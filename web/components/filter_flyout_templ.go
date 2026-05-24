@@ -1242,9 +1242,9 @@ func FilterChip(label, key, targetSel string) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var59 string
-		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue("Remove filter: " + label)
+		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "common.remove_filter", label))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 395, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/filter_flyout.templ`, Line: 395, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 		if templ_7745c5c3_Err != nil {

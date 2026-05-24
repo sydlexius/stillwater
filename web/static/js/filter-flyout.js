@@ -518,8 +518,14 @@
     if (!panel) return;
 
     var url = new URL(window.location.href);
+    // Scope this hydration loop to tri-state items only. FilterItemSingle
+    // chips share the [data-filter-key][data-filter-value] attribute pair but
+    // do NOT carry data-filter-state -- they use data-filter-selected and are
+    // hydrated by the single-select block below. Including them here would
+    // overwrite their icon and aria-label with tri-state values before that
+    // block runs.
     Array.prototype.forEach.call(
-      panel.querySelectorAll('[data-filter-key][data-filter-value]'),
+      panel.querySelectorAll('[data-filter-key][data-filter-value][data-filter-state]'),
       function (item) {
         var key = item.getAttribute('data-filter-key');
         var value = item.getAttribute('data-filter-value');

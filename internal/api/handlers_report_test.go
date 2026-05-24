@@ -1082,6 +1082,26 @@ func TestComplianceURLValues(t *testing.T) {
 			filter:   "",
 			wantKeys: map[string]string{},
 		},
+		{
+			// Regression for CR finding on PR #1653: pagination must survive
+			// HTMX swaps so the address bar reflects the current page when a
+			// chip is dismissed mid-listing.
+			name:   "non-default pagination is preserved",
+			params: artist.ListParams{Page: 3, PageSize: 100},
+			status: "",
+			filter: "",
+			wantKeys: map[string]string{
+				"page":      "3",
+				"page_size": "100",
+			},
+		},
+		{
+			name:     "page=1 and default page_size are dropped",
+			params:   artist.ListParams{Page: 1, PageSize: compliancePageSizeDefault},
+			status:   "",
+			filter:   "",
+			wantKeys: map[string]string{},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

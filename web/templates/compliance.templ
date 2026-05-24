@@ -204,7 +204,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						placeholder={ t(ctx, "common.search_artists") }
 						hx-get="/reports/compliance"
 						hx-trigger="keyup changed delay:300ms"
-						hx-target="#compliance-table"
+						hx-target="#compliance-results"
 						hx-swap="outerHTML"
 						hx-include="[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -244,7 +244,10 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						{Key: "actions", Label: "Actions"},
 					})
 					<a
+						id="compliance-export-link"
 						href={ templ.SafeURL(basePath() + complianceExportURL(data)) }
+						data-export-base={ basePath() + "/api/v1/reports/compliance/export" }
+						onclick="rewriteComplianceExport(this)"
 						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
 					>
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -254,16 +257,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					</a>
 				</div>
 			</div>
-			<!-- Hidden inputs carry filter state so the search input's hx-include can forward it -->
-			<input type="hidden" name="status" value={ data.Status }/>
-			<input type="hidden" name="filter" value={ data.Filter }/>
-			<input type="hidden" name="library_id" value={ data.LibraryID }/>
-			<input type="hidden" name="health_min" value={ intOrEmpty(data.HealthScoreMin) }/>
-			<input type="hidden" name="health_max" value={ intOrEmpty(data.HealthScoreMax) }/>
-			<!-- Hidden sort inputs -->
-			<input type="hidden" name="sort" id="compliance-sort" value={ data.Sort }/>
-			<input type="hidden" name="order" id="compliance-order" value={ data.Order }/>
-			@ComplianceTable(data)
+			@ComplianceResults(data)
 			@ComplianceFilterFlyout(data)
 		</div>
 		<!-- Bulk action bar (hidden until selections exist) -->
@@ -355,11 +349,36 @@ func intOrEmpty(v int) string {
 	return strconv.Itoa(v)
 }
 
-// ComplianceTable is the HTMX-swappable table fragment.
+// ComplianceResults is the full HTMX-swappable shell for the compliance
+// results region. It wraps the hidden filter/sort carriers (which the
+// search input reads via hx-include) plus the chips and table fragment so
+// every filter-driven refresh re-renders the complete stateful shell -- if
+// it only swapped the table, the hidden inputs would keep stale values and
+// the search input would forward the previous filter state on its next
+// request (CR feedback on PR #1653).
+templ ComplianceResults(data ComplianceData) {
+	<div id="compliance-results">
+		<!-- Hidden inputs carry filter state so the search input's hx-include can forward it -->
+		<input type="hidden" name="status" value={ data.Status }/>
+		<input type="hidden" name="filter" value={ data.Filter }/>
+		<input type="hidden" name="library_id" value={ data.LibraryID }/>
+		<input type="hidden" name="health_min" value={ intOrEmpty(data.HealthScoreMin) }/>
+		<input type="hidden" name="health_max" value={ intOrEmpty(data.HealthScoreMax) }/>
+		<!-- Hidden sort inputs -->
+		<input type="hidden" name="sort" id="compliance-sort" value={ data.Sort }/>
+		<input type="hidden" name="order" id="compliance-order" value={ data.Order }/>
+		@ComplianceTable(data)
+	</div>
+}
+
+// ComplianceTable is the inner table fragment. It is rendered as part of
+// ComplianceResults on full or HTMX-swapped renders. The chip row targets
+// #compliance-results (the outer shell) so dismissing a chip swaps the
+// hidden inputs along with the table.
 templ ComplianceTable(data ComplianceData) {
 	<div id="compliance-table">
 		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
-		@components.ActiveFilters("#compliance-table", complianceClearAllHref(data), t(ctx, "common.clear_all"), t(ctx, "dashboard.active_filters_label"), complianceActiveChips(ctx, data))
+		@components.ActiveFilters("#compliance-results", complianceClearAllHref(data), t(ctx, "common.clear_all"), t(ctx, "dashboard.active_filters_label"), complianceActiveChips(ctx, data))
 		<div class="overflow-x-auto">
 			<table id="compliance-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
@@ -931,12 +950,15 @@ templ complianceScript() {
 			updateBulkBar();
 		});
 
-		// Reload the compliance table when the filter flyout applies filters.
-		// The shared swFilterFlyout dispatches sw:filter-applied on the target
-		// but does not itself issue the HTMX request.
+		// Reload the compliance results shell when the filter flyout applies
+		// filters. The shared swFilterFlyout dispatches sw:filter-applied on
+		// the configured target (#compliance-results, which wraps the hidden
+		// filter carriers + table) but does not itself issue the HTMX
+		// request. Swapping the shell instead of just the table ensures the
+		// hidden inputs the search input reads via hx-include refresh too.
 		document.body.addEventListener('sw:filter-applied', function(evt) {
-			if (!evt.target || evt.target.id !== 'compliance-table') return;
-			htmx.ajax('GET', '/reports/compliance' + window.location.search, {target: '#compliance-table', swap: 'outerHTML'});
+			if (!evt.target || evt.target.id !== 'compliance-results') return;
+			htmx.ajax('GET', '/reports/compliance' + window.location.search, {target: '#compliance-results', swap: 'outerHTML'});
 		});
 
 		// Hydrate filter flyout state from URL on first paint.
@@ -945,6 +967,19 @@ templ complianceScript() {
 				swFilterFlyout.initFromURL('compliance-filter-flyout');
 			}
 		});
+
+		// rewriteComplianceExport rewrites the export link's href just before
+		// navigation so the CSV download uses the current URL's filter +
+		// sort params. The link element sits outside #compliance-results so
+		// it does not refresh on HTMX swap; copying window.location.search
+		// onto the link at click time gives the same effect without paying
+		// for an extra out-of-band swap on every chip dismiss.
+		window.rewriteComplianceExport = function(el) {
+			if (!el) return;
+			var base = el.getAttribute('data-export-base') || el.href;
+			var qs = window.location.search || '';
+			el.setAttribute('href', base + qs);
+		};
 	</script>
 }
 
@@ -997,11 +1032,32 @@ func complianceActiveChips(ctx context.Context, data ComplianceData) []component
 
 // complianceClearAllHref returns the href for the Clear All anchor in the
 // active-filters row. Empty when no filters are active so the link is omitted.
+//
+// Only the chip-controlled dimensions (status, filter, library_id,
+// health_min, health_max) are stripped. Search, sort, and order are NOT
+// represented as chips, so they round-trip through the cleared URL --
+// otherwise Clear All would silently drop the active search term and column
+// ordering even though those states have no chip the user could see. CR
+// feedback on PR #1653.
 func complianceClearAllHref(data ComplianceData) string {
 	if complianceActiveFilterCount(data) == 0 {
 		return ""
 	}
-	return data.BasePath + "/reports/compliance"
+	q := url.Values{}
+	if data.Search != "" {
+		q.Set("search", data.Search)
+	}
+	if data.Sort != "" && data.Sort != "name" {
+		q.Set("sort", data.Sort)
+	}
+	if data.Order != "" && data.Order != "asc" {
+		q.Set("order", data.Order)
+	}
+	u := data.BasePath + "/reports/compliance"
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	return u
 }
 
 // complianceStatusLabel returns the localized label for a status chip.
@@ -1053,7 +1109,7 @@ func complianceLibraryName(libs []library.Library, id string) string {
 // shared FilterItemSingle component; the health score range uses FilterRange.
 // URL state is written on Apply by the shared filter-flyout.js.
 templ ComplianceFilterFlyout(data ComplianceData) {
-	@components.FilterFlyout("compliance-filter-flyout", t(ctx, "report.filters_title"), "compliance-filter-trigger", complianceActiveFilterCount(data), "#compliance-table") {
+	@components.FilterFlyout("compliance-filter-flyout", t(ctx, "report.filters_title"), "compliance-filter-trigger", complianceActiveFilterCount(data), "#compliance-results") {
 		@components.FilterSection(t(ctx, "report.status_legend")) {
 			@components.FilterItemSingle("compliance-filter-flyout", "status", "compliant", t(ctx, "report.compliant"), data.Status == "compliant", 0)
 			@components.FilterItemSingle("compliance-filter-flyout", "status", "non_compliant", t(ctx, "report.non_compliant"), data.Status == "non_compliant", 0)

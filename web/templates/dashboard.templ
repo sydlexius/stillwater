@@ -256,19 +256,23 @@ func addIfSet(q url.Values, key, value string) {
 	}
 }
 
-// hasActiveFilters reports whether any filter (search or dimension) is currently applied.
+// hasActiveFilters reports whether any chip-controllable filter dimension is
+// currently applied. Search is intentionally excluded -- it has its own input
+// above the chip row and is not represented as a removable chip, so counting
+// it would show an active-filter badge / clear-all affordance with nothing
+// individually removable (CR feedback on PR #1653).
 func hasActiveFilters(data ActionQueueData) bool {
-	return data.Search != "" || data.Severity != "" || data.Category != "" ||
+	return data.Severity != "" || data.Category != "" ||
 		data.LibraryID != "" || data.RuleID != "" || data.Fixable != ""
 }
 
-// dashboardActiveFilterCount returns the number of distinct filter dimensions applied,
-// counting search as one dimension.
+// dashboardActiveFilterCount returns the number of distinct chip-controllable
+// filter dimensions applied. Search is intentionally excluded from the count
+// (see hasActiveFilters) so the count, the badge, and the visible chips stay
+// aligned: every counted dimension has a corresponding chip the user can
+// dismiss individually.
 func dashboardActiveFilterCount(data ActionQueueData) int {
 	n := 0
-	if data.Search != "" {
-		n++
-	}
 	if data.Severity != "" {
 		n++
 	}

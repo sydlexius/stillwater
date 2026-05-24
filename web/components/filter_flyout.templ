@@ -392,7 +392,7 @@ templ FilterChip(label, key, targetSel string) {
 		<button
 			type="button"
 			class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-			aria-label={ "Remove filter: " + label }
+			aria-label={ tf(ctx, "common.remove_filter", label) }
 			onclick={ DismissFilterChip(key, targetSel) }
 		>
 			<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">

@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/i18n"
 )
 
 // TestFilterItemSingle_Selected verifies the selected state renders the
@@ -100,17 +102,25 @@ func TestFilterRange_ZeroOmitsValue(t *testing.T) {
 
 // TestFilterChip verifies a chip renders the label, includes an X-mark icon,
 // and wires the dismiss button to the shared DismissFilterChip script with
-// the supplied key + targetSel.
+// the supplied key + targetSel. The aria-label is sourced through the
+// "common.remove_filter" i18n key so the assistive text follows the request
+// locale (CR feedback on PR #1653).
 func TestFilterChip(t *testing.T) {
 	var buf bytes.Buffer
-	if err := FilterChip("Error", "severity", "#action-queue").Render(context.Background(), &buf); err != nil {
+	// Provide a translator on the context so tf() can interpolate the chip
+	// label into the localized "Remove %s filter" template.
+	tr := i18n.NewTranslator("en", map[string]string{
+		"common.remove_filter": "Remove %s filter",
+	})
+	ctx := i18n.WithTranslator(context.Background(), tr)
+	if err := FilterChip("Error", "severity", "#action-queue").Render(ctx, &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
 
 	wantSubs := []string{
 		"Error",
-		`aria-label="Remove filter: Error"`,
+		`aria-label="Remove Error filter"`,
 		"DismissFilterChip", // generated script function name
 	}
 	for _, s := range wantSubs {

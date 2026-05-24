@@ -462,7 +462,7 @@ func complianceListParams(w http.ResponseWriter, req *http.Request) (artist.List
 
 	params := artist.ListParams{
 		Page:           intQuery(req, "page", 1),
-		PageSize:       intQuery(req, "page_size", 50),
+		PageSize:       intQuery(req, "page_size", compliancePageSizeDefault),
 		Sort:           sortKey,
 		Order:          order,
 		Search:         req.URL.Query().Get("search"),
@@ -561,7 +561,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 			Search:         params.Search,
 			Filter:         params.Filter,
 			LibraryID:      params.LibraryID,
-			TargetID:       "compliance-table",
+			TargetID:       "compliance-results",
 			Status:         status,
 			HealthScoreMin: params.HealthScoreMin,
 			HealthScoreMax: params.HealthScoreMax,
@@ -585,15 +585,25 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 			pushURL += "?" + vals.Encode()
 		}
 		w.Header().Set("HX-Push-Url", pushURL)
-		renderTempl(w, req, templates.ComplianceTable(data))
+		// Render the full results shell (hidden carriers + chips + table) so
+		// the search input's hx-include reads fresh hidden values after a
+		// chip dismiss or Apply/Clear cycle (CR feedback on PR #1653).
+		renderTempl(w, req, templates.ComplianceResults(data))
 		return
 	}
 	renderTempl(w, req, templates.CompliancePage(r.assetsFor(req), data))
 }
 
+// compliancePageSizeDefault matches the default applied by intQuery in
+// complianceListParams; both must stay in sync so HX-Push-Url drops the
+// query param when it equals the implicit default.
+const compliancePageSizeDefault = 50
+
 // complianceURLValues converts the compliance list params + raw status/filter
 // query values into url.Values for HX-Push-Url. Only writes the canonical
-// keys the compliance page reads back on next load.
+// keys the compliance page reads back on next load. Default values (page 1,
+// the default page size, "all" status, "name" sort, "asc" order) are dropped
+// so the pushed URL stays minimal.
 func complianceURLValues(params artist.ListParams, status, filter string) url.Values {
 	q := url.Values{}
 	if params.Search != "" {
@@ -619,6 +629,15 @@ func complianceURLValues(params artist.ListParams, status, filter string) url.Va
 	}
 	if params.Order != "" && params.Order != "asc" {
 		q.Set("order", params.Order)
+	}
+	// Preserve pagination so HTMX navigation that lands on page N keeps the
+	// address bar pointed at page N. Without this, a user on page 3 who
+	// applies/clears a chip lands back on page 1 after a manual refresh.
+	if params.Page > 1 {
+		q.Set("page", strconv.Itoa(params.Page))
+	}
+	if params.PageSize > 0 && params.PageSize != compliancePageSizeDefault {
+		q.Set("page_size", strconv.Itoa(params.PageSize))
 	}
 	return q
 }
