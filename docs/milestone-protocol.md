@@ -13,7 +13,15 @@ Before writing any code:
 
 ## 2. Plan File
 
-Create `docs/plans/m<N>-plan.md` (e.g. `docs/plans/m14-plan.md`) before starting. The plan file must include:
+Milestone plans, design prototypes, and any other ephemeral working notes
+are **out-of-repo artifacts**. Create them under
+`~/.claude/plans/m<N>-<slug>-plan.md` (e.g.
+`~/.claude/plans/m14-rule-engine-plan.md`); never commit them to the
+Stillwater tree. The `.gitignore` rules (`docs/plans/`,
+`docs/milestone-*/`, `docs/milestone-*.md`, `docs/prototypes/`) exist as a
+backstop in case one slips in.
+
+The plan file must include:
 - Milestone goal and acceptance criteria (summarised from the umbrella issue)
 - Sub-issue dependency map (which issues block which)
 - A checklist for every sub-issue: use `- [ ]` for pending, `- [x]` for done
@@ -21,11 +29,12 @@ Create `docs/plans/m<N>-plan.md` (e.g. `docs/plans/m14-plan.md`) before starting
 - The UAT and merge order (which issues are implemented/merged first, which are stacked)
 
 **Do NOT include PR numbers in plan files.** Referencing PR numbers forces a
-commit-then-update cycle every time a PR is created, which wastes time and
-resources. Track issues by number only; PR linkage lives in GitHub, not in the
-plan file.
+plan-update cycle every time a PR is created, which wastes time and
+resources. Track issues by number only; PR linkage lives in GitHub, not in
+the plan file.
 
-Commit the plan file to `main` before opening any feature branches so it survives context resets.
+The plan file lives in `~/.claude/plans/` from the moment work starts, so
+it survives context resets without needing a repo commit.
 
 Example structure:
 
@@ -116,5 +125,5 @@ Once every sub-issue PR is merged to `main`:
 2. Post a summary comment to the umbrella issue and close it.
 3. Remove all worktrees: run `git worktree list` then `bash $HOME/.claude/scripts/cleanup-worktree.sh <suffix>` for each (or remove manually with `git worktree remove <path>`).
 4. Run `git fetch --prune` to remove stale tracking refs.
-5. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
+5. Archive or delete the plan file at `~/.claude/plans/m<N>-<slug>-plan.md` (no repo commit needed; it never lived in the tree).
 6. Update `memory/worktrees.md` to move entries to "Completed" or remove them.
