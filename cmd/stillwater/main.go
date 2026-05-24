@@ -374,6 +374,16 @@ func (a *Application) buildServices() error {
 	// connection.push_failed event (busNotifier.NotifyConnectionPushFailed
 	// returns early on n.bus == nil), so the operator never sees the toast.
 	wireEventBus(a, logger)
+	// Track the goroutine so we can stop it if any phase below fails.
+	// run() registers its own Stop only after buildServices returns
+	// successfully; without this guard a wireRuleEngine error would
+	// orphan the event-bus goroutine until process exit.
+	busOwned := true
+	defer func() {
+		if busOwned {
+			a.eventBus.Stop()
+		}
+	}()
 	if err := a.wireRuleEngine(ctx, logger); err != nil {
 		return err
 	}
@@ -381,6 +391,10 @@ func (a *Application) buildServices() error {
 	wireInfraServices(ctx, a, db, cfg, logger)
 	applyPersistedBasePath(ctx, db, cfg, logger)
 	wireEventSubscriptions(a)
+	// Hand ownership to run(): the caller's deferred Stop now owns
+	// the bus lifecycle. Clearing the flag prevents the deferred
+	// Stop above from firing on the success path.
+	busOwned = false
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),

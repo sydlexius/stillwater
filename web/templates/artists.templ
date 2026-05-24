@@ -1352,7 +1352,15 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// surfaces the summary toast from the terminal snapshot.
 				function handleProgressSnapshot(data, initialAction) {
 					if (!data || data.status === 'idle') {
-						hideProgressPill();
+						// Only synthesize the terminal-canceled push when we
+						// previously observed a running action. Without this
+						// guard, every page load that hits an idle /status
+						// (the normal no-op state) fires a synthetic canceled
+						// event, which can produce false cancel-state UI in
+						// future consumers that latch on the canceled status.
+						if (bulkActionRunning) {
+							hideProgressPill();
+						}
 						bulkActionRunning = false;
 						updateBar();
 						return true;
