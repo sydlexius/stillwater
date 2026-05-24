@@ -34,6 +34,12 @@ const (
 	BulkActionReIdentifyAuto = "re_identify_auto" // silent auto-link + queue path
 	BulkActionScan           = "scan"
 	BulkActionFetchImages    = "fetch_images"
+	// Lock / unlock are the bulk-equivalent of POST/DELETE /api/v1/artists/{id}/lock.
+	// Both set source="user" via artist.Service.Lock / Unlock; idempotent (a
+	// no-op call counts the artist as Skipped). They never invoke the rule
+	// pipeline so they require only the artist service to be configured.
+	BulkActionLock   = "lock"
+	BulkActionUnlock = "unlock"
 )
 
 // idPattern accepts UUIDs and other plausible artist ID encodings used in the
@@ -119,7 +125,9 @@ func validActions(s string) bool {
 		BulkActionReIdentify,
 		BulkActionReIdentifyAuto,
 		BulkActionScan,
-		BulkActionFetchImages:
+		BulkActionFetchImages,
+		BulkActionLock,
+		BulkActionUnlock:
 		return true
 	}
 	return false
@@ -243,6 +251,15 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	case BulkActionReIdentifyAuto:
+		if r.artistService == nil {
+			releaseSlot()
+			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
+			return
+		}
+	case BulkActionLock, BulkActionUnlock:
+		// Lock / unlock only need the artist service; they never invoke
+		// the rule pipeline. Gate upfront so a misconfigured router 503s
+		// at request time instead of panicking inside the goroutine.
 		if r.artistService == nil {
 			releaseSlot()
 			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
@@ -600,6 +617,30 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 		// by the upfront service gate in handleBulkAction.
 		if _, err := r.pipeline.RunForArtist(ctx, a); err != nil {
 			r.logger.Warn("bulk action: scan RunForArtist failed", "artist_id", a.ID, "error", err)
+			return bulkOutcomeFailed
+		}
+		return bulkOutcomeSucceeded
+
+	case BulkActionLock:
+		// Idempotent: already-locked counts as Skipped so the operator
+		// sees a faithful "N changed / M skipped" summary instead of an
+		// inflated success count. source="user" mirrors the per-artist
+		// POST /api/v1/artists/{id}/lock handler.
+		if a.Locked {
+			return bulkOutcomeSkipped
+		}
+		if err := r.artistService.Lock(ctx, a.ID, "user"); err != nil {
+			r.logger.Warn("bulk action: Lock failed", "artist_id", a.ID, "error", err)
+			return bulkOutcomeFailed
+		}
+		return bulkOutcomeSucceeded
+
+	case BulkActionUnlock:
+		if !a.Locked {
+			return bulkOutcomeSkipped
+		}
+		if err := r.artistService.Unlock(ctx, a.ID); err != nil {
+			r.logger.Warn("bulk action: Unlock failed", "artist_id", a.ID, "error", err)
 			return bulkOutcomeFailed
 		}
 		return bulkOutcomeSucceeded

@@ -904,3 +904,178 @@ func TestRunBulkAction_TerminalCanceledWithFailures(t *testing.T) {
 		t.Errorf("terminal event status = %v, want canceled (cancel supersedes failed); events=%+v", last.Data["status"], evts)
 	}
 }
+
+// TestBulkAction_Lock_Success exercises the lock branch end-to-end. A freshly
+// created artist is unlocked; one bulk-lock request must mark it locked,
+// land Succeeded=1 on the snapshot, and persist the change in the artist
+// service.
+func TestBulkAction_Lock_Success(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Lock Artist A")
+
+	payload := `{"action":"lock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	if p == nil {
+		t.Fatalf("expected progress snapshot, got nil")
+	}
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	failed := p.Failed
+	p.mu.RUnlock()
+
+	if succeeded != 1 || skipped != 0 || failed != 0 {
+		t.Errorf("counts = (succeeded=%d skipped=%d failed=%d), want (1,0,0)", succeeded, skipped, failed)
+	}
+
+	// Verify the lock landed on the persisted record.
+	got, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("re-fetching artist: %v", err)
+	}
+	if !got.Locked {
+		t.Errorf("artist.Locked = false after bulk lock; want true")
+	}
+}
+
+// TestBulkAction_Lock_Idempotent verifies that locking an already-locked
+// artist counts as Skipped, not Succeeded. This matches the per-artist
+// POST /artists/{id}/lock idempotency and prevents a misleading
+// "N artists locked" toast when the operator picked a mix of locked +
+// unlocked.
+func TestBulkAction_Lock_Idempotent(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Already Locked")
+	// Pre-lock the artist so the bulk path sees Locked=true.
+	if err := artistSvc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("pre-locking: %v", err)
+	}
+
+	payload := `{"action":"lock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	p.mu.RUnlock()
+	if succeeded != 0 || skipped != 1 {
+		t.Errorf("counts = (succeeded=%d skipped=%d), want (0,1) for already-locked", succeeded, skipped)
+	}
+}
+
+// TestBulkAction_Unlock_Success exercises the unlock branch end-to-end on
+// a previously-locked artist.
+func TestBulkAction_Unlock_Success(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Unlock Artist")
+	if err := artistSvc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("pre-locking: %v", err)
+	}
+
+	payload := `{"action":"unlock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	p.mu.RUnlock()
+	if succeeded != 1 || skipped != 0 {
+		t.Errorf("counts = (succeeded=%d skipped=%d), want (1,0)", succeeded, skipped)
+	}
+
+	got, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("re-fetching artist: %v", err)
+	}
+	if got.Locked {
+		t.Errorf("artist.Locked = true after bulk unlock; want false")
+	}
+}
+
+// TestBulkAction_Unlock_Idempotent verifies that unlocking a not-locked
+// artist counts as Skipped.
+func TestBulkAction_Unlock_Idempotent(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Already Unlocked")
+
+	payload := `{"action":"unlock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	p.mu.RUnlock()
+	if succeeded != 0 || skipped != 1 {
+		t.Errorf("counts = (succeeded=%d skipped=%d), want (0,1) for already-unlocked", succeeded, skipped)
+	}
+}
+
+// TestBulkAction_LockUnlock_ConcurrentReject confirms a lock request returns
+// 409 when another bulk action is already in flight, matching the existing
+// singleton-slot semantics that fix-all also follows.
+func TestBulkAction_LockUnlock_ConcurrentReject(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithIdentify(t)
+	r.bulkActionMu.Lock()
+	r.bulkActionProgress = &BulkActionProgress{Status: bulkActionRunning, Action: "lock", Total: 5}
+	r.bulkActionMu.Unlock()
+
+	body := strings.NewReader(`{"action":"unlock","ids":["abc123"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+}

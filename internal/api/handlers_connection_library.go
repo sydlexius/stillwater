@@ -333,8 +333,31 @@ func (r *Router) handlePopulateLibrary(w http.ResponseWriter, req *http.Request)
 	go r.runPopulate(context.WithoutCancel(req.Context()), conn, lib, op)
 }
 
+// populateOpID returns the stable ProgressPill op_id for a library populate.
+// One pill per library lets the user kick off multiple populates without
+// them collapsing into a single bar; the prefix lets the JS distinguish
+// populate pills from bulk-action pills without parsing the label.
+func populateOpID(libID string) string {
+	return "populate:" + libID
+}
+
 // runPopulate executes the populate operation in a background goroutine.
+//
+// Emits ProgressPill events on the shared SSE topic (op_id="populate:<libID>")
+// so the user gets live feedback in the layout-level pill stack. Emby and
+// Jellyfin per-page loops update the running pill via publishPopulateProgress
+// once they know the total record count from the first paginated response;
+// Lidarr populate does not paginate today (single GetArtists call) so it
+// only emits start + terminal events. Cancel is out of scope for #1216
+// per the issue, so events carry no cancel_url.
 func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, lib *library.Library, op *LibraryOpResult) {
+	opID := populateOpID(lib.ID)
+	pillLabel := "populate: " + lib.Name
+	// Emit a "running" event up-front (total=0 means indeterminate; the
+	// first paginated response will publish a concrete total). The pill
+	// appears immediately so the user knows the kickoff registered.
+	r.publishOpProgress(opID, pillLabel, 0, 0, "running", "")
+
 	defer func() {
 		if v := recover(); v != nil {
 			r.logger.Error("panic in populate goroutine",
@@ -347,6 +370,9 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 			op.Status = "failed"
 			op.Message = "populate failed unexpectedly"
 			r.libraryOpsMu.Unlock()
+			// Surface the panic on the pill so the user is not left
+			// staring at a stuck "running" bar.
+			r.publishOpProgress(opID, pillLabel, 0, 0, "failed", "")
 			go r.scheduleOpCleanup(lib.ID, op)
 		}
 	}()
@@ -391,7 +417,37 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 	}
 	r.libraryOpsMu.Unlock()
 
+	// Terminal pill event. The pill auto-dismisses on "completed" and
+	// stays sticky on "failed" until the user dismisses it. processed
+	// is set equal to total on success so the bar shows full.
+	pillStatus := "completed"
+	if popErr != nil {
+		pillStatus = "failed"
+	}
+	r.publishOpProgress(opID, pillLabel, result.Total, result.Total, pillStatus, "")
+
 	go r.scheduleOpCleanup(lib.ID, op)
+}
+
+// publishPopulateProgress is the per-page progress hook called by
+// populateFromEmbyCtx / populateFromJellyfinCtx between page fetches.
+// Throttling lives here so the Emby/Jellyfin loops do not each carry
+// their own copy. Updates are emitted every 5% of total or when the
+// final page lands; for small libraries (<20 records) every page is
+// emitted because the step rounds down to 1.
+func (r *Router) publishPopulateProgress(lib *library.Library, processed, total int) {
+	if total <= 0 {
+		// Indeterminate run: emit each page so the pill shows movement.
+		r.publishOpProgress(populateOpID(lib.ID), "populate: "+lib.Name, 0, processed, "running", "")
+		return
+	}
+	step := total / 20
+	if step < 1 {
+		step = 1
+	}
+	if processed%step == 0 || processed >= total {
+		r.publishOpProgress(populateOpID(lib.ID), "populate: "+lib.Name, total, processed, "running", "")
+	}
 }
 
 // handleScanLibrary triggers an async API scan that checks metadata/image state.
@@ -600,6 +656,10 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 		if err != nil {
 			return fmt.Errorf("fetching artists from emby: %w", err)
 		}
+		// Per-page ProgressPill tick. resp.TotalRecordCount is reliable
+		// after the first response so we always pass it as the total;
+		// publishPopulateProgress handles throttling.
+		r.publishPopulateProgress(lib, result.Total, resp.TotalRecordCount)
 
 		for i := range resp.Items {
 			item := &resp.Items[i]
@@ -670,6 +730,11 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, "emby", result)
 		}
 
+		// Per-page tick after the item loop so processed reflects the
+		// items just absorbed in this page (not the lagging top-of-loop
+		// count). publishPopulateProgress throttles to ~5% steps.
+		r.publishPopulateProgress(lib, result.Total, resp.TotalRecordCount)
+
 		startIndex += pageSize
 		if startIndex >= resp.TotalRecordCount {
 			break
@@ -688,6 +753,8 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 		if err != nil {
 			return fmt.Errorf("fetching artists from jellyfin: %w", err)
 		}
+		// Per-page ProgressPill tick. See the Emby variant above.
+		r.publishPopulateProgress(lib, result.Total, resp.TotalRecordCount)
 
 		for i := range resp.Items {
 			item := &resp.Items[i]
@@ -757,6 +824,9 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, "jellyfin", result)
 		}
 
+		// Per-page tick after the item loop (see Emby variant for rationale).
+		r.publishPopulateProgress(lib, result.Total, resp.TotalRecordCount)
+
 		startIndex += pageSize
 		if startIndex >= resp.TotalRecordCount {
 			break
@@ -765,6 +835,11 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 	return nil
 }
 
+// TODO(#1216 follow-up): Lidarr populate also needs ProgressPill ticks.
+// It does not paginate today (single GetArtists call), so wiring it
+// requires either splitting the inner loop into chunks or accepting a
+// single mid-loop tick. Out of scope for this PR per the issue ("Lidarr
+// almost certainly does too but has not been validated").
 func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Client, lib *library.Library, result *populateResult) error {
 	manualLibs := r.manualLibraries(ctx)
 	artists, err := client.GetArtists(ctx)

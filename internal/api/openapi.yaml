@@ -5045,11 +5045,13 @@ paths:
         Runs the requested action for each artist in the supplied ID list.
         Only one bulk action may run at a time; concurrent starts are rejected
         with 409 Conflict. The accepted actions are run_rules,
-        re_identify_auto (legacy alias: re_identify), scan, and
-        fetch_images. The review flow is started separately via
-        POST /artists/re-identify/wizard. Progress is reported via
+        re_identify_auto (legacy alias: re_identify), scan,
+        fetch_images, lock, and unlock. The review flow is started separately
+        via POST /artists/re-identify/wizard. Progress is reported via
         GET /artists/bulk-actions/status and a bulk.completed SSE event is
-        published when the run finishes.
+        published when the run finishes. lock / unlock are idempotent:
+        already-locked artists count as Skipped on lock, and not-locked
+        artists count as Skipped on unlock.
       requestBody:
         required: true
         content:
@@ -5060,12 +5062,14 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [run_rules, re_identify, re_identify_auto, scan, fetch_images]
+                  enum: [run_rules, re_identify, re_identify_auto, scan, fetch_images, lock, unlock]
                   description: >
                     Action to apply to each artist in the list. The legacy
                     value re_identify is an alias for re_identify_auto; the
                     wizard variant (re_identify_review) is dispatched
                     separately via POST /artists/re-identify/wizard.
+                    lock / unlock set source="user" via the artist service
+                    and are idempotent (no-op calls report as Skipped).
                 ids:
                   type: array
                   minItems: 1
@@ -5088,7 +5092,7 @@ paths:
                     enum: [running]
                   action:
                     type: string
-                    enum: [run_rules, re_identify_auto, scan, fetch_images]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images, lock, unlock]
                     description: >
                       Canonical action value as emitted by the handler.
                       The legacy alias re_identify is normalized to

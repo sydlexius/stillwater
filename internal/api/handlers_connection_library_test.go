@@ -3448,3 +3448,127 @@ func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
 		t.Errorf("jellyfin membership source = %q, want jellyfin", gotSources[jfLib.ID])
 	}
 }
+
+// TestPublishPopulateProgress_ThrottlesAtFivePercent locks in the
+// throttling math added in PR7 for #1216. We call publishPopulateProgress
+// once per processed count and then assert only the 5%-step indices
+// (plus the final tick) made it onto the event bus.
+func TestPublishPopulateProgress_ThrottlesAtFivePercent(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	lib := &library.Library{ID: "lib-tp-1", Name: "Throttle Test"}
+	total := 100
+	for processed := 1; processed <= total; processed++ {
+		r.publishPopulateProgress(lib, processed, total)
+	}
+	// Allow the bus worker to drain.
+	time.Sleep(50 * time.Millisecond)
+
+	evts := rec.snapshot()
+	indices := extractProcessedIndices(evts)
+	// With total=100, step=5, so we expect 5, 10, ... 100 == 20 events.
+	if len(indices) != 20 {
+		t.Errorf("running events = %d, want 20 (5%% throttle on total=100); indices=%v", len(indices), indices)
+	}
+	if len(indices) > 0 && indices[len(indices)-1] != 100 {
+		t.Errorf("last running index = %d, want 100", indices[len(indices)-1])
+	}
+}
+
+// TestPublishPopulateProgress_IndeterminateEmitsEachCall covers the
+// total<=0 branch where the first paginated response has not landed yet.
+// The throttle short-circuits and every call emits so the pill shows
+// movement even without a known total.
+func TestPublishPopulateProgress_IndeterminateEmitsEachCall(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	lib := &library.Library{ID: "lib-tp-2", Name: "Indeterminate"}
+	for processed := 1; processed <= 4; processed++ {
+		r.publishPopulateProgress(lib, processed, 0)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	evts := rec.snapshot()
+	if got := len(extractProcessedIndices(evts)); got != 4 {
+		t.Errorf("indeterminate emits = %d, want 4 (one per call)", got)
+	}
+}
+
+// TestRunPopulate_EmitsStartAndCompletedEvents drives runPopulate
+// end-to-end against a fake Emby server returning a single artist. The
+// resulting event stream must include a "running" start event (processed=0)
+// and a terminal "completed" event.
+func TestRunPopulate_EmitsStartAndCompletedEvents(t *testing.T) {
+	t.Parallel()
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{"Name":"Progress Pill Artist","Id":"emby-pp-1","Path":"/music/PP"}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Populate Pill Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-pp",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	// Real connection for the type switch in runPopulate to find Emby; the
+	// URL points at the fake server we just stood up so no real network
+	// dependency is introduced.
+	conn := &connection.Connection{
+		ID:     "conn-pp-1",
+		Type:   connection.TypeEmby,
+		URL:    embySrv.URL,
+		APIKey: "k",
+	}
+	op := &LibraryOpResult{LibraryID: lib.ID, LibraryName: lib.Name, Operation: "populate", Status: "running", StartedAt: time.Now().UTC()}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+	// scheduleOpCleanup launches; pause briefly so the bus dispatches.
+	time.Sleep(100 * time.Millisecond)
+
+	evts := rec.snapshot()
+	if len(evts) == 0 {
+		t.Fatal("no operation.progress events recorded")
+	}
+	wantOpID := populateOpID(lib.ID)
+	var sawStart, sawCompleted bool
+	for _, e := range evts {
+		if e.Data["op_id"] != wantOpID {
+			continue
+		}
+		if e.Data["status"] == "running" && e.Data["processed"] == 0 {
+			sawStart = true
+		}
+		if e.Data["status"] == "completed" {
+			sawCompleted = true
+		}
+	}
+	if !sawStart {
+		t.Errorf("expected a running event with processed=0 for op_id=%s; events=%+v", wantOpID, evts)
+	}
+	if !sawCompleted {
+		t.Errorf("expected a completed event for op_id=%s; events=%+v", wantOpID, evts)
+	}
+}
