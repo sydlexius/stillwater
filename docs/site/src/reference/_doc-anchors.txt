@@ -342,6 +342,7 @@ troubleshooting/platform-auth#image-fetcher-conflict-warning
 troubleshooting/platform-auth#library-paths-overlap-409-from-refresh
 troubleshooting/platform-auth#nfo-writes-paused-banner
 troubleshooting/platform-auth#platform-authentication
+troubleshooting/platform-auth#platform-push-failed-toasts
 troubleshooting/platform-auth#re-sync-artists-returns-nothing-new
 troubleshooting/platform-auth#restart-the-platforms-library-service-after-revoking-hint
 troubleshooting/platform-auth#see-also
