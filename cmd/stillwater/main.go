@@ -362,9 +362,7 @@ func (a *Application) buildServices() error {
 	logger := a.logger
 	ctx := context.Background()
 
-	if err := a.wireAuth(ctx); err != nil {
-		return err
-	}
+	a.wireAuth(ctx)
 	if err := a.wireProviders(ctx); err != nil {
 		return err
 	}
@@ -560,9 +558,13 @@ func resolveRuleSchedule(a *Application, db *sql.DB, logger *slog.Logger) {
 	}
 }
 
-// wireAuth wires the authentication service, registry, and any external auth
-// provider configured in the settings table (emby / jellyfin).
-func (a *Application) wireAuth(ctx context.Context) error {
+// wireAuth wires library, artist, history, platform, connection, and the
+// authentication service / registry (plus any external auth provider
+// configured in the settings table -- emby / jellyfin). All failure modes
+// today are log-and-degrade: external auth provider construction Warns on
+// error and skips that provider, so the function never returns a non-nil
+// error and the signature has no error return (per unparam).
+func (a *Application) wireAuth(ctx context.Context) {
 	db := a.db
 	logger := a.logger
 	cfg := a.cfg
@@ -602,7 +604,6 @@ func (a *Application) wireAuth(ctx context.Context) error {
 			}
 		}
 	}
-	return nil
 }
 
 // wireProviders wires the metadata provider registry (MusicBrainz, Fanart.tv,
