@@ -432,3 +432,18 @@ func TestUpdateArtistPath_EmptyBody(t *testing.T) {
 		t.Fatal("expected error on empty body")
 	}
 }
+
+// TestUpdateArtistPath_EmptyNewPath rejects a blank target path before any
+// GET / PUT so we never silently overwrite the Lidarr artist row with "".
+func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "42", ""); err == nil {
+		t.Fatal("expected error on empty newPath")
+	}
+}

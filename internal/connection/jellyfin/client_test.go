@@ -725,6 +725,22 @@ func TestUpdateArtistPath_EmptyItemID(t *testing.T) {
 	}
 }
 
+// TestUpdateArtistPath_EmptyNewPath rejects a blank target path before any
+// fetch / POST. Pushing "" as Path would silently overwrite Jellyfin's record
+// with an invalid value and orphan the artist on the peer.
+func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "jf-pid", "   "); err == nil {
+		t.Fatal("expected error on whitespace-only newPath")
+	}
+}
+
 // TestPushMetadata_ClearsFields verifies that empty values in the push data
 // overwrite existing Jellyfin values, allowing field clears to propagate.
 func TestPushMetadata_ClearsFields(t *testing.T) {

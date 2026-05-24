@@ -1590,3 +1590,18 @@ func TestUpdateArtistPath_PeerError(t *testing.T) {
 		t.Errorf("error = %v, want wrap mentioning the operation", err)
 	}
 }
+
+// TestUpdateArtistPath_EmptyNewPath rejects a blank target path before any
+// fetch / POST so we never silently overwrite the peer record with "".
+func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "user", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "emby-pid", "   "); err == nil {
+		t.Fatal("expected error on whitespace-only newPath")
+	}
+}

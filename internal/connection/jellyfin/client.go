@@ -487,6 +487,9 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	if strings.TrimSpace(platformArtistID) == "" {
 		return fmt.Errorf("platformArtistID is required")
 	}
+	if strings.TrimSpace(newPath) == "" {
+		return fmt.Errorf("newPath is required")
+	}
 	existing, err := c.fetchItem(ctx, platformArtistID)
 	if err != nil {
 		return fmt.Errorf("fetching artist for path update: %w", err)

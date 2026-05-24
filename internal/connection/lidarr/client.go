@@ -515,6 +515,9 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	if strings.TrimSpace(platformArtistID) == "" {
 		return fmt.Errorf("platformArtistID is required")
 	}
+	if strings.TrimSpace(newPath) == "" {
+		return fmt.Errorf("newPath is required")
+	}
 	// PathEscape the platform ID so an ID containing reserved characters
 	// (slashes, percent signs, etc.) cannot break out of the URL segment.
 	// Jellyfin's push.go already does this; bringing Lidarr into parity
