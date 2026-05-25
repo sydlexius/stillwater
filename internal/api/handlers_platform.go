@@ -301,6 +301,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	// unnecessary DB queries on every settings page load.
 	var usersTabData templates.UsersTabData
 	usersTabData.MultiUserEnabled = multiUserEnabled
+	usersTabData.CallerID = middleware.UserIDFromContext(req.Context())
 	if multiUserEnabled && tab == templates.TabUsers {
 		if users, err := r.authService.ListUsers(req.Context()); err == nil {
 			usersTabData.Users = users

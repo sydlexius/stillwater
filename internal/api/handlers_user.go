@@ -178,13 +178,31 @@ func (r *Router) handleRegister(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusCreated, user)
 }
 
+// defaultInactiveThresholdDays is the fallback when the
+// users.inactive_threshold_days KV setting is unset; matches the issue spec.
+const defaultInactiveThresholdDays = 90
+
 // handleListUsers returns all user accounts.
 // GET /api/v1/users (admin only)
 // Returns JSON for API clients or HTML table rows when HX-Request is set.
+// Accepts inactive_only=true to restrict to never-logged-in + stale-login
+// accounts; the staleness threshold is read from the KV setting
+// users.inactive_threshold_days (default 90).
 func (r *Router) handleListUsers(w http.ResponseWriter, req *http.Request) {
-	users, err := r.authService.ListUsers(req.Context())
+	inactiveOnly := req.URL.Query().Get("inactive_only") == "true"
+
+	var (
+		users []auth.User
+		err   error
+	)
+	if inactiveOnly {
+		threshold := r.getIntSetting(req.Context(), "users.inactive_threshold_days", defaultInactiveThresholdDays)
+		users, err = r.authService.ListInactiveUsers(req.Context(), threshold)
+	} else {
+		users, err = r.authService.ListUsers(req.Context())
+	}
 	if err != nil {
-		r.logger.Error("failed to list users", "error", err)
+		r.logger.Error("failed to list users", "error", err, "inactive_only", inactiveOnly)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "An internal error occurred. Please try again."})
 		return
 	}
@@ -313,6 +331,52 @@ func (r *Router) handleDeactivateUser(w http.ResponseWriter, req *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteUser permanently removes a user account, recording the deletion
+// in the audit log. Distinct from DELETE /api/v1/users/{id} (deactivation)
+// which only flips is_active; this endpoint actually wipes the row. The
+// 4-segment shape sidesteps the mux conflict between a 3-segment
+// `/users/{id}/X` and the pre-existing `/users/invites/{id}`.
+// DELETE /api/v1/users/{id}/account/permanent (admin only)
+func (r *Router) handleDeleteUser(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "User ID is required."})
+		return
+	}
+
+	// Reason is optional and only used for the audit_log.detail field.
+	// Body may be absent (HTMX delete with no form) -- treat that as "no reason".
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if req.Body != nil && req.ContentLength != 0 {
+		_ = json.NewDecoder(req.Body).Decode(&body)
+	}
+
+	callerID := middleware.UserIDFromContext(req.Context())
+	if err := r.authService.DeleteUser(req.Context(), callerID, id, body.Reason); err != nil {
+		switch {
+		case errors.Is(err, auth.ErrSelfDelete):
+			r.logger.Warn("blocked self-delete from admin users panel", "user_id", id)
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "An administrator cannot delete their own account from this screen. Use Account Settings instead."})
+		case errors.Is(err, auth.ErrProtectedUser):
+			r.logger.Warn("blocked deletion of protected bootstrap admin", "user_id", id)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "The bootstrap administrator account cannot be deleted."})
+		case errors.Is(err, auth.ErrLastAdmin):
+			r.logger.Warn("blocked deletion of last active administrator", "user_id", id)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Cannot delete the last active administrator."})
+		case errors.Is(err, sql.ErrNoRows):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found."})
+		default:
+			r.logger.Error("failed to delete user", "user_id", id, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "An internal error occurred. Please try again."})
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // parseDuration parses a duration string. It supports standard Go duration
 // syntax (e.g. "24h") as well as a shorthand suffix "d" for whole days
 // (e.g. "7d" equals 168h).
@@ -336,11 +400,14 @@ func parseDuration(s string) (time.Duration, error) {
 
 // renderUserTableRows writes user table rows as HTML fragments for HTMX.
 // Pre-renders to a buffer so partial failures return a 500 instead of truncated HTML.
+// callerID flows through to userTableRow so the per-row Delete button can
+// disable itself for the signed-in admin's own row.
 func (r *Router) renderUserTableRows(w http.ResponseWriter, req *http.Request, users []auth.User) {
+	callerID := middleware.UserIDFromContext(req.Context())
 	var buf bytes.Buffer
 	for i := range users {
 		u := &users[i]
-		if err := templates.UserTableRowFragment(*u).Render(req.Context(), &buf); err != nil {
+		if err := templates.UserTableRowFragment(*u, callerID).Render(req.Context(), &buf); err != nil {
 			r.logger.Error("rendering user table row", "user_id", u.ID, "error", err)
 			http.Error(w, "Failed to render user list", http.StatusInternalServerError)
 			return

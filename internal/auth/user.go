@@ -21,6 +21,12 @@ var ErrLastAdmin = errors.New("cannot remove or downgrade the last administrator
 // protected from modification.
 var ErrProtectedUser = errors.New("cannot modify or deactivate the protected bootstrap administrator")
 
+// ErrSelfDelete is returned when an administrator attempts to permanently
+// delete their own user account from the admin Users panel; that surface is
+// for cleaning up OTHER accounts. Self-account changes route through the
+// Account Settings flow instead.
+var ErrSelfDelete = errors.New("cannot delete your own account from the admin users panel")
+
 // User represents a Stillwater user account.
 type User struct {
 	ID           string  `json:"id"`
@@ -32,8 +38,12 @@ type User struct {
 	IsActive     bool    `json:"is_active"`
 	IsProtected  bool    `json:"is_protected"`
 	InvitedBy    *string `json:"invited_by,omitempty"`
-	CreatedAt    string  `json:"created_at"`
-	UpdatedAt    string  `json:"updated_at"`
+	// LastLogin is the RFC3339 timestamp of the most recent successful
+	// session creation; nil when the user has never logged in (the inactive
+	// admin filter treats nil as "never logged in").
+	LastLogin *string `json:"last_login,omitempty"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
 }
 
 // GetUserByID returns a user by their ID. Returns an error wrapping
@@ -42,14 +52,15 @@ func (s *Service) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var u User
 	var invitedBy sql.NullString
 	var providerID sql.NullString
+	var lastLogin sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, username, display_name, role, auth_provider, provider_id,
-		       is_active, is_protected, invited_by, created_at, updated_at
+		       is_active, is_protected, invited_by, last_login, created_at, updated_at
 		FROM users WHERE id = ?
 	`, id).Scan(
 		&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.AuthProvider,
-		&providerID, &u.IsActive, &u.IsProtected, &invitedBy, &u.CreatedAt, &u.UpdatedAt,
+		&providerID, &u.IsActive, &u.IsProtected, &invitedBy, &lastLogin, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("user not found: %w", sql.ErrNoRows)
@@ -63,6 +74,9 @@ func (s *Service) GetUserByID(ctx context.Context, id string) (*User, error) {
 	}
 	if invitedBy.Valid {
 		u.InvitedBy = &invitedBy.String
+	}
+	if lastLogin.Valid {
+		u.LastLogin = &lastLogin.String
 	}
 
 	return &u, nil
@@ -88,7 +102,7 @@ func (s *Service) GetUserRole(ctx context.Context, userID string) (string, error
 func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, username, display_name, role, auth_provider, provider_id,
-		       is_active, is_protected, invited_by, created_at, updated_at
+		       is_active, is_protected, invited_by, last_login, created_at, updated_at
 		FROM users ORDER BY created_at ASC
 	`)
 	if err != nil {
@@ -96,15 +110,56 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	}
 	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
+	return scanUsers(rows)
+}
+
+// ListInactiveUsers returns users that have never logged in or whose last
+// login is older than thresholdDays. thresholdDays <= 0 disables the
+// stale-login criterion and returns only never-logged-in accounts, which is
+// the safest default for a delete-flow filter.
+func (s *Service) ListInactiveUsers(ctx context.Context, thresholdDays int) ([]User, error) {
+	const baseSelect = `
+		SELECT id, username, display_name, role, auth_provider, provider_id,
+		       is_active, is_protected, invited_by, last_login, created_at, updated_at
+		FROM users
+	`
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if thresholdDays > 0 {
+		cutoff := time.Now().UTC().AddDate(0, 0, -thresholdDays).Format(time.RFC3339)
+		rows, err = s.db.QueryContext(ctx, baseSelect+`
+			WHERE last_login IS NULL OR last_login < ?
+			ORDER BY created_at ASC
+		`, cutoff)
+	} else {
+		rows, err = s.db.QueryContext(ctx, baseSelect+`
+			WHERE last_login IS NULL
+			ORDER BY created_at ASC
+		`)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing inactive users: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	return scanUsers(rows)
+}
+
+// scanUsers drains a SELECT-shaped rows cursor that matches the canonical
+// users-table column list (see ListUsers / ListInactiveUsers).
+func scanUsers(rows *sql.Rows) ([]User, error) {
 	users := []User{}
 	for rows.Next() {
 		var u User
 		var invitedBy sql.NullString
 		var providerID sql.NullString
+		var lastLogin sql.NullString
 
 		if err := rows.Scan(
 			&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.AuthProvider,
-			&providerID, &u.IsActive, &u.IsProtected, &invitedBy, &u.CreatedAt, &u.UpdatedAt,
+			&providerID, &u.IsActive, &u.IsProtected, &invitedBy, &lastLogin, &u.CreatedAt, &u.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning user: %w", err)
 		}
@@ -115,11 +170,14 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 		if invitedBy.Valid {
 			u.InvitedBy = &invitedBy.String
 		}
+		if lastLogin.Valid {
+			u.LastLogin = &lastLogin.String
+		}
 
 		users = append(users, u)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("listing users: %w", err)
+		return nil, fmt.Errorf("scanning users: %w", err)
 	}
 	return users, nil
 }
@@ -252,6 +310,124 @@ func (s *Service) DeactivateUser(ctx context.Context, userID string) error {
 	})
 }
 
+// DeleteUser permanently removes a user account and records the deletion in
+// the audit log. Refuses to delete the actor themselves (ErrSelfDelete), the
+// bootstrap protected admin (ErrProtectedUser), or the last active
+// administrator (ErrLastAdmin).
+//
+// The audit row is INSERTTed inside the same BEGIN IMMEDIATE transaction that
+// removes the target, so a failed delete cannot leave a half-finished audit
+// trail. The new actor_user_id / target_user_id columns (migration 012) carry
+// the relationship across the target's FK cascade; the legacy
+// audit_log.user_id stays CASCADE because SQLite cannot alter FK semantics in
+// place, so the actor is recorded into both for forward compatibility.
+//
+// reason is optional free text shown in the confirm dialog; trimmed and
+// stored verbatim in audit_log.detail.
+//
+//nolint:gocognit // Single transactional precondition chain: self-delete gate, target lookup, protected guard, last-admin guard (on active admin removal), audit insert, then DELETE. Splitting these into helpers would only obscure the ordering that the security invariant depends on.
+func (s *Service) DeleteUser(ctx context.Context, actorID, targetID, reason string) error {
+	if actorID == "" {
+		return fmt.Errorf("actor id required")
+	}
+	if targetID == "" {
+		return fmt.Errorf("target id required")
+	}
+	if actorID == targetID {
+		return ErrSelfDelete
+	}
+
+	reason = strings.TrimSpace(reason)
+
+	return s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		var (
+			role        string
+			isActive    bool
+			isProtected bool
+			username    string
+		)
+		err := conn.QueryRowContext(ctx, `
+			SELECT role, is_active, is_protected, username
+			FROM users WHERE id = ?
+		`, targetID).Scan(&role, &isActive, &isProtected, &username)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("user not found: %w", sql.ErrNoRows)
+		}
+		if err != nil {
+			return fmt.Errorf("checking target user: %w", err)
+		}
+
+		if isProtected {
+			return ErrProtectedUser
+		}
+
+		// Only block on the last-admin guard if the target is an active
+		// administrator; deleting an inactive (deactivated) admin cannot
+		// drop the active-admin count, so we don't bother counting.
+		if isActive && role == "administrator" {
+			var count int
+			if err := conn.QueryRowContext(ctx, `
+				SELECT COUNT(*) FROM users WHERE role = 'administrator' AND is_active = 1
+			`).Scan(&count); err != nil {
+				return fmt.Errorf("counting active admins: %w", err)
+			}
+			if count <= 1 {
+				return ErrLastAdmin
+			}
+		}
+
+		// Write the audit entry BEFORE the DELETE so the actor reference is
+		// preserved in the legacy user_id column (ON DELETE CASCADE on user_id
+		// would otherwise nuke this row if the actor were ever deleted later;
+		// the new SET NULL columns hold the relationship long-term).
+		now := time.Now().UTC().Format(time.RFC3339)
+		detail := reason
+		if detail == "" {
+			detail = "permanently deleted: " + username
+		} else {
+			detail = "permanently deleted " + username + ": " + reason
+		}
+		if _, err := conn.ExecContext(ctx, `
+			INSERT INTO audit_log (id, action, token_id, token_name, user_id, detail,
+			                       actor_user_id, target_user_id, created_at)
+			VALUES (?, 'user.delete', NULL, '', ?, ?, ?, ?, ?)
+		`, uuid.New().String(), actorID, detail, actorID, targetID, now); err != nil {
+			return fmt.Errorf("writing user delete audit entry: %w", err)
+		}
+
+		result, err := conn.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, targetID)
+		if err != nil {
+			// The prevent_delete_protected_user trigger is the floor-level
+			// guard against deleting the bootstrap admin. The in-tx check
+			// above should always catch this first, but treat the trigger
+			// firing as ErrProtectedUser too so a future code change that
+			// drops the in-tx check still surfaces a sensible 409.
+			if strings.Contains(err.Error(), "cannot delete a protected user") {
+				return ErrProtectedUser
+			}
+			return fmt.Errorf("deleting user: %w", err)
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("checking delete rows affected: %w", err)
+		}
+		if n == 0 {
+			return fmt.Errorf("user not found: %w", sql.ErrNoRows)
+		}
+
+		// sessions.user_id is FK CASCADE in the schema, but FK enforcement
+		// is per-connection (PRAGMA foreign_keys) and tests routinely run
+		// without it on. Issue an explicit DELETE so the target's live
+		// sessions are invalidated regardless of PRAGMA state -- mirrors
+		// DeactivateUser's session sweep at the equivalent point.
+		if _, err := conn.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, targetID); err != nil {
+			return fmt.Errorf("deleting sessions for deleted user: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // CreateLocalUser creates a new user with local password authentication.
 // The password is bcrypt-hashed via PrehashPassword before storage.
 func (s *Service) CreateLocalUser(ctx context.Context, username, password, displayName, role, invitedBy string) (*User, error) {
@@ -347,14 +523,15 @@ func (s *Service) GetUserByProvider(ctx context.Context, authProvider, providerI
 	var u User
 	var invitedBy sql.NullString
 	var pID sql.NullString
+	var lastLogin sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, username, display_name, role, auth_provider, provider_id,
-		       is_active, is_protected, invited_by, created_at, updated_at
+		       is_active, is_protected, invited_by, last_login, created_at, updated_at
 		FROM users WHERE auth_provider = ? AND provider_id = ?
 	`, authProvider, providerID).Scan(
 		&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.AuthProvider,
-		&pID, &u.IsActive, &u.IsProtected, &invitedBy, &u.CreatedAt, &u.UpdatedAt,
+		&pID, &u.IsActive, &u.IsProtected, &invitedBy, &lastLogin, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("user not found: %w", sql.ErrNoRows)
@@ -368,6 +545,9 @@ func (s *Service) GetUserByProvider(ctx context.Context, authProvider, providerI
 	}
 	if invitedBy.Valid {
 		u.InvitedBy = &invitedBy.String
+	}
+	if lastLogin.Valid {
+		u.LastLogin = &lastLogin.String
 	}
 
 	return &u, nil

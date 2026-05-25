@@ -949,10 +949,7 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now); err != nil {
 			r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-			if _, delErr := r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, result.User.ID); delErr != nil {
-				r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
-					"auth_method", authMethod, "provider_id", result.User.ID, "error", delErr)
-			}
+			r.rollbackFederatedSetupUser(req.Context(), authMethod, result.User.ID)
 			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 			return
 		}
@@ -991,6 +988,36 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 	r.setSessionCookie(w, req, token)
 	w.Header().Set("HX-Redirect", r.basePath+"/")
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
+}
+
+// rollbackFederatedSetupUser wipes a half-created federated bootstrap admin
+// after a Setup-time settings write fails. Setup creates the user with
+// is_protected=1, so the prevent_delete_protected_user trigger
+// (migration 012) would block a bare DELETE; clear that flag first and
+// then issue the DELETE. Best-effort: failures only log because the
+// caller already has an actionable error to report to the user.
+func (r *Router) rollbackFederatedSetupUser(ctx context.Context, authMethod, providerID string) {
+	if _, clrErr := r.db.ExecContext(ctx, `UPDATE users SET is_protected = 0 WHERE auth_provider = ? AND provider_id = ?`, authMethod, providerID); clrErr != nil {
+		r.logger.Error("rollback clear-protected failed; DELETE will be blocked by trigger",
+			"auth_method", authMethod, "provider_id", providerID, "error", clrErr)
+	}
+	if _, delErr := r.db.ExecContext(ctx, `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, providerID); delErr != nil {
+		r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
+			"auth_method", authMethod, "provider_id", providerID, "error", delErr)
+	}
+}
+
+// rollbackLocalSetupUserByID mirrors rollbackFederatedSetupUser for the
+// local-setup path, which looks the user up by primary key.
+func (r *Router) rollbackLocalSetupUserByID(ctx context.Context, userID string) {
+	if _, clrErr := r.db.ExecContext(ctx, `UPDATE users SET is_protected = 0 WHERE id = ?`, userID); clrErr != nil {
+		r.logger.Error("rollback clear-protected failed; DELETE will be blocked by trigger",
+			"user_id", userID, "error", clrErr)
+	}
+	if _, delErr := r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID); delErr != nil {
+		r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
+			"user_id", userID, "error", delErr)
+	}
 }
 
 // handleSetupWithIdentity completes the setup flow when the provider registry
@@ -1043,10 +1070,7 @@ func (r *Router) handleSetupWithIdentity(w http.ResponseWriter, req *http.Reques
 				ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 				k, v, now); err != nil {
 				r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-				if _, delErr := r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID); delErr != nil {
-					r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
-						"user_id", user.ID, "error", delErr)
-				}
+				r.rollbackLocalSetupUserByID(ctx, user.ID)
 				writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 				return
 			}

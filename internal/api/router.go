@@ -391,6 +391,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/users/{id}", wrapAuth(requireMultiUser(r.handleGetUser), authMw))
 	mux.HandleFunc("PATCH "+bp+"/api/v1/users/{id}", wrapAuth(requireMultiUser(middleware.RequireAdmin(r.handleUpdateUser)), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/users/{id}", wrapAuth(requireMultiUser(middleware.RequireAdmin(r.handleDeactivateUser)), authMw))
+	// Permanent delete -- distinct sub-resource (4 segments) so it cannot
+	// be confused with the deactivation route above NOR collide with the
+	// existing 3-segment `/users/invites/{id}` (mirrors the
+	// `/auth/tokens/{id}/permanent` precedent for revoke-vs-delete). See
+	// issue #1170.
+	mux.HandleFunc("DELETE "+bp+"/api/v1/users/{id}/account/permanent", wrapAuth(requireMultiUser(middleware.RequireAdmin(r.handleDeleteUser)), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/badge", wrapAuth(r.handleArtistsBadge, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/locked", wrapAuth(r.handleListLockedArtists, authMw))

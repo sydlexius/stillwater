@@ -306,6 +306,11 @@ A rule is a check that compares the actual state of an artist's NFO or images ag
 
 User accounts and pending invites both live here. An account is someone who can already sign in; an invite is a single-use link that creates an account when the recipient redeems it. Use this tab to issue invites, change roles, and revoke access.
 
+- **never**
+{: #settings-users-users-last-login-never }
+- **just now**
+{: #settings-users-users-last-login-just-now }
+
 #### Multi-User Mode  {#settings-users-users-multi-user-mode}
 
 Single-user mode is the default and assumes one administrator owns the whole instance; multi-user mode unlocks invites, per-user roles, and per-account preferences so several people can share the same Stillwater. Turn it on before you create the first invite for someone other than yourself.
@@ -334,12 +339,20 @@ Single-user mode is the default and assumes one administrator owns the whole ins
 {: #settings-users-users-copy-invite }
 - **This link can only be used once.**
 {: #settings-users-users-link-single-use }
+- **Inactive only**
+{: #settings-users-users-inactive-only-label }
+- **Delete selected**
+{: #settings-users-users-bulk-delete }
 - **User accounts** -- An account is anyone who has signed in successfully and exists in Stillwater's user table, regardless of which auth provider verified them. This table lists every active account; use the row controls to promote or demote a user's role or deactivate them.
 {: #settings-users-users-user-accounts }
+- **Select all inactive users**
+{: #settings-users-users-bulk-select-all }
 - **User**
 {: #settings-users-users-user }
 - **Auth Provider**
 {: #settings-users-users-auth-provider }
+- **Last Login**
+{: #settings-users-users-last-login-column }
 - **Actions**
 {: #settings-users-users-actions }
 
@@ -347,6 +360,26 @@ Single-user mode is the default and assumes one administrator owns the whole ins
 
 An invite is a one-time link Stillwater issues to a prospective user; redeeming it creates an account at the role baked into the link. This list shows invites that have been issued but not yet redeemed, so you can revoke or copy each link before it expires.
 
+- **Select %s for bulk delete**
+{: #settings-users-users-bulk-select-user }
+- **Delete**
+{: #settings-users-users-delete }
+- **Permanently delete {name}?**
+{: #settings-users-users-delete-prompt-single }
+- **Permanently delete {count} selected users?**
+{: #settings-users-users-bulk-delete-prompt-other }
+- **{count} users deleted**
+{: #settings-users-users-bulk-delete-success-other }
+- **{count} selected**
+{: #settings-users-users-bulk-selected-count-other }
+- **Delete user account**
+{: #settings-users-users-delete-dialog-title }
+- **This permanently removes the account and cannot be undone.**
+{: #settings-users-users-delete-dialog-irreversible }
+- **Reason (optional, recorded in the audit log)**
+{: #settings-users-users-delete-dialog-reason-label }
+- **Cancel**
+{: #settings-users-users-delete-dialog-cancel }
 - **Role:** -- Marks the role badge shown next to a pending invite in the list below. The redeemed account will be created with this role.
 {: #settings-users-users-role-label }
 - **Expires:** -- Marks the expiry timestamp shown next to a pending invite in the list below. The invite stops working after this time.

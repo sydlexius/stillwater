@@ -329,6 +329,13 @@
     "covered": true
   },
   {
+    "operationId": "deleteUserAccount",
+    "method": "DELETE",
+    "path": "/users/{id}/account/permanent",
+    "handler": "handleDeleteUser",
+    "covered": true
+  },
+  {
     "operationId": "deleteWebhook",
     "method": "DELETE",
     "path": "/webhooks/{id}",
