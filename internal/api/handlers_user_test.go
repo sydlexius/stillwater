@@ -303,6 +303,13 @@ func TestHandleDeleteUser_RejectsMalformedBody(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("malformed body: status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
 	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding error response: %v", err)
+	}
+	if resp["error"] != "Invalid request body." {
+		t.Errorf("error = %q, want %q", resp["error"], "Invalid request body.")
+	}
 	if _, err := authSvc.GetUserByID(context.Background(), target.ID); err != nil {
 		t.Errorf("target should still exist after rejected delete, got %v", err)
 	}
