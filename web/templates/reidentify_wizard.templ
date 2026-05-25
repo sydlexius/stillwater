@@ -33,6 +33,15 @@ type ReIdentifyWizardStepData struct {
 	// when the user lands on the wizard and does not persist across HTMX
 	// step swaps.
 	SkippedAtStart []SkippedArtistView
+	// FailedProviders lists the human-readable names of any providers
+	// that returned an error during this step's candidate lookup but did
+	// not fail the entire step (i.e. at least one other provider still
+	// succeeded). Populated from ProviderSearchStatus on the orchestrator
+	// surface; when non-empty the step renders an in-line warning banner
+	// above the candidate list so the user can distinguish "MB returned
+	// no matches" from "Discogs errored, results incomplete". A full
+	// lookup failure routes through Errored instead. Issue #1663.
+	FailedProviders []string
 }
 
 // SkippedArtistView is the flat view of a dropped artist exposed to the
@@ -132,6 +141,9 @@ templ ReIdentifyWizardStep(data ReIdentifyWizardStepData) {
 			<progress class="w-32" value={ strconv.Itoa(data.Index + 1) } max={ strconv.Itoa(data.Total) }></progress>
 		</header>
 		<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+			if len(data.FailedProviders) > 0 {
+				@disambiguationProviderErrorBanner(data.FailedProviders)
+			}
 			@reIdentifyWizardCandidates(data)
 		</div>
 		<footer class="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">

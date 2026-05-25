@@ -1215,7 +1215,7 @@
     "method": "POST",
     "path": "/artists/{id}/refresh/search",
     "handler": "handleRefreshSearch",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "reidentifyArtist",

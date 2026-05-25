@@ -59,6 +59,8 @@
   "artist.delete_selected_failed": "Failed to delete selected images: %s",
   "artist.delete_selected_network": "Network error deleting selected images: %s",
   "artist.details": "Details",
+  "artist.disambiguation.providers_unreachable.body": "Search results may be incomplete. The following providers returned an error: %s. Check provider configuration in Settings or wait if rate-limited.",
+  "artist.disambiguation.providers_unreachable.title": "Some providers could not be reached",
   "artist.disbanded_end_date": "Disbanded/EndDate",
   "artist.edit_field": "Edit %s",
   "artist.edit_image": "Edit image",

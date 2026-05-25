@@ -2,6 +2,7 @@ package templates
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
@@ -68,17 +69,52 @@ templ RefreshDisambiguationForm(artistID, artistName string) {
 	</div>
 }
 
+// disambiguationProviderErrorBanner surfaces a warning when one or more
+// providers failed during the disambiguation search. The empty result list
+// would otherwise be indistinguishable from a clean "no matches found"; the
+// banner names the unreachable providers so the operator knows to check
+// provider configuration or wait out a rate limit instead of giving up on
+// the identify flow. Issue #1663.
+templ disambiguationProviderErrorBanner(failed []string) {
+	<div
+		class="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200 px-4 py-3 text-sm mb-3"
+		role="status"
+		aria-live="polite"
+		data-testid="providers-unreachable-banner"
+	>
+		<div class="font-medium">{ t(ctx, "artist.disambiguation.providers_unreachable.title") }</div>
+		<p class="mt-1 text-xs">
+			{ tf(ctx, "artist.disambiguation.providers_unreachable.body", strings.Join(failed, ", ")) }
+		</p>
+	</div>
+}
+
+// DisambiguationResultsData is the view model for DisambiguationResults.
+// FailedProviders carries the human-readable names of providers whose search
+// failed during the lookup (per ProviderSearchStatus). When non-empty the
+// template renders a warning banner above the results so the user can tell
+// "providers errored, results may be incomplete" apart from the legitimate
+// "providers all succeeded, no matches exist" empty state.
+type DisambiguationResultsData struct {
+	ArtistID        string
+	Candidates      []DisambiguationCandidate
+	FailedProviders []string
+}
+
 // DisambiguationResults renders the list of search result cards for MBID linking.
-templ DisambiguationResults(artistID string, candidates []DisambiguationCandidate) {
-	if len(candidates) == 0 {
+templ DisambiguationResults(data DisambiguationResultsData) {
+	if len(data.FailedProviders) > 0 {
+		@disambiguationProviderErrorBanner(data.FailedProviders)
+	}
+	if len(data.Candidates) == 0 {
 		<p class="text-sm text-gray-500 italic py-2">{ t(ctx, "image.no_results_found") }</p>
 	} else {
 		<div class="space-y-2">
-			for _, c := range candidates {
+			for _, c := range data.Candidates {
 				<button
 					type="button"
 					class="group/link relative w-full text-left rounded border border-gray-200 dark:border-gray-700 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors [&.htmx-request]:border-blue-400 [&.htmx-request]:dark:border-blue-600"
-					hx-post={ "/api/v1/artists/" + artistID + "/refresh/link" }
+					hx-post={ "/api/v1/artists/" + data.ArtistID + "/refresh/link" }
 					hx-vals={ disambiguationHxVals(c.Result) }
 					hx-target="#refresh-panel"
 					hx-swap="innerHTML"

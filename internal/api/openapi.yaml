@@ -10496,6 +10496,16 @@ paths:
                     items:
                       type: object
                     description: Search results from the refresh operation.
+                  failed_providers:
+                    type: array
+                    items:
+                      type: string
+                    description: |
+                      Human-readable display names of providers that errored
+                      during the search. Present only when at least one
+                      provider failed; absent when every provider succeeded
+                      (so the legitimate "no matches" state stays distinct
+                      from "providers unreachable"). Added in issue #1663.
             text/html:
               schema:
                 type: string

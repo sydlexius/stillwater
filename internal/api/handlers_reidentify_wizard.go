@@ -778,10 +778,22 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 		if len(localAlbums) > 0 && artistPath != "" {
 			searchName = filepath.Base(artistPath)
 		}
-		results, serr := r.orchestrator.SearchForLinking(ctx, searchName, []provider.ProviderName{provider.NameMusicBrainz})
+		results, statuses, serr := r.orchestrator.SearchForLinking(ctx, searchName, []provider.ProviderName{provider.NameMusicBrainz})
 		if serr != nil {
 			r.logger.Warn("reidentify wizard: provider search failed", "artist", a.Name, "error", serr)
 			fetchErr = serr
+			break
+		}
+		// Per-provider failures now arrive on `statuses` instead of `serr`
+		// (see SearchForLinking in internal/provider/orchestrator.go). The
+		// wizard's per-step search only queries one provider (MusicBrainz);
+		// if it errored, every result is unreliable, so we keep the existing
+		// "step failed" path to preserve the Retry-banner UX. A future
+		// multi-provider wizard query would surface a partial-failure banner
+		// instead -- see issue #1663.
+		failedProviders := collectFailedProviderDisplayNames(statuses)
+		if len(failedProviders) > 0 {
+			fetchErr = errors.New("all queried providers errored during candidate lookup")
 			break
 		}
 		if len(localAlbums) > 0 {
