@@ -274,8 +274,23 @@ type panel struct {
 }
 
 // panelOpenRE matches data-tab-panel="X" attributes that mark the start of a
-// Settings tab's div in the trunk templ file.
+// Settings tab's div in the trunk templ file. The string literal form is what
+// appears in inline JS querySelector references (and any panel div that has
+// not yet migrated to the typed SettingsTabID interpolation below).
 var panelOpenRE = regexp.MustCompile(`data-tab-panel="([a-z_]+)"`)
+
+// panelOpenTypedRE matches the typed-constant form,
+// data-tab-panel={ string(TabFoo) }, that panel divs use after the migration
+// to compile-time-checked tab IDs. The captured group is the bare suffix of
+// the Tab* constant name (e.g. "General", "AuthProviders") which we resolve
+// to its underlying SettingsTabID string via tabConstRE on the same file.
+var panelOpenTypedRE = regexp.MustCompile(`data-tab-panel=\{\s*string\(Tab([A-Z][A-Za-z0-9]+)\)\s*\}`)
+
+// tabConstRE matches the `TabFoo SettingsTabID = "foo"` declarations inside
+// the Tab constant block at the top of the trunk templ file. The two capture
+// groups are the constant suffix and the underlying string value, which the
+// scanner uses to resolve typed panel attributes back to their panel ID.
+var tabConstRE = regexp.MustCompile(`Tab([A-Z][A-Za-z0-9]+)\s+SettingsTabID\s*=\s*"([a-z_]+)"`)
 
 // templFuncRE matches the start of a templ function declaration (e.g.
 // `templ resetConfirmPrefsScript() {`). The trunk file's panel divs all live
@@ -314,25 +329,12 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 		return nil, fmt.Errorf("read %s: %w", trunk, err)
 	}
 
-	// First pass: locate every data-tab-panel="X" in trunk and record its
-	// byte offset. The trunk file embeds inline JavaScript that uses the same
-	// attribute as a CSS selector (document.querySelector('[data-tab-panel=...]')),
-	// so the regex matches both panel-div openers AND those JS references.
-	// Dedupe by panel ID, keeping the first occurrence -- panel divs sit near
-	// the top of the file, JS query helpers below them.
-	allMatches := panelOpenRE.FindAllSubmatchIndex(trunkData, -1)
-	if len(allMatches) == 0 {
-		return nil, fmt.Errorf("no data-tab-panel openers found in %s", trunk)
-	}
-	openMatches := make([][]int, 0, len(allMatches))
-	seenID := make(map[string]struct{}, len(allMatches))
-	for _, m := range allMatches {
-		id := string(trunkData[m[2]:m[3]])
-		if _, ok := seenID[id]; ok {
-			continue
-		}
-		seenID[id] = struct{}{}
-		openMatches = append(openMatches, m)
+	// First pass: locate every data-tab-panel opener in trunk and record its
+	// byte offset and panel ID. Both string-literal and typed-constant attribute
+	// forms are accepted; see findPanelOpeners for details.
+	openMatches, openIDs, err := findPanelOpeners(trunk, trunkData)
+	if err != nil {
+		return nil, err
 	}
 
 	// pageFuncEnd locates the end of the page-rendering templ function that
@@ -355,7 +357,7 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 
 	panels := make([]panel, 0, len(openMatches))
 	for i, m := range openMatches {
-		id := string(trunkData[m[2]:m[3]])
+		id := openIDs[i]
 		start := m[0]
 		// Region ends at the next deduped panel opener; for the last panel,
 		// we stop at pageFuncEnd (the start of the next `^templ X(` after the
@@ -413,6 +415,63 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 	}
 
 	return panels, nil
+}
+
+// findPanelOpeners scans trunkData for every data-tab-panel attribute that
+// opens a Settings tab region and returns parallel slices of [start, end]
+// byte spans (suitable for the existing m[0]/m[1] indexing in scanPanels)
+// and the resolved panel ID strings, deduped by panel ID in source order.
+// Two attribute forms are recognized:
+//
+//   - data-tab-panel="foo"               (string-literal form)
+//   - data-tab-panel={ string(TabFoo) }  (typed-constant form)
+//
+// The trunk file embeds inline JavaScript that uses the same attribute as a
+// CSS selector (document.querySelector('[data-tab-panel=...]')), so the
+// literal regex also matches those JS references. Dedupe keeps the textually
+// earliest occurrence per panel ID; panel divs sit above the JS helpers.
+func findPanelOpeners(trunk string, trunkData []byte) ([][]int, []string, error) {
+	// Build a TabFoo -> "foo" lookup from the Tab constant block so the
+	// typed-constant form below can resolve its capture group to a panel ID.
+	tabConstSuffixToID := make(map[string]string)
+	for _, m := range tabConstRE.FindAllSubmatch(trunkData, -1) {
+		tabConstSuffixToID[string(m[1])] = string(m[2])
+	}
+
+	type panelOpener struct {
+		start, end int
+		id         string
+	}
+	var rawOpens []panelOpener
+	for _, m := range panelOpenRE.FindAllSubmatchIndex(trunkData, -1) {
+		rawOpens = append(rawOpens, panelOpener{start: m[0], end: m[1], id: string(trunkData[m[2]:m[3]])})
+	}
+	for _, m := range panelOpenTypedRE.FindAllSubmatchIndex(trunkData, -1) {
+		suffix := string(trunkData[m[2]:m[3]])
+		id, ok := tabConstSuffixToID[suffix]
+		if !ok {
+			return nil, nil, fmt.Errorf(
+				"typed panel attribute data-tab-panel={ string(Tab%s) } in %s has no matching Tab%s SettingsTabID = \"...\" declaration",
+				suffix, trunk, suffix)
+		}
+		rawOpens = append(rawOpens, panelOpener{start: m[0], end: m[1], id: id})
+	}
+	if len(rawOpens) == 0 {
+		return nil, nil, fmt.Errorf("no data-tab-panel openers found in %s", trunk)
+	}
+	sort.Slice(rawOpens, func(i, j int) bool { return rawOpens[i].start < rawOpens[j].start })
+	openMatches := make([][]int, 0, len(rawOpens))
+	openIDs := make([]string, 0, len(rawOpens))
+	seenID := make(map[string]struct{}, len(rawOpens))
+	for _, po := range rawOpens {
+		if _, ok := seenID[po.id]; ok {
+			continue
+		}
+		seenID[po.id] = struct{}{}
+		openMatches = append(openMatches, []int{po.start, po.end})
+		openIDs = append(openIDs, po.id)
+	}
+	return openMatches, openIDs, nil
 }
 
 // indexTemplHelpers maps each `templ FUNC(...) {` name in src to the byte

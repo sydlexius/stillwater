@@ -1,8 +1,10 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,9 +36,33 @@ func profileEditable(p *platform.Profile) bool {
 	return !p.IsBuiltin || p.ID == "custom"
 }
 
+// SettingsSearchEntry is one searchable item in the settings in-page search index.
+// The index is built server-side and emitted as inline JSON so the client-side
+// filter can run without any API call.
+type SettingsSearchEntry struct {
+	ID       string        `json:"id"`    // DOM id of the ContextHelp span (e.g. "help-platform-profile")
+	Label    string        `json:"label"` // Human-readable control label
+	HelpText string        `json:"help"`  // Short help text for the control
+	TabID    SettingsTabID `json:"tab"`   // Tab the control lives on (closed set; see SettingsTabID constants)
+}
+
+// jsonSearchIndex serializes a search index slice to a JSON string for inline
+// script emission. Falls back to "[]" on marshal error so the page never breaks;
+// the failure is logged so operators see it instead of just a silently empty
+// search box.
+func jsonSearchIndex(index []SettingsSearchEntry) string {
+	b, err := json.Marshal(index)
+	if err != nil {
+		slog.Error("settings search index: json.Marshal failed; emitting empty index",
+			"err", err, "entry_count", len(index))
+		return "[]"
+	}
+	return string(b)
+}
+
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
-	ActiveTab                string
+	ActiveTab                SettingsTabID
 	Libraries                []library.Library
 	Profiles                 []platform.Profile
 	ActiveProfile            *platform.Profile
@@ -203,26 +229,143 @@ func (d SettingsData) vocabMaxMoods() string {
 	return strconv.Itoa(d.VocabConfig.MaxMoods)
 }
 
+// SettingsTabID is the stable identifier for a settings page tab. Promoting
+// this to a named type with package-level constants lifts the closed-set
+// invariant into the compiler: a typoed tab id is a build error, not a
+// silent runtime mismatch between the search index and the rendered nav.
+type SettingsTabID string
+
+const (
+	TabGeneral       SettingsTabID = "general"
+	TabProviders     SettingsTabID = "providers"
+	TabConnections   SettingsTabID = "connections"
+	TabLibraries     SettingsTabID = "libraries"
+	TabAutomation    SettingsTabID = "automation"
+	TabRules         SettingsTabID = "rules"
+	TabUsers         SettingsTabID = "users"
+	TabAuthProviders SettingsTabID = "auth_providers"
+	TabMaintenance   SettingsTabID = "maintenance"
+	TabLogs          SettingsTabID = "logs"
+	TabUpdates       SettingsTabID = "updates"
+)
+
 // settingsTab defines a tab in the settings page navigation.
 type settingsTab struct {
-	ID    string
+	ID    SettingsTabID
 	Label string
 }
 
 // settingsTabs returns the ordered list of settings page tabs.
 func settingsTabs() []settingsTab {
 	return []settingsTab{
-		{ID: "general", Label: "settings.tab.general"},
-		{ID: "providers", Label: "settings.tab.providers"},
-		{ID: "connections", Label: "settings.tab.connections"},
-		{ID: "libraries", Label: "settings.tab.libraries"},
-		{ID: "automation", Label: "settings.tab.automation"},
-		{ID: "rules", Label: "settings.tab.rules"},
-		{ID: "users", Label: "settings.tab.users"},
-		{ID: "auth_providers", Label: "settings.tab.auth_providers"},
-		{ID: "maintenance", Label: "settings.tab.maintenance"},
-		{ID: "logs", Label: "settings.tab.logs"},
-		{ID: "updates", Label: "settings.tab.updates"},
+		{ID: TabGeneral, Label: "settings.tab.general"},
+		{ID: TabProviders, Label: "settings.tab.providers"},
+		{ID: TabConnections, Label: "settings.tab.connections"},
+		{ID: TabLibraries, Label: "settings.tab.libraries"},
+		{ID: TabAutomation, Label: "settings.tab.automation"},
+		{ID: TabRules, Label: "settings.tab.rules"},
+		{ID: TabUsers, Label: "settings.tab.users"},
+		{ID: TabAuthProviders, Label: "settings.tab.auth_providers"},
+		{ID: TabMaintenance, Label: "settings.tab.maintenance"},
+		{ID: TabLogs, Label: "settings.tab.logs"},
+		{ID: TabUpdates, Label: "settings.tab.updates"},
+	}
+}
+
+// BuildSettingsSearchIndex returns the static search index for the settings
+// in-page search feature. Each entry maps a ContextHelp anchor id to a
+// human-readable label, short help text, and the tab the control lives on.
+// Entries reuse the same i18n keys as @components.ContextHelp calls in the
+// settings page template where available; new keys are added only when no
+// matching ContextHelp exists for an entry.
+func BuildSettingsSearchIndex(ctx context.Context) []SettingsSearchEntry {
+	return []SettingsSearchEntry{
+		// General tab
+		{ID: "help-platform-profile", Label: t(ctx, "settings.platform_profile.title"), HelpText: t(ctx, "settings.platform_profile.help"), TabID: TabGeneral},
+		{ID: "help-active-profile", Label: t(ctx, "settings.active_profile.title"), HelpText: t(ctx, "settings.active_profile.help"), TabID: TabGeneral},
+		{ID: "help-symlinks", Label: t(ctx, "settings.symlinks.title"), HelpText: t(ctx, "settings.symlinks.help"), TabID: TabGeneral},
+		{ID: "help-tls-status", Label: t(ctx, "settings.tls_status.title"), HelpText: t(ctx, "settings.tls_status.help"), TabID: TabGeneral},
+		{ID: "help-base-path", Label: t(ctx, "settings.base_path.title"), HelpText: t(ctx, "settings.base_path.help"), TabID: TabGeneral},
+		{ID: "help-behavior", Label: t(ctx, "settings.behavior.title"), HelpText: t(ctx, "settings.behavior.help"), TabID: TabGeneral},
+		{ID: "help-platform-debug", Label: t(ctx, "settings.platform_debug.title"), HelpText: t(ctx, "settings.platform_debug.help"), TabID: TabGeneral},
+		{ID: "help-image-cache", Label: t(ctx, "settings.image_cache.title"), HelpText: t(ctx, "settings.image_cache.help"), TabID: TabGeneral},
+		{ID: "help-cache-max-size", Label: t(ctx, "settings.image_cache.max_size"), HelpText: t(ctx, "settings.image_cache.max_size.help"), TabID: TabGeneral},
+		{ID: "help-cache-clear", Label: t(ctx, "settings.image_cache.clear"), HelpText: t(ctx, "settings.image_cache.clear.help"), TabID: TabGeneral},
+		// Providers tab
+		{ID: "help-provider-keys", Label: t(ctx, "settings.provider_keys.title"), HelpText: t(ctx, "settings.provider_keys.help"), TabID: TabProviders},
+		{ID: "help-web-search", Label: t(ctx, "settings.web_search.title"), HelpText: t(ctx, "settings.web_search.help"), TabID: TabProviders},
+		{ID: "help-provider-priorities", Label: t(ctx, "settings.priorities.title"), HelpText: t(ctx, "settings.priorities.help"), TabID: TabProviders},
+		{ID: "help-metadata-languages", Label: t(ctx, "settings.metadata_languages.title"), HelpText: t(ctx, "settings.metadata_languages.help"), TabID: TabProviders},
+		{ID: "help-advanced", Label: t(ctx, "settings.advanced.title"), HelpText: t(ctx, "settings.advanced.help"), TabID: TabProviders},
+		{ID: "help-name-similarity", Label: t(ctx, "settings.name_similarity.label"), HelpText: t(ctx, "settings.name_similarity.help"), TabID: TabProviders},
+		{ID: "help-tag-sources", Label: t(ctx, "settings.tag_sources.title"), HelpText: t(ctx, "settings.tag_sources.help"), TabID: TabProviders},
+		{ID: "help-tag-sources-exclude", Label: t(ctx, "settings.tag_sources.exclude.label"), HelpText: t(ctx, "settings.tag_sources.exclude.help"), TabID: TabProviders},
+		// Connections tab
+		{ID: "help-connections", Label: t(ctx, "settings.connections.title"), HelpText: t(ctx, "settings.connections.help"), TabID: TabConnections},
+		// Libraries tab
+		{ID: "help-libraries", Label: t(ctx, "settings.libraries.title"), HelpText: t(ctx, "settings.libraries.help"), TabID: TabLibraries},
+		{ID: "help-lib-add-name", Label: t(ctx, "settings.libraries.name"), HelpText: t(ctx, "settings.libraries.name.help"), TabID: TabLibraries},
+		{ID: "help-lib-add-path", Label: t(ctx, "settings.libraries.path"), HelpText: t(ctx, "settings.libraries.path.help"), TabID: TabLibraries},
+		// Automation tab
+		{ID: "help-webhooks", Label: t(ctx, "settings.webhooks.title"), HelpText: t(ctx, "settings.webhooks.help"), TabID: TabAutomation},
+		{ID: "help-notif-badges", Label: t(ctx, "settings.notif_badges.title"), HelpText: t(ctx, "settings.notif_badges.help"), TabID: TabAutomation},
+		{ID: "help-notif-enable-badge", Label: t(ctx, "settings.notif_badges.enable_badge"), HelpText: t(ctx, "settings.notif_badges.enable_badge.help"), TabID: TabAutomation},
+		{ID: "help-notif-count-severity", Label: t(ctx, "settings.notif_badges.count_by_severity"), HelpText: t(ctx, "settings.notif_badges.count_by_severity.help"), TabID: TabAutomation},
+		{ID: "help-api-tokens", Label: t(ctx, "settings.api_tokens.title"), HelpText: t(ctx, "settings.api_tokens.help"), TabID: TabAutomation},
+		{ID: "help-token-scope-read", Label: t(ctx, "settings.api_tokens.scope_read"), HelpText: t(ctx, "settings.api_tokens.scope_read.help"), TabID: TabAutomation},
+		{ID: "help-token-scope-write", Label: t(ctx, "settings.api_tokens.scope_write"), HelpText: t(ctx, "settings.api_tokens.scope_write.help"), TabID: TabAutomation},
+		{ID: "help-token-scope-webhook", Label: t(ctx, "settings.api_tokens.scope_webhook"), HelpText: t(ctx, "settings.api_tokens.scope_webhook.help"), TabID: TabAutomation},
+		{ID: "help-token-scope-admin", Label: t(ctx, "settings.api_tokens.scope_admin"), HelpText: t(ctx, "settings.api_tokens.scope_admin.help"), TabID: TabAutomation},
+		// Rules tab -- compose labels from the bare category noun keys and the
+		// shared "%s Rules" header template so the search label stays in sync with
+		// the rendered heading (categoryLabel(cat) + settings.rules.category_header).
+		{ID: "help-rules-nfo", Label: tf(ctx, "settings.rules.category_header", t(ctx, "settings.rules.label_nfo")), HelpText: t(ctx, "settings.rules.help_nfo"), TabID: TabRules},
+		{ID: "help-rules-image", Label: tf(ctx, "settings.rules.category_header", t(ctx, "settings.rules.label_image")), HelpText: t(ctx, "settings.rules.help_image"), TabID: TabRules},
+		{ID: "help-rules-metadata", Label: tf(ctx, "settings.rules.category_header", t(ctx, "settings.rules.label_metadata")), HelpText: t(ctx, "settings.rules.help_metadata"), TabID: TabRules},
+		{ID: "help-rule-schedule", Label: t(ctx, "settings.rule_schedule.title"), HelpText: t(ctx, "settings.rule_schedule.help"), TabID: TabRules},
+		// Users tab
+		{ID: "help-multi-user-toggle", Label: t(ctx, "settings.users.enable_multi_user.label"), HelpText: t(ctx, "settings.users.enable_multi_user.help"), TabID: TabUsers},
+		{ID: "help-users", Label: t(ctx, "settings.users.title"), HelpText: t(ctx, "settings.users.help"), TabID: TabUsers},
+		{ID: "help-invite-role", Label: t(ctx, "settings.users.role_for_invite.label"), HelpText: t(ctx, "settings.users.role_for_invite.help"), TabID: TabUsers},
+		{ID: "help-invite-expires", Label: t(ctx, "settings.users.expires_in.label"), HelpText: t(ctx, "settings.users.expires_in.help"), TabID: TabUsers},
+		{ID: "help-pending-invites", Label: t(ctx, "settings.users.pending_invites.label"), HelpText: t(ctx, "settings.users.pending_invites.help"), TabID: TabUsers},
+		// Auth Providers tab
+		{ID: "help-auth", Label: t(ctx, "settings.auth.title"), HelpText: t(ctx, "settings.auth.help"), TabID: TabAuthProviders},
+		{ID: "help-local-always-on", Label: t(ctx, "settings.auth.local.label"), HelpText: t(ctx, "settings.auth.local.help"), TabID: TabAuthProviders},
+		{ID: "help-auth-enable-emby", Label: t(ctx, "settings.auth.enable_emby.label"), HelpText: t(ctx, "settings.auth.enable_emby.help"), TabID: TabAuthProviders},
+		{ID: "help-auth-enable-jellyfin", Label: t(ctx, "settings.auth.enable_jellyfin.label"), HelpText: t(ctx, "settings.auth.enable_jellyfin.help"), TabID: TabAuthProviders},
+		{ID: "help-auth-enable-oidc", Label: t(ctx, "settings.auth.enable_oidc.label"), HelpText: t(ctx, "settings.auth.enable_oidc.help"), TabID: TabAuthProviders},
+		{ID: "help-oidc-issuer", Label: t(ctx, "settings.auth.issuer_url"), HelpText: t(ctx, "settings.auth.issuer_url.help"), TabID: TabAuthProviders},
+		{ID: "help-oidc-client-id", Label: t(ctx, "settings.auth.client_id.label"), HelpText: t(ctx, "settings.auth.client_id.help"), TabID: TabAuthProviders},
+		{ID: "help-oidc-client-secret", Label: t(ctx, "settings.auth.client_secret.label"), HelpText: t(ctx, "settings.auth.client_secret.help"), TabID: TabAuthProviders},
+		// Maintenance tab
+		{ID: "help-confirm-dialogs", Label: t(ctx, "settings.confirm_dialogs.title"), HelpText: t(ctx, "settings.confirm_dialogs.help"), TabID: TabMaintenance},
+		{ID: "help-db-maintenance", Label: t(ctx, "settings.db_maintenance.title"), HelpText: t(ctx, "settings.db_maintenance.help"), TabID: TabMaintenance},
+		{ID: "help-db-auto-schedule", Label: t(ctx, "settings.db_maintenance.auto_schedule"), HelpText: t(ctx, "settings.db_maintenance.auto_schedule.help"), TabID: TabMaintenance},
+		{ID: "help-backup", Label: t(ctx, "settings.backup.title"), HelpText: t(ctx, "settings.backup.help"), TabID: TabMaintenance},
+		{ID: "help-backup-keep", Label: t(ctx, "settings.backup.keep"), HelpText: t(ctx, "settings.backup.keep.help"), TabID: TabMaintenance},
+		{ID: "help-backup-max-age", Label: t(ctx, "settings.backup.max_age"), HelpText: t(ctx, "settings.backup.max_age.help"), TabID: TabMaintenance},
+		{ID: "help-export-import", Label: t(ctx, "settings.export_import.title"), HelpText: t(ctx, "settings.export_import.help"), TabID: TabMaintenance},
+		{ID: "help-export-passphrase", Label: t(ctx, "settings.export_import.export_passphrase"), HelpText: t(ctx, "settings.export_import.export_passphrase.help"), TabID: TabMaintenance},
+		{ID: "help-import-file", Label: t(ctx, "settings.export_import.import_file_label"), HelpText: t(ctx, "settings.export_import.import_file_label.help"), TabID: TabMaintenance},
+		{ID: "help-import-passphrase", Label: t(ctx, "settings.export_import.import_passphrase"), HelpText: t(ctx, "settings.export_import.import_passphrase.help"), TabID: TabMaintenance},
+		// Logs tab
+		{ID: "help-log-settings", Label: t(ctx, "settings.log_settings.title"), HelpText: t(ctx, "settings.log_settings.help"), TabID: TabLogs},
+		{ID: "help-log-level", Label: t(ctx, "settings.log_settings.level"), HelpText: t(ctx, "settings.log_settings.level.help"), TabID: TabLogs},
+		{ID: "help-log-format", Label: t(ctx, "settings.log_settings.format"), HelpText: t(ctx, "settings.log_settings.format.help"), TabID: TabLogs},
+		{ID: "help-log-to-file", Label: t(ctx, "settings.log_settings.log_to_file.label"), HelpText: t(ctx, "settings.log_settings.log_to_file.help"), TabID: TabLogs},
+		{ID: "help-log-file-path", Label: t(ctx, "settings.log_settings.file_path"), HelpText: t(ctx, "settings.log_settings.file_path.help"), TabID: TabLogs},
+		{ID: "help-log-max-size", Label: t(ctx, "settings.log_settings.max_size"), HelpText: t(ctx, "settings.log_settings.max_size.help"), TabID: TabLogs},
+		{ID: "help-log-files-to-keep", Label: t(ctx, "settings.log_settings.files_to_keep"), HelpText: t(ctx, "settings.log_settings.files_to_keep.help"), TabID: TabLogs},
+		{ID: "help-log-max-age", Label: t(ctx, "settings.log_settings.max_age"), HelpText: t(ctx, "settings.log_settings.max_age.help"), TabID: TabLogs},
+		{ID: "help-log-viewer", Label: t(ctx, "settings.log_viewer.title"), HelpText: t(ctx, "settings.log_viewer.help"), TabID: TabLogs},
+		// Updates tab
+		{ID: "help-updates", Label: t(ctx, "settings.updates.title"), HelpText: t(ctx, "settings.updates.help"), TabID: TabUpdates},
+		{ID: "help-updates-enabled", Label: t(ctx, "settings.updates.enabled.label"), HelpText: t(ctx, "settings.updates.enabled.help"), TabID: TabUpdates},
+		{ID: "help-updates-channel", Label: t(ctx, "settings.updates.channel.label"), HelpText: t(ctx, "settings.updates.channel.help"), TabID: TabUpdates},
+		{ID: "help-updates-auto-check", Label: t(ctx, "settings.updates.auto_check.label"), HelpText: t(ctx, "settings.updates.auto_check.help"), TabID: TabUpdates},
+		{ID: "help-updates-auto-update", Label: t(ctx, "settings.updates.auto_update.label"), HelpText: t(ctx, "settings.updates.auto_update.help"), TabID: TabUpdates},
+		{ID: "help-updates-config", Label: t(ctx, "settings.updates.config.label"), HelpText: t(ctx, "settings.updates.config.help"), TabID: TabUpdates},
 	}
 }
 
@@ -235,6 +378,60 @@ func rulesForCategory(rules []rule.Rule, category string) []rule.Rule {
 		}
 	}
 	return result
+}
+
+// imageSubtypePrefixes is the canonical ordered list of image sub-type prefixes
+// used for grouping image rules and validating rule IDs. Shared between
+// rulesForImageSubtypeFallback and the image-rule rendering loop.
+var imageSubtypePrefixes = []string{"thumb_", "fanart_", "logo_", "banner_", "backdrop_"}
+
+// imageSubtypeLabel maps a rule ID to a localized image sub-type label used
+// as a sub-group heading inside the Images category card.
+func imageSubtypeLabel(ctx context.Context, ruleID string) string {
+	switch {
+	case strings.HasPrefix(ruleID, "thumb_"):
+		return t(ctx, "settings.image_subtype.thumbnail")
+	case strings.HasPrefix(ruleID, "fanart_"):
+		return t(ctx, "settings.image_subtype.fanart")
+	case strings.HasPrefix(ruleID, "logo_"):
+		return t(ctx, "settings.image_subtype.logo")
+	case strings.HasPrefix(ruleID, "banner_"):
+		return t(ctx, "settings.image_subtype.banner")
+	case strings.HasPrefix(ruleID, "backdrop_"):
+		return t(ctx, "settings.image_subtype.backdrop")
+	default:
+		return t(ctx, "settings.image_subtype.general")
+	}
+}
+
+// rulesForImageSubtype returns rules whose ID starts with the given prefix.
+func rulesForImageSubtype(rules []rule.Rule, prefix string) []rule.Rule {
+	var out []rule.Rule
+	for _, r := range rules {
+		if strings.HasPrefix(r.ID, prefix) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// rulesForImageSubtypeFallback returns rules whose ID does not start with any
+// recognized image sub-type prefix. These are grouped under a "General" heading.
+func rulesForImageSubtypeFallback(rules []rule.Rule) []rule.Rule {
+	var out []rule.Rule
+	for _, r := range rules {
+		matched := false
+		for _, pfx := range imageSubtypePrefixes {
+			if strings.HasPrefix(r.ID, pfx) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // ruleCatalogueURL returns the absolute URL of a rule's section in the rules
@@ -650,8 +847,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@metadataLanguagesScript()
 		@romanizationFallbackScript()
 		@components.ContextHelpScript()
+		@settingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
+		@settingsSearchScript()
 		<script src={ assets.SortableJS }></script>
-		<div class="space-y-6">
+		<div class="sw-settings space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
 				<h1 class="text-2xl font-bold">{ t(ctx, "settings.title") }</h1>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -661,10 +860,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			@settingsTabBar(data.ActiveTab, assets.BasePath)
 			<!-- General tab -->
 			<div
-				data-tab-panel="general"
+				data-tab-panel={ string(TabGeneral) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "general"),
+					templ.KV("hidden", data.ActiveTab != TabGeneral),
 				}
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -1047,10 +1246,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Providers tab -->
 			<div
-				data-tab-panel="providers"
+				data-tab-panel={ string(TabProviders) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "providers"),
+					templ.KV("hidden", data.ActiveTab != TabProviders),
 				}
 			>
 				if len(data.ProviderKeys) > 0 {
@@ -1373,10 +1572,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Connections tab -->
 			<div
-				data-tab-panel="connections"
+				data-tab-panel={ string(TabConnections) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "connections"),
+					templ.KV("hidden", data.ActiveTab != TabConnections),
 				}
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -1404,10 +1603,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Libraries tab -->
 			<div
-				data-tab-panel="libraries"
+				data-tab-panel={ string(TabLibraries) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "libraries"),
+					templ.KV("hidden", data.ActiveTab != TabLibraries),
 				}
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -1504,10 +1703,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Automation tab -->
 			<div
-				data-tab-panel="automation"
+				data-tab-panel={ string(TabAutomation) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "automation"),
+					templ.KV("hidden", data.ActiveTab != TabAutomation),
 				}
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -1795,10 +1994,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Rules tab -->
 			<div
-				data-tab-panel="rules"
+				data-tab-panel={ string(TabRules) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "rules"),
+					templ.KV("hidden", data.ActiveTab != TabRules),
 				}
 			>
 				// Page-level first-occurrence flags for two ContextHelp icons inside
@@ -1858,17 +2057,56 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="px-6 divide-y divide-gray-100 dark:divide-gray-700">
 								// Each row inspects the page-level flags (declared above)
 								// before flipping them so the help icon emits exactly once.
-								for _, rl := range catRules {
-									{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
-									{{ showFsHelp := isFsUnavail && !fsHelpShown }}
-									{{ showSeverityHelp := !severityHelpShown }}
-									if showFsHelp {
-										{{ fsHelpShown = true }}
+								// The fsHelpShown and severityHelpShown flags are shared across
+								// all sub-groups within this card so they still fire exactly once.
+								if cat == "image" {
+									for _, pfx := range imageSubtypePrefixes {
+										{{ sub := rulesForImageSubtype(catRules, pfx) }}
+										if len(sub) > 0 {
+											<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(ctx, sub[0].ID) }</h3>
+											for _, rl := range sub {
+												{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+												{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+												{{ showSeverityHelp := !severityHelpShown }}
+												if showFsHelp {
+													{{ fsHelpShown = true }}
+												}
+												if showSeverityHelp {
+													{{ severityHelpShown = true }}
+												}
+												@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+											}
+										}
 									}
-									if showSeverityHelp {
-										{{ severityHelpShown = true }}
+									{{ generalRules := rulesForImageSubtypeFallback(catRules) }}
+									if len(generalRules) > 0 {
+										<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(ctx, generalRules[0].ID) }</h3>
+										for _, rl := range generalRules {
+											{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+											{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+											{{ showSeverityHelp := !severityHelpShown }}
+											if showFsHelp {
+												{{ fsHelpShown = true }}
+											}
+											if showSeverityHelp {
+												{{ severityHelpShown = true }}
+											}
+											@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+										}
 									}
-									@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+								} else {
+									for _, rl := range catRules {
+										{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+										{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+										{{ showSeverityHelp := !severityHelpShown }}
+										if showFsHelp {
+											{{ fsHelpShown = true }}
+										}
+										if showSeverityHelp {
+											{{ severityHelpShown = true }}
+										}
+										@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+									}
 								}
 							</div>
 						</div>
@@ -1915,30 +2153,30 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Users tab -->
 			<div
-				data-tab-panel="users"
+				data-tab-panel={ string(TabUsers) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "users"),
+					templ.KV("hidden", data.ActiveTab != TabUsers),
 				}
 			>
 				@settingsUsersTab(data.Users)
 			</div>
 			<!-- Auth Providers tab -->
 			<div
-				data-tab-panel="auth_providers"
+				data-tab-panel={ string(TabAuthProviders) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "auth_providers"),
+					templ.KV("hidden", data.ActiveTab != TabAuthProviders),
 				}
 			>
 				@settingsAuthProvidersTab(data.AuthProviders)
 			</div>
 			<!-- Maintenance tab -->
 			<div
-				data-tab-panel="maintenance"
+				data-tab-panel={ string(TabMaintenance) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "maintenance"),
+					templ.KV("hidden", data.ActiveTab != TabMaintenance),
 				}
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -2215,10 +2453,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Logs tab -->
 			<div
-				data-tab-panel="logs"
+				data-tab-panel={ string(TabLogs) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "logs"),
+					templ.KV("hidden", data.ActiveTab != TabLogs),
 				}
 			>
 				<!-- Log Settings -->
@@ -2505,10 +2743,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Updates tab -->
 			<div
-				data-tab-panel="updates"
+				data-tab-panel={ string(TabUpdates) }
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "updates"),
+					templ.KV("hidden", data.ActiveTab != TabUpdates),
 				}
 			>
 				@settingsUpdatesTab(data.Updates, assets.BasePath)
@@ -2548,18 +2786,27 @@ templ resetConfirmPrefsScript() {
 	</script>
 }
 
-templ settingsTabBar(activeTab string, basePath string) {
+templ settingsTabBar(activeTab SettingsTabID, basePath string) {
 	<div class="sw-card rounded-lg p-1.5">
+		<div class="px-2 pb-1.5">
+			<input
+				type="search"
+				id="settings-search-input"
+				placeholder={ t(ctx, "settings.search_placeholder") }
+				aria-label={ t(ctx, "settings.search_placeholder") }
+				class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+			/>
+		</div>
 		<nav class="flex overflow-x-auto gap-0.5" aria-label={ t(ctx, "settings.tabs_label") }>
 			for _, tab := range settingsTabs() {
 				<a
-					href={ templ.SafeURL(basePath + "/settings?tab=" + tab.ID) }
+					href={ templ.SafeURL(basePath + "/settings?tab=" + string(tab.ID)) }
 					class={
-						"whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-all cursor-pointer",
+						"sw-settings-tab whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-all cursor-pointer",
 						templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", tab.ID == activeTab),
 						templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", tab.ID != activeTab),
 					}
-					data-tab={ tab.ID }
+					data-tab={ string(tab.ID) }
 					onclick="switchSettingsTab(event, this)"
 				>
 					{ t(ctx, tab.Label) }
@@ -3540,6 +3787,177 @@ templ profileNamingEditorScript() {
 			}).catch(function() {
 				status.textContent = 'Network error.';
 			});
+		}
+	</script>
+}
+
+// settingsSearchIndexScript emits the search index as a window-global JSON
+// variable. Using @templ.Raw avoids HTML-attribute escaping that would corrupt
+// the JSON; this is safe because json.Marshal produces only ASCII-safe output
+// with no unescaped angle brackets or ampersands.
+templ settingsSearchIndexScript(index []SettingsSearchEntry) {
+	@templ.Raw(`<script>window.swSettingsSearchIndex = ` + jsonSearchIndex(index) + `;</script>`)
+}
+
+// settingsSearchScript emits the client-side in-page search behavior:
+//   - Reads from window.swSettingsSearchIndex (emitted by settingsSearchIndexScript).
+//   - Filters tabs by match count and greys out non-matching tabs.
+//   - Sets data-search-match on the DOM element for each matched control so the
+//     CSS can outline it; removes the attribute when the filter is cleared.
+//   - Pressing Enter navigates to the tab of the first match and scrolls the
+//     matched control into view with a brief flash animation.
+//   - '/' keyboard shortcut focuses the search box from anywhere on the page.
+//   - Empty query restores normal tab state and removes all match highlights.
+templ settingsSearchScript() {
+	<script>
+		// Defer wiring until the input + tab nav exist; this script may be emitted
+		// before the elements it queries are parsed by the browser.
+		function swInitSettingsSearch() {
+			var input = document.getElementById('settings-search-input');
+			if (!input) return;
+			var index = window.swSettingsSearchIndex || [];
+
+			// matchedEntries tracks which search index entries matched the last
+			// applyFilter call so Enter can navigate to the first one without
+			// re-running the filter.
+			var matchedEntries = [];
+
+			function clearFilter() {
+				document.querySelectorAll('[data-tab]').forEach(function (t) {
+					t.classList.remove('opacity-40', 'pointer-events-none');
+					t.removeAttribute('data-match-count');
+				});
+				// Remove per-control match highlights and any lingering flash state.
+				document.querySelectorAll('[data-search-match]').forEach(function (el) {
+					el.removeAttribute('data-search-match');
+				});
+				document.querySelectorAll('[data-search-flash]').forEach(function (el) {
+					el.removeAttribute('data-search-flash');
+				});
+				matchedEntries = [];
+			}
+
+			// controlValuesAt collects the searchable text content of the section
+			// rooted at el: <input>/<select>/<textarea>.value plus the visible
+			// text of the container (so a current base path like "/stillwater"
+			// or a selected option label like "stable" is searchable even though
+			// the index doesn't carry the rendered value server-side).
+			function controlValuesAt(el) {
+				if (!el) return '';
+				var parts = [];
+				// Find a reasonable scope: prefer the nearest parent "card" so we
+				// capture the help span's sibling controls, not the whole tab.
+				var scope = el.closest('.sw-card, [data-search-scope], .rounded-lg, .rounded-xl, .rounded-2xl') || el.parentElement || el;
+				scope.querySelectorAll('input, select, textarea').forEach(function (f) {
+					if (f.type === 'password' || f.type === 'hidden') return;
+					if (f.tagName === 'SELECT') {
+						var opt = f.options[f.selectedIndex];
+						if (opt && opt.text) parts.push(opt.text);
+					} else if (f.value) {
+						parts.push(f.value);
+					}
+				});
+				// Capture the visible text in status/value spans (e.g. "Active",
+				// "512 MB used (2266 files, 741 artists)", read-only display).
+				var text = (scope.innerText || scope.textContent || '').slice(0, 1000);
+				parts.push(text);
+				return parts.join(' ').toLowerCase();
+			}
+
+			function applyFilter(query) {
+				var q = query.trim().toLowerCase();
+				if (!q) { clearFilter(); return; }
+
+				// Clear previous per-control highlights before re-computing.
+				document.querySelectorAll('[data-search-match]').forEach(function (el) {
+					el.removeAttribute('data-search-match');
+				});
+
+				var matchCountByTab = {};
+				matchedEntries = [];
+				index.forEach(function (e) {
+					// Skip entries whose target control is not in the DOM on
+					// this render (the index is static; some controls only
+					// render under data-dependent branches). Counting them
+					// would inflate the tab badge and dead-end Enter-nav.
+					var el = document.getElementById(e.id);
+					if (!el) return;
+					// Match against label, help text, AND current rendered values
+					// in the surrounding card so queries like "stable", "/music",
+					// or "512 MB" find the relevant control.
+					var hit = e.label.toLowerCase().indexOf(q) !== -1 ||
+						e.help.toLowerCase().indexOf(q) !== -1 ||
+						controlValuesAt(el).indexOf(q) !== -1;
+					if (!hit) return;
+					matchCountByTab[e.tab] = (matchCountByTab[e.tab] || 0) + 1;
+					matchedEntries.push(e);
+					el.setAttribute('data-search-match', '1');
+				});
+
+				document.querySelectorAll('[data-tab]').forEach(function (t) {
+					var tabId = t.getAttribute('data-tab');
+					var count = matchCountByTab[tabId] || 0;
+					if (count === 0) {
+						t.classList.add('opacity-40', 'pointer-events-none');
+						t.removeAttribute('data-match-count');
+					} else {
+						t.classList.remove('opacity-40', 'pointer-events-none');
+						t.setAttribute('data-match-count', String(count));
+					}
+				});
+			}
+
+			// navigateToFirstMatch switches to the tab of the first matched entry
+			// and scrolls the control into view with a brief flash animation. Called
+			// on Enter keypress while the search input is focused.
+			function navigateToFirstMatch() {
+				if (matchedEntries.length === 0) return;
+				var first = matchedEntries[0];
+				// Switch to the tab that contains this entry.
+				var tabLink = document.querySelector('[data-tab="' + first.tab + '"]');
+				if (tabLink) { tabLink.click(); }
+				// Scroll and flash the matched control element.
+				var el = document.getElementById(first.id);
+				if (!el) return;
+				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				el.setAttribute('data-search-flash', '1');
+				// Remove the flash attribute after the animation so it can re-trigger
+				// if the user navigates to the same match again.
+				setTimeout(function () { el.removeAttribute('data-search-flash'); }, 650);
+			}
+
+			input.addEventListener('input', function (e) { applyFilter(e.target.value); });
+
+			input.addEventListener('keydown', function (e) {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					navigateToFirstMatch();
+				}
+			});
+
+			// Re-apply on init so any residual input.value (browser BFCache /
+			// session form restore) does not desync the visible tab state.
+			applyFilter(input.value);
+
+			// '/' shortcut: focus the search box when pressed outside an editable element.
+			// Guard against synthetic events where e.target may be null so an
+			// uncaught TypeError does not break the entire keydown chain.
+			document.addEventListener('keydown', function (e) {
+				if (e.key !== '/') return;
+				if (e.ctrlKey || e.metaKey || e.altKey) return;
+				var t = e.target;
+				if (!t) return;
+				var tag = (t.tagName || '').toLowerCase();
+				if (tag === 'input' || tag === 'textarea' || t.isContentEditable) return;
+				e.preventDefault();
+				input.focus();
+				input.select();
+			});
+		}
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', swInitSettingsSearch);
+		} else {
+			swInitSettingsSearch();
 		}
 	</script>
 }

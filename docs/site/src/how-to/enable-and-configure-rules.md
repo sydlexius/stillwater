@@ -13,8 +13,10 @@ For the *concept* (the three states, fix-all, the conflict gate), see [rules in 
 ## Turn a rule on or off
 
 1. Go to **Settings > Rules**.
-2. Find the rule -- they're grouped by category (NFO, Image, Metadata).
+2. Find the rule. Rules are grouped by category (NFO, Image, Metadata). Inside the Image category, rules are further sub-grouped by image type -- Thumbnail, Fanart, Logo, Banner, Backdrop, and General -- so the per-asset knobs sit together.
 3. Toggle the **Enabled** switch.
+
+If you cannot remember which tab a setting lives on, use the search box at the top of the Settings page; see [find a setting](find-a-setting.md).
 
 A disabled rule never evaluates. It doesn't appear in violation counts and doesn't surface in the artist's violations list. Re-enable to start finding violations again; the next rule run picks them up.
 
