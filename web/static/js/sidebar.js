@@ -192,6 +192,19 @@
     cycle();
   });
 
+  // Re-run active-link highlighting after HTMX swaps inject the Duplicates
+  // sub-nav child (#1665). highlightActiveLink only runs as part of
+  // applyState, which fires on init -- by then the HTMX fragment has not
+  // arrived, so a fresh load of /reports/duplicates would briefly highlight
+  // the parent Reports link and never the child. Re-running on afterSwap
+  // gives the child its highlight as soon as it materializes.
+  document.addEventListener('htmx:afterSwap', function (e) {
+    if (e && e.target && e.target.id === 'sidebar-duplicates-nav') {
+      var nav = getNav();
+      if (nav) highlightActiveLink(nav);
+    }
+  });
+
   // Listen for preference changes (e.g. from the appearance settings page)
   // to update sidebar state reactively.
   document.addEventListener('sw:preferences-applied', function () {

@@ -130,6 +130,39 @@ templ Sidebar(data SidebarData) {
 							hx-swap="innerHTML"
 						></span>
 					</a>
+					<!--
+						Reports sub-nav (#1665). Compliance always renders;
+						Duplicates is a hydrated placeholder that the
+						/api/v1/reports/duplicates/count endpoint fills with
+						an <a> when at least one near-duplicate group is
+						detected, and empties when none remain. The
+						placeholder is admin-only because the endpoint and
+						destination page are both admin-only; non-admins
+						don't get a wasted poll-and-403 every minute.
+						The sub-nav is hidden by CSS in icon-only/hidden
+						sidebar states (.sw-sidebar-subnav display:none),
+						so icon-only viewers see only the parent icon.
+					-->
+					<ul role="list" class="sw-sidebar-subnav">
+						<li>
+							<a
+								href={ templ.SafeURL(data.BasePath + "/reports/compliance") }
+								class="sw-sidebar-link sw-sidebar-subnav-link"
+								data-path="/reports/compliance"
+								aria-label={ t(ctx, "nav.reports.compliance") }
+							>
+								<span class="sw-sidebar-label">{ t(ctx, "nav.reports.compliance") }</span>
+							</a>
+						</li>
+						if data.IsAdmin {
+							<li
+								id="sidebar-duplicates-nav"
+								hx-get="/api/v1/reports/duplicates/count"
+								hx-trigger="load, every 60s"
+								hx-swap="innerHTML"
+							></li>
+						}
+					</ul>
 				</li>
 			</ul>
 		</div>

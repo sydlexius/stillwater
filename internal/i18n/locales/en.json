@@ -1083,6 +1083,8 @@
   "nav.open_violations": "Open Violations",
   "nav.preferences": "Preferences",
   "nav.reports": "Reports",
+  "nav.reports.compliance": "Compliance",
+  "nav.reports.duplicates": "Duplicates",
   "nav.rules": "Rules",
   "nav.section_main": "Main",
   "nav.settings": "Settings",
