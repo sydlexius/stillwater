@@ -8,6 +8,8 @@ description: A guided tour of every tab in Settings -- what each section does, w
 
 Stillwater's Settings page is divided into 11 tabs. This page is a navigational reference -- each section below describes one tab, the major panels inside it, and where to find specific knobs. For deeper explanation of *what the settings mean*, follow the cross-links into the relevant Core Concepts or How-to pages.
 
+If you already know the name of the control you want, the search box at the top of `/settings` jumps to it directly -- see [find a setting](../how-to/find-a-setting.md).
+
 <!-- BEGIN GENERATED: settings-reference -->
 
 ## General  {#tab-general}

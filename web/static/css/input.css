@@ -1664,3 +1664,56 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   filter: none;
   pointer-events: auto;
 }
+
+/* Settings in-page search: show match count badge on tabs that have results.
+ * The JS sets data-match-count on matching tab <a> elements; non-matching tabs
+ * get opacity-40 + pointer-events-none via inline Tailwind utilities. */
+.sw-settings-tab[data-match-count]::after {
+  content: attr(data-match-count);
+  margin-left: 0.35em;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  background: rgba(59, 130, 246, 0.18);
+  /* Darker blue for light mode where the badge sits on a near-white tab
+   * background; light-blue fails WCAG AA contrast there. */
+  color: #1d4ed8;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  vertical-align: middle;
+}
+.dark .sw-settings-tab[data-match-count]::after {
+  color: #93c5fd;
+}
+
+/* Settings in-page search: highlight matched controls.
+ * The JS sets data-search-match on each ContextHelp anchor whose entry
+ * matched the current query; clearFilter removes it when the search is
+ * cleared. The outline uses the project accent colour to match focus rings
+ * elsewhere in the UI. */
+.sw-settings [data-search-match] {
+  outline: 2px solid rgba(59, 130, 246, 0.45);
+  outline-offset: 4px;
+  border-radius: 4px;
+  transition: outline 200ms ease;
+}
+
+/* Flash animation: a brief pulse applied when clicking a search match badge
+ * navigates to the control. Removed by JS after the animation completes. */
+@keyframes sw-search-flash {
+  0%   { outline-color: rgba(59, 130, 246, 0.9); }
+  60%  { outline-color: rgba(59, 130, 246, 0.9); }
+  100% { outline-color: rgba(59, 130, 246, 0.45); }
+}
+.sw-settings [data-search-flash] {
+  animation: sw-search-flash 600ms ease forwards;
+}
+
+/* Respect reduced motion: skip the pulse for users with the OS preference
+ * set, and for users who have opted in to motion-off via the project's
+ * [data-motion="on"] override (same pattern as .sw-sidebar above). */
+@media (prefers-reduced-motion: reduce) {
+  .sw-settings [data-search-flash] { animation: none; }
+}
+[data-motion="on"] .sw-settings [data-search-flash] { animation: none; }

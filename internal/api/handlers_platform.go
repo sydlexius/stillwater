@@ -191,13 +191,15 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 // normalizeSettingsSection maps a raw section string to a valid settings tab
 // name. Unknown values fall back to "general". This keeps the validation logic
 // in one place so handleSettingsPage and handleSettingsSectionPage stay in sync.
-func normalizeSettingsSection(section string) string {
-	switch section {
-	case "general", "providers", "connections", "libraries", "automation", "rules",
-		"users", "auth_providers", "maintenance", "logs", "updates":
-		return section
+func normalizeSettingsSection(section string) templates.SettingsTabID {
+	switch templates.SettingsTabID(section) {
+	case templates.TabGeneral, templates.TabProviders, templates.TabConnections,
+		templates.TabLibraries, templates.TabAutomation, templates.TabRules,
+		templates.TabUsers, templates.TabAuthProviders, templates.TabMaintenance,
+		templates.TabLogs, templates.TabUpdates:
+		return templates.SettingsTabID(section)
 	default:
-		return "general"
+		return templates.TabGeneral
 	}
 }
 
@@ -299,7 +301,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	// unnecessary DB queries on every settings page load.
 	var usersTabData templates.UsersTabData
 	usersTabData.MultiUserEnabled = multiUserEnabled
-	if multiUserEnabled && tab == "users" {
+	if multiUserEnabled && tab == templates.TabUsers {
 		if users, err := r.authService.ListUsers(req.Context()); err == nil {
 			usersTabData.Users = users
 		} else {

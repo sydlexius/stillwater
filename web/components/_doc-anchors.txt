@@ -249,6 +249,11 @@ how-to/filter-artists#the-library-filter
 how-to/filter-artists#the-same-flyout-on-the-dashboard-and-reports
 how-to/filter-artists#tri-state-filters
 how-to/filter-artists#what-you-can-filter-on
+how-to/find-a-setting#clear-the-search
+how-to/find-a-setting#find-a-setting
+how-to/find-a-setting#search-the-page
+how-to/find-a-setting#tips
+how-to/find-a-setting#what-is-not-searchable
 how-to/http-redirect#enabling-the-redirect-listener-http-redirect-enable
 how-to/http-redirect#http-to-https-redirect
 how-to/http-redirect#interaction-with-reverse-proxies-http-redirect-reverse-proxy

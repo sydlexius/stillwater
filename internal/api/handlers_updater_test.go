@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/updater"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // testRouterWithUpdater creates a minimal Router with a real updater.Service.
@@ -875,7 +876,7 @@ func TestBuildUpdatesTabData_GetConfigError(t *testing.T) {
 func TestNormalizeSettingsSectionUpdates(t *testing.T) {
 	t.Parallel()
 	got := normalizeSettingsSection("updates")
-	if got != "updates" {
+	if got != templates.TabUpdates {
 		t.Errorf("normalizeSettingsSection(\"updates\") = %q, want \"updates\"", got)
 	}
 }
