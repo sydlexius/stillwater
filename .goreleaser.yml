@@ -56,6 +56,19 @@ dockers_v2:
       - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
       - "{{ if not .Prerelease }}latest{{ end }}"
       - "{{ if .Prerelease }}beta{{ end }}"
+    # Standard OCI labels surfaced by GHCR, Docker Hub, Grype, Scorecard,
+    # and most registry / scanner UIs without further configuration.
+    # .BaseImage / .BaseImageDigest are parsed from the FROM line of the
+    # dockerfile below at release time (goreleaser v2.16+), so the base
+    # layer's digest pin in Dockerfile.goreleaser is the single source of
+    # truth -- no drift risk from duplicating the digest here.
+    labels:
+      org.opencontainers.image.base.name: "{{ .BaseImage }}"
+      org.opencontainers.image.base.digest: "{{ .BaseImageDigest }}"
+      org.opencontainers.image.source: "https://github.com/sydlexius/stillwater"
+      org.opencontainers.image.licenses: "GPL-3.0"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
     dockerfile: build/docker/Dockerfile.goreleaser
     platforms:
       - linux/amd64
