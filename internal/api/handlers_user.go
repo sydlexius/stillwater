@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/auth"
@@ -351,6 +352,15 @@ func (r *Router) handleDeleteUser(w http.ResponseWriter, req *http.Request) {
 	}
 	if req.Body != nil && req.ContentLength != 0 {
 		_ = json.NewDecoder(req.Body).Decode(&body)
+	}
+
+	// OpenAPI documents reason as maxLength:200 (runes, not bytes). Reject
+	// over-long input with a 400 before touching the DB so audit_log.detail
+	// can't accumulate unbounded prose from a misbehaving client.
+	const reasonMaxRunes = 200
+	if utf8.RuneCountInString(body.Reason) > reasonMaxRunes {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reason must be 200 characters or fewer."})
+		return
 	}
 
 	callerID := middleware.UserIDFromContext(req.Context())

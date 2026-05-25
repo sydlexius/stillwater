@@ -289,7 +289,7 @@ templ settingsUsersTab(data UsersTabData) {
 					@components.ContextHelp("help-inactive-only", t(ctx, "settings.users.inactive_only_label"), t(ctx, "settings.users.inactive_only_help"), "settings-users-users-inactive-only-label")
 				</div>
 				<div id="users-bulk-bar" class="hidden flex items-center gap-2">
-					<span id="users-bulk-count" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></span>
+					<span id="users-bulk-count" class="text-xs text-gray-500 dark:text-gray-400" role="status" aria-live="polite" aria-atomic="true"></span>
 					<button
 						type="button"
 						id="users-bulk-delete-btn"
@@ -720,7 +720,17 @@ templ settingsUsersScript() {
 			var btn = document.getElementById('users-bulk-delete-btn');
 			var label = document.getElementById('users-bulk-count');
 			btn.disabled = checked.length === 0;
-			label.textContent = checked.length === 0 ? '' : (checked.length + ' selected');
+			if (checked.length === 0) {
+				label.textContent = '';
+				return;
+			}
+			// Reuse the dialog's data-i18n-selected-* attributes so the count
+			// label honors the current locale's plural form instead of
+			// hardcoding English "(N selected)".
+			label.textContent = deleteUserDialogTpl(
+				String(checked.length),
+				pluralKey('i18nSelected', checked.length)
+			);
 		}
 
 		// Delete-user dialog: a single shared modal reused by both per-row
@@ -741,7 +751,13 @@ templ settingsUsersScript() {
 			dlg.dataset.mode = 'single';
 			dlg.dataset.userId = userId;
 			dlg.dataset.displayName = displayName;
-			dlg.dataset.previousFocus = document.activeElement && document.activeElement.id ? document.activeElement.id : '';
+			// Per-row trash buttons don't have stable IDs, so we cannot round-trip
+			// focus through dlg.dataset (string-only). Keep the live element
+			// reference on a non-dataset property so closeDeleteUserDialog can
+			// hand focus back to the right control regardless of ID presence.
+			dlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')
+				? document.activeElement
+				: null;
 			document.getElementById('delete-user-dialog-body').textContent =
 				deleteUserDialogTpl(displayName, 'i18nPromptSingle');
 			document.getElementById('delete-user-reason').value = '';
@@ -754,7 +770,9 @@ templ settingsUsersScript() {
 			if (checked.length === 0) return;
 			var dlg = document.getElementById('delete-user-dialog');
 			dlg.dataset.mode = 'bulk';
-			dlg.dataset.previousFocus = document.activeElement && document.activeElement.id ? document.activeElement.id : '';
+			dlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')
+				? document.activeElement
+				: null;
 			document.getElementById('delete-user-dialog-body').textContent =
 				deleteUserDialogTpl(String(checked.length), pluralKey('i18nPromptBulk', checked.length));
 			document.getElementById('delete-user-reason').value = '';
@@ -767,11 +785,9 @@ templ settingsUsersScript() {
 			dlg.classList.add('hidden');
 			// Restore focus to the control that opened the dialog so screen
 			// readers and keyboard users do not lose their place.
-			var prevId = dlg.dataset.previousFocus;
-			if (prevId) {
-				var prev = document.getElementById(prevId);
-				if (prev && typeof prev.focus === 'function') prev.focus();
-			}
+			var prev = dlg._previousFocusEl;
+			if (prev && typeof prev.focus === 'function') prev.focus();
+			dlg._previousFocusEl = null;
 		}
 
 		// Wire Escape-to-cancel once; the listener guards on visibility so

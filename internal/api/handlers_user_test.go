@@ -250,6 +250,35 @@ func TestHandleDeleteUser_HappyPath(t *testing.T) {
 	}
 }
 
+func TestHandleDeleteUser_RejectsOverlongReason(t *testing.T) {
+	t.Parallel()
+	r, authSvc, adminID := testRouterWithAuth(t)
+
+	target, err := authSvc.CreateLocalUser(context.Background(), "op1", "password123", "Op One", "operator", adminID)
+	if err != nil {
+		t.Fatalf("creating target: %v", err)
+	}
+
+	// Build a 201-rune reason; OpenAPI declares maxLength: 200.
+	overlong := strings.Repeat("x", 201)
+	body := `{"reason":"` + overlong + `"}`
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+target.ID+"/account/permanent", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", target.ID)
+	req = withAdminCtx(req, adminID)
+	w := httptest.NewRecorder()
+	r.handleDeleteUser(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("overlong reason: status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	// Confirm the target still exists -- the validation must short-circuit
+	// before DeleteUser runs.
+	if _, err := authSvc.GetUserByID(context.Background(), target.ID); err != nil {
+		t.Errorf("target should still exist after rejected delete, got %v", err)
+	}
+}
+
 func TestHandleDeleteUser_PreventsSelfDelete(t *testing.T) {
 	t.Parallel()
 	r, _, adminID := testRouterWithAuth(t)
@@ -315,13 +344,17 @@ func TestHandleListUsers_InactiveFilter(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&users); err != nil {
 		t.Fatalf("decoding users: %v", err)
 	}
-	if len(users) < 1 {
-		t.Errorf("expected at least one never-logged-in user, got %d", len(users))
-	}
+	foundNeverin := false
 	for _, u := range users {
 		if u.LastLogin != nil && *u.LastLogin != "" {
 			t.Errorf("inactive_only returned user with LastLogin = %v", *u.LastLogin)
 		}
+		if u.Username == "neverin" {
+			foundNeverin = true
+		}
+	}
+	if !foundNeverin {
+		t.Error("expected user 'neverin' (the never-logged-in fixture) in inactive list")
 	}
 }
 

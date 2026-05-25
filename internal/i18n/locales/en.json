@@ -2051,7 +2051,7 @@
   "settings.users.deactivate_user": "Deactivate %s",
   "settings.users.delete": "Delete",
   "settings.users.delete_dialog_cancel": "Cancel",
-  "settings.users.delete_dialog_confirm": "Delete",
+  "settings.users.delete_dialog_confirm": "Delete account",
   "settings.users.delete_dialog_irreversible": "This permanently removes the account and cannot be undone.",
   "settings.users.delete_dialog_reason_label": "Reason (optional, recorded in the audit log)",
   "settings.users.delete_dialog_reason_placeholder": "e.g. left team, never redeemed invite",

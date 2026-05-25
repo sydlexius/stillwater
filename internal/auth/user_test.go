@@ -905,7 +905,7 @@ func TestDeleteUser_ReasonOmittedWhenBlank(t *testing.T) {
 	`).Scan(&detail); err != nil {
 		t.Fatalf("scanning audit row: %v", err)
 	}
-	if detail == "" || strings.Contains(detail, ":") && !strings.Contains(detail, "permanently deleted: op1") {
+	if detail != "permanently deleted: op1" {
 		t.Errorf("expected blank-reason audit detail to be 'permanently deleted: op1', got %q", detail)
 	}
 }
