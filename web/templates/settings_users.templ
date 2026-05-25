@@ -628,8 +628,10 @@ templ settingsUsersScript() {
 				var valueEl = document.getElementById('invite-link-value');
 				valueEl.value = link;
 				resultEl.classList.remove('hidden');
-				// Refresh the invites list.
-				htmx.trigger(document.getElementById('invites-list'), 'load');
+				// Refresh the invites list. See refreshUsersTable() for why
+				// htmx.ajax is required rather than re-dispatching 'load'.
+				htmx.ajax('GET', usersBasePath + '/api/v1/users/invites', { target: '#invites-list', swap: 'innerHTML' })
+					.catch(function() { showToast('Failed to refresh invite list'); });
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to create invite');
 			});
@@ -664,11 +666,11 @@ templ settingsUsersScript() {
 					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update role'); });
 				}
 				showSuccessToast('Role updated');
-				htmx.trigger(document.getElementById('users-table-body'), 'load');
+				refreshUsersTable();
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to update role');
 				// Reload to reset the select back to the current value.
-				htmx.trigger(document.getElementById('users-table-body'), 'load');
+				refreshUsersTable();
 			});
 		}
 
@@ -685,10 +687,29 @@ templ settingsUsersScript() {
 					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to deactivate user'); });
 				}
 				showSuccessToast('User deactivated');
-				htmx.trigger(document.getElementById('users-table-body'), 'load');
+				refreshUsersTable();
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to deactivate user');
 			});
+		}
+
+		// Re-fetch the users table using the body's current hx-get URL.
+		// htmx.ajax is required because hx-trigger="load" is processed once
+		// when htmx initializes the element; htmx does not install a DOM
+		// listener for the load event, so manually dispatching 'load' does
+		// nothing. A null-guard on body covers the case where the user
+		// navigated to another settings tab before an in-flight mutation
+		// resolved (the panel detaches). A .catch surfaces a refresh failure
+		// rather than leaving the table silently stale next to a "success"
+		// toast from the upstream mutation.
+		function refreshUsersTable() {
+			var body = document.getElementById('users-table-body');
+			if (!body) {
+				return;
+			}
+			var url = body.getAttribute('hx-get') || (usersBasePath + '/api/v1/users');
+			htmx.ajax('GET', url, { target: '#users-table-body', swap: 'innerHTML' })
+				.catch(function() { showToast('Failed to refresh user list'); });
 		}
 
 		// Reload the user list with the stale-account filter on/off and
@@ -711,7 +732,7 @@ templ settingsUsersScript() {
 			bulkBar.classList.toggle('flex', on);
 			document.getElementById('users-bulk-select-all').checked = false;
 			updateBulkDeleteCount();
-			htmx.trigger(body, 'load');
+			refreshUsersTable();
 		}
 
 		function toggleSelectAllUsers(master) {

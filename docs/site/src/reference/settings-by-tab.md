@@ -355,11 +355,6 @@ Single-user mode is the default and assumes one administrator owns the whole ins
 {: #settings-users-users-last-login-column }
 - **Actions**
 {: #settings-users-users-actions }
-
-#### Pending Invites  {#settings-users-users-pending-invites}
-
-An invite is a one-time link Stillwater issues to a prospective user; redeeming it creates an account at the role baked into the link. This list shows invites that have been issued but not yet redeemed, so you can revoke or copy each link before it expires.
-
 - **Select %s for bulk delete**
 {: #settings-users-users-bulk-select-user }
 - **Delete**
@@ -380,6 +375,11 @@ An invite is a one-time link Stillwater issues to a prospective user; redeeming 
 {: #settings-users-users-delete-dialog-reason-label }
 - **Cancel**
 {: #settings-users-users-delete-dialog-cancel }
+
+#### Pending Invites  {#settings-users-users-pending-invites}
+
+An invite is a one-time link Stillwater issues to a prospective user; redeeming it creates an account at the role baked into the link. This list shows invites that have been issued but not yet redeemed, so you can revoke or copy each link before it expires.
+
 - **Role:** -- Marks the role badge shown next to a pending invite in the list below. The redeemed account will be created with this role.
 {: #settings-users-users-role-label }
 - **Expires:** -- Marks the expiry timestamp shown next to a pending invite in the list below. The invite stops working after this time.

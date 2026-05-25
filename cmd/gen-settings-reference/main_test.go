@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestIsNoiseKey covers the segment-based noise filter. Each example is a
@@ -1173,6 +1174,285 @@ func TestBuildTab_LoadsIntro(t *testing.T) {
 	}
 	if updatesTab.Intro != "" {
 		t.Errorf("updatesTab.Intro = %q; want empty string (no intro key)", updatesTab.Intro)
+	}
+}
+
+// TestSubTemplateAtHelperOrdering exercises the #1681 regression: a
+// sub-template that declares a templ helper *below* its panel-entry templ
+// function must still emit the helper's keys at the call-site position, not
+// at the helper's declaration position. The old flat extractKeys pass emitted
+// keys in textual file order, which placed dialog/late-helper keys after the
+// last H4 promoter in the entry function (e.g. under "Pending Invites" when
+// the helper was really invoked above the Pending Invites H4).
+func TestSubTemplateAtHelperOrdering(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	sub := filepath.Join(dir, "settings_widgets.templ")
+
+	if err := os.WriteFile(trunk, []byte(`
+		<div data-tab-panel="widgets">
+			@settingsWidgetsTab(data.Widgets)
+		</div>
+	`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Layout in source order:
+	//   1. settingsWidgetsTab (entry, declared first)
+	//        - early key
+	//        - @widgetDialog() call
+	//        - late key (this is the H4 promoter in production)
+	//   2. widgetDialog (helper, declared below the entry)
+	//        - dialog_a, dialog_b
+	//
+	// Old behavior: keys = [early, late, dialog_a, dialog_b]  -- helper keys
+	// land after the H4 promoter, misattributed.
+	// New behavior: keys = [early, dialog_a, dialog_b, late]  -- helper keys
+	// inline at the @call position, before the H4 promoter.
+	// templ FUNC( declarations must be at column 0 to match templFuncRE's
+	// `(?m)^templ ` anchor. Production templ files always declare functions
+	// flush-left, so the same constraint applies in fixtures.
+	if err := os.WriteFile(sub, []byte("\n"+
+		"templ settingsWidgetsTab(data WidgetsData) {\n"+
+		"\t<h3>{ t(ctx, \"settings.widgets.early\") }</h3>\n"+
+		"\t@widgetDialog()\n"+
+		"\t<h4>{ t(ctx, \"settings.widgets.late\") }</h4>\n"+
+		"}\n"+
+		"\n"+
+		"templ widgetDialog() {\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.dialog_a\") }</p>\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.dialog_b\") }</p>\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(panels) != 1 {
+		t.Fatalf("expected 1 panel, got %d", len(panels))
+	}
+	want := []string{
+		"settings.widgets.early",
+		"settings.widgets.dialog_a",
+		"settings.widgets.dialog_b",
+		"settings.widgets.late",
+	}
+	if len(panels[0].Keys) != len(want) {
+		t.Fatalf("got keys=%v, want %v", panels[0].Keys, want)
+	}
+	for i, k := range want {
+		if panels[0].Keys[i] != k {
+			t.Errorf("keys[%d] = %q, want %q (full=%v)", i, panels[0].Keys[i], k, panels[0].Keys)
+		}
+	}
+}
+
+// TestSubTemplateGoFunctionKeysPreserved guards against the regression where
+// the structured walk would only enter templ-function bodies, silently
+// dropping keys that live inside plain Go helper functions (e.g.
+// formatLastLogin in settings_users.templ). The walk is now a single
+// source-order pass over the whole file, so plain Go functions are walked
+// in place wherever they appear textually.
+func TestSubTemplateGoFunctionKeysPreserved(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	sub := filepath.Join(dir, "settings_widgets.templ")
+
+	if err := os.WriteFile(trunk, []byte(`
+		<div data-tab-panel="widgets">
+			@settingsWidgetsTab(data.Widgets)
+		</div>
+	`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The Go function returns an i18n key but lives outside any templ
+	// declaration. Production parallel: formatLastLogin in settings_users.
+	if err := os.WriteFile(sub, []byte("\n"+
+		"func formatThing(ctx context.Context) string {\n"+
+		"\treturn t(ctx, \"settings.widgets.thing_label\")\n"+
+		"}\n"+
+		"\n"+
+		"templ settingsWidgetsTab(data WidgetsData) {\n"+
+		"\t<h3>{ t(ctx, \"settings.widgets.heading\") }</h3>\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(panels[0].Keys, "settings.widgets.thing_label") {
+		t.Errorf("plain-Go-function key was dropped; got keys=%v", panels[0].Keys)
+	}
+	if !contains(panels[0].Keys, "settings.widgets.heading") {
+		t.Errorf("templ-function key was dropped; got keys=%v", panels[0].Keys)
+	}
+}
+
+// TestSubTemplateAtCallCycleSafe guards the @-call recursion's visiting-set
+// against an infinite loop if the templ source ever contains a cycle
+// (helperA @-calls helperB, which @-calls back into helperA). Defensive --
+// the production templ tree is acyclic, but a regression that drops the
+// visiting check would hang the generator instead of failing loudly.
+func TestSubTemplateAtCallCycleSafe(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	sub := filepath.Join(dir, "settings_widgets.templ")
+
+	if err := os.WriteFile(trunk, []byte(`
+		<div data-tab-panel="widgets">
+			@settingsWidgetsTab(data.Widgets)
+		</div>
+	`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sub, []byte("\n"+
+		"templ settingsWidgetsTab(data WidgetsData) {\n"+
+		"\t@helperA()\n"+
+		"}\n"+
+		"templ helperA() {\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.a\") }</p>\n"+
+		"\t@helperB()\n"+
+		"}\n"+
+		"templ helperB() {\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.b\") }</p>\n"+
+		"\t@helperA()\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	var panels []panel
+	var err error
+	go func() {
+		panels, err = scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scanPanels hung on cyclic @-call graph")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"settings.widgets.a", "settings.widgets.b"}
+	if len(panels[0].Keys) != len(want) {
+		t.Fatalf("got keys=%v, want %v", panels[0].Keys, want)
+	}
+	for i, k := range want {
+		if panels[0].Keys[i] != k {
+			t.Errorf("keys[%d] = %q, want %q", i, panels[0].Keys[i], k)
+		}
+	}
+}
+
+// TestSubTemplateSharedHelperDedupedAcrossEntries pins the documented dedup
+// contract: when a single helper is @-invoked from two different entry
+// functions, its keys are emitted exactly once -- at the first @-call site
+// in walk order. Without this pin, a future refactor that scoped the seen
+// set per-entry would silently re-emit (or worse, re-order) the helper's
+// keys, doubling them in the rendered docs.
+func TestSubTemplateSharedHelperDedupedAcrossEntries(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	sub := filepath.Join(dir, "settings_widgets.templ")
+
+	if err := os.WriteFile(trunk, []byte(`
+		<div data-tab-panel="widgets">
+			@settingsWidgetsTab(data.Widgets)
+		</div>
+	`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sub, []byte("\n"+
+		"templ settingsWidgetsTab(data WidgetsData) {\n"+
+		"\t<h3>{ t(ctx, \"settings.widgets.entry_one_top\") }</h3>\n"+
+		"\t@sharedHelper()\n"+
+		"\t<h4>{ t(ctx, \"settings.widgets.entry_one_bottom\") }</h4>\n"+
+		"}\n"+
+		"\n"+
+		"templ WidgetFragment() {\n"+
+		"\t@sharedHelper()\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.fragment_only\") }</p>\n"+
+		"}\n"+
+		"\n"+
+		"templ sharedHelper() {\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.shared_a\") }</p>\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.shared_b\") }</p>\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"settings.widgets.entry_one_top",
+		"settings.widgets.shared_a",
+		"settings.widgets.shared_b",
+		"settings.widgets.entry_one_bottom",
+		"settings.widgets.fragment_only",
+	}
+	if len(panels[0].Keys) != len(want) {
+		t.Fatalf("got keys=%v, want %v", panels[0].Keys, want)
+	}
+	for i, k := range want {
+		if panels[0].Keys[i] != k {
+			t.Errorf("keys[%d] = %q, want %q (full=%v)", i, panels[0].Keys[i], k, panels[0].Keys)
+		}
+	}
+}
+
+// TestSubTemplateAtCallMissingHelperWarns exercises the same-token-but-
+// undeclared branch of walkOrdered: a bare @widgetMissing() in the entry
+// body resolves to no helper in the file. The walk continues without
+// crashing and the surrounding keys are still emitted in source order;
+// a one-line warning is printed to stderr so the regen pass is human-
+// visible rather than silently dropping the intended keys. We do not
+// capture stderr in this test because the same-process gen-settings-
+// reference command relies on stderr for all its operator-facing output,
+// and intercepting it here would mask the broader runtime behavior we
+// want exercised.
+func TestSubTemplateAtCallMissingHelperWarns(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	sub := filepath.Join(dir, "settings_widgets.templ")
+
+	if err := os.WriteFile(trunk, []byte(`
+		<div data-tab-panel="widgets">
+			@settingsWidgetsTab(data.Widgets)
+		</div>
+	`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sub, []byte("\n"+
+		"templ settingsWidgetsTab(data WidgetsData) {\n"+
+		"\t<h3>{ t(ctx, \"settings.widgets.before\") }</h3>\n"+
+		"\t@widgetMissing()\n"+
+		"\t<h4>{ t(ctx, \"settings.widgets.after\") }</h4>\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"settings.widgets.before",
+		"settings.widgets.after",
+	}
+	if len(panels[0].Keys) != len(want) {
+		t.Fatalf("got keys=%v, want %v", panels[0].Keys, want)
+	}
+	for i, k := range want {
+		if panels[0].Keys[i] != k {
+			t.Errorf("keys[%d] = %q, want %q", i, panels[0].Keys[i], k)
+		}
 	}
 }
 

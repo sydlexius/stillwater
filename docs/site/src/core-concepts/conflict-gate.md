@@ -53,6 +53,23 @@ When either check returns a blocked error, the write is rejected and the banner 
 
 The fail-closed behavior is intentional: if Stillwater cannot confirm a connection's state (network error, API timeout), it treats that connection as conflicted rather than silently proceeding. A false positive -- a brief network hiccup blocking writes -- is preferable to a false negative that triggers a collision loop.
 
+### HTTP 409 response shape
+
+When the gate refuses a write, the API endpoint returns **HTTP 409 Conflict** with a JSON body that names the blocked axis and includes the ledger snapshot the decision was made from. A client can read this body to render the same banner the server is rendering, without making a second request:
+
+```json
+{
+  "error": "image_write_blocked",
+  "axis": "image",
+  "reason": "one or more enabled connections have server-side image saving on; the server would duplicate Stillwater's artwork files. Flip 'Let Stillwater manage' or disable the saver on the peer.",
+  "ledger": { "connections": [ ... ], "round_trips": [ ... ], "foreign_files": { ... } }
+}
+```
+
+The `axis` field is one of `image`, `nfo`, or `round_trip`. The `error` code is the axis followed by `_write_blocked`, so the three codes a client may see are `image_write_blocked`, `nfo_write_blocked`, and `round_trip_write_blocked`. The `ledger` lists every contributing connection and any round-trip overlap pairs so the client can show which peer or path is responsible. The same shape is returned regardless of whether the block came from a rule fixer, a manual save, or a bulk operation.
+
+For the round-trip case (two connections sharing a directory on disk), see [Library paths overlap / 409 from refresh](../troubleshooting/platform-auth.md#library-paths-overlap--409-from-refresh) for the user-facing remediation steps.
+
 ## Coalesce and the detection cache
 
 Multiple concurrent callers could all observe a stale cache at the same moment and each trigger a separate network sweep of every peer. The detector prevents that with a **coalesce** pattern: when the cache is stale and multiple goroutines request a refresh at the same instant, exactly one performs the network fan-out. The others wait, then find the cache populated by the first and return immediately without additional requests.

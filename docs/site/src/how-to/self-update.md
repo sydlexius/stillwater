@@ -76,6 +76,47 @@ The Updates tab has no Save button. Channel, "enable updater", "auto-check on sc
 
 If the updater config fails to load on the server side (rare; typically a database read error), the tab renders with the in-code defaults shown in disabled-looking state and a banner across the top explains the read failed. Saves are blocked while the load-failed state is active so a click cannot overwrite real config with the displayed fallback values. Reload the page after fixing the underlying issue to clear the banner.
 
+## Manual nightly download
+
+Nightly builds are produced every day from the `main` branch. **They are not recommended for production:** they reflect work in progress, may include partially-shipped features, and have not been through the release smoke tests. Use them to preview an upcoming change or to reproduce a fix that has not yet shipped to stable.
+
+Most users do not need to download nightlies by hand. The in-app updater can track nightlies directly when you switch the channel to **Nightly** in Settings > Updates (see [Channels (native)](#channels-native)); Docker users can pull `ghcr.io/sydlexius/stillwater:nightly`. The walkthrough below is for the case where you want to install a specific nightly tag manually, on a host where the in-app updater is not used (for example, a fresh install or a re-imaged box).
+
+Each nightly is published as a GitHub Release with the tag `nightly-YYYYMMDD`. The most recent nightly is linked from the [Releases page](https://github.com/sydlexius/stillwater/releases) under the "Pre-release" badge.
+
+### Native binary (manual nightly)
+
+1. Pick a date from the [Releases page](https://github.com/sydlexius/stillwater/releases) and note the tag (for example, `nightly-20260525`).
+2. Download the tarball for your platform:
+
+    ```bash
+    curl -LO https://github.com/sydlexius/stillwater/releases/download/nightly-YYYYMMDD/stillwater_nightly-YYYYMMDD_linux_amd64.tar.gz
+    tar xzf stillwater_nightly-YYYYMMDD_linux_amd64.tar.gz
+    ```
+
+    The archive name follows the pattern `stillwater_<TAG>_<os>_<arch>.tar.gz` (`.zip` on Windows). Pick the file matching your operating system and CPU architecture, same as for a stable release.
+
+3. Stop the running Stillwater process.
+4. Replace the existing binary with the extracted one and restart.
+
+Optionally, verify the download against the release's `stillwater_<TAG>_checksums.txt` and `stillwater_<TAG>_checksums.txt.sigstore.json` files using the same procedure as [Verifying releases](#verifying-releases) below. Nightly artifacts are signed with the same cosign keyless flow as stable releases.
+
+Nightlies do not migrate cleanly backwards: once a nightly has applied a database migration, downgrading to an older binary (nightly or stable) requires restoring a database backup.
+
+### Docker (manual nightly)
+
+The `:nightly` tag rolls forward automatically: pulling it gives you the latest date-stamped build. To pin a specific nightly, use the dated tag (`:nightly-YYYYMMDD`) instead.
+
+```bash
+# Latest nightly:
+docker pull ghcr.io/sydlexius/stillwater:nightly
+
+# A specific dated nightly:
+docker pull ghcr.io/sydlexius/stillwater:nightly-20260525
+```
+
+Update the tag in your compose file and run `docker compose up -d` to recreate the container.
+
 ## Verifying releases
 
 Each release publishes a `checksums.txt` (SHA256 hashes) and a cosign keyless signature for it (`checksums.txt.sigstore.json`). Docker images are also signed with cosign keyless and have SLSA build provenance attached.
