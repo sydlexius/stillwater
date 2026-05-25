@@ -13,14 +13,67 @@ package api
 // artist.DetectDuplicates.
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"net/http"
+	"sync"
+	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
 )
+
+// duplicatesCountTTL bounds the load that sidebar polling places on the
+// detector. With a 60s sidebar poll per active tab, this TTL means at most
+// one DetectDuplicates run every 5 minutes regardless of tab count.
+const duplicatesCountTTL = 5 * time.Minute
+
+// duplicatesCountCache memoizes the most recent duplicate-group count so the
+// sidebar badge endpoint does not re-run the full detector on every poll.
+// Module-level (rather than Router-scoped) so the cache survives across
+// hypothetical multi-router test setups; in production there is one Router.
+type duplicatesCountCache struct {
+	mu        sync.Mutex
+	count     int
+	expiresAt time.Time
+}
+
+var duplicatesCount duplicatesCountCache
+
+// get returns the cached count when fresh; otherwise refreshes via fn and
+// caches the result for duplicatesCountTTL. Concurrent callers serialize
+// on mu so the refresh fires at most once per TTL window even under burst
+// load.
+func (c *duplicatesCountCache) get(ctx context.Context, fn func(context.Context) (int, error)) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Now().Before(c.expiresAt) {
+		return c.count, nil
+	}
+	n, err := fn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	c.count = n
+	c.expiresAt = time.Now().Add(duplicatesCountTTL)
+	return n, nil
+}
+
+// invalidate drops the cached value, forcing the next get call to refresh.
+// Exposed for tests; production code relies on TTL expiry.
+func (c *duplicatesCountCache) invalidate() {
+	c.mu.Lock()
+	c.count = 0
+	c.expiresAt = time.Time{}
+	c.mu.Unlock()
+}
 
 // handleArtistDuplicatesPage renders /reports/duplicates. Admin-only.
 func (r *Router) handleArtistDuplicatesPage(w http.ResponseWriter, req *http.Request) {
@@ -122,6 +175,13 @@ func (r *Router) handleArtistsMerge(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		r.respondMergeError(w, err, result)
 		return
+	}
+
+	// A successful real merge changes the duplicate-group set; drop the
+	// sidebar's cached count so the next poll re-runs detection. Dry runs
+	// don't mutate state, so the cache stays valid.
+	if !body.DryRun {
+		duplicatesCount.invalidate()
 	}
 
 	writeJSON(w, http.StatusOK, toMergeResultPayload(result))
@@ -245,6 +305,86 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 		Warnings:         r.Warnings,
 		LosersDeleted:    r.LosersDeleted,
 	}
+}
+
+// handleArtistDuplicatesCount returns an HTML fragment for the sidebar's
+// Duplicates child link. Admin-only (sidebar callers from non-admin pages
+// receive a 403; the sidebar omits the placeholder element for non-admins
+// so a healthy session never makes the call).
+//
+// GET /api/v1/reports/duplicates/count
+//
+// Returns:
+//   - empty body when there are no duplicate groups (HTMX innerHTML swap
+//     leaves the parent <li> empty so the child disappears from the nav);
+//   - an <a> link populated with the group count when count > 0.
+//
+// The detection result is cached at module scope for duplicatesCountTTL so
+// that polling sidebars across many tabs collapse to at most one
+// DetectDuplicates run per TTL window. The cache is invalidated on
+// successful merges (handled in handleArtistsMerge).
+func (r *Router) handleArtistDuplicatesCount(w http.ResponseWriter, req *http.Request) {
+	// Admin gate: middleware.RoleFromContext is populated by wrapAuth.
+	// Mirrors the gate enforced by requireForeignAdmin on the page handler.
+	// Returns a structured JSON envelope to match the error contract of
+	// the rest of the /api/v1/ surface; the sidebar caller ignores the
+	// body but other API consumers shouldn't have to special-case
+	// text/plain just from this one endpoint.
+	if middleware.RoleFromContext(req.Context()) != "administrator" {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":   "forbidden",
+			"message": "administrator role required",
+		})
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	db := r.db
+	count, err := duplicatesCount.get(req.Context(), func(ctx context.Context) (int, error) {
+		return countDuplicateGroups(ctx, db)
+	})
+	if err != nil {
+		// Fail-safe: log and emit an empty body so the sidebar simply
+		// doesn't show the Duplicates child. Surfacing the error inline
+		// would clutter every sidebar; the duplicates page itself surfaces
+		// detector failures.
+		r.logger.Warn("duplicates count refresh failed", "error", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if count <= 0 {
+		return
+	}
+
+	label := html.EscapeString(i18n.TFromCtx(req.Context()).T("nav.reports.duplicates"))
+	href := html.EscapeString(r.basePath + "/reports/duplicates")
+	fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
+		`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/reports/duplicates" aria-label="%s">`+
+			`<span class="sw-sidebar-label">%s</span>`+
+			`<span class="sw-sidebar-badge-pill">%d</span>`+
+			`</a>`,
+		href, label, label, count)
+}
+
+// countDuplicateGroups runs the duplicate detector and returns the group
+// count. Split from the handler so the cache callback stays a pure function
+// of (ctx, db) and so tests can drive the count without going through HTTP.
+//
+// A nil db (test seam) returns 0 with no error -- matches the page handler's
+// behavior of rendering an empty view when the DB isn't wired.
+func countDuplicateGroups(ctx context.Context, db *sql.DB) (int, error) {
+	if db == nil {
+		return 0, nil
+	}
+	groups, err := artist.DetectDuplicates(ctx, db)
+	if err != nil {
+		return 0, err
+	}
+	return len(groups), nil
 }
 
 // buildArtistDuplicatesView converts the detection result into the view model

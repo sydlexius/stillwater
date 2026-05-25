@@ -86,6 +86,7 @@
 
   // Highlight the sidebar link that matches the current URL path.
   function highlightActiveLink(nav) {
+    var sidebarState = nav.getAttribute('data-sidebar-state') || 'full';
     var links = nav.querySelectorAll('.sw-sidebar-link[data-path]');
     // Strip base path from current pathname to get the app-relative path.
     var pathname = window.location.pathname;
@@ -141,6 +142,23 @@
       winner = matches[0];
     }
 
+    // Sub-nav children (e.g. Reports > Duplicates) live inside a <ul> that
+    // CSS hides outside of full state. If a sub-nav child is the most
+    // specific match while the sidebar is in icon-only or hidden mode, the
+    // active highlight would land on an invisible element and the user
+    // would see no section selected. Promote to the parent <a> so the
+    // visible icon keeps the active style. The parent <a> sits as the
+    // immediate previous sibling of the <ul.sw-sidebar-subnav>.
+    if (winner &&
+        sidebarState !== 'full' &&
+        winner.link.classList.contains('sw-sidebar-subnav-link')) {
+      var subnav = winner.link.closest('.sw-sidebar-subnav');
+      var parentLink = subnav ? subnav.previousElementSibling : null;
+      if (parentLink && parentLink.classList.contains('sw-sidebar-link')) {
+        winner = { link: parentLink, path: parentLink.getAttribute('data-path') || '', query: null };
+      }
+    }
+
     for (var k = 0; k < links.length; k++) {
       if (winner && links[k] === winner.link) {
         links[k].classList.add('sw-sidebar-link-active');
@@ -190,6 +208,19 @@
 
     e.preventDefault();
     cycle();
+  });
+
+  // Re-run active-link highlighting after HTMX swaps inject the Duplicates
+  // sub-nav child (#1665). highlightActiveLink only runs as part of
+  // applyState, which fires on init -- by then the HTMX fragment has not
+  // arrived, so a fresh load of /reports/duplicates would briefly highlight
+  // the parent Reports link and never the child. Re-running on afterSwap
+  // gives the child its highlight as soon as it materializes.
+  document.addEventListener('htmx:afterSwap', function (e) {
+    if (e && e.target && e.target.id === 'sidebar-duplicates-nav') {
+      var nav = getNav();
+      if (nav) highlightActiveLink(nav);
+    }
   });
 
   // Listen for preference changes (e.g. from the appearance settings page)

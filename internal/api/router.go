@@ -403,6 +403,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /api/v1/artists/duplicates alias is kept for one release per the
 	// deprecation note in #1615; remove in M53.
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/duplicates", wrapAuth(r.handleDuplicates, authMw))
+	// Sidebar count badge for the Duplicates child link (#1665). Returns an
+	// HTML fragment so the sidebar's hx-swap="innerHTML" placeholder can
+	// drop the child entirely when no duplicates remain. Admin-only via
+	// the in-handler role check.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/duplicates/count", wrapAuth(r.handleArtistDuplicatesCount, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/merge", wrapAuth(r.handleArtistsMerge, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleLockArtist, authMw))

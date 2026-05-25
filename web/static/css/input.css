@@ -289,6 +289,30 @@
   padding: 0;
 }
 
+/* Sub-nav (#1665): nested <ul> rendered under a top-level sidebar link
+   (currently only Reports). Children stay hidden in icon-only/hidden
+   sidebar states -- the parent icon stays clickable and the redirect chain
+   still resolves to /reports/compliance. */
+.sw-sidebar-subnav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-subnav,
+#sw-sidebar[data-sidebar-state="hidden"] .sw-sidebar-subnav {
+  display: none;
+}
+
+/* Child link: no icon (would duplicate the parent's chart-bar). Padding
+   aligns the label under the parent label (parent has 16px left + 20px
+   icon + 10px gap = 46px to label start; rounded down to 42 to read as a
+   visible sub-item rather than perfectly column-aligned text). */
+.sw-sidebar-subnav-link {
+  padding-left: 42px;
+  font-size: 12px;
+}
+
 /* Navigation links */
 .sw-sidebar-link {
   display: flex;
