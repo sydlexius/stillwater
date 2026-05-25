@@ -26,6 +26,12 @@ func TestLocalLoginFlow(t *testing.T) {
 	if _, err := r.db.Exec("DELETE FROM sessions"); err != nil {
 		t.Fatalf("clearing sessions: %v", err)
 	}
+	// Clear is_protected first so the prevent_delete_protected_user
+	// trigger (migration 012) lets the bootstrap admin be wiped for test
+	// re-setup. Real callers should never bypass this trigger.
+	if _, err := r.db.Exec("UPDATE users SET is_protected = 0"); err != nil {
+		t.Fatalf("clearing is_protected: %v", err)
+	}
 	if _, err := r.db.Exec("DELETE FROM users"); err != nil {
 		t.Fatalf("clearing users: %v", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -146,19 +147,28 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 
 // CreateSession creates a new session for the given user ID and returns the token.
 // This is used after authentication when the caller has already validated the identity.
+// Also stamps users.last_login so the inactive-users admin filter can find stale
+// accounts; the stamp is best-effort and a failure does not roll back the session.
 func (s *Service) CreateSession(ctx context.Context, userID string) (string, error) {
 	token, err := generateToken()
 	if err != nil {
 		return "", fmt.Errorf("generating session token: %w", err)
 	}
 
-	expiresAt := time.Now().Add(sessionDuration).UTC().Format(time.RFC3339)
+	now := time.Now().UTC()
+	expiresAt := now.Add(sessionDuration).Format(time.RFC3339)
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO sessions (id, user_id, expires_at)
 		VALUES (?, ?, ?)
 	`, token, userID, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("creating session: %w", err)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE users SET last_login = ? WHERE id = ?
+	`, now.Format(time.RFC3339), userID); err != nil {
+		slog.WarnContext(ctx, "auth: failed to stamp last_login", "user_id", userID, "err", err)
 	}
 
 	return token, nil

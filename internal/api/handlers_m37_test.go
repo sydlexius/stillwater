@@ -326,6 +326,10 @@ func TestSetup_Local_CreatesAdministrator(t *testing.T) {
 	r.authRegistry = registry
 
 	// Wipe existing users so setup can run (setup requires zero users).
+	// Clear is_protected first or the migration-012 trigger blocks the wipe.
+	if _, err := r.db.Exec("UPDATE users SET is_protected = 0"); err != nil {
+		t.Fatalf("clearing is_protected: %v", err)
+	}
 	if _, err := r.db.Exec("DELETE FROM users"); err != nil {
 		t.Fatalf("clearing users: %v", err)
 	}
@@ -373,7 +377,11 @@ func TestSetup_WithRegistry_FederatedAlwaysAdministrator(t *testing.T) {
 	registry.Register(stubProvider)
 	r.authRegistry = registry
 
-	// Wipe the existing admin so setup can run.
+	// Wipe the existing admin so setup can run; clear is_protected first
+	// because of the migration-012 trigger.
+	if _, err := r.db.Exec("UPDATE users SET is_protected = 0"); err != nil {
+		t.Fatalf("clearing is_protected: %v", err)
+	}
 	if _, err := r.db.Exec("DELETE FROM users"); err != nil {
 		t.Fatalf("clearing users: %v", err)
 	}

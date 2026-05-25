@@ -2,10 +2,40 @@ package templates
 
 import (
 	"context"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/web/components"
 )
+
+// formatLastLogin renders the relative-time label for a user's last_login
+// stamp. Nil (never logged in) yields the "never" copy; an unparsable
+// timestamp falls back to the raw string so the column never silently goes
+// blank during a data drift incident.
+func formatLastLogin(ctx context.Context, ts *string) string {
+	if ts == nil || *ts == "" {
+		return t(ctx, "settings.users.last_login_never")
+	}
+	parsed, err := time.Parse(time.RFC3339, *ts)
+	if err != nil {
+		return *ts
+	}
+	d := time.Since(parsed)
+	switch {
+	case d < time.Minute:
+		return t(ctx, "settings.users.last_login_just_now")
+	case d < time.Hour:
+		return tn(ctx, "settings.users.last_login_minutes_ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return tn(ctx, "settings.users.last_login_hours_ago", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return tn(ctx, "settings.users.last_login_days_ago", int(d.Hours()/24))
+	case d < 365*24*time.Hour:
+		return tn(ctx, "settings.users.last_login_months_ago", int(d.Hours()/(24*30)))
+	default:
+		return tn(ctx, "settings.users.last_login_years_ago", int(d.Hours()/(24*365)))
+	}
+}
 
 // roleBadgeClasses returns CSS classes for a user role badge.
 func roleBadgeClasses(role string) string {
@@ -86,6 +116,10 @@ type UsersTabData struct {
 	Users            []auth.User
 	Invites          []auth.Invite
 	LoadError        string // Non-empty when user or invite data failed to load
+	// CallerID is the signed-in admin viewing the page; the per-row delete
+	// button is disabled when CallerID matches the row's user ID so the
+	// admin cannot wipe their own session by accident from this surface.
+	CallerID string
 }
 
 // settingsUsersTab renders the Users settings tab content.
@@ -240,36 +274,75 @@ templ settingsUsersTab(data UsersTabData) {
 					</div>
 				</form>
 			</div>
+			<!-- filter + bulk-delete bar -->
+			<div id="users-filter-bar" class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 flex-wrap">
+				<div class="inline-flex items-center gap-2">
+					<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+						<input
+							type="checkbox"
+							id="users-inactive-only"
+							class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+							onchange="reloadUsersTable()"
+						/>
+						{ t(ctx, "settings.users.inactive_only_label") }
+					</label>
+					@components.ContextHelp("help-inactive-only", t(ctx, "settings.users.inactive_only_label"), t(ctx, "settings.users.inactive_only_help"), "settings-users-users-inactive-only-label")
+				</div>
+				<div id="users-bulk-bar" class="hidden items-center gap-2">
+					<span id="users-bulk-count" class="text-xs text-gray-500 dark:text-gray-400" role="status" aria-live="polite" aria-atomic="true"></span>
+					<button
+						type="button"
+						id="users-bulk-delete-btn"
+						class="text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+						disabled
+						onclick="openBulkDeleteDialog()"
+					>
+						{ t(ctx, "settings.users.bulk_delete") }
+					</button>
+				</div>
+			</div>
 			<div class="overflow-x-auto">
 				<table class="w-full text-sm" aria-label={ t(ctx, "settings.users.user_accounts") }>
 					<thead>
 						<tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+							<th class="hidden px-4 py-3 w-8 users-bulk-col">
+								<input
+									type="checkbox"
+									id="users-bulk-select-all"
+									class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+									aria-label={ t(ctx, "settings.users.bulk_select_all") }
+									onchange="toggleSelectAllUsers(this)"
+								/>
+							</th>
 							<th class="px-6 py-3">{ t(ctx, "settings.users.user") }</th>
 							<th class="px-4 py-3">{ t(ctx, "settings.users.role") }</th>
 							<th class="px-4 py-3">{ t(ctx, "settings.users.auth_provider") }</th>
 							<th class="px-4 py-3">{ t(ctx, "settings.users.status") }</th>
+							<th class="px-4 py-3">{ t(ctx, "settings.users.last_login_column") }</th>
 							<th class="px-4 py-3 text-right">{ t(ctx, "settings.users.actions") }</th>
 						</tr>
 					</thead>
 					<tbody
 						id="users-table-body"
+						data-caller-id={ data.CallerID }
 						hx-get="/api/v1/users"
 						hx-trigger="load"
 						hx-swap="innerHTML"
 					>
 						if len(data.Users) == 0 {
 							<tr>
-								<td colspan="5" class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400 italic">
+								<td colspan="7" class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400 italic">
 									{ t(ctx, "settings.users.loading") }
 								</td>
 							</tr>
 						}
 						for _, u := range data.Users {
-							@userTableRow(u)
+							@userTableRow(u, data.CallerID)
 						}
 					</tbody>
 				</table>
 			</div>
+			@deleteUserDialog()
 		</div>
 		<!-- Pending invites -->
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -302,11 +375,29 @@ templ settingsUsersTab(data UsersTabData) {
 
 // userTableRow renders a single row in the users table.
 // Used both for initial SSR and for HTMX-driven updates.
-templ userTableRow(u auth.User) {
+// callerID is the signed-in admin's user ID; rows matching it disable the
+// per-row Delete button so admins cannot wipe their own session from this
+// surface (Account Settings owns that flow).
+templ userTableRow(u auth.User, callerID string) {
 	<tr
 		id={ "user-row-" + u.ID }
 		class="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750"
+		data-user-id={ u.ID }
+		data-is-protected={ boolAttr(u.IsProtected) }
+		data-is-self={ boolAttr(u.ID == callerID) }
 	>
+		<td class="hidden px-4 py-3 w-8 users-bulk-col">
+			if !u.IsProtected && u.ID != callerID {
+				<input
+					type="checkbox"
+					class="user-bulk-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+					aria-label={ tf(ctx, "settings.users.bulk_select_user", u.DisplayName) }
+					data-user-id={ u.ID }
+					data-display-name={ u.DisplayName }
+					onchange="updateBulkDeleteCount()"
+				/>
+			}
+		</td>
 		<td class="px-6 py-3">
 			<div class="flex items-center gap-3">
 				<div class="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold shrink-0" aria-hidden="true">
@@ -333,9 +424,12 @@ templ userTableRow(u auth.User) {
 				}
 			</span>
 		</td>
+		<td class="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+			{ formatLastLogin(ctx, u.LastLogin) }
+		</td>
 		<td class="px-4 py-3 text-right">
-			if u.IsActive {
-				<div class="flex items-center justify-end gap-2">
+			<div class="flex items-center justify-end gap-2">
+				if u.IsActive {
 					<select
 						class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
 						aria-label={ tf(ctx, "settings.users.change_role_for", u.DisplayName) }
@@ -357,10 +451,90 @@ templ userTableRow(u auth.User) {
 							Deactivate
 						</button>
 					}
-				</div>
-			}
+				}
+				<button
+					type="button"
+					class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+					aria-label={ tf(ctx, "settings.users.delete_user_aria", u.DisplayName) }
+					if u.IsProtected {
+						title={ t(ctx, "settings.users.delete_protected_tooltip") }
+					} else if u.ID == callerID {
+						title={ t(ctx, "settings.users.delete_self_tooltip") }
+					}
+					disabled?={ u.IsProtected || u.ID == callerID }
+					data-user-id={ u.ID }
+					data-display-name={ u.DisplayName }
+					onclick="openDeleteUserDialog(this.dataset.userId, this.dataset.displayName)"
+				>
+					{ t(ctx, "settings.users.delete") }
+				</button>
+			</div>
 		</td>
 	</tr>
+}
+
+// deleteUserDialog renders the shared inline confirm dialog used for both
+// per-row and bulk delete flows; toggled visible by the JS helpers. The
+// data-i18n-* attributes carry localized JS-side strings so the inline
+// script can render translated body / toast copy without sourcing more
+// translations at runtime.
+templ deleteUserDialog() {
+	<div
+		id="delete-user-dialog"
+		class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="delete-user-dialog-title"
+		data-i18n-prompt-single={ t(ctx, "settings.users.delete_prompt_single") }
+		data-i18n-prompt-bulk-one={ tn(ctx, "settings.users.bulk_delete_prompt", 1) }
+		data-i18n-prompt-bulk-other={ t(ctx, "settings.users.bulk_delete_prompt.other") }
+		data-i18n-success-single={ t(ctx, "settings.users.delete_success_single") }
+		data-i18n-success-bulk-one={ tn(ctx, "settings.users.bulk_delete_success", 1) }
+		data-i18n-success-bulk-other={ t(ctx, "settings.users.bulk_delete_success.other") }
+		data-i18n-selected-one={ tn(ctx, "settings.users.bulk_selected_count", 1) }
+		data-i18n-selected-other={ t(ctx, "settings.users.bulk_selected_count.other") }
+		data-i18n-failed-some={ t(ctx, "settings.users.bulk_delete_failed_some") }
+		data-i18n-failed-generic={ t(ctx, "settings.users.delete_failed_generic") }
+	>
+		<div class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl">
+			<div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+				<h3 id="delete-user-dialog-title" class="text-base font-semibold text-gray-900 dark:text-gray-100">
+					{ t(ctx, "settings.users.delete_dialog_title") }
+				</h3>
+				<p id="delete-user-dialog-body" class="mt-1 text-sm text-gray-600 dark:text-gray-300"></p>
+				<p class="mt-1 text-xs text-red-600 dark:text-red-400">{ t(ctx, "settings.users.delete_dialog_irreversible") }</p>
+			</div>
+			<div class="px-5 py-4 space-y-2">
+				<label for="delete-user-reason" class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+					{ t(ctx, "settings.users.delete_dialog_reason_label") }
+				</label>
+				<input
+					id="delete-user-reason"
+					type="text"
+					maxlength="200"
+					placeholder={ t(ctx, "settings.users.delete_dialog_reason_placeholder") }
+					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+			<div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2">
+				<button
+					type="button"
+					class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="closeDeleteUserDialog()"
+				>
+					{ t(ctx, "settings.users.delete_dialog_cancel") }
+				</button>
+				<button
+					type="button"
+					id="delete-user-dialog-confirm"
+					class="text-sm px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+					onclick="submitDeleteUserDialog()"
+				>
+					{ t(ctx, "settings.users.delete_dialog_confirm") }
+				</button>
+			</div>
+		</div>
+	</div>
 }
 
 // inviteRow renders a single pending invite entry.
@@ -516,13 +690,188 @@ templ settingsUsersScript() {
 				showToast(err.message || 'Failed to deactivate user');
 			});
 		}
+
+		// Reload the user list with the stale-account filter on/off and
+		// reveal the bulk checkbox column. Bulk delete is gated on this
+		// filter so admins cannot accidentally select live-team members.
+		function reloadUsersTable() {
+			var on = document.getElementById('users-inactive-only').checked;
+			var url = usersBasePath + '/api/v1/users' + (on ? '?inactive_only=true' : '');
+			var body = document.getElementById('users-table-body');
+			body.setAttribute('hx-get', url);
+			document.querySelectorAll('.users-bulk-col').forEach(function(el) {
+				el.classList.toggle('hidden', !on);
+			});
+			// Toggle both classes in lockstep: `hidden` (display:none) and
+			// `flex` (display:flex) on the same element rely on cascade
+			// order, which makes the static class list brittle. Owning both
+			// states from JS removes the ambiguity.
+			var bulkBar = document.getElementById('users-bulk-bar');
+			bulkBar.classList.toggle('hidden', !on);
+			bulkBar.classList.toggle('flex', on);
+			document.getElementById('users-bulk-select-all').checked = false;
+			updateBulkDeleteCount();
+			htmx.trigger(body, 'load');
+		}
+
+		function toggleSelectAllUsers(master) {
+			document.querySelectorAll('.user-bulk-checkbox').forEach(function(cb) {
+				cb.checked = master.checked;
+			});
+			updateBulkDeleteCount();
+		}
+
+		function updateBulkDeleteCount() {
+			var checked = document.querySelectorAll('.user-bulk-checkbox:checked');
+			var btn = document.getElementById('users-bulk-delete-btn');
+			var label = document.getElementById('users-bulk-count');
+			btn.disabled = checked.length === 0;
+			if (checked.length === 0) {
+				label.textContent = '';
+				return;
+			}
+			// Reuse the dialog's data-i18n-selected-* attributes so the count
+			// label honors the current locale's plural form instead of
+			// hardcoding English "(N selected)".
+			label.textContent = deleteUserDialogTpl(
+				String(checked.length),
+				pluralKey('i18nSelected', checked.length)
+			);
+		}
+
+		// Delete-user dialog: a single shared modal reused by both per-row
+		// and bulk flows. State is held on the dialog DOM node so we don't
+		// leak globals. Localized copy comes via data-i18n-* attributes on
+		// the dialog element so the templ layer owns the translations.
+		function deleteUserDialogTpl(name, key) {
+			var dlg = document.getElementById('delete-user-dialog');
+			return (dlg.dataset[key] || '').replace('{name}', name).replace('{count}', name);
+		}
+
+		function pluralKey(base, count) {
+			return count === 1 ? base + 'One' : base + 'Other';
+		}
+
+		function openDeleteUserDialog(userId, displayName) {
+			var dlg = document.getElementById('delete-user-dialog');
+			dlg.dataset.mode = 'single';
+			dlg.dataset.userId = userId;
+			dlg.dataset.displayName = displayName;
+			// Per-row trash buttons don't have stable IDs, so we cannot round-trip
+			// focus through dlg.dataset (string-only). Keep the live element
+			// reference on a non-dataset property so closeDeleteUserDialog can
+			// hand focus back to the right control regardless of ID presence.
+			dlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')
+				? document.activeElement
+				: null;
+			document.getElementById('delete-user-dialog-body').textContent =
+				deleteUserDialogTpl(displayName, 'i18nPromptSingle');
+			document.getElementById('delete-user-reason').value = '';
+			dlg.classList.remove('hidden');
+			document.getElementById('delete-user-reason').focus();
+		}
+
+		function openBulkDeleteDialog() {
+			var checked = document.querySelectorAll('.user-bulk-checkbox:checked');
+			if (checked.length === 0) return;
+			var dlg = document.getElementById('delete-user-dialog');
+			dlg.dataset.mode = 'bulk';
+			dlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')
+				? document.activeElement
+				: null;
+			document.getElementById('delete-user-dialog-body').textContent =
+				deleteUserDialogTpl(String(checked.length), pluralKey('i18nPromptBulk', checked.length));
+			document.getElementById('delete-user-reason').value = '';
+			dlg.classList.remove('hidden');
+			document.getElementById('delete-user-reason').focus();
+		}
+
+		function closeDeleteUserDialog() {
+			var dlg = document.getElementById('delete-user-dialog');
+			dlg.classList.add('hidden');
+			// Restore focus to the control that opened the dialog so screen
+			// readers and keyboard users do not lose their place.
+			var prev = dlg._previousFocusEl;
+			if (prev && typeof prev.focus === 'function') prev.focus();
+			dlg._previousFocusEl = null;
+		}
+
+		// Wire Escape-to-cancel once; the listener guards on visibility so
+		// it is inert when no dialog is open.
+		document.addEventListener('keydown', function(ev) {
+			if (ev.key !== 'Escape') return;
+			var dlg = document.getElementById('delete-user-dialog');
+			if (dlg && !dlg.classList.contains('hidden')) {
+				ev.preventDefault();
+				closeDeleteUserDialog();
+			}
+		});
+
+		function deleteOneUser(userId, reason) {
+			var csrfToken = getUsersCsrfToken();
+			var dlg = document.getElementById('delete-user-dialog');
+			var fallback = dlg.dataset.i18nFailedGeneric || 'Failed to delete user';
+			return fetch(usersBasePath + '/api/v1/users/' + userId + '/account/permanent', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+				body: JSON.stringify({ reason: reason })
+			}).then(function(resp) {
+				if (!resp.ok) {
+					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || fallback); });
+				}
+			});
+		}
+
+		function submitDeleteUserDialog() {
+			var dlg = document.getElementById('delete-user-dialog');
+			var reason = document.getElementById('delete-user-reason').value.trim();
+			var confirmBtn = document.getElementById('delete-user-dialog-confirm');
+			confirmBtn.disabled = true;
+			if (dlg.dataset.mode === 'bulk') {
+				var checked = Array.prototype.slice.call(document.querySelectorAll('.user-bulk-checkbox:checked'));
+				var ids = checked.map(function(cb) { return cb.dataset.userId; });
+				// Sequential to keep error reporting attributable per user.
+				var chain = Promise.resolve();
+				var failures = [];
+				ids.forEach(function(id, i) {
+					chain = chain.then(function() {
+						return deleteOneUser(id, reason).catch(function(err) {
+							failures.push(checked[i].dataset.displayName + ': ' + err.message);
+						});
+					});
+				});
+				chain.then(function() {
+					closeDeleteUserDialog();
+					confirmBtn.disabled = false;
+					if (failures.length === 0) {
+						showSuccessToast(deleteUserDialogTpl(String(ids.length), pluralKey('i18nSuccessBulk', ids.length)));
+					} else {
+						var tmpl = dlg.dataset.i18nFailedSome || 'Some deletions failed: {details}';
+						showToast(tmpl.replace('{details}', failures.join('; ')));
+					}
+					reloadUsersTable();
+				});
+			} else {
+				deleteOneUser(dlg.dataset.userId, reason).then(function() {
+					closeDeleteUserDialog();
+					confirmBtn.disabled = false;
+					showSuccessToast(dlg.dataset.i18nSuccessSingle || 'User deleted');
+					reloadUsersTable();
+				}).catch(function(err) {
+					confirmBtn.disabled = false;
+					showToast(err.message || dlg.dataset.i18nFailedGeneric || 'Failed to delete user');
+				});
+			}
+		}
 	</script>
 }
 
 // UserTableRowFragment is an exported wrapper around userTableRow for use by
 // the HTMX-driven user list endpoint (GET /api/v1/users with HX-Request).
-templ UserTableRowFragment(u auth.User) {
-	@userTableRow(u)
+// callerID identifies the signed-in admin so the per-row Delete control can
+// disable itself when the row IS the caller.
+templ UserTableRowFragment(u auth.User, callerID string) {
+	@userTableRow(u, callerID)
 }
 
 // InviteRowFragment is an exported wrapper around inviteRow for use by

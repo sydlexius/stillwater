@@ -2291,6 +2291,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /users/{id}/account/permanent:
+    delete:
+      tags: [Auth]
+      summary: Permanently delete a user account
+      operationId: deleteUserAccount
+      description: |
+        Permanently removes a user account and records the deletion in the
+        audit log. Distinct from `DELETE /api/v1/users/{id}` (deactivation,
+        currently undocumented), which only flips `is_active` to 0; this
+        endpoint actually wipes the row. Admin-only. The protected bootstrap
+        administrator and the signed-in admin's own account cannot be
+        deleted from this surface (use Account Settings for self-account
+        actions). The last active administrator cannot be deleted.
+
+        The 4-segment path shape sidesteps a `net/http` ServeMux conflict
+        between a hypothetical `/users/{id}/account` and the pre-existing
+        `/users/invites/{id}`; both would otherwise match `/users/invites/account`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 200
+                  description: Optional free-text reason stored verbatim in audit_log.detail.
+      responses:
+        "204":
+          description: User permanently deleted
+        "400":
+          description: Malformed JSON body or reason exceeds 200 runes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden (administrator role required, or self-delete attempted from the admin users panel)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Protected bootstrap admin or last active administrator cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists:
     get:
       tags: [Artists]

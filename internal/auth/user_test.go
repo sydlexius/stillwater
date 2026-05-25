@@ -592,6 +592,359 @@ func TestDBTrigger_PreventDeactivateProtectedUser(t *testing.T) {
 	}
 }
 
+func TestDBTrigger_PreventDeleteProtectedUser(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	// Bypass the service layer to prove the floor-level DB trigger
+	// (migration 012) blocks raw DELETE of the bootstrap admin.
+	_, err := svc.db.ExecContext(ctx, `DELETE FROM users WHERE is_protected = 1`)
+	if err == nil {
+		t.Fatal("expected DB trigger to reject DELETE on protected user, got nil error")
+	}
+	if !strings.Contains(err.Error(), "cannot delete a protected user") {
+		t.Errorf("unexpected trigger error: %v", err)
+	}
+}
+
+func TestDeleteUser_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	actor := lookupBootstrapAdminID(t, svc)
+
+	target, err := svc.CreateLocalUser(ctx, "op1", "pass1", "Op One", "operator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
+	// Establish a session for the target so we can prove the FK CASCADE
+	// from sessions to users wipes it on delete (the DeleteUser flow
+	// doesn't explicitly delete sessions; it relies on the schema FK).
+	sessTok, err := svc.Login(ctx, "op1", "pass1")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	if err := svc.DeleteUser(ctx, actor, target.ID, "left team"); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+
+	if _, err := svc.GetUserByID(ctx, target.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("expected sql.ErrNoRows after delete, got %v", err)
+	}
+	if _, err := svc.ValidateSession(ctx, sessTok); err == nil {
+		t.Error("expected target's session to be invalidated after delete")
+	}
+
+	// Audit row exists with the typed action and authoritative actor/target.
+	var (
+		action, detail, dbActor, dbTarget string
+	)
+	row := svc.db.QueryRowContext(ctx, `
+		SELECT action, detail, COALESCE(actor_user_id, ''), COALESCE(target_user_id, '')
+		FROM audit_log WHERE action = 'user.delete'
+	`)
+	if err := row.Scan(&action, &detail, &dbActor, &dbTarget); err != nil {
+		t.Fatalf("scanning audit row: %v", err)
+	}
+	if dbActor != actor {
+		t.Errorf("audit actor_user_id = %q, want %q", dbActor, actor)
+	}
+	if dbTarget != target.ID {
+		t.Errorf("audit target_user_id = %q, want %q", dbTarget, target.ID)
+	}
+	if !strings.Contains(detail, "left team") {
+		t.Errorf("audit detail = %q, want it to contain reason text", detail)
+	}
+}
+
+func TestDeleteUser_PreventsSelfDelete(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	actor := lookupBootstrapAdminID(t, svc)
+
+	err := svc.DeleteUser(ctx, actor, actor, "")
+	if !errors.Is(err, ErrSelfDelete) {
+		t.Errorf("DeleteUser self = %v, want ErrSelfDelete", err)
+	}
+}
+
+func TestDeleteUser_PreventsProtected(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	bootstrap := lookupBootstrapAdminID(t, svc)
+
+	// Second admin so the last-admin guard doesn't intercede; the service
+	// must refuse on protected-user grounds first.
+	other, err := svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser admin2: %v", err)
+	}
+
+	err = svc.DeleteUser(ctx, other.ID, bootstrap, "")
+	if !errors.Is(err, ErrProtectedUser) {
+		t.Errorf("DeleteUser protected = %v, want ErrProtectedUser", err)
+	}
+}
+
+func TestDeleteUser_PreventsLastAdmin(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Create two non-bootstrap admins (skip Setup so neither is protected).
+	a1, err := svc.CreateLocalUser(ctx, "admin1", "pass1", "Admin One", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser admin1: %v", err)
+	}
+	a2, err := svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser admin2: %v", err)
+	}
+
+	// Deleting one of two active admins must succeed.
+	if err := svc.DeleteUser(ctx, a1.ID, a2.ID, "leaving"); err != nil {
+		t.Fatalf("first DeleteUser: %v", err)
+	}
+
+	// Now a1 is the sole active admin; deleting a1 must trip the guard.
+	// Use a1 as both actor and target by inserting a third (non-admin)
+	// caller -- self-delete would otherwise trip first.
+	op, err := svc.CreateLocalUser(ctx, "op1", "pass1", "Op", "operator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser op1: %v", err)
+	}
+	err = svc.DeleteUser(ctx, op.ID, a1.ID, "")
+	if !errors.Is(err, ErrLastAdmin) {
+		t.Errorf("DeleteUser last admin = %v, want ErrLastAdmin", err)
+	}
+}
+
+func TestDeleteUser_DeactivatedAdminBypassesLastAdminGuard(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Two admins -- deactivate one so it is no longer active.
+	a1, err := svc.CreateLocalUser(ctx, "admin1", "pass1", "Admin One", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser admin1: %v", err)
+	}
+	a2, err := svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser admin2: %v", err)
+	}
+	if err := svc.DeactivateUser(ctx, a2.ID); err != nil {
+		t.Fatalf("DeactivateUser a2: %v", err)
+	}
+
+	// Deleting the deactivated admin cannot drop the active-admin count
+	// below 1, so the last-admin guard must let it through.
+	if err := svc.DeleteUser(ctx, a1.ID, a2.ID, "cleanup"); err != nil {
+		t.Errorf("DeleteUser inactive admin: unexpected %v", err)
+	}
+}
+
+func TestLastLoginWrittenOnSessionCreate(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	adminID := lookupBootstrapAdminID(t, svc)
+
+	before, err := svc.GetUserByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("GetUserByID before: %v", err)
+	}
+	if before.LastLogin != nil {
+		t.Errorf("expected LastLogin == nil before any session, got %v", *before.LastLogin)
+	}
+
+	if _, err := svc.Login(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	after, err := svc.GetUserByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("GetUserByID after: %v", err)
+	}
+	if after.LastLogin == nil || *after.LastLogin == "" {
+		t.Error("expected LastLogin to be populated after Login")
+	}
+}
+
+func TestListInactiveUsers_NeverLoggedIn(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	// Trigger a login so admin has a LastLogin stamp.
+	if _, err := svc.Login(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	if _, err := svc.CreateLocalUser(ctx, "neverloggedin", "pass1", "Never", "operator", ""); err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
+	// thresholdDays <= 0 returns ONLY never-logged-in accounts.
+	inactive, err := svc.ListInactiveUsers(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListInactiveUsers: %v", err)
+	}
+	if len(inactive) != 1 || inactive[0].Username != "neverloggedin" {
+		t.Errorf("expected only never-logged-in user, got %+v", inactive)
+	}
+}
+
+func TestListInactiveUsers_StaleLogin(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if _, err := svc.Login(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	adminID := lookupBootstrapAdminID(t, svc)
+
+	// Backdate admin's last_login so it falls outside the threshold window.
+	old := "2020-01-01T00:00:00Z"
+	if _, err := svc.db.ExecContext(ctx, `UPDATE users SET last_login = ? WHERE id = ?`, old, adminID); err != nil {
+		t.Fatalf("backdating last_login: %v", err)
+	}
+
+	inactive, err := svc.ListInactiveUsers(ctx, 30)
+	if err != nil {
+		t.Fatalf("ListInactiveUsers: %v", err)
+	}
+	// admin should be stale and therefore reported; nobody else exists.
+	if len(inactive) != 1 || inactive[0].ID != adminID {
+		t.Errorf("expected admin to be reported as stale, got %+v", inactive)
+	}
+}
+
+func TestDeleteUser_NotFound(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	actor := lookupBootstrapAdminID(t, svc)
+
+	err := svc.DeleteUser(ctx, actor, "no-such-user-id", "")
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("DeleteUser unknown target = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestDeleteUser_RequiresActorAndTargetIDs(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if err := svc.DeleteUser(ctx, "", "x", ""); err == nil {
+		t.Fatal("expected error when actor id is empty")
+	} else if !strings.Contains(strings.ToLower(err.Error()), "actor") {
+		t.Errorf("expected actor-id validation error, got %v", err)
+	}
+	if err := svc.DeleteUser(ctx, "x", "", ""); err == nil {
+		t.Fatal("expected error when target id is empty")
+	} else if !strings.Contains(strings.ToLower(err.Error()), "target") {
+		t.Errorf("expected target-id validation error, got %v", err)
+	}
+}
+
+func TestDeleteUser_ReasonOmittedWhenBlank(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Setup(ctx, "admin", "password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	actor := lookupBootstrapAdminID(t, svc)
+	target, err := svc.CreateLocalUser(ctx, "op1", "pass1", "Op", "operator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
+	if err := svc.DeleteUser(ctx, actor, target.ID, ""); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+
+	var detail string
+	if err := svc.db.QueryRowContext(ctx, `
+		SELECT detail FROM audit_log WHERE action = 'user.delete'
+	`).Scan(&detail); err != nil {
+		t.Fatalf("scanning audit row: %v", err)
+	}
+	if detail != "permanently deleted: op1" {
+		t.Errorf("expected blank-reason audit detail to be 'permanently deleted: op1', got %q", detail)
+	}
+}
+
+func TestListInactiveUsers_NoUsers(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	users, err := svc.ListInactiveUsers(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListInactiveUsers: %v", err)
+	}
+	if len(users) != 0 {
+		t.Errorf("expected zero inactive users on empty DB, got %d", len(users))
+	}
+}
+
+// lookupBootstrapAdminID returns the Setup-created admin's user ID,
+// failing the test on any miss so callers can keep one-line assertions.
+func lookupBootstrapAdminID(t *testing.T, svc *Service) string {
+	t.Helper()
+	users, err := svc.ListUsers(context.Background())
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	for _, u := range users {
+		if u.Username == "admin" {
+			return u.ID
+		}
+	}
+	t.Fatal(`user "admin" not found`)
+	return ""
+}
+
 func TestDBTrigger_PreventRoleChangeProtectedUser(t *testing.T) {
 	t.Parallel()
 	svc := setupTestService(t)
