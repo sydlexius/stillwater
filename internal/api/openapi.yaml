@@ -2328,6 +2328,12 @@ paths:
       responses:
         "204":
           description: User permanently deleted
+        "400":
+          description: Malformed JSON body or reason exceeds 200 runes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "403":
           description: Forbidden (administrator role required, or self-delete attempted from the admin users panel)
           content:

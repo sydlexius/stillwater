@@ -288,7 +288,7 @@ templ settingsUsersTab(data UsersTabData) {
 					</label>
 					@components.ContextHelp("help-inactive-only", t(ctx, "settings.users.inactive_only_label"), t(ctx, "settings.users.inactive_only_help"), "settings-users-users-inactive-only-label")
 				</div>
-				<div id="users-bulk-bar" class="hidden flex items-center gap-2">
+				<div id="users-bulk-bar" class="hidden items-center gap-2">
 					<span id="users-bulk-count" class="text-xs text-gray-500 dark:text-gray-400" role="status" aria-live="polite" aria-atomic="true"></span>
 					<button
 						type="button"
@@ -702,7 +702,13 @@ templ settingsUsersScript() {
 			document.querySelectorAll('.users-bulk-col').forEach(function(el) {
 				el.classList.toggle('hidden', !on);
 			});
-			document.getElementById('users-bulk-bar').classList.toggle('hidden', !on);
+			// Toggle both classes in lockstep: `hidden` (display:none) and
+			// `flex` (display:flex) on the same element rely on cascade
+			// order, which makes the static class list brittle. Owning both
+			// states from JS removes the ambiguity.
+			var bulkBar = document.getElementById('users-bulk-bar');
+			bulkBar.classList.toggle('hidden', !on);
+			bulkBar.classList.toggle('flex', on);
 			document.getElementById('users-bulk-select-all').checked = false;
 			updateBulkDeleteCount();
 			htmx.trigger(body, 'load');
