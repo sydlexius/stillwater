@@ -860,7 +860,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			@settingsTabBar(data.ActiveTab, assets.BasePath)
 			<!-- General tab -->
 			<div
-				data-tab-panel="general"
+				data-tab-panel={ string(TabGeneral) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabGeneral),
@@ -1246,7 +1246,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Providers tab -->
 			<div
-				data-tab-panel="providers"
+				data-tab-panel={ string(TabProviders) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabProviders),
@@ -1572,7 +1572,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Connections tab -->
 			<div
-				data-tab-panel="connections"
+				data-tab-panel={ string(TabConnections) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabConnections),
@@ -1603,7 +1603,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Libraries tab -->
 			<div
-				data-tab-panel="libraries"
+				data-tab-panel={ string(TabLibraries) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabLibraries),
@@ -1703,7 +1703,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Automation tab -->
 			<div
-				data-tab-panel="automation"
+				data-tab-panel={ string(TabAutomation) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabAutomation),
@@ -1994,7 +1994,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Rules tab -->
 			<div
-				data-tab-panel="rules"
+				data-tab-panel={ string(TabRules) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabRules),
@@ -2153,7 +2153,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Users tab -->
 			<div
-				data-tab-panel="users"
+				data-tab-panel={ string(TabUsers) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabUsers),
@@ -2163,7 +2163,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Auth Providers tab -->
 			<div
-				data-tab-panel="auth_providers"
+				data-tab-panel={ string(TabAuthProviders) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabAuthProviders),
@@ -2173,7 +2173,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Maintenance tab -->
 			<div
-				data-tab-panel="maintenance"
+				data-tab-panel={ string(TabMaintenance) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabMaintenance),
@@ -2453,7 +2453,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Logs tab -->
 			<div
-				data-tab-panel="logs"
+				data-tab-panel={ string(TabLogs) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabLogs),
@@ -2743,7 +2743,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<!-- Updates tab -->
 			<div
-				data-tab-panel="updates"
+				data-tab-panel={ string(TabUpdates) }
 				class={
 					"space-y-6",
 					templ.KV("hidden", data.ActiveTab != TabUpdates),

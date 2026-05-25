@@ -147,6 +147,73 @@ func TestScanPanels_Dedupe(t *testing.T) {
 	}
 }
 
+// TestScanPanels_TypedTabConstants verifies that scanPanels accepts the
+// typed-constant form of the panel attribute (data-tab-panel={ string(TabX) })
+// in addition to the string-literal form. The trunk also declares the matching
+// Tab const block so the scanner can resolve the suffix back to the panel ID.
+// Mixing forms in the same file is also exercised to confirm dedupe holds
+// across forms.
+func TestScanPanels_TypedTabConstants(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	body := `
+		const (
+			TabGeneral       SettingsTabID = "general"
+			TabProviders     SettingsTabID = "providers"
+			TabAuthProviders SettingsTabID = "auth_providers"
+		)
+		<div data-tab-panel={ string(TabGeneral) }>
+			<span>{ t(ctx, "settings.platform_profile.title") }</span>
+		</div>
+		<div data-tab-panel={ string(TabProviders) }>
+			<span>{ t(ctx, "settings.provider_keys.title") }</span>
+		</div>
+		<div data-tab-panel={ string(TabAuthProviders) }>
+			<span>{ t(ctx, "settings.auth.title") }</span>
+		</div>
+		<script>
+			var panel = document.querySelector('[data-tab-panel="general"]');
+		</script>
+	`
+	if err := os.WriteFile(trunk, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	panels, err := scanPanels([]string{trunk}, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(panels) != 3 {
+		t.Fatalf("scanPanels() returned %d panels, want 3: %+v", len(panels), panels)
+	}
+	wantIDs := []string{"general", "providers", "auth_providers"}
+	for i, id := range wantIDs {
+		if panels[i].ID != id {
+			t.Errorf("panels[%d].ID = %q, want %q", i, panels[i].ID, id)
+		}
+	}
+}
+
+// TestScanPanels_TypedUnknownConst verifies that a typed panel referencing a
+// Tab const that is not declared in the trunk fails loudly rather than silently
+// dropping the panel.
+func TestScanPanels_TypedUnknownConst(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	body := `
+		const (
+			TabGeneral SettingsTabID = "general"
+		)
+		<div data-tab-panel={ string(TabGeneral) }></div>
+		<div data-tab-panel={ string(TabUnknown) }></div>
+	`
+	if err := os.WriteFile(trunk, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scanPanels([]string{trunk}, map[string]string{}); err == nil {
+		t.Fatal("scanPanels() succeeded with an unknown Tab const; want error")
+	}
+}
+
 // TestScanPanels_SubTemplateAttribution verifies that keys in a sub-template
 // file (e.g. settings_users.templ) are attributed to the panel named in the
 // subTemplateOwner map.
