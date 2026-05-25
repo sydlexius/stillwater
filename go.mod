@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/quic-go/quic-go v0.59.1
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/image v0.41.0
 	golang.org/x/mod v0.36.0
 	golang.org/x/net v0.55.0
