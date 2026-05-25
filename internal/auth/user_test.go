@@ -874,10 +874,14 @@ func TestDeleteUser_RequiresActorAndTargetIDs(t *testing.T) {
 	ctx := context.Background()
 
 	if err := svc.DeleteUser(ctx, "", "x", ""); err == nil {
-		t.Error("expected error when actor id is empty")
+		t.Fatal("expected error when actor id is empty")
+	} else if !strings.Contains(strings.ToLower(err.Error()), "actor") {
+		t.Errorf("expected actor-id validation error, got %v", err)
 	}
 	if err := svc.DeleteUser(ctx, "x", "", ""); err == nil {
-		t.Error("expected error when target id is empty")
+		t.Fatal("expected error when target id is empty")
+	} else if !strings.Contains(strings.ToLower(err.Error()), "target") {
+		t.Errorf("expected target-id validation error, got %v", err)
 	}
 }
 

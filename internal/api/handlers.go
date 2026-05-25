@@ -990,34 +990,70 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
 }
 
-// rollbackFederatedSetupUser wipes a half-created federated bootstrap admin
-// after a Setup-time settings write fails. Setup creates the user with
-// is_protected=1, so the prevent_delete_protected_user trigger
-// (migration 012) would block a bare DELETE; clear that flag first and
-// then issue the DELETE. Best-effort: failures only log because the
+// rollbackSetupUser runs the clear-protected + DELETE pair atomically on a
+// short-lived cleanup context, so a client disconnect cannot strand a
+// half-rolled-back user. The bootstrap admin is created with
+// is_protected=1 and the prevent_delete_protected_user trigger
+// (migration 012) blocks a bare DELETE; the UPDATE clears that flag in
+// the same transaction. Best-effort: failures only log because the
 // caller already has an actionable error to report to the user.
-func (r *Router) rollbackFederatedSetupUser(ctx context.Context, authMethod, providerID string) {
-	if _, clrErr := r.db.ExecContext(ctx, `UPDATE users SET is_protected = 0 WHERE auth_provider = ? AND provider_id = ?`, authMethod, providerID); clrErr != nil {
+func (r *Router) rollbackSetupUser(label, clearSQL, deleteSQL string, args ...any) {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(cleanupCtx, nil)
+	if err != nil {
+		r.logger.Error("rollback begin failed", "scope", label, "error", err)
+		return
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+				r.logger.Error("rollback tx rollback failed", "scope", label, "error", rbErr)
+			}
+		}
+	}()
+
+	if _, err := tx.ExecContext(cleanupCtx, clearSQL, args...); err != nil {
 		r.logger.Error("rollback clear-protected failed; DELETE will be blocked by trigger",
-			"auth_method", authMethod, "provider_id", providerID, "error", clrErr)
+			"scope", label, "error", err)
+		return
 	}
-	if _, delErr := r.db.ExecContext(ctx, `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, providerID); delErr != nil {
+	if _, err := tx.ExecContext(cleanupCtx, deleteSQL, args...); err != nil {
 		r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
-			"auth_method", authMethod, "provider_id", providerID, "error", delErr)
+			"scope", label, "error", err)
+		return
 	}
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("rollback commit failed; setup retry may hit duplicate-user state",
+			"scope", label, "error", err)
+		return
+	}
+	committed = true
+}
+
+// rollbackFederatedSetupUser wipes a half-created federated bootstrap admin
+// after a Setup-time settings write fails. See rollbackSetupUser for the
+// transactional contract.
+func (r *Router) rollbackFederatedSetupUser(_ context.Context, authMethod, providerID string) {
+	r.rollbackSetupUser(
+		fmt.Sprintf("federated[%s/%s]", authMethod, providerID),
+		`UPDATE users SET is_protected = 0 WHERE auth_provider = ? AND provider_id = ?`,
+		`DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`,
+		authMethod, providerID,
+	)
 }
 
 // rollbackLocalSetupUserByID mirrors rollbackFederatedSetupUser for the
 // local-setup path, which looks the user up by primary key.
-func (r *Router) rollbackLocalSetupUserByID(ctx context.Context, userID string) {
-	if _, clrErr := r.db.ExecContext(ctx, `UPDATE users SET is_protected = 0 WHERE id = ?`, userID); clrErr != nil {
-		r.logger.Error("rollback clear-protected failed; DELETE will be blocked by trigger",
-			"user_id", userID, "error", clrErr)
-	}
-	if _, delErr := r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID); delErr != nil {
-		r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
-			"user_id", userID, "error", delErr)
-	}
+func (r *Router) rollbackLocalSetupUserByID(_ context.Context, userID string) {
+	r.rollbackSetupUser(
+		fmt.Sprintf("local[id=%s]", userID),
+		`UPDATE users SET is_protected = 0 WHERE id = ?`,
+		`DELETE FROM users WHERE id = ?`,
+		userID,
+	)
 }
 
 // handleSetupWithIdentity completes the setup flow when the provider registry

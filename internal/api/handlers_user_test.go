@@ -280,6 +280,34 @@ func TestHandleDeleteUser_RejectsOverlongReason(t *testing.T) {
 	}
 }
 
+// TestHandleDeleteUser_RejectsMalformedBody guards the decode-error path:
+// a non-empty body that fails JSON parsing must be rejected with 400 so a
+// malformed request cannot fall through to the delete with an empty reason.
+func TestHandleDeleteUser_RejectsMalformedBody(t *testing.T) {
+	t.Parallel()
+	r, authSvc, adminID := testRouterWithAuth(t)
+
+	target, err := authSvc.CreateLocalUser(context.Background(), "op_malformed", "password123", "Op Malformed", "operator", adminID)
+	if err != nil {
+		t.Fatalf("creating target: %v", err)
+	}
+
+	body := `{"reason": "missing closing brace"`
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+target.ID+"/account/permanent", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", target.ID)
+	req = withAdminCtx(req, adminID)
+	w := httptest.NewRecorder()
+	r.handleDeleteUser(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("malformed body: status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if _, err := authSvc.GetUserByID(context.Background(), target.ID); err != nil {
+		t.Errorf("target should still exist after rejected delete, got %v", err)
+	}
+}
+
 // TestHandleDeleteUser_AcceptsBoundaryMultibyteReason locks in rune-counting.
 // A 200-rune reason of multibyte characters has 400 bytes, so a regression
 // that switched the validator to len(reason) would falsely reject it.

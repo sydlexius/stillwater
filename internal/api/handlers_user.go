@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -351,7 +352,10 @@ func (r *Router) handleDeleteUser(w http.ResponseWriter, req *http.Request) {
 		Reason string `json:"reason"`
 	}
 	if req.Body != nil && req.ContentLength != 0 {
-		_ = json.NewDecoder(req.Body).Decode(&body)
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body."})
+			return
+		}
 	}
 
 	// OpenAPI documents reason as maxLength:200 (runes, not bytes). Reject
