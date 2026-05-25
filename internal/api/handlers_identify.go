@@ -468,12 +468,23 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 	hasAlbums := len(localAlbums) > 0
 	if hasAlbums {
 		searchName := filepath.Base(a.Path)
-		results, err := r.orchestrator.SearchForLinking(ctx, searchName, []provider.ProviderName{provider.NameMusicBrainz})
-		if err != nil {
+		results, statuses, err := r.orchestrator.SearchForLinking(ctx, searchName, []provider.ProviderName{provider.NameMusicBrainz})
+		switch {
+		case err != nil:
 			r.logger.Warn("bulk-identify: Tier 2 search failed",
 				"artist", a.Name, "error", err)
 			// Fall through to Tier 3 on search failure only.
-		} else if len(results) > 0 {
+		case len(collectFailedProviderDisplayNames(statuses)) > 0:
+			// A provider returned an error (e.g. MusicBrainz outage). Treat
+			// as a search failure rather than "no matches": empty results
+			// here are not evidence of absence -- the lookup did not run.
+			// Fall through to Tier 3, which applies the same statuses
+			// check and will route to outcomeFailed instead of
+			// outcomeUnmatched.
+			r.logger.Warn("bulk-identify: Tier 2 provider search failed",
+				"artist", a.Name,
+				"failed_providers", collectFailedProviderDisplayNames(statuses))
+		case len(results) > 0:
 			scored := r.enrichAndScoreTier2(ctx, results, localAlbums)
 			tier2Result := r.evaluateTier2(ctx, a, scored)
 			// If Tier 2 ran album comparison and found no match (< 30%),
@@ -485,10 +496,19 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 
 	// Tier 3: Name-only search (only for artists without album subdirectories,
 	// or when Tier 2 search failed due to an error).
-	results, err := r.orchestrator.SearchForLinking(ctx, a.Name, []provider.ProviderName{provider.NameMusicBrainz})
+	results, statuses, err := r.orchestrator.SearchForLinking(ctx, a.Name, []provider.ProviderName{provider.NameMusicBrainz})
 	if err != nil {
 		r.logger.Warn("bulk-identify: Tier 3 search failed",
 			"artist", a.Name, "error", err)
+		return identifyResult{Outcome: outcomeFailed}
+	}
+	if failed := collectFailedProviderDisplayNames(statuses); len(failed) > 0 {
+		// Same rationale as Tier 2: provider outage is not "no match".
+		// Surface as outcomeFailed so the bulk pipeline reports the
+		// artist as something the user needs to retry, not as confirmed-
+		// unmatched (which would suppress future auto-retry attempts).
+		r.logger.Warn("bulk-identify: Tier 3 provider search failed",
+			"artist", a.Name, "failed_providers", failed)
 		return identifyResult{Outcome: outcomeFailed}
 	}
 

@@ -1131,11 +1131,44 @@ func isGroupTypeValue(v string) bool {
 	}
 }
 
+// ProviderSearchStatus reports the outcome of a single provider's call inside
+// SearchForLinking. Callers use it to distinguish "this provider returned no
+// matches" (Errored=false, results may still be empty) from "this provider
+// failed and the empty result is incomplete" (Errored=true). The disambiguation
+// UI uses the latter to surface a banner instead of the ambiguous "no matches
+// found" empty state, which was the bug behind issue #1663.
+type ProviderSearchStatus struct {
+	Provider ProviderName
+	Errored  bool
+	// ScrubbedMessage is the user-presentable, secret-redacted error text
+	// from ScrubError(err). Empty when Errored is false. Stored as a string
+	// (not error) so it can be safely threaded through templates without
+	// risking accidental %v formatting of an unscrubbed error somewhere
+	// down the line.
+	ScrubbedMessage string
+}
+
 // SearchForLinking queries only the specified providers for disambiguation.
 // Unlike Search (which queries all providers), this targets only providers
 // whose IDs need to be linked (e.g., MusicBrainz for MBID, Discogs for DiscogsID).
-func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, providers []ProviderName) ([]ArtistSearchResult, error) {
+//
+// Returns one ProviderSearchStatus per provider that was actually queried, in
+// input order. Providers that are not registered (registry.Get returned nil)
+// are skipped entirely and do NOT emit a status -- the caller asked for a
+// provider the orchestrator does not know about, and treating that as an
+// "errored" provider would confuse the UI banner with a configuration mistake.
+//
+// The function-level error stays nil even when individual providers fail; per
+// provider failures are reported via statuses[i].Errored. A non-nil error is
+// reserved for structural problems (e.g. nil registry) that prevent any
+// search from running.
+func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, providers []ProviderName) ([]ArtistSearchResult, []ProviderSearchStatus, error) {
+	if o.registry == nil {
+		return nil, nil, errors.New("provider registry not configured")
+	}
+
 	var allResults []ArtistSearchResult
+	statuses := make([]ProviderSearchStatus, 0, len(providers))
 
 	for _, provName := range providers {
 		p := o.registry.Get(provName)
@@ -1144,15 +1177,22 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 		}
 		results, err := p.SearchArtist(ctx, name)
 		if err != nil {
+			scrubbed := ScrubError(err)
 			o.logger.Warn("provider search failed",
 				slog.String("provider", string(provName)),
-				slog.String("error", ScrubError(err)))
+				slog.String("error", scrubbed))
+			statuses = append(statuses, ProviderSearchStatus{
+				Provider:        provName,
+				Errored:         true,
+				ScrubbedMessage: scrubbed,
+			})
 			continue
 		}
+		statuses = append(statuses, ProviderSearchStatus{Provider: provName})
 		allResults = append(allResults, results...)
 	}
 
-	return allResults, nil
+	return allResults, statuses, nil
 }
 
 // isImageFieldName returns true for metadata fields that represent image slots.

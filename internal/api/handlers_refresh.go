@@ -106,7 +106,7 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 		provider.NameDiscogs,
 	}
 
-	results, err := r.orchestrator.SearchForLinking(req.Context(), query, linkProviders)
+	results, statuses, err := r.orchestrator.SearchForLinking(req.Context(), query, linkProviders)
 	if err != nil {
 		r.logger.Error("search failed", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "search failed")
@@ -120,12 +120,35 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 	}
 
 	candidates := r.enrichWithAlbumComparison(req.Context(), results, localAlbums)
+	failedProviders := collectFailedProviderDisplayNames(statuses)
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.DisambiguationResults(artistID, candidates))
+		renderTempl(w, req, templates.DisambiguationResults(templates.DisambiguationResultsData{
+			ArtistID:        artistID,
+			Candidates:      candidates,
+			FailedProviders: failedProviders,
+		}))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": candidates})
+	resp := map[string]any{"results": candidates}
+	if len(failedProviders) > 0 {
+		resp["failed_providers"] = failedProviders
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// collectFailedProviderDisplayNames returns the human-readable provider names
+// (DisplayName) for any provider whose SearchForLinking status reports an
+// error. Returns nil when no providers errored so callers can use a simple
+// len() check (and the JSON path can omit the key entirely).
+func collectFailedProviderDisplayNames(statuses []provider.ProviderSearchStatus) []string {
+	var failed []string
+	for _, s := range statuses {
+		if s.Errored {
+			failed = append(failed, s.Provider.DisplayName())
+		}
+	}
+	return failed
 }
 
 // handleRefreshLink stores the selected provider ID from disambiguation,

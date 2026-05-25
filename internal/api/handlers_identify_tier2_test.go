@@ -553,7 +553,7 @@ func TestIdentifyArtist(t *testing.T) {
 		}
 	})
 
-	t.Run("tier 3 search error returns unmatched", func(t *testing.T) {
+	t.Run("tier 3 provider error returns failed", func(t *testing.T) {
 		t.Parallel()
 		r, _ := newIdentifyTestServer(t,
 			func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
@@ -561,14 +561,15 @@ func TestIdentifyArtist(t *testing.T) {
 			},
 			nil,
 		)
-		// SearchForLinking swallows per-provider errors and returns nil error
-		// with no results, so the path here ends in "no results" => unmatched.
-		// The subtest name mirrors the asserted outcome so `go test -v` output
-		// stays consistent with the orchestrator's actual behavior.
+		// Per #1663: SearchForLinking now reports per-provider failure via
+		// ProviderSearchStatus, and identifyArtist Tier 3 routes a non-empty
+		// failed-provider set to outcomeFailed. The prior assertion
+		// (outcomeUnmatched) encoded the silent-swallow bug as expected
+		// behavior; flipping it here is part of #1663's contract.
 		a := &artist.Artist{Name: "Err"}
 		got := r.identifyArtist(context.Background(), a, nil)
-		if got.Outcome != outcomeUnmatched {
-			t.Errorf("Outcome = %v, want unmatched (orchestrator swallows errors)", got.Outcome)
+		if got.Outcome != outcomeFailed {
+			t.Errorf("Outcome = %v, want failed (provider error must not be hidden as 'no match')", got.Outcome)
 		}
 	})
 

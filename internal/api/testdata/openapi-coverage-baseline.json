@@ -58,7 +58,6 @@
   "pushMetadata",
   "refreshArtist",
   "refreshLink",
-  "refreshSearch",
   "reidentifyArtist",
   "removeAlias",
   "resetConnectionScraperConfig",
