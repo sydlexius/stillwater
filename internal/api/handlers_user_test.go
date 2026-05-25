@@ -259,8 +259,9 @@ func TestHandleDeleteUser_RejectsOverlongReason(t *testing.T) {
 		t.Fatalf("creating target: %v", err)
 	}
 
-	// Build a 201-rune reason; OpenAPI declares maxLength: 200.
-	overlong := strings.Repeat("x", 201)
+	// Build a 201-rune reason that crosses the boundary with a multibyte char
+	// (two bytes), so the validator must be counting runes rather than bytes.
+	overlong := strings.Repeat("x", 200) + "é"
 	body := `{"reason":"` + overlong + `"}`
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+target.ID+"/account/permanent", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -276,6 +277,32 @@ func TestHandleDeleteUser_RejectsOverlongReason(t *testing.T) {
 	// before DeleteUser runs.
 	if _, err := authSvc.GetUserByID(context.Background(), target.ID); err != nil {
 		t.Errorf("target should still exist after rejected delete, got %v", err)
+	}
+}
+
+// TestHandleDeleteUser_AcceptsBoundaryMultibyteReason locks in rune-counting.
+// A 200-rune reason of multibyte characters has 400 bytes, so a regression
+// that switched the validator to len(reason) would falsely reject it.
+func TestHandleDeleteUser_AcceptsBoundaryMultibyteReason(t *testing.T) {
+	t.Parallel()
+	r, authSvc, adminID := testRouterWithAuth(t)
+
+	target, err := authSvc.CreateLocalUser(context.Background(), "op_multibyte", "password123", "Op Multibyte", "operator", adminID)
+	if err != nil {
+		t.Fatalf("creating target: %v", err)
+	}
+
+	reason := strings.Repeat("é", 200)
+	body := `{"reason":"` + reason + `"}`
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+target.ID+"/account/permanent", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", target.ID)
+	req = withAdminCtx(req, adminID)
+	w := httptest.NewRecorder()
+	r.handleDeleteUser(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("boundary multibyte reason: status = %d, want %d; body: %s", w.Code, http.StatusNoContent, w.Body.String())
 	}
 }
 
