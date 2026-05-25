@@ -39,9 +39,15 @@ func TestSettingsUsersScript_NoOneShotLoadTriggers(t *testing.T) {
 	// body and invites-list URLs. These positive assertions break if a
 	// refactor accidentally drops the refresh entirely (the table would
 	// stop updating without any DOM-side signal).
+	// Refresh URLs are root-relative on purpose: htmx's configRequest
+	// listener in layout.templ prepends the meta htmx-base-path to every
+	// absolute HTMX path. Concatenating usersBasePath here would double-
+	// prefix on sub-path deployments. (fetch() call sites in the same
+	// templ file legitimately keep usersBasePath because they are not
+	// intercepted by configRequest.)
 	required := []string{
 		`htmx.ajax('GET', url, { target: '#users-table-body', swap: 'innerHTML' })`,
-		`htmx.ajax('GET', usersBasePath + '/api/v1/users/invites'`,
+		`htmx.ajax('GET', '/api/v1/users/invites'`,
 	}
 	for _, pat := range required {
 		if !strings.Contains(js, pat) {

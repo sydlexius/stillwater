@@ -325,6 +325,8 @@ templ settingsUsersTab(data UsersTabData) {
 					<tbody
 						id="users-table-body"
 						data-caller-id={ data.CallerID }
+						data-i18n-toast-refresh-users={ t(ctx, "settings.users.toast_refresh_users_failed") }
+						data-i18n-toast-refresh-invites={ t(ctx, "settings.users.toast_refresh_invites_failed") }
 						hx-get="/api/v1/users"
 						hx-trigger="load"
 						hx-swap="innerHTML"
@@ -630,8 +632,23 @@ templ settingsUsersScript() {
 				resultEl.classList.remove('hidden');
 				// Refresh the invites list. See refreshUsersTable() for why
 				// htmx.ajax is required rather than re-dispatching 'load'.
-				htmx.ajax('GET', usersBasePath + '/api/v1/users/invites', { target: '#invites-list', swap: 'innerHTML' })
-					.catch(function() { showToast('Failed to refresh invite list'); });
+				// The URL must be root-relative: htmx's configRequest
+				// listener in layout.templ already prepends htmx-base-path
+				// to every absolute HTMX path, so concatenating usersBasePath
+				// here would double-prefix on sub-path deployments. (fetch()
+				// calls in this file legitimately keep usersBasePath because
+				// they are not intercepted by configRequest.)
+				// Capture the toast string at fire time, not catch time:
+				// the panel may detach during the in-flight request, after
+				// which document.getElementById returns null and there is no
+				// element to read the localized string from. The English
+				// fallback covers a (more contrived) case where the
+				// data-i18n attr is missing or stripped, since textContent
+				// would render an `undefined` dataset value as the literal
+				// string "undefined" rather than fall through to nothing.
+				var inviteToast = (document.getElementById('users-table-body') || {dataset: {}}).dataset.i18nToastRefreshInvites || 'Failed to refresh invite list';
+				htmx.ajax('GET', '/api/v1/users/invites', { target: '#invites-list', swap: 'innerHTML' })
+					.catch(function() { showToast(inviteToast); });
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to create invite');
 			});
@@ -701,15 +718,22 @@ templ settingsUsersScript() {
 		// navigated to another settings tab before an in-flight mutation
 		// resolved (the panel detaches). A .catch surfaces a refresh failure
 		// rather than leaving the table silently stale next to a "success"
-		// toast from the upstream mutation.
+		// toast from the upstream mutation. The fallback URL is root-relative
+		// so htmx's configRequest listener (layout.templ) prepends the base
+		// path exactly once.
 		function refreshUsersTable() {
 			var body = document.getElementById('users-table-body');
 			if (!body) {
 				return;
 			}
-			var url = body.getAttribute('hx-get') || (usersBasePath + '/api/v1/users');
+			var url = body.getAttribute('hx-get') || '/api/v1/users';
+			// Same closure-at-fire-time pattern as the invites refresh:
+			// the captured toast string survives panel detach during the
+			// in-flight request, and the English fallback prevents an
+			// `undefined` toast if the data-i18n attr is missing.
+			var userToast = body.dataset.i18nToastRefreshUsers || 'Failed to refresh user list';
 			htmx.ajax('GET', url, { target: '#users-table-body', swap: 'innerHTML' })
-				.catch(function() { showToast('Failed to refresh user list'); });
+				.catch(function() { showToast(userToast); });
 		}
 
 		// Reload the user list with the stale-account filter on/off and
@@ -717,7 +741,11 @@ templ settingsUsersScript() {
 		// filter so admins cannot accidentally select live-team members.
 		function reloadUsersTable() {
 			var on = document.getElementById('users-inactive-only').checked;
-			var url = usersBasePath + '/api/v1/users' + (on ? '?inactive_only=true' : '');
+			// Root-relative URL: htmx's configRequest listener prepends the
+			// base path at request time, so storing the unprefixed form on
+			// hx-get keeps refreshUsersTable()'s subsequent reads correct on
+			// sub-path deployments.
+			var url = '/api/v1/users' + (on ? '?inactive_only=true' : '');
 			var body = document.getElementById('users-table-body');
 			body.setAttribute('hx-get', url);
 			document.querySelectorAll('.users-bulk-col').forEach(function(el) {

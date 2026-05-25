@@ -1,10 +1,12 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1410,13 +1412,11 @@ func TestSubTemplateSharedHelperDedupedAcrossEntries(t *testing.T) {
 // TestSubTemplateAtCallMissingHelperWarns exercises the same-token-but-
 // undeclared branch of walkOrdered: a bare @widgetMissing() in the entry
 // body resolves to no helper in the file. The walk continues without
-// crashing and the surrounding keys are still emitted in source order;
-// a one-line warning is printed to stderr so the regen pass is human-
-// visible rather than silently dropping the intended keys. We do not
-// capture stderr in this test because the same-process gen-settings-
-// reference command relies on stderr for all its operator-facing output,
-// and intercepting it here would mask the broader runtime behavior we
-// want exercised.
+// crashing, the surrounding keys are still emitted in source order, AND
+// a one-line warning is printed to stderr naming both the source file
+// and the missing helper. Asserting the warning text (not just key
+// order) ensures a future refactor that drops the diagnostic fails the
+// test rather than degrading the regen pass into silent docs drift.
 func TestSubTemplateAtCallMissingHelperWarns(t *testing.T) {
 	dir := t.TempDir()
 	trunk := filepath.Join(dir, "settings.templ")
@@ -1438,9 +1438,37 @@ func TestSubTemplateAtCallMissingHelperWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	// Capture stderr around the scanPanels call so the warning emitted by
+	// walkOrdered can be asserted directly. Restoration of os.Stderr is
+	// defer-protected so a panic in scanPanels would not leak the pipe
+	// writer to subsequent tests in the same process. The pipe writer is
+	// closed via a sync.Once-guarded helper so the read-after-close
+	// sequence below is idempotent regardless of which path (success or
+	// deferred recovery) reaches it first.
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("pipe: %v", err)
+	}
+	var closeOnce sync.Once
+	closeWriter := func() { closeOnce.Do(func() { _ = w.Close() }) }
+	os.Stderr = w
+	defer func() {
+		closeWriter()
+		os.Stderr = origStderr
+	}()
+
+	panels, scanErr := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+
+	closeWriter()
+	capturedBytes, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read captured stderr: %v", readErr)
+	}
+	captured := string(capturedBytes)
+
+	if scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	want := []string{
 		"settings.widgets.before",
@@ -1452,6 +1480,88 @@ func TestSubTemplateAtCallMissingHelperWarns(t *testing.T) {
 	for i, k := range want {
 		if panels[0].Keys[i] != k {
 			t.Errorf("keys[%d] = %q, want %q", i, panels[0].Keys[i], k)
+		}
+	}
+	// Warning must name both the source path and the missing helper
+	// identifier; either alone is insufficient for an operator running
+	// the regen to locate the call site.
+	if !strings.Contains(captured, sub) {
+		t.Errorf("stderr missing source path %q; got: %q", sub, captured)
+	}
+	if !strings.Contains(captured, "@widgetMissing") {
+		t.Errorf("stderr missing @widgetMissing identifier; got: %q", captured)
+	}
+}
+
+// TestSubTemplateGoFunctionBetweenHelpers pins the indexTemplHelpers
+// exact-body-range fix: a plain Go function declared BETWEEN two templ
+// helpers must have its keys emitted at the plain Go declaration position,
+// not inlined inside the prior helper when the prior helper is @-expanded.
+// The earlier approximate-range implementation (body = up to next templ
+// decl) bucketed everything between two templ helpers into the prior
+// helper's range, so plain Go keys would silently swap from the top-level
+// walk into the @-expansion slot.
+func TestSubTemplateGoFunctionBetweenHelpers(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	sub := filepath.Join(dir, "settings_widgets.templ")
+
+	if err := os.WriteFile(trunk, []byte(`
+		<div data-tab-panel="widgets">
+			@settingsWidgetsTab(data.Widgets)
+		</div>
+	`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Source order, top to bottom:
+	//   1. entry @widgetHelper() inside settingsWidgetsTab body
+	//   2. widgetHelper templ (one key: helper_key)
+	//   3. plainGoFunc plain Go function (one key: plain_between_key)
+	//
+	// Expected: walk emits entry_top, helper_key (at the @call site),
+	// plain_between_key (at the textual position of plainGoFunc, AFTER
+	// the helper's declaration), entry_bottom.
+	// Buggy approximate-range would: skip the plain Go function as part
+	// of widgetHelper's range during top-level walk, then emit it inside
+	// the @widgetHelper() expansion -- producing [entry_top, helper_key,
+	// plain_between_key, entry_bottom] in the wrong textual frame, OR
+	// emit the plain key BEFORE helper_key if the @-expansion walks in
+	// declaration order. Either way the textual-source-order invariant
+	// breaks. With exact body ranges, plain_between_key lands at its own
+	// declaration position in the top-level walk.
+	if err := os.WriteFile(sub, []byte("\n"+
+		"templ settingsWidgetsTab(data WidgetsData) {\n"+
+		"\t<h3>{ t(ctx, \"settings.widgets.entry_top\") }</h3>\n"+
+		"\t@widgetHelper()\n"+
+		"\t<h4>{ t(ctx, \"settings.widgets.entry_bottom\") }</h4>\n"+
+		"}\n"+
+		"\n"+
+		"templ widgetHelper() {\n"+
+		"\t<p>{ t(ctx, \"settings.widgets.helper_key\") }</p>\n"+
+		"}\n"+
+		"\n"+
+		"func plainGoFunc(ctx context.Context) string {\n"+
+		"\treturn t(ctx, \"settings.widgets.plain_between_key\")\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"settings.widgets.entry_top",
+		"settings.widgets.helper_key",
+		"settings.widgets.entry_bottom",
+		"settings.widgets.plain_between_key",
+	}
+	if len(panels[0].Keys) != len(want) {
+		t.Fatalf("got keys=%v, want %v", panels[0].Keys, want)
+	}
+	for i, k := range want {
+		if panels[0].Keys[i] != k {
+			t.Errorf("keys[%d] = %q, want %q (full=%v)", i, panels[0].Keys[i], k, panels[0].Keys)
 		}
 	}
 }

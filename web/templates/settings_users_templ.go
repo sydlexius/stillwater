@@ -723,25 +723,51 @@ func settingsUsersTab(data UsersTabData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" hx-get=\"/api/v1/users\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" data-i18n-toast-refresh-users=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var42 string
+			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.toast_refresh_users_failed"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 328, Col: 89}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\" data-i18n-toast-refresh-invites=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.toast_refresh_invites_failed"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 329, Col: 93}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" hx-get=\"/api/v1/users\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(data.Users) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<tr><td colspan=\"7\" class=\"px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400 italic\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<tr><td colspan=\"7\" class=\"px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400 italic\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var42 string
-				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.loading"))
+				var templ_7745c5c3_Var44 string
+				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.loading"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 335, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 337, Col: 43}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</td></tr>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</td></tr>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -752,7 +778,7 @@ func settingsUsersTab(data UsersTabData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</tbody></table></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</tbody></table></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -760,20 +786,20 @@ func settingsUsersTab(data UsersTabData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</div><!-- Pending invites --> <div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><div class=\"flex items-center gap-2\"><h2 class=\"text-lg font-semibold\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div><!-- Pending invites --> <div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><div class=\"flex items-center gap-2\"><h2 class=\"text-lg font-semibold\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var43 string
-			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.pending_invites.label"))
+			var templ_7745c5c3_Var45 string
+			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.pending_invites.label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 351, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 353, Col: 87}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</h2>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</h2>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -781,38 +807,38 @@ func settingsUsersTab(data UsersTabData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</div><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var44 string
-			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.pending_invites.description"))
+			var templ_7745c5c3_Var46 string
+			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.pending_invites.description"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 355, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 357, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</p></div><div id=\"invites-list\" class=\"px-6 py-4 space-y-2\" hx-get=\"/api/v1/users/invites\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</p></div><div id=\"invites-list\" class=\"px-6 py-4 space-y-2\" hx-get=\"/api/v1/users/invites\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(data.Invites) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<p class=\"text-sm text-gray-500 dark:text-gray-400 italic\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<p class=\"text-sm text-gray-500 dark:text-gray-400 italic\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var45 string
-				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.loading_invites"))
+				var templ_7745c5c3_Var47 string
+				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.loading_invites"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 366, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 368, Col: 106}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -823,7 +849,7 @@ func settingsUsersTab(data UsersTabData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -853,282 +879,282 @@ func userTableRow(u auth.User, callerID string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var46 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var46 == nil {
-			templ_7745c5c3_Var46 = templ.NopComponent
+		templ_7745c5c3_Var48 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var48 == nil {
+			templ_7745c5c3_Var48 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<tr id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var47 string
-		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue("user-row-" + u.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 383, Col: 25}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" class=\"border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750\" data-user-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var48 string
-		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 385, Col: 21}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\" data-is-protected=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<tr id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var49 string
-		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(u.IsProtected))
+		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue("user-row-" + u.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 386, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 385, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" data-is-self=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" class=\"border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750\" data-user-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var50 string
-		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(u.ID == callerID))
+		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 387, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 387, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\"><td class=\"hidden px-4 py-3 w-8 users-bulk-col\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\" data-is-protected=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var51 string
+		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(u.IsProtected))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 388, Col: 45}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\" data-is-self=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var52 string
+		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(u.ID == callerID))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 389, Col: 43}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\"><td class=\"hidden px-4 py-3 w-8 users-bulk-col\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if !u.IsProtected && u.ID != callerID {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<input type=\"checkbox\" class=\"user-bulk-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var51 string
-			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.bulk_select_user", u.DisplayName))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 394, Col: 75}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\" data-user-id=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var52 string
-			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 395, Col: 24}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\" data-display-name=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<input type=\"checkbox\" class=\"user-bulk-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var53 string
-			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.DisplayName)
+			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.bulk_select_user", u.DisplayName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 396, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 396, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\" onchange=\"updateBulkDeleteCount()\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\" data-user-id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var54 string
+			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 397, Col: 24}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\" data-display-name=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var55 string
+			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.DisplayName)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 398, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" onchange=\"updateBulkDeleteCount()\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "</td><td class=\"px-6 py-3\"><div class=\"flex items-center gap-3\"><div class=\"h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold shrink-0\" aria-hidden=\"true\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var54 string
-		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(userAvatarInitials(u.DisplayName, u.Username))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 404, Col: 52}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var55 string
-		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(u.DisplayName)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 407, Col: 86}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</td><td class=\"px-6 py-3\"><div class=\"flex items-center gap-3\"><div class=\"h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold shrink-0\" aria-hidden=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var56 string
-		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(u.Username)
+		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(userAvatarInitials(u.DisplayName, u.Username))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 408, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 406, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</div></div></div></td><td class=\"px-4 py-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var57 = []any{roleBadgeClasses(u.Role)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var57...)
+		var templ_7745c5c3_Var57 string
+		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(u.DisplayName)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 409, Col: 86}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var58 string
-		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var57).String())
+		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(u.Username)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 410, Col: 71}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</div></div></div></td><td class=\"px-4 py-3\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var59 = []any{roleBadgeClasses(u.Role)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var59...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<span class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var60 string
+		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var59).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var58)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var59 string
-		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(roleLabel(ctx, u.Role))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 413, Col: 68}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</span></td><td class=\"px-4 py-3\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var60 = []any{authProviderBadgeClasses(u.AuthProvider)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var60...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var61 string
-		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var60).String())
+		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(roleLabel(ctx, u.Role))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 415, Col: 68}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "</span></td><td class=\"px-4 py-3\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var62 = []any{authProviderBadgeClasses(u.AuthProvider)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var62...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<span class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var63 string
+		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var62).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var62 string
-		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(authProviderLabel(u.AuthProvider))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 416, Col: 95}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</span></td><td class=\"px-4 py-3\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var63 = []any{userStatusBadgeClasses(u.IsActive)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var63...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var64 string
-		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var63).String())
+		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(authProviderLabel(u.AuthProvider))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 418, Col: 95}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</span></td><td class=\"px-4 py-3\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var65 = []any{userStatusBadgeClasses(u.IsActive)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var65...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<span class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var66 string
+		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var65).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if u.IsActive {
-			var templ_7745c5c3_Var65 string
-			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.active"))
+			var templ_7745c5c3_Var67 string
+			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.active"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 421, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 423, Col: 30}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			var templ_7745c5c3_Var66 string
-			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.inactive"))
+			var templ_7745c5c3_Var68 string
+			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.inactive"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 423, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 425, Col: 32}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "</span></td><td class=\"px-4 py-3 text-xs text-gray-600 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</span></td><td class=\"px-4 py-3 text-xs text-gray-600 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var67 string
-		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastLogin(ctx, u.LastLogin))
+		var templ_7745c5c3_Var69 string
+		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastLogin(ctx, u.LastLogin))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 428, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 430, Col: 38}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</td><td class=\"px-4 py-3 text-right\"><div class=\"flex items-center justify-end gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</td><td class=\"px-4 py-3 text-right\"><div class=\"flex items-center justify-end gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1137,239 +1163,239 @@ func userTableRow(u auth.User, callerID string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<select class=\"text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var68 string
-			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.change_role_for", u.DisplayName))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 435, Col: 75}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if u.IsProtected {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, " disabled")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, " onchange=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var69 templ.ComponentScript = templ.ComponentScript{Call: "changeUserRole(this, '" + u.ID + "')"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\"><option value=\"operator\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if u.Role == "operator" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<select class=\"text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var70 string
-			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.operator"))
+			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.change_role_for", u.DisplayName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 439, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 437, Col: 75}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "</option> <option value=\"administrator\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if u.IsProtected {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, " disabled")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, " onchange=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var71 templ.ComponentScript = templ.ComponentScript{Call: "changeUserRole(this, '" + u.ID + "')"}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71.Call)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\"><option value=\"operator\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if u.Role == "operator" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, ">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var72 string
+			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.operator"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 441, Col: 93}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</option> <option value=\"administrator\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if u.Role == "administrator" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var71 string
-			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.administrator"))
+			var templ_7745c5c3_Var73 string
+			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.administrator"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 440, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 442, Col: 108}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "</option></select> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "</option></select> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if !u.IsProtected {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "<button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var72 string
-				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.deactivate_user", u.DisplayName))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 446, Col: 76}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" data-user-id=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var73 string
-				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 447, Col: 26}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\" data-display-name=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "<button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var74 string
-				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.DisplayName)
+				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.deactivate_user", u.DisplayName))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 448, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 448, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" onclick=\"deactivateUserFromDataset(this)\">Deactivate</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" data-user-id=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var75 string
+				templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 449, Col: 26}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\" data-display-name=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var76 string
+				templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.DisplayName)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 450, Col: 40}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" onclick=\"deactivateUserFromDataset(this)\">Deactivate</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "<button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var75 string
-		templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.delete_user_aria", u.DisplayName))
+		var templ_7745c5c3_Var77 string
+		templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.delete_user_aria", u.DisplayName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 458, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 460, Col: 75}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if u.IsProtected {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, " title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, " title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var76 string
-			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_protected_tooltip"))
+			var templ_7745c5c3_Var78 string
+			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_protected_tooltip"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 460, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 462, Col: 63}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, " else")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, " else")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if u.ID == callerID {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, " title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, " title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var77 string
-			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_self_tooltip"))
+			var templ_7745c5c3_Var79 string
+			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_self_tooltip"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 462, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 464, Col: 58}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if u.IsProtected || u.ID == callerID {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, " disabled")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, " disabled")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, " data-user-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var78 string
-		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 465, Col: 24}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "\" data-display-name=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var79 string
-		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.DisplayName)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 466, Col: 38}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "\" onclick=\"openDeleteUserDialog(this.dataset.userId, this.dataset.displayName)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, " data-user-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var80 string
-		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete"))
+		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 469, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 467, Col: 24}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</button></div></td></tr>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "\" data-display-name=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var81 string
+		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.DisplayName)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 468, Col: 38}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "\" onclick=\"openDeleteUserDialog(this.dataset.userId, this.dataset.displayName)\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var82 string
+		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 471, Col: 38}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</button></div></td></tr>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1398,220 +1424,220 @@ func deleteUserDialog() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var81 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var81 == nil {
-			templ_7745c5c3_Var81 = templ.NopComponent
+		templ_7745c5c3_Var83 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var83 == nil {
+			templ_7745c5c3_Var83 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<div id=\"delete-user-dialog\" class=\"hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"delete-user-dialog-title\" data-i18n-prompt-single=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var82 string
-		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_prompt_single"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 488, Col: 73}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "\" data-i18n-prompt-bulk-one=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var83 string
-		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.ResolveAttributeValue(tn(ctx, "settings.users.bulk_delete_prompt", 1))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 489, Col: 77}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var83)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "\" data-i18n-prompt-bulk-other=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "<div id=\"delete-user-dialog\" class=\"hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"delete-user-dialog-title\" data-i18n-prompt-single=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var84 string
-		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_delete_prompt.other"))
+		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_prompt_single"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 490, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 490, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "\" data-i18n-success-single=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "\" data-i18n-prompt-bulk-one=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var85 string
-		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_success_single"))
+		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue(tn(ctx, "settings.users.bulk_delete_prompt", 1))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 491, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 491, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var85)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "\" data-i18n-success-bulk-one=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "\" data-i18n-prompt-bulk-other=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var86 string
-		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(tn(ctx, "settings.users.bulk_delete_success", 1))
+		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_delete_prompt.other"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 492, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 492, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" data-i18n-success-bulk-other=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" data-i18n-success-single=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var87 string
-		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_delete_success.other"))
+		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_success_single"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 493, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 493, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var87)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "\" data-i18n-selected-one=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "\" data-i18n-success-bulk-one=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var88 string
-		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue(tn(ctx, "settings.users.bulk_selected_count", 1))
+		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue(tn(ctx, "settings.users.bulk_delete_success", 1))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 494, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 494, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var88)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "\" data-i18n-selected-other=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "\" data-i18n-success-bulk-other=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var89 string
-		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_selected_count.other"))
+		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_delete_success.other"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 495, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 495, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "\" data-i18n-failed-some=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "\" data-i18n-selected-one=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var90 string
-		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_delete_failed_some"))
+		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(tn(ctx, "settings.users.bulk_selected_count", 1))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 496, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 496, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "\" data-i18n-failed-generic=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "\" data-i18n-selected-other=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var91 string
-		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_failed_generic"))
+		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_selected_count.other"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 497, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 497, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var91)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "\"><div class=\"w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl\"><div class=\"px-5 py-4 border-b border-gray-200 dark:border-gray-700\"><h3 id=\"delete-user-dialog-title\" class=\"text-base font-semibold text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "\" data-i18n-failed-some=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var92 string
-		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_title"))
+		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.bulk_delete_failed_some"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 502, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 498, Col: 74}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var92)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "</h3><p id=\"delete-user-dialog-body\" class=\"mt-1 text-sm text-gray-600 dark:text-gray-300\"></p><p class=\"mt-1 text-xs text-red-600 dark:text-red-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "\" data-i18n-failed-generic=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var93 string
-		templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_irreversible"))
+		templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_failed_generic"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 505, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 499, Col: 75}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var93)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "</p></div><div class=\"px-5 py-4 space-y-2\"><label for=\"delete-user-reason\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "\"><div class=\"w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl\"><div class=\"px-5 py-4 border-b border-gray-200 dark:border-gray-700\"><h3 id=\"delete-user-dialog-title\" class=\"text-base font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var94 string
-		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_reason_label"))
+		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 509, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 504, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "</label> <input id=\"delete-user-reason\" type=\"text\" maxlength=\"200\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "</h3><p id=\"delete-user-dialog-body\" class=\"mt-1 text-sm text-gray-600 dark:text-gray-300\"></p><p class=\"mt-1 text-xs text-red-600 dark:text-red-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var95 string
-		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_dialog_reason_placeholder"))
+		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_irreversible"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 515, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 507, Col: 112}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\"></div><div class=\"px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2\"><button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"closeDeleteUserDialog()\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "</p></div><div class=\"px-5 py-4 space-y-2\"><label for=\"delete-user-reason\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var96 string
-		templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_cancel"))
+		templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_reason_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 525, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 511, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "</button> <button type=\"button\" id=\"delete-user-dialog-confirm\" class=\"text-sm px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors\" onclick=\"submitDeleteUserDialog()\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "</label> <input id=\"delete-user-reason\" type=\"text\" maxlength=\"200\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var97 string
-		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_confirm"))
+		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.delete_dialog_reason_placeholder"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 533, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 517, Col: 76}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var97)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "</button></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\"></div><div class=\"px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2\"><button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"closeDeleteUserDialog()\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var98 string
+		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_cancel"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 527, Col: 52}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "</button> <button type=\"button\" id=\"delete-user-dialog-confirm\" class=\"text-sm px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors\" onclick=\"submitDeleteUserDialog()\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var99 string
+		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.delete_dialog_confirm"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 535, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</button></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1636,143 +1662,117 @@ func inviteRow(inv auth.Invite) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var98 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var98 == nil {
-			templ_7745c5c3_Var98 = templ.NopComponent
+		templ_7745c5c3_Var100 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var100 == nil {
+			templ_7745c5c3_Var100 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "<div id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var99 string
-		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.ResolveAttributeValue("invite-row-" + inv.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 542, Col: 33}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var99)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "\" class=\"flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50\"><div class=\"flex items-center gap-4\"><span class=\"font-mono text-xs text-gray-700 dark:text-gray-300\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var100 string
-		templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(inv.Code)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 544, Col: 78}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "</span><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var101 string
-		templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.role_label"))
+		templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.ResolveAttributeValue("invite-row-" + inv.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 546, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 544, Col: 33}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, " ")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var101)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var102 = []any{roleBadgeClasses(inv.Role)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var102...)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "\" class=\"flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50\"><div class=\"flex items-center gap-4\"><span class=\"font-mono text-xs text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "<span class=\"")
+		var templ_7745c5c3_Var102 string
+		templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(inv.Code)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 546, Col: 78}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "</span><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var103 string
-		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var102).String())
+		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.role_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 548, Col: 41}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var103)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var104 string
-		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(roleLabel(ctx, inv.Role))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 546, Col: 113}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, " ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "</span></div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		var templ_7745c5c3_Var104 = []any{roleBadgeClasses(inv.Role)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var104...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var105 string
-		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.expires_label"))
+		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var104).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 549, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var105)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, " <span class=\"text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var106 string
-		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(inv.ExpiresAt)
+		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(roleLabel(ctx, inv.Role))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 549, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 548, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</span></div></div><div class=\"flex items-center gap-2\"><button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</span></div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var107 string
-		templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.copy_invite_for", inv.Code))
+		templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.expires_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 556, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 551, Col: 44}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var107))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "\" data-inv-code=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, " <span class=\"text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var108 string
-		templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.ResolveAttributeValue(inv.Code)
+		templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(inv.ExpiresAt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 557, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 551, Col: 109}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var108)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "\" data-toast-success=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "</span></div></div><div class=\"flex items-center gap-2\"><button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var109 string
-		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.invite_link_copied"))
+		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.copy_invite_for", inv.Code))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 558, Col: 68}
 		}
@@ -1780,111 +1780,137 @@ func inviteRow(inv auth.Invite) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "\" data-toast-error=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "\" data-inv-code=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var110 string
-		templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.invite_link_copy_failed"))
+		templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.ResolveAttributeValue(inv.Code)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 559, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 559, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var110)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "\" onclick=\"copyInviteLinkFromDataset(this)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "\" data-toast-success=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var111 string
-		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.copy_link"))
+		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.invite_link_copied"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 562, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 560, Col: 68}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var111)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "</button> <button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" data-toast-error=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var112 string
-		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.revoke_invite", inv.Code))
+		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.invite_link_copy_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 567, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 561, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var112)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\" hx-delete=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\" onclick=\"copyInviteLinkFromDataset(this)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var113 string
-		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/users/invites/" + inv.ID)
+		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.copy_link"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 568, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 564, Col: 40}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var113)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\" hx-confirm=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "</button> <button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var114 string
-		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.revoke_confirm"))
+		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.users.revoke_invite", inv.Code))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 569, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 569, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "\" hx-target=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "\" hx-delete=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var115 string
-		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue("#invite-row-" + inv.ID)
+		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/users/invites/" + inv.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 570, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 570, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "\" hx-swap=\"outerHTML\" data-toast-revoked=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "\" hx-confirm=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var116 string
-		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.invite_revoked"))
+		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.revoke_confirm"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 572, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 571, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var116)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "\" hx-on::after-request=\"if(event.detail.successful){ showSuccessToast(this.dataset.toastRevoked); }\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "\" hx-target=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var117 string
-		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.revoke"))
+		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.ResolveAttributeValue("#invite-row-" + inv.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 575, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 572, Col: 39}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var117)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</button></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "\" hx-swap=\"outerHTML\" data-toast-revoked=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var118 string
+		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.users.invite_revoked"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 574, Col: 64}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var118)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "\" hx-on::after-request=\"if(event.detail.successful){ showSuccessToast(this.dataset.toastRevoked); }\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var119 string
+		templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.users.revoke"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 577, Col: 37}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "</button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1909,12 +1935,12 @@ func settingsUsersScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var118 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var118 == nil {
-			templ_7745c5c3_Var118 = templ.NopComponent
+		templ_7745c5c3_Var120 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var120 == nil {
+			templ_7745c5c3_Var120 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "<script>\n\t\tvar usersBasePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction getUsersCsrfToken() {\n\t\t\treturn document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t}\n\n\t\tfunction toggleMultiUser(btn) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ 'multi_user.enabled': newVal ? 'true' : 'false' })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\t// Reload to show/hide the users table and invites sections.\n\t\t\t\twindow.location.reload();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update multi-user setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction submitCreateInvite(event, form) {\n\t\t\tevent.preventDefault();\n\t\t\tvar role = form.querySelector('[name=\"role\"]').value;\n\t\t\tvar expiresIn = form.querySelector('[name=\"expires_in\"]').value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/invites', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role, expires_in: expiresIn })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to create invite'); });\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t}).then(function(invite) {\n\t\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(invite.code);\n\t\t\t\tvar resultEl = document.getElementById('invite-link-result');\n\t\t\t\tvar valueEl = document.getElementById('invite-link-value');\n\t\t\t\tvalueEl.value = link;\n\t\t\t\tresultEl.classList.remove('hidden');\n\t\t\t\t// Refresh the invites list. See refreshUsersTable() for why\n\t\t\t\t// htmx.ajax is required rather than re-dispatching 'load'.\n\t\t\t\thtmx.ajax('GET', usersBasePath + '/api/v1/users/invites', { target: '#invites-list', swap: 'innerHTML' })\n\t\t\t\t\t.catch(function() { showToast('Failed to refresh invite list'); });\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to create invite');\n\t\t\t});\n\t\t}\n\n\t\tfunction copyInviteLink(code, successMsg, errorMsg) {\n\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(code);\n\t\t\tnavigator.clipboard.writeText(link).then(function() {\n\t\t\t\tshowSuccessToast(successMsg || 'Invite link copied');\n\t\t\t}).catch(function() {\n\t\t\t\tshowToast(errorMsg || 'Failed to copy link');\n\t\t\t});\n\t\t}\n\n\t\tfunction copyInviteLinkFromDataset(el) {\n\t\t\tcopyInviteLink(el.dataset.invCode, el.dataset.toastSuccess, el.dataset.toastError);\n\t\t}\n\n\t\tfunction deactivateUserFromDataset(el) {\n\t\t\tdeactivateUser(el.dataset.userId, el.dataset.displayName);\n\t\t}\n\n\t\tfunction changeUserRole(select, userId) {\n\t\t\tvar role = select.value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'PATCH',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update role'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Role updated');\n\t\t\t\trefreshUsersTable();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update role');\n\t\t\t\t// Reload to reset the select back to the current value.\n\t\t\t\trefreshUsersTable();\n\t\t\t});\n\t\t}\n\n\t\tfunction deactivateUser(userId, displayName) {\n\t\t\tif (!confirm('Deactivate ' + displayName + '? Their sessions will be invalidated.')) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'DELETE',\n\t\t\t\theaders: { 'X-CSRF-Token': csrfToken }\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to deactivate user'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('User deactivated');\n\t\t\t\trefreshUsersTable();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to deactivate user');\n\t\t\t});\n\t\t}\n\n\t\t// Re-fetch the users table using the body's current hx-get URL.\n\t\t// htmx.ajax is required because hx-trigger=\"load\" is processed once\n\t\t// when htmx initializes the element; htmx does not install a DOM\n\t\t// listener for the load event, so manually dispatching 'load' does\n\t\t// nothing. A null-guard on body covers the case where the user\n\t\t// navigated to another settings tab before an in-flight mutation\n\t\t// resolved (the panel detaches). A .catch surfaces a refresh failure\n\t\t// rather than leaving the table silently stale next to a \"success\"\n\t\t// toast from the upstream mutation.\n\t\tfunction refreshUsersTable() {\n\t\t\tvar body = document.getElementById('users-table-body');\n\t\t\tif (!body) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar url = body.getAttribute('hx-get') || (usersBasePath + '/api/v1/users');\n\t\t\thtmx.ajax('GET', url, { target: '#users-table-body', swap: 'innerHTML' })\n\t\t\t\t.catch(function() { showToast('Failed to refresh user list'); });\n\t\t}\n\n\t\t// Reload the user list with the stale-account filter on/off and\n\t\t// reveal the bulk checkbox column. Bulk delete is gated on this\n\t\t// filter so admins cannot accidentally select live-team members.\n\t\tfunction reloadUsersTable() {\n\t\t\tvar on = document.getElementById('users-inactive-only').checked;\n\t\t\tvar url = usersBasePath + '/api/v1/users' + (on ? '?inactive_only=true' : '');\n\t\t\tvar body = document.getElementById('users-table-body');\n\t\t\tbody.setAttribute('hx-get', url);\n\t\t\tdocument.querySelectorAll('.users-bulk-col').forEach(function(el) {\n\t\t\t\tel.classList.toggle('hidden', !on);\n\t\t\t});\n\t\t\t// Toggle both classes in lockstep: `hidden` (display:none) and\n\t\t\t// `flex` (display:flex) on the same element rely on cascade\n\t\t\t// order, which makes the static class list brittle. Owning both\n\t\t\t// states from JS removes the ambiguity.\n\t\t\tvar bulkBar = document.getElementById('users-bulk-bar');\n\t\t\tbulkBar.classList.toggle('hidden', !on);\n\t\t\tbulkBar.classList.toggle('flex', on);\n\t\t\tdocument.getElementById('users-bulk-select-all').checked = false;\n\t\t\tupdateBulkDeleteCount();\n\t\t\trefreshUsersTable();\n\t\t}\n\n\t\tfunction toggleSelectAllUsers(master) {\n\t\t\tdocument.querySelectorAll('.user-bulk-checkbox').forEach(function(cb) {\n\t\t\t\tcb.checked = master.checked;\n\t\t\t});\n\t\t\tupdateBulkDeleteCount();\n\t\t}\n\n\t\tfunction updateBulkDeleteCount() {\n\t\t\tvar checked = document.querySelectorAll('.user-bulk-checkbox:checked');\n\t\t\tvar btn = document.getElementById('users-bulk-delete-btn');\n\t\t\tvar label = document.getElementById('users-bulk-count');\n\t\t\tbtn.disabled = checked.length === 0;\n\t\t\tif (checked.length === 0) {\n\t\t\t\tlabel.textContent = '';\n\t\t\t\treturn;\n\t\t\t}\n\t\t\t// Reuse the dialog's data-i18n-selected-* attributes so the count\n\t\t\t// label honors the current locale's plural form instead of\n\t\t\t// hardcoding English \"(N selected)\".\n\t\t\tlabel.textContent = deleteUserDialogTpl(\n\t\t\t\tString(checked.length),\n\t\t\t\tpluralKey('i18nSelected', checked.length)\n\t\t\t);\n\t\t}\n\n\t\t// Delete-user dialog: a single shared modal reused by both per-row\n\t\t// and bulk flows. State is held on the dialog DOM node so we don't\n\t\t// leak globals. Localized copy comes via data-i18n-* attributes on\n\t\t// the dialog element so the templ layer owns the translations.\n\t\tfunction deleteUserDialogTpl(name, key) {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\treturn (dlg.dataset[key] || '').replace('{name}', name).replace('{count}', name);\n\t\t}\n\n\t\tfunction pluralKey(base, count) {\n\t\t\treturn count === 1 ? base + 'One' : base + 'Other';\n\t\t}\n\n\t\tfunction openDeleteUserDialog(userId, displayName) {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tdlg.dataset.mode = 'single';\n\t\t\tdlg.dataset.userId = userId;\n\t\t\tdlg.dataset.displayName = displayName;\n\t\t\t// Per-row trash buttons don't have stable IDs, so we cannot round-trip\n\t\t\t// focus through dlg.dataset (string-only). Keep the live element\n\t\t\t// reference on a non-dataset property so closeDeleteUserDialog can\n\t\t\t// hand focus back to the right control regardless of ID presence.\n\t\t\tdlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')\n\t\t\t\t? document.activeElement\n\t\t\t\t: null;\n\t\t\tdocument.getElementById('delete-user-dialog-body').textContent =\n\t\t\t\tdeleteUserDialogTpl(displayName, 'i18nPromptSingle');\n\t\t\tdocument.getElementById('delete-user-reason').value = '';\n\t\t\tdlg.classList.remove('hidden');\n\t\t\tdocument.getElementById('delete-user-reason').focus();\n\t\t}\n\n\t\tfunction openBulkDeleteDialog() {\n\t\t\tvar checked = document.querySelectorAll('.user-bulk-checkbox:checked');\n\t\t\tif (checked.length === 0) return;\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tdlg.dataset.mode = 'bulk';\n\t\t\tdlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')\n\t\t\t\t? document.activeElement\n\t\t\t\t: null;\n\t\t\tdocument.getElementById('delete-user-dialog-body').textContent =\n\t\t\t\tdeleteUserDialogTpl(String(checked.length), pluralKey('i18nPromptBulk', checked.length));\n\t\t\tdocument.getElementById('delete-user-reason').value = '';\n\t\t\tdlg.classList.remove('hidden');\n\t\t\tdocument.getElementById('delete-user-reason').focus();\n\t\t}\n\n\t\tfunction closeDeleteUserDialog() {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tdlg.classList.add('hidden');\n\t\t\t// Restore focus to the control that opened the dialog so screen\n\t\t\t// readers and keyboard users do not lose their place.\n\t\t\tvar prev = dlg._previousFocusEl;\n\t\t\tif (prev && typeof prev.focus === 'function') prev.focus();\n\t\t\tdlg._previousFocusEl = null;\n\t\t}\n\n\t\t// Wire Escape-to-cancel once; the listener guards on visibility so\n\t\t// it is inert when no dialog is open.\n\t\tdocument.addEventListener('keydown', function(ev) {\n\t\t\tif (ev.key !== 'Escape') return;\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tif (dlg && !dlg.classList.contains('hidden')) {\n\t\t\t\tev.preventDefault();\n\t\t\t\tcloseDeleteUserDialog();\n\t\t\t}\n\t\t});\n\n\t\tfunction deleteOneUser(userId, reason) {\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tvar fallback = dlg.dataset.i18nFailedGeneric || 'Failed to delete user';\n\t\t\treturn fetch(usersBasePath + '/api/v1/users/' + userId + '/account/permanent', {\n\t\t\t\tmethod: 'DELETE',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ reason: reason })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || fallback); });\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction submitDeleteUserDialog() {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tvar reason = document.getElementById('delete-user-reason').value.trim();\n\t\t\tvar confirmBtn = document.getElementById('delete-user-dialog-confirm');\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tif (dlg.dataset.mode === 'bulk') {\n\t\t\t\tvar checked = Array.prototype.slice.call(document.querySelectorAll('.user-bulk-checkbox:checked'));\n\t\t\t\tvar ids = checked.map(function(cb) { return cb.dataset.userId; });\n\t\t\t\t// Sequential to keep error reporting attributable per user.\n\t\t\t\tvar chain = Promise.resolve();\n\t\t\t\tvar failures = [];\n\t\t\t\tids.forEach(function(id, i) {\n\t\t\t\t\tchain = chain.then(function() {\n\t\t\t\t\t\treturn deleteOneUser(id, reason).catch(function(err) {\n\t\t\t\t\t\t\tfailures.push(checked[i].dataset.displayName + ': ' + err.message);\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\tchain.then(function() {\n\t\t\t\t\tcloseDeleteUserDialog();\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t\tif (failures.length === 0) {\n\t\t\t\t\t\tshowSuccessToast(deleteUserDialogTpl(String(ids.length), pluralKey('i18nSuccessBulk', ids.length)));\n\t\t\t\t\t} else {\n\t\t\t\t\t\tvar tmpl = dlg.dataset.i18nFailedSome || 'Some deletions failed: {details}';\n\t\t\t\t\t\tshowToast(tmpl.replace('{details}', failures.join('; ')));\n\t\t\t\t\t}\n\t\t\t\t\treloadUsersTable();\n\t\t\t\t});\n\t\t\t} else {\n\t\t\t\tdeleteOneUser(dlg.dataset.userId, reason).then(function() {\n\t\t\t\t\tcloseDeleteUserDialog();\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t\tshowSuccessToast(dlg.dataset.i18nSuccessSingle || 'User deleted');\n\t\t\t\t\treloadUsersTable();\n\t\t\t\t}).catch(function(err) {\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t\tshowToast(err.message || dlg.dataset.i18nFailedGeneric || 'Failed to delete user');\n\t\t\t\t});\n\t\t\t}\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "<script>\n\t\tvar usersBasePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction getUsersCsrfToken() {\n\t\t\treturn document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t}\n\n\t\tfunction toggleMultiUser(btn) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ 'multi_user.enabled': newVal ? 'true' : 'false' })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\t// Reload to show/hide the users table and invites sections.\n\t\t\t\twindow.location.reload();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update multi-user setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction submitCreateInvite(event, form) {\n\t\t\tevent.preventDefault();\n\t\t\tvar role = form.querySelector('[name=\"role\"]').value;\n\t\t\tvar expiresIn = form.querySelector('[name=\"expires_in\"]').value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/invites', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role, expires_in: expiresIn })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to create invite'); });\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t}).then(function(invite) {\n\t\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(invite.code);\n\t\t\t\tvar resultEl = document.getElementById('invite-link-result');\n\t\t\t\tvar valueEl = document.getElementById('invite-link-value');\n\t\t\t\tvalueEl.value = link;\n\t\t\t\tresultEl.classList.remove('hidden');\n\t\t\t\t// Refresh the invites list. See refreshUsersTable() for why\n\t\t\t\t// htmx.ajax is required rather than re-dispatching 'load'.\n\t\t\t\t// The URL must be root-relative: htmx's configRequest\n\t\t\t\t// listener in layout.templ already prepends htmx-base-path\n\t\t\t\t// to every absolute HTMX path, so concatenating usersBasePath\n\t\t\t\t// here would double-prefix on sub-path deployments. (fetch()\n\t\t\t\t// calls in this file legitimately keep usersBasePath because\n\t\t\t\t// they are not intercepted by configRequest.)\n\t\t\t\t// Capture the toast string at fire time, not catch time:\n\t\t\t\t// the panel may detach during the in-flight request, after\n\t\t\t\t// which document.getElementById returns null and there is no\n\t\t\t\t// element to read the localized string from. The English\n\t\t\t\t// fallback covers a (more contrived) case where the\n\t\t\t\t// data-i18n attr is missing or stripped, since textContent\n\t\t\t\t// would render an `undefined` dataset value as the literal\n\t\t\t\t// string \"undefined\" rather than fall through to nothing.\n\t\t\t\tvar inviteToast = (document.getElementById('users-table-body') || {dataset: {}}).dataset.i18nToastRefreshInvites || 'Failed to refresh invite list';\n\t\t\t\thtmx.ajax('GET', '/api/v1/users/invites', { target: '#invites-list', swap: 'innerHTML' })\n\t\t\t\t\t.catch(function() { showToast(inviteToast); });\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to create invite');\n\t\t\t});\n\t\t}\n\n\t\tfunction copyInviteLink(code, successMsg, errorMsg) {\n\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(code);\n\t\t\tnavigator.clipboard.writeText(link).then(function() {\n\t\t\t\tshowSuccessToast(successMsg || 'Invite link copied');\n\t\t\t}).catch(function() {\n\t\t\t\tshowToast(errorMsg || 'Failed to copy link');\n\t\t\t});\n\t\t}\n\n\t\tfunction copyInviteLinkFromDataset(el) {\n\t\t\tcopyInviteLink(el.dataset.invCode, el.dataset.toastSuccess, el.dataset.toastError);\n\t\t}\n\n\t\tfunction deactivateUserFromDataset(el) {\n\t\t\tdeactivateUser(el.dataset.userId, el.dataset.displayName);\n\t\t}\n\n\t\tfunction changeUserRole(select, userId) {\n\t\t\tvar role = select.value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'PATCH',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update role'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Role updated');\n\t\t\t\trefreshUsersTable();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update role');\n\t\t\t\t// Reload to reset the select back to the current value.\n\t\t\t\trefreshUsersTable();\n\t\t\t});\n\t\t}\n\n\t\tfunction deactivateUser(userId, displayName) {\n\t\t\tif (!confirm('Deactivate ' + displayName + '? Their sessions will be invalidated.')) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'DELETE',\n\t\t\t\theaders: { 'X-CSRF-Token': csrfToken }\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to deactivate user'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('User deactivated');\n\t\t\t\trefreshUsersTable();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to deactivate user');\n\t\t\t});\n\t\t}\n\n\t\t// Re-fetch the users table using the body's current hx-get URL.\n\t\t// htmx.ajax is required because hx-trigger=\"load\" is processed once\n\t\t// when htmx initializes the element; htmx does not install a DOM\n\t\t// listener for the load event, so manually dispatching 'load' does\n\t\t// nothing. A null-guard on body covers the case where the user\n\t\t// navigated to another settings tab before an in-flight mutation\n\t\t// resolved (the panel detaches). A .catch surfaces a refresh failure\n\t\t// rather than leaving the table silently stale next to a \"success\"\n\t\t// toast from the upstream mutation. The fallback URL is root-relative\n\t\t// so htmx's configRequest listener (layout.templ) prepends the base\n\t\t// path exactly once.\n\t\tfunction refreshUsersTable() {\n\t\t\tvar body = document.getElementById('users-table-body');\n\t\t\tif (!body) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar url = body.getAttribute('hx-get') || '/api/v1/users';\n\t\t\t// Same closure-at-fire-time pattern as the invites refresh:\n\t\t\t// the captured toast string survives panel detach during the\n\t\t\t// in-flight request, and the English fallback prevents an\n\t\t\t// `undefined` toast if the data-i18n attr is missing.\n\t\t\tvar userToast = body.dataset.i18nToastRefreshUsers || 'Failed to refresh user list';\n\t\t\thtmx.ajax('GET', url, { target: '#users-table-body', swap: 'innerHTML' })\n\t\t\t\t.catch(function() { showToast(userToast); });\n\t\t}\n\n\t\t// Reload the user list with the stale-account filter on/off and\n\t\t// reveal the bulk checkbox column. Bulk delete is gated on this\n\t\t// filter so admins cannot accidentally select live-team members.\n\t\tfunction reloadUsersTable() {\n\t\t\tvar on = document.getElementById('users-inactive-only').checked;\n\t\t\t// Root-relative URL: htmx's configRequest listener prepends the\n\t\t\t// base path at request time, so storing the unprefixed form on\n\t\t\t// hx-get keeps refreshUsersTable()'s subsequent reads correct on\n\t\t\t// sub-path deployments.\n\t\t\tvar url = '/api/v1/users' + (on ? '?inactive_only=true' : '');\n\t\t\tvar body = document.getElementById('users-table-body');\n\t\t\tbody.setAttribute('hx-get', url);\n\t\t\tdocument.querySelectorAll('.users-bulk-col').forEach(function(el) {\n\t\t\t\tel.classList.toggle('hidden', !on);\n\t\t\t});\n\t\t\t// Toggle both classes in lockstep: `hidden` (display:none) and\n\t\t\t// `flex` (display:flex) on the same element rely on cascade\n\t\t\t// order, which makes the static class list brittle. Owning both\n\t\t\t// states from JS removes the ambiguity.\n\t\t\tvar bulkBar = document.getElementById('users-bulk-bar');\n\t\t\tbulkBar.classList.toggle('hidden', !on);\n\t\t\tbulkBar.classList.toggle('flex', on);\n\t\t\tdocument.getElementById('users-bulk-select-all').checked = false;\n\t\t\tupdateBulkDeleteCount();\n\t\t\trefreshUsersTable();\n\t\t}\n\n\t\tfunction toggleSelectAllUsers(master) {\n\t\t\tdocument.querySelectorAll('.user-bulk-checkbox').forEach(function(cb) {\n\t\t\t\tcb.checked = master.checked;\n\t\t\t});\n\t\t\tupdateBulkDeleteCount();\n\t\t}\n\n\t\tfunction updateBulkDeleteCount() {\n\t\t\tvar checked = document.querySelectorAll('.user-bulk-checkbox:checked');\n\t\t\tvar btn = document.getElementById('users-bulk-delete-btn');\n\t\t\tvar label = document.getElementById('users-bulk-count');\n\t\t\tbtn.disabled = checked.length === 0;\n\t\t\tif (checked.length === 0) {\n\t\t\t\tlabel.textContent = '';\n\t\t\t\treturn;\n\t\t\t}\n\t\t\t// Reuse the dialog's data-i18n-selected-* attributes so the count\n\t\t\t// label honors the current locale's plural form instead of\n\t\t\t// hardcoding English \"(N selected)\".\n\t\t\tlabel.textContent = deleteUserDialogTpl(\n\t\t\t\tString(checked.length),\n\t\t\t\tpluralKey('i18nSelected', checked.length)\n\t\t\t);\n\t\t}\n\n\t\t// Delete-user dialog: a single shared modal reused by both per-row\n\t\t// and bulk flows. State is held on the dialog DOM node so we don't\n\t\t// leak globals. Localized copy comes via data-i18n-* attributes on\n\t\t// the dialog element so the templ layer owns the translations.\n\t\tfunction deleteUserDialogTpl(name, key) {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\treturn (dlg.dataset[key] || '').replace('{name}', name).replace('{count}', name);\n\t\t}\n\n\t\tfunction pluralKey(base, count) {\n\t\t\treturn count === 1 ? base + 'One' : base + 'Other';\n\t\t}\n\n\t\tfunction openDeleteUserDialog(userId, displayName) {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tdlg.dataset.mode = 'single';\n\t\t\tdlg.dataset.userId = userId;\n\t\t\tdlg.dataset.displayName = displayName;\n\t\t\t// Per-row trash buttons don't have stable IDs, so we cannot round-trip\n\t\t\t// focus through dlg.dataset (string-only). Keep the live element\n\t\t\t// reference on a non-dataset property so closeDeleteUserDialog can\n\t\t\t// hand focus back to the right control regardless of ID presence.\n\t\t\tdlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')\n\t\t\t\t? document.activeElement\n\t\t\t\t: null;\n\t\t\tdocument.getElementById('delete-user-dialog-body').textContent =\n\t\t\t\tdeleteUserDialogTpl(displayName, 'i18nPromptSingle');\n\t\t\tdocument.getElementById('delete-user-reason').value = '';\n\t\t\tdlg.classList.remove('hidden');\n\t\t\tdocument.getElementById('delete-user-reason').focus();\n\t\t}\n\n\t\tfunction openBulkDeleteDialog() {\n\t\t\tvar checked = document.querySelectorAll('.user-bulk-checkbox:checked');\n\t\t\tif (checked.length === 0) return;\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tdlg.dataset.mode = 'bulk';\n\t\t\tdlg._previousFocusEl = (document.activeElement && typeof document.activeElement.focus === 'function')\n\t\t\t\t? document.activeElement\n\t\t\t\t: null;\n\t\t\tdocument.getElementById('delete-user-dialog-body').textContent =\n\t\t\t\tdeleteUserDialogTpl(String(checked.length), pluralKey('i18nPromptBulk', checked.length));\n\t\t\tdocument.getElementById('delete-user-reason').value = '';\n\t\t\tdlg.classList.remove('hidden');\n\t\t\tdocument.getElementById('delete-user-reason').focus();\n\t\t}\n\n\t\tfunction closeDeleteUserDialog() {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tdlg.classList.add('hidden');\n\t\t\t// Restore focus to the control that opened the dialog so screen\n\t\t\t// readers and keyboard users do not lose their place.\n\t\t\tvar prev = dlg._previousFocusEl;\n\t\t\tif (prev && typeof prev.focus === 'function') prev.focus();\n\t\t\tdlg._previousFocusEl = null;\n\t\t}\n\n\t\t// Wire Escape-to-cancel once; the listener guards on visibility so\n\t\t// it is inert when no dialog is open.\n\t\tdocument.addEventListener('keydown', function(ev) {\n\t\t\tif (ev.key !== 'Escape') return;\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tif (dlg && !dlg.classList.contains('hidden')) {\n\t\t\t\tev.preventDefault();\n\t\t\t\tcloseDeleteUserDialog();\n\t\t\t}\n\t\t});\n\n\t\tfunction deleteOneUser(userId, reason) {\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tvar fallback = dlg.dataset.i18nFailedGeneric || 'Failed to delete user';\n\t\t\treturn fetch(usersBasePath + '/api/v1/users/' + userId + '/account/permanent', {\n\t\t\t\tmethod: 'DELETE',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ reason: reason })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || fallback); });\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction submitDeleteUserDialog() {\n\t\t\tvar dlg = document.getElementById('delete-user-dialog');\n\t\t\tvar reason = document.getElementById('delete-user-reason').value.trim();\n\t\t\tvar confirmBtn = document.getElementById('delete-user-dialog-confirm');\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tif (dlg.dataset.mode === 'bulk') {\n\t\t\t\tvar checked = Array.prototype.slice.call(document.querySelectorAll('.user-bulk-checkbox:checked'));\n\t\t\t\tvar ids = checked.map(function(cb) { return cb.dataset.userId; });\n\t\t\t\t// Sequential to keep error reporting attributable per user.\n\t\t\t\tvar chain = Promise.resolve();\n\t\t\t\tvar failures = [];\n\t\t\t\tids.forEach(function(id, i) {\n\t\t\t\t\tchain = chain.then(function() {\n\t\t\t\t\t\treturn deleteOneUser(id, reason).catch(function(err) {\n\t\t\t\t\t\t\tfailures.push(checked[i].dataset.displayName + ': ' + err.message);\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\tchain.then(function() {\n\t\t\t\t\tcloseDeleteUserDialog();\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t\tif (failures.length === 0) {\n\t\t\t\t\t\tshowSuccessToast(deleteUserDialogTpl(String(ids.length), pluralKey('i18nSuccessBulk', ids.length)));\n\t\t\t\t\t} else {\n\t\t\t\t\t\tvar tmpl = dlg.dataset.i18nFailedSome || 'Some deletions failed: {details}';\n\t\t\t\t\t\tshowToast(tmpl.replace('{details}', failures.join('; ')));\n\t\t\t\t\t}\n\t\t\t\t\treloadUsersTable();\n\t\t\t\t});\n\t\t\t} else {\n\t\t\t\tdeleteOneUser(dlg.dataset.userId, reason).then(function() {\n\t\t\t\t\tcloseDeleteUserDialog();\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t\tshowSuccessToast(dlg.dataset.i18nSuccessSingle || 'User deleted');\n\t\t\t\t\treloadUsersTable();\n\t\t\t\t}).catch(function(err) {\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t\tshowToast(err.message || dlg.dataset.i18nFailedGeneric || 'Failed to delete user');\n\t\t\t\t});\n\t\t\t}\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1942,9 +1968,9 @@ func UserTableRowFragment(u auth.User, callerID string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var119 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var119 == nil {
-			templ_7745c5c3_Var119 = templ.NopComponent
+		templ_7745c5c3_Var121 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var121 == nil {
+			templ_7745c5c3_Var121 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		templ_7745c5c3_Err = userTableRow(u, callerID).Render(ctx, templ_7745c5c3_Buffer)
@@ -1973,9 +1999,9 @@ func InviteRowFragment(inv auth.Invite) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var120 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var120 == nil {
-			templ_7745c5c3_Var120 = templ.NopComponent
+		templ_7745c5c3_Var122 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var122 == nil {
+			templ_7745c5c3_Var122 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		templ_7745c5c3_Err = inviteRow(inv).Render(ctx, templ_7745c5c3_Buffer)

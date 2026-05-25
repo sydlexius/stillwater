@@ -82,7 +82,7 @@ Nightly builds are produced every day from the `main` branch. **They are not rec
 
 Most users do not need to download nightlies by hand. The in-app updater can track nightlies directly when you switch the channel to **Nightly** in Settings > Updates (see [Channels (native)](#channels-native)); Docker users can pull `ghcr.io/sydlexius/stillwater:nightly`. The walkthrough below is for the case where you want to install a specific nightly tag manually, on a host where the in-app updater is not used (for example, a fresh install or a re-imaged box).
 
-Each nightly is published as a GitHub Release with the tag `nightly-YYYYMMDD`. The most recent nightly is linked from the [Releases page](https://github.com/sydlexius/stillwater/releases) under the "Pre-release" badge.
+Each nightly is published as a GitHub Release with the tag `nightly-YYYYMMDD`. The most recent nightly is linked from the [Releases page](https://github.com/sydlexius/stillwater/releases) under the "Prerelease" badge.
 
 ### Native binary (manual nightly)
 

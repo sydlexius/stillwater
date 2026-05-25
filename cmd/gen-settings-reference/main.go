@@ -353,7 +353,7 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 	// to its body byte range, so panel regions can fold in the keys of
 	// in-trunk helpers they invoke via `@FUNC(...)` (e.g. settingsUpdatesTab,
 	// which renders the entire Updates tab content from outside the panel div).
-	trunkHelpers := indexTemplHelpers(trunkData)
+	trunkHelpers := indexTemplHelpers(trunkData, trunk)
 
 	panels := make([]panel, 0, len(openMatches))
 	for i, m := range openMatches {
@@ -484,23 +484,60 @@ func findPanelOpeners(trunk string, trunkData []byte) ([][]int, []string, error)
 	return openMatches, openIDs, nil
 }
 
-// indexTemplHelpers maps each `templ FUNC(...) {` name in src to the byte
-// range of its body. The body runs from the byte after the declaration's
-// match to the start of the next `^templ X(` declaration (or end-of-src for
-// the last one). The range is approximate -- it does not respect a closing
-// `}` -- but for the codegen's purpose (collecting i18n keys called inside
-// the function), inclusivity is harmless: spurious bytes after the function's
-// real `}` would be the next function's body, which is also templ source we
-// trust.
-func indexTemplHelpers(src []byte) map[string][2]int {
+// templBlockCloseRE matches the closing `}` of a templ block, which the
+// templ-generator-aware formatter always places at column 0. Inner Go
+// constructs inside the body (if/else, for, switch) close with indented
+// `}` characters and never trigger this anchor. The next-templ-declaration
+// boundary is used only as a fallback when no `^}` is found between a
+// templ opener and end-of-file (defensive against unformatted source).
+var templBlockCloseRE = regexp.MustCompile(`(?m)^\}`)
+
+// indexTemplHelpers maps each `templ FUNC(...) {` name in src to the
+// EXACT byte range of its body. The body runs from the byte after the
+// declaration's match to the byte index immediately before the closing
+// `}` that sits at column 0 (gofmt-style indentation). Earlier versions
+// of this function used "to the start of the next templ declaration" as
+// the upper bound, which silently swept any plain Go function placed
+// between two templ helpers into the prior helper's range -- those
+// keys would then disappear from the top-level walk (skipRanges) and
+// re-appear inside the helper at @-expansion time, out of source order.
+// Computing the exact body avoids that misattribution.
+//
+// Returns an empty map if templFuncRE finds no matches. Callers must
+// tolerate missing entries because `@helperName(...)` invocations of
+// cross-file or cross-package helpers are filtered upstream (the
+// dotted-namespace form does not match panelHelperCallRE) and bare
+// identifier @-calls to non-existent names are surfaced as warnings by
+// walkOrdered, not as errors here.
+//
+// srcPath is used only to label the warning emitted when a templ block's
+// closing column-0 `}` cannot be located before the next templ
+// declaration. The fallback to the approximate range mirrors the old
+// behavior, so output stays compatible -- but a silent fallback would
+// reintroduce the very class of bug the exact-body fix was meant to
+// prevent, so an operator-visible warning is preferable to silence.
+func indexTemplHelpers(src []byte, srcPath string) map[string][2]int {
 	matches := templFuncRE.FindAllSubmatchIndex(src, -1)
 	out := make(map[string][2]int, len(matches))
 	for i, m := range matches {
 		name := string(src[m[2]:m[3]])
 		start := m[1] // byte after the `templ FUNC(` opener
-		end := len(src)
+
+		// Upper bound for the search window: the start of the next templ
+		// declaration, or end-of-src for the last one. The `^}` we find
+		// within that window is the closing brace of THIS templ block.
+		searchEnd := len(src)
 		if i+1 < len(matches) {
-			end = matches[i+1][0]
+			searchEnd = matches[i+1][0]
+		}
+		end := searchEnd
+		if loc := templBlockCloseRE.FindIndex(src[start:searchEnd]); loc != nil {
+			// loc[0] is the offset of `^}` within the window; end excludes
+			// the `}` byte itself, matching the half-open `[start, end)`
+			// semantics used by callers (extractKeys, walkOrdered).
+			end = start + loc[0]
+		} else {
+			fmt.Fprintf(os.Stderr, "gen-settings-reference: %s: templ %s: no column-0 closing brace found before next templ declaration; falling back to approximate body range (key ordering for plain Go in this gap may regress)\n", srcPath, name)
 		}
 		out[name] = [2]int{start, end}
 	}
@@ -530,7 +567,7 @@ func indexTemplHelpers(src []byte) map[string][2]int {
 // in-flight rename signal. The dotted-namespace form (e.g.
 // @components.ContextHelp) is filtered upstream by panelHelperCallRE.
 func extractSubTemplateKeys(src []byte, srcPath string) []string {
-	helpers := indexTemplHelpers(src)
+	helpers := indexTemplHelpers(src, srcPath)
 
 	// Templ helpers that appear as @-call targets anywhere in the file: their
 	// declaration-site bodies are skipped during the file walk, since the
