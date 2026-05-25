@@ -131,6 +131,32 @@ func TestHandleArtistDuplicatesCount_NonAdmin(t *testing.T) {
 	}
 }
 
+// TestHandleArtistDuplicatesCount_DetectorError pins the fail-safe branch:
+// when DetectDuplicates returns an error (here forced by closing the DB
+// before the handler call) the handler must log and emit an empty 200
+// body so the sidebar simply doesn't render the Duplicates child --
+// surfacing the failure inline would clutter every sidebar refresh.
+func TestHandleArtistDuplicatesCount_DetectorError(t *testing.T) {
+	r, db := countTestRouter(t)
+	// Force the underlying DetectDuplicates call to fail with "database is
+	// closed" without disturbing the t.Cleanup-registered Close. The cache
+	// callback returns the error verbatim; the handler's warn-then-empty
+	// branch is what we want to exercise.
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	r.handleArtistDuplicatesCount(rec, adminCountReq())
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (fail-safe empty body); body=%q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "" {
+		t.Errorf("body = %q, want empty (detector error must not surface inline)", got)
+	}
+}
+
 // TestHandleArtistDuplicatesCount_CacheTTL exercises the cache by calling
 // the handler twice without invalidating between calls and verifying the
 // detector ran only once. Drives this via a synthetic countFn through the

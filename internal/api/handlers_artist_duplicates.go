@@ -326,8 +326,15 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 func (r *Router) handleArtistDuplicatesCount(w http.ResponseWriter, req *http.Request) {
 	// Admin gate: middleware.RoleFromContext is populated by wrapAuth.
 	// Mirrors the gate enforced by requireForeignAdmin on the page handler.
+	// Returns a structured JSON envelope to match the error contract of
+	// the rest of the /api/v1/ surface; the sidebar caller ignores the
+	// body but other API consumers shouldn't have to special-case
+	// text/plain just from this one endpoint.
 	if middleware.RoleFromContext(req.Context()) != "administrator" {
-		http.Error(w, "Forbidden: administrator role required", http.StatusForbidden)
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":   "forbidden",
+			"message": "administrator role required",
+		})
 		return
 	}
 

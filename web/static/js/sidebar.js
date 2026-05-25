@@ -86,6 +86,7 @@
 
   // Highlight the sidebar link that matches the current URL path.
   function highlightActiveLink(nav) {
+    var sidebarState = nav.getAttribute('data-sidebar-state') || 'full';
     var links = nav.querySelectorAll('.sw-sidebar-link[data-path]');
     // Strip base path from current pathname to get the app-relative path.
     var pathname = window.location.pathname;
@@ -139,6 +140,23 @@
       }
     } else if (matches.length === 1) {
       winner = matches[0];
+    }
+
+    // Sub-nav children (e.g. Reports > Duplicates) live inside a <ul> that
+    // CSS hides outside of full state. If a sub-nav child is the most
+    // specific match while the sidebar is in icon-only or hidden mode, the
+    // active highlight would land on an invisible element and the user
+    // would see no section selected. Promote to the parent <a> so the
+    // visible icon keeps the active style. The parent <a> sits as the
+    // immediate previous sibling of the <ul.sw-sidebar-subnav>.
+    if (winner &&
+        sidebarState !== 'full' &&
+        winner.link.classList.contains('sw-sidebar-subnav-link')) {
+      var subnav = winner.link.closest('.sw-sidebar-subnav');
+      var parentLink = subnav ? subnav.previousElementSibling : null;
+      if (parentLink && parentLink.classList.contains('sw-sidebar-link')) {
+        winner = { link: parentLink, path: parentLink.getAttribute('data-path') || '', query: null };
+      }
     }
 
     for (var k = 0; k < links.length; k++) {

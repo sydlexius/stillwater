@@ -2612,6 +2612,44 @@ paths:
                 items:
                   $ref: "#/components/schemas/DuplicateGroup"
 
+  /reports/duplicates/count:
+    get:
+      tags: [Reports]
+      summary: Sidebar count badge for the duplicates report
+      description: >-
+        HTML fragment endpoint used by the sidebar's Duplicates child link
+        (#1665). Returns an empty body when no near-duplicate groups are
+        detected OR when the detector itself fails (the handler's
+        fail-safe path logs at warn and returns 200 + empty body so the
+        sidebar simply doesn't render the child; surfacing the failure
+        inline would clutter every sidebar refresh). Clients MUST NOT
+        interpret an empty body as a definitive "zero duplicates" signal --
+        it is "no actionable nav child to render right now," whether
+        because count is zero or detection couldn't run. When at least
+        one group exists, returns a populated <a> link element with the
+        group count. Admin-only; the sidebar omits the placeholder for
+        non-admin viewers so a healthy session never makes the call. The
+        handler memoizes the detector result for five minutes so per-tab
+        sidebar polling collapses to at most one detection run per
+        window; successful (non-dry-run) merges invalidate the cache.
+      operationId: getDuplicatesCountBadge
+      responses:
+        "200":
+          description: >-
+            HTML fragment for HTMX innerHTML swap. Empty body when count
+            is zero OR when detection is unavailable/fails (fail-safe);
+            populated <a> element with badge pill when count > 0.
+          content:
+            text/html:
+              schema:
+                type: string
+        "403":
+          description: Caller is not an administrator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/duplicates:
     get:
       tags: [Artists]

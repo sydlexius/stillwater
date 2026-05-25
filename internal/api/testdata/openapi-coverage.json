@@ -546,6 +546,13 @@
     "covered": true
   },
   {
+    "operationId": "getDuplicatesCountBadge",
+    "method": "GET",
+    "path": "/reports/duplicates/count",
+    "handler": "handleArtistDuplicatesCount",
+    "covered": true
+  },
+  {
     "operationId": "getDuplicatesReport",
     "method": "GET",
     "path": "/reports/duplicates",

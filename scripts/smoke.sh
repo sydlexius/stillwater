@@ -858,6 +858,12 @@ dupes_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/duplicates") || dupes_code="000"
 assert_status "GET /api/v1/artists/duplicates" "200" "$dupes_code"
 
+# Sidebar count badge for the duplicates report (#1665). Admin-only HTML
+# fragment; we only assert the route is wired, not the body shape.
+dupes_count_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/reports/duplicates/count") || dupes_count_code="000"
+assert_status "GET /api/v1/reports/duplicates/count" "200" "$dupes_count_code"
+
 aliases_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/aliases") || aliases_code="000"
 assert_status "GET /api/v1/artists/$ARTIST_ID/aliases" "200" "$aliases_code"
