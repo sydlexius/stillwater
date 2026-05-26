@@ -34,7 +34,12 @@ Active worktrees are tracked in `memory/worktrees.md` inside `~/.claude/projects
 whatever `core.hooksPath` value its local config inherits from the shared repository config,
 which may be stale or absolute if the original install used an older pattern.
 
-After creating a worktree, run `make hooks` inside it before the first push. `make doctor`
+`make worktree` delegates the in-worktree setup to `make hooks` (chmod, unset stale
+`core.hooksPath`, set the canonical relative `.githooks` value, then verify with
+`scripts/check-hooks.sh`), so worktrees created through that target need no manual step.
+
+For worktrees created another way (a direct `git worktree add`, or one that predates the
+delegation), run `make hooks` inside the worktree before the first push. `make doctor`
 confirms the wiring without modifying anything.
 
 ## Docker UAT in worktrees
