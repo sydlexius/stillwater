@@ -603,6 +603,47 @@ func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
+// handlePopulateInFlight returns the set of populate operations currently
+// in the "running" state, in the ProgressPill event-envelope shape so the
+// JS reconnect-rehydrate path (#1641) can replay them through
+// window.swProgressPill.push without further translation.
+//
+// Per-library populate is the only multi-instance op in the system
+// (bulk-actions is a singleton; bulk-lock is a bulk-action subtype) so a
+// single aggregate endpoint covers the reconnect-rehydrate need without
+// adding {libId}-scoped status fan-out from the client.
+//
+// GET /api/v1/connections/populate/in-flight
+func (r *Router) handlePopulateInFlight(w http.ResponseWriter, _ *http.Request) {
+	type opEnvelope struct {
+		OpID      string `json:"op_id"`
+		Label     string `json:"label"`
+		Processed int    `json:"processed"`
+		Total     int    `json:"total"`
+		Status    string `json:"status"`
+	}
+	out := struct {
+		Operations []opEnvelope `json:"operations"`
+	}{Operations: []opEnvelope{}}
+
+	r.libraryOpsMu.Lock()
+	for _, op := range r.libraryOps {
+		if op == nil || op.Status != "running" || op.Operation != "populate" {
+			continue
+		}
+		out.Operations = append(out.Operations, opEnvelope{
+			OpID:      populateOpID(op.LibraryID),
+			Label:     "populate: " + op.LibraryName,
+			Processed: 0,
+			Total:     0,
+			Status:    "running",
+		})
+	}
+	r.libraryOpsMu.Unlock()
+
+	writeJSON(w, http.StatusOK, out)
+}
+
 // dedupeForImport finds an existing artist that an inbound platform item
 // (Emby / Jellyfin / Lidarr) should attach to, scanning across ALL
 // libraries. Returns:

@@ -22,6 +22,15 @@
   var maxRetryDelay = 30000; // cap at 30 seconds
   var retryTimer = null;
 
+  // wasDisconnected gates the reconnect-rehydrate path so the initial
+  // page-load `connected` event does NOT fire status fetches (the page
+  // already rendered with the latest in-flight state from server-side
+  // templates). scheduleReconnect sets it; the next connected handler
+  // consumes and clears it. Per the ProgressPill stale/reconnect design
+  // (#1641), only true reconnects trigger /status rehydrate calls so we
+  // do not double-load on every page navigation.
+  var wasDisconnected = false;
+
   // Event types that should trigger a toast notification.
   // Maps event type to toast function name.
   var toastEvents = {
@@ -52,6 +61,16 @@
     source.addEventListener("connected", function (evt) {
       // Connection established -- reset retry delay.
       retryDelay = 1000;
+      // Reconnect rehydrate (#1641): the EventSource just came back from
+      // a disconnect, so the ProgressPill UI may be showing stale state
+      // for any in-flight long-running op that ticked while we were
+      // offline. Query the status endpoints and replay the snapshots
+      // through window.swProgressPill so the pill auto-recovers without
+      // a manual page reload.
+      if (wasDisconnected) {
+        wasDisconnected = false;
+        rehydrateInflightOps();
+      }
     });
 
     // Listen for all mapped event types.
@@ -181,12 +200,101 @@
     if (retryTimer) {
       clearTimeout(retryTimer);
     }
+    // Flag this as a reconnect (not the initial connect) so the next
+    // `connected` event fires the ProgressPill rehydrate fetches.
+    // Cleared after rehydrate runs to avoid re-firing on subsequent
+    // healthy reconnect-events that never disconnected.
+    wasDisconnected = true;
     retryTimer = setTimeout(function () {
       retryTimer = null;
       connect();
     }, retryDelay);
     // Exponential backoff with cap.
     retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+  }
+
+  // rehydrateInflightOps queries the per-op status endpoints in parallel
+  // and forwards any non-idle snapshot to the ProgressPill. Called only
+  // after a true reconnect (not the initial page load) so refreshes during
+  // a healthy session do not double-fire.
+  //
+  // Bulk-actions covers run-rules / re-identify / scan / fetch-images /
+  // bulk-lock / bulk-unlock (all serialize through the bulk_action
+  // singleton). Populate covers per-library populate jobs and may return
+  // multiple in-flight snapshots.
+  //
+  // Failures are swallowed (warn-logged only): a missing status endpoint
+  // on a stripped build, an in-flight backend deploy, or a momentary 5xx
+  // must not crash the rehydrate path. The next SSE progress tick will
+  // refresh the pill on its own.
+  function rehydrateInflightOps() {
+    if (typeof window.swProgressPill !== "object" || typeof window.swProgressPill.push !== "function") {
+      return;
+    }
+    var base = bp;
+    fetchAndForward(base + "/api/v1/artists/bulk-actions/status", function (snap) {
+      // The bulk-actions handler returns {"status":"idle"} when nothing is
+      // running; forward only non-idle snapshots so the pill does not
+      // briefly render an empty placeholder. The status payload uses the
+      // BulkActionProgress.snapshot() shape ({action, status, processed,
+      // total, ...}) which differs from the ProgressPill event envelope
+      // ({op_id, label, processed, total, status, cancel_url}); translate
+      // the running case here so the pill key matches the original SSE
+      // emission (op_id="bulk_action") and a future progress tick updates
+      // the same pill rather than stacking a second one.
+      if (!snap || !snap.status || snap.status === "idle") return;
+      var status = snap.status;
+      if (status === "running") {
+        window.swProgressPill.push({
+          op_id: "bulk_action",
+          label: snap.action || "",
+          processed: snap.processed || 0,
+          total: snap.total || 0,
+          status: "running",
+          cancel_url: "/api/v1/artists/bulk-actions/cancel"
+        });
+      } else if (status === "completed" || status === "failed" || status === "canceled") {
+        window.swProgressPill.push({
+          op_id: "bulk_action",
+          label: snap.action || "",
+          processed: snap.processed || 0,
+          total: snap.total || 0,
+          status: status
+        });
+      }
+    });
+    fetchAndForward(base + "/api/v1/connections/populate/in-flight", function (resp) {
+      // The populate aggregate returns {"operations":[...]} so we can
+      // forward multiple per-library snapshots in one round trip. Each
+      // entry is the same shape publishOpProgress emits on the SSE bus.
+      if (!resp || !resp.operations || !resp.operations.length) return;
+      for (var i = 0; i < resp.operations.length; i++) {
+        var op = resp.operations[i];
+        if (op && op.op_id) {
+          window.swProgressPill.push(op);
+        }
+      }
+    });
+  }
+
+  function fetchAndForward(url, onSnapshot) {
+    fetch(url, {credentials: "same-origin", headers: {"Accept": "application/json"}}).then(function (resp) {
+      if (!resp || !resp.ok) return null;
+      return resp.json();
+    }).then(function (data) {
+      if (!data) return;
+      try {
+        onSnapshot(data);
+      } catch (e) {
+        if (window.console && console.warn) {
+          console.warn("ProgressPill rehydrate forward failed:", e);
+        }
+      }
+    }).catch(function (e) {
+      if (window.console && console.warn) {
+        console.warn("ProgressPill rehydrate fetch failed:", url, e);
+      }
+    });
   }
 
   // Disconnect cleanly when the page unloads.

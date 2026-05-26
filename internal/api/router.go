@@ -497,6 +497,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/{libId}/populate", wrapAuth(middleware.RequireAdmin(r.handlePopulateLibrary), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/{libId}/scan", wrapAuth(middleware.RequireAdmin(r.handleScanLibrary), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/libraries/{libId}/operation/status", wrapAuth(r.handleLibraryOpStatus, authMw))
+	// Aggregate populate state for the ProgressPill reconnect-rehydrate
+	// path (#1641). Returns every in-flight populate as a ProgressPill
+	// envelope so the JS client can replay them through swProgressPill.push
+	// without needing per-library status fan-out.
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/populate/in-flight", wrapAuth(r.handlePopulateInFlight, authMw))
 	// Inbound webhook routes (API token with webhook scope)
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/inbound/lidarr",
 		wrapAuth(middleware.RequireScope("webhook")(r.handleLidarrWebhook), authMw))
