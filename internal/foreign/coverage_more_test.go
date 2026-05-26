@@ -146,6 +146,109 @@ func TestScanArtist_HashFailureIsSkipped(t *testing.T) {
 	}
 }
 
+// pagingArtistLister hands back `perPage` artists per call until the
+// underlying slice is exhausted, mimicking the real artist service's
+// paging contract: returns (page, total, err) where total is the full
+// count across all pages. Used by TestScan_PaginationAdvancesPastFileSkips
+// to exercise the multi-page loop without depending on production data.
+type pagingArtistLister struct {
+	artists []artist.Artist
+	perPage int
+}
+
+func (p pagingArtistLister) List(_ context.Context, params artist.ListParams) ([]artist.Artist, int, error) {
+	start := (params.Page - 1) * p.perPage
+	if start >= len(p.artists) {
+		return nil, len(p.artists), nil
+	}
+	end := start + p.perPage
+	if end > len(p.artists) {
+		end = len(p.artists)
+	}
+	return p.artists[start:end], len(p.artists), nil
+}
+
+// TestScan_PaginationAdvancesPastFileSkips pins the round-2 fix to
+// scanner.go: pagination must be driven by per-artist progress
+// (scanned + artistSkipped) and NOT include per-file skips returned by
+// scanArtist. Before the fix, an artist on page 1 whose directory held
+// multiple candidates that all hash-failed would push the loop's
+// counter past the artist total and stop pagination before page 2 was
+// ever requested. The test forces that exact shape: page 1 holds one
+// artist with two files whose hash will fail (chmod 0), so the buggy
+// counter went from "scanned=1, skipped=2" against a total of 2 and
+// exited the loop -- never visiting the artist on page 2.
+func TestScan_PaginationAdvancesPastFileSkips(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: chmod 0 cannot deny self-read")
+	}
+	t.Parallel()
+	db := newTestDB(t)
+	markBaselinePending(t, db)
+	repo := NewRepository(db)
+
+	// Two artist directories: a1's files all fail to hash, a2 has a
+	// readable candidate that must land in the allowlist if (and only
+	// if) pagination reaches page 2.
+	a1Dir := t.TempDir()
+	mustWrite(t, filepath.Join(a1Dir, "backdrop.jpg"), []byte("h"))
+	mustWrite(t, filepath.Join(a1Dir, "fanart.jpg"), []byte("h"))
+	if err := os.Chmod(filepath.Join(a1Dir, "backdrop.jpg"), 0); err != nil {
+		t.Fatalf("chmod a1 backdrop: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(a1Dir, "fanart.jpg"), 0); err != nil {
+		t.Fatalf("chmod a1 fanart: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(filepath.Join(a1Dir, "backdrop.jpg"), 0o600)
+		_ = os.Chmod(filepath.Join(a1Dir, "fanart.jpg"), 0o600)
+	})
+	a2Dir := t.TempDir()
+	mustWrite(t, filepath.Join(a2Dir, "backdrop.jpg"), []byte("readable-content"))
+
+	if _, err := db.Exec(
+		`INSERT INTO artists (id, name, path) VALUES (?, ?, ?), (?, ?, ?)`,
+		"a1", "Skipper", a1Dir,
+		"a2", "Reader", a2Dir,
+	); err != nil {
+		t.Fatalf("insert artists: %v", err)
+	}
+
+	// perPage=1 forces a real second page round-trip; total=2 means the
+	// loop condition must hold after the first page even though a1
+	// returned sk=2 from the hash failures.
+	lister := pagingArtistLister{
+		artists: []artist.Artist{
+			{ID: "a1", Path: a1Dir},
+			{ID: "a2", Path: a2Dir},
+		},
+		perPage: 1,
+	}
+	scanner := NewScanner(repo, lister, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	if err := scanner.Scan(context.Background()); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	// a2's readable file should have been admitted to the allowlist
+	// during the baseline scan. If pagination stopped after a1, the
+	// allowlist will be empty.
+	rows, err := repo.ListAllowlist(context.Background())
+	if err != nil {
+		t.Fatalf("ListAllowlist: %v", err)
+	}
+	var sawA2 bool
+	for _, e := range rows {
+		if e.ArtistID == "a2" || e.Scope == ScopeGlobal {
+			sawA2 = true
+			break
+		}
+	}
+	if !sawA2 {
+		t.Fatalf("a2 was never scanned -- pagination stopped early. allowlist rows: %d", len(rows))
+	}
+}
+
 // TestScanArtist_NonCandidateFilesSkipped exercises the filter branch
 // inside the onDisk loop: files whose extension is not a foreign
 // candidate (e.g. .txt) must never reach the ledger or the allowlist,

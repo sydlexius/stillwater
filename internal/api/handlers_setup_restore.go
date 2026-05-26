@@ -56,7 +56,7 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	envelope, passphrase, status, msg, ok := parseRestoreInput(req)
+	envelope, passphrase, status, msg, ok := parseRestoreInput(w, req)
 	if !ok {
 		r.writeRestoreErr(w, req, status, msg)
 		return
@@ -196,8 +196,25 @@ func (r *Router) checkRestoreGates(req *http.Request) (int, string, bool) {
 // from the parsed form maps. Returns (envelope, passphrase, 0, "",
 // true) on success or (nil, "", status, msg, false) on the first
 // failure so the handler can write the matching response.
-func parseRestoreInput(req *http.Request) (*settingsio.Envelope, string, int, string, bool) {
+//
+// The body is wrapped in http.MaxBytesReader BEFORE ParseMultipartForm
+// so an attacker on this unauthenticated endpoint cannot push a
+// multi-gigabyte payload through to disk before the post-parse length
+// check fires; ParseMultipartForm(maxImportSize) only governs the
+// in-memory buffer (parts above it spill to os.TempDir() files), it is
+// NOT a hard wire-body cap. MaxBytesReader caps the wire and surfaces
+// the breach as *http.MaxBytesError, which we map to a deterministic
+// 413; the downstream LimitReader/length check on the file part stays
+// in place as belt-and-suspenders for any path that bypasses
+// ParseMultipartForm (e.g. a future client that posts raw multipart
+// without the framing the helper expects).
+func parseRestoreInput(w http.ResponseWriter, req *http.Request) (*settingsio.Envelope, string, int, string, bool) {
+	req.Body = http.MaxBytesReader(w, req.Body, maxImportSize+1)
 	if err := req.ParseMultipartForm(maxImportSize); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return nil, "", http.StatusRequestEntityTooLarge, "Backup file exceeds 10MB limit.", false
+		}
 		return nil, "", http.StatusBadRequest, "Upload too large or malformed.", false
 	}
 	passphrase := req.FormValue("passphrase")

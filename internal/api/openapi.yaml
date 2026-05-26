@@ -398,7 +398,7 @@ components:
       description: |
         Import-side wrapper for a previously exported settings file. The shape
         is intentionally permissive: the importer accepts envelope versions
-        1.0-1.3, and earlier versions do not carry the per-section counters
+        1.0-1.4, and earlier versions do not carry the per-section counters
         that current writers emit. Required fields are limited to the core
         crypto envelope (version + app_version + created_at + salt + data);
         the optional `summary` block is informational only on the import path.
@@ -407,10 +407,11 @@ components:
         version:
           type: string
           description: |
-            Envelope format version. Importer accepts `1.0`-`1.3`. Each minor
+            Envelope format version. Importer accepts `1.0`-`1.4`. Each minor
             bump adds optional fields without breaking older readers (1.1:
             rules/scraper_configs/user_preferences; 1.2: libraries/api_tokens;
-            1.3: users).
+            1.3: users; 1.4: user stable IDs and connection feature toggles
+            including pre-Stillwater config snapshot).
         app_version:
           type: string
           description: Application version that produced the export.
@@ -451,7 +452,7 @@ components:
       type: object
       description: |
         Export-side wrapper produced by the current writer (envelope version
-        1.3). Strict shape: every counter the writer emits is marked required
+        1.4). Strict shape: every counter the writer emits is marked required
         so generated clients can rely on the field's presence without
         defensive null checks. The import-side schema is the permissive
         counterpart that accepts older envelope versions.
@@ -460,10 +461,11 @@ components:
         version:
           type: string
           description: |
-            Envelope format version. Current writer emits `1.3`. Each minor
+            Envelope format version. Current writer emits `1.4`. Each minor
             bump adds optional fields without breaking older readers (1.1:
             rules/scraper_configs/user_preferences; 1.2: libraries/api_tokens;
-            1.3: users).
+            1.3: users; 1.4: user stable IDs and connection feature toggles
+            including pre-Stillwater config snapshot).
         app_version:
           type: string
           description: Application version that produced the export.

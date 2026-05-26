@@ -205,7 +205,17 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		return fmt.Errorf("listing artists: %w", err)
 	}
 
-	scanned, recorded, cleared, skipped, baselined := 0, 0, 0, 0, 0
+	// Track artist-level progress (`scanned` + `artistSkipped` = artists
+	// processed so far) separately from per-file skips (`fileSkipped`)
+	// returned by scanArtist. Pagination is driven by artist progress
+	// because `total` from the lister is an artist count; folding
+	// per-file skips into the same counter could push the sum past
+	// `total` and stop pagination before every artist had been visited.
+	// `skipped` in the per-scan log lines is the operator-visible sum
+	// (artists with no path + files we punted on) so log shape stays
+	// the same as before this fix.
+	scanned, recorded, cleared, baselined := 0, 0, 0, 0
+	artistSkipped, fileSkipped := 0, 0
 	process := func(artists []artist.Artist) {
 		for i := range artists {
 			if ctx.Err() != nil {
@@ -213,14 +223,14 @@ func (s *Scanner) Scan(ctx context.Context) error {
 			}
 			a := &artists[i]
 			if a.Path == "" {
-				skipped++
+				artistSkipped++
 				continue
 			}
 			rec, clr, sk, bl := s.scanArtist(ctx, *a, runAsBaseline)
 			scanned++
 			recorded += rec
 			cleared += clr
-			skipped += sk
+			fileSkipped += sk
 			baselined += bl
 		}
 	}
@@ -232,7 +242,7 @@ func (s *Scanner) Scan(ctx context.Context) error {
 	// without any error-level signal that the prior run did not finish.
 	var abortErr error
 	process(first)
-	for scanned+skipped < total {
+	for scanned+artistSkipped < total {
 		if cerr := ctx.Err(); cerr != nil {
 			abortErr = cerr
 			break
@@ -257,7 +267,7 @@ func (s *Scanner) Scan(ctx context.Context) error {
 			slog.Int("scanned_artists", scanned),
 			slog.Int("recorded", recorded),
 			slog.Int("cleared", cleared),
-			slog.Int("skipped", skipped),
+			slog.Int("skipped", artistSkipped+fileSkipped),
 			slog.Int("baselined", baselined),
 			slog.Bool("baseline_mode", runAsBaseline),
 			slog.Any("error", abortErr),
@@ -297,7 +307,7 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		slog.Int("scanned_artists", scanned),
 		slog.Int("recorded", recorded),
 		slog.Int("cleared", cleared),
-		slog.Int("skipped", skipped),
+		slog.Int("skipped", artistSkipped+fileSkipped),
 		slog.Int("baselined", baselined),
 		slog.Bool("baseline_mode", runAsBaseline))
 	return nil

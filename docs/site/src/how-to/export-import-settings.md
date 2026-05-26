@@ -76,7 +76,7 @@ If you're standing up a new instance and want it to come up with the source inst
 3. Pick the `.json` file and enter the passphrase.
 4. Click **Restore**.
 
-The fresh instance applies the bundle and marks onboarding as complete. The page redirects to the login screen; sign in with credentials from the source instance.
+The fresh instance applies the bundle using the same two-phase process as the Settings > Maintenance path described above (external-service sections first, then the transactional phase covering settings, users, user preferences, libraries, and API tokens), and marks onboarding as complete. The page redirects to the login screen; sign in with credentials from the source instance.
 
 This path is gated on the receiving instance being truly empty (no admin user yet, onboarding not completed). Once an admin exists, the only way to import is through Settings > Maintenance described above.
 

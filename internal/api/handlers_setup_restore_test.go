@@ -181,7 +181,12 @@ func TestRestoreOOBE_CSRFExempt(t *testing.T) {
 	// Go through the full Handler chain (which includes CSRF middleware)
 	// rather than calling the bare handler. If the route were not in the
 	// csrfExempt list, CSRF would 403 here before the handler ever ran.
-	router.Handler(context.Background()).ServeHTTP(w, req)
+	// A cancelable context shuts down any middleware goroutines Handler
+	// spawns when the test function returns, instead of leaking them
+	// past the test boundary.
+	hctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	router.Handler(hctx).ServeHTTP(w, req)
 
 	if w.Code == http.StatusForbidden {
 		t.Fatalf("CSRF middleware blocked /setup/restore (status 403); body: %s", w.Body.String())
