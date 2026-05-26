@@ -245,3 +245,30 @@ func TestNewBase_InvalidURL(t *testing.T) {
 		t.Errorf("BaseURL = %q, want empty for invalid URL", bc.BaseURL)
 	}
 }
+
+// TestStatusError_ErrorAndIsAuth pins the substring shape that the publish
+// layer's classifyPushErr depends on, plus the 401/403 IsAuth contract used
+// by per-package ErrAuth wrappers.
+func TestStatusError_ErrorAndIsAuth(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     *StatusError
+		wantSub string
+		isAuth  bool
+	}{
+		{"401", &StatusError{StatusCode: 401, Body: "denied"}, "unexpected status 401: denied", true},
+		{"403", &StatusError{StatusCode: 403, Body: "forbidden"}, "unexpected status 403", true},
+		{"500", &StatusError{StatusCode: 500, Body: "boom"}, "unexpected status 500", false},
+		{"200", &StatusError{StatusCode: 200, Body: ""}, "unexpected status 200", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.err.Error(); !strings.Contains(got, tc.wantSub) {
+				t.Errorf("Error() = %q, want substring %q", got, tc.wantSub)
+			}
+			if got := tc.err.IsAuth(); got != tc.isAuth {
+				t.Errorf("IsAuth() = %v, want %v", got, tc.isAuth)
+			}
+		})
+	}
+}
