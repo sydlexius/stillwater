@@ -72,6 +72,9 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchImages queries DuckDuckGo image search for artist images of a specific type.
 func (a *Adapter) SearchImages(ctx context.Context, artistName string, imageType provider.ImageType) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if artistName == "" || len(artistName) > maxArtistNameLen {
 		return nil, nil
 	}

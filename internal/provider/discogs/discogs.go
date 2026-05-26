@@ -53,6 +53,9 @@ func (a *Adapter) RequiresAuth() bool { return true }
 
 // SearchArtist searches Discogs for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return nil, err
@@ -112,6 +115,9 @@ func (a *Adapter) SupportsNameLookup() bool { return true }
 // GetArtist is called again with the artist name, which routes through
 // getArtistByName for a search-then-fetch flow.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if !isNumericID(id) {
 		// If the id is not numeric but also not a UUID, treat it as an
 		// artist name and fall back to name-based search.
@@ -187,6 +193,9 @@ func (a *Adapter) getArtistByName(ctx context.Context, name string) (*provider.A
 // Returns ErrNotFound for non-numeric IDs (such as MusicBrainz UUIDs) without
 // making an HTTP request.
 func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if !isNumericID(id) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: id}
 	}

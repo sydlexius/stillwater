@@ -58,6 +58,9 @@ func (a *Adapter) SupportsNameLookup() bool { return true }
 // SearchArtist searches Genius for artists matching the given name.
 // Genius search returns song hits; we extract and deduplicate primary_artist entries.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if err := a.limiter.Wait(ctx, provider.NameGenius); err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameGenius,
@@ -108,6 +111,9 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 // UUIDs (MusicBrainz IDs) are rejected immediately since Genius cannot use them
 // and searching by UUID would always return no results.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if provider.IsUUID(id) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameGenius, ID: id}
 	}
@@ -119,6 +125,9 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 
 // GetImages returns nil since Genius does not host artist images.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	return nil, nil
 }
 

@@ -62,6 +62,18 @@ func IsDevBuild() bool {
 	return Commit == "unknown" || Date == "unknown"
 }
 
+// IsReleaseBuild reports whether the binary was produced by the release
+// pipeline (goreleaser). It is the logical negation of IsDevBuild: both
+// Commit and Date must be non-"unknown" for the binary to be considered
+// a release build.
+//
+// Used by the startup check for SW_FORCE_PROVIDER_ERROR: the env var is
+// allowed in dev/CI builds and blocked in release builds so the hook
+// cannot survive an accidental config copy into production.
+func IsReleaseBuild() bool {
+	return !IsDevBuild()
+}
+
 // UserAgent returns an HTTP User-Agent header value for outbound requests.
 //
 // prefix is the application/subsystem identifier (e.g., "Stillwater",

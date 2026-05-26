@@ -232,3 +232,60 @@ jobs:
       - name: Skip (no relevant changes)
         if: steps.filter.outputs.relevant != 'true'
         run: echo "No Go source or fuzz workflow changes; drift check skipped."
+
+  # ---------------------------------------------------------------------------
+  # Provider failure smoke test
+  #
+  # Replicates the '=== Provider failure smoke test ===' step in
+  # scripts/pre-push-gate.sh.  Builds the binary, starts a temporary instance
+  # with SW_FORCE_PROVIDER_ERROR set to all known providers, and asserts that
+  # every covered handler surface communicates the failure explicitly.
+  #
+  # Uses dorny/paths-filter to skip on PRs that touch no Go source or smoke
+  # scripts; the job itself always runs and always emits a terminal status.
+  # ---------------------------------------------------------------------------
+  provider-failure-smoke:
+    name: Provider Failure Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: filter
+        with:
+          filters: |
+            relevant:
+              - '**/*.go'
+              - 'scripts/smoke-provider-failure.sh'
+              - 'scripts/pre-push-gate.sh'
+              - '.github/workflows/gate.yml'
+              - 'go.mod'
+              - 'go.sum'
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        if: steps.filter.outputs.relevant == 'true'
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Tailwind CSS
+        if: steps.filter.outputs.relevant == 'true'
+        env:
+          TAILWIND_VERSION: v4.2.0
+          TAILWIND_SHA256: 8f65e2d21c675f1e8d265219979d17d10634c1f553a2f583265b7edb28726432
+        run: |
+          curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64"
+          echo "${TAILWIND_SHA256}  tailwindcss-linux-x64" | sha256sum -c -
+          chmod +x tailwindcss-linux-x64
+          sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+
+      - name: Run provider failure smoke test
+        if: steps.filter.outputs.relevant == 'true'
+        run: bash scripts/smoke-provider-failure.sh
+
+      - name: Skip (no relevant changes)
+        if: steps.filter.outputs.relevant != 'true'
+        run: echo "No Go source or smoke script changes; provider failure smoke skipped."

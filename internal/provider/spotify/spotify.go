@@ -67,6 +67,9 @@ func (a *Adapter) RequiresAuth() bool { return true }
 
 // SearchArtist searches Spotify for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if name == "" {
 		return nil, nil
 	}
@@ -113,6 +116,9 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 // GetArtist fetches metadata for an artist by their Spotify ID.
 // Returns ErrNotFound for IDs that are not valid Spotify format.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if !IsSpotifyID(id) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameSpotify, ID: id}
 	}
@@ -148,6 +154,9 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 // GetImages fetches artist images by Spotify ID.
 // Returns ErrNotFound for IDs that are not valid Spotify format.
 func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if !IsSpotifyID(id) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameSpotify, ID: id}
 	}

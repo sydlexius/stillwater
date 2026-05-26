@@ -334,4 +334,22 @@ fi
 echo "OK: $(wc -l < "$live_fuzz_file" | tr -d ' ') fuzz targets, matrix set matches."
 
 echo ""
+echo "=== Provider failure smoke test ==="
+# Builds the binary (re-uses cached build if present), starts a temporary
+# injected instance, drives the coverage matrix, and asserts that every
+# covered surface communicates provider failures instead of silently
+# returning empty data.  Hard-fail on non-zero exit from the script.
+SMOKE_FAILURE_SCRIPT="$SCRIPT_DIR/smoke-provider-failure.sh"
+if [ ! -x "$SMOKE_FAILURE_SCRIPT" ]; then
+  echo "pre-push-gate: smoke-provider-failure.sh not found or not executable in scripts/" >&2
+  exit 1
+fi
+if ! bash "$SMOKE_FAILURE_SCRIPT" 2>&1; then
+  echo ""
+  echo "FAIL: provider failure smoke test reported failures (see output above)."
+  exit 1
+fi
+echo "OK"
+
+echo ""
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."

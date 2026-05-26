@@ -51,16 +51,25 @@ func (a *Adapter) RequiresAuth() bool { return true }
 
 // SearchArtist is not supported by Fanart.tv (lookup by MBID only).
 func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	return nil, nil
 }
 
 // GetArtist is not supported by Fanart.tv (images only).
 func (a *Adapter) GetArtist(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	return nil, nil
 }
 
 // GetImages fetches available images for an artist by their MusicBrainz ID.
 func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	apiKey, err := a.settings.GetAPIKey(ctx, provider.NameFanartTV)
 	if err != nil {
 		return nil, fmt.Errorf("getting API key: %w", err)

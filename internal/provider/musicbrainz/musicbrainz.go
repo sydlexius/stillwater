@@ -60,6 +60,9 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchArtist searches MusicBrainz for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	params := url.Values{
 		"query": {name},
 		"fmt":   {"json"},
@@ -118,6 +121,9 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 
 // GetArtist fetches full metadata for an artist by their MusicBrainz ID.
 func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	params := url.Values{
 		"inc": {"aliases+genres+tags+ratings+url-rels+artist-rels"},
 		"fmt": {"json"},
@@ -418,6 +424,9 @@ func romanizeFromSortName(sortName string) (string, bool) {
 
 // GetImages returns nil since MusicBrainz does not host artist images.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	return nil, nil
 }
 
@@ -425,6 +434,9 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 // Results are paginated in batches of 100 and capped at 500 total to avoid
 // runaway loops on prolific artists (classical composers, etc.).
 func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	const (
 		pageSize = 100
 		maxTotal = 500

@@ -71,6 +71,9 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchArtist searches TheAudioDB by artist name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err
@@ -114,6 +117,9 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 // a MusicBrainz UUID (routed to artist-mb.php) or an AudioDB numeric ID
 // (routed to artist.php for direct lookup).
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err
@@ -146,6 +152,9 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 // GetImages fetches available images for an artist. Like GetArtist, the id
 // parameter can be a MusicBrainz UUID or an AudioDB numeric ID.
 func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err

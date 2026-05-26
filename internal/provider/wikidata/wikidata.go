@@ -72,6 +72,9 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchArtist is not directly supported by Wikidata SPARQL (use GetArtist with MBID instead).
 func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	return nil, nil
 }
 
@@ -89,6 +92,9 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 // (artist name, country name, genre name) are returned in the user's preferred
 // language.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	// Validate the input as either a UUID or a QID before interpolating into
 	// the SPARQL query. This guards against injection regardless of which
 	// branch buildArtistQuery takes below.
@@ -128,6 +134,9 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 // P18 (image/photo) and P154 (logo). The SPARQL query returns Commons filenames
 // which are then resolved to direct URLs via the Wikimedia Commons API.
 func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	// Validate MBID format before interpolating into SPARQL query to prevent injection.
 	if !provider.IsUUID(mbid) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}

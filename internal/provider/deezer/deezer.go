@@ -53,6 +53,9 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchArtist searches Deezer for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if name == "" {
 		return nil, nil
 	}
@@ -107,6 +110,9 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 // Returns ErrNotFound for non-numeric IDs such as MusicBrainz UUIDs, since
 // Deezer does not index by MBID.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if !isDeezerID(id) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameDeezer, ID: id}
 	}
@@ -143,6 +149,9 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 // GetImages fetches artist thumbnail images by Deezer ID.
 // Returns ErrNotFound for non-numeric IDs such as MusicBrainz UUIDs.
 func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	if !isDeezerID(id) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameDeezer, ID: id}
 	}

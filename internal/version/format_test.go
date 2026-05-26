@@ -57,6 +57,22 @@ func TestIsDevBuild_ReleaseBuild(t *testing.T) {
 	}
 }
 
+// ---- IsReleaseBuild ----
+
+func TestIsReleaseBuild_DevBuild(t *testing.T) {
+	withVersion(t, "1.0.6", "unknown", "unknown")
+	if version.IsReleaseBuild() {
+		t.Error("expected IsReleaseBuild() == false for a dev build")
+	}
+}
+
+func TestIsReleaseBuild_ReleaseBuild(t *testing.T) {
+	withVersion(t, "1.0.6", "abc1234", "2026-05-08")
+	if !version.IsReleaseBuild() {
+		t.Error("expected IsReleaseBuild() == true for a release build")
+	}
+}
+
 // ---- Validate ----
 
 func TestValidate_Success(t *testing.T) {
