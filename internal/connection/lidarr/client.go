@@ -39,9 +39,9 @@ type Client struct {
 	httpclient.BaseClient
 	// verifyPathAfterUpdate, when true, makes UpdateArtistPath issue a
 	// follow-up GET after the PUT and confirm the returned path field
-	// round-trips intact. Default false (opt-in per #1640): a healthy
-	// Lidarr rarely drifts and the extra request roughly doubles the
-	// per-rename cost.
+	// round-trips intact. Default false (opt-in): a healthy Lidarr
+	// rarely drifts and the extra request roughly doubles the per-rename
+	// cost.
 	verifyPathAfterUpdate bool
 }
 
@@ -67,13 +67,13 @@ func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *
 }
 
 // SetVerifyPathAfterUpdate toggles the per-connection verify-after-PUT
-// behavior described by #1640. When enabled, UpdateArtistPath issues a
-// follow-up GET after a successful PUT and compares the returned `path`
-// field against the value we sent. A mismatch surfaces an error wrapped
-// with enough context (sent vs got) to identify the divergence so the
-// operator knows Lidarr coerced the path against the Root Folder list.
-// Default false: a healthy Lidarr almost never drifts and the extra
-// request roughly doubles per-rename cost.
+// behavior. When enabled, UpdateArtistPath issues a follow-up GET after a
+// successful PUT and compares the returned `path` field against the value
+// we sent. A mismatch surfaces an error wrapped with enough context (sent
+// vs got) to identify the divergence so the operator knows Lidarr coerced
+// the path against the Root Folder list. Default false: a healthy Lidarr
+// almost never drifts and the extra request roughly doubles per-rename
+// cost.
 func (c *Client) SetVerifyPathAfterUpdate(enabled bool) {
 	c.verifyPathAfterUpdate = enabled
 }
@@ -587,10 +587,10 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 		return fmt.Errorf("putting artist path update: %w", wrapAuthIfStatusAuth(err))
 	}
 
-	// Optional verify-after-PUT round-trip (per #1640). Older Lidarr
-	// versions sometimes coerce a submitted path against the Root Folder
-	// list and silently store the coerced value, so a 2xx PUT alone is
-	// not authoritative confirmation that the path persisted exactly as
+	// Optional verify-after-PUT round-trip. Older Lidarr versions
+	// sometimes coerce a submitted path against the Root Folder list and
+	// silently store the coerced value, so a 2xx PUT alone is not
+	// authoritative confirmation that the path persisted exactly as
 	// sent. Reuses the caller's context so the verify GET shares the
 	// per-platform rename deadline (publish.renameSyncTimeout); no
 	// additional timeout knob.

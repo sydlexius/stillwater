@@ -31,9 +31,7 @@ const pushOpLockToggle = "lock_toggle"
 
 // pushOpMetadataPush is the operation slug emitted on connection.push_failed
 // events from PushMetadataAsync. Toast subscribers can filter by this slug
-// to distinguish a metadata-write failure from a lock-toggle failure (per
-// issue #1642 -- bringing the metadata push surface into parity with the
-// PushLocks notify path introduced by #1088).
+// to distinguish a metadata-write failure from a lock-toggle failure.
 const pushOpMetadataPush = "metadata_push"
 
 const (
