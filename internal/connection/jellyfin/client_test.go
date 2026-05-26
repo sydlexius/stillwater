@@ -1679,3 +1679,76 @@ func TestDisableConflictingSettings_Jellyfin(t *testing.T) {
 		}
 	}
 }
+
+// TestUpdateArtistPath_AuthClass401 verifies that a 401 response (auth-class)
+// from the POST half of UpdateArtistPath is wrapped with the ErrAuth sentinel.
+// The publish layer uses errors.Is(err, jellyfin.ErrAuth) to route the
+// failure to a per-connection re-auth UI signal (per issue #1639).
+func TestUpdateArtistPath_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-a1","Name":"Test","Path":"/old"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", "", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "jf-a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_AuthClass403 mirrors AuthClass401 for the 403 branch
+// so the publish layer can rely on both codes wrapping with ErrAuth.
+func TestUpdateArtistPath_AuthClass403(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-a1","Name":"Test","Path":"/old"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", "", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "jf-a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_NonAuthErrorNotWrapped guards the negative branch:
+// non-auth status codes (5xx) must NOT wrap with ErrAuth so the publish
+// layer routes 5xx to its own toast class (server_error) rather than the
+// re-auth signal.
+func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-a1","Name":"Test","Path":"/old"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", "", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "jf-a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = true on 500; want false")
+	}
+}

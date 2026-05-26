@@ -19,8 +19,31 @@ import (
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
-// ErrInvalidCredentials is returned when the media server rejects the credentials.
+// ErrInvalidCredentials is returned when the media server rejects the
+// credentials during the AuthenticateByName handshake.
 var ErrInvalidCredentials = errors.New("invalid credentials")
+
+// ErrAuth is the sentinel wrapped by write-method failures when the peer
+// returns a 401 or 403. Callers in the publish layer use
+// errors.Is(err, jellyfin.ErrAuth) to surface a per-connection re-auth
+// signal without parsing the formatted error string. Distinct from
+// ErrInvalidCredentials, which is scoped to the username/password handshake.
+var ErrAuth = errors.New("jellyfin: authentication required")
+
+// wrapAuthIfStatusAuth detects an httpclient.StatusError whose code is 401 or
+// 403 and wraps the original error with ErrAuth. Mirrors emby.wrapAuthIfStatusAuth
+// so consumers can use errors.Is(err, jellyfin.ErrAuth) regardless of which
+// client surfaced the failure.
+func wrapAuthIfStatusAuth(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *httpclient.StatusError
+	if errors.As(err, &se) && se.IsAuth() {
+		return fmt.Errorf("%w: %w", ErrAuth, err)
+	}
+	return err
+}
 
 // Client communicates with a Jellyfin server.
 type Client struct {
