@@ -3,11 +3,13 @@ package lidarr
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -445,5 +447,184 @@ func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
 	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
 	if err := c.UpdateArtistPath(context.Background(), "42", ""); err == nil {
 		t.Fatal("expected error on empty newPath")
+	}
+}
+
+// TestUpdateArtistPath_AuthClass401 verifies that a 401 response on the
+// PUT half wraps with the ErrAuth sentinel (per issue #1639), so the
+// publish layer can detect auth failures via errors.Is.
+func TestUpdateArtistPath_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_AuthClass403 mirrors AuthClass401 for the 403 branch.
+func TestUpdateArtistPath_AuthClass403(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_NonAuthErrorNotWrapped guards the negative branch
+// so the publish layer routes 5xx away from the re-auth toast class.
+func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = true on 500; want false")
+	}
+}
+
+// TestUpdateArtistPath_VerifyAfterPut_Match exercises the #1640 happy
+// path: when verify-after-PUT is enabled and Lidarr returns the path we
+// sent on the follow-up GET, the call succeeds. The test server tracks
+// each request so we can confirm the verify GET actually fired.
+func TestUpdateArtistPath_VerifyAfterPut_Match(t *testing.T) {
+	var getCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getCount++
+			w.Header().Set("Content-Type", "application/json")
+			// Both the pre-PUT fetch and the verify-after-PUT GET hit the
+			// same handler; for the verify branch we must echo the new
+			// path so the comparison succeeds. The first GET (pre-PUT)
+			// can return the old path; current path field is overwritten
+			// on the PUT body anyway.
+			if getCount == 1 {
+				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+			} else {
+				_, _ = w.Write([]byte(`{"id":42,"path":"/new/X"}`))
+			}
+		case http.MethodPut:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	c.SetVerifyPathAfterUpdate(true)
+	if err := c.UpdateArtistPath(context.Background(), "42", "/new/X"); err != nil {
+		t.Fatalf("UpdateArtistPath with verify (match): %v", err)
+	}
+	if getCount != 2 {
+		t.Errorf("expected 2 GET requests (pre-PUT + verify), got %d", getCount)
+	}
+}
+
+// TestUpdateArtistPath_VerifyAfterPut_Mismatch covers the divergence
+// branch: when Lidarr coerces the path against the Root Folder list, the
+// follow-up GET returns a different value and UpdateArtistPath surfaces
+// an error including both sent and got values so the operator can
+// diagnose the drift.
+func TestUpdateArtistPath_VerifyAfterPut_Mismatch(t *testing.T) {
+	var getCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getCount++
+			w.Header().Set("Content-Type", "application/json")
+			if getCount == 1 {
+				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+			} else {
+				// Simulate Lidarr coercing the path to a different value
+				// (e.g. canonicalizing against the Root Folder).
+				_, _ = w.Write([]byte(`{"id":42,"path":"/lidarr-canonical/X"}`))
+			}
+		case http.MethodPut:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	c.SetVerifyPathAfterUpdate(true)
+	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
+	if err == nil {
+		t.Fatal("expected verify-mismatch error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "verify mismatch") {
+		t.Errorf("error %q does not mention verify mismatch", msg)
+	}
+	if !strings.Contains(msg, "/new/X") || !strings.Contains(msg, "/lidarr-canonical/X") {
+		t.Errorf("error %q must include both sent and got paths for diagnosis", msg)
+	}
+}
+
+// TestUpdateArtistPath_VerifyAfterPut_Disabled confirms that without
+// SetVerifyPathAfterUpdate(true) the follow-up GET does NOT fire, so the
+// opt-in default keeps the historical per-rename cost (1 GET + 1 PUT).
+func TestUpdateArtistPath_VerifyAfterPut_Disabled(t *testing.T) {
+	var getCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getCount++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+		case http.MethodPut:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	// SetVerifyPathAfterUpdate not called; default is false.
+	if err := c.UpdateArtistPath(context.Background(), "42", "/new/X"); err != nil {
+		t.Fatalf("UpdateArtistPath (verify disabled): %v", err)
+	}
+	if getCount != 1 {
+		t.Errorf("expected 1 GET (pre-PUT only), got %d -- verify-after-PUT must be opt-in", getCount)
 	}
 }
