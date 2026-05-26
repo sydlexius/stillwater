@@ -133,8 +133,7 @@ worktree:
 	@test -n "$(NAME)"   || (echo "error: NAME is required (e.g. make worktree NAME=my-feature BRANCH=feat/my-feature)"; exit 1)
 	@test -n "$(BRANCH)" || (echo "error: BRANCH is required (e.g. make worktree NAME=my-feature BRANCH=feat/my-feature)"; exit 1)
 	git worktree add ../stillwater-$(NAME) -b $(BRANCH)
-	@git -C ../stillwater-$(NAME) config --unset core.hooksPath 2>/dev/null || true
-	git -C ../stillwater-$(NAME) config core.hooksPath .githooks
+	@$(MAKE) -C ../stillwater-$(NAME) hooks
 	@mkdir -p "$(dir $(WORKTREES_MD))"
 	@printf "| stillwater-$(NAME) | $(BRANCH) | $(if $(ISSUE),#$(ISSUE),--) | In Progress |\n" >> "$(WORKTREES_MD)"
 	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Tracker updated."
