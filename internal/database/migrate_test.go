@@ -1790,3 +1790,18 @@ func TestEnsureConnectionsColumn_AddsAndIsIdempotent(t *testing.T) {
 		t.Fatalf("second call (no-op): %v", err)
 	}
 }
+
+// TestEnsureConnectionsColumn_PropagatesAlterError covers the
+// ExecContext error branch by passing a definition SQLite rejects, and
+// asserts the wrap carries the column name so operators can diagnose
+// an upgrade-time failure from logs alone.
+func TestEnsureConnectionsColumn_PropagatesAlterError(t *testing.T) {
+	db := openMigratedDB(t)
+	err := ensureConnectionsColumn(db, "bad_col", "NOT A VALID TYPE")
+	if err == nil {
+		t.Fatal("expected error from ExecContext with invalid type")
+	}
+	if !strings.Contains(err.Error(), "bad_col") {
+		t.Errorf("error %v does not name the column", err)
+	}
+}
