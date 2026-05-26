@@ -152,7 +152,7 @@ func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID int) (*Comma
 
 	var resp CommandResponse
 	if err := c.PostJSON(ctx, "/api/v1/command", bytes.NewReader(body), &resp); err != nil {
-		return nil, fmt.Errorf("triggering artist refresh: %w", err)
+		return nil, fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
 	}
 	return &resp, nil
 }
@@ -197,7 +197,7 @@ func (c *Client) DisableMetadataConsumer(ctx context.Context, configID int) erro
 	}
 
 	path := fmt.Sprintf("/api/v1/config/metadataprovider/%d", configID)
-	return c.PutJSON(ctx, path, bytes.NewReader(body), nil)
+	return wrapAuthIfStatusAuth(c.PutJSON(ctx, path, bytes.NewReader(body), nil))
 }
 
 // getMetadataProviderConfigs fetches the metadata provider config from Lidarr,
@@ -455,7 +455,7 @@ func (c *Client) putMetadataConsumer(ctx context.Context, m map[string]any) erro
 		return fmt.Errorf("encoding consumer: %w", err)
 	}
 	path := fmt.Sprintf("/api/v1/metadata/%d", id)
-	return c.PutJSON(ctx, path, bytes.NewReader(body), nil)
+	return wrapAuthIfStatusAuth(c.PutJSON(ctx, path, bytes.NewReader(body), nil))
 }
 
 // consumerID normalizes the "id" field from the raw consumer map. Lidarr
