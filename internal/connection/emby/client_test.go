@@ -1782,6 +1782,9 @@ func TestPushMetadata_LockSortName_AppendsToExistingLocks(t *testing.T) {
 		}
 		// LockedFields fetch path (only fires when LockSortName=true).
 		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/Users/u-1/Items/") {
+			if got := r.URL.Query().Get("Fields"); got != "LockedFields" {
+				t.Errorf("Fields query = %q, want LockedFields", got)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			// User has Genres locked through the Emby UI; that must survive.
 			_, _ = w.Write([]byte(`{"LockedFields":["Genres"]}`))

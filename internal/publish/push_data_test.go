@@ -9,7 +9,8 @@ import (
 // TestDeriveSortNameFallback enumerates the (name, mbSort) inputs the
 // numeric-prefix derivation rule (#1083) must handle. Cases pin both the
 // returned sortName and the derived flag (which gates whether the push
-// code adds "SortName" to LockedFields on Emby/Jellyfin).
+// code adds "SortName" to LockedFields on Emby; Jellyfin intentionally
+// ignores LockSortName).
 func TestDeriveSortNameFallback(t *testing.T) {
 	cases := []struct {
 		name       string

@@ -1786,6 +1786,12 @@ func TestPushMetadata_LockSortName_Ignored(t *testing.T) {
 	bodyCh := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			if got := r.URL.Query().Get("Ids"); got != "jf-numeric-1" {
+				t.Errorf("Ids query = %q, want jf-numeric-1", got)
+			}
+			if fields := r.URL.Query().Get("Fields"); !strings.Contains(fields, "LockedFields") {
+				t.Errorf("Fields query = %q, want to include LockedFields", fields)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-numeric-1","Name":"12 Stones","LockedFields":["Tags"]}]}`))
 			return
@@ -1835,6 +1841,12 @@ func TestPushMetadata_LocksRoundTripVerbatim(t *testing.T) {
 	bodyCh := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			if got := r.URL.Query().Get("Ids"); got != "jf-alpha-1" {
+				t.Errorf("Ids query = %q, want jf-alpha-1", got)
+			}
+			if fields := r.URL.Query().Get("Fields"); !strings.Contains(fields, "LockedFields") {
+				t.Errorf("Fields query = %q, want to include LockedFields", fields)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-alpha-1","Name":"Bjork","LockedFields":["Tags","Overview"]}]}`))
 			return
