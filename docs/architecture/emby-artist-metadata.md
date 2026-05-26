@@ -305,6 +305,33 @@ Root element: `<artist>`
 | Disambiguation | No corresponding Emby field |
 | YearsActive | No corresponding Emby field |
 
+### Numeric-Prefix SortName Derivation
+
+When an artist has no upstream `SortName` (typically because MusicBrainz
+returned an empty value) AND the artist's name begins with an ASCII digit
+run, Stillwater derives a zero-padded sort key for the platform push so
+numeric-prefix artists sort numerically rather than lexically in the Emby
+library list.
+
+| Name | Derived ForcedSortName |
+|------|------------------------|
+| `12 Stones` | `0000000012 Stones` |
+| `3 Doors Down` | `0000000003 Doors Down` |
+| `311` | `0000000311` |
+| `38 Special` | `0000000038 Special` |
+
+Only the leading ASCII-digit run is padded; the remainder of the name is
+preserved verbatim. Alphabetic-prefix and leading-symbol names (`Bjork`,
+`!!!`, `+44`) are out of scope and pass through unchanged.
+
+When (and ONLY when) Stillwater derives the value, the push code also
+fetches the current `LockedFields` array, appends `"SortName"`, and
+includes the merged list in the POST body. This honors the Emby
+contract (see "SortName not locked" below) without overwriting per-field
+locks the user set in the Emby UI. Pushes whose `SortName` comes from
+upstream metadata never set the lock so a user's manual unlock remains
+honored.
+
 ### Known Issues and Gaps
 
 **1. Date format silently dropped (Issue #355)**
@@ -325,11 +352,14 @@ Sending POST /Items/{id} without `ProviderIds` causes a 400 error. Even an
 empty `{}` must be present. Stillwater only sends ProviderIds when
 MusicBrainzID is non-empty, which may cause errors for artists without an MBID.
 
-**4. SortName not locked**
+**4. SortName not locked (handled for derived values)**
 
 Setting `ForcedSortName` via the API requires also including `"SortName"` in
 the `LockedFields` array, otherwise Emby resets the sort name on the next
-metadata refresh. Stillwater does not currently set LockedFields.
+metadata refresh. Stillwater honors this contract for derived numeric-prefix
+sort names (see "Numeric-Prefix SortName Derivation" above); pushes that
+forward an upstream SortName verbatim do NOT lock so the user's per-field
+lock preferences on the platform side are respected.
 
 **5. Genres need GenreItems**
 

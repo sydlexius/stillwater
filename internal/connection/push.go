@@ -30,6 +30,27 @@ type ArtistPushData struct {
 	// shape so the push layer can map it into Jellyfin's People array. Empty
 	// when the artist has no members or when the caller did not fetch them.
 	BandMembers []ArtistPersonRef `json:"band_members,omitempty"`
+
+	// LockSortName signals that Stillwater itself derived the SortName
+	// value (currently: zero-padded numeric prefix for artists like
+	// "12 Stones" whose canonical SortName from MusicBrainz was empty).
+	// The flag is NOT set when the SortName came verbatim from upstream
+	// metadata; locking those would override a user's manual unlock on
+	// the platform side.
+	//
+	// **Honored by the Emby push only.** Emby's MetadataField enum
+	// contains "SortName" and the platform clears ForcedSortName on the
+	// next refresh unless that lock is set, so the Emby push fetches
+	// the current LockedFields and appends "SortName" when this flag
+	// is true (see emby/push.go fetchAndMergeLockedFields). Jellyfin's
+	// MetadataField enum has no "SortName" member -- sending it returns
+	// HTTP 400 and fails the entire push -- so the Jellyfin push path
+	// intentionally ignores this flag. ForcedSortName persists across
+	// Jellyfin's metadata refresh on its own without any lock. Future
+	// platforms must explicitly opt in by reading this flag; the default
+	// for any platform that does not consult it is "ignore", matching
+	// today's Jellyfin behavior.
+	LockSortName bool `json:"-"`
 }
 
 // ArtistPersonRef is a platform-agnostic representation of a band member

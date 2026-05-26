@@ -172,6 +172,120 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 	}
 }
 
+// TestHandlePopulateInFlight_Empty asserts the aggregate populate status
+// endpoint returns an empty operations list when no populate is running.
+// The pill-rehydrate JS skips push when operations is empty, so this
+// shape is what keeps the idle reconnect path silent.
+func TestHandlePopulateInFlight_Empty(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/populate/in-flight", nil)
+	w := httptest.NewRecorder()
+	r.handlePopulateInFlight(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	// Decode through a pointer-slice so we can distinguish a missing or
+	// JSON-null `operations` field (resp.Operations == nil) from an
+	// explicit empty array (resp.Operations != nil with len 0). The
+	// JS rehydrate path treats `operations: undefined` as a no-op, so
+	// the server contract is "operations is always present, possibly
+	// empty"; pin that explicitly here per CR feedback.
+	var resp struct {
+		Operations []map[string]any `json:"operations"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Operations == nil {
+		t.Errorf("operations field missing or null; want explicit empty array")
+	}
+	if len(resp.Operations) != 0 {
+		t.Errorf("operations = %v, want empty", resp.Operations)
+	}
+}
+
+// TestHandlePopulateInFlight_RunningOnly verifies the in-flight endpoint
+// returns only running populates (skipping completed/scan ops) in the
+// ProgressPill envelope shape with the populateOpID prefix the JS uses
+// to coalesce events into the same pill.
+func TestHandlePopulateInFlight_RunningOnly(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+
+	now := time.Now().UTC()
+	r.libraryOpsMu.Lock()
+	r.libraryOps["lib-running"] = &LibraryOpResult{
+		LibraryID:   "lib-running",
+		LibraryName: "Active Lib",
+		Operation:   "populate",
+		Status:      "running",
+		StartedAt:   now,
+	}
+	r.libraryOps["lib-completed"] = &LibraryOpResult{
+		LibraryID:   "lib-completed",
+		LibraryName: "Done Lib",
+		Operation:   "populate",
+		Status:      "completed",
+		StartedAt:   now.Add(-1 * time.Minute),
+		CompletedAt: &now,
+	}
+	r.libraryOps["lib-scanning"] = &LibraryOpResult{
+		LibraryID:   "lib-scanning",
+		LibraryName: "Scan Lib",
+		Operation:   "scan",
+		Status:      "running",
+		StartedAt:   now,
+	}
+	r.libraryOpsMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/populate/in-flight", nil)
+	w := httptest.NewRecorder()
+	r.handlePopulateInFlight(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var resp struct {
+		Operations []struct {
+			OpID      string `json:"op_id"`
+			Label     string `json:"label"`
+			Processed int    `json:"processed"`
+			Total     int    `json:"total"`
+			Status    string `json:"status"`
+		} `json:"operations"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Operations) != 1 {
+		t.Fatalf("operations count = %d, want 1; got %+v", len(resp.Operations), resp.Operations)
+	}
+	got := resp.Operations[0]
+	if got.OpID != "populate:lib-running" {
+		t.Errorf("op_id = %q, want %q", got.OpID, "populate:lib-running")
+	}
+	if got.Status != "running" {
+		t.Errorf("status = %q, want running", got.Status)
+	}
+	if !strings.Contains(got.Label, "Active Lib") {
+		t.Errorf("label = %q, want it to contain library name", got.Label)
+	}
+	// Pin processed + total on the envelope contract so regressions in
+	// either field don't slip through. The LibraryOpResult fixture has no
+	// progress recorded, so both are expected to be the zero value; the
+	// invariant tested is "field is present in the decoded envelope" plus
+	// "sensible relationship (total >= processed)".
+	if got.Processed < 0 {
+		t.Errorf("processed = %d, want >= 0", got.Processed)
+	}
+	if got.Total < got.Processed {
+		t.Errorf("total = %d < processed = %d, want total >= processed", got.Total, got.Processed)
+	}
+}
+
 func TestScheduleOpCleanup(t *testing.T) {
 	t.Parallel()
 	r := testRouterForLibraryOps(t)

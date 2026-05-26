@@ -7371,6 +7371,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/LibraryOpResult"
 
+  /connections/populate/in-flight:
+    get:
+      tags: [Libraries]
+      summary: List in-flight populate operations
+      description: >
+        Returns every populate library operation currently in the running
+        state, as ProgressPill event envelopes. Used by the SSE
+        reconnect-rehydrate path (#1641) so the global ProgressPill UI can
+        replay in-flight populate state without per-library status fan-out
+        when the EventSource reconnects after a disconnect.
+      operationId: listInFlightPopulates
+      responses:
+        "200":
+          description: List of running populate operations (empty when idle)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operations]
+                properties:
+                  operations:
+                    type: array
+                    items:
+                      type: object
+                      required: [op_id, label, processed, total, status]
+                      properties:
+                        op_id:
+                          type: string
+                          description: Stable identifier matching the SSE operation.progress payload.
+                        label:
+                          type: string
+                          description: Human-readable verb for the ProgressPill.
+                        processed:
+                          type: integer
+                          description: Items processed so far (0 when total is unknown).
+                        total:
+                          type: integer
+                          description: Total work units (0 when indeterminate).
+                        status:
+                          type: string
+                          enum: [running]
+                          description: Always "running"; terminal-state ops are not returned.
+
   # --- Connection extras ---
 
   /connections/clobber-check:

@@ -35,6 +35,13 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	existing["Name"] = data.Name
 	existing["Overview"] = data.Biography
 	existing["ForcedSortName"] = data.SortName
+	// Jellyfin does not support per-field metadata locks (only a whole-item
+	// LockData boolean). Its MetadataField enum lacks "SortName" entirely,
+	// so attempting to lock SortName via LockedFields returns HTTP 400 and
+	// fails the whole push. ForcedSortName persists across metadata refresh
+	// on its own without a lock, so data.LockSortName is intentionally
+	// ignored on the Jellyfin path -- the field is consumed only by the
+	// Emby push, where the platform documents the lock requirement.
 	existing["Genres"] = append([]string{}, data.Genres...)
 
 	// Styles and Moods map to Tags (flat string array on Jellyfin).

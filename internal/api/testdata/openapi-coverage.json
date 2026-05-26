@@ -987,6 +987,13 @@
     "covered": true
   },
   {
+    "operationId": "listInFlightPopulates",
+    "method": "GET",
+    "path": "/connections/populate/in-flight",
+    "handler": "handlePopulateInFlight",
+    "covered": true
+  },
+  {
     "operationId": "listLibraries",
     "method": "GET",
     "path": "/libraries",

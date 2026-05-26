@@ -395,6 +395,36 @@ These Kodi/Stillwater NFO elements are **ignored** by Jellyfin:
 | Disambiguation | No corresponding Jellyfin field |
 | YearsActive | No corresponding Jellyfin field |
 
+### Numeric-Prefix SortName Derivation
+
+When an artist has no upstream `SortName` (typically because MusicBrainz
+returned an empty value) AND the artist's name begins with an ASCII digit
+run, Stillwater derives a zero-padded sort key for the platform push so
+numeric-prefix artists sort numerically rather than lexically in the
+Jellyfin library list.
+
+| Name | Derived ForcedSortName |
+|------|------------------------|
+| `12 Stones` | `0000000012 Stones` |
+| `3 Doors Down` | `0000000003 Doors Down` |
+| `311` | `0000000311` |
+| `38 Special` | `0000000038 Special` |
+
+Only the leading ASCII-digit run is padded; the remainder of the name is
+preserved verbatim. Alphabetic-prefix and leading-symbol names (`Bjork`,
+`!!!`, `+44`) are out of scope and pass through unchanged.
+
+Unlike Emby, Jellyfin does not require a lock to keep the derived value
+through a metadata refresh: `ForcedSortName` is treated as user-provided
+override data and persists across `MetadataRefreshMode=FullRefresh` even
+with `ReplaceAllMetadata=true`. Jellyfin also lacks per-field locks
+entirely -- its `MetadataField` enum has no `SortName` member, and the
+only lock surface is the whole-item `LockData` boolean. The shared
+`ArtistPushData.LockSortName` signal (consumed by the Emby push path) is
+therefore intentionally ignored here; the Jellyfin push leaves the
+fetched `LockedFields` array untouched so a user's manual lock state on
+the Jellyfin side round-trips verbatim.
+
 ### Known Issues and Gaps
 
 **1. Date format silently dropped (Issue #355)**

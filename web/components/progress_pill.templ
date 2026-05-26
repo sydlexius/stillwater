@@ -27,12 +27,15 @@ templ ProgressPill() {
 		role="status"
 		aria-live="polite"
 		aria-label={ t(ctx, "progress_pill.aria_label") }
+		data-stale-after-ms="10000"
 		data-i18n-cancel={ t(ctx, "progress_pill.cancel") }
 		data-i18n-dismiss={ t(ctx, "progress_pill.dismiss") }
 		data-i18n-template={ t(ctx, "progress_pill.template") }
 		data-i18n-completed={ t(ctx, "progress_pill.completed") }
 		data-i18n-failed={ t(ctx, "progress_pill.failed") }
 		data-i18n-canceled={ t(ctx, "progress_pill.canceled") }
+		data-i18n-stale={ t(ctx, "progress_pill.stale") }
+		data-i18n-aria-stale={ t(ctx, "progress_pill.aria_stale") }
 		data-i18n-verb-bulk-action={ t(ctx, "progress_pill.verb.bulk_action") }
 		data-i18n-verb-run-rules={ t(ctx, "artists.bulk.progress.run_rules") }
 		data-i18n-verb-re-identify={ t(ctx, "artists.bulk.progress.re_identify") }
@@ -63,9 +66,45 @@ templ ProgressPill() {
 			// pill stays visible with its check before fading out.
 			var AUTO_DISMISS_MS = 2500;
 
+			// STALE_AFTER_MS is the wall-clock silence (no progress tick)
+			// after which a running pill flips to its stale visual state.
+			// Sourced from the container's data-stale-after-ms (defaults to
+			// 10000 in the templ) so manual UAT and future tuning can adjust
+			// without re-deploying templ.
+			var STALE_AFTER_MS = (function () {
+				var raw = stack.getAttribute("data-stale-after-ms");
+				var n = raw ? parseInt(raw, 10) : NaN;
+				return (isFinite(n) && n > 0) ? n : 10000;
+			})();
+
+			// STALE_CHECK_INTERVAL_MS is how often the interval walks `pills`
+			// to flip stale state. Kept short (2s) so the user sees the
+			// transition land within ~12s of silence at the default threshold.
+			var STALE_CHECK_INTERVAL_MS = 2000;
+
 			// Held per op_id so update ticks land on the existing pill
 			// instead of stacking a new one for every event.
+			//
+			// Each pill record carries:
+			//   el, txt, spinner, cancel, dismiss, autoDismissTimer (constructed
+			//   in createPill), plus lastUpdatedAt (epoch ms of the last
+			//   onProgress for this op_id) and staleMarked (whether the pill is
+			//   currently in its stale visual state).
 			var pills = {};
+
+			// originalSpinnerHTML is the spinner SVG we render in the running
+			// state; cached once so markStale / clearStale don't re-build the
+			// markup on every transition. markRunning / markFailed / markCompleted
+			// each overwrite pill.spinner.innerHTML directly with their own
+			// terminal-state markup, so this constant only needs to mirror the
+			// initial createPill template.
+			var originalSpinnerHTML = '<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+
+			// clockSVG is the indicator we swap in for the spinner when a
+			// running pill goes stale. aria-hidden because the announce text
+			// (data-i18n-aria-stale) already conveys the state to screen
+			// readers via the parent stack's aria-live region.
+			var clockSVG = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"></circle><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 
 			function i18n(key) {
 				return stack.getAttribute("data-i18n-" + key) || "";
@@ -241,6 +280,60 @@ templ ProgressPill() {
 				};
 			}
 
+			// markStale dims a running pill and swaps the spinner for a
+			// clock to signal that no progress tick has landed for
+			// STALE_AFTER_MS. The aria-label flip is what fires the
+			// single screen-reader announcement (the parent stack carries
+			// aria-live="polite") -- subsequent stale-tick checks short-
+			// circuit on staleMarked so we never re-announce.
+			function markStale(pill) {
+				if (pill.staleMarked) return;
+				pill.staleMarked = true;
+				pill.el.classList.add("opacity-60");
+				pill.spinner.innerHTML = clockSVG;
+				// Chain three i18n keys before any literal fallback so a
+				// translator dropping any single key still yields localized
+				// text. The final string literal exists only as a defense
+				// against an entirely-broken i18n bundle and should never be
+				// reached at runtime; the en.json source-of-truth carries
+				// stale_waiting_update precisely so visible text is always
+				// keyed.
+				var label = i18n("aria-stale") || i18n("stale") || i18n("stale_waiting_update") || "Waiting for update";
+				pill.el.setAttribute("aria-label", label);
+			}
+
+			// clearStale restores the running visual state when a fresh
+			// onProgress lands (either via SSE tick or the reconnect
+			// rehydrate fetch). Idempotent so callers don't have to track
+			// the prior state.
+			function clearStale(pill) {
+				if (!pill.staleMarked) return;
+				pill.staleMarked = false;
+				pill.el.classList.remove("opacity-60");
+				pill.spinner.innerHTML = originalSpinnerHTML;
+				pill.el.removeAttribute("aria-label");
+			}
+
+			// checkStale runs on the interval and flips any running pill
+			// whose lastUpdatedAt is older than STALE_AFTER_MS. Terminal
+			// pills (failed/completed) and pills with no recorded tick yet
+			// are skipped so we don't dim a pill that just appeared.
+			function checkStale() {
+				var now = Date.now();
+				var keys = Object.keys(pills);
+				for (var i = 0; i < keys.length; i++) {
+					var pill = pills[keys[i]];
+					if (!pill || !pill.lastUpdatedAt) continue;
+					// Terminal-state pills (completed/failed) keep their own
+					// visuals; opacity-dim them would conflict with the
+					// success/error coloring.
+					if (pill.terminal) continue;
+					if ((now - pill.lastUpdatedAt) >= STALE_AFTER_MS) {
+						markStale(pill);
+					}
+				}
+			}
+
 			// markRunning resets every piece of visual state that markFailed
 			// or markCompleted might have mutated, so a reused op_id that
 			// transitions back to running (rare today; possible once the
@@ -253,11 +346,12 @@ templ ProgressPill() {
 				pill.el.classList.add("bg-blue-600", "dark:bg-blue-500");
 				pill.el.removeAttribute("role");
 				hideButton(pill.dismiss);
-				pill.spinner.innerHTML = '<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+				pill.spinner.innerHTML = originalSpinnerHTML;
+				pill.terminal = false;
 			}
 
 			function markCompleted(pill, label) {
-				pill.el.classList.remove("bg-blue-600", "dark:bg-blue-500", "bg-red-600", "dark:bg-red-500");
+				pill.el.classList.remove("bg-blue-600", "dark:bg-blue-500", "bg-red-600", "dark:bg-red-500", "opacity-60");
 				pill.el.classList.add("bg-emerald-600", "dark:bg-emerald-500");
 				pill.spinner.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 				hideButton(pill.cancel);
@@ -265,16 +359,22 @@ templ ProgressPill() {
 				// failed; otherwise screen readers re-announce the success
 				// text with the more urgent alert semantics.
 				pill.el.removeAttribute("role");
+				pill.el.removeAttribute("aria-label");
+				pill.staleMarked = false;
+				pill.terminal = true;
 				renderText(pill, label, 0, 0, i18n("completed") || "completed");
 			}
 
 			function markFailed(pill, label) {
-				pill.el.classList.remove("bg-blue-600", "dark:bg-blue-500", "bg-emerald-600", "dark:bg-emerald-500");
+				pill.el.classList.remove("bg-blue-600", "dark:bg-blue-500", "bg-emerald-600", "dark:bg-emerald-500", "opacity-60");
 				pill.el.classList.add("bg-red-600", "dark:bg-red-500");
 				pill.spinner.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 9v3.75M9.401 19.401h5.198c1.61 0 2.616-1.741 1.812-3.135l-2.598-4.5a2.092 2.092 0 00-3.624 0l-2.598 4.5c-.804 1.394.203 3.135 1.812 3.135zM12 16.5h.008v.008H12V16.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 				hideButton(pill.cancel);
 				showButton(pill.dismiss);
 				pill.el.setAttribute("role", "alert");
+				pill.el.removeAttribute("aria-label");
+				pill.staleMarked = false;
+				pill.terminal = true;
 				renderText(pill, label, 0, 0, i18n("failed") || "failed");
 			}
 
@@ -292,6 +392,11 @@ templ ProgressPill() {
 					pill = createPill(opID);
 					pills[opID] = pill;
 				}
+				// Every progress event resets the stale clock. clearStale is
+				// a no-op when the pill is already fresh, so the unconditional
+				// call keeps the bookkeeping simple at every code path.
+				pill.lastUpdatedAt = Date.now();
+				clearStale(pill);
 				// Pre-empt any pending auto-dismiss if the same op_id is
 				// re-used (e.g. a new bulk action started right after the
 				// previous one's success pill faded).
@@ -328,6 +433,12 @@ templ ProgressPill() {
 
 			document.body.addEventListener("sse:operation.progress", onProgress);
 
+			// Install the stale-check loop. A single interval walks every
+			// pill rather than per-pill timers so a 50-pill stack (rare but
+			// possible with bulk populate + bulk-action + bulk-lock all in
+			// flight) doesn't pay a setTimeout cost per pill on every tick.
+			var staleInterval = setInterval(checkStale, STALE_CHECK_INTERVAL_MS);
+
 			// Expose for tests / external triggers so a screenshot or
 			// programmatic UAT can render the pill without an SSE stream.
 			window.swProgressPill = {
@@ -336,6 +447,16 @@ templ ProgressPill() {
 				},
 				clear: function () {
 					Object.keys(pills).forEach(removePill);
+				},
+				// checkStale + the interval handle are exposed for manual UAT
+				// (force a stale flip without waiting STALE_AFTER_MS) and so
+				// teardown in tests can stop the timer cleanly.
+				_checkStaleNow: checkStale,
+				_stopStaleChecker: function () {
+					if (staleInterval) {
+						clearInterval(staleInterval);
+						staleInterval = null;
+					}
 				}
 			};
 		})();
