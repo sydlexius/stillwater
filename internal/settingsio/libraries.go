@@ -78,9 +78,7 @@ func (s *Service) exportLibraries(ctx context.Context) ([]LibraryExport, error) 
 // importUserPreferences). Path validation is intentionally bypassed: the
 // target filesystem may not yet contain the directory at restore time, and
 // rejecting absent paths would defeat the disaster-recovery use case.
-//
-//nolint:gocognit // Per-library upsert with primary-key (name) lookup, secondary-key ((connection_id, external_id)) fallback for renamed peer libraries, and source-aware connection remap; skip-with-warning behavior preserves the disaster-recovery contract when individual rows cannot resolve. The skip vs error ladder mirrors importUserPreferences and is part of the import envelope's documented contract.
-func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, result *ImportResult) error {
+func (s *Service) importLibraries(ctx context.Context, db dbExecutor, libs []LibraryExport, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i := range libs {
 		le := &libs[i]
@@ -104,26 +102,24 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 
 		// Resolve connection_id for non-manual libraries by remapping (type, url)
 		// to a local connection. Manual libraries carry no connection reference.
+		// The lookup goes through the same dbExecutor (tx) the importer holds:
+		// going through connectionSvc.GetByTypeAndURL would issue a query on
+		// the raw *sql.DB and deadlock against the outer tx when the pool is
+		// capped (e.g. MaxOpenConns(1) in tests). Only the id is needed
+		// downstream, so a single-column SELECT is sufficient.
 		var connectionID string
 		if source != "manual" {
-			// Defensive guard: NewService always wires connectionSvc today, but
-			// a nil here would panic on the GetByTypeAndURL call below. Surface
-			// a clear error instead so a misconfigured Service fails fast and
-			// loud rather than crashing mid-import.
-			if s.connectionSvc == nil {
-				return fmt.Errorf("importing library %q: connection service is required for source %q", le.Name, source)
-			}
 			if le.ConnectionType == "" || le.ConnectionURL == "" {
 				slog.Warn("import: skipping library missing connection reference",
 					"library", le.Name, "source", source)
 				result.LibrariesSkipped++
 				continue
 			}
-			conn, err := s.connectionSvc.GetByTypeAndURL(ctx, le.ConnectionType, le.ConnectionURL)
-			if err != nil {
-				return fmt.Errorf("looking up connection for library %q: %w", le.Name, err)
-			}
-			if conn == nil {
+			err := db.QueryRowContext(ctx,
+				`SELECT id FROM connections WHERE type = ? AND url = ? ORDER BY created_at DESC LIMIT 1`,
+				le.ConnectionType, le.ConnectionURL,
+			).Scan(&connectionID)
+			if errors.Is(err, sql.ErrNoRows) {
 				// Connection URLs may embed credentials (e.g. http://user:pass@host)
 				// or sensitive query params, so the URL value itself is omitted from
 				// the warning. A boolean presence flag is enough to disambiguate
@@ -136,7 +132,9 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 				result.LibrariesSkipped++
 				continue
 			}
-			connectionID = conn.ID
+			if err != nil {
+				return fmt.Errorf("looking up connection for library %q: %w", le.Name, err)
+			}
 		}
 
 		// Look up an existing library by name (UNIQUE) to drive upsert. We do
@@ -144,7 +142,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 		// a partial unique index on (connection_id, external_id) and a name
 		// match must take precedence over an external_id collision.
 		var existingID string
-		err := s.db.QueryRowContext(ctx,
+		err := db.QueryRowContext(ctx,
 			`SELECT id FROM libraries WHERE name = ?`, le.Name,
 		).Scan(&existingID)
 		// When the name lookup misses, fall back to the secondary unique
@@ -164,7 +162,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 		// those rows, so a hit is impossible).
 		if errors.Is(err, sql.ErrNoRows) && connectionID != "" && le.ExternalID != "" {
 			var byRemoteID string
-			remoteErr := s.db.QueryRowContext(ctx,
+			remoteErr := db.QueryRowContext(ctx,
 				`SELECT id FROM libraries WHERE connection_id = ? AND external_id = ?`,
 				connectionID, le.ExternalID,
 			).Scan(&byRemoteID)
@@ -180,7 +178,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 		case errors.Is(err, sql.ErrNoRows):
 			// Insert new
 			id := uuid.New().String()
-			if _, err := s.db.ExecContext(ctx, `
+			if _, err := db.ExecContext(ctx, `
 				INSERT INTO libraries (
 					id, name, path, type, source, connection_id, external_id,
 					fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at
@@ -203,7 +201,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 			// name-lookup branch above writes the same value back, so the
 			// SET is a no-op there. This implements the "import payload
 			// wins" policy that the rest of the import path follows.
-			if _, err := s.db.ExecContext(ctx, `
+			if _, err := db.ExecContext(ctx, `
 				UPDATE libraries SET
 					name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?,
 					fs_watch = ?, fs_poll_interval = ?, nfo_lock_data = ?, updated_at = ?

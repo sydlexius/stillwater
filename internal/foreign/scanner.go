@@ -3,6 +3,7 @@ package foreign
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -86,10 +87,101 @@ func isForeignCandidate(name string) bool {
 	return false
 }
 
+// baselineKey is the settings KV row that records whether the first
+// foreign-file scan has run to completion. When unset (or "false"), the
+// next Scan runs in baseline mode: detections are recorded directly into
+// the content-hash allowlist as the install's starting point, NOT into
+// the foreign_files alert ledger. This avoids greeting a new operator
+// with "325 incidents" on day-one of a fresh install when every one of
+// those files predates Stillwater itself.
+const baselineKey = "foreign_files.baseline_completed"
+
+// baselineCountKey records the number of files admitted into the allowlist
+// during the baseline scan. Surfaced by the OOBE summary panel and the
+// foreign-files settings page as informational copy, not as an alert.
+const baselineCountKey = "foreign_files.baseline_count"
+
+// IsBaselined returns whether the first scan has run to completion. The
+// caller is the OOBE wizard step that gates between "show baseline
+// summary" vs "show empty-state" rendering.
+func (s *Scanner) IsBaselined(ctx context.Context) (bool, error) {
+	return readBaseline(ctx, s.repo.db)
+}
+
+// readBaseline is a package-internal helper so both the scanner and any
+// future caller (e.g. an OOBE handler that wants to know whether the
+// first scan has run) can share the same KV-probe logic.
+func readBaseline(ctx context.Context, db interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}) (bool, error) {
+	var v string
+	err := db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = ?`, baselineKey).Scan(&v)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading %s: %w", baselineKey, err)
+	}
+	return v == "true", nil
+}
+
+// baselineWriter is the subset of *sql.DB that writeBaselineDone needs to
+// open a transaction. Both *sql.DB and a test fake can satisfy it.
+type baselineWriter interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+// writeBaselineDone records that the first-scan baseline has completed,
+// along with the count of files admitted into the global allowlist. Both
+// rows are upserted inside a single transaction so a crash between the
+// flag flip and the count write cannot leave baseline_completed=true with
+// the count unrecorded; the next scan would otherwise believe the
+// baseline is done while the OOBE summary panel renders a missing or
+// stale count.
+func writeBaselineDone(ctx context.Context, db baselineWriter, count int) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning baseline tx: %w", err)
+	}
+	defer func() {
+		// Rollback is a no-op once Commit succeeds, so it is safe to always
+		// schedule. Errors here would only fire on a driver-level failure
+		// AFTER a successful commit, which is not actionable.
+		_ = tx.Rollback()
+	}()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, 'true', ?)
+		ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at
+	`, baselineKey, now); err != nil {
+		return fmt.Errorf("marking baseline completed: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+	`, baselineCountKey, fmt.Sprintf("%d", count), now); err != nil {
+		return fmt.Errorf("recording baseline count: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing baseline tx: %w", err)
+	}
+	return nil
+}
+
 // Scan walks every artist that has a filesystem path, records foreign image
 // files in the ledger, and removes ledger rows whose underlying files have
 // since been deleted or gained Stillwater provenance (so a successful crop
 // or re-fetch flushes the entry without an explicit "resolved" action).
+//
+// On the FIRST scan of an install (foreign_files.baseline_completed != "true"
+// in settings), every detection is admitted into the global content-hash
+// allowlist instead of the alert ledger so the operator does not start at
+// "325 incidents" against artwork that predates Stillwater. Once
+// the baseline has been recorded, this method flips into the historical
+// behavior: only NEW files (not on the allowlist) become alerts.
 //
 // The scan never deletes files. Allowlisted (artist, file_name) pairs and
 // every globally-allowlisted file_name are skipped.
@@ -97,12 +189,33 @@ func (s *Scanner) Scan(ctx context.Context) error {
 	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
+	// Baseline-mode probe runs once per Scan call. The setting is read
+	// here rather than per-artist because flipping the flag mid-scan
+	// would split detections across the ledger and the allowlist for the
+	// same scan generation, which is harder to reason about than a clean
+	// "this whole scan was baselined".
+	baselineDone, err := readBaseline(ctx, s.repo.db)
+	if err != nil {
+		return fmt.Errorf("probing baseline state: %w", err)
+	}
+	runAsBaseline := !baselineDone
+
 	first, total, err := s.artists.List(ctx, params)
 	if err != nil {
 		return fmt.Errorf("listing artists: %w", err)
 	}
 
-	scanned, recorded, cleared, skipped := 0, 0, 0, 0
+	// Track artist-level progress (`scanned` + `artistSkipped` = artists
+	// processed so far) separately from per-file skips (`fileSkipped`)
+	// returned by scanArtist. Pagination is driven by artist progress
+	// because `total` from the lister is an artist count; folding
+	// per-file skips into the same counter could push the sum past
+	// `total` and stop pagination before every artist had been visited.
+	// `skipped` in the per-scan log lines is the operator-visible sum
+	// (artists with no path + files we punted on) so log shape stays
+	// the same as before this fix.
+	scanned, recorded, cleared, baselined := 0, 0, 0, 0
+	artistSkipped, fileSkipped := 0, 0
 	process := func(artists []artist.Artist) {
 		for i := range artists {
 			if ctx.Err() != nil {
@@ -110,14 +223,15 @@ func (s *Scanner) Scan(ctx context.Context) error {
 			}
 			a := &artists[i]
 			if a.Path == "" {
-				skipped++
+				artistSkipped++
 				continue
 			}
-			rec, clr, sk := s.scanArtist(ctx, *a)
+			rec, clr, sk, bl := s.scanArtist(ctx, *a, runAsBaseline)
 			scanned++
 			recorded += rec
 			cleared += clr
-			skipped += sk
+			fileSkipped += sk
+			baselined += bl
 		}
 	}
 
@@ -128,7 +242,7 @@ func (s *Scanner) Scan(ctx context.Context) error {
 	// without any error-level signal that the prior run did not finish.
 	var abortErr error
 	process(first)
-	for scanned+skipped < total {
+	for scanned+artistSkipped < total {
 		if cerr := ctx.Err(); cerr != nil {
 			abortErr = cerr
 			break
@@ -153,31 +267,60 @@ func (s *Scanner) Scan(ctx context.Context) error {
 			slog.Int("scanned_artists", scanned),
 			slog.Int("recorded", recorded),
 			slog.Int("cleared", cleared),
-			slog.Int("skipped", skipped),
+			slog.Int("skipped", artistSkipped+fileSkipped),
+			slog.Int("baselined", baselined),
+			slog.Bool("baseline_mode", runAsBaseline),
 			slog.Any("error", abortErr),
 		}
 		if errors.Is(abortErr, context.Canceled) || errors.Is(abortErr, context.DeadlineExceeded) {
 			s.logger.Info("foreign-file scan canceled; counts are partial", fields...)
+			// A canceled baseline scan should NOT mark the baseline as
+			// complete; the partial allowlist is fine to keep (subsequent
+			// scans skip those hashes), but we want the next scan to also
+			// run in baseline mode so any artist not yet visited still
+			// gets admitted rather than alerted.
 		} else {
 			s.logger.Error("foreign-file scan aborted; counts are partial", fields...)
 		}
 		return abortErr
 	}
 
+	// Successful completion: flip the baseline flag so subsequent scans
+	// run in alert mode. The count is informational only -- the OOBE
+	// summary surfaces it as "Found N existing files; recorded as your
+	// starting point" rather than as an alert count.
+	if runAsBaseline {
+		if err := writeBaselineDone(ctx, s.repo.db, baselined); err != nil {
+			s.logger.Error("recording baseline completion", slog.Any("error", err))
+			// writeBaselineDone is transactional: a mid-flight failure
+			// rolls back the entire (baseline_completed, baseline_count)
+			// pair, leaving the next scan in baseline mode. Re-admitting
+			// the same hashes is safe because the allowlist insert is
+			// idempotent via UNIQUE on (content_hash, scope). Surface
+			// the failure to the caller so the operator sees why the
+			// baseline mode persisted across runs.
+			return fmt.Errorf("recording baseline completion: %w", err)
+		}
+	}
+
 	s.logger.Info("foreign-file scan complete",
 		slog.Int("scanned_artists", scanned),
 		slog.Int("recorded", recorded),
 		slog.Int("cleared", cleared),
-		slog.Int("skipped", skipped))
+		slog.Int("skipped", artistSkipped+fileSkipped),
+		slog.Int("baselined", baselined),
+		slog.Bool("baseline_mode", runAsBaseline))
 	return nil
 }
 
 // scanArtist examines a single artist directory and reconciles the ledger
-// with on-disk reality. Returns (recorded, cleared, skipped) counts so the
-// caller can roll up Scan-level metrics.
+// with on-disk reality. Returns (recorded, cleared, skipped, baselined)
+// counts so the caller can roll up Scan-level metrics. When runAsBaseline
+// is true, foreign detections are admitted into the global allowlist
+// instead of being upserted into the foreign_files alert ledger.
 //
 //nolint:gocognit // Foreign-file reconciler (cog 50): reconciles on-disk files against the ledger with skip-don't-clear semantics (ambiguous reads -> skipped, not recorded/cleared, per the proactive-cron blast-radius safeguard). The bucket-selection ladder is essential to the safety policy but the per-file classification could split into a typed classifier helper to ease readability. Refactor tracked in #1549.
-func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, int) {
+func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline bool) (int, int, int, int) {
 	entries, err := os.ReadDir(a.Path)
 	if err != nil {
 		// Skip-don't-clear: a transient read error must NOT clear ledger
@@ -187,7 +330,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 			slog.String("artist_id", a.ID),
 			slog.String("path", a.Path),
 			slog.Any("error", err))
-		return 0, 0, 1
+		return 0, 0, 1, 0
 	}
 
 	// Build a set of the foreign candidates currently on disk so we can,
@@ -204,9 +347,19 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 	}
 
 	recorded := 0
+	baselined := 0
+	// skipped covers files that the per-file pipeline could not classify
+	// because a transient error short-circuited it: a provenance read
+	// failure, a hash failure, an allowlist probe failure, or an upsert
+	// failure. We keep a single counter so the per-scan log can roll up
+	// "how many files did we punt on" rather than the operator inferring
+	// it from the gap between onDisk size and (recorded + baselined). The
+	// reconciliation pass below uses its own skip-don't-clear policy and
+	// is intentionally not folded in here.
+	skipped := 0
 	for name, de := range onDisk {
 		if ctx.Err() != nil {
-			return recorded, 0, 0
+			return recorded, 0, skipped, baselined
 		}
 		fullPath := filepath.Join(a.Path, name)
 
@@ -216,9 +369,10 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		// common case.
 		meta, err := img.ReadProvenance(fullPath)
 		if err != nil {
-			s.logger.Debug("read provenance failed; skipping",
+			s.logger.Warn("read provenance failed; skipping",
 				slog.String("path", fullPath),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 		if meta != nil {
@@ -233,9 +387,10 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		// file is readable.
 		hash, err := hashFile(fullPath)
 		if err != nil {
-			s.logger.Debug("hash file failed; skipping",
+			s.logger.Warn("hash file failed; skipping",
 				slog.String("path", fullPath),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 
@@ -245,6 +400,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 				slog.String("artist_id", a.ID),
 				slog.String("file", name),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 		if allowed {
@@ -255,6 +411,32 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		if info, ierr := de.Info(); ierr == nil {
 			size = info.Size()
 		}
+
+		// Baseline mode: admit the file into the global content-hash
+		// allowlist instead of the alert ledger. The OOBE summary panel
+		// will surface the per-scan count as informational copy
+		// ("Found N existing files; recorded as your starting point")
+		// so the user sees a neutral starting state rather than 325
+		// red-banner incidents.
+		if runAsBaseline {
+			allow := AllowlistEntry{
+				Scope:       ScopeGlobal,
+				FileName:    name,
+				ContentHash: hash,
+				Note:        "Recorded during first foreign-file scan baseline",
+			}
+			if err := s.repo.AddAllowlist(ctx, allow); err != nil {
+				s.logger.Warn("baseline: admitting file to allowlist failed",
+					slog.String("artist_id", a.ID),
+					slog.String("file", name),
+					slog.Any("error", err))
+				skipped++
+				continue
+			}
+			baselined++
+			continue
+		}
+
 		entry := Entry{
 			ArtistID:    a.ID,
 			FilePath:    fullPath,
@@ -268,6 +450,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 				slog.String("artist_id", a.ID),
 				slog.String("file", name),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 		recorded++
@@ -281,7 +464,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		s.logger.Warn("listing existing entries for reconcile; skipping clear",
 			slog.String("artist_id", a.ID),
 			slog.Any("error", err))
-		return recorded, 0, 0
+		return recorded, 0, skipped, baselined
 	}
 	cleared := 0
 	for i := range existing {
@@ -366,7 +549,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		}
 	}
 
-	return recorded, cleared, 0
+	return recorded, cleared, skipped, baselined
 }
 
 // listForArtist returns the existing ledger rows for one artist, used by

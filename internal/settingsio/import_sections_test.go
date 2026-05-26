@@ -12,6 +12,7 @@ import (
 
 	"log/slog"
 
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -34,7 +35,7 @@ func TestImportSettings_UpsertAndCount(t *testing.T) {
 		"section.key_b": "val_b",
 	}
 	result := &ImportResult{}
-	if err := svc.importSettings(ctx, settings, result); err != nil {
+	if err := svc.importSettings(ctx, db, settings, result); err != nil {
 		t.Fatalf("importSettings: %v", err)
 	}
 	if result.Settings != 2 {
@@ -61,11 +62,11 @@ func TestImportSettings_IdempotentUpsert(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 
 	settings := map[string]string{"idem.key": "first"}
-	if err := svc.importSettings(ctx, settings, &ImportResult{}); err != nil {
+	if err := svc.importSettings(ctx, db, settings, &ImportResult{}); err != nil {
 		t.Fatalf("first importSettings: %v", err)
 	}
 	settings["idem.key"] = "second"
-	if err := svc.importSettings(ctx, settings, &ImportResult{}); err != nil {
+	if err := svc.importSettings(ctx, db, settings, &ImportResult{}); err != nil {
 		t.Fatalf("second importSettings: %v", err)
 	}
 
@@ -94,7 +95,7 @@ func TestImportSettings_EmptyMapIsNoOp(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 
 	result := &ImportResult{}
-	if err := svc.importSettings(ctx, map[string]string{}, result); err != nil {
+	if err := svc.importSettings(ctx, db, map[string]string{}, result); err != nil {
 		t.Fatalf("importSettings with empty map: %v", err)
 	}
 	if result.Settings != 0 {
@@ -145,7 +146,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 		{Name: "Emby A", Type: "emby", URL: "http://emby.local:8096", APIKey: "key1", Enabled: true},
 	}
 	result := &ImportResult{}
-	if err := svc.importConnections(ctx, conns, result); err != nil {
+	if err := svc.importConnections(ctx, conns, result, true); err != nil {
 		t.Fatalf("importConnections (insert): %v", err)
 	}
 	if result.Connections != 1 {
@@ -156,7 +157,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 	conns[0].Name = "Emby A Renamed"
 	conns[0].APIKey = "key2"
 	result2 := &ImportResult{}
-	if err := svc.importConnections(ctx, conns, result2); err != nil {
+	if err := svc.importConnections(ctx, conns, result2, true); err != nil {
 		t.Fatalf("importConnections (update): %v", err)
 	}
 	if result2.Connections != 1 {
@@ -172,6 +173,95 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 	}
 	if all[0].Name != "Emby A Renamed" {
 		t.Errorf("connection name: got %q, want Emby A Renamed", all[0].Name)
+	}
+}
+
+// TestImportConnections_PreV14EnvelopePreservesV14Fields proves that when a
+// legacy (pre-1.4) envelope updates an existing target connection, the four
+// v1.4-only fields the envelope cannot carry are NOT overwritten with their
+// zero values. Without the gate, a 1.3 backup would silently disable
+// FeatureMetadataPush/FeatureTriggerRefresh/FeatureManageServerFiles and
+// clear PreStillwaterConfigJSON the operator had set after upgrading.
+func TestImportConnections_PreV14EnvelopePreservesV14Fields(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	// Seed the target with a connection that has all four v1.4 fields set
+	// to non-zero values, simulating an operator who upgraded to a v1.4
+	// binary and then enabled the new toggles locally.
+	seed := &connection.Connection{
+		Name:                     "Emby A",
+		Type:                     "emby",
+		URL:                      "http://emby.local:8096",
+		APIKey:                   "key1",
+		Enabled:                  true,
+		FeatureMetadataPush:      true,
+		FeatureTriggerRefresh:    true,
+		FeatureManageServerFiles: true,
+		PreStillwaterConfigJSON:  `{"some":"snapshot"}`,
+	}
+	if err := connSvc.Create(ctx, seed); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+
+	// Pre-1.4 envelope: the four v1.4 fields are absent in the wire format
+	// and decode to zero values on the import side.
+	conns := []ConnectionExport{{
+		Name: "Emby A", Type: "emby", URL: "http://emby.local:8096",
+		APIKey: "key2", Enabled: true,
+		// v1.4-only fields explicitly left zero to model a pre-1.4 payload.
+	}}
+	if err := svc.importConnections(ctx, conns, &ImportResult{}, false); err != nil {
+		t.Fatalf("importConnections (legacy envelope): %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	got := all[0]
+	if got.APIKey != "key2" {
+		t.Errorf("APIKey: got %q, want key2 (legacy import must still rotate keys)", got.APIKey)
+	}
+	if !got.FeatureMetadataPush {
+		t.Error("FeatureMetadataPush was cleared by a legacy import; target value must be preserved")
+	}
+	if !got.FeatureTriggerRefresh {
+		t.Error("FeatureTriggerRefresh was cleared by a legacy import; target value must be preserved")
+	}
+	if !got.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles was cleared by a legacy import; target value must be preserved")
+	}
+	if got.PreStillwaterConfigJSON != `{"some":"snapshot"}` {
+		t.Errorf("PreStillwaterConfigJSON was overwritten by a legacy import; got %q", got.PreStillwaterConfigJSON)
+	}
+}
+
+// TestEnvelopeCarriesConnectionV14Fields locks the gate's allow-set so a
+// future envelope-version bump trips this test if the maintainer forgets to
+// list it (or to refactor the helper to take a structured capability set).
+func TestEnvelopeCarriesConnectionV14Fields(t *testing.T) {
+	cases := []struct {
+		version string
+		want    bool
+	}{
+		{"1.0", false},
+		{"1.1", false},
+		{"1.2", false},
+		{"1.3", false},
+		{"1.4", true},
+		{"", false},
+		{"99.0", false},
+	}
+	for _, tc := range cases {
+		if got := envelopeCarriesConnectionV14Fields(tc.version); got != tc.want {
+			t.Errorf("envelopeCarriesConnectionV14Fields(%q) = %v, want %v", tc.version, got, tc.want)
+		}
 	}
 }
 
@@ -615,7 +705,7 @@ func TestImportSettings_DBError(t *testing.T) {
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
-	err := svc.importSettings(t.Context(), map[string]string{"k": "v"}, &ImportResult{})
+	err := svc.importSettings(t.Context(), db, map[string]string{"k": "v"}, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -640,7 +730,7 @@ func TestImportConnections_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
 	conns := []ConnectionExport{{Name: "x", Type: "emby", URL: "http://localhost:8096"}}
-	err := svc.importConnections(t.Context(), conns, &ImportResult{})
+	err := svc.importConnections(t.Context(), conns, &ImportResult{}, true)
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -735,7 +825,7 @@ func TestImportAPITokens_OrphanTokenSkipped(t *testing.T) {
 		{Name: "Orphan", TokenHash: "orphan-hash", Scopes: "read,write", Username: "ghost", Status: "active"},
 	}
 	result := &ImportResult{}
-	if err := svc.importAPITokens(ctx, tokens, result, ImportOptions{}); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, ImportOptions{}); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokensSkipped != 1 {
@@ -773,7 +863,7 @@ func TestImportAPITokens_EmptyHashSkipped(t *testing.T) {
 		{Name: "Bad Token", TokenHash: "", Scopes: "read,write", Username: "alice", Status: "active"},
 	}
 	result := &ImportResult{}
-	if err := svc.importAPITokens(ctx, tokens, result, ImportOptions{}); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, ImportOptions{}); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokensSkipped != 1 {
@@ -803,7 +893,7 @@ func TestImportAPITokens_AdminFallbackAssignsToken(t *testing.T) {
 	}
 	result := &ImportResult{}
 	opts := ImportOptions{AdminFallbackTokens: true, ImportingAdminUserID: "u-admin"}
-	if err := svc.importAPITokens(ctx, tokens, result, opts); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, opts); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokens != 1 || result.APITokensSkipped != 0 {
@@ -849,7 +939,7 @@ func TestImportAPITokens_ConflictResolution_UpdatesExistingRow(t *testing.T) {
 		{Name: "New Name", TokenHash: "stable-hash", Scopes: "read,write", Username: "owner", Status: "active", CreatedAt: now},
 	}
 	result := &ImportResult{}
-	if err := svc.importAPITokens(ctx, tokens, result, ImportOptions{}); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, ImportOptions{}); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokens != 1 {

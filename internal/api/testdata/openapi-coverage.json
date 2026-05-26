@@ -1449,6 +1449,13 @@
     "covered": true
   },
   {
+    "operationId": "setupRestore",
+    "method": "POST",
+    "path": "/setup/restore",
+    "handler": "handleSetupRestore",
+    "covered": true
+  },
+  {
     "operationId": "skipReIdentifyWizardStep",
     "method": "POST",
     "path": "/artists/re-identify/wizard/{sid}/step/{idx}/skip",

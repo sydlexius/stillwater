@@ -22,10 +22,12 @@ import (
 // importSettings upserts every key-value pair from the exported settings map
 // into the settings KV table. The timestamp is fixed for the entire batch so
 // that multiple calls within a single import produce a consistent updated_at.
-func (s *Service) importSettings(ctx context.Context, settings map[string]string, result *ImportResult) error {
+// Accepts a dbExecutor so the orchestrator can hand it a *sql.Tx wrapping
+// every s.db-direct import section.
+func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings map[string]string, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range settings {
-		_, err := s.db.ExecContext(ctx,
+		_, err := db.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now)
@@ -53,7 +55,14 @@ func (s *Service) importProviderKeys(ctx context.Context, keys map[string]string
 // connection with the same (type, url) exists on the target it is updated in
 // place; otherwise a new connection is created. The internal connection ID is
 // never exported; only the natural key (type, url) crosses the wire.
-func (s *Service) importConnections(ctx context.Context, conns []ConnectionExport, result *ImportResult) error {
+//
+// carryV14Fields signals that the envelope is v1.4 or later, so the four
+// v1.4-only fields (FeatureMetadataPush, FeatureTriggerRefresh,
+// FeatureManageServerFiles, PreStillwaterConfigJSON) are authoritative.
+// When false (a pre-1.4 envelope), those fields decoded as zero values and
+// must not be copied onto the target's existing connection row -- doing so
+// would silently disable toggles the operator had set.
+func (s *Service) importConnections(ctx context.Context, conns []ConnectionExport, result *ImportResult, carryV14Fields bool) error {
 	for _, ce := range conns {
 		existing, err := s.connectionSvc.GetByTypeAndURL(ctx, ce.Type, ce.URL)
 		if err != nil {
@@ -66,19 +75,42 @@ func (s *Service) importConnections(ctx context.Context, conns []ConnectionExpor
 			existing.FeatureLibraryImport = ce.FeatureLibraryImport
 			existing.FeatureNFOWrite = ce.FeatureNFOWrite
 			existing.FeatureImageWrite = ce.FeatureImageWrite
+			if carryV14Fields {
+				existing.FeatureMetadataPush = ce.FeatureMetadataPush
+				existing.FeatureTriggerRefresh = ce.FeatureTriggerRefresh
+				existing.FeatureManageServerFiles = ce.FeatureManageServerFiles
+				existing.PreStillwaterConfigJSON = ce.PreStillwaterConfigJSON
+			}
+			// platform_user_id and platform_server_id reflect the live peer's
+			// identity. Preserve the receiving instance's value if it already
+			// has one (a prior connection-test resolved it); fall back to the
+			// envelope's value for restore-into-fresh-install path where the
+			// receiving row was just created and has empty strings.
+			if existing.PlatformUserID == "" {
+				existing.PlatformUserID = ce.PlatformUserID
+			}
+			if existing.PlatformServerID == "" {
+				existing.PlatformServerID = ce.PlatformServerID
+			}
 			if err := s.connectionSvc.Update(ctx, existing); err != nil {
 				return fmt.Errorf("updating connection %q: %w", ce.Name, err)
 			}
 		} else {
 			c := &connection.Connection{
-				Name:                 ce.Name,
-				Type:                 ce.Type,
-				URL:                  ce.URL,
-				APIKey:               ce.APIKey,
-				Enabled:              ce.Enabled,
-				FeatureLibraryImport: ce.FeatureLibraryImport,
-				FeatureNFOWrite:      ce.FeatureNFOWrite,
-				FeatureImageWrite:    ce.FeatureImageWrite,
+				Name:                     ce.Name,
+				Type:                     ce.Type,
+				URL:                      ce.URL,
+				APIKey:                   ce.APIKey,
+				Enabled:                  ce.Enabled,
+				FeatureLibraryImport:     ce.FeatureLibraryImport,
+				FeatureNFOWrite:          ce.FeatureNFOWrite,
+				FeatureImageWrite:        ce.FeatureImageWrite,
+				FeatureMetadataPush:      ce.FeatureMetadataPush,
+				FeatureTriggerRefresh:    ce.FeatureTriggerRefresh,
+				FeatureManageServerFiles: ce.FeatureManageServerFiles,
+				PreStillwaterConfigJSON:  ce.PreStillwaterConfigJSON,
+				PlatformUserID:           ce.PlatformUserID,
+				PlatformServerID:         ce.PlatformServerID,
 			}
 			if err := s.connectionSvc.Create(ctx, c); err != nil {
 				return fmt.Errorf("creating connection %q: %w", ce.Name, err)
