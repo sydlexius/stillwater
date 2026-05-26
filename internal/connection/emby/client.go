@@ -194,7 +194,7 @@ func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, l
 // TriggerLibraryScan triggers a full library scan.
 func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 	if err := c.Post(ctx, "/Library/Refresh", nil); err != nil {
-		return fmt.Errorf("triggering library scan: %w", err)
+		return fmt.Errorf("triggering library scan: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }
@@ -203,7 +203,7 @@ func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) error {
 	path := fmt.Sprintf("/Items/%s/Refresh", artistID)
 	if err := c.Post(ctx, path, nil); err != nil {
-		return fmt.Errorf("triggering artist refresh: %w", err)
+		return fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }
@@ -434,7 +434,7 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 	}
 
 	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
-	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
+	return wrapAuthIfStatusAuth(c.PostJSON(ctx, path, bytes.NewReader(body), nil))
 }
 
 // UpdateArtistLocks persists the given field-level lock list and whole-item lock
