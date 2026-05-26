@@ -569,3 +569,147 @@ func TestShortConnLabel(t *testing.T) {
 		})
 	}
 }
+
+// TestPushMetadataAsync_NotifierFiresOnPushFailure mirrors
+// TestPushLocks_NotifierFiresOnSyncFailure for the PushMetadataAsync
+// surface (#1642). When the platform write returns 401, the per-connection
+// goroutine must invoke the Notifier exactly once with the operation slug
+// "metadata_push" and a non-empty error class from the classifyPushErr
+// taxonomy (auth_failed for 401). Without this hook the operator gets
+// nothing in the UI while the platform silently rejected the write.
+func TestPushMetadataAsync_NotifierFiresOnPushFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Emby PushMetadata posts directly to /Items/{id}; reject every
+		// write with 401 so the push goroutine surfaces an auth_failed
+		// classification through classifyPushErr.
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	notifier := &recordingNotifier{}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+		Logger:   silentLogger(),
+		Notifier: notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	// PushMetadataAsync dispatches its work in a goroutine; spin briefly
+	// until the notifier observes the failure. The 401 path is synchronous
+	// inside PushMetadata so a short deadline is sufficient.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(notifier.snapshot()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	got := notifier.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	if got[0].connection != "my-emby" {
+		t.Errorf("connection = %q, want %q", got[0].connection, "my-emby")
+	}
+	if got[0].errorClass != "auth_failed" {
+		t.Errorf("errorClass = %q, want %q (401 should classify as auth_failed)", got[0].errorClass, "auth_failed")
+	}
+	if got[0].artistID != "a1" {
+		t.Errorf("artistID = %q, want %q", got[0].artistID, "a1")
+	}
+	if got[0].artistName != "Test Artist" {
+		t.Errorf("artistName = %q, want %q", got[0].artistName, "Test Artist")
+	}
+	if got[0].operation != "metadata_push" {
+		t.Errorf("operation = %q, want %q (PushMetadataAsync must emit pushOpMetadataPush)", got[0].operation, "metadata_push")
+	}
+	if got[0].err == nil {
+		t.Error("err = nil, want a non-nil error so logs can correlate")
+	}
+}
+
+// TestPushMetadataAsync_NotifierFiresOnConnectionLookupFailure verifies
+// the GetByID lookup-failure branch. When a connection is deleted between
+// platform-ID resolution and metadata push, the goroutine must still
+// surface a toast (operator otherwise sees a green success path while the
+// underlying write was never attempted). Connection name falls back to
+// shortConnLabel since GetByID failed before we could read the real name.
+func TestPushMetadataAsync_NotifierFiresOnConnectionLookupFailure(t *testing.T) {
+	notifier := &recordingNotifier{}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-gone", PlatformArtistID: "p1"},
+		}},
+		// Empty conns map -> fakeConnectionGetter.GetByID returns an error.
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+		Notifier:          notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(notifier.snapshot()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	got := notifier.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	if got[0].operation != "metadata_push" {
+		t.Errorf("operation = %q, want %q", got[0].operation, "metadata_push")
+	}
+	if got[0].connection == "" {
+		t.Error("connection label is empty; expected shortConnLabel fallback (id=c-gone)")
+	}
+	if got[0].errorClass == "" {
+		t.Error("errorClass empty; lookup failure must still classify (rejected fallback)")
+	}
+	if got[0].err == nil {
+		t.Error("err = nil, want a non-nil error so logs can correlate")
+	}
+}
+
+// TestPushMetadataAsync_NotifierNotCalledOnSuccess covers the happy path:
+// no notify, no toast. Symmetric with TestPushLocks_NotifierNotCalledOnSuccess
+// so a regression on either surface fails its own test, not the other's.
+func TestPushMetadataAsync_NotifierNotCalledOnSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	notifier := &recordingNotifier{}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+		Logger:   silentLogger(),
+		Notifier: notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	// Give the goroutine time to complete a successful POST.
+	time.Sleep(200 * time.Millisecond)
+	if got := notifier.snapshot(); len(got) != 0 {
+		t.Errorf("notifier calls on success = %d, want 0; calls=%+v", len(got), got)
+	}
+}

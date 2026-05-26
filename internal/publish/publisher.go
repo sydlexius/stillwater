@@ -26,9 +26,15 @@ import (
 )
 
 // pushOpLockToggle is the operation slug emitted on connection.push_failed
-// events from PushLocks. Other push surfaces (PushMetadataAsync) will gain
-// their own slugs as the notifier path is extended to them.
+// events from PushLocks.
 const pushOpLockToggle = "lock_toggle"
+
+// pushOpMetadataPush is the operation slug emitted on connection.push_failed
+// events from PushMetadataAsync. Toast subscribers can filter by this slug
+// to distinguish a metadata-write failure from a lock-toggle failure (per
+// issue #1642 -- bringing the metadata push surface into parity with the
+// PushLocks notify path introduced by #1088).
+const pushOpMetadataPush = "metadata_push"
 
 const (
 	// pushTimeout is the per-connection timeout for async metadata pushes.
@@ -286,6 +292,16 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 					slog.String("artist_id", a.ID),
 					slog.String("connection_id", pid.ConnectionID),
 					slog.String("error", connErr.Error()))
+				// Mirror the PushLocks lookup-failure notify path (#1088).
+				// shortConnLabel falls back to an 8-char id prefix because the
+				// connection name is unknown when GetByID itself failed.
+				// classifyPushErr keeps the toast error class in the same
+				// stable taxonomy regardless of which surface raised it.
+				class := classifyPushErr(connErr)
+				if class == "" {
+					class = "rejected"
+				}
+				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), class, a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
 				return
 			}
 			if !conn.Enabled {
@@ -303,6 +319,11 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 					slog.String("artist_name", a.Name),
 					slog.String("connection", conn.Name),
 					slog.String("error", pushErr.Error()))
+				// Same notify path as PushLocks: classifyPushErr translates
+				// the raw transport / status error into the stable taxonomy
+				// (auth_failed, timeout, server_error, ...) so the toast
+				// tells the operator what kind of intervention is needed.
+				p.notifyPushFailure(conn.Name, classifyPushErr(pushErr), a.ID, artistDisplayName(a), pushOpMetadataPush, pushErr)
 			} else {
 				p.logger.Info("auto-push: metadata pushed",
 					slog.String("artist_id", a.ID),
