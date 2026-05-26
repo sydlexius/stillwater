@@ -69,13 +69,28 @@ func TestRestoreOOBE_BypassesAdminWizard(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("restore status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	// Every documented contract key must be present so a future regression
+	// that drops one is caught here rather than silently shrinking the
+	// payload to whatever subset a client happens to read.
+	for _, k := range []string{"status", "redirect", "users_imported", "connections", "libraries", "api_tokens"} {
+		if _, ok := raw[k]; !ok {
+			t.Fatalf("missing response key %q in restore success payload; body: %s", k, w.Body.String())
+		}
+	}
 	var resp struct {
 		Status        string `json:"status"`
 		Redirect      string `json:"redirect"`
 		UsersImported int    `json:"users_imported"`
+		Connections   int    `json:"connections"`
+		Libraries     int    `json:"libraries"`
+		APITokens     int    `json:"api_tokens"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
+		t.Fatalf("unmarshal typed response: %v", err)
 	}
 	if resp.Status != "restored" {
 		t.Errorf("status: got %q, want restored", resp.Status)

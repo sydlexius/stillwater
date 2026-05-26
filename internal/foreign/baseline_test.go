@@ -2,6 +2,8 @@ package foreign
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -162,13 +164,21 @@ func TestScanner_BaselineSurvivesContextCancel(t *testing.T) {
 
 	// Cancellation propagates from the lister probe or the first
 	// QueryRow; either way the function must NOT mark baseline as done.
-	_ = scanner.Scan(ctx)
+	// Asserting context.Canceled rather than discarding the error catches
+	// the regression where Scan returns nil (e.g. swallows cancellation)
+	// while still failing to write the baseline flag -- a subtler bug than
+	// what the err==nil-only test would have surfaced.
+	if err := scanner.Scan(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Scan on canceled ctx: err = %v, want context.Canceled", err)
+	}
 
 	var v string
 	err := db.QueryRow(
 		`SELECT value FROM settings WHERE key = 'foreign_files.baseline_completed'`).Scan(&v)
-	if err == nil {
-		// Row exists -> flag was set. That would be wrong.
-		t.Errorf("baseline_completed must not be set on a canceled scan; got %q", v)
+	// Treating "any error" as success would mask unrelated DB failures
+	// (driver hiccups, schema drift) and false-pass the test. Assert the
+	// exact ErrNoRows that proves the row was never written.
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected baseline_completed row to be absent (sql.ErrNoRows); got err=%v value=%q", err, v)
 	}
 }

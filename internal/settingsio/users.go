@@ -207,6 +207,23 @@ func (s *Service) importOneUser(ctx context.Context, db dbExecutor, u *UserExpor
 		return fmt.Errorf("probing user by id %q: %w", sourceID, err)
 	}
 	if existingByID != "" {
+		// Before issuing the UPDATE, verify the envelope's username does
+		// not collide with a DIFFERENT target row. If it does, the
+		// UPDATE will rename the id-hit row to a username already taken
+		// by another user, the schema's UNIQUE(username) trips, and the
+		// caller surfaces a generic 500 instead of the documented 409
+		// ErrUserIDCollision. Probing here keeps the
+		// "halt on rename-into-collision" contract intact.
+		var usernameOwner string
+		err := db.QueryRowContext(ctx,
+			`SELECT id FROM users WHERE username = ?`, u.Username).Scan(&usernameOwner)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("probing user by username %q: %w", u.Username, err)
+		}
+		if usernameOwner != "" && usernameOwner != sourceID {
+			return fmt.Errorf("%w: username %q is taken by user id %q on target, envelope brought id %q",
+				ErrUserIDCollision, u.Username, usernameOwner, sourceID)
+		}
 		if err := s.updateUserByID(ctx, db, u, sourceID, now, role, authProvider, isActive); err != nil {
 			return err
 		}

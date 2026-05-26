@@ -55,7 +55,14 @@ func (s *Service) importProviderKeys(ctx context.Context, keys map[string]string
 // connection with the same (type, url) exists on the target it is updated in
 // place; otherwise a new connection is created. The internal connection ID is
 // never exported; only the natural key (type, url) crosses the wire.
-func (s *Service) importConnections(ctx context.Context, conns []ConnectionExport, result *ImportResult) error {
+//
+// carryV14Fields signals that the envelope is v1.4 or later, so the four
+// v1.4-only fields (FeatureMetadataPush, FeatureTriggerRefresh,
+// FeatureManageServerFiles, PreStillwaterConfigJSON) are authoritative.
+// When false (a pre-1.4 envelope), those fields decoded as zero values and
+// must not be copied onto the target's existing connection row -- doing so
+// would silently disable toggles the operator had set.
+func (s *Service) importConnections(ctx context.Context, conns []ConnectionExport, result *ImportResult, carryV14Fields bool) error {
 	for _, ce := range conns {
 		existing, err := s.connectionSvc.GetByTypeAndURL(ctx, ce.Type, ce.URL)
 		if err != nil {
@@ -68,10 +75,12 @@ func (s *Service) importConnections(ctx context.Context, conns []ConnectionExpor
 			existing.FeatureLibraryImport = ce.FeatureLibraryImport
 			existing.FeatureNFOWrite = ce.FeatureNFOWrite
 			existing.FeatureImageWrite = ce.FeatureImageWrite
-			existing.FeatureMetadataPush = ce.FeatureMetadataPush
-			existing.FeatureTriggerRefresh = ce.FeatureTriggerRefresh
-			existing.FeatureManageServerFiles = ce.FeatureManageServerFiles
-			existing.PreStillwaterConfigJSON = ce.PreStillwaterConfigJSON
+			if carryV14Fields {
+				existing.FeatureMetadataPush = ce.FeatureMetadataPush
+				existing.FeatureTriggerRefresh = ce.FeatureTriggerRefresh
+				existing.FeatureManageServerFiles = ce.FeatureManageServerFiles
+				existing.PreStillwaterConfigJSON = ce.PreStillwaterConfigJSON
+			}
 			// platform_user_id and platform_server_id reflect the live peer's
 			// identity. Preserve the receiving instance's value if it already
 			// has one (a prior connection-test resolved it); fall back to the

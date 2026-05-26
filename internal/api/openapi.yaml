@@ -2207,6 +2207,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [status, redirect, users_imported, connections, libraries, api_tokens]
                 properties:
                   status: { type: string, enum: [restored] }
                   redirect: { type: string }

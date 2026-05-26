@@ -58,6 +58,27 @@ var supportedEnvelopeVersions = map[string]bool{
 	"1.4": true,
 }
 
+// envelopeCarriesConnectionV14Fields reports whether an envelope of the given
+// version is known to carry the v1.4 connection feature fields
+// (FeatureMetadataPush, FeatureTriggerRefresh, FeatureManageServerFiles,
+// PreStillwaterConfigJSON). Pre-1.4 envelopes lack those fields, so
+// deserializing leaves them at their zero values; copying those zeros onto
+// an existing target row would silently disable toggles the operator had
+// set. Returning false here lets importConnections preserve the target's
+// existing values instead.
+//
+// When the schema adds a new envelope version that also carries these fields,
+// add it to the allow-set here. Parameter name `envelopeVersion` is spelled
+// out to avoid shadowing the imported `version` package.
+func envelopeCarriesConnectionV14Fields(envelopeVersion string) bool {
+	switch envelopeVersion {
+	case "1.4":
+		return true
+	default:
+		return false
+	}
+}
+
 // ErrWrongPassphrase is returned by Import when the AES-GCM tag verification
 // fails, meaning the supplied passphrase does not match the one used during
 // export. Callers may use errors.Is to distinguish this case from other
@@ -575,7 +596,7 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 	if err := s.importProviderKeys(ctx, payload.ProviderKeys, result); err != nil {
 		return nil, fmt.Errorf("importing provider keys: %w", err)
 	}
-	if err := s.importConnections(ctx, payload.Connections, result); err != nil {
+	if err := s.importConnections(ctx, payload.Connections, result, envelopeCarriesConnectionV14Fields(v)); err != nil {
 		return nil, fmt.Errorf("importing connections: %w", err)
 	}
 	if err := s.importPlatformProfiles(ctx, payload.PlatformProfiles, result); err != nil {

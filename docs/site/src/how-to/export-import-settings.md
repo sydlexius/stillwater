@@ -65,7 +65,7 @@ There are two ways to import an exported bundle, depending on whether the receiv
 4. Enter the same passphrase that was used to export.
 5. Click **Import**.
 
-Stillwater decrypts, validates, and applies the bundle inside a single database transaction. Either the entire bundle lands or none of it does -- a mid-import error rolls back without leaving the database in a half-restored state. If the passphrase is wrong, decryption fails before anything is touched. The result shows what was imported and what was skipped.
+Stillwater decrypts and validates the bundle first. It then applies the bundle in two phases: external-service sections (connections, platform profiles, webhooks, provider keys and priorities, rules, scraper preferences) are applied first, and the remaining database-direct sections (settings, users, user preferences, libraries, API tokens) are applied in a single transaction so an error in any one of them rolls the whole transactional phase back. Sections applied during the first phase remain committed if the transactional phase later rolls back; every section's import is upsert-by-natural-key, so the operator can safely retry. If the passphrase is wrong, decryption fails before anything is touched. The result shows what was imported and what was skipped.
 
 ### Into a fresh instance, before admin creation (Restore from backup)
 

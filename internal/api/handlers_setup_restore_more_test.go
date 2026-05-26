@@ -280,10 +280,10 @@ func TestRestoreOOBE_OversizedFile(t *testing.T) {
 
 	router.handleSetupRestore(w, req)
 
-	// Either ParseMultipartForm rejects it (400) or the LimitReader path
-	// returns 413; both are valid defenses. The handler must NOT let the
-	// oversized payload reach the JSON unmarshal step.
-	if w.Code != http.StatusRequestEntityTooLarge && w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 413 or 400; body: %s", w.Code, w.Body.String())
+	// The documented oversized-upload contract is 413. The handler must
+	// reject the payload via the LimitReader path before it reaches the
+	// JSON unmarshal step.
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413; body: %s", w.Code, w.Body.String())
 	}
 }

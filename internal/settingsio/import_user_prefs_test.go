@@ -215,7 +215,12 @@ func TestImportUserPreferences_IDMissThenUsernameHit(t *testing.T) {
 	}
 	p.Users = nil
 	// Sanity check: UserPrefsExport must still carry the source's UserID.
-	if len(p.UserPreferences) == 0 || p.UserPreferences[0].UserID != "u-source-only" {
+	// Split the empty check from the index access so an empty slice fails
+	// with a clear message instead of panicking on the [0] dereference.
+	if len(p.UserPreferences) == 0 {
+		t.Fatal("envelope precondition: expected at least one UserPreferences entry, got none")
+	}
+	if p.UserPreferences[0].UserID != "u-source-only" {
 		t.Fatalf("envelope precondition: UserPreferences[0].UserID = %q, want u-source-only",
 			p.UserPreferences[0].UserID)
 	}
