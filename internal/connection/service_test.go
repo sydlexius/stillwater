@@ -745,7 +745,7 @@ func TestVerifyPathAfterUpdate_RoundTrip(t *testing.T) {
 // TestVerifyPathAfterUpdate_DefaultsFalse pins the opt-in default required
 // by issue #1640: a connection inserted without setting the field reads
 // back false. Existing rows on upgrade hit the same path via the
-// ensureColumn DEFAULT 0 fallback in migrate.go.
+// ensureConnectionsColumn DEFAULT 0 fallback in migrate.go.
 func TestVerifyPathAfterUpdate_DefaultsFalse(t *testing.T) {
 	t.Parallel()
 	svc := setupTestService(t)
