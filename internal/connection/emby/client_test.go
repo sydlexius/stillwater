@@ -1740,3 +1740,30 @@ func TestUploadImage_AuthClass401(t *testing.T) {
 		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
+
+// TestPushMetadata_AuthClass401_DualContract pins the dual-contract that
+// any future "single-wrap" refactor would break: the same joined error
+// must satisfy BOTH errors.Is(err, ErrAuthRequired) (the typed sentinel
+// consumed by publish.classifyPushErr's auth_failed branch via the
+// errors.Is(_, ErrAuthRequired) fast path that will land alongside the
+// existing string match) AND strings.Contains(err.Error(), "status 401")
+// (the substring contract that classifyPushErr relies on today). Either
+// half going missing breaks the toast taxonomy.
+func TestPushMetadata_AuthClass401_DualContract(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"})
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "status 401") {
+		t.Errorf("err.Error() = %q; want substring \"status 401\"", err.Error())
+	}
+}
