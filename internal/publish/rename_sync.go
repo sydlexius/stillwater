@@ -43,7 +43,16 @@ var renamePathUpdaterFactory = func(conn *connection.Connection, logger *slog.Lo
 	case connection.TypeJellyfin:
 		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
 	case connection.TypeLidarr:
-		return lidarr.New(conn.URL, conn.APIKey, logger), true
+		// VerifyPathAfterUpdate is the per-connection opt-in (#1640): when
+		// true, UpdateArtistPath issues a follow-up GET and confirms the
+		// returned path round-trips. Setting it here is the load-bearing
+		// wiring -- without this line the Connection field exists in the
+		// DB but never reaches the client, so the verify capability is
+		// dead code. Default false on the model means existing rows keep
+		// today's single-PUT behavior.
+		client := lidarr.New(conn.URL, conn.APIKey, logger)
+		client.SetVerifyPathAfterUpdate(conn.VerifyPathAfterUpdate)
+		return client, true
 	default:
 		return nil, false
 	}
