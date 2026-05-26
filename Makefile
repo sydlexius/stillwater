@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks worktree check-openapi hadolint scan bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi hadolint scan bruno-ci
 
 # Binary name
 BINARY=stillwater
@@ -117,10 +117,13 @@ check-openapi:
 ## hooks: Install git hooks (pre-commit lint, pre-push gate)
 hooks:
 	chmod +x .githooks/pre-commit .githooks/pre-push
+	@git config --unset core.hooksPath 2>/dev/null || true
 	git config core.hooksPath .githooks
-	@echo "Hooks installed via core.hooksPath=.githooks (covers worktrees)."
-	@echo "  pre-commit: lint, gofmt, templ freshness, build, golangci-lint, govulncheck, hadolint"
-	@echo "  pre-push:   runs scripts/pre-push-gate.sh (tests, OpenAPI, generated, patch coverage >= 70%)"
+	@./scripts/check-hooks.sh
+
+## doctor: Verify hook wiring without modifying anything
+doctor:
+	@./scripts/check-hooks.sh
 
 ## worktree: Create a sibling worktree with hooks wired and tracker entry appended
 ##   Usage: make worktree NAME=<slug> BRANCH=<branch> [ISSUE=<number>]
@@ -130,6 +133,7 @@ worktree:
 	@test -n "$(NAME)"   || (echo "error: NAME is required (e.g. make worktree NAME=my-feature BRANCH=feat/my-feature)"; exit 1)
 	@test -n "$(BRANCH)" || (echo "error: BRANCH is required (e.g. make worktree NAME=my-feature BRANCH=feat/my-feature)"; exit 1)
 	git worktree add ../stillwater-$(NAME) -b $(BRANCH)
+	@git -C ../stillwater-$(NAME) config --unset core.hooksPath 2>/dev/null || true
 	git -C ../stillwater-$(NAME) config core.hooksPath .githooks
 	@mkdir -p "$(dir $(WORKTREES_MD))"
 	@printf "| stillwater-$(NAME) | $(BRANCH) | $(if $(ISSUE),#$(ISSUE),--) | In Progress |\n" >> "$(WORKTREES_MD)"
