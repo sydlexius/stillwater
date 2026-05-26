@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -450,13 +451,16 @@ func TestSyncRename_PerPlatformTimeoutFires(t *testing.T) {
 // succeeds without each test needing to script per-request bodies.
 func lidarrVerifyServer(t *testing.T, newPath string) (*httptest.Server, func() int) {
 	t.Helper()
-	var getCount int
+	// atomic.Int32 because the counter is written from the httptest
+	// handler goroutine and read from the test goroutine; a plain int
+	// trips -race under the project's race-test rule.
+	var getCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			getCount++
+			n := getCount.Add(1)
 			w.Header().Set("Content-Type", "application/json")
-			if getCount == 1 {
+			if n == 1 {
 				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
 				return
 			}
@@ -470,7 +474,7 @@ func lidarrVerifyServer(t *testing.T, newPath string) (*httptest.Server, func() 
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return srv, func() int { return getCount }
+	return srv, func() int { return int(getCount.Load()) }
 }
 
 // TestSyncRename_LidarrVerifyWiringEnabled asserts the load-bearing wiring

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -524,18 +525,21 @@ func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
 // sent on the follow-up GET, the call succeeds. The test server tracks
 // each request so we can confirm the verify GET actually fired.
 func TestUpdateArtistPath_VerifyAfterPut_Match(t *testing.T) {
-	var getCount int
+	// atomic.Int32 because the counter is written from the httptest
+	// handler goroutine and read from the test goroutine; a plain int
+	// trips -race under the project's race-test rule.
+	var getCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			getCount++
+			n := getCount.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			// Both the pre-PUT fetch and the verify-after-PUT GET hit the
 			// same handler; for the verify branch we must echo the new
 			// path so the comparison succeeds. The first GET (pre-PUT)
 			// can return the old path; current path field is overwritten
 			// on the PUT body anyway.
-			if getCount == 1 {
+			if n == 1 {
 				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
 			} else {
 				_, _ = w.Write([]byte(`{"id":42,"path":"/new/X"}`))
@@ -553,8 +557,8 @@ func TestUpdateArtistPath_VerifyAfterPut_Match(t *testing.T) {
 	if err := c.UpdateArtistPath(context.Background(), "42", "/new/X"); err != nil {
 		t.Fatalf("UpdateArtistPath with verify (match): %v", err)
 	}
-	if getCount != 2 {
-		t.Errorf("expected 2 GET requests (pre-PUT + verify), got %d", getCount)
+	if got := getCount.Load(); got != 2 {
+		t.Errorf("expected 2 GET requests (pre-PUT + verify), got %d", got)
 	}
 }
 
@@ -564,13 +568,14 @@ func TestUpdateArtistPath_VerifyAfterPut_Match(t *testing.T) {
 // an error including both sent and got values so the operator can
 // diagnose the drift.
 func TestUpdateArtistPath_VerifyAfterPut_Mismatch(t *testing.T) {
-	var getCount int
+	// atomic.Int32: see TestUpdateArtistPath_VerifyAfterPut_Match.
+	var getCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			getCount++
+			n := getCount.Add(1)
 			w.Header().Set("Content-Type", "application/json")
-			if getCount == 1 {
+			if n == 1 {
 				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
 			} else {
 				// Simulate Lidarr coercing the path to a different value
@@ -604,11 +609,12 @@ func TestUpdateArtistPath_VerifyAfterPut_Mismatch(t *testing.T) {
 // SetVerifyPathAfterUpdate(true) the follow-up GET does NOT fire, so the
 // opt-in default keeps the historical per-rename cost (1 GET + 1 PUT).
 func TestUpdateArtistPath_VerifyAfterPut_Disabled(t *testing.T) {
-	var getCount int
+	// atomic.Int32: see TestUpdateArtistPath_VerifyAfterPut_Match.
+	var getCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			getCount++
+			getCount.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
 		case http.MethodPut:
@@ -624,8 +630,8 @@ func TestUpdateArtistPath_VerifyAfterPut_Disabled(t *testing.T) {
 	if err := c.UpdateArtistPath(context.Background(), "42", "/new/X"); err != nil {
 		t.Fatalf("UpdateArtistPath (verify disabled): %v", err)
 	}
-	if getCount != 1 {
-		t.Errorf("expected 1 GET (pre-PUT only), got %d -- verify-after-PUT must be opt-in", getCount)
+	if got := getCount.Load(); got != 1 {
+		t.Errorf("expected 1 GET (pre-PUT only), got %d -- verify-after-PUT must be opt-in", got)
 	}
 }
 
@@ -682,12 +688,13 @@ func TestGetMetadataConsumers_AuthClass401(t *testing.T) {
 // ErrAuthRequired so the toast surface routes to auth_failed rather than a
 // generic verify mismatch class.
 func TestUpdateArtistPath_VerifyAfterPut_AuthClass401(t *testing.T) {
-	var getCount int
+	// atomic.Int32: see TestUpdateArtistPath_VerifyAfterPut_Match.
+	var getCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			getCount++
-			if getCount == 1 {
+			n := getCount.Add(1)
+			if n == 1 {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
 				return
@@ -711,7 +718,7 @@ func TestUpdateArtistPath_VerifyAfterPut_AuthClass401(t *testing.T) {
 	if !errors.Is(err, ErrAuthRequired) {
 		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
-	if getCount != 2 {
-		t.Errorf("expected 2 GETs (pre-PUT + verify), got %d", getCount)
+	if got := getCount.Load(); got != 2 {
+		t.Errorf("expected 2 GETs (pre-PUT + verify), got %d", got)
 	}
 }

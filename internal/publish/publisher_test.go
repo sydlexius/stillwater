@@ -686,11 +686,19 @@ func TestPushMetadataAsync_NotifierFiresOnConnectionLookupFailure(t *testing.T) 
 	if got[0].operation != "metadata_push" {
 		t.Errorf("operation = %q, want %q", got[0].operation, "metadata_push")
 	}
-	if got[0].connection == "" {
-		t.Error("connection label is empty; expected shortConnLabel fallback (id=c-gone)")
+	// Pin the exact shortConnLabel("c-gone") fallback so a future regression
+	// that changes the label format or drops the prefix-truncation logic
+	// fails here. Asserting non-empty would let an unrelated format change
+	// pass silently.
+	if want := shortConnLabel("c-gone"); got[0].connection != want {
+		t.Errorf("connection = %q, want %q", got[0].connection, want)
 	}
-	if got[0].errorClass == "" {
-		t.Error("errorClass empty; lookup failure must still classify (rejected fallback)")
+	// Pin the exact "rejected" class so the PushMetadataAsync lookup-failure
+	// path stays in parity with PushLocks: classifyPushErr's default
+	// taxonomy bucket for a non-network/non-status error is "rejected", and
+	// this is the contract the surrounding toast surface relies on.
+	if got[0].errorClass != "rejected" {
+		t.Errorf("errorClass = %q, want %q (lookup failure must classify as rejected)", got[0].errorClass, "rejected")
 	}
 	if got[0].err == nil {
 		t.Error("err = nil, want a non-nil error so logs can correlate")

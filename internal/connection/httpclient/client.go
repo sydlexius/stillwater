@@ -103,7 +103,12 @@ func (b *BaseClient) Get(ctx context.Context, path string, result any) error {
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
-		return NewStatusError(resp.StatusCode, readErrorBody(resp.Body))
+		// Construct StatusError directly rather than via NewStatusError:
+		// NewStatusError treats any 2xx as success (nil) to fit the
+		// POST/PUT contract, but Get's documented contract is 200-only,
+		// so a 201/204 here must still surface as an error rather than
+		// silently fall through to JSON-decoding an unexpected body.
+		return &StatusError{StatusCode: resp.StatusCode, Body: readErrorBody(resp.Body)}
 	}
 
 	if result != nil {
