@@ -131,7 +131,11 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 // is also present.
 func (r *Router) writeRestoreErr(w http.ResponseWriter, req *http.Request, status int, msg string) {
 	if !acceptsJSON(req) && req.Header.Get("HX-Request") == "true" {
+		// WriteHeader must precede the body write or net/http promotes
+		// the implicit 200 to the wire status; HTMX swap-on-error then
+		// silently treats the error fragment as a successful render.
 		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(status)
 		fmt.Fprintf(w, `<div class="text-sm text-red-600 dark:text-red-400">%s</div>`, html.EscapeString(msg)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}

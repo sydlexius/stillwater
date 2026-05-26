@@ -210,7 +210,12 @@ func (s *Service) importOneUser(ctx context.Context, db dbExecutor, u *UserExpor
 		if err := s.updateUserByID(ctx, db, u, sourceID, now, role, authProvider, isActive); err != nil {
 			return err
 		}
-		result.UsersImported++
+		// Do not increment UsersImported here. The counter is documented
+		// on ImportResult as "user rows recreated from the envelope on
+		// import because they were absent on the target"; an id-hit
+		// update path is a refresh of an existing row, not a recreation,
+		// so counting it would overreport the cross-instance restore on
+		// any subsequent import to the same target.
 		return nil
 	}
 

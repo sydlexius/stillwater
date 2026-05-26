@@ -14,13 +14,21 @@ import (
 // APITokenExport carries the persisted API-token row in a form portable
 // across instances. The plaintext token is never persisted in the DB, so
 // this struct cannot expose it; only the stored hash crosses the wire, and
-// only inside the passphrase-encrypted envelope. Username replaces user_id
-// because user IDs are generated per-instance (same remap pattern as
-// user_preferences).
+// only inside the passphrase-encrypted envelope.
+//
+// From envelope v1.4 onward the source instance's UserID (UUID) is also
+// carried so the import side can match by id first (stable across installs
+// once the Users block has restored the source ids) and only fall back to
+// the historical username remap when no id match exists. This covers the
+// "same user, locally renamed on target" case where username-only lookup
+// would silently skip every token belonging to that user. UserID is
+// omitempty so pre-1.4 envelopes (which never had it) still decode and the
+// importer falls back to the username path for those rows.
 type APITokenExport struct {
 	Name       string `json:"name"`
 	TokenHash  string `json:"token_hash"`
 	Scopes     string `json:"scopes"`
+	UserID     string `json:"user_id,omitempty"`
 	Username   string `json:"username"`
 	CreatedAt  string `json:"created_at"`
 	LastUsedAt string `json:"last_used_at,omitempty"`
@@ -34,7 +42,7 @@ type APITokenExport struct {
 // source survives the round-trip rather than being silently re-activated.
 func (s *Service) exportAPITokens(ctx context.Context) ([]APITokenExport, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT t.name, t.token_hash, t.scopes, u.username,
+		SELECT t.name, t.token_hash, t.scopes, u.id, u.username,
 		       t.created_at, COALESCE(t.last_used_at, ''),
 		       COALESCE(t.revoked_at, ''), t.status
 		FROM api_tokens t
@@ -50,7 +58,7 @@ func (s *Service) exportAPITokens(ctx context.Context) ([]APITokenExport, error)
 	for rows.Next() {
 		var te APITokenExport
 		if err := rows.Scan(
-			&te.Name, &te.TokenHash, &te.Scopes, &te.Username,
+			&te.Name, &te.TokenHash, &te.Scopes, &te.UserID, &te.Username,
 			&te.CreatedAt, &te.LastUsedAt, &te.RevokedAt, &te.Status,
 		); err != nil {
 			return nil, fmt.Errorf("scanning api token row: %w", err)
@@ -64,18 +72,28 @@ func (s *Service) exportAPITokens(ctx context.Context) ([]APITokenExport, error)
 }
 
 // importAPITokens upserts API tokens by token_hash (which is UNIQUE in the
-// schema). The owning user is resolved by username on the target instance.
+// schema). The owning user is resolved with a two-step probe: id first
+// (stable across installs once the Users block has restored source ids),
+// then username (historical pre-1.4 path).
 //
-// Resolution order (#1283):
-//  1. Username found on target (either pre-existing OR just recreated from
-//     the envelope's Users block) -> token attributes back to that user.
-//  2. Username absent AND opts.AdminFallbackTokens=true -> token is
+// Resolution order:
+//  1. te.UserID present (v1.4+ envelope) AND that id exists on the target
+//     -> token attributes back to that user, even if the local username
+//     differs (the operator renamed the account locally).
+//  2. id absent or id miss -> probe by username. If found (pre-existing OR
+//     just recreated from the envelope's Users block) -> token attributes
+//     to that user.
+//  3. Both probes miss AND opts.AdminFallbackTokens=true -> token is
 //     attributed to opts.ImportingAdminUserID and OwnershipReassigned is
 //     incremented in the result so the operator can see the audit count.
-//  3. Username absent AND admin-fallback is off (the historical default) ->
+//  4. Both probes miss AND admin-fallback is off (the historical default) ->
 //     token is skipped and APITokensSkipped is incremented; this preserves
 //     the prior behavior for callers that prefer a quiet skip over a silent
 //     ownership change (e.g. prod->staging clones).
+//
+// The id-first path was added in #1691 because the original username-only
+// lookup silently dropped every token belonging to a user who shared the
+// source id but had been locally renamed on the target.
 func (s *Service) importAPITokens(ctx context.Context, db dbExecutor, tokens []APITokenExport, result *ImportResult, opts ImportOptions) error {
 	for i := range tokens {
 		te := &tokens[i]
@@ -87,53 +105,16 @@ func (s *Service) importAPITokens(ctx context.Context, db dbExecutor, tokens []A
 			result.APITokensSkipped++
 			continue
 		}
-		// Resolve owning user by username.
-		var userID string
-		err := db.QueryRowContext(ctx,
-			`SELECT id FROM users WHERE username = ?`, te.Username,
-		).Scan(&userID)
-		switch {
-		case err == nil:
-			// Owner found (pre-existing or just recreated from envelope).
-		case errors.Is(err, sql.ErrNoRows):
-			if opts.AdminFallbackTokens && opts.ImportingAdminUserID != "" {
-				// Verify the importing admin still exists on the target.
-				// A tampered or stale opt would otherwise insert a token
-				// with a dangling user_id FK.
-				var adminProbe string
-				probeErr := db.QueryRowContext(ctx,
-					`SELECT id FROM users WHERE id = ?`, opts.ImportingAdminUserID,
-				).Scan(&adminProbe)
-				switch {
-				case errors.Is(probeErr, sql.ErrNoRows):
-					// Genuine "admin deleted between resolution and import":
-					// skip the token, do not fail the whole import.
-					slog.Warn("import: admin-fallback configured but admin id missing on target; skipping token",
-						"token_name", te.Name, "username", te.Username,
-						"admin_id", opts.ImportingAdminUserID)
-					result.APITokensSkipped++
-					continue
-				case probeErr != nil:
-					// A real DB error (connectivity, locking, EIO) must not
-					// be silently swallowed as "admin missing"; that turns a
-					// transient outage into a quiet bulk-token loss. Fail
-					// fast so the operator sees the underlying cause.
-					return fmt.Errorf("probing importing admin %q for token fallback: %w", opts.ImportingAdminUserID, probeErr)
-				}
-				slog.Info("import: reassigning api token to importing admin (admin-fallback)",
-					"token_name", te.Name,
-					"original_username", te.Username,
-					"new_owner_id", opts.ImportingAdminUserID)
-				userID = opts.ImportingAdminUserID
-				result.OwnershipReassigned++
-			} else {
-				slog.Warn("import: skipping api token whose owner is absent on target",
-					"token_name", te.Name, "username", te.Username)
-				result.APITokensSkipped++
-				continue
-			}
-		default:
-			return fmt.Errorf("looking up user %q for token %q: %w", te.Username, te.Name, err)
+		// Resolve owning user. id-first probe (v1.4+ envelopes) covers
+		// the same-user-renamed-locally case; username fallback covers
+		// pre-1.4 envelopes and id-misses. See resolveTokenOwner for
+		// the exact resolution rules.
+		userID, skip, err := s.resolveTokenOwner(ctx, db, te, opts, result)
+		if err != nil {
+			return err
+		}
+		if skip {
+			continue
 		}
 
 		// Upsert by token_hash. We look up first (instead of using ON CONFLICT)
@@ -186,6 +167,86 @@ func (s *Service) importAPITokens(ctx context.Context, db dbExecutor, tokens []A
 		result.APITokens++
 	}
 	return nil
+}
+
+// resolveTokenOwner returns the target user_id this token should be
+// attributed to, applying the four-step resolution documented on
+// importAPITokens. (skip=true, err=nil) means the loop should continue
+// past this token without writing it; (skip=false, err=nil) means userID
+// is bound and the caller should proceed with the upsert. A non-nil err
+// is a real DB failure and must bubble up so the whole import fails fast
+// rather than masking a transient outage as a per-token skip.
+func (s *Service) resolveTokenOwner(ctx context.Context, db dbExecutor, te *APITokenExport, opts ImportOptions, result *ImportResult) (userID string, skip bool, err error) {
+	// Step 1: id probe (v1.4+ envelopes). An id miss is not an error here
+	// because the target may have the user under a different id; fall
+	// through to the username probe instead of failing.
+	if te.UserID != "" {
+		var found string
+		probeErr := db.QueryRowContext(ctx,
+			`SELECT id FROM users WHERE id = ?`, te.UserID,
+		).Scan(&found)
+		switch {
+		case probeErr == nil:
+			return found, false, nil
+		case errors.Is(probeErr, sql.ErrNoRows):
+			// fall through to username probe
+		default:
+			return "", false, fmt.Errorf("probing user by id %q for token %q: %w", te.UserID, te.Name, probeErr)
+		}
+	}
+
+	// Step 2: username probe.
+	var found string
+	probeErr := db.QueryRowContext(ctx,
+		`SELECT id FROM users WHERE username = ?`, te.Username,
+	).Scan(&found)
+	switch {
+	case probeErr == nil:
+		return found, false, nil
+	case errors.Is(probeErr, sql.ErrNoRows):
+		// fall through to admin-fallback / skip below
+	default:
+		return "", false, fmt.Errorf("looking up user %q for token %q: %w", te.Username, te.Name, probeErr)
+	}
+
+	// Step 3: admin-fallback opt-in.
+	if opts.AdminFallbackTokens && opts.ImportingAdminUserID != "" {
+		// Verify the importing admin still exists on the target. A
+		// tampered or stale opt would otherwise insert a token with a
+		// dangling user_id FK.
+		var adminProbe string
+		probeErr := db.QueryRowContext(ctx,
+			`SELECT id FROM users WHERE id = ?`, opts.ImportingAdminUserID,
+		).Scan(&adminProbe)
+		switch {
+		case probeErr == nil:
+			slog.Info("import: reassigning api token to importing admin (admin-fallback)",
+				"token_name", te.Name,
+				"original_username", te.Username,
+				"new_owner_id", opts.ImportingAdminUserID)
+			result.OwnershipReassigned++
+			return opts.ImportingAdminUserID, false, nil
+		case errors.Is(probeErr, sql.ErrNoRows):
+			// Genuine "admin deleted between resolution and import":
+			// skip the token, do not fail the whole import.
+			slog.Warn("import: admin-fallback configured but admin id missing on target; skipping token",
+				"token_name", te.Name, "username", te.Username,
+				"admin_id", opts.ImportingAdminUserID)
+			result.APITokensSkipped++
+			return "", true, nil
+		default:
+			// A real DB error must not be silently swallowed as "admin
+			// missing"; that turns a transient outage into a quiet
+			// bulk-token loss.
+			return "", false, fmt.Errorf("probing importing admin %q for token fallback: %w", opts.ImportingAdminUserID, probeErr)
+		}
+	}
+
+	// Step 4: skip with audit counter.
+	slog.Warn("import: skipping api token whose owner is absent on target",
+		"token_name", te.Name, "username", te.Username)
+	result.APITokensSkipped++
+	return "", true, nil
 }
 
 // validTokenScopes falls back to the schema default when the import payload

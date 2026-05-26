@@ -208,10 +208,14 @@ func TestRestoreOOBE_HTMXErrorShape(t *testing.T) {
 
 	router.handleSetupRestore(w, req)
 
-	if w.Code != http.StatusOK {
-		// writeErr does not set a status on HX-Request -- the response is
-		// the html fragment with implicit 200. Just assert the body shape.
-		t.Logf("HX error status = %d (informational)", w.Code)
+	// HX-Request error responses must carry the intended error status on
+	// the wire so HTMX's swap-on-error path activates. A malformed
+	// envelope body (not-JSON) routes through writeRestoreErr with status
+	// 400; the prior implementation left WriteHeader unset and HTMX saw
+	// an implicit 200, silently treating the error fragment as success.
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("HX error status = %d, want %d (writeRestoreErr must set the wire status)",
+			w.Code, http.StatusBadRequest)
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "text/html" {
 		t.Errorf("Content-Type = %q, want text/html", ct)

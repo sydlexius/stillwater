@@ -2188,7 +2188,21 @@ paths:
                   description: Passphrase used at export time (PBKDF2 key derivation)
       responses:
         "200":
-          description: Restore applied; client should follow the redirect to sign in
+          description: |
+            Restore applied. JSON clients receive `redirect` in the response
+            body and navigate themselves. HTMX clients receive a generic HTML
+            fragment plus an `HX-Redirect` response header, which HTMX
+            consumes to drive the browser to the post-restore sign-in page.
+          headers:
+            HX-Redirect:
+              schema:
+                type: string
+              description: |
+                Present on responses to HTMX requests (HX-Request: true with
+                an Accept header that does not include application/json).
+                HTMX follows this URL after the swap completes. Absent on
+                JSON responses; clients use the body's `redirect` field
+                instead.
           content:
             application/json:
               schema:
@@ -2200,6 +2214,13 @@ paths:
                   connections: { type: integer }
                   libraries: { type: integer }
                   api_tokens: { type: integer }
+            text/html:
+              schema:
+                type: string
+                description: |
+                  HTMX swap fragment returned alongside the `HX-Redirect`
+                  header so the OOBE wizard's container can show a brief
+                  "Restoring..." copy while the browser navigates.
         "400":
           description: Invalid request or client-side restore error (missing file/passphrase, malformed multipart body, wrong passphrase, corrupt envelope, or unsupported envelope version)
           content:

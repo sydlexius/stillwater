@@ -181,10 +181,14 @@ type ImportResult struct {
 	LibrariesSkipped int `json:"libraries_skipped,omitempty"`
 	APITokens        int `json:"api_tokens"`
 	APITokensSkipped int `json:"api_tokens_skipped,omitempty"`
-	// UsersImported counts user rows recreated from the envelope on import
-	// because they were absent on the target instance (#1283). Users that
-	// already existed on the target are NOT counted -- their rows are left
-	// untouched so the operator's local setup wins over the envelope.
+	// UsersImported counts user rows freshly inserted on the target from
+	// the envelope because they were absent under both id and username
+	// (#1283). The id-hit refresh path (envelope brought a user whose UUID
+	// already exists on the target) and the username-hit skip path
+	// (pre-1.4 envelope row whose username is already taken) do NOT
+	// increment this counter -- those are refresh/skip, not recreation,
+	// and folding them in would overreport on subsequent re-imports
+	// against the same target.
 	UsersImported int `json:"users_imported,omitempty"`
 	// OwnershipReassigned counts api_tokens whose original owner is absent
 	// on the target AND who were attributed to the importing admin via the
@@ -558,7 +562,7 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 	//     keys, provider priorities, rules, scraper preferences). Those
 	//     services own their own transactions internally so wrapping them
 	//     here would require threading a *sql.Tx through every service
-	//     constructor; that surface change is tracked as follow-up.
+	//     constructor; that surface change is tracked as #1693 (M54).
 	//
 	//  2. Tx phase: the s.db-direct helpers (settings, users,
 	//     user_preferences, libraries, api_tokens) all run inside a single

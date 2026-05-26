@@ -205,8 +205,14 @@ func TestImport_UsersIDMatchUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if res.UsersImported < 1 {
-		t.Errorf("UsersImported: got %d, want >=1", res.UsersImported)
+	// id-hit refresh path: the envelope's user already exists under this
+	// UUID, so the row is updated (display_name, password_hash) but no
+	// "fresh import" is taking place. UsersImported only counts freshly
+	// inserted rows (#1691 review fix), so it must NOT increment here.
+	// The observable signal that the row was refreshed is checked below
+	// against the user table directly.
+	if res.UsersImported != 0 {
+		t.Errorf("UsersImported: got %d, want 0 (id-hit refresh is not a recreation)", res.UsersImported)
 	}
 
 	var displayName, passwordHash, role string

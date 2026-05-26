@@ -282,11 +282,13 @@ func (s *Scanner) Scan(ctx context.Context) error {
 	if runAsBaseline {
 		if err := writeBaselineDone(ctx, s.repo.db, baselined); err != nil {
 			s.logger.Error("recording baseline completion", slog.Any("error", err))
-			// Returning the error here would leave the ledger in an
-			// otherwise-correct state; we surface the failure but do not
-			// retry. The next scan will re-run in baseline mode and
-			// re-admit the same hashes (allowlist insert is idempotent
-			// via UNIQUE on content_hash + scope) so this is safe.
+			// writeBaselineDone is transactional: a mid-flight failure
+			// rolls back the entire (baseline_completed, baseline_count)
+			// pair, leaving the next scan in baseline mode. Re-admitting
+			// the same hashes is safe because the allowlist insert is
+			// idempotent via UNIQUE on (content_hash, scope). Surface
+			// the failure to the caller so the operator sees why the
+			// baseline mode persisted across runs.
 			return fmt.Errorf("recording baseline completion: %w", err)
 		}
 	}
@@ -336,9 +338,18 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 
 	recorded := 0
 	baselined := 0
+	// skipped covers files that the per-file pipeline could not classify
+	// because a transient error short-circuited it: a provenance read
+	// failure, a hash failure, an allowlist probe failure, or an upsert
+	// failure. We keep a single counter so the per-scan log can roll up
+	// "how many files did we punt on" rather than the operator inferring
+	// it from the gap between onDisk size and (recorded + baselined). The
+	// reconciliation pass below uses its own skip-don't-clear policy and
+	// is intentionally not folded in here.
+	skipped := 0
 	for name, de := range onDisk {
 		if ctx.Err() != nil {
-			return recorded, 0, 0, baselined
+			return recorded, 0, skipped, baselined
 		}
 		fullPath := filepath.Join(a.Path, name)
 
@@ -351,6 +362,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 			s.logger.Warn("read provenance failed; skipping",
 				slog.String("path", fullPath),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 		if meta != nil {
@@ -368,6 +380,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 			s.logger.Warn("hash file failed; skipping",
 				slog.String("path", fullPath),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 
@@ -377,6 +390,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 				slog.String("artist_id", a.ID),
 				slog.String("file", name),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 		if allowed {
@@ -406,6 +420,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 					slog.String("artist_id", a.ID),
 					slog.String("file", name),
 					slog.Any("error", err))
+				skipped++
 				continue
 			}
 			baselined++
@@ -425,6 +440,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 				slog.String("artist_id", a.ID),
 				slog.String("file", name),
 				slog.Any("error", err))
+			skipped++
 			continue
 		}
 		recorded++
@@ -438,7 +454,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 		s.logger.Warn("listing existing entries for reconcile; skipping clear",
 			slog.String("artist_id", a.ID),
 			slog.Any("error", err))
-		return recorded, 0, 0, baselined
+		return recorded, 0, skipped, baselined
 	}
 	cleared := 0
 	for i := range existing {
@@ -523,7 +539,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 		}
 	}
 
-	return recorded, cleared, 0, baselined
+	return recorded, cleared, skipped, baselined
 }
 
 // listForArtist returns the existing ledger rows for one artist, used by

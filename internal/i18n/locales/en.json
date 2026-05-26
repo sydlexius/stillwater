@@ -2155,7 +2155,7 @@
   "setup.choose_setup_mode": "Setup mode",
   "setup.how_to_sign_in": "How do you want to sign in?",
   "setup.page_title": "Setup - Stillwater",
-  "setup.restore_desc": "Bring back a previous Stillwater install from a passphrase-protected export file.",
+  "setup.restore_desc": "Bring back a previous Stillwater installation from a passphrase-protected export file.",
   "setup.restore_file_label": "Backup file",
   "setup.restore_headline": "Restore from backup",
   "setup.restore_passphrase_hint": "The passphrase you set when you exported the backup. Stillwater cannot recover it if you lose it.",
