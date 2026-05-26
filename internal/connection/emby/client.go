@@ -23,31 +23,32 @@ import (
 // ErrInvalidCredentials is returned when the media server rejects the
 // credentials during the AuthenticateByName handshake. Scoped to the initial
 // username/password exchange; write methods report auth-class failures via
-// ErrAuth (see below).
+// ErrAuthRequired (see below).
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
-// ErrAuth is the sentinel wrapped by write-method failures when the peer
-// returns a 401 or 403. Callers in the publish layer use
-// errors.Is(err, emby.ErrAuth) to surface a per-connection re-auth signal
-// without parsing the formatted error string. Distinct from
-// ErrInvalidCredentials (which is scoped to the username/password handshake)
-// because the API-key write path has its own re-auth UI signal.
-var ErrAuth = errors.New("emby: authentication required")
+// ErrAuthRequired is the sentinel wrapped by write-method failures when the
+// peer returns a 401 or 403. Callers in the publish layer use
+// errors.Is(err, emby.ErrAuthRequired) so publish.classifyPushErr maps the
+// failure to the auth_failed class consumed by the per-connection
+// push-failure toast. Distinct from ErrInvalidCredentials (which is scoped
+// to the username/password handshake) because the API-key write path has
+// its own re-auth UI signal.
+var ErrAuthRequired = errors.New("emby: authentication required")
 
 // wrapAuthIfStatusAuth detects an httpclient.StatusError whose code is 401 or
-// 403 and wraps the original error with ErrAuth. Used by every write method
-// in this package so the publish layer can route auth-class failures to a
-// re-auth UI signal without parsing the formatted error string. The original
-// error is preserved (still %w-wrapped) so the existing classifyPushErr
-// substring contract on err.Error() continues to match the "HTTP 401" /
-// "status 401" surface.
+// 403 and wraps the original error with ErrAuthRequired. Used by every write
+// method in this package so the publish layer can route auth-class failures
+// to a re-auth UI signal without parsing the formatted error string. The
+// original error is preserved (still %w-wrapped) so the existing
+// classifyPushErr substring contract on err.Error() continues to match the
+// "HTTP 401" / "status 401" surface.
 func wrapAuthIfStatusAuth(err error) error {
 	if err == nil {
 		return nil
 	}
 	var se *httpclient.StatusError
 	if errors.As(err, &se) && se.IsAuth() {
-		return fmt.Errorf("%w: %w", ErrAuth, err)
+		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
 	}
 	return err
 }

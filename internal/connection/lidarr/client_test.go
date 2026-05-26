@@ -451,7 +451,7 @@ func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
 }
 
 // TestUpdateArtistPath_AuthClass401 verifies that a 401 response on the
-// PUT half wraps with the ErrAuth sentinel (per issue #1639), so the
+// PUT half wraps with the ErrAuthRequired sentinel (per issue #1639), so the
 // publish layer can detect auth failures via errors.Is.
 func TestUpdateArtistPath_AuthClass401(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -469,8 +469,8 @@ func TestUpdateArtistPath_AuthClass401(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !errors.Is(err, ErrAuth) {
-		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
 
@@ -491,8 +491,8 @@ func TestUpdateArtistPath_AuthClass403(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 403")
 	}
-	if !errors.Is(err, ErrAuth) {
-		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
 
@@ -514,8 +514,8 @@ func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
-	if errors.Is(err, ErrAuth) {
-		t.Errorf("errors.Is(err, ErrAuth) = true on 500; want false")
+	if errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = true on 500; want false")
 	}
 }
 

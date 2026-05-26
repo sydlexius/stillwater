@@ -19,8 +19,8 @@ import (
 // readBoundedStatusError builds an httpclient.StatusError from a non-2xx
 // response, capping the body at 1 MB to guard against a misbehaving peer
 // returning a huge HTML error page. Used by every hand-rolled HTTP path in
-// this file so write-method errors carry the typed status code for ErrAuth
-// detection without re-parsing strings.
+// this file so write-method errors carry the typed status code for
+// ErrAuthRequired detection without re-parsing strings.
 func readBoundedStatusError(resp *http.Response) *httpclient.StatusError {
 	const maxErrBody = 1 << 20 // 1 MB
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
@@ -132,7 +132,8 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		// for test fixtures and operator log familiarity; errors.Join attaches
 		// the typed StatusError as a sibling in the error tree so
 		// wrapAuthIfStatusAuth (via errors.As) can still detect 401/403 and
-		// route to ErrAuth without duplicating the status string in Error().
+		// route to ErrAuthRequired without duplicating the status string in
+		// Error().
 		formatted := fmt.Errorf("push failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
 		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}

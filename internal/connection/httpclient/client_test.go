@@ -248,7 +248,7 @@ func TestNewBase_InvalidURL(t *testing.T) {
 
 // TestStatusError_ErrorAndIsAuth pins the substring shape that the publish
 // layer's classifyPushErr depends on, plus the 401/403 IsAuth contract used
-// by per-package ErrAuth wrappers.
+// by per-package ErrAuthRequired wrappers.
 func TestStatusError_ErrorAndIsAuth(t *testing.T) {
 	tests := []struct {
 		name    string

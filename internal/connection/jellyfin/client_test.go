@@ -1681,8 +1681,8 @@ func TestDisableConflictingSettings_Jellyfin(t *testing.T) {
 }
 
 // TestUpdateArtistPath_AuthClass401 verifies that a 401 response (auth-class)
-// from the POST half of UpdateArtistPath is wrapped with the ErrAuth sentinel.
-// The publish layer uses errors.Is(err, jellyfin.ErrAuth) to route the
+// from the POST half of UpdateArtistPath is wrapped with the ErrAuthRequired sentinel.
+// The publish layer uses errors.Is(err, jellyfin.ErrAuthRequired) to route the
 // failure to a per-connection re-auth UI signal (per issue #1639).
 func TestUpdateArtistPath_AuthClass401(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1700,13 +1700,13 @@ func TestUpdateArtistPath_AuthClass401(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !errors.Is(err, ErrAuth) {
-		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
 
 // TestUpdateArtistPath_AuthClass403 mirrors AuthClass401 for the 403 branch
-// so the publish layer can rely on both codes wrapping with ErrAuth.
+// so the publish layer can rely on both codes wrapping with ErrAuthRequired.
 func TestUpdateArtistPath_AuthClass403(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -1723,13 +1723,13 @@ func TestUpdateArtistPath_AuthClass403(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 403")
 	}
-	if !errors.Is(err, ErrAuth) {
-		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
 
 // TestUpdateArtistPath_NonAuthErrorNotWrapped guards the negative branch:
-// non-auth status codes (5xx) must NOT wrap with ErrAuth so the publish
+// non-auth status codes (5xx) must NOT wrap with ErrAuthRequired so the publish
 // layer routes 5xx to its own toast class (server_error) rather than the
 // re-auth signal.
 func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
@@ -1748,7 +1748,7 @@ func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
-	if errors.Is(err, ErrAuth) {
-		t.Errorf("errors.Is(err, ErrAuth) = true on 500; want false")
+	if errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = true on 500; want false")
 	}
 }

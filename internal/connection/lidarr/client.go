@@ -17,23 +17,19 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 )
 
-// ErrAuth is the sentinel wrapped by write-method failures when the peer
-// returns a 401 or 403. Callers in the publish layer use
-// errors.Is(err, lidarr.ErrAuth) to route the failure to a per-connection
-// re-auth UI signal without parsing the formatted error string.
-var ErrAuth = errors.New("lidarr: authentication required")
+// ErrAuthRequired is the sentinel wrapped by write-method failures when the
+// peer returns a 401 or 403.
+var ErrAuthRequired = errors.New("lidarr: authentication required")
 
-// wrapAuthIfStatusAuth detects an httpclient.StatusError whose code is 401 or
-// 403 and wraps the original error with ErrAuth. Mirrors the emby /
-// jellyfin helpers so consumers can use errors.Is(err, lidarr.ErrAuth)
-// regardless of which client surfaced the failure.
+// wrapAuthIfStatusAuth wraps 401/403 StatusError with ErrAuthRequired; see
+// emby.wrapAuthIfStatusAuth for rationale.
 func wrapAuthIfStatusAuth(err error) error {
 	if err == nil {
 		return nil
 	}
 	var se *httpclient.StatusError
 	if errors.As(err, &se) && se.IsAuth() {
-		return fmt.Errorf("%w: %w", ErrAuth, err)
+		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
 	}
 	return err
 }
@@ -226,7 +222,7 @@ func (c *Client) getMetadataProviderConfigs(ctx context.Context) ([]MetadataProv
 		// Read a small prefix for diagnostics and drain the rest so the
 		// transport can reuse the connection. Wrap with the typed
 		// httpclient.StatusError so wrapAuthIfStatusAuth can route 401/403
-		// to ErrAuth even for this hand-rolled HTTP path.
+		// to ErrAuthRequired even for this hand-rolled HTTP path.
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, wrapAuthIfStatusAuth(&httpclient.StatusError{StatusCode: resp.StatusCode, Body: string(bytes.TrimSpace(snippet))})
@@ -610,7 +606,7 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 // confirms the `path` field round-tripped intact. Mismatch returns a
 // caller-friendly error including both sent and got values; the auth-class
 // wrap is applied to any transport / status error so a credentials
-// rotation between PUT and verify still routes to ErrAuth.
+// rotation between PUT and verify still routes to ErrAuthRequired.
 func (c *Client) verifyArtistPath(ctx context.Context, escapedID, sent string) error {
 	getPath := fmt.Sprintf("/api/v1/artist/%s", escapedID)
 	var verifyItem map[string]any

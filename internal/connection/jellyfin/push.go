@@ -19,7 +19,7 @@ import (
 // readBoundedStatusError reads a bounded snippet of the peer error body and
 // returns a typed httpclient.StatusError. Used by every hand-rolled HTTP
 // path in this file so write-method errors carry the status code for
-// wrapAuthIfStatusAuth (errors.As + ErrAuth wrap on 401/403).
+// wrapAuthIfStatusAuth (errors.As + ErrAuthRequired wrap on 401/403).
 func readBoundedStatusError(resp *http.Response) *httpclient.StatusError {
 	const maxErrBody = 1 << 20 // 1 MB
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
