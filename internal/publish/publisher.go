@@ -292,16 +292,18 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 					slog.String("artist_id", a.ID),
 					slog.String("connection_id", pid.ConnectionID),
 					slog.String("error", connErr.Error()))
-				// Mirror the PushLocks lookup-failure notify path (#1088).
-				// shortConnLabel falls back to an 8-char id prefix because the
-				// connection name is unknown when GetByID itself failed.
-				// classifyPushErr keeps the toast error class in the same
-				// stable taxonomy regardless of which surface raised it.
-				class := classifyPushErr(connErr)
-				if class == "" {
-					class = "rejected"
-				}
-				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), class, a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
+				// Mirror the PushLocks lookup-failure notify path so the
+				// metadata push surface emits the same toast taxonomy.
+				// shortConnLabel falls back to an 8-char id prefix the
+				// operator can correlate against the settings page
+				// connection list -- it matches the connection_id prefix
+				// shown in the "auto-push: fetching connection" error log
+				// above, so a toast can be cross-referenced to the log
+				// entry without exposing the full UUID. classifyPushErr
+				// translates the lookup failure into a stable category;
+				// connErr is always non-nil in this branch so the empty
+				// return from classifyPushErr is unreachable here.
+				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
 				return
 			}
 			if !conn.Enabled {

@@ -613,8 +613,22 @@ func (c *Client) verifyArtistPath(ctx context.Context, escapedID, sent string) e
 	if err := c.Get(ctx, getPath, &verifyItem); err != nil {
 		return fmt.Errorf("verifying artist path after update: %w", wrapAuthIfStatusAuth(err))
 	}
+	// Distinguish "body decoded to nil" (Lidarr returned literal JSON null,
+	// or the GET succeeded but the artist disappeared between PUT and
+	// verify) from "body decoded to an object with no path field". The
+	// former is a malformed-body class error the operator must triage on
+	// the peer; the latter is a genuine field-level mismatch (sent X, got
+	// "") so we route to the regular mismatch error.
+	if verifyItem == nil {
+		return fmt.Errorf("lidarr path verify: empty response body after update")
+	}
 	got, _ := verifyItem["path"].(string)
 	if got != sent {
+		c.Logger.Warn("lidarr path verify mismatch",
+			slog.String("artist_id_escaped", escapedID),
+			slog.String("sent", sent),
+			slog.String("got", got),
+		)
 		return fmt.Errorf("lidarr path verify mismatch: sent %q, got %q", sent, got)
 	}
 	return nil
