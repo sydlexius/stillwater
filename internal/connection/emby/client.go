@@ -20,8 +20,38 @@ import (
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
-// ErrInvalidCredentials is returned when the media server rejects the credentials.
+// ErrInvalidCredentials is returned when the media server rejects the
+// credentials during the AuthenticateByName handshake. Scoped to the initial
+// username/password exchange; write methods report auth-class failures via
+// ErrAuthRequired (see below).
 var ErrInvalidCredentials = errors.New("invalid credentials")
+
+// ErrAuthRequired is the sentinel wrapped by write-method failures when the
+// peer returns a 401 or 403. Callers in the publish layer use
+// errors.Is(err, emby.ErrAuthRequired) so publish.classifyPushErr maps the
+// failure to the auth_failed class consumed by the per-connection
+// push-failure toast. Distinct from ErrInvalidCredentials (which is scoped
+// to the username/password handshake) because the API-key write path has
+// its own re-auth UI signal.
+var ErrAuthRequired = errors.New("emby: authentication required")
+
+// wrapAuthIfStatusAuth detects an httpclient.StatusError whose code is 401 or
+// 403 and wraps the original error with ErrAuthRequired. Used by every write
+// method in this package so the publish layer can route auth-class failures
+// to a re-auth UI signal without parsing the formatted error string. The
+// original error is preserved (still %w-wrapped) so the existing
+// classifyPushErr substring contract on err.Error() continues to match the
+// "HTTP 401" / "status 401" surface.
+func wrapAuthIfStatusAuth(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *httpclient.StatusError
+	if errors.As(err, &se) && se.IsAuth() {
+		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
+	}
+	return err
+}
 
 // Client communicates with an Emby server.
 type Client struct {
@@ -164,7 +194,7 @@ func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, l
 // TriggerLibraryScan triggers a full library scan.
 func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 	if err := c.Post(ctx, "/Library/Refresh", nil); err != nil {
-		return fmt.Errorf("triggering library scan: %w", err)
+		return fmt.Errorf("triggering library scan: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }
@@ -173,7 +203,7 @@ func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) error {
 	path := fmt.Sprintf("/Items/%s/Refresh", artistID)
 	if err := c.Post(ctx, path, nil); err != nil {
-		return fmt.Errorf("triggering artist refresh: %w", err)
+		return fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }
@@ -404,7 +434,7 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 	}
 
 	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
-	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
+	return wrapAuthIfStatusAuth(c.PostJSON(ctx, path, bytes.NewReader(body), nil))
 }
 
 // UpdateArtistLocks persists the given field-level lock list and whole-item lock
@@ -444,7 +474,7 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 	}
 	path := fmt.Sprintf("/Items/%s", platformArtistID)
 	if err := c.PostJSON(ctx, path, bytes.NewReader(body), nil); err != nil {
-		return fmt.Errorf("posting artist lock update: %w", err)
+		return fmt.Errorf("posting artist lock update: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }
@@ -491,7 +521,7 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	}
 	postPath := fmt.Sprintf("/Items/%s", escapedID)
 	if err := c.PostJSON(ctx, postPath, bytes.NewReader(body), nil); err != nil {
-		return fmt.Errorf("posting artist path update: %w", err)
+		return fmt.Errorf("posting artist path update: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }

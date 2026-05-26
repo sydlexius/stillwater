@@ -26,9 +26,13 @@ import (
 )
 
 // pushOpLockToggle is the operation slug emitted on connection.push_failed
-// events from PushLocks. Other push surfaces (PushMetadataAsync) will gain
-// their own slugs as the notifier path is extended to them.
+// events from PushLocks.
 const pushOpLockToggle = "lock_toggle"
+
+// pushOpMetadataPush is the operation slug emitted on connection.push_failed
+// events from PushMetadataAsync. Toast subscribers can filter by this slug
+// to distinguish a metadata-write failure from a lock-toggle failure.
+const pushOpMetadataPush = "metadata_push"
 
 const (
 	// pushTimeout is the per-connection timeout for async metadata pushes.
@@ -286,6 +290,18 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 					slog.String("artist_id", a.ID),
 					slog.String("connection_id", pid.ConnectionID),
 					slog.String("error", connErr.Error()))
+				// Mirror the PushLocks lookup-failure notify path so the
+				// metadata push surface emits the same toast taxonomy.
+				// shortConnLabel falls back to an 8-char id prefix the
+				// operator can correlate against the settings page
+				// connection list -- it matches the connection_id prefix
+				// shown in the "auto-push: fetching connection" error log
+				// above, so a toast can be cross-referenced to the log
+				// entry without exposing the full UUID. classifyPushErr
+				// translates the lookup failure into a stable category;
+				// connErr is always non-nil in this branch so the empty
+				// return from classifyPushErr is unreachable here.
+				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
 				return
 			}
 			if !conn.Enabled {
@@ -303,6 +319,11 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 					slog.String("artist_name", a.Name),
 					slog.String("connection", conn.Name),
 					slog.String("error", pushErr.Error()))
+				// Same notify path as PushLocks: classifyPushErr translates
+				// the raw transport / status error into the stable taxonomy
+				// (auth_failed, timeout, server_error, ...) so the toast
+				// tells the operator what kind of intervention is needed.
+				p.notifyPushFailure(conn.Name, classifyPushErr(pushErr), a.ID, artistDisplayName(a), pushOpMetadataPush, pushErr)
 			} else {
 				p.logger.Info("auto-push: metadata pushed",
 					slog.String("artist_id", a.ID),

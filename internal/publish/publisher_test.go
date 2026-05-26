@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -306,12 +307,19 @@ func TestResolveLockNFO(t *testing.T) {
 }
 
 // recordingNotifier captures every NotifyConnectionPushFailed call so
-// PushLocks tests can assert on the (connection, error_class) pair the
-// publisher hands the SSE bridge. Concurrent calls from per-connection
-// goroutines are serialized by mu.
+// PushLocks / PushMetadataAsync tests can assert on the (connection,
+// error_class) pair the publisher hands the SSE bridge. Concurrent calls
+// from per-connection goroutines are serialized by mu.
+//
+// done is an optional non-buffered signal: every call sends a struct{} on
+// it after appending to calls, so a test can block on receive instead of
+// polling for the slice length to grow. Tests that do not care about
+// synchronization (most pre-channel-conversion ones) leave done nil and
+// the send is skipped.
 type recordingNotifier struct {
 	mu    sync.Mutex
 	calls []notifyCall
+	done  chan struct{}
 }
 
 type notifyCall struct {
@@ -325,7 +333,6 @@ type notifyCall struct {
 
 func (r *recordingNotifier) NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation string, err error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.calls = append(r.calls, notifyCall{
 		connection: connectionName,
 		errorClass: errorClass,
@@ -334,6 +341,17 @@ func (r *recordingNotifier) NotifyConnectionPushFailed(connectionName, errorClas
 		operation:  operation,
 		err:        err,
 	})
+	ch := r.done
+	r.mu.Unlock()
+	if ch != nil {
+		// Buffered channel so a producer never blocks; tests that wire it
+		// up are responsible for draining when they expect more than one
+		// notify within a single test.
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func (r *recordingNotifier) snapshot() []notifyCall {
@@ -567,5 +585,181 @@ func TestShortConnLabel(t *testing.T) {
 				t.Errorf("shortConnLabel(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestPushMetadataAsync_NotifierFiresOnPushFailure mirrors
+// TestPushLocks_NotifierFiresOnSyncFailure for the PushMetadataAsync
+// surface (#1642). When the platform write returns 401, the per-connection
+// goroutine must invoke the Notifier exactly once with the operation slug
+// "metadata_push" and a non-empty error class from the classifyPushErr
+// taxonomy (auth_failed for 401). Without this hook the operator gets
+// nothing in the UI while the platform silently rejected the write.
+func TestPushMetadataAsync_NotifierFiresOnPushFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Emby PushMetadata posts directly to /Items/{id}; reject every
+		// write with 401 so the push goroutine surfaces an auth_failed
+		// classification through classifyPushErr.
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	notifier := &recordingNotifier{done: make(chan struct{}, 1)}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+		Logger:   silentLogger(),
+		Notifier: notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	// Block on the channel-backed notify signal instead of polling. The
+	// 401 path is synchronous inside PushMetadata, so the goroutine
+	// completes well within the 2s safety timeout.
+	select {
+	case <-notifier.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("notify did not fire within 2s")
+	}
+
+	got := notifier.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	if got[0].connection != "my-emby" {
+		t.Errorf("connection = %q, want %q", got[0].connection, "my-emby")
+	}
+	if got[0].errorClass != "auth_failed" {
+		t.Errorf("errorClass = %q, want %q (401 should classify as auth_failed)", got[0].errorClass, "auth_failed")
+	}
+	if got[0].artistID != "a1" {
+		t.Errorf("artistID = %q, want %q", got[0].artistID, "a1")
+	}
+	if got[0].artistName != "Test Artist" {
+		t.Errorf("artistName = %q, want %q", got[0].artistName, "Test Artist")
+	}
+	if got[0].operation != "metadata_push" {
+		t.Errorf("operation = %q, want %q (PushMetadataAsync must emit pushOpMetadataPush)", got[0].operation, "metadata_push")
+	}
+	if got[0].err == nil {
+		t.Error("err = nil, want a non-nil error so logs can correlate")
+	}
+}
+
+// TestPushMetadataAsync_NotifierFiresOnConnectionLookupFailure verifies
+// the GetByID lookup-failure branch. When a connection is deleted between
+// platform-ID resolution and metadata push, the goroutine must still
+// surface a toast (operator otherwise sees a green success path while the
+// underlying write was never attempted). Connection name falls back to
+// shortConnLabel since GetByID failed before we could read the real name.
+func TestPushMetadataAsync_NotifierFiresOnConnectionLookupFailure(t *testing.T) {
+	notifier := &recordingNotifier{done: make(chan struct{}, 1)}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-gone", PlatformArtistID: "p1"},
+		}},
+		// Empty conns map -> fakeConnectionGetter.GetByID returns an error.
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+		Notifier:          notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	select {
+	case <-notifier.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("notify did not fire within 2s")
+	}
+
+	got := notifier.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	if got[0].operation != "metadata_push" {
+		t.Errorf("operation = %q, want %q", got[0].operation, "metadata_push")
+	}
+	// Pin the exact shortConnLabel("c-gone") fallback so a future regression
+	// that changes the label format or drops the prefix-truncation logic
+	// fails here. Asserting non-empty would let an unrelated format change
+	// pass silently.
+	if want := shortConnLabel("c-gone"); got[0].connection != want {
+		t.Errorf("connection = %q, want %q", got[0].connection, want)
+	}
+	// Pin the exact "rejected" class so the PushMetadataAsync lookup-failure
+	// path stays in parity with PushLocks: classifyPushErr's default
+	// taxonomy bucket for a non-network/non-status error is "rejected", and
+	// this is the contract the surrounding toast surface relies on.
+	if got[0].errorClass != "rejected" {
+		t.Errorf("errorClass = %q, want %q (lookup failure must classify as rejected)", got[0].errorClass, "rejected")
+	}
+	if got[0].err == nil {
+		t.Error("err = nil, want a non-nil error so logs can correlate")
+	}
+}
+
+// TestPushMetadataAsync_NotifierNotCalledOnSuccess covers the happy path:
+// no notify, no toast. Symmetric with TestPushLocks_NotifierNotCalledOnSuccess
+// so a regression on either surface fails its own test, not the other's.
+func TestPushMetadataAsync_NotifierNotCalledOnSuccess(t *testing.T) {
+	// pushDone fires when the test server has finished handling the
+	// metadata POST (the one PushMetadataAsync's goroutine awaits).
+	// Refresh requests fire after the POST and are not waited on. The
+	// channel-backed barrier replaces a sleep timer so the test does not
+	// race on a slow CI box.
+	pushDone := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		select {
+		case pushDone <- struct{}{}:
+		default:
+		}
+	}))
+	defer srv.Close()
+
+	notifier := &recordingNotifier{done: make(chan struct{}, 1)}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+		Logger:   silentLogger(),
+		Notifier: notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	// Wait for the metadata POST to complete server-side, then assert
+	// the notifier never fired. A spurious notify (regression) would
+	// already have raced into r.calls by the time the POST returned.
+	select {
+	case <-pushDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("metadata POST did not complete within 2s")
+	}
+	// Tiny yield so any spurious notify enqueued from inside the publisher
+	// goroutine has a chance to land before we read the snapshot. This is
+	// not a polling loop; the success path is synchronous post-POST.
+	select {
+	case <-notifier.done:
+		t.Errorf("notifier fired on success path")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := notifier.snapshot(); len(got) != 0 {
+		t.Errorf("notifier calls on success = %d, want 0; calls=%+v", len(got), got)
 	}
 }

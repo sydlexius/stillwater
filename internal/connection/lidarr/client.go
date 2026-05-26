@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,9 +17,32 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 )
 
+// ErrAuthRequired is the sentinel wrapped by write-method failures when the
+// peer returns a 401 or 403.
+var ErrAuthRequired = errors.New("lidarr: authentication required")
+
+// wrapAuthIfStatusAuth wraps 401/403 StatusError with ErrAuthRequired; see
+// emby.wrapAuthIfStatusAuth for rationale.
+func wrapAuthIfStatusAuth(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *httpclient.StatusError
+	if errors.As(err, &se) && se.IsAuth() {
+		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
+	}
+	return err
+}
+
 // Client communicates with a Lidarr server.
 type Client struct {
 	httpclient.BaseClient
+	// verifyPathAfterUpdate, when true, makes UpdateArtistPath issue a
+	// follow-up GET after the PUT and confirm the returned path field
+	// round-trips intact. Default false (opt-in): a healthy Lidarr
+	// rarely drifts and the extra request roughly doubles the per-rename
+	// cost.
+	verifyPathAfterUpdate bool
 }
 
 // New creates a Lidarr client with default HTTP settings.
@@ -40,6 +64,18 @@ func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *
 	}
 	c.AuthFunc = c.setAuth
 	return c
+}
+
+// SetVerifyPathAfterUpdate toggles the per-connection verify-after-PUT
+// behavior. When enabled, UpdateArtistPath issues a follow-up GET after a
+// successful PUT and compares the returned `path` field against the value
+// we sent. A mismatch surfaces an error wrapped with enough context (sent
+// vs got) to identify the divergence so the operator knows Lidarr coerced
+// the path against the Root Folder list. Default false: a healthy Lidarr
+// almost never drifts and the extra request roughly doubles per-rename
+// cost.
+func (c *Client) SetVerifyPathAfterUpdate(enabled bool) {
+	c.verifyPathAfterUpdate = enabled
 }
 
 // TestConnection verifies connectivity by calling GET /api/v1/system/status.
@@ -116,7 +152,7 @@ func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID int) (*Comma
 
 	var resp CommandResponse
 	if err := c.PostJSON(ctx, "/api/v1/command", bytes.NewReader(body), &resp); err != nil {
-		return nil, fmt.Errorf("triggering artist refresh: %w", err)
+		return nil, fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
 	}
 	return &resp, nil
 }
@@ -161,7 +197,7 @@ func (c *Client) DisableMetadataConsumer(ctx context.Context, configID int) erro
 	}
 
 	path := fmt.Sprintf("/api/v1/config/metadataprovider/%d", configID)
-	return c.PutJSON(ctx, path, bytes.NewReader(body), nil)
+	return wrapAuthIfStatusAuth(c.PutJSON(ctx, path, bytes.NewReader(body), nil))
 }
 
 // getMetadataProviderConfigs fetches the metadata provider config from Lidarr,
@@ -184,10 +220,12 @@ func (c *Client) getMetadataProviderConfigs(ctx context.Context) ([]MetadataProv
 
 	if resp.StatusCode != http.StatusOK {
 		// Read a small prefix for diagnostics and drain the rest so the
-		// transport can reuse the connection.
+		// transport can reuse the connection. Wrap with the typed
+		// httpclient.StatusError so wrapAuthIfStatusAuth can route 401/403
+		// to ErrAuthRequired even for this hand-rolled HTTP path.
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(snippet))
+		return nil, wrapAuthIfStatusAuth(&httpclient.StatusError{StatusCode: resp.StatusCode, Body: string(bytes.TrimSpace(snippet))})
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // cap at 1 MB
@@ -380,7 +418,8 @@ func (c *Client) getMetadataConsumers(ctx context.Context) ([]map[string]any, er
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	if resp.StatusCode != http.StatusOK {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(snippet))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, wrapAuthIfStatusAuth(&httpclient.StatusError{StatusCode: resp.StatusCode, Body: string(bytes.TrimSpace(snippet))})
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -416,7 +455,7 @@ func (c *Client) putMetadataConsumer(ctx context.Context, m map[string]any) erro
 		return fmt.Errorf("encoding consumer: %w", err)
 	}
 	path := fmt.Sprintf("/api/v1/metadata/%d", id)
-	return c.PutJSON(ctx, path, bytes.NewReader(body), nil)
+	return wrapAuthIfStatusAuth(c.PutJSON(ctx, path, bytes.NewReader(body), nil))
 }
 
 // consumerID normalizes the "id" field from the raw consumer map. Lidarr
@@ -529,7 +568,7 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	getPath := fmt.Sprintf("/api/v1/artist/%s", escapedID)
 	var item map[string]any
 	if err := c.Get(ctx, getPath, &item); err != nil {
-		return fmt.Errorf("fetching artist for path update: %w", err)
+		return fmt.Errorf("fetching artist for path update: %w", wrapAuthIfStatusAuth(err))
 	}
 	if item == nil {
 		return fmt.Errorf("lidarr returned empty artist body for id %s", platformArtistID)
@@ -545,7 +584,52 @@ func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath
 	// to move them would either fail (source gone) or race our own rename.
 	putPath := fmt.Sprintf("/api/v1/artist/%s?moveFiles=false", escapedID)
 	if err := c.PutJSON(ctx, putPath, bytes.NewReader(body), nil); err != nil {
-		return fmt.Errorf("putting artist path update: %w", err)
+		return fmt.Errorf("putting artist path update: %w", wrapAuthIfStatusAuth(err))
+	}
+
+	// Optional verify-after-PUT round-trip. Older Lidarr versions
+	// sometimes coerce a submitted path against the Root Folder list and
+	// silently store the coerced value, so a 2xx PUT alone is not
+	// authoritative confirmation that the path persisted exactly as
+	// sent. Reuses the caller's context so the verify GET shares the
+	// per-platform rename deadline (publish.renameSyncTimeout); no
+	// additional timeout knob.
+	if c.verifyPathAfterUpdate {
+		if err := c.verifyArtistPath(ctx, escapedID, newPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyArtistPath issues a follow-up GET on the artist resource and
+// confirms the `path` field round-tripped intact. Mismatch returns a
+// caller-friendly error including both sent and got values; the auth-class
+// wrap is applied to any transport / status error so a credentials
+// rotation between PUT and verify still routes to ErrAuthRequired.
+func (c *Client) verifyArtistPath(ctx context.Context, escapedID, sent string) error {
+	getPath := fmt.Sprintf("/api/v1/artist/%s", escapedID)
+	var verifyItem map[string]any
+	if err := c.Get(ctx, getPath, &verifyItem); err != nil {
+		return fmt.Errorf("verifying artist path after update: %w", wrapAuthIfStatusAuth(err))
+	}
+	// Distinguish "body decoded to nil" (Lidarr returned literal JSON null,
+	// or the GET succeeded but the artist disappeared between PUT and
+	// verify) from "body decoded to an object with no path field". The
+	// former is a malformed-body class error the operator must triage on
+	// the peer; the latter is a genuine field-level mismatch (sent X, got
+	// "") so we route to the regular mismatch error.
+	if verifyItem == nil {
+		return fmt.Errorf("lidarr path verify: empty response body after update")
+	}
+	got, _ := verifyItem["path"].(string)
+	if got != sent {
+		c.Logger.Warn("lidarr path verify mismatch",
+			slog.String("artist_id_escaped", escapedID),
+			slog.String("sent", sent),
+			slog.String("got", got),
+		)
+		return fmt.Errorf("lidarr path verify mismatch: sent %q, got %q", sent, got)
 	}
 	return nil
 }

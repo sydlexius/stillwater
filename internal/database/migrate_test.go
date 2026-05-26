@@ -1762,3 +1762,46 @@ func TestMigration010_NoClassicalRowsAfterMigrate(t *testing.T) {
 		t.Errorf("classical library count on fresh migrated db = %d, want 0", count)
 	}
 }
+
+// TestEnsureConnectionsColumn_AddsAndIsIdempotent covers both branches of
+// the runtime helper used to add forward-compat columns to the connections
+// table on upgrade. The SQL migrations exercise the no-op branch (column
+// already exists); this test exercises the ALTER TABLE branch and the
+// idempotency follow-up call.
+func TestEnsureConnectionsColumn_AddsAndIsIdempotent(t *testing.T) {
+	db := openMigratedDB(t)
+
+	const col = "test_only_dummy"
+	const def = "INTEGER NOT NULL DEFAULT 0"
+
+	if err := ensureConnectionsColumn(db, col, def); err != nil {
+		t.Fatalf("first call (add): %v", err)
+	}
+
+	got, err := columnExists(db, "connections", col)
+	if err != nil {
+		t.Fatalf("columnExists after add: %v", err)
+	}
+	if !got {
+		t.Fatalf("column %q not added after first call", col)
+	}
+
+	if err := ensureConnectionsColumn(db, col, def); err != nil {
+		t.Fatalf("second call (no-op): %v", err)
+	}
+}
+
+// TestEnsureConnectionsColumn_PropagatesAlterError covers the
+// ExecContext error branch by passing a definition SQLite rejects, and
+// asserts the wrap carries the column name so operators can diagnose
+// an upgrade-time failure from logs alone.
+func TestEnsureConnectionsColumn_PropagatesAlterError(t *testing.T) {
+	db := openMigratedDB(t)
+	err := ensureConnectionsColumn(db, "bad_col", "NOT A VALID TYPE")
+	if err == nil {
+		t.Fatal("expected error from ExecContext with invalid type")
+	}
+	if !strings.Contains(err.Error(), "bad_col") {
+		t.Errorf("error %v does not name the column", err)
+	}
+}

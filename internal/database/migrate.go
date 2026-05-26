@@ -218,13 +218,13 @@ func markPre002Applied(db *sql.DB) error {
 // PRAGMA table_info to avoid the "duplicate column" error SQLite raises
 // when a column already exists.
 func ensureConnectionColumns(db *sql.DB) error {
-	if err := ensureColumn(db, "connections", "platform_server_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+	if err := ensureConnectionsColumn(db, "platform_server_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	if err := ensureColumn(db, "connections", "feature_manage_server_files", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+	if err := ensureConnectionsColumn(db, "feature_manage_server_files", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	return ensureColumn(db, "connections", "pre_stillwater_config_json", "TEXT NOT NULL DEFAULT ''")
+	return ensureConnectionsColumn(db, "pre_stillwater_config_json", "TEXT NOT NULL DEFAULT ''")
 }
 
 // cleanupOrphanArtistPlatformIDs removes rows from artist_platform_ids whose
@@ -1008,14 +1008,15 @@ func lowercaseASCII(s string) string {
 	return string(b)
 }
 
-// ensureColumn adds a column to a table if it does not already exist.
-// The definition string is concatenated directly into the ALTER TABLE
-// statement, so callers must only pass internal literals.
-func ensureColumn(db *sql.DB, table, column, definition string) error {
+// ensureConnectionsColumn adds a column to the connections table if it
+// does not already exist. The definition string is concatenated directly
+// into the ALTER TABLE statement, so callers must only pass internal
+// literals.
+func ensureConnectionsColumn(db *sql.DB, column, definition string) error {
 	ctx := context.Background()
-	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info(connections)")
 	if err != nil {
-		return fmt.Errorf("reading %s schema: %w", table, err)
+		return fmt.Errorf("reading connections schema: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
@@ -1029,19 +1030,19 @@ func ensureColumn(db *sql.DB, table, column, definition string) error {
 			pk        int
 		)
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
-			return fmt.Errorf("scanning %s schema row: %w", table, err)
+			return fmt.Errorf("scanning connections schema row: %w", err)
 		}
 		if name == column {
 			return nil
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterating %s schema: %w", table, err)
+		return fmt.Errorf("iterating connections schema: %w", err)
 	}
 
-	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)
+	stmt := fmt.Sprintf("ALTER TABLE connections ADD COLUMN %s %s", column, definition)
 	if _, err := db.ExecContext(ctx, stmt); err != nil {
-		return fmt.Errorf("adding %s.%s: %w", table, column, err)
+		return fmt.Errorf("adding connections.%s: %w", column, err)
 	}
 	return nil
 }

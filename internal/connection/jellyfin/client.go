@@ -19,8 +19,27 @@ import (
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
-// ErrInvalidCredentials is returned when the media server rejects the credentials.
+// ErrInvalidCredentials is returned when the media server rejects the
+// credentials during the AuthenticateByName handshake.
 var ErrInvalidCredentials = errors.New("invalid credentials")
+
+// ErrAuthRequired is the sentinel wrapped by write-method failures when the
+// peer returns a 401 or 403. Distinct from ErrInvalidCredentials, which is
+// scoped to the username/password handshake.
+var ErrAuthRequired = errors.New("jellyfin: authentication required")
+
+// wrapAuthIfStatusAuth wraps 401/403 StatusError with ErrAuthRequired; see
+// emby.wrapAuthIfStatusAuth for rationale.
+func wrapAuthIfStatusAuth(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *httpclient.StatusError
+	if errors.As(err, &se) && se.IsAuth() {
+		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
+	}
+	return err
+}
 
 // Client communicates with a Jellyfin server.
 type Client struct {
@@ -167,7 +186,7 @@ func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, l
 // TriggerLibraryScan triggers a full library scan.
 func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 	if err := c.Post(ctx, "/Library/Refresh", nil); err != nil {
-		return fmt.Errorf("triggering library scan: %w", err)
+		return fmt.Errorf("triggering library scan: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }
@@ -176,7 +195,7 @@ func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) error {
 	path := fmt.Sprintf("/Items/%s/Refresh", artistID)
 	if err := c.Post(ctx, path, nil); err != nil {
-		return fmt.Errorf("triggering artist refresh: %w", err)
+		return fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
 	}
 	return nil
 }
@@ -411,7 +430,7 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 	}
 
 	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
-	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
+	return wrapAuthIfStatusAuth(c.PostJSON(ctx, path, bytes.NewReader(body), nil))
 }
 
 // CheckImageSaverEnabled reports whether Jellyfin will persist artwork files

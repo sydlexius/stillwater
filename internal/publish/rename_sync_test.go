@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -440,5 +441,117 @@ func TestSyncRename_PerPlatformTimeoutFires(t *testing.T) {
 	// wrapping any future per-client wrapper might apply.
 	if !strings.Contains(results[0].Error, "deadline") {
 		t.Errorf("Error = %q, want substring \"deadline\" (context.DeadlineExceeded)", results[0].Error)
+	}
+}
+
+// lidarrVerifyServer is a minimal httptest fixture that counts GET vs PUT
+// hits against /api/v1/artist/{id}. Shared by the two wiring tests below so
+// the only delta between them is the Connection.VerifyPathAfterUpdate value.
+// Echoes the requested path on the verify GET so the match branch
+// succeeds without each test needing to script per-request bodies.
+func lidarrVerifyServer(t *testing.T, newPath string) (*httptest.Server, func() int) {
+	t.Helper()
+	// atomic.Int32 because the counter is written from the httptest
+	// handler goroutine and read from the test goroutine; a plain int
+	// trips -race under the project's race-test rule.
+	var getCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			n := getCount.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			if n == 1 {
+				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+				return
+			}
+			// Subsequent GET (the verify-after-PUT branch) echoes the new
+			// path so the match check inside lidarr.Client succeeds.
+			_, _ = w.Write([]byte(`{"id":42,"path":"` + newPath + `"}`))
+		case http.MethodPut:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() int { return int(getCount.Load()) }
+}
+
+// TestSyncRename_LidarrVerifyWiringEnabled asserts the load-bearing wiring
+// for #1640: when conn.VerifyPathAfterUpdate is true the real
+// renamePathUpdaterFactory must call client.SetVerifyPathAfterUpdate(true)
+// so the rename produces 2 GETs (pre-PUT + verify) against the Lidarr
+// peer. The factory is NOT swapped here so the test exercises the actual
+// production path. Without this coverage the Connection field could be
+// silently dropped on its way to the client and the verify capability
+// would be dead code.
+func TestSyncRename_LidarrVerifyWiringEnabled(t *testing.T) {
+	srv, gets := lidarrVerifyServer(t, "/new/X")
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-lid", PlatformArtistID: "42"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-lid": {
+				ID:                    "c-lid",
+				Name:                  "lid",
+				Type:                  connection.TypeLidarr,
+				URL:                   srv.URL,
+				APIKey:                "k",
+				Enabled:               true,
+				VerifyPathAfterUpdate: true,
+			},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new/X")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 1 || results[0].Result != artist.PlatformRemapOK {
+		t.Fatalf("results = %+v, want one ok entry", results)
+	}
+	if got := gets(); got != 2 {
+		t.Errorf("GET count = %d, want 2 (pre-PUT + verify); wiring did not reach client", got)
+	}
+}
+
+// TestSyncRename_LidarrVerifyWiringDisabled is the negative-branch twin
+// of the enabled wiring test: when conn.VerifyPathAfterUpdate is false the
+// rename must produce exactly 1 GET (pre-PUT only) so the opt-in default
+// stays cheap. A regression that hard-codes verify=true would surface
+// here as a 2-GET observation.
+func TestSyncRename_LidarrVerifyWiringDisabled(t *testing.T) {
+	srv, gets := lidarrVerifyServer(t, "/new/X")
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-lid", PlatformArtistID: "42"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-lid": {
+				ID:      "c-lid",
+				Name:    "lid",
+				Type:    connection.TypeLidarr,
+				URL:     srv.URL,
+				APIKey:  "k",
+				Enabled: true,
+				// VerifyPathAfterUpdate defaults to false.
+			},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new/X")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 1 || results[0].Result != artist.PlatformRemapOK {
+		t.Fatalf("results = %+v, want one ok entry", results)
+	}
+	if got := gets(); got != 1 {
+		t.Errorf("GET count = %d, want 1 (verify must remain opt-in)", got)
 	}
 }

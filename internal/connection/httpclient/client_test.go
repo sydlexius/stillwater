@@ -245,3 +245,75 @@ func TestNewBase_InvalidURL(t *testing.T) {
 		t.Errorf("BaseURL = %q, want empty for invalid URL", bc.BaseURL)
 	}
 }
+
+// TestStatusError_ErrorAndIsAuth pins the substring shape that the publish
+// layer's classifyPushErr depends on, plus the 401/403 IsAuth contract used
+// by per-package ErrAuthRequired wrappers.
+func TestReadBoundedStatusError_BodyAndStatusCaptured(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Body:       io.NopCloser(strings.NewReader("upstream blew up")),
+	}
+	got := ReadBoundedStatusError(resp)
+	if got == nil {
+		t.Fatal("ReadBoundedStatusError returned nil; want non-nil for non-2xx")
+	}
+	if got.StatusCode != http.StatusBadGateway {
+		t.Errorf("StatusCode = %d, want %d", got.StatusCode, http.StatusBadGateway)
+	}
+	if got.Body != "upstream blew up" {
+		t.Errorf("Body = %q, want %q", got.Body, "upstream blew up")
+	}
+}
+
+func TestReadBoundedStatusError_OneMBCap(t *testing.T) {
+	// Build a body just over the 1 MB cap so the limiter must trim and
+	// the drain must consume the overflow. Use a single byte repeated so
+	// the slice grows fast without burning the test on JSON parsing.
+	const cap1MB = 1 << 20
+	bodyBytes := strings.Repeat("x", cap1MB+512)
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Body:       io.NopCloser(strings.NewReader(bodyBytes)),
+	}
+	got := ReadBoundedStatusError(resp)
+	if got == nil {
+		t.Fatal("ReadBoundedStatusError returned nil; want non-nil for 5xx")
+	}
+	if got.StatusCode != http.StatusInternalServerError {
+		t.Errorf("StatusCode = %d, want %d", got.StatusCode, http.StatusInternalServerError)
+	}
+	if len(got.Body) != cap1MB {
+		t.Errorf("len(Body) = %d, want exactly 1 MB cap (%d) -- limiter not enforced", len(got.Body), cap1MB)
+	}
+	// Body must be drained so the underlying transport can reuse the
+	// connection -- a subsequent ReadAll on the same body returns nothing.
+	rest, _ := io.ReadAll(resp.Body)
+	if len(rest) != 0 {
+		t.Errorf("Body not drained: %d bytes remain after read", len(rest))
+	}
+}
+
+func TestStatusError_ErrorAndIsAuth(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     *StatusError
+		wantSub string
+		isAuth  bool
+	}{
+		{"401", &StatusError{StatusCode: 401, Body: "denied"}, "unexpected status 401: denied", true},
+		{"403", &StatusError{StatusCode: 403, Body: "forbidden"}, "unexpected status 403", true},
+		{"500", &StatusError{StatusCode: 500, Body: "boom"}, "unexpected status 500", false},
+		{"200", &StatusError{StatusCode: 200, Body: ""}, "unexpected status 200", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.err.Error(); !strings.Contains(got, tc.wantSub) {
+				t.Errorf("Error() = %q, want substring %q", got, tc.wantSub)
+			}
+			if got := tc.err.IsAuth(); got != tc.isAuth {
+				t.Errorf("IsAuth() = %v, want %v", got, tc.isAuth)
+			}
+		})
+	}
+}

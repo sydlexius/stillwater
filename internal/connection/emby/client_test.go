@@ -1605,3 +1605,165 @@ func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
 		t.Fatal("expected error on whitespace-only newPath")
 	}
 }
+
+// TestUpdateArtistPath_AuthClass401 verifies that a 401 response on the
+// POST half of UpdateArtistPath is wrapped with the ErrAuthRequired sentinel so
+// the publish layer can route the failure to a per-connection re-auth UI
+// signal via errors.Is rather than parsing the formatted message string.
+func TestUpdateArtistPath_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","Path":"/old"}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_AuthClass403 mirrors AuthClass401 for the 403 branch.
+// The publish layer treats both as the same re-auth class so both must wrap.
+func TestUpdateArtistPath_AuthClass403(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","Path":"/old"}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_NonAuthErrorNotWrapped verifies that non-auth status
+// codes (5xx) DO NOT wrap with ErrAuthRequired -- those are server-side faults the
+// publish layer routes to a different toast class (server_error, retry).
+func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","Path":"/old"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = true on 500; want false")
+	}
+}
+
+// TestPushMetadata_AuthClass401 verifies the PushMetadata write path wraps
+// 401 responses with ErrAuthRequired so the publish layer can detect auth failures
+// from PushMetadataAsync's notify path (per issue #1639).
+func TestPushMetadata_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"})
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistLocks_AuthClass401 mirrors TestUpdateArtistPath_AuthClass401
+// for the lock-toggle write path. PushLocks runs through UpdateArtistLocks,
+// so a 401 here must wrap with ErrAuthRequired or the lock-toggle toast
+// loses its auth_failed classification.
+func TestUpdateArtistLocks_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","LockData":false,"LockedFields":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistLocks(context.Background(), "a1", true, []string{"name"})
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestUploadImage_AuthClass401 covers the image-write surface. Image syncs
+// share the per-connection observability path with PushMetadata, so a 401
+// here must wrap with ErrAuthRequired alongside the metadata write methods.
+func TestUploadImage_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	err := c.UploadImage(context.Background(), "emby-001", "thumb", []byte{1, 2, 3}, "image/jpeg")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestPushMetadata_AuthClass401_DualContract pins the dual-contract that
+// any future "single-wrap" refactor would break: the same joined error
+// must satisfy BOTH errors.Is(err, ErrAuthRequired) (the typed sentinel
+// consumed by publish.classifyPushErr's auth_failed branch via the
+// errors.Is(_, ErrAuthRequired) fast path that will land alongside the
+// existing string match) AND strings.Contains(err.Error(), "status 401")
+// (the substring contract that classifyPushErr relies on today). Either
+// half going missing breaks the toast taxonomy.
+func TestPushMetadata_AuthClass401_DualContract(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"})
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "status 401") {
+		t.Errorf("err.Error() = %q; want substring \"status 401\"", err.Error())
+	}
+}

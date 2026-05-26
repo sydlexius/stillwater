@@ -43,7 +43,16 @@ type Connection struct {
 	// options taken when FeatureManageServerFiles was flipped on. Empty
 	// string when the toggle has never been flipped or has been restored.
 	PreStillwaterConfigJSON string `json:"pre_stillwater_config_json,omitempty"`
-	PlatformUserID          string `json:"platform_user_id,omitempty"`
+	// VerifyPathAfterUpdate, for Lidarr connections only, enables a
+	// follow-up GET after UpdateArtistPath PUT that confirms the returned
+	// path field matches what Stillwater sent. Mismatch produces an error
+	// with "sent X, got Y" context so the operator can identify that
+	// Lidarr coerced the path against its Root Folder list. Default false
+	// (opt-in): a healthy Lidarr rarely drifts and the extra request
+	// roughly doubles the per-rename HTTP cost. Ignored for non-Lidarr
+	// types because they do not expose this failure mode.
+	VerifyPathAfterUpdate bool   `json:"verify_path_after_update"`
+	PlatformUserID        string `json:"platform_user_id,omitempty"`
 	// PlatformServerID is the Emby/Jellyfin server identity returned by
 	// /System/Info. Web deep-links must include serverId=<id> so the
 	// platform client loads the correct item view; without it the URL
