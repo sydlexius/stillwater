@@ -1279,6 +1279,7 @@
   "progress_pill.dismiss": "Dismiss",
   "progress_pill.failed": "failed",
   "progress_pill.stale": "waiting for update...",
+  "progress_pill.stale_waiting_update": "Waiting for update",
   "progress_pill.template": "{verb}: {processed} of {total}",
   "progress_pill.verb.bulk_action": "Working",
   "register.already_have_account": "Already have an account?",

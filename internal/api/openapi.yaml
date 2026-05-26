@@ -7389,11 +7389,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [operations]
                 properties:
                   operations:
                     type: array
                     items:
                       type: object
+                      required: [op_id, label, processed, total, status]
                       properties:
                         op_id:
                           type: string

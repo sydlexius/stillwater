@@ -22,12 +22,14 @@ import (
 // MusicBrainz and the Name begins with an ASCII digit run, the push code
 // derives a zero-padded sort key ("12 Stones" -> "0000000012 Stones") so
 // numeric-prefix artists sort numerically rather than lexically in Emby
-// and Jellyfin library views. The derivation also sets LockSortName so the
-// push code adds "SortName" to the platform's LockedFields, preventing
-// Emby and Jellyfin from clearing the derived value on the next refresh
-// (see docs/architecture/emby-artist-metadata.md section 5). The flag is
-// NOT set when SortName came from upstream so a user's manual unlock on
-// the platform-side is preserved.
+// and Jellyfin library views. The derivation also sets LockSortName, which
+// the Emby push consumes to add "SortName" to the platform's LockedFields
+// (Emby clears ForcedSortName on the next refresh otherwise -- see
+// docs/architecture/emby-artist-metadata.md section 5). The Jellyfin push
+// intentionally ignores LockSortName because Jellyfin's MetadataField enum
+// has no "SortName" member; ForcedSortName persists on Jellyfin without a
+// lock anyway. The flag is NOT set when SortName came from upstream so a
+// user's manual unlock on the Emby side is preserved.
 func BuildArtistPushData(a *artist.Artist, members []artist.BandMember) connection.ArtistPushData {
 	derivedSort, locked := deriveSortNameFallback(a.Name, a.SortName)
 	data := connection.ArtistPushData{
@@ -82,8 +84,16 @@ const sortNamePadWidth = 10
 //     SortName on the platform side.
 //   - mbSort is empty AND name does NOT start with an ASCII digit run
 //     (alphabetic prefix, leading symbol like "!!!", empty string, etc.):
-//     pass through the empty string verbatim; derived=false. The platform
-//     keeps whatever SortName it already had.
+//     pass through the empty string verbatim; derived=false. Behavior on
+//     the platform side then diverges: Emby preserves any existing
+//     ForcedSortName because emby/push.go's itemUpdateBody.ForcedSortName
+//     has `omitempty` and an empty value is dropped from the body.
+//     Jellyfin, by contrast, performs a fetch-and-merge full-replacement
+//     POST that writes existing["ForcedSortName"] = "" unconditionally
+//     (jellyfin/push.go), which clears any user-set ForcedSortName on the
+//     platform side. This asymmetry is pre-existing Jellyfin push behavior
+//     (not introduced by #1083) and is documented here so callers know not
+//     to expect a no-op on Jellyfin in this branch.
 //
 // Only ASCII digits trigger the fallback. Unicode digits (Arabic-Indic,
 // Devanagari, fullwidth) are intentionally out of scope: their

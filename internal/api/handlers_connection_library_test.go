@@ -187,11 +187,20 @@ func TestHandlePopulateInFlight_Empty(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
+	// Decode through a pointer-slice so we can distinguish a missing or
+	// JSON-null `operations` field (resp.Operations == nil) from an
+	// explicit empty array (resp.Operations != nil with len 0). The
+	// JS rehydrate path treats `operations: undefined` as a no-op, so
+	// the server contract is "operations is always present, possibly
+	// empty"; pin that explicitly here per CR feedback.
 	var resp struct {
 		Operations []map[string]any `json:"operations"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
+	}
+	if resp.Operations == nil {
+		t.Errorf("operations field missing or null; want explicit empty array")
 	}
 	if len(resp.Operations) != 0 {
 		t.Errorf("operations = %v, want empty", resp.Operations)
@@ -241,9 +250,11 @@ func TestHandlePopulateInFlight_RunningOnly(t *testing.T) {
 	}
 	var resp struct {
 		Operations []struct {
-			OpID   string `json:"op_id"`
-			Label  string `json:"label"`
-			Status string `json:"status"`
+			OpID      string `json:"op_id"`
+			Label     string `json:"label"`
+			Processed int    `json:"processed"`
+			Total     int    `json:"total"`
+			Status    string `json:"status"`
 		} `json:"operations"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
@@ -261,6 +272,17 @@ func TestHandlePopulateInFlight_RunningOnly(t *testing.T) {
 	}
 	if !strings.Contains(got.Label, "Active Lib") {
 		t.Errorf("label = %q, want it to contain library name", got.Label)
+	}
+	// Pin processed + total on the envelope contract so regressions in
+	// either field don't slip through. The LibraryOpResult fixture has no
+	// progress recorded, so both are expected to be the zero value; the
+	// invariant tested is "field is present in the decoded envelope" plus
+	// "sensible relationship (total >= processed)".
+	if got.Processed < 0 {
+		t.Errorf("processed = %d, want >= 0", got.Processed)
+	}
+	if got.Total < got.Processed {
+		t.Errorf("total = %d < processed = %d, want total >= processed", got.Total, got.Processed)
 	}
 }
 

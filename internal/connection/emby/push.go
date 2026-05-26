@@ -175,7 +175,18 @@ func (c *Client) fetchAndMergeLockedFields(ctx context.Context, platformArtistID
 	if c.userID == "" {
 		return nil, fmt.Errorf("no user ID configured for this connection")
 	}
-	getPath := fmt.Sprintf("/Users/%s/Items/%s?Fields=LockedFields", c.userID, platformArtistID)
+	// Escape both path segments: Emby user IDs and artist IDs can include
+	// characters that would otherwise be misinterpreted as path separators
+	// (slashes) or query delimiters (question marks, ampersands). Without
+	// url.PathEscape the GET could land on the wrong route and silently
+	// degrade the lock merge to "ship without lock" via the not-found
+	// branch -- a quiet correctness regression. Mirrors the same fix that
+	// already applies to other Emby write paths (see emby/client.go).
+	getPath := fmt.Sprintf(
+		"/Users/%s/Items/%s?Fields=LockedFields",
+		url.PathEscape(c.userID),
+		url.PathEscape(platformArtistID),
+	)
 	var item map[string]any
 	if err := c.Get(ctx, getPath, &item); err != nil {
 		return nil, fmt.Errorf("fetching locked fields: %w", err)

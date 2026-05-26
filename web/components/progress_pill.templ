@@ -291,7 +291,14 @@ templ ProgressPill() {
 				pill.staleMarked = true;
 				pill.el.classList.add("opacity-60");
 				pill.spinner.innerHTML = clockSVG;
-				var label = i18n("aria-stale") || i18n("stale") || "Waiting for update";
+				// Chain three i18n keys before any literal fallback so a
+				// translator dropping any single key still yields localized
+				// text. The final string literal exists only as a defense
+				// against an entirely-broken i18n bundle and should never be
+				// reached at runtime; the en.json source-of-truth carries
+				// stale_waiting_update precisely so visible text is always
+				// keyed.
+				var label = i18n("aria-stale") || i18n("stale") || i18n("stale_waiting_update") || "Waiting for update";
 				pill.el.setAttribute("aria-label", label);
 			}
 

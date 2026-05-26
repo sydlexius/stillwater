@@ -97,9 +97,19 @@
     }
 
     source.onerror = function () {
-      // EventSource will auto-reconnect on its own for network errors,
-      // but if the connection is fully closed (e.g. auth failure), we
-      // need manual reconnection with backoff.
+      // Any non-OPEN state means the SSE stream is degraded -- either fully
+      // CLOSED (e.g. auth failure) or in CONNECTING while the browser's
+      // native EventSource attempts auto-reconnect after a transient drop.
+      // Flag wasDisconnected for both so the next `connected` event fires
+      // rehydrateInflightOps; without this, native auto-reconnects would
+      // silently skip the rehydrate and the pill could stay stale-display
+      // after a real reconnect (#1641 CR follow-up).
+      if (source.readyState !== EventSource.OPEN) {
+        wasDisconnected = true;
+      }
+      // Only schedule manual reconnect when CLOSED -- CONNECTING means the
+      // browser is already retrying on its own, so a parallel
+      // scheduleReconnect would race and produce double connections.
       if (source.readyState === EventSource.CLOSED) {
         scheduleReconnect();
       }
@@ -251,7 +261,7 @@
           processed: snap.processed || 0,
           total: snap.total || 0,
           status: "running",
-          cancel_url: "/api/v1/artists/bulk-actions/cancel"
+          cancel_url: base + "/api/v1/artists/bulk-actions/cancel"
         });
       } else if (status === "completed" || status === "failed" || status === "canceled") {
         window.swProgressPill.push({
