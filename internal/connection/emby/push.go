@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +13,20 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 )
+
+// readBoundedStatusError builds an httpclient.StatusError from a non-2xx
+// response, capping the body at 1 MB to guard against a misbehaving peer
+// returning a huge HTML error page. Used by every hand-rolled HTTP path in
+// this file so write-method errors carry the typed status code for ErrAuth
+// detection without re-parsing strings.
+func readBoundedStatusError(resp *http.Response) *httpclient.StatusError {
+	const maxErrBody = 1 << 20 // 1 MB
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return &httpclient.StatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
+}
 
 // tagItem is a named tag for Emby's TagItems field.
 // Emby uses {Name, Id} objects instead of flat strings; only Name is required
@@ -113,10 +127,14 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		const maxErrBody = 1 << 20 // 1 MB
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("push failed with status %d: %s", resp.StatusCode, string(respBody))
+		statusErr := readBoundedStatusError(resp)
+		// Historical error wording preserved ("push failed with status N: body")
+		// for test fixtures and operator log familiarity; errors.Join attaches
+		// the typed StatusError as a sibling in the error tree so
+		// wrapAuthIfStatusAuth (via errors.As) can still detect 401/403 and
+		// route to ErrAuth without duplicating the status string in Error().
+		formatted := fmt.Errorf("push failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
+		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
 
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -208,10 +226,9 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		const maxErrBody = 1 << 20 // 1 MB
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("image upload failed with status %d: %s", resp.StatusCode, string(respBody))
+		statusErr := readBoundedStatusError(resp)
+		formatted := fmt.Errorf("image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
+		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
 
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -248,10 +265,9 @@ func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		const maxErrBody = 1 << 20 // 1 MB
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("indexed image upload failed with status %d: %s", resp.StatusCode, string(respBody))
+		statusErr := readBoundedStatusError(resp)
+		formatted := fmt.Errorf("indexed image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
+		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
 
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -281,10 +297,9 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		const maxErrBody = 1 << 20 // 1 MB
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("image delete failed with status %d: %s", resp.StatusCode, string(respBody))
+		statusErr := readBoundedStatusError(resp)
+		formatted := fmt.Errorf("image delete failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
+		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
 
 	_, _ = io.Copy(io.Discard, resp.Body)

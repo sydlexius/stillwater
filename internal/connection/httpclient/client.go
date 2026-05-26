@@ -11,6 +11,36 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 )
 
+// StatusError is returned by the base HTTP helpers when the peer returns a
+// non-2xx response. It exposes the raw status code (and a bounded snippet of
+// the response body) so per-package callers can route auth-class failures
+// (401/403) to a typed sentinel like emby.ErrAuth without re-parsing the
+// formatted error string. The string form preserves the historical
+// "unexpected status N: body" shape so existing callers and tests that
+// substring-match on err.Error() are unaffected.
+type StatusError struct {
+	StatusCode int
+	Body       string
+}
+
+// Error renders the status-error in the historical "unexpected status N: body"
+// shape so callers that grep err.Error() (notably publish.classifyPushErr,
+// which looks for "status 401"/"HTTP 401"/"status 5" substrings) keep
+// working untouched. Per-package write methods that already include their
+// own "X failed with status %d" prefix should %w the StatusError to keep
+// the typed code available without duplicating the status string; see
+// emby/push.go and jellyfin/push.go for the pattern.
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("unexpected status %d: %s", e.StatusCode, e.Body)
+}
+
+// IsAuth reports whether the status code is in the auth-class set (401 or
+// 403). Used by per-package write methods to decide whether to wrap with
+// the package-level ErrAuth sentinel.
+func (e *StatusError) IsAuth() bool {
+	return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden
+}
+
 // readErrorBody reads up to 1 KB of body for use in error messages, then
 // drains any remaining bytes so the HTTP transport can reuse the connection.
 func readErrorBody(r io.Reader) string {
@@ -62,7 +92,7 @@ func (b *BaseClient) Get(ctx context.Context, path string, result any) error {
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
+		return &StatusError{StatusCode: resp.StatusCode, Body: readErrorBody(resp.Body)}
 	}
 
 	if result != nil {
@@ -89,7 +119,7 @@ func (b *BaseClient) Post(ctx context.Context, path string, body io.Reader) erro
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
+		return &StatusError{StatusCode: resp.StatusCode, Body: readErrorBody(resp.Body)}
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
@@ -111,7 +141,7 @@ func (b *BaseClient) GetRaw(ctx context.Context, path string) ([]byte, string, e
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, "", &StatusError{StatusCode: resp.StatusCode, Body: readErrorBody(resp.Body)}
 	}
 
 	const maxImageSize = 25 << 20 // 25 MB
@@ -143,7 +173,7 @@ func (b *BaseClient) PutJSON(ctx context.Context, path string, body io.Reader, r
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
+		return &StatusError{StatusCode: resp.StatusCode, Body: readErrorBody(resp.Body)}
 	}
 
 	if result != nil {
@@ -172,7 +202,7 @@ func (b *BaseClient) PostJSON(ctx context.Context, path string, body io.Reader, 
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
+		return &StatusError{StatusCode: resp.StatusCode, Body: readErrorBody(resp.Body)}
 	}
 
 	if result != nil {

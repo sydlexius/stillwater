@@ -1605,3 +1605,94 @@ func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
 		t.Fatal("expected error on whitespace-only newPath")
 	}
 }
+
+// TestUpdateArtistPath_AuthClass401 verifies that a 401 response on the
+// POST half of UpdateArtistPath is wrapped with the ErrAuth sentinel so
+// the publish layer can route the failure to a per-connection re-auth UI
+// signal via errors.Is rather than parsing the formatted message string.
+func TestUpdateArtistPath_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","Path":"/old"}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_AuthClass403 mirrors AuthClass401 for the 403 branch.
+// The publish layer treats both as the same re-auth class so both must wrap.
+func TestUpdateArtistPath_AuthClass403(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","Path":"/old"}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_NonAuthErrorNotWrapped verifies that non-auth status
+// codes (5xx) DO NOT wrap with ErrAuth -- those are server-side faults the
+// publish layer routes to a different toast class (server_error, retry).
+func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","Path":"/old"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = true on 500; want false")
+	}
+}
+
+// TestPushMetadata_AuthClass401 verifies the PushMetadata write path wraps
+// 401 responses with ErrAuth so the publish layer can detect auth failures
+// from PushMetadataAsync's notify path (per issue #1639).
+func TestPushMetadata_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"})
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuth) {
+		t.Errorf("errors.Is(err, ErrAuth) = false; want true. err = %v", err)
+	}
+}
