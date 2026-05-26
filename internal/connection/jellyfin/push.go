@@ -35,17 +35,13 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	existing["Name"] = data.Name
 	existing["Overview"] = data.Biography
 	existing["ForcedSortName"] = data.SortName
-	// When Stillwater derived the SortName (#1083) Jellyfin will reset it
-	// on the next metadata refresh unless "SortName" is in LockedFields.
-	// Append to the pre-fetched LockedFields slice so the user's manual
-	// per-field locks (Tags, Overview, etc.) survive the push. Dedup is
-	// honored so re-pushing the same artist does not append "SortName"
-	// repeatedly. We only lock when WE authored the value; an upstream
-	// MB-provided SortName never sets LockSortName so the user's manual
-	// unlock on the platform side stays intact.
-	if data.LockSortName {
-		existing["LockedFields"] = appendLockedField(existing["LockedFields"], "SortName")
-	}
+	// Jellyfin does not support per-field metadata locks (only a whole-item
+	// LockData boolean). Its MetadataField enum lacks "SortName" entirely,
+	// so attempting to lock SortName via LockedFields returns HTTP 400 and
+	// fails the whole push. ForcedSortName persists across metadata refresh
+	// on its own without a lock, so data.LockSortName is intentionally
+	// ignored on the Jellyfin path -- the field is consumed only by the
+	// Emby push, where the platform documents the lock requirement.
 	existing["Genres"] = append([]string{}, data.Genres...)
 
 	// Styles and Moods map to Tags (flat string array on Jellyfin).
@@ -136,45 +132,6 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 
 	c.Logger.Debug("metadata pushed to jellyfin", "artist_id", platformArtistID)
 	return nil
-}
-
-// appendLockedField returns a LockedFields slice with `field` appended to
-// the existing value (dedup-preserving). The fetched item's LockedFields
-// deserializes as []any from generic JSON decoding; we normalize to
-// []string here so the next POST round-trips a plain JSON string array
-// instead of mixed-type elements. Pre-existing entries are preserved
-// verbatim (no canonicalization) so the user's manual locks land back on
-// Jellyfin exactly as they were fetched.
-func appendLockedField(existing any, field string) []string {
-	out := make([]string, 0, 4)
-	seen := make(map[string]struct{}, 4)
-	switch v := existing.(type) {
-	case []any:
-		for _, item := range v {
-			if s, ok := item.(string); ok && s != "" {
-				if _, dup := seen[s]; dup {
-					continue
-				}
-				seen[s] = struct{}{}
-				out = append(out, s)
-			}
-		}
-	case []string:
-		for _, s := range v {
-			if s == "" {
-				continue
-			}
-			if _, dup := seen[s]; dup {
-				continue
-			}
-			seen[s] = struct{}{}
-			out = append(out, s)
-		}
-	}
-	if _, dup := seen[field]; !dup {
-		out = append(out, field)
-	}
-	return out
 }
 
 // buildProviderIDUpdates builds the set of external-ID key/value pairs

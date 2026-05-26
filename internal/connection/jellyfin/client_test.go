@@ -1772,17 +1772,21 @@ func TestUploadImage_AuthClass401(t *testing.T) {
 	}
 }
 
-// TestPushMetadata_LockSortName_AppendsToExistingLocks verifies that the
-// derived-SortName flag (#1083) causes "SortName" to be appended to the
-// fetched LockedFields slice in the POST body, preserving pre-existing
-// per-field locks. Without the lock, Jellyfin would reset the derived
-// ForcedSortName on the next metadata refresh.
-func TestPushMetadata_LockSortName_AppendsToExistingLocks(t *testing.T) {
+// TestPushMetadata_LockSortName_Ignored verifies that data.LockSortName=true
+// on the Jellyfin path does NOT cause "SortName" to land in LockedFields.
+// Jellyfin's MetadataField enum has no SortName member (the platform only
+// supports a whole-item LockData boolean, not per-field locks), so sending
+// "SortName" returns HTTP 400 and fails the entire push. ForcedSortName
+// persists across metadata refresh on Jellyfin without any lock, so the
+// LockSortName signal is consumed only by the Emby push path.
+//
+// The pre-existing user-set lock on Tags must still round-trip verbatim
+// so the user's Jellyfin-UI choices survive the push.
+func TestPushMetadata_LockSortName_Ignored(t *testing.T) {
 	bodyCh := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
 			w.Header().Set("Content-Type", "application/json")
-			// Pre-existing user-set lock on Tags must survive the push.
 			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-numeric-1","Name":"12 Stones","LockedFields":["Tags"]}]}`))
 			return
 		}
@@ -1814,25 +1818,20 @@ func TestPushMetadata_LockSortName_AppendsToExistingLocks(t *testing.T) {
 	if fs, _ := got["ForcedSortName"].(string); fs != "0000000012 Stones" {
 		t.Errorf("ForcedSortName = %q, want zero-padded derived value", fs)
 	}
-	lockedAny, present := got["LockedFields"]
-	if !present {
-		t.Fatalf("LockedFields missing from POST body; got keys = %v", keysOf(got))
-	}
-	locks := stringSliceFromAny(lockedAny)
+	locks := stringSliceFromAny(got["LockedFields"])
 	if !sliceContains(locks, "Tags") {
 		t.Errorf("LockedFields = %v, must preserve pre-existing 'Tags' lock", locks)
 	}
-	if !sliceContains(locks, "SortName") {
-		t.Errorf("LockedFields = %v, must include derived 'SortName' lock", locks)
+	if sliceContains(locks, "SortName") {
+		t.Errorf("LockedFields = %v, must NOT include SortName -- Jellyfin rejects it with HTTP 400", locks)
 	}
 }
 
-// TestPushMetadata_LockSortName_Off_LeavesLocksUntouched verifies that a
-// push without the LockSortName flag round-trips the fetched LockedFields
-// slice unchanged. Without this, every push would silently re-author the
-// platform-side lock list and break per-field locks the user set in the
-// platform UI.
-func TestPushMetadata_LockSortName_Off_LeavesLocksUntouched(t *testing.T) {
+// TestPushMetadata_LocksRoundTripVerbatim verifies that pre-existing per-field
+// locks on the Jellyfin item round-trip unchanged through PushMetadata,
+// regardless of the LockSortName signal. The push must never silently
+// re-author the platform-side lock list.
+func TestPushMetadata_LocksRoundTripVerbatim(t *testing.T) {
 	bodyCh := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
@@ -1861,10 +1860,7 @@ func TestPushMetadata_LockSortName_Off_LeavesLocksUntouched(t *testing.T) {
 		t.Fatalf("PushMetadata: %v", err)
 	}
 	got := <-bodyCh
-	// LockedFields must be preserved verbatim from the fetched state since
-	// LockSortName=false (no override).
-	lockedAny := got["LockedFields"]
-	locks := stringSliceFromAny(lockedAny)
+	locks := stringSliceFromAny(got["LockedFields"])
 	if len(locks) != 2 {
 		t.Errorf("LockedFields = %v, want preserved length 2", locks)
 	}
@@ -1872,19 +1868,8 @@ func TestPushMetadata_LockSortName_Off_LeavesLocksUntouched(t *testing.T) {
 		t.Errorf("LockedFields = %v, want both Tags and Overview preserved", locks)
 	}
 	if sliceContains(locks, "SortName") {
-		t.Errorf("LockedFields = %v, must NOT include SortName when LockSortName=false", locks)
+		t.Errorf("LockedFields = %v, must NOT include SortName -- Jellyfin rejects it", locks)
 	}
-}
-
-// keysOf returns the keys of a JSON-decoded body for diagnostic error
-// messages. Stable order is not required for the assertions; this is
-// only used inside t.Errorf format strings.
-func keysOf(m map[string]any) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }
 
 // stringSliceFromAny coerces a JSON-decoded LockedFields value ([]any)

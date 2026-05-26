@@ -414,13 +414,16 @@ Only the leading ASCII-digit run is padded; the remainder of the name is
 preserved verbatim. Alphabetic-prefix and leading-symbol names (`Bjork`,
 `!!!`, `+44`) are out of scope and pass through unchanged.
 
-When (and ONLY when) Stillwater derives the value, the push code appends
-`"SortName"` to the merged `LockedFields` array fetched from Jellyfin so
-the next metadata refresh does not clear the derived sort name. The
-append preserves pre-existing per-field locks (e.g. Tags, Overview) so a
-user's manual lock state on the Jellyfin side survives the push. Pushes
-whose `SortName` comes from upstream metadata never set the lock so a
-user's manual unlock on the platform side remains honored.
+Unlike Emby, Jellyfin does not require a lock to keep the derived value
+through a metadata refresh: `ForcedSortName` is treated as user-provided
+override data and persists across `MetadataRefreshMode=FullRefresh` even
+with `ReplaceAllMetadata=true`. Jellyfin also lacks per-field locks
+entirely -- its `MetadataField` enum has no `SortName` member, and the
+only lock surface is the whole-item `LockData` boolean. The shared
+`ArtistPushData.LockSortName` signal (consumed by the Emby push path) is
+therefore intentionally ignored here; the Jellyfin push leaves the
+fetched `LockedFields` array untouched so a user's manual lock state on
+the Jellyfin side round-trips verbatim.
 
 ### Known Issues and Gaps
 
