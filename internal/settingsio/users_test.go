@@ -231,3 +231,72 @@ func TestImport_UsersIDMatchUpdates(t *testing.T) {
 		t.Errorf("is_protected: got %d, want 1 (per-install invariant)", isProtected)
 	}
 }
+
+// TestImport_PreV14UserUsernameCollisionSkips pins the v1.3 backward
+// compatibility behavior: when an envelope user row carries an empty id
+// (pre-1.4 envelope) and the target already has a row with the same
+// username under its own UUID, the import must skip that row silently
+// (matching the historical INSERT OR IGNORE semantics) rather than fail
+// the whole import with ErrUserIDCollision. The strict collision behavior
+// is still enforced when the envelope carried an explicit id; see
+// TestImport_UsersIdCollisionFails for that path.
+func TestImport_PreV14UserUsernameCollisionSkips(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+	// Seed the target with alice under its own UUID. The envelope below
+	// will bring an ID-less alice; the importer must leave the target row
+	// untouched and continue rather than 409.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, username, role, display_name)
+		VALUES (?, ?, ?, ?)
+	`, "u-target", "alice", "operator", "Target Alice"); err != nil {
+		t.Fatalf("seeding target alice: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	// Drive importUsers directly with a hand-built UserExport (ID="").
+	// Going through Service.Export would assign a UUID; we want to mimic
+	// a v1.3 envelope decoded from the wire.
+	preV14 := []UserExport{
+		{
+			ID:           "",
+			Username:     "alice",
+			DisplayName:  "Envelope Alice",
+			PasswordHash: "envelope-hash",
+			Role:         "administrator",
+			AuthProvider: "local",
+			IsActive:     true,
+			CreatedAt:    "2026-01-01T00:00:00Z",
+		},
+	}
+
+	var result ImportResult
+	if err := svc.importUsers(ctx, db, preV14, &result); err != nil {
+		t.Fatalf("importUsers: unexpected error on pre-1.4 username collision: %v", err)
+	}
+
+	// Target row must be untouched: id, role, and display_name preserved.
+	var id, role, displayName string
+	if err := db.QueryRowContext(ctx,
+		`SELECT id, role, display_name FROM users WHERE username = 'alice'`,
+	).Scan(&id, &role, &displayName); err != nil {
+		t.Fatalf("scanning target alice: %v", err)
+	}
+	if id != "u-target" {
+		t.Errorf("target id: got %q, want u-target (envelope row must not overwrite)", id)
+	}
+	if role != "operator" {
+		t.Errorf("target role: got %q, want operator (envelope row must not overwrite)", role)
+	}
+	if displayName != "Target Alice" {
+		t.Errorf("target display_name: got %q, want Target Alice", displayName)
+	}
+
+	// Skipped rows must not increment UsersImported.
+	if result.UsersImported != 0 {
+		t.Errorf("UsersImported: got %d, want 0 (skipped row must not count)", result.UsersImported)
+	}
+}

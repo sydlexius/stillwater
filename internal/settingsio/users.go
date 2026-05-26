@@ -109,8 +109,13 @@ func (s *Service) exportUsers(ctx context.Context) ([]UserExport, error) {
 //     overwrite is_protected from the envelope; protected status is a
 //     per-install policy.
 //  2. No id match, but the username exists under a DIFFERENT id ->
-//     ErrUserIDCollision. The import halts; the operator must resolve the
-//     conflict manually (e.g. rename one of the colliding accounts).
+//     ErrUserIDCollision when the envelope carried an explicit id (v1.4+).
+//     The import halts; the operator must resolve the conflict manually
+//     (e.g. rename one of the colliding accounts). When the envelope did
+//     not carry an id (pre-1.4 envelopes), the importer cannot prove
+//     identity by id and falls back to the original INSERT OR IGNORE
+//     semantics: the target row wins, the envelope row is skipped with an
+//     Info log, and the import continues.
 //  3. Neither id nor username matches -> INSERT a new row with the source id
 //     so downstream rows can still resolve owners by id.
 //
@@ -159,9 +164,14 @@ func (s *Service) importOneUser(ctx context.Context, db dbExecutor, u *UserExpor
 	}
 	// pre-id envelope versions (v1.3 and earlier) lack a UUID; synthesize
 	// one so downstream rows that reference users by id still resolve.
+	// Track that we synthesized it so the username-collision branch below
+	// can fall back to the pre-1.4 INSERT OR IGNORE skip semantics rather
+	// than failing the whole import with ErrUserIDCollision.
 	sourceID := u.ID
+	synthesizedID := false
 	if sourceID == "" {
 		sourceID = uuid.New().String()
+		synthesizedID = true
 	}
 
 	role := normalizeImportRole(u.Role)
@@ -211,6 +221,17 @@ func (s *Service) importOneUser(ctx context.Context, db dbExecutor, u *UserExpor
 		return fmt.Errorf("probing user by username %q: %w", u.Username, err)
 	}
 	if collidingID != "" {
+		if synthesizedID {
+			// Pre-1.4 envelope: the source carried no UUID to match
+			// against, and the target already has a row with this
+			// username under its own UUID. Old INSERT OR IGNORE
+			// semantics: skip silently rather than fail the whole
+			// import. Log at Info so the audit trail shows why the
+			// envelope row did not land on the target.
+			slog.Info("import: skipping pre-1.4 user; username already present on target",
+				"username", u.Username, "target_id", collidingID)
+			return nil
+		}
 		return fmt.Errorf("%w: username %q is taken by user id %q on target, envelope brought id %q",
 			ErrUserIDCollision, u.Username, collidingID, sourceID)
 	}
