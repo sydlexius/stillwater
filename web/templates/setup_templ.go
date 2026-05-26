@@ -180,189 +180,371 @@ func SetupPage(assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" alt=\"\" class=\"h-12 w-12\" aria-hidden=\"true\"></div><h1 class=\"mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400\">Stillwater</h1><h2 class=\"mt-4 text-xl text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" alt=\"\" class=\"h-12 w-12\" aria-hidden=\"true\"></div><h1 class=\"mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400\">Stillwater</h1><h2 class=\"mt-4 text-xl text-gray-900 dark:text-gray-100\" id=\"setup-headline\" data-fresh-headline=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.how_to_sign_in"))
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "setup.how_to_sign_in"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 48, Col: 96}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 51, Col: 59}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</h2><p class=\"mt-2 text-sm text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" data-restore-headline=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.choose_auth_method"))
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "setup.restore_headline"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 50, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 52, Col: 63}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</p></div><!-- Auth method selection cards --><div class=\"grid grid-cols-3 gap-3\" id=\"auth-method-cards\" role=\"radiogroup\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "setup.authentication_method"))
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.how_to_sign_in"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 54, Col: 132}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 53, Col: 39}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\"><button type=\"button\" role=\"radio\" aria-checked=\"true\" onclick=\"selectAuthMethod('local')\" id=\"card-local\" class=\"auth-card auth-card-selected flex flex-col items-center rounded-xl border-2 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 p-4 text-center transition-all hover:shadow-md\"><!-- Key icon --><svg class=\"h-8 w-8 text-blue-600 dark:text-blue-400 mb-2\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z\"></path></svg> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</h2><p class=\"mt-2 text-sm text-gray-500 dark:text-gray-400\" id=\"setup-subhead\" data-fresh-subhead=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var16 string
-		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.local_account"))
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "setup.choose_auth_method"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 67, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 57, Col: 62}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" data-restore-subhead=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.username_and_password"))
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "setup.restore_subhead"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 68, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 58, Col: 61}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</span></button> <button type=\"button\" role=\"radio\" aria-checked=\"false\" onclick=\"selectAuthMethod('emby')\" id=\"card-emby\" class=\"auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md\"><img src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 string
-		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/static/img/logos/emby-128.png")
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.choose_auth_method"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 78, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 60, Col: 43}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" alt=\"\" class=\"h-8 w-8 mb-2\" aria-hidden=\"true\"> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">Emby</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</p></div><!--\n\t\t\t\t\t  Start fresh vs Restore from backup. Restore lives on this\n\t\t\t\t\t  pre-admin page so the user signs in with their\n\t\t\t\t\t  pre-existing credentials. Posting to /api/v1/setup/restore\n\t\t\t\t\t  is blocked by the HasUsers gate once any user exists, so\n\t\t\t\t\t  the setup page is the only context where this branch is\n\t\t\t\t\t  reachable.\n\t\t\t\t\t--><div class=\"grid grid-cols-2 gap-3\" id=\"setup-mode-cards\" role=\"radiogroup\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 string
-		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "register.use_emby_account"))
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "setup.choose_setup_mode"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 80, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 71, Col: 127}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</span></button> <button type=\"button\" role=\"radio\" aria-checked=\"false\" onclick=\"selectAuthMethod('jellyfin')\" id=\"card-jellyfin\" class=\"auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md\"><img src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><button type=\"button\" role=\"radio\" aria-checked=\"true\" id=\"card-mode-fresh\" onclick=\"selectSetupMode('fresh')\" class=\"setup-mode-card setup-mode-card-selected flex flex-col items-center rounded-xl border-2 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 p-4 text-center transition-all hover:shadow-md\"><svg class=\"h-7 w-7 text-blue-600 dark:text-blue-400 mb-2\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 4.5v15m7.5-7.5h-15\"></path></svg> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var20 string
-		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/static/img/logos/jellyfin.svg")
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.start_fresh_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 90, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 83, Col: 111}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" alt=\"\" class=\"h-8 w-8 mb-2\" aria-hidden=\"true\"> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">Jellyfin</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var21 string
-		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "register.use_jellyfin_account"))
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.start_fresh_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 92, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 84, Col: 101}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</span></button></div><!-- Setup form --><form method=\"post\" action=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</span></button> <button type=\"button\" role=\"radio\" aria-checked=\"false\" id=\"card-mode-restore\" onclick=\"selectSetupMode('restore')\" class=\"setup-mode-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md\"><svg class=\"h-7 w-7 text-gray-600 dark:text-gray-400 mb-2\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25\"></path></svg> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var22 templ.SafeURL
-		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/setup"))
+		var templ_7745c5c3_Var22 string
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.restore_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 98, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 97, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" hx-post=\"/api/v1/auth/setup\" hx-swap=\"innerHTML\" hx-target=\"#setup-result\" class=\"space-y-5\"><input type=\"hidden\" name=\"auth_method\" id=\"auth-method-input\" value=\"local\"><!-- Server URL (hidden for local, visible for federated) --><div id=\"server-url-field\" class=\"hidden\"><label for=\"server_url\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var23 string
-		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.server_url"))
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.restore_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 108, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 98, Col: 97}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</label> <input id=\"server_url\" name=\"server_url\" type=\"url\" placeholder=\"http://192.168.1.100:8096\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span></button></div><!-- Auth method selection cards (Start fresh branch) --><div id=\"setup-fresh-branch\" class=\"space-y-8\"><div class=\"grid grid-cols-3 gap-3\" id=\"auth-method-cards\" role=\"radiogroup\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var24 string
-		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.username"))
+		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "setup.authentication_method"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 120, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 103, Col: 133}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</label> <input id=\"username\" name=\"username\" type=\"text\" required autocomplete=\"username\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\"><button type=\"button\" role=\"radio\" aria-checked=\"true\" onclick=\"selectAuthMethod('local')\" id=\"card-local\" class=\"auth-card auth-card-selected flex flex-col items-center rounded-xl border-2 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 p-4 text-center transition-all hover:shadow-md\"><!-- Key icon --><svg class=\"h-8 w-8 text-blue-600 dark:text-blue-400 mb-2\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z\"></path></svg> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var25 string
-		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.password"))
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.local_account"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 133, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 116, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</label> <input id=\"password\" name=\"password\" type=\"password\" required minlength=\"8\" autocomplete=\"new-password\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><button type=\"submit\" id=\"setup-submit-btn\" class=\"flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var26 string
-		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "register.create_account"))
+		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.username_and_password"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 150, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 117, Col: 108}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</button></form><div id=\"setup-result\"></div></div></div><script>\n\t\t\t\tfunction selectAuthMethod(method) {\n\t\t\t\t\t// Update hidden input\n\t\t\t\t\tdocument.getElementById('auth-method-input').value = method;\n\n\t\t\t\t\t// Update card styles and ARIA state\n\t\t\t\t\tdocument.querySelectorAll('.auth-card').forEach(function(card) {\n\t\t\t\t\t\tcard.setAttribute('aria-checked', 'false');\n\t\t\t\t\t\tcard.classList.remove('auth-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');\n\t\t\t\t\t});\n\t\t\t\t\tvar selected = document.getElementById('card-' + method);\n\t\t\t\t\tselected.setAttribute('aria-checked', 'true');\n\t\t\t\t\tselected.classList.add('auth-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');\n\t\t\t\t\tselected.classList.remove('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');\n\n\t\t\t\t\t// Show/hide server URL field\n\t\t\t\t\tvar urlField = document.getElementById('server-url-field');\n\t\t\t\t\tvar urlInput = document.getElementById('server_url');\n\t\t\t\t\tvar passwordInput = document.getElementById('password');\n\t\t\t\t\tvar submitBtn = document.getElementById('setup-submit-btn');\n\n\t\t\t\t\tif (method === 'local') {\n\t\t\t\t\t\turlField.classList.add('hidden');\n\t\t\t\t\t\turlInput.removeAttribute('required');\n\t\t\t\t\t\tpasswordInput.setAttribute('minlength', '8');\n\t\t\t\t\t\tpasswordInput.setAttribute('autocomplete', 'new-password');\n\t\t\t\t\t\tsubmitBtn.textContent = 'Create Account';\n\t\t\t\t\t} else {\n\t\t\t\t\t\turlField.classList.remove('hidden');\n\t\t\t\t\t\turlInput.setAttribute('required', '');\n\t\t\t\t\t\tpasswordInput.removeAttribute('minlength');\n\t\t\t\t\t\tpasswordInput.setAttribute('autocomplete', 'current-password');\n\t\t\t\t\t\tsubmitBtn.textContent = 'Sign In with ' + (method === 'emby' ? 'Emby' : 'Jellyfin');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</span></button> <button type=\"button\" role=\"radio\" aria-checked=\"false\" onclick=\"selectAuthMethod('emby')\" id=\"card-emby\" class=\"auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md\"><img src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var27 string
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/static/img/logos/emby-128.png")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 127, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" alt=\"\" class=\"h-8 w-8 mb-2\" aria-hidden=\"true\"> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">Emby</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var28 string
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "register.use_emby_account"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 129, Col: 105}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</span></button> <button type=\"button\" role=\"radio\" aria-checked=\"false\" onclick=\"selectAuthMethod('jellyfin')\" id=\"card-jellyfin\" class=\"auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md\"><img src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var29 string
+		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/static/img/logos/jellyfin.svg")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 139, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" alt=\"\" class=\"h-8 w-8 mb-2\" aria-hidden=\"true\"> <span class=\"text-sm font-semibold text-gray-900 dark:text-gray-100\">Jellyfin</span> <span class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var30 string
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "register.use_jellyfin_account"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 141, Col: 109}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</span></button></div><!-- Setup form --><form method=\"post\" action=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var31 templ.SafeURL
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/setup"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 147, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" hx-post=\"/api/v1/auth/setup\" hx-swap=\"innerHTML\" hx-target=\"#setup-result\" class=\"space-y-5\"><input type=\"hidden\" name=\"auth_method\" id=\"auth-method-input\" value=\"local\"><!-- Server URL (hidden for local, visible for federated) --><div id=\"server-url-field\" class=\"hidden\"><label for=\"server_url\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var32 string
+		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.server_url"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 157, Col: 37}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</label> <input id=\"server_url\" name=\"server_url\" type=\"url\" placeholder=\"http://192.168.1.100:8096\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var33 string
+		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.username"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 169, Col: 36}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</label> <input id=\"username\" name=\"username\" type=\"text\" required autocomplete=\"username\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var34 string
+		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.password"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 182, Col: 36}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</label> <input id=\"password\" name=\"password\" type=\"password\" required minlength=\"8\" autocomplete=\"new-password\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><button type=\"submit\" id=\"setup-submit-btn\" class=\"flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var35 string
+		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "register.create_account"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 199, Col: 43}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</button></form><div id=\"setup-result\"></div></div><!-- Restore from backup branch (hidden by default) --><div id=\"setup-restore-branch\" class=\"hidden space-y-5\"><form id=\"setup-restore-form\" method=\"post\" action=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var36 templ.SafeURL
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/setup/restore"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 209, Col: 72}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" enctype=\"multipart/form-data\" hx-post=\"/api/v1/setup/restore\" hx-target=\"#setup-restore-result\" hx-encoding=\"multipart/form-data\" class=\"space-y-5\"><div><label for=\"restore-file\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var37 string
+		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.restore_file_label"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 217, Col: 137}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</label> <input id=\"restore-file\" type=\"file\" name=\"file\" accept=\".json,application/json\" required class=\"mt-1 block w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 dark:file:bg-blue-900/40 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/60\"></div><div><label for=\"restore-passphrase\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var38 string
+		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.restore_passphrase_label"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 228, Col: 149}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</label> <input id=\"restore-passphrase\" name=\"passphrase\" type=\"password\" required autocomplete=\"off\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"><p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var39 string
+		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.restore_passphrase_hint"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 237, Col: 106}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</p></div><button type=\"submit\" class=\"flex w-full justify-center rounded-lg bg-green-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var40 string
+		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "setup.restore_submit"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 243, Col: 40}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</button></form><div id=\"setup-restore-result\"></div></div></div></div><script>\n\t\t\t\tfunction selectSetupMode(mode) {\n\t\t\t\t\tdocument.querySelectorAll('.setup-mode-card').forEach(function(card) {\n\t\t\t\t\t\tcard.setAttribute('aria-checked', 'false');\n\t\t\t\t\t\tcard.classList.remove('setup-mode-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');\n\t\t\t\t\t});\n\t\t\t\t\tvar selected = document.getElementById('card-mode-' + mode);\n\t\t\t\t\tif (!selected) return;\n\t\t\t\t\tselected.setAttribute('aria-checked', 'true');\n\t\t\t\t\tselected.classList.add('setup-mode-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');\n\t\t\t\t\tselected.classList.remove('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');\n\n\t\t\t\t\tvar fresh = document.getElementById('setup-fresh-branch');\n\t\t\t\t\tvar restore = document.getElementById('setup-restore-branch');\n\t\t\t\t\tvar headline = document.getElementById('setup-headline');\n\t\t\t\t\tvar subhead = document.getElementById('setup-subhead');\n\t\t\t\t\tif (mode === 'restore') {\n\t\t\t\t\t\tfresh.classList.add('hidden');\n\t\t\t\t\t\trestore.classList.remove('hidden');\n\t\t\t\t\t\tif (headline) headline.textContent = headline.getAttribute('data-restore-headline') || headline.textContent;\n\t\t\t\t\t\tif (subhead) subhead.textContent = subhead.getAttribute('data-restore-subhead') || subhead.textContent;\n\t\t\t\t\t} else {\n\t\t\t\t\t\tfresh.classList.remove('hidden');\n\t\t\t\t\t\trestore.classList.add('hidden');\n\t\t\t\t\t\tif (headline) headline.textContent = headline.getAttribute('data-fresh-headline') || headline.textContent;\n\t\t\t\t\t\tif (subhead) subhead.textContent = subhead.getAttribute('data-fresh-subhead') || subhead.textContent;\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction selectAuthMethod(method) {\n\t\t\t\t\t// Update hidden input\n\t\t\t\t\tdocument.getElementById('auth-method-input').value = method;\n\n\t\t\t\t\t// Update card styles and ARIA state\n\t\t\t\t\tdocument.querySelectorAll('.auth-card').forEach(function(card) {\n\t\t\t\t\t\tcard.setAttribute('aria-checked', 'false');\n\t\t\t\t\t\tcard.classList.remove('auth-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');\n\t\t\t\t\t});\n\t\t\t\t\tvar selected = document.getElementById('card-' + method);\n\t\t\t\t\tselected.setAttribute('aria-checked', 'true');\n\t\t\t\t\tselected.classList.add('auth-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');\n\t\t\t\t\tselected.classList.remove('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');\n\n\t\t\t\t\t// Show/hide server URL field\n\t\t\t\t\tvar urlField = document.getElementById('server-url-field');\n\t\t\t\t\tvar urlInput = document.getElementById('server_url');\n\t\t\t\t\tvar passwordInput = document.getElementById('password');\n\t\t\t\t\tvar submitBtn = document.getElementById('setup-submit-btn');\n\n\t\t\t\t\tif (method === 'local') {\n\t\t\t\t\t\turlField.classList.add('hidden');\n\t\t\t\t\t\turlInput.removeAttribute('required');\n\t\t\t\t\t\tpasswordInput.setAttribute('minlength', '8');\n\t\t\t\t\t\tpasswordInput.setAttribute('autocomplete', 'new-password');\n\t\t\t\t\t\tsubmitBtn.textContent = 'Create Account';\n\t\t\t\t\t} else {\n\t\t\t\t\t\turlField.classList.remove('hidden');\n\t\t\t\t\t\turlInput.setAttribute('required', '');\n\t\t\t\t\t\tpasswordInput.removeAttribute('minlength');\n\t\t\t\t\t\tpasswordInput.setAttribute('autocomplete', 'current-password');\n\t\t\t\t\t\tsubmitBtn.textContent = 'Sign In with ' + (method === 'emby' ? 'Emby' : 'Jellyfin');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

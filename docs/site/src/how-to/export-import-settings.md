@@ -2,7 +2,7 @@
 description: Move your Stillwater configuration to another instance with an encrypted bundle.
 ---
 
-<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.3, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, UserExport, ImportOptions.AdminFallbackTokens, pbkdf2Iterations 600_000), internal/settingsio/users.go, internal/settingsio/tokens.go (admin-fallback path), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import), web/templates/settings.templ maintenance tab (export passphrase + import upload + admin-fallback checkbox). -->
+<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.4, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, UserExport, ImportOptions.AdminFallbackTokens, pbkdf2Iterations 600_000, transactional Import wrapping the per-section apply), internal/settingsio/users.go (id-first probe with ErrUserIDCollision halt), internal/settingsio/tokens.go (admin-fallback path), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import, POST /api/v1/setup/restore), internal/api/handlers_setup_restore.go (pre-admin OOBE restore handler with HasUsers gate + serialization mutex), web/templates/settings.templ maintenance tab (export passphrase + import upload + admin-fallback checkbox), web/templates/setup.templ (Start fresh / Restore from backup mode cards). -->
 
 # Export and import settings
 
@@ -55,13 +55,30 @@ Treat the file like a backup. Encrypt your backup target (e.g., a password-manag
 
 ## Import
 
+There are two ways to import an exported bundle, depending on whether the receiving instance already has an admin account.
+
+### Into an existing instance (Settings > Maintenance)
+
 1. On the target Stillwater instance, go to **Settings > Maintenance**.
 2. Click **Import settings**.
 3. Pick the `.json` file.
 4. Enter the same passphrase that was used to export.
 5. Click **Import**.
 
-Stillwater decrypts, validates, and applies the bundle. The result shows what was imported and what was skipped. If the passphrase is wrong, decryption fails before anything is touched.
+Stillwater decrypts, validates, and applies the bundle inside a single database transaction. Either the entire bundle lands or none of it does -- a mid-import error rolls back without leaving the database in a half-restored state. If the passphrase is wrong, decryption fails before anything is touched. The result shows what was imported and what was skipped.
+
+### Into a fresh instance, before admin creation (Restore from backup)
+
+If you're standing up a new instance and want it to come up with the source instance's users (so you sign in with your *original* credentials, not a throwaway admin):
+
+1. Open the new instance for the first time -- the setup screen renders because no admin exists yet.
+2. Click the **Restore from backup** card.
+3. Pick the `.json` file and enter the passphrase.
+4. Click **Restore**.
+
+The fresh instance applies the bundle and marks onboarding as complete. The page redirects to the login screen; sign in with credentials from the source instance.
+
+This path is gated on the receiving instance being truly empty (no admin user yet, onboarding not completed). Once an admin exists, the only way to import is through Settings > Maintenance described above.
 
 ## Cross-version compatibility
 
@@ -81,10 +98,13 @@ So an import on a fresh instance fully populates it; an import on an instance wi
 
 ### How users are handled
 
-Users get a softer treatment than other items because their state on the receiving instance often reflects local choices (rotated passwords, role changes) that should not be silently overwritten:
+Bundles produced by recent versions carry every user's stable UUID, so the import matches by id first rather than by username. Three cases:
 
-- **Users present on the receiving instance with the same username** are left exactly as they are. The bundle's row is ignored. This means an admin who has rotated their password on the target keeps the new password, even if the source is older.
-- **Users absent on the receiving instance** are recreated from the bundle so any of their API tokens or preferences in the same import can attribute back to them.
+- **Same id on the target.** The user's mutable fields (display name, password hash, role on non-protected rows) are updated from the bundle. The `is_protected` flag is never overwritten -- protected status is a per-install policy, not transferable across instances.
+- **Id absent on the target and username is free.** A new user row is inserted carrying the source id so downstream rows (API tokens, preferences) attribute correctly.
+- **Id absent on the target but the username is taken under a *different* id.** The import halts with a clear error. This prevents one operator's account from silently being overwritten by another with the same username from a different instance. Resolve manually by renaming the colliding account on either side before retrying.
+
+Older bundles (envelope version 1.3 and below) do not carry user UUIDs. For those, the import falls back to username-based matching and leaves same-username users untouched on the target -- the older softer behavior. Newer bundles get the id-first treatment described above.
 
 ### When the source's owner is missing on the target
 

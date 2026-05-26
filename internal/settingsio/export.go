@@ -39,7 +39,13 @@ const pbkdf2Iterations = 600_000
 //     owners before remapping api_tokens / user_preferences (#1283). The
 //     password_hash inside Users is a bcrypt digest -- never plaintext --
 //     and only crosses the wire inside the passphrase-encrypted envelope.
-const CurrentEnvelopeVersion = "1.3"
+//   - "1.4": adds id to UserExport and user_id to UserPrefsExport so the
+//     target instance can match users by UUID (stable across installs)
+//     instead of remapping by username, and so a username collision under
+//     a different id can fail the import instead of silently remapping.
+//     Restore-from-OOBE flows also rely on the id stability so a restored
+//     backup keeps every downstream reference intact.
+const CurrentEnvelopeVersion = "1.4"
 
 // supportedEnvelopeVersions lists the envelope versions Import will accept.
 // Older versions are accepted for backward compatibility (their newer fields
@@ -49,6 +55,7 @@ var supportedEnvelopeVersions = map[string]bool{
 	"1.1": true,
 	"1.2": true,
 	"1.3": true,
+	"1.4": true,
 }
 
 // ErrWrongPassphrase is returned by Import when the AES-GCM tag verification
@@ -91,15 +98,31 @@ type Payload struct {
 }
 
 // ConnectionExport is a connection with its API key decrypted for export.
+//
+// Every operator-set per-connection toggle is carried so a restore
+// reconstructs the source instance's behavioral configuration in full.
+// Losing any of these would silently degrade the restored instance --
+// "Let Stillwater manage server files" would turn off, push-on-change
+// would stop, and the snapshot used to roll the platform back on opt-out
+// would be gone. Fields that have no value on the receiving instance
+// (platform_user_id, platform_server_id) are still carried so a
+// restore-into-fresh-install path picks them up; the connection-test
+// flow will overwrite them with live values on the first health check.
 type ConnectionExport struct {
-	Name                 string `json:"name"`
-	Type                 string `json:"type"`
-	URL                  string `json:"url"`
-	APIKey               string `json:"api_key"`
-	Enabled              bool   `json:"enabled"`
-	FeatureLibraryImport bool   `json:"feature_library_import"`
-	FeatureNFOWrite      bool   `json:"feature_nfo_write"`
-	FeatureImageWrite    bool   `json:"feature_image_write"`
+	Name                     string `json:"name"`
+	Type                     string `json:"type"`
+	URL                      string `json:"url"`
+	APIKey                   string `json:"api_key"`
+	Enabled                  bool   `json:"enabled"`
+	FeatureLibraryImport     bool   `json:"feature_library_import"`
+	FeatureNFOWrite          bool   `json:"feature_nfo_write"`
+	FeatureImageWrite        bool   `json:"feature_image_write"`
+	FeatureMetadataPush      bool   `json:"feature_metadata_push,omitempty"`
+	FeatureTriggerRefresh    bool   `json:"feature_trigger_refresh,omitempty"`
+	FeatureManageServerFiles bool   `json:"feature_manage_server_files,omitempty"`
+	PreStillwaterConfigJSON  string `json:"pre_stillwater_config_json,omitempty"`
+	PlatformUserID           string `json:"platform_user_id,omitempty"`
+	PlatformServerID         string `json:"platform_server_id,omitempty"`
 }
 
 // PriorityExport holds a field's provider priority list.
@@ -129,10 +152,13 @@ type ScraperConfigExport struct {
 	Overrides *scraper.Overrides    `json:"overrides,omitempty"`
 }
 
-// UserPrefsExport holds the full preference map for a single user,
-// identified by username rather than internal ID so the export is portable
-// across instances.
+// UserPrefsExport holds the full preference map for a single user. From
+// envelope v1.4 onward the user_id (UUID) is also carried so the import
+// side can match by id first (stable across installs once the Users block
+// also restores ids) and fall back to username for backwards compatibility
+// with pre-1.4 envelopes (versions 1.0-1.3) that carried only the username.
 type UserPrefsExport struct {
+	UserID      string            `json:"user_id,omitempty"`
 	Username    string            `json:"username"`
 	Preferences map[string]string `json:"preferences"`
 }
@@ -187,6 +213,22 @@ type ImportOptions struct {
 	// when AdminFallbackTokens is true. The HTTP handler resolves it from
 	// the authenticated session before calling ImportWithOptions.
 	ImportingAdminUserID string
+}
+
+// dbExecutor is the subset of *sql.DB used by the s.db-direct import
+// helpers (importSettings, importUsers, importUserPreferences,
+// importLibraries, importAPITokens). Both *sql.DB and *sql.Tx satisfy it,
+// so the helpers can run either standalone or inside a transaction the
+// orchestrator opens. The delegated sub-imports (importConnections,
+// importPlatformProfiles, importWebhooks, importProviderKeys,
+// importProviderPriorities, importRules, importScraperPreferences) reach
+// the database through their owning services and commit per-row outside
+// any transaction the settingsio orchestrator opens; that limitation is
+// noted in CHECKPOINT.md for the M52 round-1 review fixes.
+type dbExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // Service handles settings export and import.
@@ -283,14 +325,20 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	for i := range conns {
 		c := &conns[i]
 		payload.Connections = append(payload.Connections, ConnectionExport{
-			Name:                 c.Name,
-			Type:                 c.Type,
-			URL:                  c.URL,
-			APIKey:               c.APIKey,
-			Enabled:              c.Enabled,
-			FeatureLibraryImport: c.FeatureLibraryImport,
-			FeatureNFOWrite:      c.FeatureNFOWrite,
-			FeatureImageWrite:    c.FeatureImageWrite,
+			Name:                     c.Name,
+			Type:                     c.Type,
+			URL:                      c.URL,
+			APIKey:                   c.APIKey,
+			Enabled:                  c.Enabled,
+			FeatureLibraryImport:     c.FeatureLibraryImport,
+			FeatureNFOWrite:          c.FeatureNFOWrite,
+			FeatureImageWrite:        c.FeatureImageWrite,
+			FeatureMetadataPush:      c.FeatureMetadataPush,
+			FeatureTriggerRefresh:    c.FeatureTriggerRefresh,
+			FeatureManageServerFiles: c.FeatureManageServerFiles,
+			PreStillwaterConfigJSON:  c.PreStillwaterConfigJSON,
+			PlatformUserID:           c.PlatformUserID,
+			PlatformServerID:         c.PlatformServerID,
 		})
 	}
 
@@ -499,67 +547,99 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 
 	result := &ImportResult{}
 
-	// Each per-section helper increments the relevant counter(s) on result.
 	// Sections are called in dependency order: connections must precede
 	// libraries (which remap by (type, url)), and users must precede both
 	// user_preferences and api_tokens (which remap by username).
-
-	if err := s.importSettings(ctx, payload.Settings, result); err != nil {
-		return nil, fmt.Errorf("importing settings: %w", err)
-	}
-
+	//
+	// The import splits into two phases:
+	//
+	//  1. Pre-tx phase: helpers that reach the database through external
+	//     services (connections, platform profiles, webhooks, provider
+	//     keys, provider priorities, rules, scraper preferences). Those
+	//     services own their own transactions internally so wrapping them
+	//     here would require threading a *sql.Tx through every service
+	//     constructor; that surface change is tracked as follow-up.
+	//
+	//  2. Tx phase: the s.db-direct helpers (settings, users,
+	//     user_preferences, libraries, api_tokens) all run inside a single
+	//     transaction so a failure in any one of them rolls back every
+	//     row written by the others in this phase. The pre-tx phase rows
+	//     remain committed -- a half-applied restore still allows the
+	//     operator to retry idempotently (every section's import is
+	//     upsert-by-natural-key) which matches the OOBE handler's
+	//     fail-soft policy on the post-import onboarding flag flip.
 	if err := s.importProviderKeys(ctx, payload.ProviderKeys, result); err != nil {
 		return nil, fmt.Errorf("importing provider keys: %w", err)
 	}
-
 	if err := s.importConnections(ctx, payload.Connections, result); err != nil {
 		return nil, fmt.Errorf("importing connections: %w", err)
 	}
-
 	if err := s.importPlatformProfiles(ctx, payload.PlatformProfiles, result); err != nil {
 		return nil, fmt.Errorf("importing platform profiles: %w", err)
 	}
-
 	if err := s.importWebhooks(ctx, payload.Webhooks, result); err != nil {
 		return nil, fmt.Errorf("importing webhooks: %w", err)
 	}
-
 	if err := s.importProviderPriorities(ctx, payload.ProviderPriorities, result); err != nil {
 		return nil, fmt.Errorf("importing provider priorities: %w", err)
 	}
-
 	if err := s.importRules(ctx, payload.Rules, result); err != nil {
 		return nil, fmt.Errorf("importing rules: %w", err)
 	}
-
 	if err := s.importScraperPreferences(ctx, payload.ScraperConfigs, result); err != nil {
 		return nil, fmt.Errorf("importing scraper preferences: %w", err)
 	}
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("beginning import tx: %w", err)
+	}
+	// Snapshot the counters that the pre-tx phase already incremented so a
+	// rollback of the tx phase can restore them; otherwise the returned
+	// ImportResult would misreport partial counts.
+	preTxSnapshot := *result
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+			// Restore the result struct to its pre-tx state so the caller
+			// sees pre-tx counts plus an error, never the partial tx
+			// counts that got rolled back.
+			*result = preTxSnapshot
+		}
+	}()
+
+	if err := s.importSettings(ctx, tx, payload.Settings, result); err != nil {
+		return nil, fmt.Errorf("importing settings: %w", err)
+	}
 	// Users must precede user_preferences and api_tokens so absent owners
 	// are recreated from the envelope before the downstream remap lookups
 	// run. See importUsers for the "existing users left untouched" policy.
-	if err := s.importUsers(ctx, payload.Users, result); err != nil {
+	if err := s.importUsers(ctx, tx, payload.Users, result); err != nil {
 		return nil, fmt.Errorf("importing users: %w", err)
 	}
-
-	if err := s.importUserPreferences(ctx, payload.UserPreferences, result); err != nil {
+	if err := s.importUserPreferences(ctx, tx, payload.UserPreferences, result); err != nil {
 		return nil, fmt.Errorf("importing user preferences: %w", err)
 	}
-
 	// Libraries must run AFTER connections so the (type, url) -> id remap
-	// can resolve to the freshly-imported connection rows.
-	if err := s.importLibraries(ctx, payload.Libraries, result); err != nil {
+	// can resolve to the freshly-imported connection rows. The lookup
+	// happens through connectionSvc, which reads from its own DB handle;
+	// the writes go through the tx.
+	if err := s.importLibraries(ctx, tx, payload.Libraries, result); err != nil {
 		return nil, fmt.Errorf("importing libraries: %w", err)
 	}
-
 	// API tokens must run AFTER importUsers so the username -> user_id
 	// lookup sees the final user set, including any users just recreated
 	// from the envelope. The opts parameter controls the admin-fallback
 	// opt-in behavior for tokens whose owner is still absent after user import.
-	if err := s.importAPITokens(ctx, payload.APITokens, result, opts); err != nil {
+	if err := s.importAPITokens(ctx, tx, payload.APITokens, result, opts); err != nil {
 		return nil, fmt.Errorf("importing api tokens: %w", err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing import tx: %w", err)
+	}
+	committed = true
 
 	return result, nil
 }
@@ -594,11 +674,15 @@ func countUserPreferences(prefs []UserPrefsExport) int {
 }
 
 // exportUserPreferences loads all rows from user_preferences joined with users
-// and groups them by username. Password hashes and active session tokens are
+// and groups them by user. Password hashes and active session tokens are
 // never included in user preferences; this query only touches the preferences table.
+//
+// Both user_id (UUID) and username are carried per group so a target instance
+// can prefer id-based matching (stable across installs from envelope v1.4)
+// and fall back to username only when an older envelope is being restored.
 func (s *Service) exportUserPreferences(ctx context.Context) ([]UserPrefsExport, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.username, p.key, p.value
+		SELECT u.id, u.username, p.key, p.value
 		FROM user_preferences p
 		JOIN users u ON u.id = p.user_id
 		ORDER BY u.username, p.key
@@ -608,19 +692,25 @@ func (s *Service) exportUserPreferences(ctx context.Context) ([]UserPrefsExport,
 	}
 	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
-	// Build an ordered list preserving username ordering.
+	// Build an ordered list keyed by user_id (or username when id is somehow
+	// blank, which should not happen but stays defensive).
 	var result []UserPrefsExport
-	index := make(map[string]int) // username -> index in result
+	index := make(map[string]int) // key -> index in result
 	for rows.Next() {
-		var username, key, value string
-		if err := rows.Scan(&username, &key, &value); err != nil {
+		var userID, username, key, value string
+		if err := rows.Scan(&userID, &username, &key, &value); err != nil {
 			return nil, fmt.Errorf("scanning user preference row: %w", err)
 		}
-		idx, ok := index[username]
+		groupKey := userID
+		if groupKey == "" {
+			groupKey = username
+		}
+		idx, ok := index[groupKey]
 		if !ok {
 			idx = len(result)
-			index[username] = idx
+			index[groupKey] = idx
 			result = append(result, UserPrefsExport{
+				UserID:      userID,
 				Username:    username,
 				Preferences: make(map[string]string),
 			})
@@ -634,29 +724,44 @@ func (s *Service) exportUserPreferences(ctx context.Context) ([]UserPrefsExport,
 }
 
 // importUserPreferences upserts exported preference rows into the target instance.
-// Users that do not exist on this instance are silently skipped; this avoids
-// errors when the target instance has a different user set.
-func (s *Service) importUserPreferences(ctx context.Context, prefs []UserPrefsExport, result *ImportResult) error {
+// Resolution order:
+//  1. If the envelope carries user_id and a row with that id exists on the
+//     target (recreated by importUsers when the source id was preserved),
+//     use it.
+//  2. Otherwise fall back to username lookup so pre-1.4 envelopes (which
+//     carried only Username) still import cleanly.
+//  3. Neither match -> skip with a warning so an empty target users table
+//     does not silently drop every preference without trace.
+func (s *Service) importUserPreferences(ctx context.Context, db dbExecutor, prefs []UserPrefsExport, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, up := range prefs {
-		// Look up the user ID by username on this instance.
 		var userID string
-		err := s.db.QueryRowContext(ctx,
-			`SELECT id FROM users WHERE username = ?`, up.Username).Scan(&userID)
-		if errors.Is(err, sql.ErrNoRows) {
-			// User does not exist on this instance -- expected when importing
-			// across instances with different user sets. Warn because an empty
-			// target users table would silently drop every preference.
-			slog.Warn("import: skipping preferences for unknown user", "username", up.Username)
-			continue
-		} else if err != nil {
-			// A real DB error (connection issue, corruption) must fail the
-			// import -- silently swallowing it would return success after
-			// dropping preference rows.
-			return fmt.Errorf("looking up user %q for preferences: %w", up.Username, err)
+		// Try id-based lookup first when the envelope provides one.
+		if up.UserID != "" {
+			err := db.QueryRowContext(ctx,
+				`SELECT id FROM users WHERE id = ?`, up.UserID).Scan(&userID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("looking up user id %q for preferences: %w", up.UserID, err)
+			}
+		}
+		// Fall back to username lookup for pre-1.4 envelopes or when the
+		// id-based match missed.
+		if userID == "" {
+			err := db.QueryRowContext(ctx,
+				`SELECT id FROM users WHERE username = ?`, up.Username).Scan(&userID)
+			if errors.Is(err, sql.ErrNoRows) {
+				slog.Warn("import: skipping preferences for unknown user",
+					"username", up.Username, "user_id", up.UserID)
+				continue
+			} else if err != nil {
+				// A real DB error (connection issue, corruption) must fail the
+				// import -- silently swallowing it would return success after
+				// dropping preference rows.
+				return fmt.Errorf("looking up user %q for preferences: %w", up.Username, err)
+			}
 		}
 		for k, v := range up.Preferences {
-			_, err := s.db.ExecContext(ctx,
+			_, err := db.ExecContext(ctx,
 				`INSERT INTO user_preferences (user_id, key, value, updated_at)
 				VALUES (?, ?, ?, ?)
 				ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,

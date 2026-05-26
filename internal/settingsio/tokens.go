@@ -76,7 +76,7 @@ func (s *Service) exportAPITokens(ctx context.Context) ([]APITokenExport, error)
 //     token is skipped and APITokensSkipped is incremented; this preserves
 //     the prior behavior for callers that prefer a quiet skip over a silent
 //     ownership change (e.g. prod->staging clones).
-func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, result *ImportResult, opts ImportOptions) error {
+func (s *Service) importAPITokens(ctx context.Context, db dbExecutor, tokens []APITokenExport, result *ImportResult, opts ImportOptions) error {
 	for i := range tokens {
 		te := &tokens[i]
 		if te.TokenHash == "" {
@@ -89,7 +89,7 @@ func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, 
 		}
 		// Resolve owning user by username.
 		var userID string
-		err := s.db.QueryRowContext(ctx,
+		err := db.QueryRowContext(ctx,
 			`SELECT id FROM users WHERE username = ?`, te.Username,
 		).Scan(&userID)
 		switch {
@@ -101,7 +101,7 @@ func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, 
 				// A tampered or stale opt would otherwise insert a token
 				// with a dangling user_id FK.
 				var adminProbe string
-				probeErr := s.db.QueryRowContext(ctx,
+				probeErr := db.QueryRowContext(ctx,
 					`SELECT id FROM users WHERE id = ?`, opts.ImportingAdminUserID,
 				).Scan(&adminProbe)
 				switch {
@@ -141,13 +141,13 @@ func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, 
 		// re-importing the same export is therefore idempotent without
 		// introducing a new row each pass.
 		var existingID string
-		err = s.db.QueryRowContext(ctx,
+		err = db.QueryRowContext(ctx,
 			`SELECT id FROM api_tokens WHERE token_hash = ?`, te.TokenHash,
 		).Scan(&existingID)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			id := uuid.New().String()
-			if _, err := s.db.ExecContext(ctx, `
+			if _, err := db.ExecContext(ctx, `
 				INSERT INTO api_tokens (
 					id, name, token_hash, scopes, user_id,
 					created_at, last_used_at, revoked_at, status
@@ -168,7 +168,7 @@ func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, 
 			// metadata is preserved when the same token_hash already exists
 			// on the target. Without this the local row keeps its original
 			// timestamp, drifting from the source instance's record.
-			if _, err := s.db.ExecContext(ctx, `
+			if _, err := db.ExecContext(ctx, `
 				UPDATE api_tokens SET
 					name = ?, scopes = ?, user_id = ?, created_at = ?,
 					last_used_at = ?, revoked_at = ?, status = ?

@@ -2146,6 +2146,103 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /setup/restore:
+    post:
+      tags: [Auth]
+      summary: Restore a Stillwater backup during OOBE
+      description: |
+        Applies a previously exported settings envelope (passphrase-encrypted
+        with AES-256-GCM) into the current instance, including local user
+        accounts. Intended for the "Restore from backup" branch of the
+        pre-admin setup page so a user can stand up a new install with their
+        prior credentials, library config, and platform integrations intact.
+
+        The endpoint is gated on "no admin user exists yet" AND
+        `onboarding.completed != "true"`. The admin-existence check enforces
+        that restore happens before any admin account is created -- the user
+        signs in with their pre-existing credentials and no orphaned
+        throwaway admin row gets left behind. Once OOBE finishes, the
+        secondary onboarding flag locks the route. Rate-limited identically
+        to login and admin creation. CSRF-exempt (entry point: no session
+        exists yet to attach a token to).
+
+        On success the response sets `HX-Redirect` (HTMX) or includes a
+        `redirect` field (JSON) pointing at the root so the user signs in
+        with the restored credentials.
+      security: []
+      operationId: setupRestore
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, passphrase]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Backup envelope produced by POST /settings/export
+                passphrase:
+                  type: string
+                  description: Passphrase used at export time (PBKDF2 key derivation)
+      responses:
+        "200":
+          description: Restore applied; client should follow the redirect to sign in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [restored] }
+                  redirect: { type: string }
+                  users_imported: { type: integer }
+                  connections: { type: integer }
+                  libraries: { type: integer }
+                  api_tokens: { type: integer }
+        "400":
+          description: Invalid request or client-side restore error (missing file/passphrase, malformed multipart body, wrong passphrase, corrupt envelope, or unsupported envelope version)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: An admin already exists, or onboarding has already completed; restore is no longer reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A user account on the target collides with the backup under a different id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Backup file exceeds the 10MB upload limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests; the loginRL middleware throttles brute-force attempts at the passphrase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error applying the envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Restore service is not configured on this server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /auth/logout:
     post:
       tags: [Auth]

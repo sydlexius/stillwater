@@ -34,7 +34,7 @@ func TestImportSettings_UpsertAndCount(t *testing.T) {
 		"section.key_b": "val_b",
 	}
 	result := &ImportResult{}
-	if err := svc.importSettings(ctx, settings, result); err != nil {
+	if err := svc.importSettings(ctx, db, settings, result); err != nil {
 		t.Fatalf("importSettings: %v", err)
 	}
 	if result.Settings != 2 {
@@ -61,11 +61,11 @@ func TestImportSettings_IdempotentUpsert(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 
 	settings := map[string]string{"idem.key": "first"}
-	if err := svc.importSettings(ctx, settings, &ImportResult{}); err != nil {
+	if err := svc.importSettings(ctx, db, settings, &ImportResult{}); err != nil {
 		t.Fatalf("first importSettings: %v", err)
 	}
 	settings["idem.key"] = "second"
-	if err := svc.importSettings(ctx, settings, &ImportResult{}); err != nil {
+	if err := svc.importSettings(ctx, db, settings, &ImportResult{}); err != nil {
 		t.Fatalf("second importSettings: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestImportSettings_EmptyMapIsNoOp(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 
 	result := &ImportResult{}
-	if err := svc.importSettings(ctx, map[string]string{}, result); err != nil {
+	if err := svc.importSettings(ctx, db, map[string]string{}, result); err != nil {
 		t.Fatalf("importSettings with empty map: %v", err)
 	}
 	if result.Settings != 0 {
@@ -615,7 +615,7 @@ func TestImportSettings_DBError(t *testing.T) {
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
-	err := svc.importSettings(t.Context(), map[string]string{"k": "v"}, &ImportResult{})
+	err := svc.importSettings(t.Context(), db, map[string]string{"k": "v"}, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -735,7 +735,7 @@ func TestImportAPITokens_OrphanTokenSkipped(t *testing.T) {
 		{Name: "Orphan", TokenHash: "orphan-hash", Scopes: "read,write", Username: "ghost", Status: "active"},
 	}
 	result := &ImportResult{}
-	if err := svc.importAPITokens(ctx, tokens, result, ImportOptions{}); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, ImportOptions{}); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokensSkipped != 1 {
@@ -773,7 +773,7 @@ func TestImportAPITokens_EmptyHashSkipped(t *testing.T) {
 		{Name: "Bad Token", TokenHash: "", Scopes: "read,write", Username: "alice", Status: "active"},
 	}
 	result := &ImportResult{}
-	if err := svc.importAPITokens(ctx, tokens, result, ImportOptions{}); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, ImportOptions{}); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokensSkipped != 1 {
@@ -803,7 +803,7 @@ func TestImportAPITokens_AdminFallbackAssignsToken(t *testing.T) {
 	}
 	result := &ImportResult{}
 	opts := ImportOptions{AdminFallbackTokens: true, ImportingAdminUserID: "u-admin"}
-	if err := svc.importAPITokens(ctx, tokens, result, opts); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, opts); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokens != 1 || result.APITokensSkipped != 0 {
@@ -849,7 +849,7 @@ func TestImportAPITokens_ConflictResolution_UpdatesExistingRow(t *testing.T) {
 		{Name: "New Name", TokenHash: "stable-hash", Scopes: "read,write", Username: "owner", Status: "active", CreatedAt: now},
 	}
 	result := &ImportResult{}
-	if err := svc.importAPITokens(ctx, tokens, result, ImportOptions{}); err != nil {
+	if err := svc.importAPITokens(ctx, db, tokens, result, ImportOptions{}); err != nil {
 		t.Fatalf("importAPITokens: %v", err)
 	}
 	if result.APITokens != 1 {
