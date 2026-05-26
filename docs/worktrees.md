@@ -28,6 +28,15 @@ git worktree add -b feat/320-short-desc ../stillwater-m17-320 feat/m17-umbrella
 
 Active worktrees are tracked in `memory/worktrees.md` inside `~/.claude/projects/<project>/memory/`. Update it whenever a worktree is created or removed.
 
+## Hook installation per worktree
+
+`git worktree add` does not copy or re-apply hook configuration. Each worktree starts with
+whatever `core.hooksPath` value its local config inherits from the shared repository config,
+which may be stale or absolute if the original install used an older pattern.
+
+After creating a worktree, run `make hooks` inside it before the first push. `make doctor`
+confirms the wiring without modifying anything.
+
 ## Docker UAT in worktrees
 
 `setupdocker.sh` lives in the main repo root only. To run UAT from a worktree, copy it in or run from main repo.
