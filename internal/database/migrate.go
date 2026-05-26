@@ -224,7 +224,10 @@ func ensureConnectionColumns(db *sql.DB) error {
 	if err := ensureColumn(db, "connections", "feature_manage_server_files", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	return ensureColumn(db, "connections", "pre_stillwater_config_json", "TEXT NOT NULL DEFAULT ''")
+	if err := ensureColumn(db, "connections", "pre_stillwater_config_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return ensureColumn(db, "connections", "verify_path_after_update", "INTEGER NOT NULL DEFAULT 0")
 }
 
 // cleanupOrphanArtistPlatformIDs removes rows from artist_platform_ids whose
