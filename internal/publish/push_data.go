@@ -17,10 +17,23 @@ import (
 // platform-agnostic BandMembers field; pass nil when the caller has no
 // member data to send (a nil/empty slice yields a nil BandMembers field on
 // the payload, so the platform push code can branch cleanly).
+//
+// SortName fallback (#1083): when the artist has no SortName from
+// MusicBrainz and the Name begins with an ASCII digit run, the push code
+// derives a zero-padded sort key ("12 Stones" -> "0000000012 Stones") so
+// numeric-prefix artists sort numerically rather than lexically in Emby
+// and Jellyfin library views. The derivation also sets LockSortName so the
+// push code adds "SortName" to the platform's LockedFields, preventing
+// Emby and Jellyfin from clearing the derived value on the next refresh
+// (see docs/architecture/emby-artist-metadata.md section 5). The flag is
+// NOT set when SortName came from upstream so a user's manual unlock on
+// the platform-side is preserved.
 func BuildArtistPushData(a *artist.Artist, members []artist.BandMember) connection.ArtistPushData {
+	derivedSort, locked := deriveSortNameFallback(a.Name, a.SortName)
 	data := connection.ArtistPushData{
 		Name:           a.Name,
-		SortName:       a.SortName,
+		SortName:       derivedSort,
+		LockSortName:   locked,
 		Biography:      a.Biography,
 		Genres:         a.Genres,
 		Styles:         a.Styles,
@@ -47,6 +60,70 @@ func BuildArtistPushData(a *artist.Artist, members []artist.BandMember) connecti
 		data.Disbanded = a.Disbanded
 	}
 	return data
+}
+
+// sortNamePadWidth is the zero-pad target width for the leading numeric
+// run when Stillwater derives a SortName. 10 digits handles every plausible
+// real-world numeric prefix (the largest is 4 digits, e.g. "1349"); a
+// wider pad would still sort correctly but bloats the on-disk SortName
+// field. Matches the convention used by Beets and MusicBrainz Picard for
+// the same purpose.
+const sortNamePadWidth = 10
+
+// deriveSortNameFallback returns the SortName value to push to the
+// platform and whether Stillwater derived it.
+//
+// Behavior matrix (see #1083 design checkpoint):
+//   - mbSort is non-empty: pass through verbatim; derived=false. Honors
+//     whatever upstream (MusicBrainz, manual edit) gave us.
+//   - mbSort is empty AND name starts with an ASCII digit run: split the
+//     leading digit run from the remainder, zero-pad the digit run to
+//     sortNamePadWidth, concatenate. derived=true so the push code locks
+//     SortName on the platform side.
+//   - mbSort is empty AND name does NOT start with an ASCII digit run
+//     (alphabetic prefix, leading symbol like "!!!", empty string, etc.):
+//     pass through the empty string verbatim; derived=false. The platform
+//     keeps whatever SortName it already had.
+//
+// Only ASCII digits trigger the fallback. Unicode digits (Arabic-Indic,
+// Devanagari, fullwidth) are intentionally out of scope: their
+// platform-side sort behavior is undefined and Beets/Picard limit the
+// same transform to ASCII digits. A follow-up issue can extend coverage
+// once a real-world test artist surfaces.
+func deriveSortNameFallback(name, mbSort string) (sortName string, derived bool) {
+	if mbSort != "" {
+		return mbSort, false
+	}
+	if name == "" {
+		return "", false
+	}
+	// Walk the leading digit run by byte position; ASCII digits are
+	// single-byte in UTF-8 so a byte-index split is safe and avoids
+	// allocating a rune slice for the common non-numeric case.
+	digitEnd := 0
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c < '0' || c > '9' {
+			break
+		}
+		digitEnd++
+	}
+	if digitEnd == 0 {
+		return "", false
+	}
+	digits := name[:digitEnd]
+	remainder := name[digitEnd:]
+	// strings.Repeat for the pad keeps the allocation visible and
+	// avoids fmt.Sprintf("%010s", ...) which right-aligns with spaces
+	// (not zeros) when the input is non-numeric -- a footgun if a future
+	// caller passes a non-digit string by accident.
+	if len(digits) < sortNamePadWidth {
+		padded := strings.Repeat("0", sortNamePadWidth-len(digits)) + digits
+		return padded + remainder, true
+	}
+	// Already at or above target width: no padding needed but still
+	// flag as derived because we are still authoring SortName.
+	return digits + remainder, true
 }
 
 // buildMemberRefs translates artist.BandMember entries into the

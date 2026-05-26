@@ -1767,3 +1767,108 @@ func TestPushMetadata_AuthClass401_DualContract(t *testing.T) {
 		t.Errorf("err.Error() = %q; want substring \"status 401\"", err.Error())
 	}
 }
+
+// TestPushMetadata_LockSortName_AppendsToExistingLocks verifies that the
+// derived-SortName flag (#1083) makes PushMetadata fetch the current
+// LockedFields via /Users/{u}/Items/{id} and append "SortName" to the
+// merged list, preserving any user-set per-field locks. Without this,
+// Emby resets ForcedSortName on the next metadata refresh.
+func TestPushMetadata_LockSortName_AppendsToExistingLocks(t *testing.T) {
+	bodyCh := make(chan itemUpdateBody, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// LockedFields fetch path (only fires when LockSortName=true).
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/Users/u-1/Items/") {
+			w.Header().Set("Content-Type", "application/json")
+			// User has Genres locked through the Emby UI; that must survive.
+			_, _ = w.Write([]byte(`{"LockedFields":["Genres"]}`))
+			return
+		}
+		// Metadata POST.
+		if r.Method == http.MethodPost && r.URL.Path == "/Items/emby-numeric-1" {
+			var b itemUpdateBody
+			if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- b
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "u-1", srv.Client(), testLogger())
+	data := connection.ArtistPushData{
+		Name:         "12 Stones",
+		SortName:     "0000000012 Stones",
+		LockSortName: true,
+	}
+	if err := c.PushMetadata(context.Background(), "emby-numeric-1", data); err != nil {
+		t.Fatalf("PushMetadata: %v", err)
+	}
+	got := <-bodyCh
+	if got.ForcedSortName != "0000000012 Stones" {
+		t.Errorf("ForcedSortName = %q, want zero-padded derived value", got.ForcedSortName)
+	}
+	if !containsString(got.LockedFields, "SortName") {
+		t.Errorf("LockedFields = %v, must include 'SortName' when LockSortName=true", got.LockedFields)
+	}
+	if !containsString(got.LockedFields, "Genres") {
+		t.Errorf("LockedFields = %v, must preserve pre-existing 'Genres' lock", got.LockedFields)
+	}
+}
+
+// TestPushMetadata_LockSortName_Off_OmitsLockedFields verifies that a
+// push without LockSortName preserves the pre-#1083 behavior: no
+// LockedFields key in the body at all, so Emby keeps whatever per-field
+// locks the user set without us round-tripping the list.
+func TestPushMetadata_LockSortName_Off_OmitsLockedFields(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/Items/emby-alpha-1" {
+			var m map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- m
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "u-1", srv.Client(), testLogger())
+	data := connection.ArtistPushData{Name: "Radiohead", SortName: "Radiohead"}
+	if err := c.PushMetadata(context.Background(), "emby-alpha-1", data); err != nil {
+		t.Fatalf("PushMetadata: %v", err)
+	}
+	got := <-bodyCh
+	if _, present := got["LockedFields"]; present {
+		t.Errorf("LockedFields present in body = %v; want omitted when LockSortName=false", got["LockedFields"])
+	}
+}
+
+// containsString is a local helper for the LockedFields assertions in
+// the #1083 tests. Avoids depending on slices.Contains so the test file
+// stays compatible with the project's minimum Go toolchain.
+func containsString(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}

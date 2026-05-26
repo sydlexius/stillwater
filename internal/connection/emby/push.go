@@ -33,6 +33,13 @@ type itemUpdateBody struct {
 	ProviderIds    map[string]string `json:"ProviderIds,omitempty"`
 	PremiereDate   string            `json:"PremiereDate,omitempty"`
 	EndDate        string            `json:"EndDate,omitempty"`
+	// LockedFields is included ONLY when Stillwater needs to pin a
+	// derived value on the Emby side (currently: derived numeric-prefix
+	// SortName per #1083). The omitempty tag is what keeps the existing
+	// pure-metadata push behavior unchanged for all other artists: an
+	// empty slice is dropped from the JSON body, so we never clobber
+	// existing platform-side locks for the non-derived case.
+	LockedFields []string `json:"LockedFields,omitempty"`
 }
 
 // PushMetadata updates metadata for an artist item on the Emby server.
@@ -55,6 +62,21 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	}
 	if data.SortName != "" {
 		body.ForcedSortName = data.SortName
+	}
+	// When Stillwater derived the SortName (#1083), Emby will reset it
+	// on the next refresh unless "SortName" is in LockedFields. Fetch
+	// the current locks and merge so user-set per-field locks survive
+	// the push. Failure here downgrades to a warn-and-continue: we
+	// prefer to ship the metadata even if locks could not be merged,
+	// because the alternative is silently failing the entire push for
+	// every numeric-prefix artist. The next push will retry the merge.
+	if data.LockSortName {
+		if merged, err := c.fetchAndMergeLockedFields(ctx, platformArtistID, "SortName"); err == nil {
+			body.LockedFields = merged
+		} else {
+			c.Logger.Warn("emby: locked-fields merge failed, pushing without SortName lock",
+				"artist_id", platformArtistID, "error", err)
+		}
 	}
 	// Populate ProviderIds with every external ID Stillwater has. Empty IDs
 	// are omitted so we never overwrite an existing platform-side value with
@@ -135,6 +157,57 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	c.refreshItem(ctx, platformArtistID)
 
 	return nil
+}
+
+// fetchAndMergeLockedFields pulls the current LockedFields list from
+// Emby for the named artist and returns it with `addition` appended
+// (dedup-preserving, PascalCase-canonicalized to match Emby's
+// MetadataFields enum). Used by PushMetadata to honor the
+// derived-SortName lock contract (#1083) without overwriting per-field
+// locks the user set in the Emby UI.
+//
+// Failure modes (no userID, GET fails, item null) are surfaced as
+// errors so the caller can downgrade to "ship without lock" instead of
+// silently writing a fresh single-element LockedFields list that would
+// clobber every prior lock. An empty fetched list is fine: the
+// addition still wins and the body carries it alone.
+func (c *Client) fetchAndMergeLockedFields(ctx context.Context, platformArtistID, addition string) ([]string, error) {
+	if c.userID == "" {
+		return nil, fmt.Errorf("no user ID configured for this connection")
+	}
+	getPath := fmt.Sprintf("/Users/%s/Items/%s?Fields=LockedFields", c.userID, platformArtistID)
+	var item map[string]any
+	if err := c.Get(ctx, getPath, &item); err != nil {
+		return nil, fmt.Errorf("fetching locked fields: %w", err)
+	}
+	if item == nil {
+		return nil, fmt.Errorf("emby returned null item body")
+	}
+	// Existing entries on the wire are PascalCase already; pass them
+	// through the canonicalizer so any non-canonical input (e.g. a
+	// historical write from an older Stillwater version) lands on the
+	// canonical form. canonicalizeLockedFields drops unmapped entries
+	// silently; that matches the existing UpdateArtistLocks contract.
+	existing := lockedFieldsFromRaw(item["LockedFields"])
+	existing = append(existing, addition)
+	return canonicalizeLockedFields(existing), nil
+}
+
+// lockedFieldsFromRaw normalizes the LockedFields value Emby returns
+// (deserialized as []any from generic JSON decoding) into a []string
+// the canonicalizer accepts. Non-string entries are dropped silently.
+func lockedFieldsFromRaw(raw any) []string {
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // buildProviderIDs assembles the ProviderIds map for the Emby push payload

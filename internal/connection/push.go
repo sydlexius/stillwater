@@ -30,6 +30,17 @@ type ArtistPushData struct {
 	// shape so the push layer can map it into Jellyfin's People array. Empty
 	// when the artist has no members or when the caller did not fetch them.
 	BandMembers []ArtistPersonRef `json:"band_members,omitempty"`
+
+	// LockSortName signals that Stillwater itself derived the SortName
+	// value (currently: zero-padded numeric prefix for artists like
+	// "12 Stones" whose canonical SortName from MusicBrainz was empty)
+	// and that the platform-side LockedFields must include "SortName"
+	// to prevent the next metadata refresh from clearing the derived
+	// value. The flag is NOT set when the SortName came verbatim from
+	// upstream metadata; locking those would override a user's manual
+	// unlock on the platform. Honored by the Emby and Jellyfin push
+	// implementations; ignored by other platforms.
+	LockSortName bool `json:"-"`
 }
 
 // ArtistPersonRef is a platform-agnostic representation of a band member

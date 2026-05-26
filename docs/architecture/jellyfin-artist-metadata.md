@@ -395,6 +395,33 @@ These Kodi/Stillwater NFO elements are **ignored** by Jellyfin:
 | Disambiguation | No corresponding Jellyfin field |
 | YearsActive | No corresponding Jellyfin field |
 
+### Numeric-Prefix SortName Derivation
+
+When an artist has no upstream `SortName` (typically because MusicBrainz
+returned an empty value) AND the artist's name begins with an ASCII digit
+run, Stillwater derives a zero-padded sort key for the platform push so
+numeric-prefix artists sort numerically rather than lexically in the
+Jellyfin library list.
+
+| Name | Derived ForcedSortName |
+|------|------------------------|
+| `12 Stones` | `0000000012 Stones` |
+| `3 Doors Down` | `0000000003 Doors Down` |
+| `311` | `0000000311` |
+| `38 Special` | `0000000038 Special` |
+
+Only the leading ASCII-digit run is padded; the remainder of the name is
+preserved verbatim. Alphabetic-prefix and leading-symbol names (`Bjork`,
+`!!!`, `+44`) are out of scope and pass through unchanged.
+
+When (and ONLY when) Stillwater derives the value, the push code appends
+`"SortName"` to the merged `LockedFields` array fetched from Jellyfin so
+the next metadata refresh does not clear the derived sort name. The
+append preserves pre-existing per-field locks (e.g. Tags, Overview) so a
+user's manual lock state on the Jellyfin side survives the push. Pushes
+whose `SortName` comes from upstream metadata never set the lock so a
+user's manual unlock on the platform side remains honored.
+
 ### Known Issues and Gaps
 
 **1. Date format silently dropped (Issue #355)**

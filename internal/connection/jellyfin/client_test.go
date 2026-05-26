@@ -1771,3 +1771,151 @@ func TestUploadImage_AuthClass401(t *testing.T) {
 		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
+
+// TestPushMetadata_LockSortName_AppendsToExistingLocks verifies that the
+// derived-SortName flag (#1083) causes "SortName" to be appended to the
+// fetched LockedFields slice in the POST body, preserving pre-existing
+// per-field locks. Without the lock, Jellyfin would reset the derived
+// ForcedSortName on the next metadata refresh.
+func TestPushMetadata_LockSortName_AppendsToExistingLocks(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			// Pre-existing user-set lock on Tags must survive the push.
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-numeric-1","Name":"12 Stones","LockedFields":["Tags"]}]}`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/Items/jf-numeric-1" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	data := connection.ArtistPushData{
+		Name:         "12 Stones",
+		SortName:     "0000000012 Stones",
+		LockSortName: true,
+	}
+	if err := c.PushMetadata(context.Background(), "jf-numeric-1", data); err != nil {
+		t.Fatalf("PushMetadata: %v", err)
+	}
+	got := <-bodyCh
+	if fs, _ := got["ForcedSortName"].(string); fs != "0000000012 Stones" {
+		t.Errorf("ForcedSortName = %q, want zero-padded derived value", fs)
+	}
+	lockedAny, present := got["LockedFields"]
+	if !present {
+		t.Fatalf("LockedFields missing from POST body; got keys = %v", keysOf(got))
+	}
+	locks := stringSliceFromAny(lockedAny)
+	if !sliceContains(locks, "Tags") {
+		t.Errorf("LockedFields = %v, must preserve pre-existing 'Tags' lock", locks)
+	}
+	if !sliceContains(locks, "SortName") {
+		t.Errorf("LockedFields = %v, must include derived 'SortName' lock", locks)
+	}
+}
+
+// TestPushMetadata_LockSortName_Off_LeavesLocksUntouched verifies that a
+// push without the LockSortName flag round-trips the fetched LockedFields
+// slice unchanged. Without this, every push would silently re-author the
+// platform-side lock list and break per-field locks the user set in the
+// platform UI.
+func TestPushMetadata_LockSortName_Off_LeavesLocksUntouched(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-alpha-1","Name":"Bjork","LockedFields":["Tags","Overview"]}]}`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/Items/jf-alpha-1" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	data := connection.ArtistPushData{Name: "Bjork", SortName: "Bjork"}
+	if err := c.PushMetadata(context.Background(), "jf-alpha-1", data); err != nil {
+		t.Fatalf("PushMetadata: %v", err)
+	}
+	got := <-bodyCh
+	// LockedFields must be preserved verbatim from the fetched state since
+	// LockSortName=false (no override).
+	lockedAny := got["LockedFields"]
+	locks := stringSliceFromAny(lockedAny)
+	if len(locks) != 2 {
+		t.Errorf("LockedFields = %v, want preserved length 2", locks)
+	}
+	if !sliceContains(locks, "Tags") || !sliceContains(locks, "Overview") {
+		t.Errorf("LockedFields = %v, want both Tags and Overview preserved", locks)
+	}
+	if sliceContains(locks, "SortName") {
+		t.Errorf("LockedFields = %v, must NOT include SortName when LockSortName=false", locks)
+	}
+}
+
+// keysOf returns the keys of a JSON-decoded body for diagnostic error
+// messages. Stable order is not required for the assertions; this is
+// only used inside t.Errorf format strings.
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// stringSliceFromAny coerces a JSON-decoded LockedFields value ([]any)
+// into a []string slice, dropping any non-string elements silently. The
+// generic JSON decoder always returns array-of-any for unknown shapes,
+// so the assertion side has to do the type assertion explicitly.
+func stringSliceFromAny(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		if strs, ok := v.([]string); ok {
+			return strs
+		}
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// sliceContains reports whether `needle` appears anywhere in `haystack`.
+// Used by the locked-fields assertions where ordering is not part of the
+// contract -- the platform stores the array in arbitrary order.
+func sliceContains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
