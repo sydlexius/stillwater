@@ -16,17 +16,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 )
 
-// readBoundedStatusError reads a bounded snippet of the peer error body and
-// returns a typed httpclient.StatusError. Used by every hand-rolled HTTP
-// path in this file so write-method errors carry the status code for
-// wrapAuthIfStatusAuth (errors.As + ErrAuthRequired wrap on 401/403).
-func readBoundedStatusError(resp *http.Response) *httpclient.StatusError {
-	const maxErrBody = 1 << 20 // 1 MB
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return &httpclient.StatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
-}
-
 // PushMetadata updates metadata for an artist item on the Jellyfin server.
 //
 // Jellyfin's POST /Items/{id} requires the full item body; partial updates
@@ -250,7 +239,7 @@ func (c *Client) postFullItem(ctx context.Context, platformArtistID string, item
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		statusErr := readBoundedStatusError(resp)
+		statusErr := httpclient.ReadBoundedStatusError(resp)
 		formatted := fmt.Errorf("%s failed with status %d: %s", op, statusErr.StatusCode, statusErr.Body)
 		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
@@ -294,7 +283,7 @@ func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, 
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		statusErr := readBoundedStatusError(resp)
+		statusErr := httpclient.ReadBoundedStatusError(resp)
 		formatted := fmt.Errorf("fetch failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
 		return nil, wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
@@ -346,7 +335,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		statusErr := readBoundedStatusError(resp)
+		statusErr := httpclient.ReadBoundedStatusError(resp)
 		formatted := fmt.Errorf("image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
 		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
@@ -385,7 +374,7 @@ func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		statusErr := readBoundedStatusError(resp)
+		statusErr := httpclient.ReadBoundedStatusError(resp)
 		formatted := fmt.Errorf("indexed image upload failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
 		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}
@@ -417,7 +406,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
-		statusErr := readBoundedStatusError(resp)
+		statusErr := httpclient.ReadBoundedStatusError(resp)
 		formatted := fmt.Errorf("image delete failed with status %d: %s", statusErr.StatusCode, statusErr.Body)
 		return wrapAuthIfStatusAuth(errors.Join(formatted, statusErr))
 	}

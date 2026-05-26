@@ -60,6 +60,22 @@ func readErrorBody(r io.Reader) string {
 	return string(buf)
 }
 
+// ReadBoundedStatusError builds a StatusError from a non-2xx response,
+// capping the body at 1 MB to guard against a misbehaving peer returning a
+// huge HTML error page. Used by the hand-rolled HTTP paths in emby/push.go
+// and jellyfin/push.go so write-method errors carry the typed status code
+// for ErrAuthRequired detection without re-parsing strings. The 1 MB cap
+// is intentionally larger than readErrorBody's 1 KB so write-method errors
+// preserve enough diagnostic body for operators to debug a 4xx/5xx from
+// the peer; the smaller readErrorBody cap stays in place for the
+// BaseClient helpers where errors typically fit in a single sentence.
+func ReadBoundedStatusError(resp *http.Response) *StatusError {
+	const maxErrBody = 1 << 20 // 1 MB
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return &StatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
+}
+
 // BaseClient holds the common fields and HTTP transport methods shared by all platform clients.
 type BaseClient struct {
 	HTTPClient *http.Client
