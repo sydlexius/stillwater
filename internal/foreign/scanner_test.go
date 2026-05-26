@@ -51,6 +51,8 @@ func newTestDB(t *testing.T) *sql.DB {
 	// Minimal schema needed by the tests: artists + foreign_files +
 	// foreign_file_allowlist mirrored from 001_initial_schema.sql plus
 	// migration 008 (content_hash column + hash-keyed unique indexes).
+	// settings is also created because the baseline-mode probe in
+	// scanner.Scan reads `foreign_files.baseline_completed` from it.
 	stmts := []string{
 		`CREATE TABLE artists (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE foreign_files (
@@ -76,6 +78,12 @@ func newTestDB(t *testing.T) *sql.DB {
 		`CREATE UNIQUE INDEX idx_foreign_allowlist_artist_hash
 			ON foreign_file_allowlist(artist_id, content_hash)
 			WHERE scope = 'artist' AND content_hash IS NOT NULL`,
+		`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+		// Pre-mark the baseline as complete so the legacy tests below
+		// continue to exercise the historical alert-ledger code path.
+		// Tests that specifically cover the baseline behavior reset this
+		// row themselves with markBaselinePending.
+		`INSERT INTO settings (key, value) VALUES ('foreign_files.baseline_completed', 'true')`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -83,6 +91,17 @@ func newTestDB(t *testing.T) *sql.DB {
 		}
 	}
 	return db
+}
+
+// markBaselinePending clears the `foreign_files.baseline_completed` row
+// so the next Scan call runs in baseline mode (admits detections to the
+// allowlist instead of the ledger). Used by baseline-specific tests.
+func markBaselinePending(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(
+		`DELETE FROM settings WHERE key = 'foreign_files.baseline_completed'`); err != nil {
+		t.Fatalf("clearing baseline flag: %v", err)
+	}
 }
 
 func TestIsForeignCandidate(t *testing.T) {

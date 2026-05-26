@@ -45,115 +45,238 @@ templ SetupPage(assets AssetPaths) {
 							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
 						</div>
 						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Stillwater</h1>
-						<h2 class="mt-4 text-xl text-gray-900 dark:text-gray-100">{ t(ctx, "setup.how_to_sign_in") }</h2>
-						<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+						<h2
+							class="mt-4 text-xl text-gray-900 dark:text-gray-100"
+							id="setup-headline"
+							data-fresh-headline={ t(ctx, "setup.how_to_sign_in") }
+							data-restore-headline={ t(ctx, "setup.restore_headline") }
+						>{ t(ctx, "setup.how_to_sign_in") }</h2>
+						<p
+							class="mt-2 text-sm text-gray-500 dark:text-gray-400"
+							id="setup-subhead"
+							data-fresh-subhead={ t(ctx, "setup.choose_auth_method") }
+							data-restore-subhead={ t(ctx, "setup.restore_subhead") }
+						>
 							{ t(ctx, "setup.choose_auth_method") }
 						</p>
 					</div>
-					<!-- Auth method selection cards -->
-					<div class="grid grid-cols-3 gap-3" id="auth-method-cards" role="radiogroup" aria-label={ t(ctx, "setup.authentication_method") }>
+					<!--
+					  Start fresh vs Restore from backup. Restore lives on this
+					  pre-admin page so the user signs in with their
+					  pre-existing credentials. Posting to /api/v1/setup/restore
+					  is blocked by the HasUsers gate once any user exists, so
+					  the setup page is the only context where this branch is
+					  reachable.
+					-->
+					<div class="grid grid-cols-2 gap-3" id="setup-mode-cards" role="radiogroup" aria-label={ t(ctx, "setup.choose_setup_mode") }>
 						<button
 							type="button"
 							role="radio"
 							aria-checked="true"
-							onclick="selectAuthMethod('local')"
-							id="card-local"
-							class="auth-card auth-card-selected flex flex-col items-center rounded-xl border-2 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 p-4 text-center transition-all hover:shadow-md"
+							id="card-mode-fresh"
+							onclick="selectSetupMode('fresh')"
+							class="setup-mode-card setup-mode-card-selected flex flex-col items-center rounded-xl border-2 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 p-4 text-center transition-all hover:shadow-md"
 						>
-							<!-- Key icon -->
-							<svg class="h-8 w-8 text-blue-600 dark:text-blue-400 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
+							<svg class="h-7 w-7 text-blue-600 dark:text-blue-400 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
 							</svg>
-							<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "common.local_account") }</span>
-							<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "common.username_and_password") }</span>
+							<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "setup.start_fresh_title") }</span>
+							<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "setup.start_fresh_desc") }</span>
 						</button>
 						<button
 							type="button"
 							role="radio"
 							aria-checked="false"
-							onclick="selectAuthMethod('emby')"
-							id="card-emby"
-							class="auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md"
+							id="card-mode-restore"
+							onclick="selectSetupMode('restore')"
+							class="setup-mode-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md"
 						>
-							<img src={ assets.BasePath + "/static/img/logos/emby-128.png" } alt="" class="h-8 w-8 mb-2" aria-hidden="true"/>
-							<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Emby</span>
-							<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "register.use_emby_account") }</span>
-						</button>
-						<button
-							type="button"
-							role="radio"
-							aria-checked="false"
-							onclick="selectAuthMethod('jellyfin')"
-							id="card-jellyfin"
-							class="auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md"
-						>
-							<img src={ assets.BasePath + "/static/img/logos/jellyfin.svg" } alt="" class="h-8 w-8 mb-2" aria-hidden="true"/>
-							<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Jellyfin</span>
-							<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "register.use_jellyfin_account") }</span>
+							<svg class="h-7 w-7 text-gray-600 dark:text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25"></path>
+							</svg>
+							<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "setup.restore_title") }</span>
+							<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "setup.restore_desc") }</span>
 						</button>
 					</div>
-					<!-- Setup form -->
-					<form
-						method="post"
-						action={ templ.SafeURL(assets.BasePath + "/api/v1/auth/setup") }
-						hx-post="/api/v1/auth/setup"
-						hx-swap="innerHTML"
-						hx-target="#setup-result"
-						class="space-y-5"
-					>
-						<input type="hidden" name="auth_method" id="auth-method-input" value="local"/>
-						<!-- Server URL (hidden for local, visible for federated) -->
-						<div id="server-url-field" class="hidden">
-							<label for="server_url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								{ t(ctx, "setup.server_url") }
-							</label>
-							<input
-								id="server_url"
-								name="server_url"
-								type="url"
-								placeholder="http://192.168.1.100:8096"
-								class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-							/>
+					<!-- Auth method selection cards (Start fresh branch) -->
+					<div id="setup-fresh-branch" class="space-y-8">
+						<div class="grid grid-cols-3 gap-3" id="auth-method-cards" role="radiogroup" aria-label={ t(ctx, "setup.authentication_method") }>
+							<button
+								type="button"
+								role="radio"
+								aria-checked="true"
+								onclick="selectAuthMethod('local')"
+								id="card-local"
+								class="auth-card auth-card-selected flex flex-col items-center rounded-xl border-2 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 p-4 text-center transition-all hover:shadow-md"
+							>
+								<!-- Key icon -->
+								<svg class="h-8 w-8 text-blue-600 dark:text-blue-400 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
+								</svg>
+								<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "common.local_account") }</span>
+								<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "common.username_and_password") }</span>
+							</button>
+							<button
+								type="button"
+								role="radio"
+								aria-checked="false"
+								onclick="selectAuthMethod('emby')"
+								id="card-emby"
+								class="auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md"
+							>
+								<img src={ assets.BasePath + "/static/img/logos/emby-128.png" } alt="" class="h-8 w-8 mb-2" aria-hidden="true"/>
+								<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Emby</span>
+								<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "register.use_emby_account") }</span>
+							</button>
+							<button
+								type="button"
+								role="radio"
+								aria-checked="false"
+								onclick="selectAuthMethod('jellyfin')"
+								id="card-jellyfin"
+								class="auth-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md"
+							>
+								<img src={ assets.BasePath + "/static/img/logos/jellyfin.svg" } alt="" class="h-8 w-8 mb-2" aria-hidden="true"/>
+								<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Jellyfin</span>
+								<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "register.use_jellyfin_account") }</span>
+							</button>
 						</div>
-						<div>
-							<label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								{ t(ctx, "common.username") }
-							</label>
-							<input
-								id="username"
-								name="username"
-								type="text"
-								required
-								autocomplete="username"
-								class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-							/>
-						</div>
-						<div>
-							<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								{ t(ctx, "common.password") }
-							</label>
-							<input
-								id="password"
-								name="password"
-								type="password"
-								required
-								minlength="8"
-								autocomplete="new-password"
-								class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-							/>
-						</div>
-						<button
-							type="submit"
-							id="setup-submit-btn"
-							class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+						<!-- Setup form -->
+						<form
+							method="post"
+							action={ templ.SafeURL(assets.BasePath + "/api/v1/auth/setup") }
+							hx-post="/api/v1/auth/setup"
+							hx-swap="innerHTML"
+							hx-target="#setup-result"
+							class="space-y-5"
 						>
-							{ t(ctx, "register.create_account") }
-						</button>
-					</form>
-					<div id="setup-result"></div>
+							<input type="hidden" name="auth_method" id="auth-method-input" value="local"/>
+							<!-- Server URL (hidden for local, visible for federated) -->
+							<div id="server-url-field" class="hidden">
+								<label for="server_url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+									{ t(ctx, "setup.server_url") }
+								</label>
+								<input
+									id="server_url"
+									name="server_url"
+									type="url"
+									placeholder="http://192.168.1.100:8096"
+									class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+								/>
+							</div>
+							<div>
+								<label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+									{ t(ctx, "common.username") }
+								</label>
+								<input
+									id="username"
+									name="username"
+									type="text"
+									required
+									autocomplete="username"
+									class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+								/>
+							</div>
+							<div>
+								<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+									{ t(ctx, "common.password") }
+								</label>
+								<input
+									id="password"
+									name="password"
+									type="password"
+									required
+									minlength="8"
+									autocomplete="new-password"
+									class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+								/>
+							</div>
+							<button
+								type="submit"
+								id="setup-submit-btn"
+								class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+							>
+								{ t(ctx, "register.create_account") }
+							</button>
+						</form>
+						<div id="setup-result"></div>
+					</div>
+					<!-- Restore from backup branch (hidden by default) -->
+					<div id="setup-restore-branch" class="hidden space-y-5">
+						<form
+							id="setup-restore-form"
+							method="post"
+							action={ templ.SafeURL(assets.BasePath + "/api/v1/setup/restore") }
+							enctype="multipart/form-data"
+							hx-post="/api/v1/setup/restore"
+							hx-target="#setup-restore-result"
+							hx-encoding="multipart/form-data"
+							class="space-y-5"
+						>
+							<div>
+								<label for="restore-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "setup.restore_file_label") }</label>
+								<input
+									id="restore-file"
+									type="file"
+									name="file"
+									accept=".json,application/json"
+									required
+									class="mt-1 block w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 dark:file:bg-blue-900/40 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/60"
+								/>
+							</div>
+							<div>
+								<label for="restore-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "setup.restore_passphrase_label") }</label>
+								<input
+									id="restore-passphrase"
+									name="passphrase"
+									type="password"
+									required
+									autocomplete="off"
+									class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+								/>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "setup.restore_passphrase_hint") }</p>
+							</div>
+							<button
+								type="submit"
+								class="flex w-full justify-center rounded-lg bg-green-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+							>
+								{ t(ctx, "setup.restore_submit") }
+							</button>
+						</form>
+						<div id="setup-restore-result"></div>
+					</div>
 				</div>
 			</div>
 			<script>
+				function selectSetupMode(mode) {
+					document.querySelectorAll('.setup-mode-card').forEach(function(card) {
+						card.setAttribute('aria-checked', 'false');
+						card.classList.remove('setup-mode-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');
+						card.classList.add('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');
+					});
+					var selected = document.getElementById('card-mode-' + mode);
+					if (!selected) return;
+					selected.setAttribute('aria-checked', 'true');
+					selected.classList.add('setup-mode-card-selected', 'border-blue-500', 'bg-blue-50/60', 'dark:bg-blue-900/30');
+					selected.classList.remove('border-gray-200', 'dark:border-gray-700', 'bg-white/40', 'dark:bg-gray-800/40');
+
+					var fresh = document.getElementById('setup-fresh-branch');
+					var restore = document.getElementById('setup-restore-branch');
+					var headline = document.getElementById('setup-headline');
+					var subhead = document.getElementById('setup-subhead');
+					if (mode === 'restore') {
+						fresh.classList.add('hidden');
+						restore.classList.remove('hidden');
+						if (headline) headline.textContent = headline.getAttribute('data-restore-headline') || headline.textContent;
+						if (subhead) subhead.textContent = subhead.getAttribute('data-restore-subhead') || subhead.textContent;
+					} else {
+						fresh.classList.remove('hidden');
+						restore.classList.add('hidden');
+						if (headline) headline.textContent = headline.getAttribute('data-fresh-headline') || headline.textContent;
+						if (subhead) subhead.textContent = subhead.getAttribute('data-fresh-subhead') || subhead.textContent;
+					}
+				}
+
 				function selectAuthMethod(method) {
 					// Update hidden input
 					document.getElementById('auth-method-input').value = method;

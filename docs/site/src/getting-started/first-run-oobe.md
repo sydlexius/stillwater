@@ -17,7 +17,12 @@ You can skip individual wizard steps and come back to them later under **Setting
 
 Open Stillwater (default `http://localhost:1973`). With no users in the database, the home page renders a setup screen instead of the normal login form.
 
-Pick an authentication method:
+Before picking an authentication method, the setup screen offers two cards:
+
+- **Start fresh.** The path described below: create a new admin account, then run the setup wizard. Choose this for a brand-new install.
+- **Restore from backup.** Upload a previously-exported settings bundle (`.json`) and enter its passphrase. The restore replaces this fresh install's empty database with the bundle's contents, including the original admin accounts. After it completes you sign in with your *original* credentials, with no throwaway admin to clean up. See [Export and import settings](../how-to/export-import-settings.md) for how to produce the bundle on the source instance.
+
+If you picked Start fresh, pick an authentication method:
 
 - **Local username and password.** Stillwater stores the password hashed in its own database. Suitable when Stillwater is the only thing handling auth.
 - **Emby or Jellyfin.** Sign in with an existing account on your media server. Stillwater redirects to that server for authentication and creates a federated user record. Suitable when you'd rather not manage another username/password.
@@ -116,6 +121,20 @@ A two-phase final step.
 **Review phase.** When discovery finishes, the wizard presents a review of identified vs. ambiguous vs. unresolved artists. Ambiguous artists go to a re-identify queue you can work through after the wizard. Unresolved artists stay in the library and can be manually linked later.
 
 Click **Finish** to leave the wizard. You land on the **Artists** view with your discovered library.
+
+## Foreign-file baseline
+
+The first time Stillwater scans for **foreign files** (artwork written by other apps -- e.g. media servers, manual edits, image utilities) on a fresh install, it records every file it finds as the library's *baseline* rather than flagging each one as an incident.
+
+This matters because, without baselining, onboarding an existing music library against a brand-new Stillwater install would surface hundreds of "foreign file" alerts on day one -- every piece of pre-existing artwork, since none of it carries Stillwater's provenance tag yet. That noise trains operators to ignore the foreign-file surface before it has shown them anything useful.
+
+After the baseline scan completes:
+
+- Pre-existing artwork is recorded in the content-hash allowlist and **does not appear as an incident**.
+- Every subsequent scan diffs against the baseline. Only files added *after* the baseline are flagged as foreign.
+- The number of files baselined is available in the OOBE summary so you see the install's starting state, not a red-banner alert count.
+
+The baseline is a per-instance, one-time event. You don't need to do anything to enable it. If you ever want a fresh look at the foreign-file surface (e.g. after migrating to a new library structure), use **Settings** > **Maintenance** to clear the allowlist and the next scan will re-baseline.
 
 ## After the wizard
 

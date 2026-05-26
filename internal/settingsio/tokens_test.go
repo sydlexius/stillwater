@@ -296,3 +296,56 @@ func TestImport_LegacyEnvelopeWithoutUsers(t *testing.T) {
 		t.Errorf("legacy envelope: got users_imported=%d, want 0", res.UsersImported)
 	}
 }
+
+// TestImport_TokenIDFirst_FollowsRenamedUser pins the v1.4+ behavior:
+// when the envelope's token carries the source user's UUID and the
+// target has the same user under that UUID but with a locally-renamed
+// username, the token's owner is resolved by id (not username) so the
+// token survives the round-trip. Without this, the username-only probe
+// would silently skip the token even though the user is the same
+// person on both instances. See importAPITokens / resolveTokenOwner.
+func TestImport_TokenIDFirst_FollowsRenamedUser(t *testing.T) {
+	hash := "renamed-user-token-hash"
+	srcSvc, ctx := seedTokenSource(t, hash)
+	envelope, err := srcSvc.Export(ctx, "pp")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Build a target with the same user id as the source but renamed
+	// locally. seedTokenSource creates user "alice" with a stable id
+	// ("u-alice") -- we mirror that id and use a different username.
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	if _, err := db2.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role,
+		                   auth_provider, is_active, is_protected, created_at)
+		VALUES (?, 'renamed-alice', 'Renamed Locally', 'target-hash', 'administrator',
+		        'local', 1, 0, '2026-01-01T00:00:00Z')
+	`, "u-alice"); err != nil {
+		t.Fatalf("seeding renamed target user: %v", err)
+	}
+
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+	res, err := svc2.Import(ctx, envelope, "pp")
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	// The token must have been attributed to u-alice via id resolution.
+	var ownerID string
+	if err := db2.QueryRowContext(ctx,
+		`SELECT user_id FROM api_tokens WHERE token_hash = ?`, hash,
+	).Scan(&ownerID); err != nil {
+		t.Fatalf("token not present on target -- id-first resolution failed: %v", err)
+	}
+	if ownerID != "u-alice" {
+		t.Errorf("token owner_id: got %q, want u-alice (id-first resolution must follow the rename)", ownerID)
+	}
+	if res.APITokensSkipped != 0 {
+		t.Errorf("APITokensSkipped: got %d, want 0 (id resolved -- no skip)", res.APITokensSkipped)
+	}
+	if res.APITokens != 1 {
+		t.Errorf("APITokens: got %d, want 1", res.APITokens)
+	}
+}

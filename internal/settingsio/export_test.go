@@ -369,13 +369,11 @@ func TestRoundTrip_RuleScraperPreferences(t *testing.T) {
 	if err := ruleSvc2.SeedDefaults(ctx); err != nil {
 		t.Fatalf("seeding rules in target db: %v", err)
 	}
-	// Create matching user in target DB. Same fail-fast rationale as above:
-	// silently dropping this insert would make the user-preference import
-	// assertions fail for the wrong reason.
-	userID2 := "user-002"
-	if _, err := db2.ExecContext(ctx, `INSERT INTO users (id, username, display_name) VALUES (?, 'alice', 'Alice')`, userID2); err != nil {
-		t.Fatalf("seeding target user: %v", err)
-	}
+	// Since #1114 the envelope's Users block carries the source id, so a
+	// fresh target should NOT pre-seed alice -- the import recreates her
+	// with the source's id and preferences resolve by id. Seeding under a
+	// different id would now fail-fast as a username collision.
+	userID2 := userID
 
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2).
 		WithRuleService(ruleSvc2).
@@ -946,10 +944,11 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
-	// Envelope version was bumped to 1.3 when the Users block was added
-	// (#1283). Older versions remain importable; see TestImport_LegacyEnvelopeWithoutUsers.
-	if envelope.Version != "1.3" {
-		t.Errorf("envelope version: got %q, want 1.3", envelope.Version)
+	// Envelope version was bumped to 1.4 when UserExport.id and
+	// UserPrefsExport.user_id were added (#1114). Older versions remain
+	// importable; see TestImport_LegacyEnvelopeWithoutUsers.
+	if envelope.Version != "1.4" {
+		t.Errorf("envelope version: got %q, want 1.4", envelope.Version)
 	}
 	if envelope.Summary == nil {
 		t.Fatal("expected non-nil export summary")
@@ -1009,8 +1008,13 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	if err := connSvc2.Create(ctx, c2); err != nil {
 		t.Fatalf("seeding target connection: %v", err)
 	}
+	// Since #1114 user import matches by id (not username); the target user
+	// must share the source user's id so the round-trip resolves cleanly.
+	// A different id under the same username is a fatal collision and is
+	// covered by TestImport_UsersIdCollisionFails.
 	if _, err := db2.ExecContext(ctx,
-		`INSERT INTO users (id, username, role) VALUES ('u-target', 'tokenowner', 'admin')`); err != nil {
+		`INSERT INTO users (id, username, role) VALUES (?, 'tokenowner', 'admin')`,
+		userID); err != nil {
 		t.Fatalf("seeding target user: %v", err)
 	}
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
@@ -1049,8 +1053,8 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	if gotHash != tokenHash {
 		t.Errorf("token hash drift: got %q, want %q", gotHash, tokenHash)
 	}
-	if gotUserID != "u-target" {
-		t.Errorf("user_id remap: got %q, want u-target", gotUserID)
+	if gotUserID != userID {
+		t.Errorf("user_id remap: got %q, want %q", gotUserID, userID)
 	}
 
 	// --- Target #2: no matching connection, no matching user. Both

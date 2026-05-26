@@ -398,7 +398,7 @@ components:
       description: |
         Import-side wrapper for a previously exported settings file. The shape
         is intentionally permissive: the importer accepts envelope versions
-        1.0-1.3, and earlier versions do not carry the per-section counters
+        1.0-1.4, and earlier versions do not carry the per-section counters
         that current writers emit. Required fields are limited to the core
         crypto envelope (version + app_version + created_at + salt + data);
         the optional `summary` block is informational only on the import path.
@@ -407,10 +407,11 @@ components:
         version:
           type: string
           description: |
-            Envelope format version. Importer accepts `1.0`-`1.3`. Each minor
+            Envelope format version. Importer accepts `1.0`-`1.4`. Each minor
             bump adds optional fields without breaking older readers (1.1:
             rules/scraper_configs/user_preferences; 1.2: libraries/api_tokens;
-            1.3: users).
+            1.3: users; 1.4: user stable IDs and connection feature toggles
+            including pre-Stillwater config snapshot).
         app_version:
           type: string
           description: Application version that produced the export.
@@ -451,7 +452,7 @@ components:
       type: object
       description: |
         Export-side wrapper produced by the current writer (envelope version
-        1.3). Strict shape: every counter the writer emits is marked required
+        1.4). Strict shape: every counter the writer emits is marked required
         so generated clients can rely on the field's presence without
         defensive null checks. The import-side schema is the permissive
         counterpart that accepts older envelope versions.
@@ -460,10 +461,11 @@ components:
         version:
           type: string
           description: |
-            Envelope format version. Current writer emits `1.3`. Each minor
+            Envelope format version. Current writer emits `1.4`. Each minor
             bump adds optional fields without breaking older readers (1.1:
             rules/scraper_configs/user_preferences; 1.2: libraries/api_tokens;
-            1.3: users).
+            1.3: users; 1.4: user stable IDs and connection feature toggles
+            including pre-Stillwater config snapshot).
         app_version:
           type: string
           description: Application version that produced the export.
@@ -2141,6 +2143,125 @@ paths:
                 $ref: "#/components/schemas/Error"
         "502":
           description: Media server unreachable (federated auth only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /setup/restore:
+    post:
+      tags: [Auth]
+      summary: Restore a Stillwater backup during OOBE
+      description: |
+        Applies a previously exported settings envelope (passphrase-encrypted
+        with AES-256-GCM) into the current instance, including local user
+        accounts. Intended for the "Restore from backup" branch of the
+        pre-admin setup page so a user can stand up a new install with their
+        prior credentials, library config, and platform integrations intact.
+
+        The endpoint is gated on "no admin user exists yet" AND
+        `onboarding.completed != "true"`. The admin-existence check enforces
+        that restore happens before any admin account is created -- the user
+        signs in with their pre-existing credentials and no orphaned
+        throwaway admin row gets left behind. Once OOBE finishes, the
+        secondary onboarding flag locks the route. Rate-limited identically
+        to login and admin creation. CSRF-exempt (entry point: no session
+        exists yet to attach a token to).
+
+        On success the response sets `HX-Redirect` (HTMX) or includes a
+        `redirect` field (JSON) pointing at the root so the user signs in
+        with the restored credentials.
+      security: []
+      operationId: setupRestore
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, passphrase]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Backup envelope produced by POST /settings/export
+                passphrase:
+                  type: string
+                  description: Passphrase used at export time (PBKDF2 key derivation)
+      responses:
+        "200":
+          description: |
+            Restore applied. JSON clients receive `redirect` in the response
+            body and navigate themselves. HTMX clients receive a generic HTML
+            fragment plus an `HX-Redirect` response header, which HTMX
+            consumes to drive the browser to the post-restore sign-in page.
+          headers:
+            HX-Redirect:
+              schema:
+                type: string
+              description: |
+                Present on responses to HTMX requests (HX-Request: true with
+                an Accept header that does not include application/json).
+                HTMX follows this URL after the swap completes. Absent on
+                JSON responses; clients use the body's `redirect` field
+                instead.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, redirect, users_imported, connections, libraries, api_tokens]
+                properties:
+                  status: { type: string, enum: [restored] }
+                  redirect: { type: string }
+                  users_imported: { type: integer }
+                  connections: { type: integer }
+                  libraries: { type: integer }
+                  api_tokens: { type: integer }
+            text/html:
+              schema:
+                type: string
+                description: |
+                  HTMX swap fragment returned alongside the `HX-Redirect`
+                  header so the OOBE wizard's container can show a brief
+                  "Restoring..." copy while the browser navigates.
+        "400":
+          description: Invalid request or client-side restore error (missing file/passphrase, malformed multipart body, wrong passphrase, corrupt envelope, or unsupported envelope version)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: An admin already exists, or onboarding has already completed; restore is no longer reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A user account on the target collides with the backup under a different id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Backup file exceeds the 10MB upload limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests; the loginRL middleware throttles brute-force attempts at the passphrase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error applying the envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Restore service is not configured on this server
           content:
             application/json:
               schema:

@@ -104,6 +104,7 @@ getting-started/connect-jellyfin#when-the-toggle-is-moot
 getting-started/first-run-oobe#after-the-wizard
 getting-started/first-run-oobe#create-the-admin-account
 getting-started/first-run-oobe#first-time-setup
+getting-started/first-run-oobe#foreign-file-baseline
 getting-started/first-run-oobe#troubleshooting
 getting-started/first-run-oobe#welcome-intro
 getting-started/first-run-oobe#wizard-step-1-music-libraries
@@ -216,6 +217,8 @@ how-to/export-import-settings#export
 how-to/export-import-settings#export-and-import-settings
 how-to/export-import-settings#how-users-are-handled
 how-to/export-import-settings#import
+how-to/export-import-settings#into-a-fresh-instance-before-admin-creation-restore-from-backup
+how-to/export-import-settings#into-an-existing-instance-settings-maintenance
 how-to/export-import-settings#migrating-to-a-new-host
 how-to/export-import-settings#save-the-bundle-somewhere-durable
 how-to/export-import-settings#troubleshooting

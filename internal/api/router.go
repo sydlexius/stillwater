@@ -187,6 +187,21 @@ type Router struct {
 	// foreign-files settings page never has to special-case a missing dep.
 	foreignRepo *foreign.Repository
 
+	// setupRestoreMu serializes handleSetupRestore. The handler runs a
+	// read-modify-write across the users table and the onboarding
+	// settings row: HasUsers probe, onboarding flag probe, envelope
+	// Import, then onboarding flag flip. Without serialization two
+	// simultaneous unauthenticated POSTs to /api/v1/setup/restore would
+	// each see HasUsers=false at the top, both fall through the gate,
+	// and the second call would either insert duplicate user rows or
+	// fail mid-import depending on which transaction ordering the engine
+	// happens to pick. The handler is rate-limited by loginRL but rate
+	// limits are coarse; a coincident pair within the same window is
+	// possible and the mutex closes that TOCTOU window. Held only for
+	// the duration of one request, so contention is bounded by the
+	// rate-limit cap.
+	setupRestoreMu sync.Mutex
+
 	// webhookWg tracks in-flight inbound webhook processing goroutines so
 	// DrainWebhooks can wait for them to finish before the DB is closed.
 	webhookWg sync.WaitGroup
@@ -363,6 +378,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/docs/openapi.yaml", r.handleOpenAPISpec)
 	mux.Handle("POST "+bp+"/api/v1/auth/login", loginRL.Middleware(http.HandlerFunc(r.handleLogin)))
 	mux.Handle("POST "+bp+"/api/v1/auth/setup", loginRL.Middleware(http.HandlerFunc(r.handleSetup)))
+	// Pre-admin restore-from-backup (#1114). Same rate-limiter as login/setup
+	// so brute-forcing the passphrase is throttled identically. The handler
+	// internally checks HasUsers AND onboarding.completed so the route is
+	// only reachable on a truly fresh install -- before any admin exists.
+	// CSRF-exempt for the same reason as /auth/setup: no session to attach
+	// a token to.
+	mux.Handle("POST "+bp+"/api/v1/setup/restore", loginRL.Middleware(http.HandlerFunc(r.handleSetupRestore)))
 	mux.Handle("POST "+bp+"/api/v1/users/register", loginRL.Middleware(requireMultiUser(r.handleRegister)))
 	// OIDC authentication flow (public, rate-limited)
 	mux.Handle("GET "+bp+"/api/v1/auth/oidc/login", loginRL.Middleware(http.HandlerFunc(r.handleOIDCLogin)))
@@ -781,10 +803,15 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc(bp+"/{path...}", wrapOptionalAuth(r.handle404, optAuthMw))
 
 	// Apply middleware chain: security headers > i18n > logging > CSRF
-	// Login and setup are exempt from CSRF (registered with rate limiter above)
+	// Login and setup are exempt from CSRF (registered with rate limiter above).
+	// /setup/restore shares the entry-point treatment because the UI that
+	// posts to it (setup.templ) is rendered before any user exists, so there
+	// is no session to attach a CSRF token to. Brute-force protection comes
+	// from loginRL on the route.
 	csrfExempt := []string{
 		bp + "/api/v1/auth/login",
 		bp + "/api/v1/auth/setup",
+		bp + "/api/v1/setup/restore",
 	}
 	var handler http.Handler = mux
 	handler = csrfWithExemptions(csrf, handler, csrfExempt)
