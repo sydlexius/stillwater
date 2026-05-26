@@ -27,6 +27,7 @@ core-concepts/conflict-gate#dismiss-allowlist-all
 core-concepts/conflict-gate#feature-toggles-on-connections
 core-concepts/conflict-gate#foreign-files
 core-concepts/conflict-gate#how-writes-are-gated
+core-concepts/conflict-gate#http-409-response-shape
 core-concepts/conflict-gate#let-stillwater-manage-and-auto-re-disable
 core-concepts/conflict-gate#relationship-to-field-locks-and-rules
 core-concepts/conflict-gate#the-round-trip-problem
@@ -312,9 +313,12 @@ how-to/self-update#check-for-updates
 how-to/self-update#docker
 how-to/self-update#docker-compose-installs
 how-to/self-update#docker-images
+how-to/self-update#docker-manual-nightly
+how-to/self-update#manual-nightly-download
 how-to/self-update#native
 how-to/self-update#native-binaries
 how-to/self-update#native-binary-installs
+how-to/self-update#native-binary-manual-nightly
 how-to/self-update#rolling-back
 how-to/self-update#see-also
 how-to/self-update#switching-channels-docker

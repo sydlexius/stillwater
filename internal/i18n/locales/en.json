@@ -2124,6 +2124,8 @@
   "settings.users.role_label.description": "Marks the role badge shown next to a pending invite in the list below. The redeemed account will be created with this role.",
   "settings.users.status": "Status",
   "settings.users.title": "Users",
+  "settings.users.toast_refresh_invites_failed": "Failed to refresh invite list",
+  "settings.users.toast_refresh_users_failed": "Failed to refresh user list",
   "settings.users.user": "User",
   "settings.users.user_accounts": "User accounts",
   "settings.users.user_accounts.description": "An account is anyone who has signed in successfully and exists in Stillwater's user table, regardless of which auth provider verified them. This table lists every active account; use the row controls to promote or demote a user's role or deactivate them.",

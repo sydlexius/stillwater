@@ -353,7 +353,7 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 	// to its body byte range, so panel regions can fold in the keys of
 	// in-trunk helpers they invoke via `@FUNC(...)` (e.g. settingsUpdatesTab,
 	// which renders the entire Updates tab content from outside the panel div).
-	trunkHelpers := indexTemplHelpers(trunkData)
+	trunkHelpers := indexTemplHelpers(trunkData, trunk)
 
 	panels := make([]panel, 0, len(openMatches))
 	for i, m := range openMatches {
@@ -394,7 +394,17 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", src, err)
 		}
-		extra := extractKeys(data)
+		// Walk the sub-template starting from its "entry" templ functions
+		// (those not @-invoked from anywhere else in the same file), expanding
+		// @helperName(...) calls inline. The flat extractKeys(data) we used
+		// before returned keys in textual file order, which placed helper-
+		// resident keys after every key in the entry function's body --
+		// breaking key-to-section attribution when an @-helper invoked early
+		// in the entry function was defined late in the file (e.g. the
+		// settings_users.templ delete-user-dialog helper bucketed under the
+		// Pending Invites H4 because Pending Invites was the last H4 promoted
+		// in the entry function's textual span). #1681.
+		extra := extractSubTemplateKeys(data, src)
 		// Find the trunk panel this sub-template's keys belong to. If the
 		// owner ID doesn't exist in the trunk -- typically because someone
 		// added settings_X.templ without ever adding a data-tab-panel="X"
@@ -474,27 +484,204 @@ func findPanelOpeners(trunk string, trunkData []byte) ([][]int, []string, error)
 	return openMatches, openIDs, nil
 }
 
-// indexTemplHelpers maps each `templ FUNC(...) {` name in src to the byte
-// range of its body. The body runs from the byte after the declaration's
-// match to the start of the next `^templ X(` declaration (or end-of-src for
-// the last one). The range is approximate -- it does not respect a closing
-// `}` -- but for the codegen's purpose (collecting i18n keys called inside
-// the function), inclusivity is harmless: spurious bytes after the function's
-// real `}` would be the next function's body, which is also templ source we
-// trust.
-func indexTemplHelpers(src []byte) map[string][2]int {
+// templBlockCloseRE matches the closing `}` of a templ block, which the
+// templ-generator-aware formatter always places at column 0. Inner Go
+// constructs inside the body (if/else, for, switch) close with indented
+// `}` characters and never trigger this anchor. The next-templ-declaration
+// boundary is used only as a fallback when no `^}` is found between a
+// templ opener and end-of-file (defensive against unformatted source).
+var templBlockCloseRE = regexp.MustCompile(`(?m)^\}`)
+
+// indexTemplHelpers maps each `templ FUNC(...) {` name in src to the
+// EXACT byte range of its body. The body runs from the byte after the
+// declaration's match to the byte index immediately before the closing
+// `}` that sits at column 0 (gofmt-style indentation). Earlier versions
+// of this function used "to the start of the next templ declaration" as
+// the upper bound, which silently swept any plain Go function placed
+// between two templ helpers into the prior helper's range -- those
+// keys would then disappear from the top-level walk (skipRanges) and
+// re-appear inside the helper at @-expansion time, out of source order.
+// Computing the exact body avoids that misattribution.
+//
+// Returns an empty map if templFuncRE finds no matches. Callers must
+// tolerate missing entries because `@helperName(...)` invocations of
+// cross-file or cross-package helpers are filtered upstream (the
+// dotted-namespace form does not match panelHelperCallRE) and bare
+// identifier @-calls to non-existent names are surfaced as warnings by
+// walkOrdered, not as errors here.
+//
+// srcPath is used only to label the warning emitted when a templ block's
+// closing column-0 `}` cannot be located before the next templ
+// declaration. The fallback to the approximate range mirrors the old
+// behavior, so output stays compatible -- but a silent fallback would
+// reintroduce the very class of bug the exact-body fix was meant to
+// prevent, so an operator-visible warning is preferable to silence.
+func indexTemplHelpers(src []byte, srcPath string) map[string][2]int {
 	matches := templFuncRE.FindAllSubmatchIndex(src, -1)
 	out := make(map[string][2]int, len(matches))
 	for i, m := range matches {
 		name := string(src[m[2]:m[3]])
 		start := m[1] // byte after the `templ FUNC(` opener
-		end := len(src)
+
+		// Upper bound for the search window: the start of the next templ
+		// declaration, or end-of-src for the last one. The `^}` we find
+		// within that window is the closing brace of THIS templ block.
+		searchEnd := len(src)
 		if i+1 < len(matches) {
-			end = matches[i+1][0]
+			searchEnd = matches[i+1][0]
+		}
+		end := searchEnd
+		if loc := templBlockCloseRE.FindIndex(src[start:searchEnd]); loc != nil {
+			// loc[0] is the offset of `^}` within the window; end excludes
+			// the `}` byte itself, matching the half-open `[start, end)`
+			// semantics used by callers (extractKeys, walkOrdered).
+			end = start + loc[0]
+		} else {
+			fmt.Fprintf(os.Stderr, "gen-settings-reference: %s: templ %s: no column-0 closing brace found before next templ declaration; falling back to approximate body range (key ordering for plain Go in this gap may regress)\n", srcPath, name)
 		}
 		out[name] = [2]int{start, end}
 	}
 	return out
+}
+
+// extractSubTemplateKeys returns every i18n key in a sub-template's source
+// in walk order, inlining keys from @-invoked helper bodies at the position
+// of the @-call site rather than at the helper's declaration position. This
+// preserves correct positional ordering when an @-helper invoked early in
+// an entry function is declared late in the file (e.g. settings_users.templ's
+// @deleteUserDialog() call sits before the Pending Invites H4, but the
+// dialog's templ helper is declared after; the flat scan misattributed the
+// dialog keys to Pending Invites). #1681.
+//
+// The walk treats the file in source order and skips the bodies of templ
+// helpers that are @-invoked from elsewhere in the file -- those keys are
+// emitted via inline expansion at the @-call sites instead. Templ functions
+// not @-invoked locally (entries called from the trunk or as HTMX fragments)
+// are walked in place. Plain Go function bodies (e.g. formatLastLogin) are
+// also walked in place, since their keys live wherever they are textually
+// declared and the generator does not follow plain Go call graphs.
+//
+// srcPath is used solely to prefix the warning emitted when a same-token
+// @-call resolves to a helper that isn't declared in this file. The
+// generator does not follow cross-file @-calls, so this is a typo or
+// in-flight rename signal. The dotted-namespace form (e.g.
+// @components.ContextHelp) is filtered upstream by panelHelperCallRE.
+func extractSubTemplateKeys(src []byte, srcPath string) []string {
+	helpers := indexTemplHelpers(src, srcPath)
+
+	// Templ helpers that appear as @-call targets anywhere in the file: their
+	// declaration-site bodies are skipped during the file walk, since the
+	// @-call expansion emits their keys at the correct caller position.
+	called := make(map[string]struct{})
+	for _, hm := range panelHelperCallRE.FindAllSubmatch(src, -1) {
+		called[string(hm[1])] = struct{}{}
+	}
+	skipRanges := make([][2]int, 0, len(called))
+	for name, rng := range helpers {
+		if _, ok := called[name]; ok {
+			skipRanges = append(skipRanges, rng)
+		}
+	}
+	sort.Slice(skipRanges, func(i, j int) bool { return skipRanges[i][0] < skipRanges[j][0] })
+
+	var out []string
+	seen := make(map[string]struct{})
+	visiting := make(map[string]bool)
+	walkOrdered(src, srcPath, 0, len(src), helpers, skipRanges, visiting, seen, &out)
+	return out
+}
+
+// walkOrdered emits keys found in src[start:end] in source order, with two
+// transformations: (1) byte ranges in skipRanges are skipped entirely (used
+// to suppress the declaration-site body of a templ helper that is emitted
+// via @-expansion at its call site instead), and (2) at every @helperName(...)
+// site whose target is in helpers, the helper's body is walked recursively
+// and its keys are inlined at the call position.
+//
+// seen is the shared dedup set so a key visible from multiple paths (e.g.
+// via two callers of the same helper) appears only at its first-encounter
+// position. visiting guards against @-call cycles, which are defensively
+// handled even though the production templ tree is acyclic.
+func walkOrdered(
+	src []byte,
+	srcPath string,
+	start, end int,
+	helpers map[string][2]int,
+	skipRanges [][2]int,
+	visiting map[string]bool,
+	seen map[string]struct{},
+	out *[]string,
+) {
+	type event struct {
+		pos    int
+		isCall bool
+		key    string
+		helper string
+	}
+	region := src[start:end]
+	var events []event
+	for _, m := range i18nCallRE.FindAllSubmatchIndex(region, -1) {
+		events = append(events, event{pos: start + m[0], key: string(region[m[2]:m[3]])})
+	}
+	for _, m := range panelHelperCallRE.FindAllSubmatchIndex(region, -1) {
+		events = append(events, event{pos: start + m[0], isCall: true, helper: string(region[m[2]:m[3]])})
+	}
+	sort.Slice(events, func(i, j int) bool { return events[i].pos < events[j].pos })
+
+	for _, ev := range events {
+		if inSkipRange(ev.pos, skipRanges) {
+			continue
+		}
+		if ev.isCall {
+			if visiting[ev.helper] {
+				continue
+			}
+			rng, ok := helpers[ev.helper]
+			if !ok {
+				// Same-token @-call with no matching helper in this file:
+				// either a typo or an in-flight rename. The dotted-namespace
+				// form (e.g. @components.ContextHelp) is filtered upstream by
+				// panelHelperCallRE, so this branch fires only for bare
+				// identifiers we expected to resolve locally. Surface it on
+				// stderr so the next regen pass attributes the lost keys to a
+				// human-visible warning, not a silent docs drift.
+				fmt.Fprintf(os.Stderr, "gen-settings-reference: %s: @%s called but not declared in this file\n", srcPath, ev.helper)
+				continue
+			}
+			visiting[ev.helper] = true
+			// Recursive walks pass nil skipRanges: we are intentionally
+			// stepping into the helper body to emit its keys at this @-call
+			// site, so the file-level "suppress @-invoked helper bodies"
+			// rule must not also suppress the body we are deliberately
+			// expanding.
+			walkOrdered(src, srcPath, rng[0], rng[1], helpers, nil, visiting, seen, out)
+			delete(visiting, ev.helper)
+			continue
+		}
+		if isNoiseKey(ev.key) {
+			continue
+		}
+		if _, ok := seen[ev.key]; ok {
+			continue
+		}
+		seen[ev.key] = struct{}{}
+		*out = append(*out, ev.key)
+	}
+}
+
+// inSkipRange reports whether pos falls within any [start,end) range in
+// ranges. ranges is expected to be sorted by start; a linear scan is fine at
+// the scale of one sub-template file's helper count.
+func inSkipRange(pos int, ranges [][2]int) bool {
+	for _, r := range ranges {
+		if pos >= r[0] && pos < r[1] {
+			return true
+		}
+		if pos < r[0] {
+			break
+		}
+	}
+	return false
 }
 
 // appendUnique appends every element of extras to base that is not already
