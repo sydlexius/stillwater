@@ -1696,3 +1696,47 @@ func TestPushMetadata_AuthClass401(t *testing.T) {
 		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
 	}
 }
+
+// TestUpdateArtistLocks_AuthClass401 mirrors TestUpdateArtistPath_AuthClass401
+// for the lock-toggle write path. PushLocks runs through UpdateArtistLocks,
+// so a 401 here must wrap with ErrAuthRequired or the lock-toggle toast
+// loses its auth_failed classification.
+func TestUpdateArtistLocks_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Test","LockData":false,"LockedFields":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistLocks(context.Background(), "a1", true, []string{"name"})
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestUploadImage_AuthClass401 covers the image-write surface. Image syncs
+// share the per-connection observability path with PushMetadata, so a 401
+// here must wrap with ErrAuthRequired alongside the metadata write methods.
+func TestUploadImage_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	err := c.UploadImage(context.Background(), "emby-001", "thumb", []byte{1, 2, 3}, "image/jpeg")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}

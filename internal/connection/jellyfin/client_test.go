@@ -1752,3 +1752,22 @@ func TestUpdateArtistPath_NonAuthErrorNotWrapped(t *testing.T) {
 		t.Errorf("errors.Is(err, ErrAuthRequired) = true on 500; want false")
 	}
 }
+
+// TestUploadImage_AuthClass401 covers the image-write surface. Image syncs
+// share the per-connection observability path with PushMetadata, so a 401
+// here must wrap with ErrAuthRequired alongside the metadata write methods.
+func TestUploadImage_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", "", srv.Client(), testLogger())
+	err := c.UploadImage(context.Background(), "jf-001", "thumb", []byte{1, 2, 3}, "image/jpeg")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}

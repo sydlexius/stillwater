@@ -628,3 +628,90 @@ func TestUpdateArtistPath_VerifyAfterPut_Disabled(t *testing.T) {
 		t.Errorf("expected 1 GET (pre-PUT only), got %d -- verify-after-PUT must be opt-in", getCount)
 	}
 }
+
+// TestGetMetadataProviderConfigs_AuthClass401 covers the hand-rolled GET on
+// /api/v1/config/metadataprovider so a 401 there still routes through the
+// ErrAuthRequired wrap. The function is unexported, so we exercise it
+// through GetMetadataConsumers (its only caller) which forwards the error.
+func TestGetMetadataProviderConfigs_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/config/metadataprovider" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	_, err := c.GetMetadataConsumers(context.Background())
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestGetMetadataConsumers_AuthClass401 covers the hand-rolled GET on
+// /api/v1/metadata used by the conflict detection and snapshot/restore
+// paths. A 401 here must wrap with ErrAuthRequired so peer-side credential
+// rotation surfaces consistently across every Lidarr touchpoint.
+func TestGetMetadataConsumers_AuthClass401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/metadata" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	// CheckNFOWriterEnabled forwards getMetadataConsumers' error directly.
+	_, _, err := c.CheckNFOWriterEnabled(context.Background())
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+}
+
+// TestUpdateArtistPath_VerifyAfterPut_AuthClass401 covers the credentials
+// rotation between PUT and verify case: the pre-PUT GET and the PUT both
+// succeed, but the verify GET returns 401. The error must still wrap with
+// ErrAuthRequired so the toast surface routes to auth_failed rather than a
+// generic verify mismatch class.
+func TestUpdateArtistPath_VerifyAfterPut_AuthClass401(t *testing.T) {
+	var getCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getCount++
+			if getCount == 1 {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":42,"path":"/old/X"}`))
+				return
+			}
+			// Second GET is the verify call; simulate credentials revoked.
+			w.WriteHeader(http.StatusUnauthorized)
+		case http.MethodPut:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "k", srv.Client(), testLogger())
+	c.SetVerifyPathAfterUpdate(true)
+	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
+	if err == nil {
+		t.Fatal("expected error on verify 401")
+	}
+	if !errors.Is(err, ErrAuthRequired) {
+		t.Errorf("errors.Is(err, ErrAuthRequired) = false; want true. err = %v", err)
+	}
+	if getCount != 2 {
+		t.Errorf("expected 2 GETs (pre-PUT + verify), got %d", getCount)
+	}
+}
