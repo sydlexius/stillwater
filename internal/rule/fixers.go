@@ -466,6 +466,17 @@ func (f *ImageFixer) validatePreconditions(ctx context.Context, a *artist.Artist
 			Message: "no MBID, cannot search image providers",
 		}, nil
 	}
+	// API-only artists carry no on-disk path. Without it
+	// readExistingImageDimensions would call os.ReadDir("") and read the
+	// current working directory; downloadAndPersist would write to an
+	// arbitrary CWD-relative location. Refuse early instead.
+	if a.Path == "" {
+		return nil, &FixResult{
+			RuleID:  v.RuleID,
+			Fixed:   false,
+			Message: "artist has no local path; image download requires filesystem access",
+		}, nil
+	}
 	if f.fsCheck.IsShared(ctx, a) {
 		return nil, &FixResult{
 			RuleID:  v.RuleID,
@@ -495,6 +506,9 @@ func (f *ImageFixer) discoverCandidates(ctx context.Context, a *artist.Artist, v
 	result, err := f.fetchImages(ctx, a.MusicBrainzID, a.ProviderIDMap())
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetching images: %w", err)
+	}
+	if result == nil {
+		return nil, nil, fmt.Errorf("fetching images: provider returned nil result")
 	}
 	var candidates []provider.ImageResult
 	for _, im := range result.Images {
@@ -589,13 +603,17 @@ func (f *ImageFixer) candidateListResult(v *Violation, fctx *imageFixContext, ca
 // downstream UpdateImageProvenance call.
 func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v *Violation, fctx *imageFixContext, candidates []provider.ImageResult) *FixResult {
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
+	var downloadFails, dimGateFails, saveFails int
 	for _, c := range candidates {
 		data, err := fetchImageURL(ctx, f.httpClient, c.URL)
 		if err != nil {
-			f.logger.Debug("image download failed", "url", c.URL, "error", err)
+			// Source identifies the provider without leaking the signed URL.
+			f.logger.Debug("image download failed", "source", c.Source, "error", err)
+			downloadFails++
 			continue
 		}
-		if !passesPostDownloadDimensionGate(data, fctx, c.URL, f.logger) {
+		if !passesPostDownloadDimensionGate(data, fctx, f.logger) {
+			dimGateFails++
 			continue
 		}
 
@@ -609,7 +627,9 @@ func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v
 
 		saved, err := SaveImageFromData(ctx, a, fctx.imageType, data, nil, useSymlinks, saveMeta, f.platformService, f.logger)
 		if err != nil {
-			f.logger.Debug("image save failed", "url", c.URL, "error", err)
+			// Source identifies the provider without leaking the signed URL.
+			f.logger.Debug("image save failed", "source", c.Source, "error", err)
+			saveFails++
 			continue
 		}
 
@@ -626,9 +646,10 @@ func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v
 		}
 	}
 	return &FixResult{
-		RuleID:  v.RuleID,
-		Fixed:   false,
-		Message: fmt.Sprintf("all %d image downloads failed", len(candidates)),
+		RuleID: v.RuleID,
+		Fixed:  false,
+		Message: fmt.Sprintf("no suitable image saved from %d candidates: %d download failures, %d below resolution gate, %d save failures",
+			len(candidates), downloadFails, dimGateFails, saveFails),
 	}
 }
 
@@ -637,8 +658,11 @@ func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v
 // do not report dimensions in their API responses, so candidates arrive
 // with Width=0/Height=0 and slip past the pre-download filter. Returns
 // true when the candidate is unknown-sized (skip the gate) or clears both
-// the minimum and existing constraints.
-func passesPostDownloadDimensionGate(data []byte, fctx *imageFixContext, url string, logger *slog.Logger) bool {
+// the minimum and existing constraints. The URL is intentionally omitted
+// from the debug-log fields: provider URLs frequently carry signed query
+// parameters or short-lived tokens that should not surface in operator
+// logs (per CLAUDE.md "Scrub sensitive values from logs").
+func passesPostDownloadDimensionGate(data []byte, fctx *imageFixContext, logger *slog.Logger) bool {
 	if fctx.minW == 0 && fctx.minH == 0 && (fctx.existW == 0 || fctx.existH == 0) {
 		return true
 	}
@@ -648,13 +672,13 @@ func passesPostDownloadDimensionGate(data []byte, fctx *imageFixContext, url str
 	}
 	if (fctx.minW > 0 && dw < fctx.minW) || (fctx.minH > 0 && dh < fctx.minH) {
 		logger.Debug("skipping candidate below configured minimum (actual)",
-			"url", url, "actual_width", dw, "actual_height", dh,
+			"actual_width", dw, "actual_height", dh,
 			"min_width", fctx.minW, "min_height", fctx.minH)
 		return false
 	}
 	if fctx.existW > 0 && fctx.existH > 0 && dw*dh < fctx.existW*fctx.existH {
 		logger.Debug("skipping candidate below existing resolution (actual)",
-			"url", url, "actual_width", dw, "actual_height", dh,
+			"actual_width", dw, "actual_height", dh,
 			"existing_width", fctx.existW, "existing_height", fctx.existH)
 		return false
 	}

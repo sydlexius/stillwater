@@ -2574,7 +2574,7 @@ func TestNewImageFixer_HTTPClient_RejectsLoopback(t *testing.T) {
 // matching the pre-refactor behavior callers rely on.
 func TestImageFixer_validatePreconditions_UnknownRule(t *testing.T) {
 	f := NewImageFixer(nil, nil, nonSharedFSCheck(), testLogger())
-	a := &artist.Artist{Name: "Unknown", MusicBrainzID: "mbid-x", LibraryID: "lib-test"}
+	a := &artist.Artist{Name: "Unknown", MusicBrainzID: "mbid-x", LibraryID: "lib-test", Path: t.TempDir()}
 	v := &Violation{RuleID: "made_up_rule"}
 
 	_, pre, err := f.validatePreconditions(context.Background(), a, v)
@@ -2583,6 +2583,33 @@ func TestImageFixer_validatePreconditions_UnknownRule(t *testing.T) {
 	}
 	if pre != nil {
 		t.Errorf("expected no preflight FixResult, got %+v", pre)
+	}
+}
+
+// TestImageFixer_validatePreconditions_NoPath pins the guard against
+// API-only artists with no local on-disk path. Without it, downstream
+// readExistingImageDimensions would call os.ReadDir("") and read the
+// process CWD instead of the artist directory.
+func TestImageFixer_validatePreconditions_NoPath(t *testing.T) {
+	f := NewImageFixer(nil, nil, nonSharedFSCheck(), testLogger())
+	a := &artist.Artist{Name: "No Path", MusicBrainzID: "mbid-np", LibraryID: "lib-test"}
+	v := &Violation{RuleID: RuleThumbExists}
+
+	fctx, pre, err := f.validatePreconditions(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fctx != nil {
+		t.Errorf("expected nil imageFixContext when Path is empty, got %+v", fctx)
+	}
+	if pre == nil {
+		t.Fatal("expected preflight FixResult, got nil")
+	}
+	if pre.Fixed {
+		t.Error("preflight.Fixed = true; want false")
+	}
+	if !strings.Contains(pre.Message, "no local path") {
+		t.Errorf("preflight.Message = %q; want it to mention 'no local path'", pre.Message)
 	}
 }
 
@@ -2655,7 +2682,7 @@ func TestResolutionConstraintDesc(t *testing.T) {
 // no-op when there is nothing to enforce. The original inline check had no
 // dedicated coverage for the "skip the gate" branch.
 func TestPassesPostDownloadDimensionGate_NoConstraints(t *testing.T) {
-	if !passesPostDownloadDimensionGate(nil, &imageFixContext{}, "u", testLogger()) {
+	if !passesPostDownloadDimensionGate(nil, &imageFixContext{}, testLogger()) {
 		t.Error("expected true when no constraints are configured")
 	}
 }
@@ -2700,8 +2727,8 @@ func TestPipeline_ProcessManualViolation_WithCandidates(t *testing.T) {
 	if out.resolvedRow != nil {
 		t.Error("manual mode must not return a resolvedRow")
 	}
-	if !out.persistOK {
-		t.Error("persistOK = false; want true on a clean upsert")
+	if out.persistFailed {
+		t.Error("persistFailed = true; want false on a clean upsert")
 	}
 
 	// And the row landed as pending_choice.
@@ -2756,8 +2783,8 @@ func TestPipeline_ProcessManualViolation_NoDiscoverer(t *testing.T) {
 	if sideEffectFixer.calls != 0 {
 		t.Errorf("side-effect fixer was invoked %d time(s); want 0 in manual mode", sideEffectFixer.calls)
 	}
-	if !out.persistOK {
-		t.Error("persistOK = false; want true")
+	if out.persistFailed {
+		t.Error("persistFailed = true; want false")
 	}
 }
 
@@ -2839,8 +2866,8 @@ func TestPipeline_ProcessAutoFixViolation_Unfixable(t *testing.T) {
 	if out.fixed {
 		t.Error("unfixable outcome must not be fixed")
 	}
-	if !out.persistOK {
-		t.Error("persistOK = false; want true on a clean unfixable upsert")
+	if out.persistFailed {
+		t.Error("persistFailed = true; want false on a clean unfixable upsert")
 	}
 
 	// And the row landed as open with Fixable=false.
@@ -3010,7 +3037,7 @@ func TestPipeline_RunForArtist_LookupRuleFailure(t *testing.T) {
 func TestPassesPostDownloadDimensionGate_BelowMinimum(t *testing.T) {
 	// Encode a small JPEG that the gate will measure to be below minimum.
 	small := makeTestJPEG(t, 100, 100)
-	got := passesPostDownloadDimensionGate(small, &imageFixContext{minW: 500, minH: 500}, "u", testLogger())
+	got := passesPostDownloadDimensionGate(small, &imageFixContext{minW: 500, minH: 500}, testLogger())
 	if got {
 		t.Error("expected false when actual dimensions are below configured minimum")
 	}
@@ -3019,7 +3046,7 @@ func TestPassesPostDownloadDimensionGate_BelowMinimum(t *testing.T) {
 func TestPassesPostDownloadDimensionGate_BelowExisting(t *testing.T) {
 	small := makeTestJPEG(t, 300, 300)
 	// minW=0, minH=0 but existing 1000x1000 => pixel count 90000 < 1000000.
-	got := passesPostDownloadDimensionGate(small, &imageFixContext{existW: 1000, existH: 1000}, "u", testLogger())
+	got := passesPostDownloadDimensionGate(small, &imageFixContext{existW: 1000, existH: 1000}, testLogger())
 	if got {
 		t.Error("expected false when actual pixel count is below existing image")
 	}

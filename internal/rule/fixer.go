@@ -523,10 +523,15 @@ type violationOutcome struct {
 	// metadata and the orchestrator sets metadataFixed.
 	imageFix  bool
 	imageType string
-	// persistOK is false when any violation upsert or fixer-side write
+	// persistFailed is true when any violation upsert or fixer-side write
 	// failed; the orchestrator folds this into the artist-level flag that
-	// gates rules_evaluated_at.
-	persistOK bool
+	// gates rules_evaluated_at. The polarity is inverted (compared to the
+	// runForArtistAccum.persistOK flag) so the zero value of a freshly
+	// constructed violationOutcome means "no failure recorded" rather
+	// than the dangerous "every write failed" default that would silently
+	// disable rules_evaluated_at stamping for future strategy authors who
+	// return a bare violationOutcome{} without setting the field.
+	persistFailed bool
 }
 
 // runForArtistAccum is the in-flight per-artist state runForArtistFiltered
@@ -551,7 +556,7 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 		result.Results = append(result.Results, *out.fr)
 		result.FixesAttempted++
 	}
-	if !out.persistOK {
+	if out.persistFailed {
 		acc.persistOK = false
 	}
 	if out.fixed {
@@ -702,7 +707,7 @@ func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist,
 	fixer := p.findFixer(v)
 	if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
 		ok := p.persistViolation(ctx, a, v, v.Fixable && fixer != nil, ViolationStatusOpen, nil, "manual-mode violation")
-		return violationOutcome{persistOK: ok}
+		return violationOutcome{persistFailed: !ok}
 	}
 
 	v.Config.DiscoveryOnly = true
@@ -713,7 +718,7 @@ func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist,
 		status = ViolationStatusPendingChoice
 	}
 	ok := p.persistViolation(ctx, a, v, true, status, fr.Candidates, "manual-mode violation")
-	return violationOutcome{fr: fr, persistOK: ok}
+	return violationOutcome{fr: fr, persistFailed: !ok}
 }
 
 // processAutoFixViolation is the auto-automation strategy: persist
@@ -726,11 +731,11 @@ func (p *Pipeline) processManualViolation(ctx context.Context, a *artist.Artist,
 func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist, v *Violation) violationOutcome {
 	if !v.Fixable {
 		ok := p.persistViolation(ctx, a, v, false, ViolationStatusOpen, nil, "unfixable violation")
-		return violationOutcome{persistOK: ok}
+		return violationOutcome{persistFailed: !ok}
 	}
 
 	fr := p.attemptFix(ctx, a, v)
-	out := violationOutcome{fr: fr, persistOK: true}
+	out := violationOutcome{fr: fr}
 	if fr.Fixed {
 		out.fixed = true
 		if fr.ImageType != "" {
@@ -759,7 +764,9 @@ func (p *Pipeline) processAutoFixViolation(ctx context.Context, a *artist.Artist
 	if len(fr.Candidates) > 0 {
 		status = ViolationStatusPendingChoice
 	}
-	out.persistOK = p.persistViolation(ctx, a, v, true, status, fr.Candidates, "fix result violation")
+	if !p.persistViolation(ctx, a, v, true, status, fr.Candidates, "fix result violation") {
+		out.persistFailed = true
+	}
 	return out
 }
 
