@@ -52,6 +52,17 @@ SW_BASE="${SW_BASE:-http://localhost:19730}"
 SW_USER="${SW_USER:-admin}"
 SW_PASS="${SW_PASS:-testpassword123testpassword123}"
 
+# Derive the listen port from SW_BASE so a non-default SW_BASE (e.g. a
+# different port for parallel smoke runs) launches the binary on the
+# matching port instead of the hard-coded 19730 the health check then
+# fails to reach. The sed regex matches "http(s)://<host>:<port>" and
+# returns empty for URLs without an explicit port (e.g. "http://localhost")
+# or IPv6 bracketed hosts ("http://[::1]:..."), both of which fall back to
+# the 19730 default on the next line -- safe for the smoke use case where
+# the operator overriding SW_BASE controls the port either way.
+SW_PORT="${SW_PORT:-$(printf '%s' "$SW_BASE" | sed -nE 's#^https?://[^:/]+:([0-9]+).*$#\1#p')}"
+SW_PORT="${SW_PORT:-19730}"
+
 # All real providers -- must match provider.NameXxx constants in provider.go.
 ALL_PROVIDERS="musicbrainz,fanarttv,audiodb,discogs,lastfm,wikidata,duckduckgo,deezer,genius,wikipedia,spotify"
 
@@ -128,7 +139,14 @@ cleanup() {
       sleep 0.3
       i=$((i + 1))
     done
-    kill -9 "$SWPID" 2>/dev/null || true
+    # Only SIGKILL if the PID still refers to a live process. The wait
+    # loop exits either because the child is gone (and the kernel may
+    # have already recycled the PID) or because the 3 s cap fired; the
+    # unconditional kill -9 in the second case could otherwise terminate
+    # an unrelated process that happened to inherit the recycled PID.
+    if kill -0 "$SWPID" 2>/dev/null; then
+      kill -9 "$SWPID" 2>/dev/null || true
+    fi
   fi
   if [[ -n "${_SPF_TMPDIR:-}" && -d "$_SPF_TMPDIR" ]]; then
     rm -rf "$_SPF_TMPDIR"
@@ -170,13 +188,22 @@ SPF_LOG="$SW_RUN_DIR/spf-server.log"
 # env-var defaults are sufficient for a smoke instance.
 SW_FORCE_PROVIDER_ERROR="$ALL_PROVIDERS" \
   SW_DB_PATH="$_SPF_TMPDIR/stillwater.db" \
-  SW_PORT=19730 \
+  SW_PORT="$SW_PORT" \
   "$SW_BINARY" >"$SPF_LOG" 2>&1 &
 SWPID=$!
 
-# Wait for the server to become healthy (up to 20 s).
+# Wait for the server to become healthy (up to 20 s). Bail out early if
+# the child process already exited so the operator sees the boot error
+# rather than 20 s of silence followed by a "did not become healthy" message.
 healthy=0
 for i in $(seq 1 40); do
+  if ! kill -0 "$SWPID" 2>/dev/null; then
+    echo "FATAL: injected instance exited before becoming healthy." >&2
+    echo "  PID: $SWPID"
+    echo "  Server log (last 40 lines):"
+    tail -40 "$SPF_LOG" >&2 || true
+    exit 2
+  fi
   if curl -s "$SW_BASE/api/v1/health" | grep -q '"status":"ok"'; then
     healthy=1
     break
@@ -218,13 +245,19 @@ setup_resp=$(curl -s -w "\n%{http_code}" \
   -d "$setup_payload")
 setup_code=$(echo "$setup_resp" | tail -n 1)
 # 201 = created; 409 = already exists (acceptable if DB was somehow reused).
+# Branch the PASS message so the 409 case (admin already present) does not
+# get reported as a failure by assert_status's strict "got != expected" path.
 if [[ "$setup_code" != "201" && "$setup_code" != "409" ]]; then
   setup_body=$(echo "$setup_resp" | sed '$d')
   echo "FATAL: POST /api/v1/auth/setup returned HTTP $setup_code" >&2
   echo "  body: ${setup_body:0:400}" >&2
   exit 2
 fi
-assert_status "POST /api/v1/auth/setup (create admin)" "201" "$setup_code"
+if [[ "$setup_code" == "201" ]]; then
+  assert_pass "POST /api/v1/auth/setup (create admin)"
+else
+  assert_pass "POST /api/v1/auth/setup (admin already exists, HTTP 409)"
+fi
 
 login_payload=$(jq -nc --arg u "$SW_USER" --arg p "$SW_PASS" '{username: $u, password: $p}')
 login_resp=$(printf '%s' "$login_payload" | curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "\n%{http_code}" \

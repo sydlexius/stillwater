@@ -24,7 +24,7 @@ func TestInjection_Deezer(t *testing.T) {
 	if _, err := a.SearchArtist(ctx, "test"); !errors.Is(err, provider.ErrInjectedFailure) {
 		t.Errorf("SearchArtist: want ErrInjectedFailure, got %v", err)
 	}
-	// GetArtist with a numeric ID so the isNumericID guard does not trigger first.
+	// GetArtist with a numeric ID so the isDeezerID guard does not trigger first.
 	if _, err := a.GetArtist(ctx, "12345"); !errors.Is(err, provider.ErrInjectedFailure) {
 		t.Errorf("GetArtist: want ErrInjectedFailure, got %v", err)
 	}

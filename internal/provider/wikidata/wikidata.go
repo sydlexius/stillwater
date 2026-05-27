@@ -70,11 +70,12 @@ func (a *Adapter) Name() provider.ProviderName { return provider.NameWikidata }
 // RequiresAuth returns whether this provider needs an API key.
 func (a *Adapter) RequiresAuth() bool { return false }
 
-// SearchArtist is not directly supported by Wikidata SPARQL (use GetArtist with MBID instead).
+// SearchArtist is a documented no-op for Wikidata (SPARQL lookup requires
+// an MBID -- use GetArtist instead). Injection is intentionally NOT
+// consulted here; matching the production (nil, nil) contract keeps
+// callers that treat known-no-op providers as "not supported, skip" on
+// the same code path under the smoke harness.
 func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
-	if provider.ShouldInjectFailure(a.Name()) {
-		return nil, provider.ErrInjectedFailure
-	}
 	return nil, nil
 }
 

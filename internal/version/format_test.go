@@ -27,6 +27,18 @@ func withVersion(t *testing.T, v, commit, date string) {
 	})
 }
 
+// withBuildType swaps version.BuildType for the duration of a test. Use
+// alongside withVersion when a test cares about IsReleaseBuild semantics,
+// which now key off BuildType rather than Commit/Date presence.
+func withBuildType(t *testing.T, bt string) {
+	t.Helper()
+	orig := version.BuildType
+	version.BuildType = bt
+	t.Cleanup(func() {
+		version.BuildType = orig
+	})
+}
+
 // ---- IsDevBuild ----
 
 func TestIsDevBuild_CommitUnknown(t *testing.T) {
@@ -58,18 +70,53 @@ func TestIsDevBuild_ReleaseBuild(t *testing.T) {
 }
 
 // ---- IsReleaseBuild ----
+//
+// IsReleaseBuild keys off BuildType, NOT IsDevBuild's Commit/Date check.
+// `make build` produces non-"unknown" Commit and Date via the Makefile's
+// git/date probes, which is indistinguishable from a goreleaser-produced
+// binary by those fields alone. Only the goreleaser configs inject
+// BuildType=release, so anything else (make build, IDE go build, CI test
+// builds, the provider-failure smoke harness) reports IsReleaseBuild=false
+// and the SW_FORCE_PROVIDER_ERROR boot guard does not fire.
 
-func TestIsReleaseBuild_DevBuild(t *testing.T) {
-	withVersion(t, "1.0.6", "unknown", "unknown")
+func TestIsReleaseBuild_BuildTypeUnset(t *testing.T) {
+	withVersion(t, "1.0.6", "abc1234", "2026-05-08")
+	withBuildType(t, "")
 	if version.IsReleaseBuild() {
-		t.Error("expected IsReleaseBuild() == false for a dev build")
+		t.Error("expected IsReleaseBuild() == false when BuildType is unset (make build / IDE)")
 	}
 }
 
-func TestIsReleaseBuild_ReleaseBuild(t *testing.T) {
+func TestIsReleaseBuild_BuildTypeRelease(t *testing.T) {
 	withVersion(t, "1.0.6", "abc1234", "2026-05-08")
+	withBuildType(t, "release")
 	if !version.IsReleaseBuild() {
-		t.Error("expected IsReleaseBuild() == true for a release build")
+		t.Error("expected IsReleaseBuild() == true when BuildType is 'release'")
+	}
+}
+
+func TestIsReleaseBuild_BuildTypeArbitrary(t *testing.T) {
+	// Anything other than the exact string "release" is non-release, so a
+	// future "nightly" or "dirty" marker (or a typo) does not silently
+	// inherit release semantics.
+	withVersion(t, "1.0.6", "abc1234", "2026-05-08")
+	for _, bt := range []string{"nightly", "dev", "smoke", "Release", " release "} {
+		withBuildType(t, bt)
+		if version.IsReleaseBuild() {
+			t.Errorf("expected IsReleaseBuild() == false for BuildType=%q", bt)
+		}
+	}
+}
+
+func TestIsReleaseBuild_DevBuildRegardlessOfBuildType(t *testing.T) {
+	// Belt-and-suspenders: even if BuildType were somehow set to "release"
+	// on a binary whose Commit/Date came back "unknown", that combination
+	// represents a build pipeline bug -- IsDevBuild is unaffected by
+	// BuildType and continues to surface the "(dev build)" formatting.
+	withVersion(t, "1.0.6", "unknown", "unknown")
+	withBuildType(t, "release")
+	if !version.IsDevBuild() {
+		t.Error("expected IsDevBuild() == true regardless of BuildType when Commit/Date are 'unknown'")
 	}
 }
 

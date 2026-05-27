@@ -422,11 +422,11 @@ func romanizeFromSortName(sortName string) (string, bool) {
 	return given + " " + family, true
 }
 
-// GetImages returns nil since MusicBrainz does not host artist images.
+// GetImages is a documented no-op for MusicBrainz (no image hosting).
+// Injection is intentionally NOT consulted here; matching the production
+// (nil, nil) contract keeps callers that treat known-no-op providers as
+// "not supported, skip" on the same code path under the smoke harness.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
-	if provider.ShouldInjectFailure(a.Name()) {
-		return nil, provider.ErrInjectedFailure
-	}
 	return nil, nil
 }
 

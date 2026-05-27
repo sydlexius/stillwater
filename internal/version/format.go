@@ -63,15 +63,18 @@ func IsDevBuild() bool {
 }
 
 // IsReleaseBuild reports whether the binary was produced by the release
-// pipeline (goreleaser). It is the logical negation of IsDevBuild: both
-// Commit and Date must be non-"unknown" for the binary to be considered
-// a release build.
+// pipeline (goreleaser, stable or nightly). It checks BuildType rather
+// than negating IsDevBuild because both `make build` and goreleaser
+// inject non-"unknown" Commit and Date values, so the two cannot be
+// distinguished by those fields alone. Only the goreleaser configs set
+// `-X .../version.BuildType=release`; everything else (make build,
+// `go build`, IDE builds, CI test builds) leaves it as the zero value.
 //
 // Used by the startup check for SW_FORCE_PROVIDER_ERROR: the env var is
-// allowed in dev/CI builds and blocked in release builds so the hook
-// cannot survive an accidental config copy into production.
+// allowed in dev/CI/smoke builds and blocked in release builds so the
+// hook cannot survive an accidental config copy into production.
 func IsReleaseBuild() bool {
-	return !IsDevBuild()
+	return BuildType == "release"
 }
 
 // UserAgent returns an HTTP User-Agent header value for outbound requests.

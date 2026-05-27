@@ -85,12 +85,12 @@ func (a *Adapter) RequiresAuth() bool { return false }
 // Only the MBID-to-Wikidata-to-article path is reliable.
 func (a *Adapter) SupportsNameLookup() bool { return false }
 
-// SearchArtist is not supported; Wikipedia lookup requires a MusicBrainz ID
-// resolved through Wikidata to ensure the correct article is matched.
+// SearchArtist is a documented no-op for Wikipedia (lookup requires an
+// MBID resolved through Wikidata so the correct article is matched).
+// Injection is intentionally NOT consulted here; matching the production
+// (nil, nil) contract keeps callers that treat known-no-op providers as
+// "not supported, skip" on the same code path under the smoke harness.
 func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
-	if provider.ShouldInjectFailure(a.Name()) {
-		return nil, provider.ErrInjectedFailure
-	}
 	return nil, nil
 }
 
@@ -333,11 +333,12 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	return meta, nil
 }
 
-// GetImages returns nil; Wikipedia is not used for artist images.
+// GetImages is a documented no-op for Wikipedia (not used for artist
+// images). Injection is intentionally NOT consulted here; matching the
+// production (nil, nil) contract keeps callers that treat known-no-op
+// providers as "not supported, skip" on the same code path under the
+// smoke harness.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
-	if provider.ShouldInjectFailure(a.Name()) {
-		return nil, provider.ErrInjectedFailure
-	}
 	return nil, nil
 }
 

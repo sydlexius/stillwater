@@ -123,11 +123,11 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	return a.getArtistByID(ctx, id)
 }
 
-// GetImages returns nil since Genius does not host artist images.
+// GetImages is a documented no-op for Genius (no artist image hosting).
+// Injection is intentionally NOT consulted here; matching the production
+// (nil, nil) contract keeps callers that treat known-no-op providers as
+// "not supported, skip" on the same code path under the smoke harness.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
-	if provider.ShouldInjectFailure(a.Name()) {
-		return nil, provider.ErrInjectedFailure
-	}
 	return nil, nil
 }
 
