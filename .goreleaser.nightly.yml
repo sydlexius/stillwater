@@ -16,6 +16,33 @@ version: 2
 # Keeps cosign keyless signing of the checksums blob to match stable pipeline
 # behavior (checksums.txt.sigstore.json accompanies every release).
 
+# Same-commit tag-collision handling. When a stable v* tag and the nightly
+# tag both point at one commit (e.g. the maintainer cuts v1.4.0, then the
+# 06:00 UTC nightly fires on the same `main` HEAD), the default behavior
+# routes the nightly's artifacts at the existing v1.4.0 GitHub Release and
+# fails the upload with 422 already_exists.
+#
+#   tag_sort: -creatordate picks the most recently created tag on a
+#       multi-tag commit. The nightly tag is always newer than any
+#       same-commit stable tag because the workflow creates it at
+#       runtime, after any stable tag the maintainer pushed earlier.
+#       Drives `.Tag` / `.Version`. (Goreleaser docs imply `ignore_tags`
+#       below also covers current-tag selection, but in v2.16 the
+#       "tag exactly on HEAD" code path does NOT honor `ignore_tags` --
+#       verified empirically against the v1.4.0/nightly-20260527
+#       collision: with `ignore_tags: ["v*"]` alone, goreleaser still
+#       resolved current=v1.4.0. So tag_sort is load-bearing here, not
+#       redundant with ignore_tags.)
+#   ignore_tags: ["v*"] keeps `.PreviousTag` on the prior nightly so the
+#       changelog window stays nightly-to-nightly. Without this, the
+#       previous-tag walk falls through to the next semver below the
+#       current stable (e.g. v1.3.0) and the changelog spans the wrong
+#       window.
+git:
+  tag_sort: -creatordate
+  ignore_tags:
+    - "v*"
+
 before:
   hooks:
     - go tool templ generate
