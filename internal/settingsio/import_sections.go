@@ -41,9 +41,9 @@ func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings ma
 
 // importProviderKeys writes each provider API key via the provider settings
 // service, which handles at-rest encryption. An empty key map is a no-op.
-func (s *Service) importProviderKeys(ctx context.Context, keys map[string]string, result *ImportResult) error {
+func (s *Service) importProviderKeys(ctx context.Context, db dbExecutor, keys map[string]string, result *ImportResult) error {
 	for name, key := range keys {
-		if err := s.providerSettings.SetAPIKey(ctx, provider.ProviderName(name), key); err != nil {
+		if err := s.providerSettings.ImportSetAPIKeyTx(ctx, db, provider.ProviderName(name), key); err != nil {
 			return fmt.Errorf("setting provider key %q: %w", name, err)
 		}
 		result.ProviderKeys++
@@ -62,9 +62,14 @@ func (s *Service) importProviderKeys(ctx context.Context, keys map[string]string
 // When false (a pre-1.4 envelope), those fields decoded as zero values and
 // must not be copied onto the target's existing connection row -- doing so
 // would silently disable toggles the operator had set.
-func (s *Service) importConnections(ctx context.Context, conns []ConnectionExport, result *ImportResult, carryV14Fields bool) error {
+//
+// carryV15Fields signals that the envelope is v1.5 or later, so the
+// v1.5-only field (VerifyPathAfterUpdate) is authoritative. When false (a
+// pre-1.5 envelope), the field decoded as a zero value and must not be
+// copied onto the target's existing connection row for the same reason.
+func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []ConnectionExport, result *ImportResult, carryV14Fields, carryV15Fields bool) error {
 	for _, ce := range conns {
-		existing, err := s.connectionSvc.GetByTypeAndURL(ctx, ce.Type, ce.URL)
+		existing, err := s.connectionSvc.ImportGetByTypeAndURLTx(ctx, db, ce.Type, ce.URL)
 		if err != nil {
 			return fmt.Errorf("looking up connection %q: %w", ce.Name, err)
 		}
@@ -81,6 +86,9 @@ func (s *Service) importConnections(ctx context.Context, conns []ConnectionExpor
 				existing.FeatureManageServerFiles = ce.FeatureManageServerFiles
 				existing.PreStillwaterConfigJSON = ce.PreStillwaterConfigJSON
 			}
+			if carryV15Fields {
+				existing.VerifyPathAfterUpdate = ce.VerifyPathAfterUpdate
+			}
 			// platform_user_id and platform_server_id reflect the live peer's
 			// identity. Preserve the receiving instance's value if it already
 			// has one (a prior connection-test resolved it); fall back to the
@@ -92,7 +100,7 @@ func (s *Service) importConnections(ctx context.Context, conns []ConnectionExpor
 			if existing.PlatformServerID == "" {
 				existing.PlatformServerID = ce.PlatformServerID
 			}
-			if err := s.connectionSvc.Update(ctx, existing); err != nil {
+			if err := s.connectionSvc.ImportUpdateTx(ctx, db, existing); err != nil {
 				return fmt.Errorf("updating connection %q: %w", ce.Name, err)
 			}
 		} else {
@@ -108,11 +116,12 @@ func (s *Service) importConnections(ctx context.Context, conns []ConnectionExpor
 				FeatureMetadataPush:      ce.FeatureMetadataPush,
 				FeatureTriggerRefresh:    ce.FeatureTriggerRefresh,
 				FeatureManageServerFiles: ce.FeatureManageServerFiles,
+				VerifyPathAfterUpdate:    ce.VerifyPathAfterUpdate,
 				PreStillwaterConfigJSON:  ce.PreStillwaterConfigJSON,
 				PlatformUserID:           ce.PlatformUserID,
 				PlatformServerID:         ce.PlatformServerID,
 			}
-			if err := s.connectionSvc.Create(ctx, c); err != nil {
+			if err := s.connectionSvc.ImportCreateTx(ctx, db, c); err != nil {
 				return fmt.Errorf("creating connection %q: %w", ce.Name, err)
 			}
 		}
@@ -125,22 +134,22 @@ func (s *Service) importConnections(ctx context.Context, conns []ConnectionExpor
 // with the same name has its ID preserved and its fields updated; absent profiles
 // are created with a new ID. IsActive is forced to false on create to prevent
 // multiple active profiles from being introduced during import.
-func (s *Service) importPlatformProfiles(ctx context.Context, profiles []platform.Profile, result *ImportResult) error {
+func (s *Service) importPlatformProfiles(ctx context.Context, db dbExecutor, profiles []platform.Profile, result *ImportResult) error {
 	for i := range profiles {
 		p := &profiles[i]
-		existing, err := s.platformSvc.GetByName(ctx, p.Name)
+		existing, err := s.platformSvc.ImportGetByNameTx(ctx, db, p.Name)
 		if err != nil {
 			return fmt.Errorf("looking up platform profile %q: %w", p.Name, err)
 		}
 		if existing != nil {
 			p.ID = existing.ID
-			if err := s.platformSvc.Update(ctx, p); err != nil {
+			if err := s.platformSvc.ImportUpdateTx(ctx, db, p); err != nil {
 				return fmt.Errorf("updating platform profile %q: %w", p.Name, err)
 			}
 		} else {
 			p.ID = ""          // Let Create generate a new ID.
 			p.IsActive = false // Avoid creating multiple active profiles on import.
-			if err := s.platformSvc.Create(ctx, p); err != nil {
+			if err := s.platformSvc.ImportCreateTx(ctx, db, p); err != nil {
 				return fmt.Errorf("creating platform profile %q: %w", p.Name, err)
 			}
 		}
@@ -152,21 +161,21 @@ func (s *Service) importPlatformProfiles(ctx context.Context, profiles []platfor
 // importWebhooks upserts webhooks by matching on (name, url). An existing
 // webhook is updated in place with its ID preserved; absent webhooks are
 // created with a new ID.
-func (s *Service) importWebhooks(ctx context.Context, webhooks []webhook.Webhook, result *ImportResult) error {
+func (s *Service) importWebhooks(ctx context.Context, db dbExecutor, webhooks []webhook.Webhook, result *ImportResult) error {
 	for i := range webhooks {
 		w := &webhooks[i]
-		existing, err := s.webhookSvc.GetByNameAndURL(ctx, w.Name, w.URL)
+		existing, err := s.webhookSvc.ImportGetByNameAndURLTx(ctx, db, w.Name, w.URL)
 		if err != nil {
 			return fmt.Errorf("looking up webhook %q: %w", w.Name, err)
 		}
 		if existing != nil {
 			w.ID = existing.ID
-			if err := s.webhookSvc.Update(ctx, w); err != nil {
+			if err := s.webhookSvc.ImportUpdateTx(ctx, db, w); err != nil {
 				return fmt.Errorf("updating webhook %q: %w", w.Name, err)
 			}
 		} else {
 			w.ID = "" // Let Create generate a new ID.
-			if err := s.webhookSvc.Create(ctx, w); err != nil {
+			if err := s.webhookSvc.ImportCreateTx(ctx, db, w); err != nil {
 				return fmt.Errorf("creating webhook %q: %w", w.Name, err)
 			}
 		}
@@ -177,16 +186,16 @@ func (s *Service) importWebhooks(ctx context.Context, webhooks []webhook.Webhook
 
 // importProviderPriorities writes the ordered provider list and the disabled
 // provider set for each exported field. An empty priorities slice is a no-op.
-func (s *Service) importProviderPriorities(ctx context.Context, priorities []PriorityExport, result *ImportResult) error {
+func (s *Service) importProviderPriorities(ctx context.Context, db dbExecutor, priorities []PriorityExport, result *ImportResult) error {
 	for _, p := range priorities {
-		if err := s.providerSettings.SetPriority(ctx, p.Field, p.Providers); err != nil {
+		if err := s.providerSettings.ImportSetPriorityTx(ctx, db, p.Field, p.Providers); err != nil {
 			return fmt.Errorf("setting priority for %q: %w", p.Field, err)
 		}
 		disabled := p.Disabled
 		if disabled == nil {
 			disabled = []provider.ProviderName{}
 		}
-		if err := s.providerSettings.SetDisabledProviders(ctx, p.Field, disabled); err != nil {
+		if err := s.providerSettings.ImportSetDisabledProvidersTx(ctx, db, p.Field, disabled); err != nil {
 			return fmt.Errorf("setting disabled providers for %q: %w", p.Field, err)
 		}
 		result.Priorities++
@@ -200,7 +209,7 @@ func (s *Service) importProviderPriorities(ctx context.Context, priorities []Pri
 // skipped so cross-version imports do not abort. Entries with an empty ID or
 // an unrecognized automation_mode are also skipped with a warning. This method
 // is a no-op when ruleService is nil.
-func (s *Service) importRules(ctx context.Context, rules []RuleExport, result *ImportResult) error {
+func (s *Service) importRules(ctx context.Context, db dbExecutor, rules []RuleExport, result *ImportResult) error {
 	if s.ruleService == nil {
 		return nil
 	}
@@ -209,7 +218,7 @@ func (s *Service) importRules(ctx context.Context, rules []RuleExport, result *I
 		if re.ID == "" {
 			continue
 		}
-		existing, err := s.ruleService.GetByID(ctx, re.ID)
+		existing, err := s.ruleService.ImportGetByIDTx(ctx, db, re.ID)
 		if err != nil {
 			// Unknown rule IDs (newer export, older binary) are expected -- skip.
 			// Other errors (DB connection, corruption) must surface.
@@ -235,7 +244,7 @@ func (s *Service) importRules(ctx context.Context, rules []RuleExport, result *I
 		existing.Enabled = re.Enabled
 		existing.AutomationMode = re.AutomationMode
 		existing.Config = re.Config
-		if err := s.ruleService.Update(ctx, existing); err != nil {
+		if err := s.ruleService.ImportUpdateTx(ctx, db, existing); err != nil {
 			return fmt.Errorf("updating rule %q: %w", re.ID, err)
 		}
 		result.Rules++
@@ -244,10 +253,11 @@ func (s *Service) importRules(ctx context.Context, rules []RuleExport, result *I
 }
 
 // importScraperPreferences upserts scraper configurations for every scope in
-// the exported payload. Each scope is written via SaveConfig which performs an
-// ON CONFLICT update internally. Entries with an empty scope are skipped.
-// This method is a no-op when scraperService is nil.
-func (s *Service) importScraperPreferences(ctx context.Context, configs []ScraperConfigExport, result *ImportResult) error {
+// the exported payload. Each scope is written via the tx-aware import helper
+// so a mid-import failure rolls back every prior section's writes. Entries
+// with an empty scope are skipped. This method is a no-op when
+// scraperService is nil.
+func (s *Service) importScraperPreferences(ctx context.Context, db dbExecutor, configs []ScraperConfigExport, result *ImportResult) error {
 	if s.scraperService == nil {
 		return nil
 	}
@@ -259,7 +269,7 @@ func (s *Service) importScraperPreferences(ctx context.Context, configs []Scrape
 		// Clear the ID so SaveConfig resolves it from the DB, avoiding ID
 		// collisions when importing across instances.
 		sce.Config.ID = ""
-		if err := s.scraperService.SaveConfig(ctx, sce.Scope, &sce.Config, sce.Overrides); err != nil {
+		if err := s.scraperService.ImportSaveConfigTx(ctx, db, sce.Scope, &sce.Config, sce.Overrides); err != nil {
 			return fmt.Errorf("saving scraper config for scope %q: %w", sce.Scope, err)
 		}
 		result.ScraperConfigs++
