@@ -31,8 +31,8 @@ func hasQualifyingConflictConnection(conns []connection.Connection) bool {
 
 // handlePostOnboardingConflictStep renders the body of the OOBE conflict
 // pre-flight step (#1184). It is HTMX-loaded by onboarding.templ when the
-// user transitions into step 5 so the synchronous peer probe runs lazily
-// rather than on every wizard page render.
+// user transitions into step 6 (renumbered from 5 by #1142) so the
+// synchronous peer probe runs lazily rather than on every wizard page render.
 //
 // POST is used (instead of the more typical GET for a render-only fragment)
 // because the handler mutates state on every call: it persists the

@@ -108,11 +108,12 @@ getting-started/first-run-oobe#foreign-file-baseline
 getting-started/first-run-oobe#troubleshooting
 getting-started/first-run-oobe#welcome-intro
 getting-started/first-run-oobe#wizard-step-1-music-libraries
-getting-started/first-run-oobe#wizard-step-2-platform-profile
-getting-started/first-run-oobe#wizard-step-3-provider-api-keys
-getting-started/first-run-oobe#wizard-step-4-server-connections
-getting-started/first-run-oobe#wizard-step-5-conflict-pre-flight-conditional
-getting-started/first-run-oobe#wizard-step-6-artist-discovery
+getting-started/first-run-oobe#wizard-step-2-language-preferences
+getting-started/first-run-oobe#wizard-step-3-platform-profile
+getting-started/first-run-oobe#wizard-step-4-provider-api-keys
+getting-started/first-run-oobe#wizard-step-5-server-connections
+getting-started/first-run-oobe#wizard-step-6-conflict-pre-flight-conditional
+getting-started/first-run-oobe#wizard-step-7-artist-discovery
 getting-started/index#1-install
 getting-started/index#2-run-the-first-time-setup
 getting-started/index#3-pick-a-delivery-mode

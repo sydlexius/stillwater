@@ -9,7 +9,7 @@ The first time you open Stillwater in a browser, it has no admin user, no librar
 There are two pieces:
 
 1. **Create the admin account.** A short form that runs once. After this, the home page is gated by login.
-2. **The setup wizard.** A multi-step guided tour for libraries, the platform profile, provider API keys, server connections, and an initial artist discovery.
+2. **The setup wizard.** A multi-step guided tour for libraries, language preferences, the platform profile, provider API keys, server connections, and an initial artist discovery.
 
 You can skip individual wizard steps and come back to them later under **Settings**. The wizard is a guide, not a gatekeeper. The only step that truly blocks you is creating the admin account.
 
@@ -55,7 +55,15 @@ Stillwater validates that the path exists and is writable before letting you sav
 
 You can add more libraries later under **Settings** > **Libraries**.
 
-## Wizard step 2: Platform Profile
+## Wizard step 2: Language preferences
+
+Choose the languages Stillwater prefers when fetching metadata from providers. Search for a language by name and pick from the autocomplete to add a pill. Pills accumulate left-to-right in priority order: drag to reorder, or focus a pill and use arrow keys.
+
+**Order matters.** When a provider returns content for an artist in several languages, Stillwater walks the list from left to right and uses the first language the provider has. So `English, French, Japanese` means "give me English if you have it, otherwise French, otherwise Japanese, otherwise whatever the provider considers its default." Languages later in the list are fallbacks, not co-equals.
+
+You can skip this step and use the default (English-only). Language preferences can be changed later under **Settings** > **Providers** > **Metadata Language Preferences**.
+
+## Wizard step 3: Platform Profile
 
 Pick the platform you primarily target: Emby, Jellyfin, Kodi, Plex, or another supported profile. The profile controls:
 
@@ -63,11 +71,11 @@ Pick the platform you primarily target: Emby, Jellyfin, Kodi, Plex, or another s
 - Default rules and validations geared to that platform's behavior.
 - Image-format and resolution preferences.
 
-You can run Stillwater against multiple platforms at once by combining the profile choice here with the per-server connections in step 4. The profile sets the *primary* dialect.
+You can run Stillwater against multiple platforms at once by combining the profile choice here with the per-server connections in step 5. The profile sets the *primary* dialect.
 
 If you signed in with Emby or Jellyfin during admin setup, the wizard pre-selects the matching profile.
 
-## Wizard step 3: Provider API keys
+## Wizard step 4: Provider API keys
 
 Stillwater queries up to ten metadata providers in a per-field fallback chain. Some providers work without an API key (MusicBrainz, Wikipedia, Wikidata, AudioDB's free tier). Others require keys you create on each provider's developer portal:
 
@@ -81,7 +89,7 @@ There's also a separate **Web image search** subsection at the bottom of this st
 
 You can add or update keys later under **Settings** > **Providers**.
 
-## Wizard step 4: Server connections
+## Wizard step 5: Server connections
 
 Connect Stillwater to your media server(s) and (optionally) Lidarr. The wizard shows a card per supported connection type:
 
@@ -98,9 +106,9 @@ After you save a connection, the wizard runs a "clobber check" against it to loo
 
 You can skip this step if you only use NFO writeback. You can also add or remove connections later under **Settings** > **Connections**.
 
-## Wizard step 5: Conflict pre-flight (conditional)
+## Wizard step 6: Conflict pre-flight (conditional)
 
-This step only appears when you have **both** at least one library configured (step 1) **and** at least one enabled Emby, Jellyfin, or Lidarr connection (step 4). When it appears, Stillwater runs a synchronous probe to look for existing NFO files or lockdata flags that would clash with what it's about to write.
+This step only appears when you have **both** at least one library configured (step 1) **and** at least one enabled Emby, Jellyfin, or Lidarr connection (step 5). When it appears, Stillwater runs a synchronous probe to detect potential write-back and round-trip conflicts: configurations where a connected server might overwrite the files Stillwater is about to write, or where Stillwater would overwrite content the server is authoritative on. Pre-existing NFO files on disk are surfaced as part of the same check.
 
 Three outcomes:
 
@@ -110,7 +118,7 @@ Three outcomes:
 
 If the probe fails to reach the server, you'll see a retry button. Failed probes do not block the wizard; you can continue and revisit Settings later.
 
-## Wizard step 6: Artist discovery
+## Wizard step 7: Artist discovery
 
 A two-phase final step.
 
@@ -124,30 +132,32 @@ Click **Finish** to leave the wizard. You land on the **Artists** view with your
 
 ## Foreign-file baseline
 
-The first time Stillwater scans for **foreign files** (artwork written by other apps -- e.g. media servers, manual edits, image utilities) on a fresh install, it records every file it finds as the library's *baseline* rather than flagging each one as an incident.
+When Stillwater's scanner has already found pre-existing artwork files in your library, **Step 7** (Artist discovery) shows a baseline sub-section. You'll be asked whether to record those files as the library's *starting baseline*.
 
-This matters because, without baselining, onboarding an existing music library against a brand-new Stillwater install would surface hundreds of "foreign file" alerts on day one -- every piece of pre-existing artwork, since none of it carries Stillwater's provenance tag yet. That noise trains operators to ignore the foreign-file surface before it has shown them anything useful.
+**Why it matters:** without baselining, onboarding an existing music library against a new Stillwater install would surface hundreds of "foreign file" alerts on day one -- every piece of pre-existing artwork, since none of it carries Stillwater's provenance tag yet. That noise trains operators to ignore the foreign-file surface before it has shown them anything useful.
+
+The sub-section defaults to **Yes -- record as baseline**. You can switch to **No** if you want Stillwater to flag every pre-existing foreign file from the first scan. Most installs should leave this at Yes.
 
 After the baseline scan completes:
 
 - Pre-existing artwork is recorded in the content-hash allowlist and **does not appear as an incident**.
 - Every subsequent scan diffs against the baseline. Only files added *after* the baseline are flagged as foreign.
-- The number of files baselined is available in the OOBE summary so you see the install's starting state, not a red-banner alert count.
 
-The baseline is a per-instance, one-time event. You don't need to do anything to enable it. If you ever want a fresh look at the foreign-file surface (e.g. after migrating to a new library structure), use **Settings** > **Maintenance** to clear the allowlist and the next scan will re-baseline.
+The baseline is a per-instance, one-time event. If you ever want a fresh look at the foreign-file surface (for example, after migrating to a new library structure), use **Settings** > **Maintenance** to clear the allowlist and the next scan will re-baseline.
 
 ## After the wizard
 
 Everything the wizard touched lives under the **Settings** menu, organized by area:
 
 - **Settings** > **Libraries** to add, remove, or reconfigure libraries.
+- **Settings** > **Providers** > **Metadata Language Preferences** for language preferences, and **Settings** > **General** for other account-level defaults.
 - **Settings** > **Platform** to switch platform profiles.
 - **Settings** > **Providers** for API keys and per-provider configuration.
 - **Settings** > **Connections** for media server and Lidarr connections.
 - **Settings** > **Rules** for the rule engine.
 - **Settings** > **Maintenance** > **Backup** for scheduled and manual backups.
 
-The wizard never has to be re-run; settings can be edited freely from this point forward.
+Settings can be edited freely from this point forward. If you want to walk through the wizard again, administrators can re-launch it from **Settings** > **General** > **Onboarding**.
 
 ## Troubleshooting
 

@@ -107,12 +107,12 @@ For each metadata field (biography, genres, image URLs, and so on) Stillwater qu
 
 ### Metadata Language Preferences  {#settings-providers-metadata-languages}
 
-Set your preferred languages for artist names, biographies, aliases, and genre/style/mood tags. Providers will return content in the first available language from your list. Drag to reorder priority.
+Set your preferred languages for artist names, biographies, aliases, and genre/style/mood tags. Search by language name and pick from the autocomplete to add pills. Order matters: pills are an ordered priority list, left to right. When a provider has the same field in multiple languages, Stillwater walks the list and uses the first language the provider offers; everything to the right is a fallback. Drag pills or focus one and use the arrow keys to reorder; click the X or press Backspace on a focused pill to remove. Clearing all pills falls back to English silently.
 
-- **Remove**
-{: #settings-providers-metadata-languages-remove }
 - **Search languages**
 {: #settings-providers-metadata-languages-input-label }
+- **Remove**
+{: #settings-providers-metadata-languages-remove }
 - **Use MB sort-name as a fallback for display names** -- When your top metadata language is Latin-script (English, German, French, etc.) and MusicBrainz does not have a tagged alias in that language, Stillwater can use MB's sort-name as the display name (e.g. 青木達之 becomes Tatsuyuki Aoki). Disable this if you want to see only the canonical name or curator-tagged aliases.
 {: #settings-providers-metadata-languages-romanization-fallback }
 

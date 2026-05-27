@@ -7737,6 +7737,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /onboarding/reset:
+    post:
+      operationId: resetOnboarding
+      summary: Reset onboarding wizard progress (admin-only)
+      description: |
+        Clears `onboarding.completed` and resets `onboarding.step` to "0"
+        so the next visit to `/` redirects to the wizard. User-facing
+        settings (libraries, providers, connections, profile) are
+        preserved. Requires an authenticated administrator request.
+      tags: [Onboarding]
+      responses:
+        "204":
+          description: Wizard progress reset
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated but not admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error while resetting onboarding state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /onboarding/conflict-step:
     post:
       tags: [Connections]

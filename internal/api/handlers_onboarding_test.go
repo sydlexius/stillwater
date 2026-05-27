@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/i18n"
+	"github.com/sydlexius/stillwater/internal/langpref"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -97,6 +98,7 @@ func TestHandleOnboardingPage_StoredSteps(t *testing.T) {
 		{"step 4", "4", "4"},
 		{"step 5", "5", "5"},
 		{"step 6", "6", "6"},
+		{"step 7", "7", "7"},
 	}
 
 	for _, tt := range tests {
@@ -295,5 +297,183 @@ func TestHandleOnboardingPage_UserAuthProvider(t *testing.T) {
 				t.Errorf("expected %s in response body", tt.wantAttribute)
 			}
 		})
+	}
+}
+
+// TestHandleOnboardingPage_LanguagePreferences verifies that the user's stored
+// language preferences are rendered into the language step input field.
+func TestHandleOnboardingPage_LanguagePreferences(t *testing.T) {
+	t.Parallel()
+	r := testRouterForOnboarding(t)
+	ctx := context.Background()
+
+	// Write language preferences via the repository, just as the langpref
+	// save endpoint would.
+	langRepo := langpref.NewRepository(r.db)
+	if err := langRepo.Set(ctx, "test-user-id", []string{"fr", "de", "en"}); err != nil {
+		t.Fatalf("setting language preferences: %v", err)
+	}
+
+	req := onboardingRequest()
+	w := httptest.NewRecorder()
+	r.handleOnboardingPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// The shared LanguagePicker component embeds the tags as a JSON
+	// array on data-languages; that's what the script reads on init.
+	body := w.Body.String()
+	if !strings.Contains(body, `data-languages="[&#34;fr&#34;,&#34;de&#34;,&#34;en&#34;]"`) {
+		t.Errorf("expected language preferences serialized as data-languages JSON array in response body")
+	}
+}
+
+// TestHandleOnboardingPage_DefaultLanguages verifies that when no language
+// preferences are stored the page still renders without error and includes
+// the default language tag.
+func TestHandleOnboardingPage_DefaultLanguages(t *testing.T) {
+	t.Parallel()
+	r := testRouterForOnboarding(t)
+
+	// No preferences stored -- handler should fall back to langpref.DefaultTags().
+	req := onboardingRequest()
+	w := httptest.NewRecorder()
+	r.handleOnboardingPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// DefaultTags returns ["en"]; assert the concrete serialized payload on
+	// data-languages rather than a loose "en" substring (which can
+	// false-pass on unrelated markup or text content).
+	body := w.Body.String()
+	if !strings.Contains(body, `data-languages="[&#34;en&#34;]"`) {
+		t.Errorf("expected default language payload data-languages=[\"en\"] in response body")
+	}
+}
+
+// TestHandleOnboardingPage_ForeignFileCountShown verifies that when foreign
+// files exist the baseline sub-section is rendered in the Discovery step.
+func TestHandleOnboardingPage_ForeignFileCountShown(t *testing.T) {
+	t.Parallel()
+	r := testRouterForOnboarding(t)
+	ctx := context.Background()
+
+	// NewRouter wires foreignRepo automatically when DB is provided.
+	if r.foreignRepo == nil {
+		t.Fatal("foreignRepo should be wired by NewRouter when DB is provided")
+	}
+
+	// Seed a foreign file record so Count() returns > 0.
+	// FK enforcement is off in test DBs (EnableForeignKeys is production-only),
+	// so we can use an empty artist_id without a parent artists row.
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO foreign_files (id, artist_id, file_path, file_name, size_bytes, detected_at)
+		 VALUES ('ff-1', '', '/music/Pink Floyd/cover.jpg', 'cover.jpg', 12345, '2026-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("inserting foreign file: %v", err)
+	}
+
+	req := onboardingRequest()
+	w := httptest.NewRecorder()
+	r.handleOnboardingPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// The baseline sub-section should be rendered when count > 0.
+	body := w.Body.String()
+	if !strings.Contains(body, "baseline-subsection") {
+		t.Errorf("expected baseline-subsection in response body when foreign files present")
+	}
+}
+
+// TestHandleOnboardingPage_LangPrefError verifies that when the language
+// preference query fails (simulated by dropping the user_preferences table),
+// the handler falls back to default tags and still returns 200.
+func TestHandleOnboardingPage_LangPrefError(t *testing.T) {
+	// Not parallel: schema mutation must not race with the other test's DB.
+	r := testRouterForOnboarding(t)
+
+	// Drop user_preferences so langRepo.Get returns an error. All other
+	// queries in handleOnboardingPage (settings, artists, connections, etc.)
+	// use separate tables and succeed normally.
+	if _, err := r.db.ExecContext(context.Background(),
+		`DROP TABLE IF EXISTS user_preferences`); err != nil {
+		t.Fatalf("dropping user_preferences: %v", err)
+	}
+
+	req := onboardingRequest()
+	w := httptest.NewRecorder()
+	r.handleOnboardingPage(w, req)
+
+	// The fallback must succeed and render the page (not a 5xx error).
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// The page must still contain the default serialized language payload
+	// from the fallback. Tightened to the concrete data-languages JSON so
+	// the test can't false-pass on unrelated "en" occurrences.
+	body := w.Body.String()
+	if !strings.Contains(body, `data-languages="[&#34;en&#34;]"`) {
+		t.Errorf("expected default language payload data-languages=[\"en\"] in fallback response body")
+	}
+}
+
+// TestHandleOnboardingPage_ForeignCountError verifies that when the foreign
+// file count query fails (simulated by dropping the foreign_files table),
+// the handler falls back to count=0 and still returns 200 without the
+// baseline sub-section.
+func TestHandleOnboardingPage_ForeignCountError(t *testing.T) {
+	// Not parallel: schema mutation must not race with the other test's DB.
+	r := testRouterForOnboarding(t)
+
+	// Drop foreign_files so Count() returns an error. The user_preferences
+	// and other tables used earlier in the handler still exist.
+	if _, err := r.db.ExecContext(context.Background(),
+		`DROP TABLE IF EXISTS foreign_files`); err != nil {
+		t.Fatalf("dropping foreign_files: %v", err)
+	}
+
+	req := onboardingRequest()
+	w := httptest.NewRecorder()
+	r.handleOnboardingPage(w, req)
+
+	// The handler must fall back gracefully and render the page.
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// With count=0 fallback, the baseline sub-section must not appear.
+	body := w.Body.String()
+	if strings.Contains(body, "baseline-subsection") {
+		t.Errorf("unexpected baseline-subsection when foreign_files table unavailable")
+	}
+}
+
+// TestHandleOnboardingPage_ForeignFileCountZero verifies that when no foreign
+// files exist the baseline sub-section is NOT rendered.
+func TestHandleOnboardingPage_ForeignFileCountZero(t *testing.T) {
+	t.Parallel()
+	r := testRouterForOnboarding(t)
+
+	// No rows in foreign_files table -- Count() returns 0, so the baseline
+	// sub-section must not appear.
+	req := onboardingRequest()
+	w := httptest.NewRecorder()
+	r.handleOnboardingPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, "baseline-subsection") {
+		t.Errorf("unexpected baseline-subsection in response body when no foreign files present")
 	}
 }

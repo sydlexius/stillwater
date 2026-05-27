@@ -198,6 +198,29 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// onboarding.baseline_choice is a request-time signal from the OOBE
+	// wizard, not a persisted setting. Translate it to the derived
+	// foreign_files.baseline_completed flag in body so the generic
+	// validate-then-upsert path below handles persistence and error
+	// propagation uniformly with every other setting. Reject unexpected
+	// values explicitly rather than silently dropping them (#1142 / #1698
+	// review feedback). The input is normalised (trimmed, lowercased)
+	// before the switch so case variations and stray whitespace from
+	// non-OOBE callers don't reject -- mirrors the pattern used by
+	// validateLocalAuthEnabled.
+	if choice, ok := body["onboarding.baseline_choice"]; ok {
+		delete(body, "onboarding.baseline_choice")
+		switch strings.TrimSpace(strings.ToLower(choice)) {
+		case "yes":
+			body["foreign_files.baseline_completed"] = "true"
+		case "no":
+			body["foreign_files.baseline_completed"] = ""
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `onboarding.baseline_choice must be "yes" or "no"`})
+			return
+		}
+	}
+
 	// Validate all keys up front; normalise values in-place.
 	for k, v := range body {
 		fn, ok := settingValidators[k]

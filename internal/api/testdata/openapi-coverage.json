@@ -1288,6 +1288,13 @@
     "covered": false
   },
   {
+    "operationId": "resetOnboarding",
+    "method": "POST",
+    "path": "/onboarding/reset",
+    "handler": "handlePostOnboardingReset",
+    "covered": true
+  },
+  {
     "operationId": "resetPriorities",
     "method": "POST",
     "path": "/providers/priorities/reset",
