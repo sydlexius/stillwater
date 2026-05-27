@@ -126,7 +126,8 @@ func TestHandlePostOnboardingReset_UnauthReturnsUnauthorized(t *testing.T) {
 
 // TestHandlePostOnboardingReset_CancelledContextReturns500 verifies that the
 // handler returns 500 when the request context is canceled (simulating a DB
-// error without requiring a mock database or connection failure).
+// error without requiring a mock database or connection failure). A canceled
+// context fails at BeginTx, covering the transaction-start error path.
 func TestHandlePostOnboardingReset_CancelledContextReturns500(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterForReset(t)
@@ -136,7 +137,7 @@ func TestHandlePostOnboardingReset_CancelledContextReturns500(t *testing.T) {
 	ctx = middleware.WithTestRole(ctx, "administrator")
 
 	// Cancel the context before passing it to the handler.  A canceled context
-	// causes r.db.ExecContext to return an error, which exercises the 500 path.
+	// causes r.db.BeginTx to return an error, which exercises the 500 path.
 	cancelCtx, cancel := context.WithCancel(ctx)
 	cancel()
 	req = req.WithContext(cancelCtx)
@@ -147,4 +148,74 @@ func TestHandlePostOnboardingReset_CancelledContextReturns500(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 with canceled context, got %d body=%s", w.Code, w.Body.String())
 	}
+}
+
+// TestHandlePostOnboardingReset_FirstUpsertFailsReturns500 forces the first
+// in-transaction UPSERT (clearing onboarding.completed) to fail by installing
+// a BEFORE INSERT trigger that raises on that key. This exercises the
+// transactional handler's first-UPSERT-error branch -- without it, the only
+// covered error path is BeginTx itself.
+func TestHandlePostOnboardingReset_FirstUpsertFailsReturns500(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterForReset(t)
+
+	// Install a trigger that fails any INSERT setting key = onboarding.completed.
+	// The UPSERT in the handler is `INSERT ... ON CONFLICT(key) DO UPDATE`, so
+	// the BEFORE INSERT trigger fires before the conflict resolution and the
+	// statement aborts with RAISE(FAIL, ...).
+	mustExec(t, r.db, `
+		CREATE TRIGGER fail_onboarding_completed_insert
+		BEFORE INSERT ON settings
+		WHEN NEW.key = 'onboarding.completed'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced failure for test');
+		END`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/reset", nil)
+	ctx := middleware.WithTestUserID(req.Context(), "admin-user")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	middleware.RequireAdmin(r.handlePostOnboardingReset)(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when first UPSERT fails, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandlePostOnboardingReset_SecondUpsertFailsReturns500 forces the second
+// in-transaction UPSERT (resetting onboarding.step to 0) to fail while letting
+// the first UPSERT succeed. This exercises the second-UPSERT-error branch and
+// implicitly verifies that the deferred Rollback releases the transaction
+// after a mid-transaction failure (no leaked locks would let the test DB
+// continue to accept writes).
+func TestHandlePostOnboardingReset_SecondUpsertFailsReturns500(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterForReset(t)
+
+	mustExec(t, r.db, `
+		CREATE TRIGGER fail_onboarding_step_insert
+		BEFORE INSERT ON settings
+		WHEN NEW.key = 'onboarding.step'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced failure for test');
+		END`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/reset", nil)
+	ctx := middleware.WithTestUserID(req.Context(), "admin-user")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	middleware.RequireAdmin(r.handlePostOnboardingReset)(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when second UPSERT fails, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// The deferred Rollback should have released the tx; confirm a fresh
+	// write to a different key still succeeds (would block if the tx leaked).
+	mustExec(t, r.db,
+		`INSERT INTO settings (key, value) VALUES ('post_rollback_canary', 'ok')`)
 }

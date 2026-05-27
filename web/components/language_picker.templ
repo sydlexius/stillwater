@@ -299,9 +299,13 @@ templ LanguagePickerScript() {
 					window.swPreferences.set("metadata_languages", val).then(function (saved) {
 						var isLatest = saveSeq === latestSaveSeq;
 						var prevVal = JSON.stringify(previous);
-						// swPreferences.set resolves with previousValue on
-						// HTTP error, so saved === previous AND saved !== val
-						// means the server rejected.
+						// swPreferences.set (web/static/js/preferences.js)
+						// resolves with the previous value on HTTP error and
+						// with the new value on success. "saved === prevVal
+						// AND saved !== val" therefore identifies a server
+						// rejection. Both sides of this contract must stay
+						// aligned; changing one without the other breaks the
+						// rollback path.
 						if (typeof saved === "string" && saved !== "" && !(saved === prevVal && saved !== val)) {
 							var parsed;
 							try { parsed = JSON.parse(saved); }
@@ -315,9 +319,14 @@ templ LanguagePickerScript() {
 								}
 								return;
 							}
-							persistedLangs = parsed.slice();
+							// Guard persistedLangs behind the isLatest check
+							// so a late response to an older save can't
+							// clobber the rollback snapshot with a stale
+							// server value (the actual current server state
+							// belongs to the most recent save).
 							if (!isLatest) return;
-							langs = parsed;
+							persistedLangs = parsed.slice();
+							langs = parsed.slice();
 							container.setAttribute("data-languages", JSON.stringify(langs));
 							renderPills();
 							if (typeof window.showSuccessToast === "function") {

@@ -198,6 +198,29 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// onboarding.baseline_choice is a request-time signal from the OOBE
+	// wizard, not a persisted setting. Translate it to the derived
+	// foreign_files.baseline_completed flag in body so the generic
+	// validate-then-upsert path below handles persistence and error
+	// propagation uniformly with every other setting. Reject unexpected
+	// values explicitly rather than silently dropping them (#1142 / #1698
+	// review feedback). The input is normalised (trimmed, lowercased)
+	// before the switch so case variations and stray whitespace from
+	// non-OOBE callers don't reject -- mirrors the pattern used by
+	// validateLocalAuthEnabled.
+	if choice, ok := body["onboarding.baseline_choice"]; ok {
+		delete(body, "onboarding.baseline_choice")
+		switch strings.TrimSpace(strings.ToLower(choice)) {
+		case "yes":
+			body["foreign_files.baseline_completed"] = "true"
+		case "no":
+			body["foreign_files.baseline_completed"] = ""
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `onboarding.baseline_choice must be "yes" or "no"`})
+			return
+		}
+	}
+
 	// Validate all keys up front; normalise values in-place.
 	for k, v := range body {
 		fn, ok := settingValidators[k]
@@ -244,27 +267,6 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 	if v, ok := body["backup_max_age_days"]; ok {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			r.backupService.SetMaxAgeDays(n)
-		}
-	}
-
-	// When the OOBE wizard finishes and the user selected the baseline
-	// affordance (#1142 / PR10 #1584), flip the foreign_files.baseline_completed
-	// flag accordingly. "yes" (or any non-"no" value) marks the baseline done
-	// so the next foreign-file scan treats existing files as already-admitted
-	// rather than new incidents. "no" leaves the flag unset so the next scan
-	// runs in baseline mode and re-admits everything.
-	if choice, ok := body["onboarding.baseline_choice"]; ok {
-		baselineVal := ""
-		if choice != "no" {
-			baselineVal = "true"
-		}
-		_, err := r.db.ExecContext(req.Context(),
-			`INSERT INTO settings (key, value, updated_at) VALUES ('foreign_files.baseline_completed', ?, ?)
-			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-			baselineVal, now)
-		if err != nil {
-			r.logger.Error("applying baseline choice from OOBE wizard", "choice", choice, "error", err)
-			// Non-fatal: wizard completion is more important than the baseline flag.
 		}
 	}
 

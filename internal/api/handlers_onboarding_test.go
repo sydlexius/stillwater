@@ -346,10 +346,12 @@ func TestHandleOnboardingPage_DefaultLanguages(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	// DefaultTags returns ["en"]; the page must include it.
+	// DefaultTags returns ["en"]; assert the concrete serialized payload on
+	// data-languages rather than a loose "en" substring (which can
+	// false-pass on unrelated markup or text content).
 	body := w.Body.String()
-	if !strings.Contains(body, "en") {
-		t.Errorf("expected default language 'en' in response body")
+	if !strings.Contains(body, `data-languages="[&#34;en&#34;]"`) {
+		t.Errorf("expected default language payload data-languages=[\"en\"] in response body")
 	}
 }
 
@@ -414,10 +416,12 @@ func TestHandleOnboardingPage_LangPrefError(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	// The page must still contain the default language tag from the fallback.
+	// The page must still contain the default serialized language payload
+	// from the fallback. Tightened to the concrete data-languages JSON so
+	// the test can't false-pass on unrelated "en" occurrences.
 	body := w.Body.String()
-	if !strings.Contains(body, "en") {
-		t.Errorf("expected default language 'en' in fallback response body")
+	if !strings.Contains(body, `data-languages="[&#34;en&#34;]"`) {
+		t.Errorf("expected default language payload data-languages=[\"en\"] in fallback response body")
 	}
 }
 

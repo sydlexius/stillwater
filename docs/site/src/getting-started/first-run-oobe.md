@@ -108,7 +108,7 @@ You can skip this step if you only use NFO writeback. You can also add or remove
 
 ## Wizard step 6: Conflict pre-flight (conditional)
 
-This step only appears when you have **both** at least one library configured (step 1) **and** at least one enabled Emby, Jellyfin, or Lidarr connection (step 5). When it appears, Stillwater runs a synchronous probe to look for existing NFO files or lockdata flags that would clash with what it's about to write.
+This step only appears when you have **both** at least one library configured (step 1) **and** at least one enabled Emby, Jellyfin, or Lidarr connection (step 5). When it appears, Stillwater runs a synchronous probe to detect potential write-back and round-trip conflicts: configurations where a connected server might overwrite the files Stillwater is about to write, or where Stillwater would overwrite content the server is authoritative on. Pre-existing NFO files on disk are surfaced as part of the same check.
 
 Three outcomes:
 

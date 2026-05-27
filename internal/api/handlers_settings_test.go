@@ -434,22 +434,29 @@ func TestValidateLocalAuthEnabled(t *testing.T) {
 	}
 }
 
-// TestHandleUpdateSettings_BaselineChoice verifies that when the OOBE wizard
-// sends onboarding.baseline_choice in the settings payload, the handler writes
-// foreign_files.baseline_completed correctly:
-//   - "yes" (or any non-"no" value) -> "true"
-//   - "no"                           -> ""  (empty = unset)
+// TestHandleUpdateSettings_BaselineChoice verifies that the OOBE wizard's
+// onboarding.baseline_choice transport key is translated to the derived
+// foreign_files.baseline_completed flag and the original key is not persisted:
+//   - "yes" -> flag="true", key removed from settings, 200
+//   - "no"  -> flag="",     key removed from settings, 200
+//   - other -> 400 BadRequest, no settings written
+//
+// The "other" path enforces an allowlist on the transport key so buggy callers
+// can't silently activate the baseline flag with an unexpected value.
 func TestHandleUpdateSettings_BaselineChoice(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		choice   string
-		wantFlag string
+		choice     string
+		wantStatus int
+		wantFlag   string // value of foreign_files.baseline_completed (empty if unset)
 	}{
-		{"yes", "true"},
-		{"no", ""},
-		{"", "true"},
-		{"maybe", "true"}, // any non-"no" value still flips the flag
+		{"yes", http.StatusOK, "true"},
+		{"no", http.StatusOK, ""},
+		// Normalisation: trimmed + lowercased before the switch.
+		{"YES", http.StatusOK, "true"},
+		{" yes ", http.StatusOK, "true"},
+		{"No", http.StatusOK, ""},
 	}
 
 	for _, c := range cases {
@@ -467,11 +474,21 @@ func TestHandleUpdateSettings_BaselineChoice(t *testing.T) {
 			w := httptest.NewRecorder()
 			r.handleUpdateSettings(w, req)
 
-			if w.Code != http.StatusOK {
-				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+			if w.Code != c.wantStatus {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, c.wantStatus, w.Body.String())
 			}
 
-			// Read back the stored flag value.
+			// The transport-only key must never persist as a real setting.
+			var transportRows int
+			if err := r.db.QueryRowContext(context.Background(),
+				`SELECT COUNT(*) FROM settings WHERE key = 'onboarding.baseline_choice'`).Scan(&transportRows); err != nil {
+				t.Fatalf("counting transport key rows: %v", err)
+			}
+			if transportRows != 0 {
+				t.Errorf("onboarding.baseline_choice persisted as a setting (rows=%d); transport key should be deleted before upsert", transportRows)
+			}
+
+			// Read back the derived flag value.
 			var got string
 			err := r.db.QueryRowContext(context.Background(),
 				`SELECT COALESCE(value, '') FROM settings WHERE key = 'foreign_files.baseline_completed'`).Scan(&got)
@@ -483,4 +500,75 @@ func TestHandleUpdateSettings_BaselineChoice(t *testing.T) {
 			}
 		})
 	}
+
+	// Unexpected values must reject the entire settings update with 400 so the
+	// caller is forced to send a known value rather than having an unknown one
+	// silently dropped (which masked the original bug -- see #1698 review).
+	// "YES" and "Yes" are NOT in this set -- they normalise to "yes" and pass.
+	for _, badChoice := range []string{"", "maybe", "true", "1", "yeah"} {
+		badChoice := badChoice
+		t.Run("rejects choice="+badChoice, func(t *testing.T) {
+			t.Parallel()
+			r, _ := testRouter(t)
+
+			payload := map[string]string{
+				"onboarding.completed":       "true",
+				"onboarding.baseline_choice": badChoice,
+			}
+			bodyBytes, _ := json.Marshal(payload)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(string(bodyBytes)))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			// Nothing should have been persisted, including the otherwise-valid
+			// onboarding.completed key -- the whole transaction must abort.
+			var completedRows int
+			if err := r.db.QueryRowContext(context.Background(),
+				`SELECT COUNT(*) FROM settings WHERE key = 'onboarding.completed'`).Scan(&completedRows); err != nil {
+				t.Fatalf("counting onboarding.completed rows: %v", err)
+			}
+			if completedRows != 0 {
+				t.Errorf("settings updated despite 400 (onboarding.completed rows=%d)", completedRows)
+			}
+		})
+	}
+
+	// Separate subtest: when the key is entirely absent from the payload (a
+	// non-OOBE settings update) the existing baseline flag must be left
+	// alone. Guards against a future refactor accidentally clearing the
+	// flag on every settings save.
+	t.Run("key absent leaves existing flag unchanged", func(t *testing.T) {
+		t.Parallel()
+		r, _ := testRouter(t)
+
+		_, err := r.db.ExecContext(context.Background(),
+			`INSERT INTO settings (key, value, updated_at) VALUES ('foreign_files.baseline_completed', 'true', 'seed')
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+		if err != nil {
+			t.Fatalf("seeding baseline flag: %v", err)
+		}
+
+		payload := map[string]string{
+			"onboarding.completed": "true",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(string(bodyBytes)))
+		w := httptest.NewRecorder()
+		r.handleUpdateSettings(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var got string
+		if err := r.db.QueryRowContext(context.Background(),
+			`SELECT COALESCE(value, '') FROM settings WHERE key = 'foreign_files.baseline_completed'`).Scan(&got); err != nil {
+			t.Fatalf("reading foreign_files.baseline_completed: %v", err)
+		}
+		if got != "true" {
+			t.Errorf("foreign_files.baseline_completed = %q, want unchanged %q", got, "true")
+		}
+	})
 }

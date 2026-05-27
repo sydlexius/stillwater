@@ -7762,6 +7762,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error while resetting onboarding state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /onboarding/conflict-step:
     post:

@@ -70,7 +70,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
 					var bp = bpMeta ? bpMeta.content : '';
 					document.addEventListener('htmx:configRequest', function(evt) {
-						var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+						// Canonical CSRF cookie reader exposed by preferences.js
+						// (loaded above). Falls back to '' if preferences.js
+						// hasn't finished evaluating; htmx will then omit the
+						// header and the server will reject the request,
+						// which is the safe failure mode.
+						var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
 						if (csrfToken) {
 							evt.detail.headers['X-CSRF-Token'] = csrfToken;
 						}
@@ -629,7 +634,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				var basePath = bpEl ? bpEl.content : '';
 
 				function getCsrfToken() {
-					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+					// Defers to the canonical helper in preferences.js so all
+					// X-CSRF-Token threading goes through one cookie parser.
+					return (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
 				}
 
 				// recomputeConflictPreflight refreshes the cached
@@ -954,12 +961,15 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					var btn = document.getElementById('ob-lang-skip-btn');
 					if (btn) { btn.disabled = true; }
 					var defaults = '["en"]';
+					// Hold the button disabled across the step transition so a
+					// rapid double-click can't re-enter and fire a second
+					// swPreferences.set() before the language step is hidden.
+					// goToStepInFlight guards the step transition itself; this
+					// guards the preference reset call.
 					if (window.swPreferences && typeof window.swPreferences.set === 'function') {
 						window.swPreferences.set('metadata_languages', defaults).then(function() {
-							if (btn) { btn.disabled = false; }
 							goToStep(3);
 						}).catch(function() {
-							if (btn) { btn.disabled = false; }
 							console.warn('Language preference reset network error; continuing anyway.');
 							goToStep(3);
 						});
@@ -967,7 +977,6 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 					// Fallback when preferences.js failed to load: advance
 					// without persisting; the server-side default is "en".
-					if (btn) { btn.disabled = false; }
 					goToStep(3);
 				}
 
