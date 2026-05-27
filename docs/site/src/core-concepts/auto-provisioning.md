@@ -51,6 +51,12 @@ When provisioning fires and the guard rail passes, Stillwater assigns the new ac
 
 The default roles are `administrator` and `operator`. Operators have full access to library management but cannot change system settings.
 
+## Returning to the requested page after sign-in
+
+When a session expires (or the user follows a deep link without an active session), Stillwater renders the login page in place of the requested view. The hidden form input that posts with the credentials carries the originally-requested path, so a successful sign-in returns the user to that path rather than dropping them on the dashboard.
+
+The return path is validated server-side: it must be a same-origin path (no scheme or host), must sit within the configured base path when one is set, and cannot be `/login` or any `/api/*` route. Inputs failing those checks are silently replaced with the dashboard root.
+
 ## Display name sync
 
 After a federated user signs in to their existing account, Stillwater checks whether their display name changed on the upstream provider. If it did, the local account's display name is updated to match. This is a best-effort operation and non-fatal if it fails; the session is issued regardless.

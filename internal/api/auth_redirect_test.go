@@ -78,6 +78,26 @@ func TestSanitizeReturnTo(t *testing.T) {
 		{name: "backslash mid-path", raw: `/settings\..\admin`, basePath: "", want: "/"},
 		{name: "single backslash", raw: `/\evil`, basePath: "", want: "/"},
 
+		// Reject: dot-segment paths. url.Parse does not normalize ".."
+		// segments, so the path-prefix guards (basePath, /login, /api)
+		// would otherwise miss a payload that resolves outside their
+		// scope in the browser. Path traversal bypass attempts:
+		{name: "dot-segment to login", raw: "/something/../login", basePath: "", want: "/"},
+		{name: "dot-segment to api", raw: "/something/../api/v1/artists", basePath: "", want: "/"},
+		{name: "dot-segment escape basepath", raw: "/sw/x/../../../outside", basePath: "/sw", want: "/sw/"},
+		{name: "dot-segment basepath collapse", raw: "/sw/../other", basePath: "/sw", want: "/sw/"},
+		{name: "dot-only path", raw: "/.", basePath: "", want: "/"},
+		{name: "dot-dot only", raw: "/..", basePath: "", want: "/"},
+		{name: "duplicate separators", raw: "//settings", basePath: "", want: "/"},
+		{name: "triple separators", raw: "///settings", basePath: "", want: "/"},
+		{name: "internal duplicate separator", raw: "/settings//child", basePath: "", want: "/"},
+
+		// Accept: trailing slash on a path is canonical-adjacent (path.Clean
+		// strips a trailing slash from non-root paths, so the validator
+		// allows the single trailing-slash difference as a legitimate form).
+		{name: "trailing slash", raw: "/settings/", basePath: "", want: "/settings/"},
+		{name: "basepath with trailing slash on root", raw: "/sw/", basePath: "/sw", want: "/sw/"},
+
 		// Reject: too long.
 		{name: "oversized", raw: longString, basePath: "", want: "/"},
 

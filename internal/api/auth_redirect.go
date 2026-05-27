@@ -3,6 +3,7 @@ package api
 import (
 	"log/slog"
 	"net/url"
+	"path"
 	"strings"
 )
 
@@ -83,13 +84,28 @@ func sanitizeReturnTo(raw, basePath string) string {
 		return fallback
 	}
 
-	// The path component must be the same path we parsed from. If url.Parse
-	// emitted something different the input had embedded sentinels we don't
-	// trust.
-	path := parsed.Path
+	// Extract and canonicalize the path component so all downstream guards
+	// (base-path scope, /login loop check, /api JSON-endpoint check) operate
+	// on a normalized form. url.Parse does NOT collapse dot-segments, so
+	// without this step a crafted input like /sw/../login would byte-prefix-
+	// match basePath="/sw" and slip past the /login check; the browser would
+	// then resolve the literal path to /login, breaking the contract.
+	rawPath := parsed.Path
+	cleanPath := path.Clean(rawPath)
+
+	// Reject anything whose canonical form differs from the raw path: that
+	// signals dot-segments, duplicate separators, or other non-canonical
+	// forms whose browser-resolved target diverges from what this validator
+	// sees. The two acceptable shapes are an exact match (already canonical)
+	// or a single trailing-slash difference (path.Clean strips a trailing
+	// slash from non-root paths).
+	if cleanPath != rawPath && cleanPath+"/" != rawPath {
+		slog.Debug("rejected return URL: non-canonical path", "raw", rawPath, "clean", cleanPath)
+		return fallback
+	}
 
 	if basePath != "" {
-		if path != basePath && !strings.HasPrefix(path, basePath+"/") {
+		if cleanPath != basePath && !strings.HasPrefix(cleanPath, basePath+"/") {
 			slog.Debug("rejected return URL: outside base path")
 			return fallback
 		}
@@ -98,7 +114,7 @@ func sanitizeReturnTo(raw, basePath string) string {
 	// The login page and API surface are not legitimate return targets:
 	// landing on /login after login is a loop, and /api/* paths are JSON
 	// endpoints the browser cannot render.
-	rel := path
+	rel := cleanPath
 	if basePath != "" {
 		rel = strings.TrimPrefix(rel, basePath)
 		if rel == "" {
