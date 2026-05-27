@@ -57,6 +57,9 @@ func (a *Adapter) SupportsNameLookup() bool { return true }
 
 // SearchArtist searches Last.fm for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err
@@ -109,6 +112,9 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 
 // GetArtist fetches full metadata for an artist by name or MBID.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err
@@ -180,7 +186,11 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	return mapArtist(&resp.Artist), nil
 }
 
-// GetImages returns nil since Last.fm does not host high-quality artist images.
+// GetImages is a documented no-op for Last.fm (no high-quality artist
+// images). Injection is intentionally NOT consulted here; matching the
+// production (nil, nil) contract keeps callers that treat known-no-op
+// providers as "not supported, skip" on the same code path under the
+// smoke harness.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
 	return nil, nil
 }

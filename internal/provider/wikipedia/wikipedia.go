@@ -85,8 +85,11 @@ func (a *Adapter) RequiresAuth() bool { return false }
 // Only the MBID-to-Wikidata-to-article path is reliable.
 func (a *Adapter) SupportsNameLookup() bool { return false }
 
-// SearchArtist is not supported; Wikipedia lookup requires a MusicBrainz ID
-// resolved through Wikidata to ensure the correct article is matched.
+// SearchArtist is a documented no-op for Wikipedia (lookup requires an
+// MBID resolved through Wikidata so the correct article is matched).
+// Injection is intentionally NOT consulted here; matching the production
+// (nil, nil) contract keeps callers that treat known-no-op providers as
+// "not supported, skip" on the same code path under the smoke harness.
 func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
 	return nil, nil
 }
@@ -111,6 +114,9 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 //
 //nolint:gocognit // Resolves an ID to (title, QID), iterates user language preferences with English fallback, and at each language probes extracts, sitelinks, infobox, image, and disambiguation handling; the per-language fallthrough on empty content keeps the policy in one place rather than scattered helpers.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: id}
@@ -327,7 +333,11 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	return meta, nil
 }
 
-// GetImages returns nil; Wikipedia is not used for artist images.
+// GetImages is a documented no-op for Wikipedia (not used for artist
+// images). Injection is intentionally NOT consulted here; matching the
+// production (nil, nil) contract keeps callers that treat known-no-op
+// providers as "not supported, skip" on the same code path under the
+// smoke harness.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
 	return nil, nil
 }

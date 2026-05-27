@@ -60,6 +60,9 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchArtist searches MusicBrainz for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	params := url.Values{
 		"query": {name},
 		"fmt":   {"json"},
@@ -118,6 +121,9 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 
 // GetArtist fetches full metadata for an artist by their MusicBrainz ID.
 func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistMetadata, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	params := url.Values{
 		"inc": {"aliases+genres+tags+ratings+url-rels+artist-rels"},
 		"fmt": {"json"},
@@ -416,7 +422,10 @@ func romanizeFromSortName(sortName string) (string, bool) {
 	return given + " " + family, true
 }
 
-// GetImages returns nil since MusicBrainz does not host artist images.
+// GetImages is a documented no-op for MusicBrainz (no image hosting).
+// Injection is intentionally NOT consulted here; matching the production
+// (nil, nil) contract keeps callers that treat known-no-op providers as
+// "not supported, skip" on the same code path under the smoke harness.
 func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult, error) {
 	return nil, nil
 }
@@ -425,6 +434,9 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 // Results are paginated in batches of 100 and capped at 500 total to avoid
 // runaway loops on prolific artists (classical composers, etc.).
 func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	const (
 		pageSize = 100
 		maxTotal = 500

@@ -49,18 +49,27 @@ func (a *Adapter) Name() provider.ProviderName { return provider.NameFanartTV }
 // RequiresAuth returns whether this provider needs an API key.
 func (a *Adapter) RequiresAuth() bool { return true }
 
-// SearchArtist is not supported by Fanart.tv (lookup by MBID only).
+// SearchArtist is a documented no-op for Fanart.tv (lookup is by MBID only).
+// Injection is intentionally NOT consulted here: the production contract is
+// (nil, nil), and callers that treat a nil error from a known-no-op as
+// "provider does not support this" would otherwise behave differently under
+// the smoke harness than in prod -- which would test the harness, not the
+// silent-failure surfaces the harness exists to catch.
 func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
 	return nil, nil
 }
 
-// GetArtist is not supported by Fanart.tv (images only).
+// GetArtist is a documented no-op for Fanart.tv (images only). Injection is
+// intentionally NOT consulted here; see SearchArtist for rationale.
 func (a *Adapter) GetArtist(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
 	return nil, nil
 }
 
 // GetImages fetches available images for an artist by their MusicBrainz ID.
 func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageResult, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
 	apiKey, err := a.settings.GetAPIKey(ctx, provider.NameFanartTV)
 	if err != nil {
 		return nil, fmt.Errorf("getting API key: %w", err)

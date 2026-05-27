@@ -30,6 +30,7 @@ builds:
       - -X github.com/sydlexius/stillwater/internal/version.Version={{ .Version }}
       - -X github.com/sydlexius/stillwater/internal/version.Commit={{ .ShortCommit }}
       - -X github.com/sydlexius/stillwater/internal/version.Date={{ .Date }}
+      - -X github.com/sydlexius/stillwater/internal/version.BuildType=release
 
 archives:
   - id: default

@@ -205,6 +205,21 @@ func newApplication(opts ...Option) *Application {
 func run() error {
 	a := newApplication()
 
+	// Safety: SW_FORCE_PROVIDER_ERROR must never be set in a production binary.
+	// A release build with this env var active would silently break every
+	// provider-dependent surface for real users. Refuse to start so the
+	// operator immediately sees what to unset.
+	//
+	// IsReleaseBuild keys off version.BuildType (set to "release" only by the
+	// goreleaser configs), so `make build`, IDE builds, and the provider-failure
+	// smoke harness all report false here and the guard does not fire on them.
+	if os.Getenv("SW_FORCE_PROVIDER_ERROR") != "" && version.IsReleaseBuild() {
+		return fmt.Errorf(
+			"SW_FORCE_PROVIDER_ERROR is set but this is a release build -- " +
+				"this env var is reserved for smoke testing only; unset it before starting",
+		)
+	}
+
 	if err := a.loadConfig(); err != nil {
 		return err
 	}
