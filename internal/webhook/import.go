@@ -44,6 +44,9 @@ func (s *Service) ImportGetByNameAndURLTx(ctx context.Context, db DBExecutor, na
 // ImportCreateTx inserts a new webhook via the supplied executor. Mirrors
 // Create's SQL exactly.
 func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, w *Webhook) error {
+	if w == nil {
+		return fmt.Errorf("webhook is required")
+	}
 	if w.Name == "" {
 		return fmt.Errorf("name is required")
 	}
@@ -55,7 +58,9 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, w *Webhook)
 	}
 
 	now := time.Now().UTC()
-	w.ID = uuid.New().String()
+	if w.ID == "" {
+		w.ID = uuid.New().String()
+	}
 	w.CreatedAt = now
 	w.UpdatedAt = now
 
@@ -77,6 +82,9 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, w *Webhook)
 // ImportUpdateTx updates an existing webhook via the supplied executor.
 // Mirrors Update's SQL exactly.
 func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, w *Webhook) error {
+	if w == nil {
+		return fmt.Errorf("webhook is required")
+	}
 	w.UpdatedAt = time.Now().UTC()
 
 	eventsJSON, err := json.Marshal(w.Events)
@@ -92,7 +100,10 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, w *Webhook)
 		return fmt.Errorf("updating webhook: %w", err)
 	}
 
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking updated webhook rows: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("webhook not found")
 	}

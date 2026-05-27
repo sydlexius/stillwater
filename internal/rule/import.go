@@ -45,13 +45,23 @@ func (s *Service) ImportGetByIDTx(ctx context.Context, db DBExecutor, id string)
 // behavior including the soft-resolve cleanup for disabled rules so a tx-
 // rolled-back import does not orphan rule_results rows.
 func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, r *Rule) error {
+	if r == nil {
+		return fmt.Errorf("rule is required")
+	}
 	r.UpdatedAt = s.clock.Now()
-	_, err := db.ExecContext(ctx, `
+	result, err := db.ExecContext(ctx, `
 		UPDATE rules SET enabled = ?, automation_mode = ?, config = ?, updated_at = ? WHERE id = ?
 	`, dbutil.BoolToInt(r.Enabled), r.AutomationMode, MarshalConfig(r.Config),
 		r.UpdatedAt.Format(time.RFC3339), r.ID)
 	if err != nil {
 		return fmt.Errorf("updating rule: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking updated rule rows: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("rule not found: %s", r.ID)
 	}
 	if !r.Enabled {
 		if err := s.cleanupDisabledRuleStateTx(ctx, db, r.ID); err != nil {
@@ -64,7 +74,7 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, r *Rule) er
 // cleanupDisabledRuleStateTx mirrors cleanupDisabledRuleState but writes
 // through the supplied executor.
 func (s *Service) cleanupDisabledRuleStateTx(ctx context.Context, db DBExecutor, ruleID string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := s.clock.Now().Format(time.RFC3339)
 	if _, err := db.ExecContext(ctx,
 		`UPDATE rule_violations
 		    SET status = ?, resolved_at = ?, updated_at = ?

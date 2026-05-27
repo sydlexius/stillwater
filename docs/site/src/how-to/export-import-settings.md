@@ -134,6 +134,22 @@ There is an optional **Reassign orphan tokens to me** checkbox on the import for
 2. Make the change.
 3. If something goes wrong, import the export to roll back.
 
+## What survives the round-trip
+
+Connections carry the full set of per-connection write toggles through the export and back, including:
+
+- Library import on/off
+- NFO write on/off
+- Image write on/off
+- Metadata push on/off
+- Trigger refresh on/off
+- Manage server-side artwork and NFO files on/off
+- Verify file paths after a peer update
+
+A successful import restores every toggle on the destination exactly as it was set on the source. If a connection toggle changes silently after an import, that is a bug; file an issue with the source and destination versions.
+
+The import is atomic across every section: connections, platform profiles, webhooks, provider keys, provider priorities, rules, scraper preferences, application settings, users, user preferences, libraries, and API tokens. A failure in any section rolls back the whole import; the destination is left in the state it had before the import began. Earlier behavior committed connections and rules partway before a later failure, leaving a half-applied configuration; that gap is closed.
+
 ## Troubleshooting
 
 - **"Decryption failed."** Wrong passphrase, or the file was corrupted in transit. Re-export from the source.

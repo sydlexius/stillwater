@@ -56,6 +56,9 @@ func (s *Service) ImportGetByTypeAndURLTx(ctx context.Context, db DBExecutor, co
 // ImportCreateTx inserts a new connection via the supplied executor. Mirrors
 // Create's SQL exactly so the rows are bit-identical to a non-import insert.
 func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, c *Connection) error {
+	if c == nil {
+		return fmt.Errorf("connection is required")
+	}
 	if err := c.Validate(); err != nil {
 		return fmt.Errorf("validating connection: %w", err)
 	}
@@ -96,6 +99,9 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, c *Connecti
 // ImportUpdateTx updates an existing connection via the supplied executor.
 // Mirrors Update's SQL exactly.
 func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connection) error {
+	if c == nil {
+		return fmt.Errorf("connection is required")
+	}
 	if err := c.Validate(); err != nil {
 		return fmt.Errorf("validating connection: %w", err)
 	}
@@ -130,7 +136,10 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connecti
 	if err != nil {
 		return fmt.Errorf("updating connection: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking updated connection rows: %w", err)
+	}
 	if rows == 0 {
 		return fmt.Errorf("connection not found: %s", c.ID)
 	}

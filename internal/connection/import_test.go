@@ -142,6 +142,26 @@ func TestImportCreateTx_ValidationError(t *testing.T) {
 	}
 }
 
+// TestImportCreateTx_NilArg pins the defensive nil-guard on the tx-aware
+// create path so a malformed envelope cannot panic the import.
+func TestImportCreateTx_NilArg(t *testing.T) {
+	t.Parallel()
+	svc, db := setupTestServiceWithDB(t)
+	if err := svc.ImportCreateTx(context.Background(), db, nil); err == nil {
+		t.Fatal("expected error for nil connection, got nil")
+	}
+}
+
+// TestImportUpdateTx_NilArg pins the defensive nil-guard on the tx-aware
+// update path.
+func TestImportUpdateTx_NilArg(t *testing.T) {
+	t.Parallel()
+	svc, db := setupTestServiceWithDB(t)
+	if err := svc.ImportUpdateTx(context.Background(), db, nil); err == nil {
+		t.Fatal("expected error for nil connection, got nil")
+	}
+}
+
 // TestImportGetByTypeAndURLTx_DBError pins error propagation when the
 // executor fails (closed DB triggers a non-ErrNoRows DB error).
 func TestImportGetByTypeAndURLTx_DBError(t *testing.T) {

@@ -90,3 +90,13 @@ func TestImportSaveConfigTx_ExistingScopePreservesID(t *testing.T) {
 		t.Errorf("second call ID: got %q, want %q (upsert must preserve existing id)", second.ID, originalID)
 	}
 }
+
+// TestImportSaveConfigTx_NilArg pins the defensive nil-guard on the
+// tx-aware import path.
+func TestImportSaveConfigTx_NilArg(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db, slog.Default())
+	if err := svc.ImportSaveConfigTx(context.Background(), db, "scope", nil, nil); err == nil {
+		t.Fatal("expected error for nil cfg, got nil")
+	}
+}

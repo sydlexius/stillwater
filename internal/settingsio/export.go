@@ -92,6 +92,10 @@ func envelopeCarriesConnectionV14Fields(envelopeVersion string) bool {
 // would silently disable a Lidarr verify toggle the operator had set. Returning
 // false here lets importConnections preserve the target's existing value
 // instead.
+//
+// When introducing a v1.6+ envelope that ALSO carries VerifyPathAfterUpdate,
+// add the new version to the case below. New schema bumps that drop the field
+// (unlikely) need their own gating function rather than reusing this one.
 func envelopeCarriesConnectionV15Fields(envelopeVersion string) bool {
 	switch envelopeVersion {
 	case "1.5":

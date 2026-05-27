@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // TestImportGetByIDTx_RoundTrip verifies the tx-aware reader returns a
@@ -59,7 +60,9 @@ func TestImportGetByIDTx_DBError(t *testing.T) {
 }
 
 // TestImportUpdateTx_DisabledRuleCleansUp exercises the cleanupDisabledRuleStateTx
-// branch by disabling a rule and asserting the helper ran without error.
+// branch by disabling a rule and asserting (a) the Enabled column actually
+// flipped on the row, and (b) cleanupDisabledRuleStateTx deleted the seeded
+// rule_results row tied to the rule.
 func TestImportUpdateTx_DisabledRuleCleansUp(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
@@ -72,15 +75,49 @@ func TestImportUpdateTx_DisabledRuleCleansUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	// Already-disabled by default; flip enabled true then back to false
-	// to force the cleanup path.
-	r.Enabled = true
-	if err := svc.ImportUpdateTx(ctx, db, r); err != nil {
-		t.Fatalf("ImportUpdateTx enable: %v", err)
+	if !r.Enabled {
+		t.Fatalf("baseline: seeded rule should be enabled, got Enabled=false")
 	}
+
+	// Seed a synthetic artist + rule_results row so cleanupDisabledRuleStateTx
+	// has an observable side effect (it removes the row from rule_results
+	// for the disabled rule). FK on rule_results.artist_id forces the
+	// artist insert.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+		 VALUES ('cleanup-test-artist', 'Cleanup Test', 'cleanup test', '/tmp/cleanup-test-artist', ?, ?)`,
+		time.Now().UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339),
+	); err != nil {
+		t.Fatalf("seeding artist row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO rule_results (artist_id, rule_id, passed, evaluated_at)
+		 VALUES ('cleanup-test-artist', ?, 0, ?)`,
+		RuleThumbExists, time.Now().UTC().Format(time.RFC3339),
+	); err != nil {
+		t.Fatalf("seeding rule_results row: %v", err)
+	}
+
 	r.Enabled = false
 	if err := svc.ImportUpdateTx(ctx, db, r); err != nil {
 		t.Fatalf("ImportUpdateTx disable: %v", err)
+	}
+	disabled, err := svc.GetByID(ctx, RuleThumbExists)
+	if err != nil {
+		t.Fatalf("GetByID after disable: %v", err)
+	}
+	if disabled.Enabled {
+		t.Errorf("Enabled should be false after disable; got true")
+	}
+	// Cleanup post-condition: the seeded rule_results row must be gone.
+	var cnt int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM rule_results WHERE rule_id = ?`, RuleThumbExists,
+	).Scan(&cnt); err != nil {
+		t.Fatalf("counting rule_results after disable: %v", err)
+	}
+	if cnt != 0 {
+		t.Errorf("rule_results rows for disabled rule: got %d, want 0", cnt)
 	}
 }
 
@@ -99,8 +136,27 @@ func TestImportUpdateTx_EnabledRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	r.AutomationMode = AutomationModeAuto
+	// Capture the seeded baseline. The test asserts state transitions
+	// relative to the captured values rather than hardcoded constants so
+	// future changes to the rule seeds do not produce false-positive
+	// failures here.
+	baselineEnabled := r.Enabled
+	baselineMode := r.AutomationMode
+	if !baselineEnabled {
+		t.Fatalf("baseline: seeded RuleThumbExists should be enabled, got Enabled=false")
+	}
+
+	// Pick a target AutomationMode that differs from the baseline so the
+	// transition is observable. AutomationModeManual is the broadest non-
+	// auto value; flip to auto if baseline is already manual, otherwise
+	// flip to manual.
+	targetMode := AutomationModeAuto
+	if baselineMode == AutomationModeAuto {
+		targetMode = AutomationModeManual
+	}
+
 	r.Enabled = false
+	r.AutomationMode = targetMode
 	if err := svc.ImportUpdateTx(ctx, db, r); err != nil {
 		t.Fatalf("ImportUpdateTx: %v", err)
 	}
@@ -110,9 +166,19 @@ func TestImportUpdateTx_EnabledRoundTrip(t *testing.T) {
 		t.Fatalf("reload after ImportUpdateTx: %v", err)
 	}
 	if reloaded.Enabled {
-		t.Error("Enabled should be false after ImportUpdateTx")
+		t.Errorf("Enabled should have flipped to false; got true (baseline was %v)", baselineEnabled)
 	}
-	if reloaded.AutomationMode != AutomationModeAuto {
-		t.Errorf("AutomationMode: got %q, want %q", reloaded.AutomationMode, AutomationModeAuto)
+	if reloaded.AutomationMode != targetMode {
+		t.Errorf("AutomationMode should have flipped to %q; got %q (baseline was %q)", targetMode, reloaded.AutomationMode, baselineMode)
+	}
+}
+
+// TestImportUpdateTx_NilArg pins the defensive nil-guard on the tx-aware
+// import path.
+func TestImportUpdateTx_NilArg(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	if err := svc.ImportUpdateTx(context.Background(), db, nil); err == nil {
+		t.Fatal("expected error for nil rule, got nil")
 	}
 }

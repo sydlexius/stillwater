@@ -29,6 +29,9 @@ type DBExecutor interface {
 // the same upsert (resolving cfg.ID from any pre-existing row for the scope)
 // but reads and writes through the supplied executor.
 func (s *Service) ImportSaveConfigTx(ctx context.Context, db DBExecutor, scope string, cfg *ScraperConfig, overrides *Overrides) error {
+	if cfg == nil {
+		return fmt.Errorf("scraper config is required")
+	}
 	cfg.Scope = scope
 	if cfg.ID == "" {
 		var existingID string

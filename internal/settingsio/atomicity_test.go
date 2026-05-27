@@ -115,6 +115,16 @@ func TestImport_AtomicAcrossAllSections(t *testing.T) {
 		t.Fatalf("seeding target user: %v", err)
 	}
 
+	// Capture the target's pre-import baseline value for the priority row
+	// so the post-rollback assertion compares against actual state, not a
+	// hardcoded seed string that drifts when future migrations change the
+	// default.
+	var baselineBiographyPriority string
+	if err := db2.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'provider.priority.biography'`).Scan(&baselineBiographyPriority); err != nil {
+		t.Fatalf("reading baseline provider priority: %v", err)
+	}
+
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2).
 		WithRuleService(ruleSvc2).
 		WithScraperService(scraperSvc2)
@@ -180,19 +190,16 @@ func TestImport_AtomicAcrossAllSections(t *testing.T) {
 	})
 	t.Run("provider priority rolled back", func(t *testing.T) {
 		// Migration 001 seeds default priority rows so absence-of-row is
-		// the wrong probe. Capture the post-rollback value and assert it
-		// matches the migration default, not the envelope's
-		// "musicbrainz,wikipedia" list.
+		// the wrong probe. Assert the post-rollback value matches the
+		// baseline captured before Import ran, not a hardcoded seed
+		// string that drifts when future migrations change the default.
 		var got string
 		if err := db2.QueryRowContext(ctx,
 			`SELECT value FROM settings WHERE key = 'provider.priority.biography'`).Scan(&got); err != nil {
 			t.Fatalf("reading priority row: %v", err)
 		}
-		// The migration seeds biography with musicbrainz/lastfm/audiodb/discogs.
-		// PR #1438 removed wikidata; the envelope was musicbrainz/wikipedia
-		// which is clearly distinct from the migration default.
-		if got != `["musicbrainz","lastfm","audiodb","discogs"]` {
-			t.Errorf("provider priority committed despite import failure: got %q", got)
+		if got != baselineBiographyPriority {
+			t.Errorf("provider priority committed despite import failure: got %q, want baseline %q", got, baselineBiographyPriority)
 		}
 	})
 	t.Run("settings KV rolled back", func(t *testing.T) {
@@ -239,7 +246,11 @@ func TestImport_AtomicSameSectionRollback(t *testing.T) {
 	conns := []ConnectionExport{
 		{Name: "TxBoundConn", Type: "emby", URL: "http://txbound.example:8096", APIKey: "k", Enabled: true},
 	}
-	if err := svc.importConnections(ctx, tx, conns, &ImportResult{}, true, true); err != nil {
+	const (
+		carryV15Fields    = true // envelope is v1.5+ (irrelevant here; new row)
+		overwriteExisting = true // standard import semantics
+	)
+	if err := svc.importConnections(ctx, tx, conns, &ImportResult{}, carryV15Fields, overwriteExisting); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("importConnections inside tx: %v", err)
 	}

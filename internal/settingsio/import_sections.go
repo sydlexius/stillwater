@@ -63,10 +63,12 @@ func (s *Service) importProviderKeys(ctx context.Context, db dbExecutor, keys ma
 // must not be copied onto the target's existing connection row -- doing so
 // would silently disable toggles the operator had set.
 //
-// carryV15Fields signals that the envelope is v1.5 or later, so the
-// v1.5-only field (VerifyPathAfterUpdate) is authoritative. When false (a
-// pre-1.5 envelope), the field decoded as a zero value and must not be
-// copied onto the target's existing connection row for the same reason.
+// carryV15Fields signals that the envelope version is recognized as one
+// that carries the v1.5-only field (VerifyPathAfterUpdate), in which case
+// the field is authoritative. When false (a pre-1.5 envelope OR a future
+// envelope version not yet added to envelopeCarriesConnectionV15Fields),
+// the field decoded as a zero value and must not be copied onto the
+// target's existing connection row for the same reason as V14.
 func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []ConnectionExport, result *ImportResult, carryV14Fields, carryV15Fields bool) error {
 	for _, ce := range conns {
 		existing, err := s.connectionSvc.ImportGetByTypeAndURLTx(ctx, db, ce.Type, ce.URL)

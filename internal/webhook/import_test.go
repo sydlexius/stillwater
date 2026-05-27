@@ -137,3 +137,21 @@ func TestImportGetByNameAndURLTx_NotFound(t *testing.T) {
 		t.Errorf("expected nil for missing row, got %+v", got)
 	}
 }
+
+// TestImportCreateTx_NilArg + TestImportUpdateTx_NilArg pin the defensive
+// nil-guards on the tx-aware import path.
+func TestImportCreateTx_NilArg(t *testing.T) {
+	t.Parallel()
+	svc, db := setupTestServiceWithDB(t)
+	if err := svc.ImportCreateTx(context.Background(), db, nil); err == nil {
+		t.Fatal("expected error for nil webhook, got nil")
+	}
+}
+
+func TestImportUpdateTx_NilArg(t *testing.T) {
+	t.Parallel()
+	svc, db := setupTestServiceWithDB(t)
+	if err := svc.ImportUpdateTx(context.Background(), db, nil); err == nil {
+		t.Fatal("expected error for nil webhook, got nil")
+	}
+}

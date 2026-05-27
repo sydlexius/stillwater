@@ -45,6 +45,9 @@ func (s *Service) ImportGetByNameTx(ctx context.Context, db DBExecutor, name str
 // ImportCreateTx inserts a new profile via the supplied executor. Mirrors
 // Create's SQL exactly.
 func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, p *Profile) error {
+	if p == nil {
+		return fmt.Errorf("platform profile is required")
+	}
 	if p.ID == "" {
 		p.ID = uuid.New().String()
 	}
@@ -69,9 +72,12 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, p *Profile)
 // ImportUpdateTx updates an existing profile via the supplied executor.
 // Mirrors Update's SQL exactly.
 func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, p *Profile) error {
+	if p == nil {
+		return fmt.Errorf("platform profile is required")
+	}
 	p.UpdatedAt = time.Now().UTC()
 
-	_, err := db.ExecContext(ctx, `
+	result, err := db.ExecContext(ctx, `
 		UPDATE platform_profiles SET
 			name = ?, nfo_enabled = ?, nfo_format = ?, image_naming = ?, use_symlinks = ?, updated_at = ?
 		WHERE id = ?
@@ -83,6 +89,13 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, p *Profile)
 	)
 	if err != nil {
 		return fmt.Errorf("updating platform profile: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking updated platform profile rows: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("platform profile not found: %s", p.ID)
 	}
 	return nil
 }
