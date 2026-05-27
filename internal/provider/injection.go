@@ -32,9 +32,10 @@ var (
 	injectedSet = parseInjectedSet(os.Getenv("SW_FORCE_PROVIDER_ERROR"))
 
 	// injectedFiredCount counts the number of times ShouldInjectFailure
-	// returned true. Exposed via InjectedFailureCount so test harnesses can
-	// assert the injection hook was actually exercised (issue #1697). An
-	// atomic int64 avoids contending with injectedMu on the hot path.
+	// returned true. Exposed via injectedFailureCount so test harnesses in
+	// this package can assert the injection hook was actually exercised
+	// (issue #1697). An atomic int64 avoids contending with injectedMu on
+	// the hot path.
 	injectedFiredCount atomic.Int64
 )
 
@@ -79,7 +80,7 @@ func SetInjectedProviders(names []string) {
 // The check is a no-op (returns false) when SW_FORCE_PROVIDER_ERROR is unset
 // and SetInjectedProviders has not been called, so normal production behavior
 // is preserved with zero overhead. On a true return the function also
-// increments an atomic counter (see InjectedFailureCount) and emits a single
+// increments an atomic counter (see injectedFailureCount) and emits a single
 // Info-level log line carrying the provider name, so smoke harnesses can
 // assert the hook was actually reached by the surfaces they drive.
 func ShouldInjectFailure(name ProviderName) bool {
@@ -97,19 +98,20 @@ func ShouldInjectFailure(name ProviderName) bool {
 	return ok
 }
 
-// InjectedFailureCount returns the number of times ShouldInjectFailure has
-// returned true since process start (or since the last ResetInjectedFailureCount
-// call). Exposed so test harnesses can assert that the injection hook was
-// actually exercised by the surfaces they drive (issue #1697). The counter is
-// process-global and atomic; concurrent provider calls cannot lose increments.
-func InjectedFailureCount() int64 {
+// injectedFailureCount returns the number of times ShouldInjectFailure has
+// returned true since process start (or since the last resetInjectedFailureCount
+// call). Unexported so only same-package test code can read it; exporting it
+// would let unrelated production callers depend on a counter intended only
+// for the smoke harness (issue #1697 finding). The counter is process-global
+// and atomic; concurrent provider calls cannot lose increments.
+func injectedFailureCount() int64 {
 	return injectedFiredCount.Load()
 }
 
-// ResetInjectedFailureCount zeroes the counter. Intended for tests that want
-// to assert "this surface incremented the counter from N to N+M"; production
-// code must never call it.
-func ResetInjectedFailureCount() {
+// resetInjectedFailureCount zeroes the counter. Intended for tests that want
+// to assert "this surface incremented the counter from N to N+M". Unexported
+// for the same reason as injectedFailureCount.
+func resetInjectedFailureCount() {
 	injectedFiredCount.Store(0)
 }
 
