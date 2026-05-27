@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -430,5 +431,56 @@ func TestValidateLocalAuthEnabled(t *testing.T) {
 		if got != c.canonical {
 			t.Errorf("input %q: canonical = %q, want %q", c.input, got, c.canonical)
 		}
+	}
+}
+
+// TestHandleUpdateSettings_BaselineChoice verifies that when the OOBE wizard
+// sends onboarding.baseline_choice in the settings payload, the handler writes
+// foreign_files.baseline_completed correctly:
+//   - "yes" (or any non-"no" value) -> "true"
+//   - "no"                           -> ""  (empty = unset)
+func TestHandleUpdateSettings_BaselineChoice(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		choice   string
+		wantFlag string
+	}{
+		{"yes", "true"},
+		{"no", ""},
+		{"", "true"},
+		{"maybe", "true"}, // any non-"no" value still flips the flag
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run("choice="+c.choice, func(t *testing.T) {
+			t.Parallel()
+			r, _ := testRouter(t)
+
+			payload := map[string]string{
+				"onboarding.completed":       "true",
+				"onboarding.baseline_choice": c.choice,
+			}
+			bodyBytes, _ := json.Marshal(payload)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(string(bodyBytes)))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+			}
+
+			// Read back the stored flag value.
+			var got string
+			err := r.db.QueryRowContext(context.Background(),
+				`SELECT COALESCE(value, '') FROM settings WHERE key = 'foreign_files.baseline_completed'`).Scan(&got)
+			if err != nil {
+				t.Fatalf("reading foreign_files.baseline_completed: %v", err)
+			}
+			if got != c.wantFlag {
+				t.Errorf("foreign_files.baseline_completed = %q, want %q", got, c.wantFlag)
+			}
+		})
 	}
 }

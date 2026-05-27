@@ -247,6 +247,27 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// When the OOBE wizard finishes and the user selected the baseline
+	// affordance (#1142 / PR10 #1584), flip the foreign_files.baseline_completed
+	// flag accordingly. "yes" (or any non-"no" value) marks the baseline done
+	// so the next foreign-file scan treats existing files as already-admitted
+	// rather than new incidents. "no" leaves the flag unset so the next scan
+	// runs in baseline mode and re-admits everything.
+	if choice, ok := body["onboarding.baseline_choice"]; ok {
+		baselineVal := ""
+		if choice != "no" {
+			baselineVal = "true"
+		}
+		_, err := r.db.ExecContext(req.Context(),
+			`INSERT INTO settings (key, value, updated_at) VALUES ('foreign_files.baseline_completed', ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+			baselineVal, now)
+		if err != nil {
+			r.logger.Error("applying baseline choice from OOBE wizard", "choice", choice, "error", err)
+			// Non-fatal: wizard completion is more important than the baseline flag.
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 

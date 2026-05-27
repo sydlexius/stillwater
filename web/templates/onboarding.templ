@@ -21,11 +21,19 @@ type OnboardingData struct {
 	UnidentifiedCount  int
 	UserAuthProvider   string // "local", "emby", "jellyfin", "oidc", etc.
 	// ConflictPreflightVisible is true when the conflict pre-flight step
-	// (step 5) should be shown. It requires both >=1 library and >=1 enabled
-	// emby/jellyfin/lidarr connection. When false, the step is skipped at
-	// transition time so the user goes directly from connections (step 4)
-	// to discovery (step 6).
+	// (step 6, after language-step insert) should be shown. It requires
+	// both >=1 library and >=1 enabled emby/jellyfin/lidarr connection.
+	// When false, the step is skipped at transition time so the user goes
+	// directly from connections (step 5) to discovery (step 7).
 	ConflictPreflightVisible bool
+	// Languages holds the user's current metadata language preference
+	// (BCP-47 codes). Defaults to ["en"] when unset.
+	Languages []string
+	// ForeignFileCount is the count of pre-existing artwork/NFO files
+	// detected in the library. When >0, the Discovery step renders a
+	// baseline affordance so the user can choose to accept or reject the
+	// existing files as the reference state.
+	ForeignFileCount int
 }
 
 // findConnectionByType returns the first connection matching the given type, or nil.
@@ -54,6 +62,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			<meta name="htmx-base-path" content={ assets.BasePath }/>
 			@themeInitScript()
 			<script src={ assets.HTMX }></script>
+			<!-- preferences.js exposes window.swPreferences + window.swCsrfToken,
+			     consumed by the shared LanguagePicker further down. -->
+			<script src={ assets.PreferencesJS }></script>
 			<script>
 				(function() {
 					var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
@@ -91,27 +102,32 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						<div id="step-line-1" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-2" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">2</div>
-							<span id="step-label-2" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_platform") }</span>
+							<span id="step-label-2" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_language") }</span>
 						</div>
 						<div id="step-line-2" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-3" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">3</div>
-							<span id="step-label-3" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_providers") }</span>
+							<span id="step-label-3" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_platform") }</span>
 						</div>
 						<div id="step-line-3" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-4" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">4</div>
-							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_connections") }</span>
+							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_providers") }</span>
 						</div>
 						<div id="step-line-4" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
-						<div class={ "flex items-center gap-2", templ.KV("hidden", !data.ConflictPreflightVisible) } id="progress-conflict">
-							<div id="step-dot-5" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">5</div>
-							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_conflict") }</span>
-						</div>
-						<div id="step-line-5" class={ "h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8", templ.KV("hidden", !data.ConflictPreflightVisible) }></div>
 						<div class="flex items-center gap-2">
+							<div id="step-dot-5" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">5</div>
+							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_connections") }</span>
+						</div>
+						<div id="step-line-5" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
+						<div class={ "flex items-center gap-2", templ.KV("hidden", !data.ConflictPreflightVisible) } id="progress-conflict">
 							<div id="step-dot-6" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">6</div>
-							<span id="step-label-6" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_discovery") }</span>
+							<span id="step-label-6" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_conflict") }</span>
+						</div>
+						<div id="step-line-6" class={ "h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8", templ.KV("hidden", !data.ConflictPreflightVisible) }></div>
+						<div class="flex items-center gap-2">
+							<div id="step-dot-7" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">7</div>
+							<span id="step-label-7" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_discovery") }</span>
 						</div>
 					</div>
 					<!-- Step 0: Introduction -->
@@ -225,11 +241,53 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							</form>
 						</div>
 					</div>
-					<!-- Step 2: Platform Profile -->
+					<!-- Step 2: Language preferences (#1142) -->
 					<div id="wizard-step-2" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 2) }>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">{ t(ctx, "onboarding.language_title") }</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{ t(ctx, "onboarding.language_body") }</p>
+						@components.LanguagePicker(components.LanguagePickerOpts{
+							InstanceID:       "oobe",
+							InitialLanguages: data.Languages,
+							Labels: components.LanguagePickerLabels{
+								InputLabel:       t(ctx, "settings.metadata_languages.input_label"),
+								InputPlaceholder: t(ctx, "settings.metadata_languages.input_placeholder"),
+								Remove:           t(ctx, "settings.metadata_languages.remove"),
+								AriaListLabel:    t(ctx, "settings.metadata_languages.aria_list_label"),
+								AriaPillHint:     t(ctx, "settings.metadata_languages.aria_pill_hint"),
+								AriaPillLabel:    t(ctx, "settings.metadata_languages.aria_pill_label"),
+								DefaultHint:      t(ctx, "settings.metadata_languages.default_hint"),
+								ToastSaved:       t(ctx, "settings.metadata_languages.toast_saved"),
+								ToastFailed:      t(ctx, "settings.metadata_languages.toast_failed"),
+								ToastMax:         t(ctx, "settings.metadata_languages.toast_max"),
+							},
+						})
+						<div class="mt-6 flex items-center justify-between gap-3">
+							<div>
+								<button
+									type="button"
+									id="ob-lang-skip-btn"
+									class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+									onclick="obSkipLanguages()"
+								>
+									{ t(ctx, "onboarding.language_skip_button") }
+								</button>
+								<p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{ t(ctx, "onboarding.language_skip_consequence") }</p>
+							</div>
+							<button
+								type="button"
+								id="ob-lang-continue-btn"
+								class="text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								onclick="goToStep(3)"
+							>
+								{ t(ctx, "common.next") }
+							</button>
+						</div>
+					</div>
+					<!-- Step 3: Platform Profile (was Step 2) -->
+					<div id="wizard-step-3" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 3) }>
 						<div class="inline-flex items-center gap-2 mb-1">
 							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.choose_platform") }</h2>
-							@components.ContextHelp("help-onboarding-platform", t(ctx, "onboarding.help.platform.label"), t(ctx, "onboarding.help.platform"), "getting-started/first-run-oobe#wizard-step-2-platform-profile")
+							@components.ContextHelp("help-onboarding-platform", t(ctx, "onboarding.help.platform.label"), t(ctx, "onboarding.help.platform"), "getting-started/first-run-oobe#wizard-step-3-platform-profile")
 						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.platform_description") }
@@ -240,11 +298,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 						</div>
 					</div>
-					<!-- Step 3: Provider API Keys -->
-					<div id="wizard-step-3" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 3) }>
+					<!-- Step 4: Provider API Keys (was Step 3) -->
+					<div id="wizard-step-4" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 4) }>
 						<div class="inline-flex items-center gap-2 mb-1">
 							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.provider_api_keys") }</h2>
-							@components.ContextHelp("help-onboarding-providers", t(ctx, "onboarding.help.providers.label"), t(ctx, "onboarding.help.providers"), "getting-started/first-run-oobe#wizard-step-3-provider-api-keys")
+							@components.ContextHelp("help-onboarding-providers", t(ctx, "onboarding.help.providers.label"), t(ctx, "onboarding.help.providers"), "getting-started/first-run-oobe#wizard-step-4-provider-api-keys")
 						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.providers_description") }
@@ -268,11 +326,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							</div>
 						}
 					</div>
-					<!-- Step 4: Server Connections -->
-					<div id="wizard-step-4" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 4) }>
+					<!-- Step 5: Server Connections (was Step 4) -->
+					<div id="wizard-step-5" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 5) }>
 						<div class="inline-flex items-center gap-2 mb-1">
 							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.server_connections") }</h2>
-							@components.ContextHelp("help-onboarding-connections", t(ctx, "onboarding.help.connections.label"), t(ctx, "onboarding.help.connections"), "getting-started/first-run-oobe#wizard-step-4-server-connections")
+							@components.ContextHelp("help-onboarding-connections", t(ctx, "onboarding.help.connections.label"), t(ctx, "onboarding.help.connections"), "getting-started/first-run-oobe#wizard-step-5-server-connections")
 						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.connections_description") }
@@ -311,11 +369,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							class="mt-4"
 						></div>
 					</div>
-					<!-- Step 5: Conflict pre-flight (only when libraries + qualifying connections present) -->
-					<div id="wizard-step-5" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 5) }>
+					<!-- Step 6: Conflict pre-flight (was Step 5; only when libraries + qualifying connections present) -->
+					<div id="wizard-step-6" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 6) }>
 						<div class="inline-flex items-center gap-2 mb-1">
 							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.step_conflict") }</h2>
-							@components.ContextHelp("help-onboarding-conflict-preflight", t(ctx, "onboarding.help.conflict_preflight.label"), t(ctx, "onboarding.help.conflict_preflight"), "getting-started/first-run-oobe#wizard-step-5-conflict-pre-flight-conditional")
+							@components.ContextHelp("help-onboarding-conflict-preflight", t(ctx, "onboarding.help.conflict_preflight.label"), t(ctx, "onboarding.help.conflict_preflight"), "getting-started/first-run-oobe#wizard-step-6-conflict-pre-flight-conditional")
 						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.conflict_check_intro") }
@@ -346,13 +404,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							</div>
 						</div>
 					</div>
-					<!-- Step 6: Artist Discovery -->
-					<div id="wizard-step-6" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 6) }>
+					<!-- Step 7: Artist Discovery (was Step 6) -->
+					<div id="wizard-step-7" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 7) }>
 						<!-- Phase 1: Opt-in -->
 						<div id="discovery-opt-in">
 							<div class="inline-flex items-center gap-2 mb-1">
 								<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.artist_discovery") }</h2>
-								@components.ContextHelp("help-onboarding-discovery", t(ctx, "onboarding.help.discovery.label"), t(ctx, "onboarding.help.discovery"), "getting-started/first-run-oobe#wizard-step-6-artist-discovery")
+								@components.ContextHelp("help-onboarding-discovery", t(ctx, "onboarding.help.discovery.label"), t(ctx, "onboarding.help.discovery"), "getting-started/first-run-oobe#wizard-step-7-artist-discovery")
 							</div>
 							<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 								{ t(ctx, "onboarding.discovery_description") }
@@ -441,6 +499,26 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								</div>
 							}
 						</div>
+						<!-- Baseline sub-section: shown when pre-existing foreign files are present (#1142) -->
+						if data.ForeignFileCount > 0 {
+							<div id="baseline-subsection" class="mt-6 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4">
+								<h3 class="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-2">{ t(ctx, "onboarding.baseline_title") }</h3>
+								<p class="text-sm text-amber-900 dark:text-amber-100 mb-3">
+									{ tf(ctx, "onboarding.baseline_body", data.ForeignFileCount) }
+								</p>
+								<fieldset class="space-y-2">
+									<legend class="sr-only">{ t(ctx, "onboarding.baseline_title") }</legend>
+									<label class="flex items-start gap-2 cursor-pointer">
+										<input type="radio" name="baseline_choice" value="yes" checked class="mt-0.5"/>
+										<span class="text-sm text-amber-900 dark:text-amber-100">{ t(ctx, "onboarding.baseline_yes") }</span>
+									</label>
+									<label class="flex items-start gap-2 cursor-pointer">
+										<input type="radio" name="baseline_choice" value="no" class="mt-0.5"/>
+										<span class="text-sm text-amber-900 dark:text-amber-100">{ t(ctx, "onboarding.baseline_no") }</span>
+									</label>
+								</fieldset>
+							</div>
+						}
 						<!-- Phase 2: Progress -->
 						<div id="discovery-progress" class="hidden">
 							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.artist_discovery") }</h2>
@@ -537,8 +615,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			<script>
 				var parsedStep = parseInt(document.body.dataset.currentStep, 10);
 				var currentStep = isNaN(parsedStep) ? 0 : parsedStep;
-				var totalSteps = 6;
-				// Conflict pre-flight (step 5) is invisible unless server-side
+				var totalSteps = 7;
+				// Conflict pre-flight (step 6) is invisible unless server-side
 				// gating reports >=1 library AND >=1 enabled emby/jellyfin/lidarr
 				// connection. The flag is rendered into a data attribute so JS
 				// can skip the step on next/back without a server round-trip.
@@ -560,7 +638,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				// from data-conflict-preflight at page load, but in-session
 				// changes (adding the first library, saving the first qualifying
 				// connection) would otherwise leave it stale and the user would
-				// either skip step 5 entirely or land on it without prerequisites.
+				// either skip step 6 entirely or land on it without prerequisites.
 				// Mirrors the server gating in handlers.go (len(libs) > 0 AND a
 				// qualifying enabled emby/jellyfin/lidarr connection).
 				function recomputeConflictPreflight() {
@@ -573,7 +651,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					// On non-2xx we throw so the .catch below fires and the
 					// previously-cached visibility is preserved. A naive
 					// `r.ok ? r.json() : []` would treat a transient 401/5xx
-					// as "no libraries / no connections" and hide step 5,
+					// as "no libraries / no connections" and hide step 6,
 					// silently dropping the user out of the pre-flight.
 					return Promise.all([
 						fetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){
@@ -595,12 +673,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						// goToStep on a fresh visit) sees the up-to-date value.
 						document.body.dataset.conflictPreflight = conflictPreflightVisible ? 'true' : 'false';
 						var progress = document.getElementById('progress-conflict');
-						var line = document.getElementById('step-line-5');
+						var line = document.getElementById('step-line-6');
 						if (progress) progress.classList.toggle('hidden', !conflictPreflightVisible);
 						if (line) line.classList.toggle('hidden', !conflictPreflightVisible);
 					}).catch(function() {
 						// Leave the cached value in place on transient failures;
-						// goToStep will still try to render step 5 if the user
+						// goToStep will still try to render step 6 if the user
 						// navigates there manually.
 					});
 				}
@@ -625,7 +703,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				// Re-entrancy guard. goToStep is async (it awaits the conflict
-				// preflight recompute when transitioning to step 5), so a
+				// preflight recompute when transitioning to step 6), so a
 				// rapid double-click on Next would otherwise launch two
 				// concurrent invocations: both would await, both would
 				// proceed, and the second would clobber currentStep based
@@ -639,22 +717,22 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					try {
 					if (step < 0) step = 0;
 					if (step > totalSteps) step = totalSteps;
-					// When the requested target is step 5, await an
+					// When the requested target is step 6, await an
 					// authoritative recompute before deciding whether to
-					// land on 4/5/6. Without this, a user who saves the
+					// land on 5/6/7. Without this, a user who saves the
 					// last qualifying library/connection and immediately
 					// clicks Next can race the in-flight recompute and
-					// see step 5 wrongly skipped (or wrongly entered).
+					// see step 6 wrongly skipped (or wrongly entered).
 					// The recompute swallows its own fetch errors, so the
 					// await never rejects under normal operation.
-					if (step === 5) {
+					if (step === 6) {
 						try { await recomputeConflictPreflight(); } catch (_) {}
 					}
-					// Skip the conflict pre-flight (step 5) when the gating
+					// Skip the conflict pre-flight (step 6) when the gating
 					// preconditions are not satisfied. We need the direction
-					// (forward/back) to know whether to land on 4 or 6.
-					if (step === 5 && !conflictPreflightVisible) {
-						step = step > currentStep ? 6 : 4;
+					// (forward/back) to know whether to land on 5 or 7.
+					if (step === 6 && !conflictPreflightVisible) {
+						step = step > currentStep ? 7 : 5;
 					}
 					currentStep = step;
 
@@ -689,12 +767,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							var base = i < step
 								? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'
 								: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';
-							// Step 5's connector is conditionally hidden by
+							// Step 6's connector is conditionally hidden by
 							// the template when the conflict pre-flight is
 							// not gated in. Reassigning className here would
 							// drop that hidden class, leaving a dangling
 							// connector before the discovery dot.
-							if (i === 5 && !conflictPreflightVisible) {
+							if (i === 6 && !conflictPreflightVisible) {
 								base = 'hidden ' + base;
 							}
 							line.className = base;
@@ -707,12 +785,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					nextBtn.textContent = step === 0 ? 'Get Started' : 'Next';
 					document.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);
 
-					// Step 6 (discovery) hides Back during progress/review phases.
-					if (step === 6 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {
+					// Step 7 (discovery) hides Back during progress/review phases.
+					if (step === 7 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {
 						document.getElementById('back-btn').classList.add('hidden');
 					}
 
-					// Step 5 (conflict pre-flight): trigger an HTMX-driven refresh
+					// Step 6 (conflict pre-flight): trigger an HTMX-driven refresh
 					// of the body partial each time the user lands here so we
 					// always show fresh ledger data (peer state may have changed
 					// since OOBE last loaded). triggerConflictRefresh re-closes
@@ -720,13 +798,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					// cannot bypass a fresh round-trip block during the in-flight
 					// probe (the input would otherwise still hold the prior
 					// render's "0").
-					if (step === 5) {
+					if (step === 6) {
 						triggerConflictRefresh();
 					}
 					updateConflictGate();
 
-					// Step 2 (platform): auto-select based on auth provider only if no platform is already selected
-					if (step === 2) {
+					// Step 3 (platform): auto-select based on auth provider only if no platform is already selected
+					if (step === 3) {
 						var userAuthProvider = document.body.dataset.userAuthProvider;
 						if (userAuthProvider && (userAuthProvider === 'emby' || userAuthProvider === 'jellyfin')) {
 							var hasActiveCard = document.querySelector('[data-profile-card].border-blue-500') !== null;
@@ -751,7 +829,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				}
 
-				// updateConflictGate disables Next on step 5 when the rendered
+				// updateConflictGate disables Next on step 6 when the rendered
 				// conflict body sets the hidden #ob-conflict-block input to "1"
 				// (round-trip / red state). Other states are advisory and leave
 				// Next enabled. Called from goToStep and from htmx:afterSwap on
@@ -760,9 +838,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				function updateConflictGate() {
 					var nextBtn = document.getElementById('next-btn');
 					if (!nextBtn) return;
-					if (currentStep !== 5) {
+					if (currentStep !== 6) {
 						// Clear any disabled state left over from a prior visit
-						// to step 5; otherwise a user who hit a round-trip block
+						// to step 6; otherwise a user who hit a round-trip block
 						// and navigated back would find Next still grayed out
 						// on the unrelated step.
 						nextBtn.disabled = false;
@@ -797,7 +875,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				// firing the conflict-step request. The hidden input is the
 				// only thing updateConflictGate consults, and the rendered
 				// body only mutates it via the htmx:afterSwap sync. Without
-				// resetting it here, every refresh path (step-5 re-entry,
+				// resetting it here, every refresh path (step-6 re-entry,
 				// retry button) would leave Continue enabled in the window
 				// between trigger and swap-in, racing a fresh round-trip
 				// block.
@@ -844,10 +922,18 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				function finishWizard() {
+					var payload = {"onboarding.completed": "true"};
+					// If the baseline sub-section is visible, include the
+					// user's selection so the server can flip the
+					// foreign_files.baseline_completed flag accordingly.
+					var baselineChoice = document.querySelector('input[name="baseline_choice"]:checked');
+					if (baselineChoice) {
+						payload["onboarding.baseline_choice"] = baselineChoice.value;
+					}
 					fetch(basePath + '/api/v1/settings', {
 						method: 'PUT',
 						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
-						body: JSON.stringify({"onboarding.completed": "true"})
+						body: JSON.stringify(payload)
 					}).then(function(resp) {
 						if (!resp.ok) throw new Error('HTTP ' + resp.status);
 						if (typeof window.markTourPending === 'function') {
@@ -857,6 +943,32 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}).catch(function() {
 						alert('Failed to complete setup. Please try again.');
 					});
+				}
+
+				// obSkipLanguages explicitly resets the language preference
+				// to ["en"] -- the shared LanguagePicker auto-saves on every
+				// change, so the Continue button is just a step advance.
+				// Skip forces the default regardless of any picks the user
+				// already made in this session.
+				function obSkipLanguages() {
+					var btn = document.getElementById('ob-lang-skip-btn');
+					if (btn) { btn.disabled = true; }
+					var defaults = '["en"]';
+					if (window.swPreferences && typeof window.swPreferences.set === 'function') {
+						window.swPreferences.set('metadata_languages', defaults).then(function() {
+							if (btn) { btn.disabled = false; }
+							goToStep(3);
+						}).catch(function() {
+							if (btn) { btn.disabled = false; }
+							console.warn('Language preference reset network error; continuing anyway.');
+							goToStep(3);
+						});
+						return;
+					}
+					// Fallback when preferences.js failed to load: advance
+					// without persisting; the server-side default is "en".
+					if (btn) { btn.disabled = false; }
+					goToStep(3);
 				}
 
 				function selectPlatform(el) {
@@ -907,7 +1019,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 
 				// Returns a Promise so callers (notably tests and any future
 				// awaiter) can compose with the recompute. Most live callers
-				// fire-and-forget; the goToStep step-5 await closes the
+				// fire-and-forget; the goToStep step-6 await closes the
 				// stale-flag race that would otherwise need awaiting here.
 				function refreshLibraryList() {
 					return fetch(basePath + '/api/v1/libraries', {
@@ -919,7 +1031,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						var list = document.getElementById('ob-library-list');
 						if (!libs || libs.length === 0) {
 							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>';
-							// Library count contributes to step-5 gating;
+							// Library count contributes to step-6 gating;
 							// refresh the cached visibility flag whenever the
 							// list mutates. Returned so the chain is awaitable.
 							return recomputeConflictPreflight();
@@ -1418,7 +1530,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				// Returns the recompute Promise so callers can compose. Most
-				// live callers fire-and-forget; the goToStep step-5 await
+				// live callers fire-and-forget; the goToStep step-6 await
 				// closes the stale-flag race that would otherwise need
 				// awaiting here.
 				function onConnectionSaved(connType, xhr) {
@@ -1431,7 +1543,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (btn) btn.classList.add('hidden');
 					document.body.dispatchEvent(new Event('clobberRecheck'));
 					// Saving an emby/jellyfin/lidarr connection is the other half
-					// of the step-5 gate; refresh the cached flag so the user
+					// of the step-6 gate; refresh the cached flag so the user
 					// won't be skipped past the conflict pre-flight.
 					var recomputeP = recomputeConflictPreflight();
 					if (dot) {
@@ -1498,7 +1610,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				// Initialize to the correct step on page load. We defer to
-				// DOMContentLoaded so that on direct-resume to step 5, the
+				// DOMContentLoaded so that on direct-resume to step 6, the
 				// htmx.trigger('oobeConflictRefresh') inside goToStep fires
 				// after htmx has scanned the body and bound the
 				// hx-trigger="oobeConflictRefresh from:body" listener; firing
@@ -1515,6 +1627,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					obInit();
 				}
 			</script>
+			@components.LanguagePickerScript()
 		</body>
 	</html>
 }

@@ -171,27 +171,6 @@ type UpdatesTabData struct {
 	LoadFailed bool
 }
 
-// metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
-// suitable for embedding in a data attribute.
-//
-// Empty slices are preserved as "[]" rather than coerced to the default.
-// This is load-bearing: the Providers tab JS treats "[]" as the explicit
-// "no languages set, using default: English" state (issue #1138). Coercing
-// back to ["en"] here would silently re-render an English pill after a
-// user's explicit reset-to-default action, contradicting what they just did.
-// On JSON marshal failure we fall back to "[]" for the same reason: it is
-// the safer no-op than fabricating an opinion on the user's behalf.
-func (d SettingsData) metadataLanguagesJSON() string {
-	if len(d.MetadataLanguages) == 0 {
-		return `[]`
-	}
-	b, err := json.Marshal(d.MetadataLanguages)
-	if err != nil {
-		return `[]`
-	}
-	return string(b)
-}
-
 // vocabExcludePatternsText returns the exclude patterns as a newline-separated
 // string suitable for pre-filling the Tag Sources textarea. Returns an empty
 // string when no patterns are configured so the textarea renders blank.
@@ -844,7 +823,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@profileNamingEditorScript()
 		@settingsUsersScript()
 		@settingsAuthProvidersScript()
-		@metadataLanguagesScript()
+		@components.LanguagePickerScript()
 		@romanizationFallbackScript()
 		@components.ContextHelpScript()
 		@settingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
@@ -1243,6 +1222,116 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 				@cacheScript()
+				<!-- Onboarding section: re-run wizard (#1142) -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" id="settings-onboarding">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.onboarding_section_title") }</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							{ t(ctx, "settings.onboarding_section_body") }
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<button
+							type="button"
+							id="rerun-onboarding-btn"
+							class="rounded-md border border-blue-500 text-blue-600 dark:text-blue-400 px-3 py-1.5 text-sm hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"
+							aria-haspopup="dialog"
+							aria-controls="rerun-onboarding-confirm"
+							onclick="openRerunOnboardingDialog(this)"
+						>
+							{ t(ctx, "settings.rerun_onboarding_button") }
+						</button>
+						<dialog
+							id="rerun-onboarding-confirm"
+							aria-modal="true"
+							aria-labelledby="rerun-onboarding-confirm-title"
+							class="rounded-lg p-6 bg-white dark:bg-gray-800 shadow-xl backdrop:bg-black/30"
+						>
+							<h4 id="rerun-onboarding-confirm-title" class="text-base font-semibold mb-2 text-gray-900 dark:text-gray-100">{ t(ctx, "settings.rerun_confirm_title") }</h4>
+							<p class="text-sm text-gray-600 dark:text-gray-300 mb-4">{ t(ctx, "settings.rerun_confirm_body") }</p>
+							<div class="flex justify-end gap-2">
+								<button
+									type="button"
+									onclick="closeRerunOnboardingDialog()"
+									class="px-3 py-1.5 text-sm rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+								>
+									{ t(ctx, "common.cancel") }
+								</button>
+								<button
+									type="button"
+									id="rerun-onboarding-confirm-btn"
+									data-i18n-failed-http={ t(ctx, "settings.rerun_failed_http") }
+									data-i18n-failed-network={ t(ctx, "settings.rerun_failed_network") }
+									class="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								>
+									{ t(ctx, "settings.rerun_confirm_continue") }
+								</button>
+							</div>
+						</dialog>
+						<script>
+							(function() {
+								var dialog = document.getElementById('rerun-onboarding-confirm');
+								var btn = document.getElementById('rerun-onboarding-confirm-btn');
+								if (!btn) return;
+								// Track the element that opened the dialog so close
+								// can restore keyboard focus (mirrors the
+								// path_picker.templ / artist_duplicates.templ pattern).
+								var lastFocused = null;
+								window.openRerunOnboardingDialog = function(trigger) {
+									if (!dialog) return;
+									lastFocused = trigger || document.activeElement;
+									dialog.showModal();
+									// Move focus to the confirm button so screen
+									// readers announce the new context and Tab order
+									// begins inside the dialog. Defer to next tick so
+									// the dialog has settled into the modal layer.
+									setTimeout(function() { btn.focus(); }, 0);
+								};
+								window.closeRerunOnboardingDialog = function() {
+									if (dialog && dialog.open) dialog.close();
+								};
+								if (dialog) {
+									dialog.addEventListener('close', function() {
+										if (lastFocused && typeof lastFocused.focus === 'function') {
+											lastFocused.focus();
+										}
+									});
+								}
+								btn.addEventListener('click', function() {
+									btn.disabled = true;
+									// Use the canonical CSRF reader from preferences.js
+									// to avoid drift if the cookie name ever changes.
+									var csrf = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+									var bp = (function() {
+										var m = document.querySelector('meta[name="htmx-base-path"]');
+										return m ? m.content : '';
+									})();
+									var httpTpl = btn.dataset.i18nFailedHttp || 'Re-run onboarding failed ({status})';
+									var netMsg = btn.dataset.i18nFailedNetwork || 'Network error. Please try again.';
+									fetch(bp + '/api/v1/onboarding/reset', {
+										method: 'POST',
+										headers: {'X-CSRF-Token': decodeURIComponent(csrf)}
+									}).then(function(res) {
+										if (res.ok) {
+											window.location.href = bp + '/setup/wizard';
+										} else {
+											btn.disabled = false;
+											var msg = httpTpl.replace('{status}', res.status);
+											if (window.showToast) {
+												window.showToast(msg);
+											} else {
+												alert(msg);
+											}
+										}
+									}).catch(function() {
+										btn.disabled = false;
+										alert(netMsg);
+									});
+								});
+							})();
+						</script>
+					</div>
+				</div>
 			</div>
 			<!-- Providers tab -->
 			<div
@@ -1331,39 +1420,22 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 					<div class="px-6 py-4">
 						<div class="space-y-3">
-							<div
-								id="metadata-lang-container"
-								data-languages={ data.metadataLanguagesJSON() }
-								data-remove-label={ t(ctx, "settings.metadata_languages.remove") }
-								data-toast-saved={ t(ctx, "settings.metadata_languages.toast_saved") }
-								data-toast-failed={ t(ctx, "settings.metadata_languages.toast_failed") }
-								data-toast-max={ t(ctx, "settings.metadata_languages.toast_max") }
-								data-aria-list-label={ t(ctx, "settings.metadata_languages.aria_list_label") }
-								data-aria-pill-hint={ t(ctx, "settings.metadata_languages.aria_pill_hint") }
-								data-aria-pill-label={ t(ctx, "settings.metadata_languages.aria_pill_label") }
-								data-default-hint={ t(ctx, "settings.metadata_languages.default_hint") }
-							>
-								<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
-									<!-- Pills rendered by JS from data-languages -->
-								</div>
-								<div class="mt-2 relative">
-									<input
-										type="text"
-										id="metadata-lang-input"
-										role="combobox"
-										aria-label={ t(ctx, "settings.metadata_languages.input_label") }
-										aria-expanded="false"
-										aria-controls="metadata-lang-dropdown"
-										aria-autocomplete="list"
-										placeholder={ t(ctx, "settings.metadata_languages.input_placeholder") }
-										autocomplete="off"
-										class="w-full text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-									/>
-									<div id="metadata-lang-dropdown" role="listbox" class="hidden absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-lg">
-										<!-- Autocomplete results rendered by JS -->
-									</div>
-								</div>
-							</div>
+							@components.LanguagePicker(components.LanguagePickerOpts{
+								InstanceID:       "settings",
+								InitialLanguages: data.MetadataLanguages,
+								Labels: components.LanguagePickerLabels{
+									InputLabel:       t(ctx, "settings.metadata_languages.input_label"),
+									InputPlaceholder: t(ctx, "settings.metadata_languages.input_placeholder"),
+									Remove:           t(ctx, "settings.metadata_languages.remove"),
+									AriaListLabel:    t(ctx, "settings.metadata_languages.aria_list_label"),
+									AriaPillHint:     t(ctx, "settings.metadata_languages.aria_pill_hint"),
+									AriaPillLabel:    t(ctx, "settings.metadata_languages.aria_pill_label"),
+									DefaultHint:      t(ctx, "settings.metadata_languages.default_hint"),
+									ToastSaved:       t(ctx, "settings.metadata_languages.toast_saved"),
+									ToastFailed:      t(ctx, "settings.metadata_languages.toast_failed"),
+									ToastMax:         t(ctx, "settings.metadata_languages.toast_max"),
+								},
+							})
 							<!-- Romanization fallback toggle -->
 							<div class="flex items-start justify-between gap-4 pt-3 border-t border-gray-200 dark:border-gray-700">
 								<div>
@@ -4814,384 +4886,6 @@ templ sortableInitScript() {
 	</script>
 }
 
-// metadataLanguagesScript renders the inline JS for the metadata language
-// preference pills on the Providers tab: autocomplete search, pill rendering
-// with human-readable names, drag-to-reorder via SortableJS, and persistence.
-templ metadataLanguagesScript() {
-	<script>
-		document.addEventListener('DOMContentLoaded', function () {
-			// Use Intl.DisplayNames to derive localized display names for any
-			// BCP 47 tag, falling back to the raw code when unavailable.
-			var uiLocales = (Array.isArray(navigator.languages) && navigator.languages.length > 0)
-				? navigator.languages.slice()
-				: [navigator.language || 'en'];
-			// Filter out empty strings and the literal "undefined" so the
-			// Intl.DisplayNames constructor does not throw RangeError on bad
-			// browser-supplied locale arrays (#1618).
-			uiLocales = uiLocales.filter(function (tag) {
-				return typeof tag === 'string' && tag !== '' && tag !== 'undefined';
-			});
-			if (uiLocales.length === 0) uiLocales = ['en'];
-
-			var langDisplayNames = null;
-			if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function') {
-				try {
-					langDisplayNames = new Intl.DisplayNames(uiLocales, { type: 'language', fallback: 'code' });
-				} catch (_) {
-					langDisplayNames = null;
-				}
-			}
-
-			function langName(code) {
-				if (!langDisplayNames) return code;
-				try { return langDisplayNames.of(code) || code; }
-				catch (_) { return code; }
-			}
-
-			// Common BCP 47 tags used by music metadata providers for autocomplete
-			// suggestions. Display names are derived dynamically via Intl.DisplayNames.
-			var COMMON_TAGS = [
-				'en', 'en-GB', 'en-US', 'ja', 'de', 'fr', 'es', 'it',
-				'pt', 'pt-BR', 'zh', 'zh-TW', 'ko', 'ru', 'nl', 'sv',
-				'no', 'nb', 'nn', 'fi', 'da', 'pl', 'cs', 'sk', 'hu',
-				'ro', 'bg', 'hr', 'sr', 'sl', 'uk', 'el', 'tr', 'ar',
-				'he', 'hi', 'th', 'vi', 'id', 'ms', 'tl', 'ca', 'eu',
-				'gl', 'cy', 'ga', 'et', 'lv', 'lt', 'is', 'sq', 'mk',
-				'bs', 'ka', 'hy', 'fa', 'ur', 'bn', 'ta', 'te', 'ml',
-				'kn', 'sw', 'af', 'la', 'eo'
-			];
-
-			var container = document.getElementById('metadata-lang-container');
-			if (!container) return;
-
-			var pillBox = document.getElementById('metadata-lang-pills');
-			var input = document.getElementById('metadata-lang-input');
-			var dropdown = document.getElementById('metadata-lang-dropdown');
-			var langs = [];
-			var persistedLangs = [];
-			try { langs = JSON.parse(container.getAttribute('data-languages') || '["en"]'); }
-			catch (e) { langs = ['en']; }
-			persistedLangs = langs.slice();
-
-			function renderPills() {
-				pillBox.innerHTML = '';
-
-				// Empty state: user cleared all pills. Render a visible
-				// "Using default: English" hint instead of silently
-				// re-inserting ['en']. The server treats [] as an explicit
-				// unset -- the row is deleted and subsequent reads return
-				// the default. See issue #1138.
-				//
-				// Strip role="list" and aria-label in this branch: a
-				// container advertised as a list whose only child is a
-				// role="status" span (no listitem children) is invalid
-				// ARIA. The list semantics are re-applied below when
-				// actual pills are rendered.
-				if (langs.length === 0) {
-					pillBox.removeAttribute('role');
-					pillBox.removeAttribute('aria-label');
-					var hint = document.createElement('span');
-					hint.className = 'text-sm italic text-gray-500 dark:text-gray-400 px-2 py-1';
-					hint.setAttribute('role', 'status');
-					hint.setAttribute('aria-live', 'polite');
-					hint.textContent = container.getAttribute('data-default-hint')
-						|| 'No languages set. Using default: English. Search above to add languages.';
-					pillBox.appendChild(hint);
-					return;
-				}
-
-				pillBox.setAttribute('role', 'list');
-				pillBox.setAttribute('aria-label', container.getAttribute('data-aria-list-label') || 'Language priority order');
-				langs.forEach(function (code, idx) {
-					var pill = document.createElement('span');
-					pill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500';
-					pill.setAttribute('data-idx', String(idx));
-					pill.setAttribute('data-lang', code);
-					pill.setAttribute('role', 'listitem');
-					pill.setAttribute('tabindex', '0');
-					var pillHint = container.getAttribute('data-aria-pill-hint') || 'use arrow keys to reorder';
-					var pillLabelTpl = container.getAttribute('data-aria-pill-label') || '{name}, position {pos} of {total}, {hint}';
-					pill.setAttribute('aria-label', pillLabelTpl.replace('{name}', langName(code)).replace('{pos}', String(idx + 1)).replace('{total}', String(langs.length)).replace('{hint}', pillHint));
-					pill.textContent = langName(code);
-
-					// Keyboard reorder: ArrowLeft/Right to swap position.
-					pill.addEventListener('keydown', function (e) {
-						var pillIdx = Number(pill.getAttribute('data-idx'));
-						if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-							if (pillIdx > 0) {
-								e.preventDefault();
-								var previous = langs.slice();
-								var tmp = langs[pillIdx - 1];
-								langs[pillIdx - 1] = langs[pillIdx];
-								langs[pillIdx] = tmp;
-								renderPills();
-								saveLangs(previous);
-								// Re-focus the moved pill at its new position.
-								var moved = pillBox.querySelector('[data-idx="' + (pillIdx - 1) + '"]');
-								if (moved) moved.focus();
-							}
-						} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-							if (pillIdx < langs.length - 1) {
-								e.preventDefault();
-								var previous = langs.slice();
-								var tmp = langs[pillIdx + 1];
-								langs[pillIdx + 1] = langs[pillIdx];
-								langs[pillIdx] = tmp;
-								renderPills();
-								saveLangs(previous);
-								var moved = pillBox.querySelector('[data-idx="' + (pillIdx + 1) + '"]');
-								if (moved) moved.focus();
-							}
-						} else if (e.key === 'Delete' || e.key === 'Backspace') {
-							e.preventDefault();
-							var previous = langs.slice();
-							langs.splice(pillIdx, 1);
-							renderPills();
-							saveLangs(previous);
-							// Focus the pill at the same index or the last
-							// one. If langs is now empty, move focus to the
-							// search input so keyboard users can immediately
-							// add a language without re-tabbing.
-							if (langs.length === 0) {
-								if (input) input.focus();
-							} else {
-								var focusIdx = Math.min(pillIdx, langs.length - 1);
-								var next = pillBox.querySelector('[data-idx="' + focusIdx + '"]');
-								if (next) next.focus();
-							}
-						}
-					});
-
-					var removeBtn = document.createElement('button');
-					removeBtn.type = 'button';
-					removeBtn.setAttribute('tabindex', '-1'); // pill itself is focusable
-					removeBtn.className = 'ml-0.5 text-blue-600 dark:text-blue-300 hover:text-red-500 dark:hover:text-red-400 focus:outline-none';
-					removeBtn.innerHTML = '&times;';
-					removeBtn.setAttribute('aria-label', (container.getAttribute('data-remove-label') || 'Remove') + ' ' + langName(code));
-					removeBtn.addEventListener('click', function () {
-						var previous = langs.slice();
-						var removeIdx = langs.indexOf(code);
-						if (removeIdx >= 0) langs.splice(removeIdx, 1);
-						renderPills();
-						saveLangs(previous);
-					});
-					pill.appendChild(removeBtn);
-					pillBox.appendChild(pill);
-				});
-
-				// Attach SortableJS for drag reorder.
-				if (typeof Sortable !== 'undefined' && !pillBox._sortable) {
-					pillBox._sortable = new Sortable(pillBox, {
-						animation: 150,
-						ghostClass: 'opacity-50',
-						onEnd: function () {
-							var previous = langs.slice();
-							var newOrder = [];
-							pillBox.querySelectorAll('[data-lang]').forEach(function (el) {
-								newOrder.push(el.getAttribute('data-lang'));
-							});
-							langs = newOrder;
-							renderPills();
-							saveLangs(previous);
-						}
-					});
-				}
-			}
-
-			var latestSaveSeq = 0;
-
-			function saveLangs(previous) {
-				var saveSeq = ++latestSaveSeq;
-				var val = JSON.stringify(langs);
-				container.setAttribute('data-languages', val);
-				if (window.swPreferences) {
-					window.swPreferences.set('metadata_languages', val).then(function (saved) {
-						var isLatest = saveSeq === latestSaveSeq;
-						var prevVal = JSON.stringify(previous);
-						// swPreferences.set resolves with previousValue on HTTP error,
-						// so if saved matches previous but differs from what we sent,
-						// the server rejected the change.
-						if (typeof saved === 'string' && saved !== '' && !(saved === prevVal && saved !== val)) {
-							// Success: server accepted (possibly normalized).
-							var parsed;
-							try { parsed = JSON.parse(saved); } catch (_) {
-								console.warn('swPreferences: failed to parse server response for metadata_languages');
-								if (!isLatest) return;
-								langs = persistedLangs.slice();
-								container.setAttribute('data-languages', JSON.stringify(langs));
-								renderPills();
-								if (typeof window.showToast === 'function') {
-									showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
-								}
-								return;
-							}
-							// Always record the server-confirmed state, even for stale responses.
-							persistedLangs = parsed.slice();
-							if (!isLatest) {
-								console.debug('swPreferences: discarding stale save response (seq ' + saveSeq + ', latest ' + latestSaveSeq + ')');
-								return;
-							}
-							langs = parsed;
-							container.setAttribute('data-languages', JSON.stringify(langs));
-							renderPills();
-							if (typeof window.showSuccessToast === 'function') {
-								showSuccessToast(container.getAttribute('data-toast-saved') || 'Language preferences saved');
-							}
-						} else {
-							// Failure: server rejected or empty response.
-							// Roll back to last server-confirmed state, not the optimistic previous.
-							if (!isLatest) return;
-							langs = persistedLangs.slice();
-							container.setAttribute('data-languages', JSON.stringify(langs));
-							renderPills();
-							if (typeof window.showToast === 'function') {
-								showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
-							}
-						}
-					}).catch(function (err) {
-						var isLatest = saveSeq === latestSaveSeq;
-						if (!isLatest) {
-							console.debug('swPreferences: discarding stale save error', err);
-							return;
-						}
-						console.warn('swPreferences: metadata_languages save failed', err);
-						langs = persistedLangs.slice();
-						container.setAttribute('data-languages', JSON.stringify(langs));
-						renderPills();
-						if (typeof window.showToast === 'function') {
-							showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
-						}
-					});
-				}
-			}
-
-			var activeIdx = -1; // index of keyboard-highlighted dropdown option
-
-			// Autocomplete: filter COMMON_TAGS by input, excluding already-selected.
-			function showDropdown() {
-				var query = (input.value || '').trim().toLowerCase();
-				dropdown.innerHTML = '';
-				activeIdx = -1;
-				if (!query) {
-					dropdown.classList.add('hidden');
-					input.setAttribute('aria-expanded', 'false');
-					input.removeAttribute('aria-activedescendant');
-					return;
-				}
-
-				var matches = [];
-				for (var i = 0; i < COMMON_TAGS.length; i++) {
-					var code = COMMON_TAGS[i];
-					if (langs.indexOf(code) >= 0) continue;
-					var name = langName(code);
-					if (name.toLowerCase().indexOf(query) >= 0 || code.toLowerCase().indexOf(query) >= 0) {
-						matches.push({ code: code, name: name });
-					}
-				}
-
-				if (matches.length === 0) {
-					dropdown.classList.add('hidden');
-					input.setAttribute('aria-expanded', 'false');
-					input.removeAttribute('aria-activedescendant');
-					activeIdx = -1;
-					return;
-				}
-
-				matches.sort(function (a, b) { return a.name.localeCompare(b.name); });
-
-				matches.forEach(function (m, idx) {
-					var opt = document.createElement('div');
-					opt.className = 'px-3 py-1.5 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100';
-					opt.setAttribute('role', 'option');
-					opt.setAttribute('data-code', m.code);
-					opt.setAttribute('data-idx', String(idx));
-					opt.id = 'metadata-lang-opt-' + idx;
-					opt.textContent = m.name + ' (' + m.code + ')';
-					opt.addEventListener('mousedown', function (e) {
-						e.preventDefault(); // prevent input blur
-						addLang(m.code);
-					});
-					dropdown.appendChild(opt);
-				});
-				dropdown.classList.remove('hidden');
-				input.setAttribute('aria-expanded', 'true');
-			}
-
-			function highlightOption(idx) {
-				var items = dropdown.querySelectorAll('[role="option"]');
-				items.forEach(function (el) {
-					el.classList.remove('bg-blue-50', 'dark:bg-gray-600');
-					el.removeAttribute('aria-selected');
-				});
-				if (idx >= 0 && idx < items.length) {
-					activeIdx = idx;
-					items[idx].classList.add('bg-blue-50', 'dark:bg-gray-600');
-					items[idx].setAttribute('aria-selected', 'true');
-					input.setAttribute('aria-activedescendant', items[idx].id);
-					items[idx].scrollIntoView({ block: 'nearest' });
-				} else {
-					activeIdx = -1;
-					input.removeAttribute('aria-activedescendant');
-				}
-			}
-
-			function addLang(code) {
-				if (langs.indexOf(code) >= 0) return;
-				if (langs.length >= 20) {
-					if (typeof window.showToast === 'function') {
-						showToast(container.getAttribute('data-toast-max') || 'Maximum of 20 languages allowed');
-					}
-					return;
-				}
-				var previous = langs.slice();
-				langs.push(code);
-				input.value = '';
-				dropdown.classList.add('hidden');
-				input.setAttribute('aria-expanded', 'false');
-				input.removeAttribute('aria-activedescendant');
-				activeIdx = -1;
-				renderPills();
-				saveLangs(previous);
-			}
-
-			input.addEventListener('input', showDropdown);
-			input.addEventListener('focus', showDropdown);
-			input.addEventListener('blur', function () {
-				// Delay to allow mousedown on dropdown items.
-				setTimeout(function () {
-					dropdown.classList.add('hidden');
-					input.setAttribute('aria-expanded', 'false');
-					input.removeAttribute('aria-activedescendant');
-					activeIdx = -1;
-				}, 150);
-			});
-			input.addEventListener('keydown', function (e) {
-				var items = dropdown.querySelectorAll('[role="option"]');
-				if (e.key === 'ArrowDown') {
-					e.preventDefault();
-					if (dropdown.classList.contains('hidden')) { showDropdown(); return; }
-					highlightOption(activeIdx < items.length - 1 ? activeIdx + 1 : 0);
-				} else if (e.key === 'ArrowUp') {
-					e.preventDefault();
-					if (dropdown.classList.contains('hidden')) return;
-					highlightOption(activeIdx > 0 ? activeIdx - 1 : items.length - 1);
-				} else if (e.key === 'Enter') {
-					e.preventDefault();
-					if (activeIdx >= 0 && activeIdx < items.length) {
-						addLang(items[activeIdx].getAttribute('data-code'));
-					}
-				} else if (e.key === 'Escape') {
-					dropdown.classList.add('hidden');
-					input.setAttribute('aria-expanded', 'false');
-					input.removeAttribute('aria-activedescendant');
-					activeIdx = -1;
-				}
-			});
-
-			renderPills();
-		});
-	</script>
-}
 
 // romanizationFallbackScript renders the JS for the
 // metadata_name_romanization_fallback toggle on the Providers tab. The toggle

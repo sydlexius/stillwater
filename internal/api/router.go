@@ -490,6 +490,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/foreign-file-allowlist", wrapAuth(middleware.RequireAdmin(r.handleForeignAllowlistList), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/foreign-file-allowlist/{id}", wrapAuth(middleware.RequireAdmin(r.handleForeignAllowlistRemove), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/onboarding/conflict-step", wrapAuth(r.handlePostOnboardingConflictStep, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/onboarding/reset", wrapAuth(middleware.RequireAdmin(r.handlePostOnboardingReset), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/platform-summary", wrapAuth(r.handleGetPlatformSummary, authMw))
 	// Connection library discovery/import routes
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/libraries", wrapAuth(r.handleDiscoverLibraries, authMw))

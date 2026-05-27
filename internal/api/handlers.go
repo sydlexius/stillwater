@@ -18,6 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	connEmby "github.com/sydlexius/stillwater/internal/connection/emby"
 	connJellyfin "github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/langpref"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/components"
@@ -1266,6 +1267,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 			currentStep = 5
 		case "6":
 			currentStep = 6
+		case "7":
+			currentStep = 7
 		}
 	}
 
@@ -1310,10 +1313,29 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 
 	// Compute whether the conflict pre-flight step (#1184) is visible.
 	// Gating: >=1 library configured AND >=1 enabled connection of type
-	// emby/jellyfin/lidarr. When invisible the JS skips step 5 in
-	// goToStep so the user goes straight from connections (4) to
-	// discovery (6) as before this feature shipped.
+	// emby/jellyfin/lidarr. When invisible the JS skips step 6 in
+	// goToStep so the user goes straight from connections (5) to
+	// discovery (7) as before this feature shipped.
 	conflictPreflightVisible := len(libs) > 0 && hasQualifyingConflictConnection(conns)
+
+	// Load language preferences for the OOBE language step (#1142).
+	langRepo := langpref.NewRepository(r.db)
+	langs, err := langRepo.Get(req.Context(), userID)
+	if err != nil {
+		r.logger.Warn("loading language preferences for onboarding", "user_id", userID, "error", err)
+		langs = langpref.DefaultTags()
+	}
+
+	// Count pre-existing foreign files for the baseline sub-section
+	// in the Discovery step (#1142 / PR10 #1584). Zero is the no-op case.
+	foreignFileCount := 0
+	if r.foreignRepo != nil {
+		foreignFileCount, err = r.foreignRepo.Count(req.Context())
+		if err != nil {
+			r.logger.Warn("counting foreign files for onboarding", "error", err)
+			foreignFileCount = 0
+		}
+	}
 
 	data := templates.OnboardingData{
 		Libraries:                libs,
@@ -1325,6 +1347,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		UnidentifiedCount:        unidentifiedCount,
 		UserAuthProvider:         userAuthProvider,
 		ConflictPreflightVisible: conflictPreflightVisible,
+		Languages:                langs,
+		ForeignFileCount:         foreignFileCount,
 	}
 	renderTempl(w, req, templates.OnboardingPage(r.assetsFor(req), data))
 }
