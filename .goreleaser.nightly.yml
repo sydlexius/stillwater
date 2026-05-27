@@ -22,13 +22,22 @@ version: 2
 # routes the nightly's artifacts at the existing v1.4.0 GitHub Release and
 # fails the upload with 422 already_exists.
 #
-#   tag_sort: -creatordate picks the most recently created tag on the
-#       same commit, which is always the nightly because it is created at
-#       workflow time, after any stable tag the maintainer pushed earlier.
-#       This drives `.Tag` / `.Version`.
-#   ignore_tags: ["v*"] excludes stable tags from previous-tag walking,
-#       keeping `.PreviousTag` on the prior nightly so the changelog
-#       window stays nightly-to-nightly.
+#   tag_sort: -creatordate picks the most recently created tag on a
+#       multi-tag commit. The nightly tag is always newer than any
+#       same-commit stable tag because the workflow creates it at
+#       runtime, after any stable tag the maintainer pushed earlier.
+#       Drives `.Tag` / `.Version`. (Goreleaser docs imply `ignore_tags`
+#       below also covers current-tag selection, but in v2.16 the
+#       "tag exactly on HEAD" code path does NOT honor `ignore_tags` --
+#       verified empirically against the v1.4.0/nightly-20260527
+#       collision: with `ignore_tags: ["v*"]` alone, goreleaser still
+#       resolved current=v1.4.0. So tag_sort is load-bearing here, not
+#       redundant with ignore_tags.)
+#   ignore_tags: ["v*"] keeps `.PreviousTag` on the prior nightly so the
+#       changelog window stays nightly-to-nightly. Without this, the
+#       previous-tag walk falls through to the next semver below the
+#       current stable (e.g. v1.3.0) and the changelog spans the wrong
+#       window.
 git:
   tag_sort: -creatordate
   ignore_tags:
