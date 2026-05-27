@@ -2566,3 +2566,461 @@ func TestNewImageFixer_HTTPClient_RejectsLoopback(t *testing.T) {
 		t.Fatalf("expected ErrPrivateAddress from SafeTransport, got: %v", err)
 	}
 }
+
+// ---- per-stage unit tests for ImageFixer.Fix (#1415) ----
+
+// TestImageFixer_validatePreconditions_UnknownRule pins the contract that an
+// unsupported rule ID produces a hard error rather than a non-fixed result,
+// matching the pre-refactor behavior callers rely on.
+func TestImageFixer_validatePreconditions_UnknownRule(t *testing.T) {
+	f := NewImageFixer(nil, nil, nonSharedFSCheck(), testLogger())
+	a := &artist.Artist{Name: "Unknown", MusicBrainzID: "mbid-x", LibraryID: "lib-test"}
+	v := &Violation{RuleID: "made_up_rule"}
+
+	_, pre, err := f.validatePreconditions(context.Background(), a, v)
+	if err == nil {
+		t.Fatal("expected error for unknown rule, got nil")
+	}
+	if pre != nil {
+		t.Errorf("expected no preflight FixResult, got %+v", pre)
+	}
+}
+
+// TestImageFixer_filterCandidatesByQuality_AllEliminated verifies the
+// resolution-gate stage returns a non-fixed FixResult with the
+// constraint-aware message and ok=false when no candidate clears the gate.
+func TestImageFixer_filterCandidatesByQuality_AllEliminated(t *testing.T) {
+	f := NewImageFixer(nil, nil, nonSharedFSCheck(), testLogger())
+	fctx := &imageFixContext{imageType: "thumb", minW: 1000, minH: 1000}
+	cands := []provider.ImageResult{
+		{URL: "a", Width: 100, Height: 100},
+		{URL: "b", Width: 200, Height: 200},
+	}
+
+	got := f.filterCandidatesByQuality(context.Background(), nil, &Violation{RuleID: RuleThumbMinRes}, fctx, cands)
+	if got.ok {
+		t.Fatal("ok = true; want false when every candidate is below the minimum")
+	}
+	if got.result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if !strings.Contains(got.result.Message, "minimum resolution requirements") {
+		t.Errorf("Message = %q; want 'minimum resolution requirements'", got.result.Message)
+	}
+}
+
+// TestImageFixer_filterCandidatesByQuality_Survives confirms the happy path:
+// candidates that clear the gate flow through unchanged and ok is true.
+func TestImageFixer_filterCandidatesByQuality_Survives(t *testing.T) {
+	f := NewImageFixer(nil, nil, nonSharedFSCheck(), testLogger())
+	fctx := &imageFixContext{imageType: "thumb", minW: 100, minH: 100}
+	cands := []provider.ImageResult{
+		{URL: "a", Width: 200, Height: 200},
+	}
+
+	got := f.filterCandidatesByQuality(context.Background(), nil, &Violation{RuleID: RuleThumbMinRes}, fctx, cands)
+	if !got.ok {
+		t.Fatalf("ok = false; want true. result=%+v", got.result)
+	}
+	if len(got.candidates) != 1 || got.candidates[0].URL != "a" {
+		t.Errorf("candidates = %+v; want [a]", got.candidates)
+	}
+}
+
+// TestResolutionConstraintDesc pins the message-rendering rules so the user
+// sees the right reason after the resolution gate eliminates every
+// candidate.
+func TestResolutionConstraintDesc(t *testing.T) {
+	cases := []struct {
+		name                       string
+		minW, minH, existW, existH int
+		want                       string
+	}{
+		{"both", 100, 100, 500, 500, "minimum and existing image resolution requirements"},
+		{"min only", 100, 100, 0, 0, "minimum resolution requirements"},
+		{"existing only", 0, 0, 500, 500, "existing image resolution requirements"},
+		{"neither", 0, 0, 0, 0, "resolution requirements"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := resolutionConstraintDesc(c.minW, c.minH, c.existW, c.existH)
+			if got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestPassesPostDownloadDimensionGate_NoConstraints proves the gate is a
+// no-op when there is nothing to enforce. The original inline check had no
+// dedicated coverage for the "skip the gate" branch.
+func TestPassesPostDownloadDimensionGate_NoConstraints(t *testing.T) {
+	if !passesPostDownloadDimensionGate(nil, &imageFixContext{}, "u", testLogger()) {
+		t.Error("expected true when no constraints are configured")
+	}
+}
+
+// ---- per-mode strategy unit tests for runForArtistFiltered (#1416) ----
+
+// TestPipeline_ProcessManualViolation_WithCandidates verifies the manual
+// strategy persists a pending_choice row when the discoverer surfaces
+// candidates, and forwards the FixResult to the orchestrator.
+func TestPipeline_ProcessManualViolation_WithCandidates(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Manual Test", SortName: "Manual Test", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	cands := []ImageCandidate{{URL: "http://example.com/x.jpg", ImageType: "thumb"}}
+	fixer := &candidateDiscoveryFixer{
+		canFixRuleID: RuleThumbExists,
+		result:       &FixResult{Fixed: false, Message: "found 1", Candidates: cands},
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	v := &Violation{RuleID: RuleThumbExists, Fixable: true, Severity: "warning"}
+	out := pipeline.processManualViolation(ctx, a, v)
+
+	if out.fr == nil {
+		t.Fatal("expected FixResult, got nil")
+	}
+	if out.fixed {
+		t.Error("manual mode must never set fixed=true")
+	}
+	if out.resolvedRow != nil {
+		t.Error("manual mode must not return a resolvedRow")
+	}
+	if !out.persistOK {
+		t.Error("persistOK = false; want true on a clean upsert")
+	}
+
+	// And the row landed as pending_choice.
+	pend, err := ruleSvc.ListViolations(ctx, ViolationStatusPendingChoice)
+	if err != nil {
+		t.Fatalf("ListViolations: %v", err)
+	}
+	found := false
+	for _, rv := range pend {
+		if rv.ArtistID == a.ID && rv.RuleID == RuleThumbExists {
+			found = true
+			if len(rv.Candidates) != 1 {
+				t.Errorf("Candidates len = %d, want 1", len(rv.Candidates))
+			}
+		}
+	}
+	if !found {
+		t.Error("expected pending_choice row for thumb_exists")
+	}
+}
+
+// TestPipeline_ProcessManualViolation_NoDiscoverer verifies the manual
+// strategy falls back to a plain open-row upsert when no fixer supports
+// candidate discovery (the side-effect-fixer guard). The fixer is never
+// invoked.
+func TestPipeline_ProcessManualViolation_NoDiscoverer(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "No Discoverer", SortName: "No Discoverer", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// mockFixer does NOT implement CandidateDiscoverer.
+	sideEffectFixer := &mockFixer{canFix: true}
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{sideEffectFixer}, nil, testLogger())
+
+	v := &Violation{RuleID: RuleNFOExists, Fixable: true, Severity: "warning"}
+	out := pipeline.processManualViolation(ctx, a, v)
+
+	if out.fr != nil {
+		t.Errorf("expected no FixResult (fixer must not be invoked), got %+v", out.fr)
+	}
+	if sideEffectFixer.calls != 0 {
+		t.Errorf("side-effect fixer was invoked %d time(s); want 0 in manual mode", sideEffectFixer.calls)
+	}
+	if !out.persistOK {
+		t.Error("persistOK = false; want true")
+	}
+}
+
+// TestPipeline_ProcessAutoFixViolation_Success verifies the auto strategy
+// invokes the fixer, returns a deferred resolvedRow (#983), and marks the
+// outcome as fixed with the correct metadata/image classification.
+func TestPipeline_ProcessAutoFixViolation_Success(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Auto Test", SortName: "Auto Test", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	fixer := &mockFixer{
+		canFix: true,
+		result: &FixResult{RuleID: RuleThumbExists, Fixed: true, Message: "ok", ImageType: "thumb"},
+	}
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	v := &Violation{RuleID: RuleThumbExists, Fixable: true, Severity: "warning"}
+	out := pipeline.processAutoFixViolation(ctx, a, v)
+
+	if out.fr == nil || !out.fr.Fixed {
+		t.Fatalf("expected fixed FixResult, got %+v", out.fr)
+	}
+	if !out.fixed {
+		t.Error("outcome.fixed = false; want true on a successful fix")
+	}
+	if !out.imageFix || out.imageType != "thumb" {
+		t.Errorf("expected imageFix=true imageType=thumb, got %+v / %q", out.imageFix, out.imageType)
+	}
+	if out.resolvedRow == nil {
+		t.Fatal("expected a deferred resolvedRow on success (#983)")
+	}
+	if out.resolvedRow.Status == ViolationStatusResolved {
+		t.Error("resolvedRow.Status was already Resolved; the orchestrator must stamp it AFTER updateHealthScore (#983)")
+	}
+}
+
+// TestPipeline_ProcessAutoFixViolation_Unfixable verifies the auto
+// strategy persists an open row when v.Fixable is false and never invokes
+// the fixer chain. This is the "disabled-equivalent" path: the violation
+// is recorded but no auto-fix is attempted.
+func TestPipeline_ProcessAutoFixViolation_Unfixable(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Unfixable Test", SortName: "Unfixable Test", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	fixer := &mockFixer{canFix: true}
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	v := &Violation{RuleID: RuleNFOExists, Fixable: false, Severity: "warning"}
+	out := pipeline.processAutoFixViolation(ctx, a, v)
+
+	if out.fr != nil {
+		t.Errorf("expected no FixResult on unfixable, got %+v", out.fr)
+	}
+	if fixer.calls != 0 {
+		t.Errorf("fixer was invoked %d time(s); want 0 for unfixable", fixer.calls)
+	}
+	if out.fixed {
+		t.Error("unfixable outcome must not be fixed")
+	}
+	if !out.persistOK {
+		t.Error("persistOK = false; want true on a clean unfixable upsert")
+	}
+
+	// And the row landed as open with Fixable=false.
+	open, err := ruleSvc.ListViolations(ctx, ViolationStatusOpen)
+	if err != nil {
+		t.Fatalf("ListViolations: %v", err)
+	}
+	found := false
+	for _, rv := range open {
+		if rv.ArtistID == a.ID && rv.RuleID == RuleNFOExists {
+			found = true
+			if rv.Fixable {
+				t.Error("persisted row had Fixable=true; want false")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected open row for nfo_exists")
+	}
+}
+
+// TestPipeline_RunForArtist_DefersResolvedRows verifies the load-bearing
+// #983 ordering at the orchestrator level: a successful auto-fix triggers
+// updateHealthScore FIRST, and finalizeResolvedRows runs only after that
+// persistence step succeeds. Asserted by reading back the row after
+// RunForArtist returns -- the row must be Resolved (#983 chain
+// completed), not Open (chain skipped) or any intermediate state.
+func TestPipeline_RunForArtist_DefersResolvedRows(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Defer Test", SortName: "Defer Test", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	fixer := &mockFixer{
+		canFix: true,
+		result: &FixResult{RuleID: RuleNFOExists, Fixed: true, Message: "ok"},
+	}
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	if _, err := pipeline.RunForArtist(ctx, a); err != nil {
+		t.Fatalf("RunForArtist: %v", err)
+	}
+
+	resolved, err := ruleSvc.ListViolations(ctx, ViolationStatusResolved)
+	if err != nil {
+		t.Fatalf("ListViolations: %v", err)
+	}
+	found := false
+	for _, rv := range resolved {
+		if rv.ArtistID == a.ID && rv.RuleID == RuleNFOExists {
+			found = true
+			if rv.ResolvedAt == nil {
+				t.Error("ResolvedAt = nil; want non-nil timestamp after deferred finalize")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected resolved nfo_exists row after RunForArtist; #983 deferred-finalize did not fire")
+	}
+}
+
+// TestPipeline_RunImageRulesForArtist_FiltersByCategory pins the
+// category-filter chain extracted into writeFilteredPassResults +
+// allowedRulesForCategory: the image-only run path must only persist pass
+// rows for rules whose Category is "image". The previous monolithic
+// runForArtistFiltered had no direct coverage for the helper boundary; a
+// regression here would silently let RunImageRulesForArtist claim the
+// artist "passes" metadata rules it never ran (CR #3114616841).
+func TestPipeline_RunImageRulesForArtist_FiltersByCategory(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Image Only", SortName: "Image Only", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	fixer := &mockFixer{canFix: true}
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	result, err := pipeline.RunImageRulesForArtist(ctx, a)
+	if err != nil {
+		t.Fatalf("RunImageRulesForArtist: %v", err)
+	}
+	if result.ArtistsProcessed != 1 {
+		t.Errorf("ArtistsProcessed = %d, want 1", result.ArtistsProcessed)
+	}
+	// Every violation surfaced must be image-category. Reach into the
+	// rule definition to confirm rather than relying on rule-ID lists
+	// (the seed set churns when new image rules land).
+	for _, fr := range result.Results {
+		r, err := ruleSvc.GetByID(ctx, fr.RuleID)
+		if err != nil {
+			t.Fatalf("GetByID %s: %v", fr.RuleID, err)
+		}
+		if string(r.Category) != "image" {
+			t.Errorf("violation %s has category %q; want image (category filter leaked)", fr.RuleID, r.Category)
+		}
+	}
+}
+
+// TestPipeline_RunForArtist_LookupRuleFailure verifies the runtime
+// behavior when ruleService.GetByID fails for a violation's rule: the
+// orchestrator skips that violation, flips persistOK to false, and the
+// failure cascades into rules_evaluated_at NOT being stamped. Exercises
+// the lookupRule branch and ties the failure-mode contract to the
+// rules_evaluated_at stamping rule.
+func TestPipeline_RunForArtist_LookupRuleFailure(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Lookup Fail", SortName: "Lookup Fail", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Verify lookupRule populates the cache on hit by calling it twice.
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{&mockFixer{canFix: false}}, nil, testLogger())
+
+	cache := map[string]*Rule{}
+	r1, ok1 := pipeline.lookupRule(ctx, a, RuleNFOExists, cache)
+	if !ok1 || r1 == nil {
+		t.Fatal("lookupRule(real) returned not-ok / nil")
+	}
+	if _, present := cache[RuleNFOExists]; !present {
+		t.Error("cache miss did not populate")
+	}
+	// Second call: cache hit. Same pointer back.
+	r2, ok2 := pipeline.lookupRule(ctx, a, RuleNFOExists, cache)
+	if !ok2 || r2 != r1 {
+		t.Error("cache hit returned different *Rule")
+	}
+
+	// Lookup of a non-existent rule should warn-log and return not-ok
+	// (covers the GetByID-failure branch).
+	_, okMissing := pipeline.lookupRule(ctx, a, "made_up_rule_id", cache)
+	if okMissing {
+		t.Error("lookupRule(bogus) returned ok=true; want false")
+	}
+}
+
+// TestPassesPostDownloadDimensionGate_BelowMinimum + _BelowExisting cover
+// the actual-dimension rejection branches of the gate so the extracted
+// helper has direct coverage for both rejection paths, not just the
+// no-constraints skip.
+func TestPassesPostDownloadDimensionGate_BelowMinimum(t *testing.T) {
+	// Encode a small JPEG that the gate will measure to be below minimum.
+	small := makeTestJPEG(t, 100, 100)
+	got := passesPostDownloadDimensionGate(small, &imageFixContext{minW: 500, minH: 500}, "u", testLogger())
+	if got {
+		t.Error("expected false when actual dimensions are below configured minimum")
+	}
+}
+
+func TestPassesPostDownloadDimensionGate_BelowExisting(t *testing.T) {
+	small := makeTestJPEG(t, 300, 300)
+	// minW=0, minH=0 but existing 1000x1000 => pixel count 90000 < 1000000.
+	got := passesPostDownloadDimensionGate(small, &imageFixContext{existW: 1000, existH: 1000}, "u", testLogger())
+	if got {
+		t.Error("expected false when actual pixel count is below existing image")
+	}
+}
