@@ -115,3 +115,48 @@ func TestShouldInjectFailure_AllProviders(t *testing.T) {
 		}
 	}
 }
+
+func TestInjectedFailureCount_IncrementsOnHit(t *testing.T) {
+	t.Cleanup(func() {
+		SetInjectedProviders(nil)
+		ResetInjectedFailureCount()
+	})
+
+	ResetInjectedFailureCount()
+	SetInjectedProviders([]string{"musicbrainz"})
+
+	if got := InjectedFailureCount(); got != 0 {
+		t.Fatalf("counter must be 0 after reset, got %d", got)
+	}
+
+	// Hits on injected provider increment the counter.
+	for i := 0; i < 3; i++ {
+		ShouldInjectFailure(NameMusicBrainz)
+	}
+	if got := InjectedFailureCount(); got != 3 {
+		t.Errorf("counter must be 3 after 3 injected hits, got %d", got)
+	}
+
+	// Misses (provider not in the set) do not increment the counter.
+	ShouldInjectFailure(NameFanartTV)
+	if got := InjectedFailureCount(); got != 3 {
+		t.Errorf("counter must remain 3 after miss on non-injected provider, got %d", got)
+	}
+}
+
+func TestInjectedFailureCount_NoIncrementWhenSetEmpty(t *testing.T) {
+	t.Cleanup(func() {
+		SetInjectedProviders(nil)
+		ResetInjectedFailureCount()
+	})
+
+	ResetInjectedFailureCount()
+	SetInjectedProviders(nil)
+
+	for i := 0; i < 5; i++ {
+		ShouldInjectFailure(NameMusicBrainz)
+	}
+	if got := InjectedFailureCount(); got != 0 {
+		t.Errorf("counter must remain 0 when injectedSet is empty, got %d", got)
+	}
+}
