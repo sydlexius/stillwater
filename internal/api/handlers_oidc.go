@@ -80,10 +80,12 @@ func (r *Router) handleOIDCLogin(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Preserve the return URL across the IdP round-trip so the callback can
-	// redirect the user back to where they were before session expiry.
+	// redirect the user back to where they were before session expiry. The
+	// sanitized value is stored; the callback re-applies sanitizeReturnTo as
+	// a defense-in-depth check against cookie tampering.
 	if returnURL := req.URL.Query().Get("return"); returnURL != "" {
-		if validated := validateReturnURL(returnURL); validated != "" {
-			http.SetCookie(w, cookieOpts("oidc_return", validated))
+		if sanitized := sanitizeReturnTo(returnURL, r.basePath); sanitized != r.basePath+"/" {
+			http.SetCookie(w, cookieOpts("oidc_return", sanitized))
 		}
 	}
 

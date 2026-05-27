@@ -2,6 +2,7 @@ package templates
 
 import (
 	"context"
+	"net/url"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/auth"
@@ -17,7 +18,12 @@ type OIDCLoginInfo struct {
 // LoginPage renders the login page. It accepts a slice of enabled auth providers
 // so the page can show federated buttons and/or the local credentials form as
 // appropriate for this instance's configuration.
-templ LoginPage(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDCLoginInfo) {
+//
+// returnTo is the (pre-sanitized) path the server should send the user back
+// to after a successful login. Empty string means "fall back to the dashboard".
+// It is also propagated to the OIDC sign-in link so the redirect-based flow
+// can round-trip it through the state cookie.
+templ LoginPage(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDCLoginInfo, returnTo string) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
 		<head>
@@ -65,9 +71,9 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDC
 						<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "login.sign_in_to_account") }</h2>
 					</div>
 					<!-- Federated provider buttons (Emby, Jellyfin, OIDC) -->
-					@loginFederatedButtons(assets, providers, oidcInfo)
+					@loginFederatedButtons(assets, providers, oidcInfo, returnTo)
 					<!-- Local credentials form -->
-					@loginLocalForm(assets, providers)
+					@loginLocalForm(assets, providers, returnTo)
 					<div id="login-result"></div>
 				</div>
 			</div>
@@ -119,7 +125,7 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDC
 
 // loginFederatedButtons renders sign-in buttons for non-local providers.
 // Returns nothing if no federated providers are enabled.
-templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDCLoginInfo) {
+templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDCLoginInfo, returnTo string) {
 	for _, p := range providers {
 		if p.Type() == "emby" {
 			<button
@@ -148,19 +154,21 @@ templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator, o
 			</button>
 		}
 		if p.Type() == "oidc" {
-			@loginOIDCButton(assets, oidcInfo)
+			@loginOIDCButton(assets, oidcInfo, returnTo)
 		}
 	}
 	<!-- Federated credentials form (hidden until a provider button is clicked) -->
-	@loginFederatedForm(assets, providers)
+	@loginFederatedForm(assets, providers, returnTo)
 	<!-- Divider shown when both federated and local providers exist -->
 	@loginDivider(providers)
 }
 
 // loginOIDCButton renders the OIDC sign-in button with optional display name and logo.
-templ loginOIDCButton(assets AssetPaths, info OIDCLoginInfo) {
+// returnTo, when non-empty, is appended as ?return=<url-encoded> so the OIDC
+// state cookie round-trips it through the IdP.
+templ loginOIDCButton(assets AssetPaths, info OIDCLoginInfo, returnTo string) {
 	<a
-		href={ templ.SafeURL(assets.BasePath + "/api/v1/auth/oidc/login") }
+		href={ templ.SafeURL(oidcLoginHref(assets.BasePath, returnTo)) }
 		aria-label={ oidcButtonLabel(ctx, info.DisplayName) }
 		class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
 	>
@@ -177,7 +185,7 @@ templ loginOIDCButton(assets AssetPaths, info OIDCLoginInfo) {
 
 // loginFederatedForm is the shared username/password form for Emby and Jellyfin.
 // It is hidden by default and shown by the provider button onclick handlers above.
-templ loginFederatedForm(assets AssetPaths, providers []auth.Authenticator) {
+templ loginFederatedForm(assets AssetPaths, providers []auth.Authenticator, returnTo string) {
 	if hasFederatedProvider(providers) {
 		<div id="federated-form" class="hidden mt-2 space-y-4">
 			<p id="federated-form-title" class="text-sm font-medium text-gray-700 dark:text-gray-300 text-center"></p>
@@ -190,7 +198,7 @@ templ loginFederatedForm(assets AssetPaths, providers []auth.Authenticator) {
 				class="space-y-4"
 			>
 				<input type="hidden" id="federated-form-provider" name="provider" value=""/>
-				<input type="hidden" name="return_url" value=""/>
+				<input type="hidden" name="return_url" value={ returnTo }/>
 				<div>
 					<label for="federated-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "login.server_username") }</label>
 					<input
@@ -240,7 +248,7 @@ templ loginDivider(providers []auth.Authenticator) {
 
 // loginLocalForm renders the username/password form for local authentication.
 // Only rendered when the local provider is enabled.
-templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator) {
+templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator, returnTo string) {
 	if hasLocalProvider(providers) {
 		<form
 			method="post"
@@ -251,7 +259,7 @@ templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator) {
 			class="space-y-5"
 		>
 			<input type="hidden" name="provider" value="local"/>
-			<input type="hidden" name="return_url" value=""/>
+			<input type="hidden" name="return_url" value={ returnTo }/>
 			<div>
 				<label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "common.username") }</label>
 				<input
@@ -282,6 +290,17 @@ templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator) {
 			</button>
 		</form>
 	}
+}
+
+// oidcLoginHref builds the OIDC initiation URL, appending the return URL as a
+// query parameter when one was captured. The url.QueryEscape call is what
+// makes embedded path query strings safe (e.g. "/artists?page=2").
+func oidcLoginHref(basePath, returnTo string) string {
+	href := basePath + "/api/v1/auth/oidc/login"
+	if returnTo != "" {
+		href += "?return=" + url.QueryEscape(returnTo)
+	}
+	return href
 }
 
 // oidcButtonLabel returns the localised CTA for the OIDC sign-in button.
