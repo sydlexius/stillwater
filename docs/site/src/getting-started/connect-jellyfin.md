@@ -57,6 +57,7 @@ Each connection has a set of feature toggles that control how Stillwater interac
 - **Image write.** Stillwater pushes artwork (primary, backdrop, banner, logo) to Jellyfin via its API.
 - **Trigger refresh.** After pushing edits, Stillwater asks Jellyfin to refresh the affected items so the new metadata appears in Jellyfin's UI without waiting for Jellyfin's own scan schedule.
 - **Read MusicBrainz IDs.** Stillwater reads the `ProviderIds` field on Jellyfin's artist records and uses those IDs as starting points for its own provider lookups. Saves a round trip and avoids re-identifying artists Jellyfin already resolved.
+- **Lock-state sync from Jellyfin.** A scheduled background job (default cadence: every 30 minutes) walks every artist Stillwater has linked to this Jellyfin connection, reads the platform's `LockData` flag, and updates Stillwater's per-artist lock state to match. Lets you toggle a lock in either Jellyfin's UI or Stillwater's UI and have both views agree on the next sync. Stillwater records `lock_source=platform` on locks pulled this way so the origin is visible in the artist's lock history. Locks toggled in Stillwater within the last 5 minutes are protected from being overwritten by a stale platform snapshot. Configure the cadence via the `lock_sync.interval_minutes` setting (set to 0 to disable).
 
 ## Let Stillwater manage server files
 

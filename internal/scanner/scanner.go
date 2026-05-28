@@ -430,9 +430,14 @@ func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID
 	// Parse NFO if it exists for metadata
 	if detected.NFOExists {
 		if s.populateFromNFO(dirPath, a) {
-			// Import lockdata from NFO only for newly discovered artists.
+			// Import lockdata from NFO only on the new-artist path: this is
+			// the first time Stillwater sees the artist, so the NFO's
+			// <lockdata>true</lockdata> is the only available signal. Tagged
+			// with the dedicated "initial_import" lock_source so the user can
+			// distinguish first-discovery imports from explicit user locks or
+			// platform-pulled locks (issue #1726).
 			a.Locked = true
-			a.LockSource = "imported"
+			a.LockSource = "initial_import"
 			now := time.Now().UTC()
 			a.LockedAt = &now
 		}
@@ -582,17 +587,16 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath string, exi
 
 	// Re-parse NFO for updated metadata. Skip for locked artists
 	// to avoid overwriting user-curated metadata.
+	//
+	// IMPORTANT (issue #1726): the re-scan path must NEVER write
+	// artists.locked. Before the fix, populateFromNFO returning true (the
+	// NFO carries <lockdata>true</lockdata>) re-locked the artist on every
+	// rescan, silently undoing user unlocks. The canonical lock signal is
+	// (per-artist UI toggle) || (per-library NFOLockData setting) ||
+	// (scheduled platform pull). The NFO file is downstream of those, not
+	// upstream, so the scanner ignores its lockdata bit on re-scan.
 	if detected.NFOExists && !existing.Locked {
-		if s.populateFromNFO(dirPath, existing) {
-			// Mirror the new-artist path: an NFO carrying
-			// <lockdata>true</lockdata> (set by Stillwater or another
-			// tool) surfaces as an artist-level lock so the UI reflects
-			// that the metadata is locked. One-way (NFO -> artist).
-			existing.Locked = true
-			existing.LockSource = "imported"
-			lockedAt := time.Now().UTC()
-			existing.LockedAt = &lockedAt
-		}
+		s.populateFromNFO(dirPath, existing)
 	}
 
 	now := time.Now().UTC()

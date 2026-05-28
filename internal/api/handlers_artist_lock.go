@@ -39,6 +39,10 @@ func (r *Router) handleLockArtist(w http.ResponseWriter, req *http.Request) {
 	// Propagate the new lock state to every connected platform immediately
 	// so Emby/Jellyfin show the pin without requiring a manual push.
 	r.publisher.PushLocks(req.Context(), updated)
+	// Rewrite the on-disk NFO so its <lockdata> matches the new DB state
+	// (issue #1726). Without this, the next scan would re-import the stale
+	// lockdata from the NFO and undo the user's toggle.
+	r.publisher.WriteBackNFO(req.Context(), updated)
 
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -73,6 +77,10 @@ func (r *Router) handleUnlockArtist(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.publisher.PushLocks(req.Context(), updated)
+	// Rewrite the on-disk NFO so its <lockdata> matches the new DB state
+	// (issue #1726). Without this, the next scan would re-import the stale
+	// lockdata from the NFO and undo the user's unlock.
+	r.publisher.WriteBackNFO(req.Context(), updated)
 
 	writeJSON(w, http.StatusOK, updated)
 }

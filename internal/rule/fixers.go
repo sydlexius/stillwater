@@ -87,23 +87,36 @@ func coalescedFetchImages(ctx context.Context, orch imageProvider, mbid string, 
 	return orch.FetchImages(ctx, mbid, providerIDs)
 }
 
+// LockNFOResolver returns whether the artist's NFO should carry
+// <lockdata>true</lockdata>. The canonical implementation lives in
+// publish.Publisher.ResolveLockNFO and returns
+// artist.Locked || library.NFOLockData (issue #1726). Injected as a narrow
+// interface so the rule package does not depend on the publish package.
+type LockNFOResolver interface {
+	ResolveLockNFO(ctx context.Context, a *artist.Artist) bool
+}
+
 // NFOFixer creates missing artist.nfo files from the artist's current metadata.
 type NFOFixer struct {
 	SnapshotService    *nfo.SnapshotService
 	nfoSettingsService *nfo.NFOSettingsService
 	fsCheck            *SharedFSCheck
 	expectedWrites     *watcher.ExpectedWrites
+	lockResolver       LockNFOResolver
 }
 
 // NewNFOFixer creates an NFOFixer with an optional shared-filesystem guard.
 // The nfoSettings parameter is used to read the current field map for
 // platform-specific NFO element mapping; if nil, the default mapping is used.
-func NewNFOFixer(snapshotService *nfo.SnapshotService, nfoSettings *nfo.NFOSettingsService, fsCheck *SharedFSCheck, expectedWrites *watcher.ExpectedWrites) *NFOFixer {
+// lockResolver supplies the OR-of-knobs (artist.Locked || library.NFOLockData)
+// per issue #1726; when nil the fixer falls back to artist.Locked only.
+func NewNFOFixer(snapshotService *nfo.SnapshotService, nfoSettings *nfo.NFOSettingsService, fsCheck *SharedFSCheck, expectedWrites *watcher.ExpectedWrites, lockResolver LockNFOResolver) *NFOFixer {
 	return &NFOFixer{
 		SnapshotService:    snapshotService,
 		nfoSettingsService: nfoSettings,
 		fsCheck:            fsCheck,
 		expectedWrites:     expectedWrites,
+		lockResolver:       lockResolver,
 	}
 }
 
@@ -147,7 +160,16 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 		}
 	}
 	nfoData := nfo.FromArtistWithFieldMap(a, fm)
-	nfoData.LockData = true
+	// Stamp lockdata only when either the per-artist lock or the per-library
+	// NFOLockData setting is on (issue #1726). Without this OR, the fixer
+	// unconditionally stamped lockdata=true, which the scanner then
+	// re-imported as artists.locked=true on every rescan, silently undoing
+	// any user unlock.
+	if f.lockResolver != nil {
+		nfoData.LockData = f.lockResolver.ResolveLockNFO(ctx, a)
+	} else {
+		nfoData.LockData = a.Locked
+	}
 	var buf bytes.Buffer
 	if err := nfo.Write(&buf, nfoData); err != nil {
 		return nil, fmt.Errorf("generating nfo: %w", err)

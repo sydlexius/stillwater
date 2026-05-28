@@ -247,10 +247,34 @@ func (errorResolver) FindForArtistPath(_ context.Context, _ string) (*library.Li
 	return nil, fmt.Errorf("resolver boom")
 }
 
-// TestResolveLockNFO covers every branch of Publisher.resolveLockNFO:
+// TestLockSyncClientFactory verifies the factory wired into
+// cmd/stillwater/main.go: Emby -> emby client, Jellyfin -> jellyfin
+// client, anything else (including nil) -> nil. The branches matter
+// because LockSync uses the nil return as the "this connection has no
+// lock concept" signal.
+func TestLockSyncClientFactory(t *testing.T) {
+	logger := silentLogger()
+	factory := LockSyncClientFactory()
+
+	if got := factory(nil, logger); got != nil {
+		t.Errorf("nil connection -> %T, want nil", got)
+	}
+	if got := factory(&connection.Connection{Type: connection.TypeEmby, URL: "http://e", PlatformUserID: "u"}, logger); got == nil {
+		t.Error("TypeEmby -> nil; want non-nil emby client")
+	}
+	if got := factory(&connection.Connection{Type: connection.TypeJellyfin, URL: "http://j", PlatformUserID: "u"}, logger); got == nil {
+		t.Error("TypeJellyfin -> nil; want non-nil jellyfin client")
+	}
+	if got := factory(&connection.Connection{Type: connection.TypeLidarr}, logger); got != nil {
+		t.Errorf("TypeLidarr -> %T, want nil (no lock concept)", got)
+	}
+}
+
+// TestResolveLockNFO covers every branch of Publisher.ResolveLockNFO:
 // nil libraryService, nil artist, empty path, lookup error, no match, and
-// matched library with NFOLockData on or off. The default in every
-// non-true case must be false (issue #1264 safe default).
+// matched library with NFOLockData on or off. Issue #1264 set the safe
+// default to false; issue #1726 OR-ed in artist.Locked, which is covered
+// by a separate test below.
 func TestResolveLockNFO(t *testing.T) {
 	logger := silentLogger()
 
@@ -258,50 +282,61 @@ func TestResolveLockNFO(t *testing.T) {
 
 	t.Run("nil libraryService -> false", func(t *testing.T) {
 		p := New(Deps{Logger: logger})
-		if got := p.resolveLockNFO(context.Background(), a); got {
+		if got := p.ResolveLockNFO(context.Background(), a); got {
 			t.Error("nil libraryService must default to false")
 		}
 	})
 
 	t.Run("nil artist -> false", func(t *testing.T) {
 		p := New(Deps{Logger: logger, LibraryService: &alwaysOnResolver{}})
-		if got := p.resolveLockNFO(context.Background(), nil); got {
+		if got := p.ResolveLockNFO(context.Background(), nil); got {
 			t.Error("nil artist must default to false")
 		}
 	})
 
 	t.Run("empty artist path -> false", func(t *testing.T) {
 		p := New(Deps{Logger: logger, LibraryService: &alwaysOnResolver{}})
-		if got := p.resolveLockNFO(context.Background(), &artist.Artist{ID: "x"}); got {
+		if got := p.ResolveLockNFO(context.Background(), &artist.Artist{ID: "x"}); got {
 			t.Error("empty artist path must default to false")
 		}
 	})
 
 	t.Run("resolver error -> false (best-effort)", func(t *testing.T) {
 		p := New(Deps{Logger: logger, LibraryService: &errorResolver{}})
-		if got := p.resolveLockNFO(context.Background(), a); got {
+		if got := p.ResolveLockNFO(context.Background(), a); got {
 			t.Error("resolver error must default to false (best-effort)")
 		}
 	})
 
 	t.Run("no matching library -> false", func(t *testing.T) {
 		p := New(Deps{Logger: logger, LibraryService: &nilResolver{}})
-		if got := p.resolveLockNFO(context.Background(), a); got {
+		if got := p.ResolveLockNFO(context.Background(), a); got {
 			t.Error("no matching library must default to false")
 		}
 	})
 
 	t.Run("library with NFOLockData=true -> true", func(t *testing.T) {
 		p := New(Deps{Logger: logger, LibraryService: &alwaysOnResolver{}})
-		if got := p.resolveLockNFO(context.Background(), a); !got {
+		if got := p.ResolveLockNFO(context.Background(), a); !got {
 			t.Error("matched library with NFOLockData=true must return true")
 		}
 	})
 
 	t.Run("library with NFOLockData=false -> false", func(t *testing.T) {
 		p := New(Deps{Logger: logger, LibraryService: &alwaysOffResolver{}})
-		if got := p.resolveLockNFO(context.Background(), a); got {
+		if got := p.ResolveLockNFO(context.Background(), a); got {
 			t.Error("matched library with NFOLockData=false must return false")
+		}
+	})
+
+	// Issue #1726 OR-of-knobs: per-artist Locked alone is sufficient to
+	// flip the resolver true, regardless of the library setting (and
+	// without even consulting the library lookup).
+	t.Run("artist.Locked=true with NFOLockData=false -> true (#1726)", func(t *testing.T) {
+		p := New(Deps{Logger: logger, LibraryService: &alwaysOffResolver{}})
+		locked := &artist.Artist{ID: "a1", Path: "/music/jazz/Coltrane", Locked: true}
+		if got := p.ResolveLockNFO(context.Background(), locked); !got {
+			t.Error("artist.Locked=true must return true even when library NFOLockData=false")
 		}
 	})
 }

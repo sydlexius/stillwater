@@ -8,7 +8,7 @@ package version
 // real release artifact from a developer's `make build` output (both get
 // non-"unknown" values via the Makefile's git/date probes).
 var (
-	Version   = "1.4.0"
+	Version   = "1.5.0"
 	Commit    = "unknown"
 	Date      = "unknown"
 	BuildType = ""

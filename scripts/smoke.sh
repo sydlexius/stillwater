@@ -1100,6 +1100,54 @@ if [[ "$FULL" -eq 1 ]]; then
     -X POST "$SW_BASE/api/v1/settings/backup") || backup_code="000"
   assert_status "POST /api/v1/settings/backup (--full)" "200" "$backup_code"
 
+  # Lock-loop regression (#1726). Catches the silent re-lock bug where the
+  # NFOExistsFixer hardcoded <lockdata>true</lockdata> and the scanner
+  # re-imported it on every scan, undoing user unlocks. Sequence: lock via
+  # API (handler must rewrite NFO with lockdata=true), unlock via API
+  # (handler must rewrite NFO with lockdata removed), then run scanner.
+  # If fix A (handler-side NFO rewrite) or B (fixer OR-of-knobs) regresses,
+  # the post-scan locked state will be 1 instead of 0.
+  if [[ -n "$ARTIST_ID" && "$ARTIST_ID" != "unknown" ]]; then
+    lock_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+      -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/lock") || lock_code="000"
+    assert_status_in "POST /api/v1/artists/$ARTIST_ID/lock (#1726 setup)" "$lock_code" 200 409
+    unlock_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+      -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/lock") || unlock_code="000"
+    assert_status_in "DELETE /api/v1/artists/$ARTIST_ID/lock (#1726 setup)" "$unlock_code" 200 409
+    scan_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" -X POST "$SW_BASE/api/v1/scanner/run") || scan_resp=$'\n000'
+    scan_body=$(echo "$scan_resp" | sed '$d')
+    scan_code=$(echo "$scan_resp" | tail -n 1)
+    assert_status_in "POST /api/v1/scanner/run (#1726 setup)" "$scan_code" 200 202
+    scan_id=""
+    if [[ "$scan_code" == "200" || "$scan_code" == "202" ]]; then
+      scan_id=$(echo "$scan_body" | jq -r '.id // empty' 2>/dev/null || true)
+    fi
+    if [[ -n "$scan_id" ]]; then
+      scan_status=""
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 2
+        scan_status=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/scanner/status" | jq -r '.status // empty' 2>/dev/null || true)
+        if [[ "$scan_status" == "completed" || "$scan_status" == "failed" ]]; then
+          break
+        fi
+      done
+      if [[ "$scan_status" != "completed" ]]; then
+        echo "[FAIL] #1726 regression -- scanner did not reach completed state (status=$scan_status)"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("#1726 regression -- scanner did not reach completed state (status=$scan_status)")
+      else
+        post_locked=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID" | jq -r '.artist.locked' 2>/dev/null || echo "PARSE_ERROR")
+        assert_json_value "GET /api/v1/artists/$ARTIST_ID locked after unlock+scan (#1726)" "false" "$post_locked"
+      fi
+    else
+      echo "[FAIL] #1726 regression -- scanner/run did not return an id"
+      FAIL=$((FAIL + 1))
+      FAILURES+=("#1726 regression -- scanner/run did not return an id")
+    fi
+  else
+    echo "[SKIP] #1726 lock-loop regression -- no ARTIST_ID discovered"
+  fi
+
   echo ""
 fi
 

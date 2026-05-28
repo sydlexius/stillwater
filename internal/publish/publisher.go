@@ -146,12 +146,23 @@ func (p *Publisher) notifyPushFailure(connectionName, errorClass, artistID, arti
 	p.notifier.NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation, err)
 }
 
-// resolveLockNFO returns the per-library NFOLockData setting for the artist's
-// owning library, or false when no library claims the path. The lookup is
-// best-effort: any error or unset library defaults to false (the safe,
-// pre-#1264 default of "do not stamp lockdata").
-func (p *Publisher) resolveLockNFO(ctx context.Context, a *artist.Artist) bool {
-	if p.libraryService == nil || a == nil || a.Path == "" {
+// ResolveLockNFO returns the effective <lockdata> value for the artist: the
+// OR of the per-artist lock flag and the per-library NFOLockData setting
+// (issue #1726). Either knob being on stamps lockdata=true; both off leaves
+// it absent. The library lookup is best-effort and defaults to false on
+// error so a transient DB hiccup never silently flips the lock bit on.
+//
+// Exported so the rule package (NFOExistsFixer) can call into the same
+// resolver the publisher uses; keeping the logic in one place is the entire
+// point of the refactor.
+func (p *Publisher) ResolveLockNFO(ctx context.Context, a *artist.Artist) bool {
+	if a == nil {
+		return false
+	}
+	if a.Locked {
+		return true
+	}
+	if p == nil || p.libraryService == nil || a.Path == "" {
 		return false
 	}
 	lib, err := p.libraryService.FindForArtistPath(ctx, a.Path)
@@ -225,7 +236,7 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 		}
 	}
 
-	lockNFO := p.resolveLockNFO(ctx, a)
+	lockNFO := p.ResolveLockNFO(ctx, a)
 	if err := nfo.WriteBackArtistNFOWithFieldMap(ctx, a, p.nfoSnapshotService, p.logger, fm, lockNFO); err != nil {
 		p.logger.Error("NFO write-back failed",
 			slog.String("artist_id", a.ID),
@@ -445,6 +456,27 @@ func newLockSyncer(conn *connection.Connection, logger *slog.Logger) connection.
 		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
 	default:
 		return nil
+	}
+}
+
+// LockSyncClientFactory returns the production factory used by the
+// connection.LockSync platform-pull scheduler (issue #1726 Part C). Lives
+// here so cmd/stillwater/main.go does not need to import the emby /
+// jellyfin sub-packages directly, and the connection package does not
+// need to import them (which would form an import cycle).
+func LockSyncClientFactory() connection.LockSyncClientFactory {
+	return func(conn *connection.Connection, logger *slog.Logger) connection.ArtistStateGetter {
+		if conn == nil {
+			return nil
+		}
+		switch conn.Type {
+		case connection.TypeEmby:
+			return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		case connection.TypeJellyfin:
+			return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		default:
+			return nil
+		}
 	}
 }
 

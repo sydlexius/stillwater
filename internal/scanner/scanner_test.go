@@ -1241,13 +1241,13 @@ func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
 	}
 }
 
-// TestScan_LockDataImportedOnRescan verifies that <lockdata>true</lockdata>
-// added to an existing artist's NFO (e.g. by another tool, or a later
-// Stillwater write under a per-library NFOLockData=true setting) is mirrored
-// to the artist-level Locked flag on the next scan, so the artist UI reflects
-// that the metadata is locked. Regression coverage for the rescan path that
-// previously discarded populateFromNFO's lockdata return value.
-func TestScan_LockDataImportedOnRescan(t *testing.T) {
+// TestScan_LockDataNotReimportedOnRescan is the regression fixture for
+// issue #1726. Before the fix, an NFO carrying <lockdata>true</lockdata> on
+// the rescan path silently re-locked the artist on every scan, undoing any
+// user unlock. The canonical lock signals are now: user UI toggle,
+// per-library NFOLockData setting, and scheduled platform pull -- the
+// scanner's re-scan path no longer touches artists.locked.
+func TestScan_LockDataNotReimportedOnRescan(t *testing.T) {
 	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Portishead")
@@ -1268,8 +1268,8 @@ func TestScan_LockDataImportedOnRescan(t *testing.T) {
 		t.Fatal("artist should start unlocked when no NFO exists")
 	}
 
-	// Drop in an NFO with lockdata=true (simulating an external tool, or a
-	// downstream Stillwater write under NFOLockData=true).
+	// Drop in an NFO with lockdata=true (e.g. a stale on-disk lockdata bit
+	// from a pre-fix Stillwater write). The re-scan must NOT re-lock.
 	nfoContent := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <artist>
   <name>Portishead</name>
@@ -1289,14 +1289,55 @@ func TestScan_LockDataImportedOnRescan(t *testing.T) {
 	if a == nil {
 		t.Fatal("artist not found after second scan")
 	}
-	if !a.Locked {
-		t.Error("Locked should be true after rescan picked up <lockdata>true</lockdata>")
+	if a.Locked {
+		t.Error("Locked must remain false after rescan; NFO lockdata is not a re-scan signal (#1726)")
 	}
-	if a.LockSource != "imported" {
-		t.Errorf("LockSource = %q, want \"imported\"", a.LockSource)
+	if a.LockSource != "" {
+		t.Errorf("LockSource = %q, want empty (no lock applied)", a.LockSource)
+	}
+	if a.LockedAt != nil {
+		t.Errorf("LockedAt = %v, want nil (no lock applied -- partial lock-state writes would surface here)", a.LockedAt)
+	}
+}
+
+// TestScan_LockDataImportedOnInitialDiscovery verifies the new-artist code
+// path still imports <lockdata>true</lockdata>: that is the only place the
+// scanner gets to seed artists.locked, tagged with "initial_import" so the
+// user can distinguish it from a user-toggle or platform-pulled lock
+// (#1726).
+func TestScan_LockDataImportedOnInitialDiscovery(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Massive Attack")
+	nfoContent := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Massive Attack</name>
+  <lockdata>true</lockdata>
+</artist>`
+	nfoPath := filepath.Join(libDir, "Massive Attack", "artist.nfo")
+	if err := os.WriteFile(nfoPath, []byte(nfoContent), 0o644); err != nil {
+		t.Fatalf("writing nfo: %v", err)
+	}
+
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Massive Attack"))
+	if a == nil {
+		t.Fatal("artist not found")
+	}
+	if !a.Locked {
+		t.Error("initial discovery with lockdata=true should set Locked")
+	}
+	if a.LockSource != "initial_import" {
+		t.Errorf("LockSource = %q, want \"initial_import\"", a.LockSource)
 	}
 	if a.LockedAt == nil {
-		t.Error("LockedAt should be set after lockdata import")
+		t.Error("LockedAt should be set on initial-import lock")
 	}
 }
 
