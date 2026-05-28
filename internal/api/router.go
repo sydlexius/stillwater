@@ -597,11 +597,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Rule routes (config/enable requires admin; execution/evaluate/fix are operator-accessible)
 	mux.HandleFunc("GET "+bp+"/api/v1/rules", wrapAuth(r.handleListRules, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/rules/{id}", wrapAuth(middleware.RequireAdmin(r.handleUpdateRule), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/rules/{id}/results", wrapAuth(r.handleRuleResults, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/{id}/run", wrapAuth(r.handleRunRule, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/run-all", wrapAuth(r.handleRunAllRules, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/rules/run-all/status", wrapAuth(r.handleRunAllRulesStatus, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/rules/status", wrapAuth(r.handleRulesStatus, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/rule-results", wrapAuth(r.handleArtistRuleResults, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/run-rules", wrapAuth(r.handleRunArtistRules, authMw))
 
 	// Notifications (rule violations) routes
@@ -662,6 +664,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance", wrapAuth(r.handleReportCompliance, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/export", wrapAuth(r.handleReportComplianceExport, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/metadata-completeness", wrapAuth(r.handleReportMetadataCompleteness, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/rule-pass-rates", wrapAuth(r.handleReportRulePassRates, authMw))
 
 	// History routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))

@@ -476,6 +476,13 @@
     "covered": true
   },
   {
+    "operationId": "getArtistRuleResults",
+    "method": "GET",
+    "path": "/artists/{id}/rule-results",
+    "handler": "handleArtistRuleResults",
+    "covered": true
+  },
+  {
     "operationId": "getArtistsBadge",
     "method": "GET",
     "path": "/artists/badge",
@@ -791,6 +798,13 @@
     "covered": true
   },
   {
+    "operationId": "getReportRulePassRates",
+    "method": "GET",
+    "path": "/reports/rule-pass-rates",
+    "handler": "handleReportRulePassRates",
+    "covered": true
+  },
+  {
     "operationId": "getRulesStatus",
     "method": "GET",
     "path": "/rules/status",
@@ -1041,6 +1055,13 @@
     "path": "/providers",
     "handler": "handleListProviders",
     "covered": false
+  },
+  {
+    "operationId": "listRuleResults",
+    "method": "GET",
+    "path": "/rules/{id}/results",
+    "handler": "handleRuleResults",
+    "covered": true
   },
   {
     "operationId": "listRules",

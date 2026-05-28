@@ -816,6 +816,30 @@ components:
               severity:
                 type: string
                 description: Severity level of the rule (error, warning, info).
+        rule_pass_rates:
+          type: array
+          description: Per-rule pass/fail aggregates for the dashboard widget (#699 slice 2). Omitted when pass-rate data is unavailable (for example, no evaluated rules yet, or the aggregate lookup failed and the handler logged a warning).
+          items:
+            type: object
+            required: [rule_id, rule_name, severity, passed, failed, evaluated, pass_rate]
+            properties:
+              rule_id:
+                type: string
+              rule_name:
+                type: string
+              severity:
+                type: string
+                enum: [error, warning, info]
+              passed:
+                type: integer
+              failed:
+                type: integer
+              evaluated:
+                type: integer
+              pass_rate:
+                type: number
+                format: float
+                description: passed / evaluated as a 0.0-1.0 fraction. Returned rows always have evaluated > 0 (the SQL omits rules with no rule_results rows).
     BackupInfo:
       type: object
       properties:
@@ -3343,6 +3367,85 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/{id}/rule-results:
+    get:
+      tags: [Artists, Rules]
+      summary: List per-rule pass/fail breakdown for an artist
+      operationId: getArtistRuleResults
+      description: >
+        Returns the most recent pass/fail state for each currently-enabled
+        rule against the given artist, joined with the rule's display name,
+        category, and severity. Disabled rules are filtered out even if a
+        prior evaluation row exists. Artists that exist but have not been
+        evaluated yet return an empty rule_results array (#699 slice 2).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Artist ID.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Per-rule pass/fail rows for this artist.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rule_results]
+                properties:
+                  rule_results:
+                    type: array
+                    description: One row per currently-enabled rule that has been evaluated against this artist. Always present (empty array when the artist has not been evaluated against any rules yet).
+                    items:
+                      type: object
+                      required: [artist_id, rule_id, passed, evaluated_at, first_failed_at, last_passed_at, rule_name, rule_category, severity]
+                      properties:
+                        artist_id:
+                          type: string
+                        rule_id:
+                          type: string
+                        passed:
+                          type: boolean
+                        violation_id:
+                          type: string
+                          description: Stable identifier for the current violation, omitted when passed.
+                        violation_message:
+                          type: string
+                          description: Human-readable failure message, omitted when passed.
+                        evaluated_at:
+                          type: string
+                          format: date-time
+                        first_failed_at:
+                          type: [string, "null"]
+                          format: date-time
+                          description: Timestamp the rule first started failing for this artist.
+                        last_passed_at:
+                          type: [string, "null"]
+                          format: date-time
+                          description: Most recent timestamp the rule passed for this artist.
+                        rule_name:
+                          type: string
+                          description: Display name of the rule (joined from rules table).
+                        rule_category:
+                          type: string
+                          description: Category of the rule (e.g. nfo, image).
+                        severity:
+                          type: string
+                          description: Rule severity level.
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/{id}/history:
     get:
       tags: [History]
@@ -5206,6 +5309,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /rules/{id}/results:
+    get:
+      tags: [Rules]
+      summary: List per-artist results for a single rule (drill-down)
+      operationId: listRuleResults
+      description: >
+        Returns a paginated list of artists with their current pass/fail
+        state for the given rule (#699 slice 2). The JSON envelope matches
+        /reports/compliance so the front-end pagination component can be
+        reused unchanged. Unknown rule IDs return 200 with an empty rows
+        array rather than 404 -- friendlier for a UI that polls during
+        rule (re)configuration.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Rule ID.
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: 1-indexed page number. Out-of-range values are clamped by the handler (page < 1 becomes 1; pathologically large values that would overflow offset math are clamped to max-int / page_size).
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          description: Page size. The handler clamps to [1, 200] (default 50); the schema does not declare strict bounds because the server accepts any integer and clamps server-side.
+          schema:
+            type: integer
+            default: 50
+        - name: passed
+          in: query
+          required: false
+          description: Tri-state filter on pass/fail. Empty == any.
+          allowEmptyValue: true
+          schema:
+            type: string
+            enum: [passed, failed, any, ""]
+            default: any
+      responses:
+        "200":
+          description: Paginated drill-down list (empty when the rule has no rule_results rows yet).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows, total, page, page_size]
+                properties:
+                  rows:
+                    type: array
+                    description: One row per artist evaluated against this rule, joined with artist display name and (first) library membership.
+                    items:
+                      type: object
+                      required: [artist_id, rule_id, passed, evaluated_at, first_failed_at, last_passed_at, artist_name, is_excluded]
+                      properties:
+                        artist_id:
+                          type: string
+                        rule_id:
+                          type: string
+                        passed:
+                          type: boolean
+                        violation_id:
+                          type: string
+                          description: Stable identifier for the current violation, omitted when passed.
+                        violation_message:
+                          type: string
+                          description: Human-readable failure message, omitted when passed.
+                        evaluated_at:
+                          type: string
+                          format: date-time
+                        first_failed_at:
+                          type: [string, "null"]
+                          format: date-time
+                        last_passed_at:
+                          type: [string, "null"]
+                          format: date-time
+                        artist_name:
+                          type: string
+                        is_excluded:
+                          type: boolean
+                          description: True if the artist is currently excluded from rule evaluations. The row is still returned so callers can render an "(excluded)" badge.
+                        library_name:
+                          type: string
+                          description: First library the artist belongs to, empty when none.
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
         "500":
           description: Internal server error
           content:
@@ -9152,6 +9355,56 @@ paths:
             text/html:
               schema:
                 type: string
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /reports/rule-pass-rates:
+    get:
+      tags: [Reports]
+      summary: Per-rule pass-rate aggregate for the dashboard widget
+      operationId: getReportRulePassRates
+      description: >
+        Returns one row per enabled rule with pass/fail/evaluated counts
+        and a 0.0-1.0 pass_rate. Ordered by pass_rate ascending so the
+        worst-performing rules surface first. Rules with no evaluations
+        yet are omitted so the widget can render "no data yet" rather
+        than 0% (which would imply 100% failing) (#699 slice 2).
+      responses:
+        "200":
+          description: List of per-rule pass-rate rows. The rates field is always present (empty array when no rules have been evaluated yet).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rates]
+                properties:
+                  rates:
+                    type: array
+                    items:
+                      type: object
+                      required: [rule_id, rule_name, severity, passed, failed, evaluated, pass_rate]
+                      properties:
+                        rule_id:
+                          type: string
+                        rule_name:
+                          type: string
+                        severity:
+                          type: string
+                          enum: [error, warning, info]
+                        passed:
+                          type: integer
+                        failed:
+                          type: integer
+                        evaluated:
+                          type: integer
+                        pass_rate:
+                          type: number
+                          format: float
+                          description: passed / evaluated as a 0.0-1.0 fraction. Returned rows always have evaluated > 0 (the SQL omits rules with no rule_results rows).
         "500":
           description: Internal server error
           content:

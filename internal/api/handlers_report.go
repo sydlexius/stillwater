@@ -18,6 +18,20 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// rulePassRateRow is the JSON shape returned in the /reports/health
+// envelope so the dashboard can hydrate the per-rule widget without a
+// second HTTP call. Mirrors rule.RulePassRate field-for-field; held
+// locally to keep the rule package free of HTTP concerns.
+type rulePassRateRow struct {
+	RuleID    string  `json:"rule_id"`
+	RuleName  string  `json:"rule_name"`
+	Severity  string  `json:"severity"`
+	Passed    int     `json:"passed"`
+	Failed    int     `json:"failed"`
+	Evaluated int     `json:"evaluated"`
+	PassRate  float64 `json:"pass_rate"`
+}
+
 // healthSummary is the JSON response for the dashboard health endpoint.
 type healthSummary struct {
 	Score            float64            `json:"score"`
@@ -28,6 +42,7 @@ type healthSummary struct {
 	MissingFanart    int                `json:"missing_fanart"`
 	MissingMBID      int                `json:"missing_mbid"`
 	TopViolations    []violationSummary `json:"top_violations"`
+	RulePassRates    []rulePassRateRow  `json:"rule_pass_rates,omitempty"`
 }
 
 // violationSummary tracks how many artists fail a specific rule.
@@ -66,11 +81,20 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	topViolations, err := r.ruleService.TopViolationSummaries(ctx, 10)
+	topViolations, err := r.ruleService.TopFailingRuleResults(ctx, 10)
 	if err != nil {
-		r.logger.Error("querying top violations", "error", err)
+		r.logger.Error("querying top failing rule results", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to generate health report")
 		return
+	}
+
+	// Pass-rate widget is non-critical: a failure here should still let the
+	// rest of /reports/health render. Warn and fall through with an empty
+	// slice instead of returning 500.
+	rulePassRates, err := r.ruleService.GetRulePassRates(ctx)
+	if err != nil {
+		r.logger.Warn("querying rule pass rates for dashboard widget", "error", err)
+		rulePassRates = []rule.RulePassRate{}
 	}
 
 	summary := healthSummary{
@@ -90,6 +114,19 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 			RuleName: v.RuleName,
 			Count:    v.Count,
 			Severity: v.Severity,
+		})
+	}
+
+	summary.RulePassRates = make([]rulePassRateRow, 0, len(rulePassRates))
+	for _, p := range rulePassRates {
+		summary.RulePassRates = append(summary.RulePassRates, rulePassRateRow{
+			RuleID:    p.RuleID,
+			RuleName:  p.RuleName,
+			Severity:  p.Severity,
+			Passed:    p.Passed,
+			Failed:    p.Failed,
+			Evaluated: p.Evaluated,
+			PassRate:  p.PassRate,
 		})
 	}
 
@@ -114,6 +151,8 @@ func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, 
 			MissingFanart:    summary.MissingFanart,
 			MissingMBID:      summary.MissingMBID,
 			TopViolations:    toTemplateViolations(summary.TopViolations),
+			RulePassRates:    toTemplateRulePassRates(summary.RulePassRates),
+			BasePath:         r.basePath,
 		}
 		renderTempl(w, req, templates.HealthSummaryFragment(data))
 		return
@@ -677,6 +716,22 @@ func toTemplateSummary(s librarySummary) templates.LibrarySummaryData {
 	}
 }
 
+func toTemplateRulePassRates(rs []rulePassRateRow) []templates.RulePassRateData {
+	out := make([]templates.RulePassRateData, len(rs))
+	for i, p := range rs {
+		out[i] = templates.RulePassRateData{
+			RuleID:    p.RuleID,
+			RuleName:  p.RuleName,
+			Severity:  p.Severity,
+			Passed:    p.Passed,
+			Failed:    p.Failed,
+			Evaluated: p.Evaluated,
+			PassRate:  p.PassRate,
+		}
+	}
+	return out
+}
+
 // handleReportMetadataCompleteness returns aggregate field-coverage metrics.
 // GET /api/v1/reports/metadata-completeness
 func (r *Router) handleReportMetadataCompleteness(w http.ResponseWriter, req *http.Request) {
@@ -708,4 +763,25 @@ func (r *Router) handleReportMetadataCompleteness(w http.ResponseWriter, req *ht
 	}
 
 	writeJSON(w, http.StatusOK, report)
+}
+
+// handleReportRulePassRates returns one row per enabled rule with its
+// pass / fail counts and pass rate (#699 slice 2). Powers the dashboard
+// per-rule pass-rate widget. Rules with no evaluations yet are omitted
+// (the widget shows "no data yet" for the empty-list case rather than
+// rendering them at 0%). JSON only -- the dashboard widget consumes this
+// via fetch + a small HTMX swap.
+//
+// GET /api/v1/reports/rule-pass-rates
+func (r *Router) handleReportRulePassRates(w http.ResponseWriter, req *http.Request) {
+	rates, err := r.ruleService.GetRulePassRates(req.Context())
+	if err != nil {
+		r.logger.Error("querying rule pass rates", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to query rule pass rates")
+		return
+	}
+	if rates == nil {
+		rates = []rule.RulePassRate{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rates": rates})
 }

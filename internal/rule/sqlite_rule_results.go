@@ -276,6 +276,327 @@ func (s *Service) queryRuleResultCountsChunk(ctx context.Context, chunk []string
 	return nil
 }
 
+// PassedFilter is the tri-state filter for the per-rule drill-down list.
+// Any -> no WHERE clause on passed.
+// Passed -> WHERE passed = 1.
+// Failed -> WHERE passed = 0.
+// Strongly-typed so the handler layer can't accidentally pass a stray
+// integer that would break the SQL.
+type PassedFilter int
+
+// PassedFilter values for the per-rule drill-down list. Any means no
+// WHERE clause on passed; Passed and Failed restrict to passed=1 / =0
+// respectively.
+const (
+	PassedFilterAny PassedFilter = iota
+	PassedFilterPassed
+	PassedFilterFailed
+)
+
+// passedWhere returns the AND-prefixed WHERE-clause fragment for the
+// given filter. Returns "" for Any so callers don't have to AND in a
+// no-op. Keeping the predicate construction here means every consumer of
+// PassedFilter applies the same SQL convention. The fragment never takes
+// a bind parameter, so callers append the empty string directly to their
+// query template.
+func passedWhere(f PassedFilter) string {
+	switch f {
+	case PassedFilterPassed:
+		return " AND rr.passed = 1"
+	case PassedFilterFailed:
+		return " AND rr.passed = 0"
+	default:
+		return ""
+	}
+}
+
+// GetRuleResultsForRule returns a paginated list of artist-joined
+// rule_results rows for the given rule, ordered by artist name so the UI
+// is stable across calls. Limit must be > 0; offset must be >= 0; both
+// are caller-validated (the handler clamps to sensible bounds via
+// intQuery before calling).
+//
+// The query JOINs to artists for display name and is_excluded; LEFT JOINs
+// artist_libraries + libraries so an artist that is not in any library
+// still appears (library_name is empty in that case). Excluded artists
+// are NOT filtered out -- the row carries is_excluded so the UI can render
+// a "(excluded)" badge, which matches the per-artist drill-down behavior
+// and lets reviewers explicitly see which excluded artists failed.
+func (s *Service) GetRuleResultsForRule(
+	ctx context.Context,
+	ruleID string,
+	filter PassedFilter,
+	limit, offset int,
+) ([]RuleResultWithArtist, error) {
+	extraWhere := passedWhere(filter)
+	//nolint:gosec // G202: only the constant filter fragment is concatenated; no user input.
+	query := `
+		SELECT rr.artist_id, rr.rule_id, rr.passed, rr.violation_id,
+		       rr.evaluated_at, rr.violation_message,
+		       rr.first_failed_at, rr.last_passed_at,
+		       a.name, a.is_excluded,
+		       COALESCE(MIN(l.name), '') AS library_name
+		FROM rule_results rr
+		JOIN artists a ON a.id = rr.artist_id
+		LEFT JOIN artist_libraries al
+		     ON al.artist_id = a.id
+		LEFT JOIN libraries l
+		     ON l.id = al.library_id
+		WHERE rr.rule_id = ?` + extraWhere + `
+		GROUP BY rr.artist_id
+		ORDER BY a.name ASC, rr.artist_id ASC
+		LIMIT ? OFFSET ?`
+
+	rows, err := s.db.QueryContext(ctx, query, ruleID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("querying rule_results drill-down: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var out []RuleResultWithArtist
+	for rows.Next() {
+		var (
+			rr               RuleResultWithArtist
+			passedInt        int
+			isExcludedInt    int
+			violationID      sql.NullString
+			evaluatedAt      string
+			violationMessage sql.NullString
+			firstFailedAt    sql.NullString
+			lastPassedAt     sql.NullString
+		)
+		if err := rows.Scan(
+			&rr.ArtistID, &rr.RuleID, &passedInt, &violationID,
+			&evaluatedAt, &violationMessage, &firstFailedAt, &lastPassedAt,
+			&rr.ArtistName, &isExcludedInt, &rr.LibraryName,
+		); err != nil {
+			return nil, fmt.Errorf("scanning rule_results drill-down row: %w", err)
+		}
+		rr.Passed = passedInt != 0
+		rr.IsExcluded = isExcludedInt != 0
+		if violationID.Valid {
+			rr.ViolationID = violationID.String
+		}
+		if violationMessage.Valid {
+			rr.ViolationMessage = violationMessage.String
+		}
+		if ts, ok := parseNullableTime(evaluatedAt); ok {
+			rr.EvaluatedAt = ts
+		}
+		if firstFailedAt.Valid {
+			if ts, ok := parseNullableTime(firstFailedAt.String); ok {
+				rr.FirstFailedAt = &ts
+			}
+		}
+		if lastPassedAt.Valid {
+			if ts, ok := parseNullableTime(lastPassedAt.String); ok {
+				rr.LastPassedAt = &ts
+			}
+		}
+		out = append(out, rr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rule_results drill-down rows: %w", err)
+	}
+	return out, nil
+}
+
+// CountRuleResultsForRule pairs with GetRuleResultsForRule; the handler
+// emits both as {rows, total} so the front-end can render pagination
+// without a second round-trip.
+func (s *Service) CountRuleResultsForRule(ctx context.Context, ruleID string, filter PassedFilter) (int, error) {
+	// Mirror the INNER JOIN artists in GetRuleResultsForRule so the total
+	// excludes orphaned rule_results rows whose artist has been hard-deleted;
+	// otherwise the paginated rows can never sum to the reported total and
+	// the UI's page math breaks.
+	query := `SELECT COUNT(*) FROM rule_results rr JOIN artists a ON a.id = rr.artist_id WHERE rr.rule_id = ?` + passedWhere(filter)
+	var n int
+	if err := s.db.QueryRowContext(ctx, query, ruleID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("counting rule_results for rule: %w", err)
+	}
+	return n, nil
+}
+
+// GetEnabledRuleResultsForArtist returns one row per enabled rule with the
+// artist's current pass/fail state for that rule. Rules without any
+// rule_results row for this artist are omitted (the artist has not been
+// evaluated against that rule yet); rules that are disabled at query time
+// are filtered out so the artist detail page only shows rules the user is
+// currently asking the engine to enforce.
+//
+// Rows are ordered by rule_id so the breakdown is stable across calls.
+// Severity is pulled from the rule's JSON config (rules.config has no
+// dedicated severity column; the rule engine decodes it via RuleConfig
+// on the Go side). The COALESCE falls back to "warning" so the UI's
+// color-coding always has a valid value even for legacy rules whose
+// config did not specify a severity. modernc.org/sqlite ships JSON1
+// built in, so json_extract is safe to use without a driver flag.
+func (s *Service) GetEnabledRuleResultsForArtist(ctx context.Context, artistID string) ([]RuleResultWithRule, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rr.artist_id, rr.rule_id, rr.passed, rr.violation_id,
+		       rr.evaluated_at, rr.violation_message,
+		       rr.first_failed_at, rr.last_passed_at,
+		       r.name, r.category,
+		       COALESCE(json_extract(r.config, '$.severity'), 'warning') AS severity
+		FROM rule_results rr
+		JOIN rules r ON r.id = rr.rule_id AND r.enabled = 1
+		WHERE rr.artist_id = ?
+		ORDER BY rr.rule_id ASC`,
+		artistID)
+	if err != nil {
+		return nil, fmt.Errorf("querying enabled rule_results for artist: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var out []RuleResultWithRule
+	for rows.Next() {
+		var (
+			rr               RuleResultWithRule
+			passedInt        int
+			violationID      sql.NullString
+			evaluatedAt      string
+			violationMessage sql.NullString
+			firstFailedAt    sql.NullString
+			lastPassedAt     sql.NullString
+		)
+		if err := rows.Scan(
+			&rr.ArtistID, &rr.RuleID, &passedInt, &violationID,
+			&evaluatedAt, &violationMessage, &firstFailedAt, &lastPassedAt,
+			&rr.RuleName, &rr.RuleCategory, &rr.Severity,
+		); err != nil {
+			return nil, fmt.Errorf("scanning enabled rule_result row: %w", err)
+		}
+		rr.Passed = passedInt != 0
+		if violationID.Valid {
+			rr.ViolationID = violationID.String
+		}
+		if violationMessage.Valid {
+			rr.ViolationMessage = violationMessage.String
+		}
+		if ts, ok := parseNullableTime(evaluatedAt); ok {
+			rr.EvaluatedAt = ts
+		}
+		if firstFailedAt.Valid {
+			if ts, ok := parseNullableTime(firstFailedAt.String); ok {
+				rr.FirstFailedAt = &ts
+			}
+		}
+		if lastPassedAt.Valid {
+			if ts, ok := parseNullableTime(lastPassedAt.String); ok {
+				rr.LastPassedAt = &ts
+			}
+		}
+		out = append(out, rr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating enabled rule_result rows: %w", err)
+	}
+	return out, nil
+}
+
+// TopFailingRuleResults is the rule_results-based replacement for
+// TopViolationSummaries. It returns the rules with the most failing
+// (passed=0) results across non-excluded artists, ordered by failure
+// count descending and rule_id ascending as a stable tie-breaker. The
+// caller-passed limit is clamped to [1, 100]: zero or negative becomes
+// 10 (the dashboard default), and very large requests are capped to
+// keep the response shape predictable.
+//
+// Returns the same ViolationSummary shape as TopViolationSummaries so the
+// handler can swap one call site for the other without touching the JSON
+// envelope or the health_summary templ widget. Severity is sourced via
+// json_extract on rules.config (rules has no severity column; the COALESCE
+// falls back to 'warning' to match the existing UI convention).
+func (s *Service) TopFailingRuleResults(ctx context.Context, limit int) ([]ViolationSummary, error) {
+	switch {
+	case limit <= 0:
+		limit = 10
+	case limit > 100:
+		limit = 100
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rr.rule_id,
+		       r.name,
+		       COUNT(*) AS cnt,
+		       COALESCE(json_extract(r.config, '$.severity'), 'warning') AS severity
+		FROM rule_results rr
+		JOIN rules r   ON r.id = rr.rule_id AND r.enabled = 1
+		JOIN artists a ON a.id = rr.artist_id AND a.is_excluded = 0
+		WHERE rr.passed = 0
+		GROUP BY rr.rule_id
+		ORDER BY cnt DESC, rr.rule_id ASC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying top failing rule_results: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var out []ViolationSummary
+	for rows.Next() {
+		var vs ViolationSummary
+		if err := rows.Scan(&vs.RuleID, &vs.RuleName, &vs.Count, &vs.Severity); err != nil {
+			return nil, fmt.Errorf("scanning top failing rule_result row: %w", err)
+		}
+		out = append(out, vs)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating top failing rule_result rows: %w", err)
+	}
+	return out, nil
+}
+
+// GetRulePassRates returns one row per enabled rule with aggregate pass /
+// fail counts and a 0.0-1.0 PassRate. Ordered by PassRate ascending then
+// rule_id ascending so the dashboard widget shows the worst-performing
+// rules first (matches the TopViolations card's "biggest problems on top"
+// intent). Rules with no rule_results rows are omitted because the COUNT
+// runs on the rule_results table; the widget treats absent rules as "no
+// data yet" rather than rendering them at 0% (which would imply 100%
+// failing). Excluded artists are filtered out so the rates match the
+// dashboard's other counts.
+//
+// Severity is sourced from rules.config JSON via json_extract, falling
+// back to 'warning' when the config has no severity field. This matches
+// the source-of-truth pattern used in TopFailingRuleResults (rules has
+// no dedicated severity column; the rule engine reads it as
+// RuleConfig.Severity on the Go side).
+func (s *Service) GetRulePassRates(ctx context.Context) ([]RulePassRate, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rr.rule_id,
+		       r.name,
+		       COALESCE(json_extract(r.config, '$.severity'), 'warning') AS severity,
+		       SUM(CASE WHEN rr.passed = 1 THEN 1 ELSE 0 END) AS passed,
+		       SUM(CASE WHEN rr.passed = 0 THEN 1 ELSE 0 END) AS failed,
+		       COUNT(*) AS evaluated
+		FROM rule_results rr
+		JOIN rules r   ON r.id = rr.rule_id AND r.enabled = 1
+		JOIN artists a ON a.id = rr.artist_id AND a.is_excluded = 0
+		GROUP BY rr.rule_id
+		ORDER BY (CAST(SUM(CASE WHEN rr.passed = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*)) ASC,
+		         rr.rule_id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("querying rule pass rates: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var out []RulePassRate
+	for rows.Next() {
+		var pr RulePassRate
+		if err := rows.Scan(&pr.RuleID, &pr.RuleName, &pr.Severity, &pr.Passed, &pr.Failed, &pr.Evaluated); err != nil {
+			return nil, fmt.Errorf("scanning rule pass rate row: %w", err)
+		}
+		if pr.Evaluated > 0 {
+			pr.PassRate = float64(pr.Passed) / float64(pr.Evaluated)
+		}
+		out = append(out, pr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rule pass rate rows: %w", err)
+	}
+	return out, nil
+}
+
 // parseNullableTime parses a stored RFC3339 timestamp, returning false if the
 // input is empty or unparsable. Kept here (rather than pulling dbutil) so
 // the rule_results accessor doesn't bleed its time-format assumption into

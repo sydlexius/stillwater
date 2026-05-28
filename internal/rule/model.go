@@ -174,6 +174,46 @@ type RuleResultCount struct {
 	Evaluated int `json:"evaluated"`
 }
 
+// RuleResultWithArtist is a rule_results row joined with the artist's
+// display name and (one) library name. When an artist belongs to
+// multiple libraries the SQL collapses them with MIN(l.name) so the
+// returned value is deterministic but represents a single library, not
+// a flattened list. It is the row shape returned by
+// GET /api/v1/rules/{id}/results so the front-end can render an
+// artist + status grid without a second lookup per row.
+type RuleResultWithArtist struct {
+	RuleResult
+	ArtistName  string `json:"artist_name"`
+	IsExcluded  bool   `json:"is_excluded"`
+	LibraryName string `json:"library_name,omitempty"`
+}
+
+// RuleResultWithRule is a rule_results row joined with the rule's display
+// name, severity, and category. It is the row shape returned by GET
+// /api/v1/artists/{id}/rule-results so the artist detail page can render
+// the per-rule breakdown without re-fetching the rules collection.
+type RuleResultWithRule struct {
+	RuleResult
+	RuleName     string `json:"rule_name"`
+	RuleCategory string `json:"rule_category"`
+	Severity     string `json:"severity"`
+}
+
+// RulePassRate is one row of the dashboard per-rule pass-rate widget.
+// PassRate is Passed / Evaluated as a 0.0-1.0 fraction; Evaluated of 0
+// is preserved so the widget can render "no data yet" rather than a
+// divide-by-zero NaN. Severity is included so the widget can color-code
+// failing rules using the same scheme as TopViolations.
+type RulePassRate struct {
+	RuleID    string  `json:"rule_id"`
+	RuleName  string  `json:"rule_name"`
+	Severity  string  `json:"severity"`
+	Passed    int     `json:"passed"`
+	Failed    int     `json:"failed"`
+	Evaluated int     `json:"evaluated"`
+	PassRate  float64 `json:"pass_rate"`
+}
+
 // ViolationListParams controls filtering, sorting, and grouping of violations.
 type ViolationListParams struct {
 	Status    string // "active", "open", "resolved", "dismissed", "pending_choice", "" (all)

@@ -10,8 +10,6 @@ import (
 // seedArtistAndRule inserts a minimal artist + rule pair for rule_results
 // tests. rule_results has FK references to both; the rule row also has to
 // exist for the FK on rule_violations (which the UpsertViolation tx needs).
-//
-//nolint:unparam // artistID/ruleID vary across call sites in other tests.
 func seedArtistAndRule(t *testing.T, db *sql.DB, artistID, ruleID string) {
 	t.Helper()
 	ctx := context.Background()
