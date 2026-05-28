@@ -72,8 +72,8 @@ make dev            # Hot reload with air
 make clean          # Remove build artifacts
 
 # Tests
-make test           # Run all tests (no race detector)
-make test-race      # Race detector (matches `go test -race ./...`); native on macOS, requires CGO
+make test           # Run all tests with race detector and verbose output
+make test-race      # Race detector only, non-verbose; explicit CGO_ENABLED=1 (native on macOS)
 make test-shuffle   # Random ordering to surface order-dependent tests
 make test-cover     # Coverage report
 make bruno-ci       # Build, run ephemeral server, execute Bruno API tests

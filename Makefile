@@ -30,7 +30,7 @@ run: build
 dev:
 	air
 
-## test: Run all tests
+## test: Run all tests with race detector and verbose output
 test:
 	go test -v -race -count=1 ./...
 
