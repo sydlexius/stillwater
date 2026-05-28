@@ -4,6 +4,7 @@ package platform
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -82,8 +83,12 @@ func TestImportCreateTx_NilArg(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
-	if err := svc.ImportCreateTx(context.Background(), db, nil); err == nil {
+	err := svc.ImportCreateTx(context.Background(), db, nil)
+	if err == nil {
 		t.Fatal("expected error for nil profile, got nil")
+	}
+	if !strings.Contains(err.Error(), "platform profile is required") {
+		t.Fatalf("expected nil-guard error, got: %v", err)
 	}
 }
 
@@ -91,7 +96,11 @@ func TestImportUpdateTx_NilArg(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
-	if err := svc.ImportUpdateTx(context.Background(), db, nil); err == nil {
+	err := svc.ImportUpdateTx(context.Background(), db, nil)
+	if err == nil {
 		t.Fatal("expected error for nil profile, got nil")
+	}
+	if !strings.Contains(err.Error(), "platform profile is required") {
+		t.Fatalf("expected nil-guard error, got: %v", err)
 	}
 }

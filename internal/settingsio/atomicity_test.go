@@ -54,6 +54,41 @@ func TestImport_AtomicAcrossAllSections(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seeding settings: %v", err)
 	}
+	// Flip a default rule's Enabled flag on the source so the exported
+	// bundle carries a non-default value for it. Without this the rule
+	// upsert is a no-op on a target that ran the same SeedDefaults, and
+	// the rollback assertion would not actually exercise importRules.
+	srcRules, err := ruleSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing source rules: %v", err)
+	}
+	if len(srcRules) == 0 {
+		t.Fatal("source rule list is empty; SeedDefaults regression")
+	}
+	mutatedRuleID := srcRules[0].ID
+	srcRules[0].Enabled = !srcRules[0].Enabled
+	if err := ruleSvc.Update(ctx, &srcRules[0]); err != nil {
+		t.Fatalf("mutating source rule: %v", err)
+	}
+	// Mutate the source's global scraper config so the exported bundle
+	// carries a non-default scope row. Same rationale as the rule mutation
+	// above: identical defaults on source and target mean no observable
+	// import without divergence first.
+	srcScraper, err := scraperSvc.GetConfig(ctx, "global")
+	if err != nil {
+		t.Fatalf("reading source scraper global: %v", err)
+	}
+	if len(srcScraper.FallbackChains) > 0 && len(srcScraper.FallbackChains[0].Providers) >= 2 {
+		// Swap the first two providers in the first fallback chain --
+		// observable change, no schema risk.
+		p := srcScraper.FallbackChains[0].Providers
+		p[0], p[1] = p[1], p[0]
+	} else {
+		t.Fatal("source scraper config missing expected fallback chain; SeedDefaults regression")
+	}
+	if err := scraperSvc.SaveConfig(ctx, "global", srcScraper, nil); err != nil {
+		t.Fatalf("mutating source scraper config: %v", err)
+	}
 	if err := connSvc.Create(ctx, &connection.Connection{
 		Name: "AtomicSrcConn", Type: "emby", URL: "http://atomic.example:8096",
 		APIKey: "atomic-src-key", Enabled: true,
@@ -85,6 +120,17 @@ func TestImport_AtomicAcrossAllSections(t *testing.T) {
 		"src-collide-id", "alice", "administrator",
 	); err != nil {
 		t.Fatalf("seeding source user: %v", err)
+	}
+	// Seed a user_preferences row tied to the source alice. importUsers
+	// fails before importUserPreferences runs, so the rollback assertion
+	// below verifies that no preferences row leaked onto the target via
+	// any path.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, ?, ?, datetime('now'))`,
+		"src-collide-id", "atomicity.test.pref", "atomicity.test.pref.value",
+	); err != nil {
+		t.Fatalf("seeding source user preference: %v", err)
 	}
 
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).
@@ -124,6 +170,26 @@ func TestImport_AtomicAcrossAllSections(t *testing.T) {
 		`SELECT value FROM settings WHERE key = 'provider.priority.biography'`).Scan(&baselineBiographyPriority); err != nil {
 		t.Fatalf("reading baseline provider priority: %v", err)
 	}
+	// Capture the target's pre-import baseline for the mutated rule and
+	// the global scraper config so the post-rollback assertions compare
+	// against actual state, not a hardcoded default that future
+	// SeedDefaults edits might drift away from.
+	baselineRule, err := ruleSvc2.GetByID(ctx, mutatedRuleID)
+	if err != nil {
+		t.Fatalf("reading baseline rule: %v", err)
+	}
+	if baselineRule == nil {
+		t.Fatal("baseline rule not found on target; SeedDefaults regression")
+	}
+	baselineEnabled := baselineRule.Enabled
+	baselineScraper, err := scraperSvc2.GetConfig(ctx, "global")
+	if err != nil {
+		t.Fatalf("reading baseline scraper global: %v", err)
+	}
+	if len(baselineScraper.FallbackChains) == 0 || len(baselineScraper.FallbackChains[0].Providers) < 2 {
+		t.Fatal("baseline scraper config missing expected fallback chain on target")
+	}
+	baselineFirstProvider := baselineScraper.FallbackChains[0].Providers[0]
 
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2).
 		WithRuleService(ruleSvc2).
@@ -137,10 +203,14 @@ func TestImport_AtomicAcrossAllSections(t *testing.T) {
 		t.Fatalf("Import: expected ErrUserIDCollision wrapped, got %v", err)
 	}
 
-	// Single-tx atomicity: ImportResult counters must reset to zero on
-	// rollback so callers do not see partial counts.
-	if result != nil && (*result != ImportResult{}) {
-		t.Errorf("ImportResult must reset to zero on rollback; got %+v", *result)
+	// Single-tx atomicity: Import returns a nil *ImportResult on rollback
+	// so callers never see partial counts paired with an error. (The defer
+	// in ImportWithOptions also zeroes the heap-allocated result for
+	// defensive reasons, but that copy is never returned on the error path
+	// -- the function literal-returns nil. Assert the visible contract:
+	// nil result on every rollback path.)
+	if result != nil {
+		t.Errorf("ImportResult must be nil on rollback; got %+v", *result)
 	}
 
 	// Now the actual atomicity assertions: every section that ran BEFORE
@@ -220,6 +290,53 @@ func TestImport_AtomicAcrossAllSections(t *testing.T) {
 		}
 		if id != "target-collide-id" || role != "operator" {
 			t.Errorf("target alice mutated despite import failure: id=%q role=%q", id, role)
+		}
+	})
+	t.Run("rules rolled back", func(t *testing.T) {
+		// importRules runs before importUsers, so the mutated rule from
+		// the source would have been written into the tx and must be
+		// rolled back when importUsers fails.
+		got, err := ruleSvc2.GetByID(ctx, mutatedRuleID)
+		if err != nil {
+			t.Fatalf("reading target rule: %v", err)
+		}
+		if got == nil {
+			t.Fatal("target rule disappeared after rollback")
+		}
+		if got.Enabled != baselineEnabled {
+			t.Errorf("rule committed despite import failure: enabled=%v, want baseline %v",
+				got.Enabled, baselineEnabled)
+		}
+	})
+	t.Run("scraper config rolled back", func(t *testing.T) {
+		// importScraperPreferences runs before importUsers, so the source's
+		// swapped fallback chain would have been written into the tx and
+		// must be rolled back when importUsers fails.
+		got, err := scraperSvc2.GetConfig(ctx, "global")
+		if err != nil {
+			t.Fatalf("reading target scraper global: %v", err)
+		}
+		if len(got.FallbackChains) == 0 || len(got.FallbackChains[0].Providers) < 2 {
+			t.Fatal("target scraper fallback chain shape changed unexpectedly")
+		}
+		if got.FallbackChains[0].Providers[0] != baselineFirstProvider {
+			t.Errorf("scraper config committed despite import failure: first provider %q, want baseline %q",
+				got.FallbackChains[0].Providers[0], baselineFirstProvider)
+		}
+	})
+	t.Run("user preferences rolled back", func(t *testing.T) {
+		// importUserPreferences runs AFTER importUsers in the orchestrator,
+		// so the failing importUsers call should mean the source's pref
+		// row never even reached the target. This assertion guards against
+		// future reorderings that move user_preferences before users.
+		var count int
+		if err := db2.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM user_preferences WHERE user_id = ?`,
+			"src-collide-id").Scan(&count); err != nil {
+			t.Fatalf("counting target user_preferences: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("user preference committed despite import failure: count=%d", count)
 		}
 	})
 }

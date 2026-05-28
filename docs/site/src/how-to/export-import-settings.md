@@ -65,7 +65,7 @@ There are two ways to import an exported bundle, depending on whether the receiv
 4. Enter the same passphrase that was used to export.
 5. Click **Import**.
 
-Stillwater decrypts and validates the bundle first. It then applies the bundle in two phases: external-service sections (connections, platform profiles, webhooks, provider keys and priorities, rules, scraper preferences) are applied first, and the remaining database-direct sections (settings, users, user preferences, libraries, API tokens) are applied in a single transaction so an error in any one of them rolls the whole transactional phase back. Sections applied during the first phase remain committed if the transactional phase later rolls back; every section's import is upsert-by-natural-key, so the operator can safely retry. If the passphrase is wrong, decryption fails before anything is touched. The result shows what was imported and what was skipped.
+Stillwater decrypts and validates the bundle first. It then applies the whole bundle in a single database transaction covering every section (connections, platform profiles, webhooks, provider keys and priorities, rules, scraper preferences, application settings, users, user preferences, libraries, and API tokens), so an error in any section rolls the entire import back and the destination is left in the state it had before the import began. If the passphrase is wrong, decryption fails before anything is touched. Each section's import is upsert-by-natural-key, so a retry after a fixed-up bundle is safe. The result shows what was imported and what was skipped.
 
 ### Into a fresh instance, before admin creation (Restore from backup)
 
@@ -76,7 +76,7 @@ If you're standing up a new instance and want it to come up with the source inst
 3. Pick the `.json` file and enter the passphrase.
 4. Click **Restore**.
 
-The fresh instance applies the bundle using the same two-phase process as the Settings > Maintenance path described above (external-service sections first, then the transactional phase covering settings, users, user preferences, libraries, and API tokens), and marks onboarding as complete. The page redirects to the login screen; sign in with credentials from the source instance.
+The fresh instance applies the bundle in the same single-transaction atomic import described above, then marks onboarding as complete. The page redirects to the login screen; sign in with credentials from the source instance.
 
 This path is gated on the receiving instance being truly empty (no admin user yet, onboarding not completed). Once an admin exists, the only way to import is through Settings > Maintenance described above.
 
@@ -148,7 +148,7 @@ Connections carry the full set of per-connection write toggles through the expor
 
 A successful import restores every toggle on the destination exactly as it was set on the source. If a connection toggle changes silently after an import, that is a bug; file an issue with the source and destination versions.
 
-The import is atomic across every section: connections, platform profiles, webhooks, provider keys, provider priorities, rules, scraper preferences, application settings, users, user preferences, libraries, and API tokens. A failure in any section rolls back the whole import; the destination is left in the state it had before the import began. Earlier behavior committed connections and rules partway before a later failure, leaving a half-applied configuration; that gap is closed.
+The import is atomic across every section: connections, platform profiles, webhooks, provider keys, provider priorities, rules, scraper preferences, application settings, users, user preferences, libraries, and API tokens. A failure in any section rolls back the whole import; the destination is left in the state it had before the import began.
 
 ## Troubleshooting
 

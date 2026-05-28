@@ -5,6 +5,7 @@ package scraper
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -96,7 +97,11 @@ func TestImportSaveConfigTx_ExistingScopePreservesID(t *testing.T) {
 func TestImportSaveConfigTx_NilArg(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db, slog.Default())
-	if err := svc.ImportSaveConfigTx(context.Background(), db, "scope", nil, nil); err == nil {
+	err := svc.ImportSaveConfigTx(context.Background(), db, "scope", nil, nil)
+	if err == nil {
 		t.Fatal("expected error for nil cfg, got nil")
+	}
+	if !strings.Contains(err.Error(), "scraper config is required") {
+		t.Fatalf("expected nil-guard error, got: %v", err)
 	}
 }
