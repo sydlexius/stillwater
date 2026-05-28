@@ -45,7 +45,12 @@ const pbkdf2Iterations = 600_000
 //     a different id can fail the import instead of silently remapping.
 //     Restore-from-OOBE flows also rely on the id stability so a restored
 //     backup keeps every downstream reference intact.
-const CurrentEnvelopeVersion = "1.4"
+//   - "1.5": adds verify_path_after_update to ConnectionExport so the
+//     Lidarr post-update path-verification opt-in survives export/import
+//     (#1692). Pre-1.5 envelopes lack the field, so legacy imports must
+//     preserve the target's existing value instead of clobbering it with
+//     a decoded zero.
+const CurrentEnvelopeVersion = "1.5"
 
 // supportedEnvelopeVersions lists the envelope versions Import will accept.
 // Older versions are accepted for backward compatibility (their newer fields
@@ -56,6 +61,7 @@ var supportedEnvelopeVersions = map[string]bool{
 	"1.2": true,
 	"1.3": true,
 	"1.4": true,
+	"1.5": true,
 }
 
 // envelopeCarriesConnectionV14Fields reports whether an envelope of the given
@@ -72,7 +78,27 @@ var supportedEnvelopeVersions = map[string]bool{
 // out to avoid shadowing the imported `version` package.
 func envelopeCarriesConnectionV14Fields(envelopeVersion string) bool {
 	switch envelopeVersion {
-	case "1.4":
+	case "1.4", "1.5":
+		return true
+	default:
+		return false
+	}
+}
+
+// envelopeCarriesConnectionV15Fields reports whether an envelope of the given
+// version is known to carry the v1.5 connection feature field
+// (VerifyPathAfterUpdate). Pre-1.5 envelopes lack the field, so deserializing
+// leaves it at its zero value; copying that zero onto an existing target row
+// would silently disable a Lidarr verify toggle the operator had set. Returning
+// false here lets importConnections preserve the target's existing value
+// instead.
+//
+// When introducing a v1.6+ envelope that ALSO carries VerifyPathAfterUpdate,
+// add the new version to the case below. New schema bumps that drop the field
+// (unlikely) need their own gating function rather than reusing this one.
+func envelopeCarriesConnectionV15Fields(envelopeVersion string) bool {
+	switch envelopeVersion {
+	case "1.5":
 		return true
 	default:
 		return false
@@ -141,6 +167,7 @@ type ConnectionExport struct {
 	FeatureMetadataPush      bool   `json:"feature_metadata_push,omitempty"`
 	FeatureTriggerRefresh    bool   `json:"feature_trigger_refresh,omitempty"`
 	FeatureManageServerFiles bool   `json:"feature_manage_server_files,omitempty"`
+	VerifyPathAfterUpdate    bool   `json:"verify_path_after_update,omitempty"`
 	PreStillwaterConfigJSON  string `json:"pre_stillwater_config_json,omitempty"`
 	PlatformUserID           string `json:"platform_user_id,omitempty"`
 	PlatformServerID         string `json:"platform_server_id,omitempty"`
@@ -240,16 +267,12 @@ type ImportOptions struct {
 	ImportingAdminUserID string
 }
 
-// dbExecutor is the subset of *sql.DB used by the s.db-direct import
-// helpers (importSettings, importUsers, importUserPreferences,
-// importLibraries, importAPITokens). Both *sql.DB and *sql.Tx satisfy it,
-// so the helpers can run either standalone or inside a transaction the
-// orchestrator opens. The delegated sub-imports (importConnections,
-// importPlatformProfiles, importWebhooks, importProviderKeys,
-// importProviderPriorities, importRules, importScraperPreferences) reach
-// the database through their owning services and commit per-row outside
-// any transaction the settingsio orchestrator opens; that limitation is
-// noted in CHECKPOINT.md for the M52 round-1 review fixes.
+// dbExecutor is the subset of *sql.DB used by the per-section import
+// helpers. Both *sql.DB and *sql.Tx satisfy it, so the helpers can run
+// either standalone (against s.db, e.g. unit tests that exercise a single
+// section) or inside the orchestrator's single transaction. Every section's
+// owning service exposes Import*Tx methods that also take a *Tx-compatible
+// executor (#1693) so the full import is now atomic across all sections.
 type dbExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -361,6 +384,7 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 			FeatureMetadataPush:      c.FeatureMetadataPush,
 			FeatureTriggerRefresh:    c.FeatureTriggerRefresh,
 			FeatureManageServerFiles: c.FeatureManageServerFiles,
+			VerifyPathAfterUpdate:    c.VerifyPathAfterUpdate,
 			PreStillwaterConfigJSON:  c.PreStillwaterConfigJSON,
 			PlatformUserID:           c.PlatformUserID,
 			PlatformServerID:         c.PlatformServerID,
@@ -572,68 +596,53 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 
 	result := &ImportResult{}
 
+	// All sections run inside a single transaction so any mid-import failure
+	// rolls back every row written by every prior section. Per-section
+	// helpers thread the tx through tx-aware ImportXxxTx methods on each
+	// owning service (connection, platform, webhook, provider, rule,
+	// scraper); the s.db-direct helpers (settings, users, user_preferences,
+	// libraries, api_tokens) accept a dbExecutor and run against the tx
+	// directly. Public Create/Update signatures on those services stay
+	// unchanged so non-import callers see no surface drift (#1693).
+	//
 	// Sections are called in dependency order: connections must precede
 	// libraries (which remap by (type, url)), and users must precede both
 	// user_preferences and api_tokens (which remap by username).
-	//
-	// The import splits into two phases:
-	//
-	//  1. Pre-tx phase: helpers that reach the database through external
-	//     services (connections, platform profiles, webhooks, provider
-	//     keys, provider priorities, rules, scraper preferences). Those
-	//     services own their own transactions internally so wrapping them
-	//     here would require threading a *sql.Tx through every service
-	//     constructor; that surface change is tracked as #1693 (M54).
-	//
-	//  2. Tx phase: the s.db-direct helpers (settings, users,
-	//     user_preferences, libraries, api_tokens) all run inside a single
-	//     transaction so a failure in any one of them rolls back every
-	//     row written by the others in this phase. The pre-tx phase rows
-	//     remain committed -- a half-applied restore still allows the
-	//     operator to retry idempotently (every section's import is
-	//     upsert-by-natural-key) which matches the OOBE handler's
-	//     fail-soft policy on the post-import onboarding flag flip.
-	if err := s.importProviderKeys(ctx, payload.ProviderKeys, result); err != nil {
-		return nil, fmt.Errorf("importing provider keys: %w", err)
-	}
-	if err := s.importConnections(ctx, payload.Connections, result, envelopeCarriesConnectionV14Fields(v)); err != nil {
-		return nil, fmt.Errorf("importing connections: %w", err)
-	}
-	if err := s.importPlatformProfiles(ctx, payload.PlatformProfiles, result); err != nil {
-		return nil, fmt.Errorf("importing platform profiles: %w", err)
-	}
-	if err := s.importWebhooks(ctx, payload.Webhooks, result); err != nil {
-		return nil, fmt.Errorf("importing webhooks: %w", err)
-	}
-	if err := s.importProviderPriorities(ctx, payload.ProviderPriorities, result); err != nil {
-		return nil, fmt.Errorf("importing provider priorities: %w", err)
-	}
-	if err := s.importRules(ctx, payload.Rules, result); err != nil {
-		return nil, fmt.Errorf("importing rules: %w", err)
-	}
-	if err := s.importScraperPreferences(ctx, payload.ScraperConfigs, result); err != nil {
-		return nil, fmt.Errorf("importing scraper preferences: %w", err)
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("beginning import tx: %w", err)
 	}
-	// Snapshot the counters that the pre-tx phase already incremented so a
-	// rollback of the tx phase can restore them; otherwise the returned
-	// ImportResult would misreport partial counts.
-	preTxSnapshot := *result
 	committed := false
 	defer func() {
 		if !committed {
 			_ = tx.Rollback()
-			// Restore the result struct to its pre-tx state so the caller
-			// sees pre-tx counts plus an error, never the partial tx
-			// counts that got rolled back.
-			*result = preTxSnapshot
+			// Reset the result struct so the caller sees zero counts plus
+			// an error, never the partial counts that got rolled back.
+			*result = ImportResult{}
 		}
 	}()
 
+	if err := s.importProviderKeys(ctx, tx, payload.ProviderKeys, result); err != nil {
+		return nil, fmt.Errorf("importing provider keys: %w", err)
+	}
+	if err := s.importConnections(ctx, tx, payload.Connections, result, envelopeCarriesConnectionV14Fields(v), envelopeCarriesConnectionV15Fields(v)); err != nil {
+		return nil, fmt.Errorf("importing connections: %w", err)
+	}
+	if err := s.importPlatformProfiles(ctx, tx, payload.PlatformProfiles, result); err != nil {
+		return nil, fmt.Errorf("importing platform profiles: %w", err)
+	}
+	if err := s.importWebhooks(ctx, tx, payload.Webhooks, result); err != nil {
+		return nil, fmt.Errorf("importing webhooks: %w", err)
+	}
+	if err := s.importProviderPriorities(ctx, tx, payload.ProviderPriorities, result); err != nil {
+		return nil, fmt.Errorf("importing provider priorities: %w", err)
+	}
+	if err := s.importRules(ctx, tx, payload.Rules, result); err != nil {
+		return nil, fmt.Errorf("importing rules: %w", err)
+	}
+	if err := s.importScraperPreferences(ctx, tx, payload.ScraperConfigs, result); err != nil {
+		return nil, fmt.Errorf("importing scraper preferences: %w", err)
+	}
 	if err := s.importSettings(ctx, tx, payload.Settings, result); err != nil {
 		return nil, fmt.Errorf("importing settings: %w", err)
 	}
@@ -648,8 +657,7 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 	}
 	// Libraries must run AFTER connections so the (type, url) -> id remap
 	// can resolve to the freshly-imported connection rows. The lookup
-	// happens through connectionSvc, which reads from its own DB handle;
-	// the writes go through the tx.
+	// uses the tx so it observes those uncommitted rows.
 	if err := s.importLibraries(ctx, tx, payload.Libraries, result); err != nil {
 		return nil, fmt.Errorf("importing libraries: %w", err)
 	}

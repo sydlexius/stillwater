@@ -115,7 +115,7 @@ func TestImportProviderKeys_CountsAndPersists(t *testing.T) {
 
 	keys := map[string]string{string(provider.NameFanartTV): "fanart-test-key"}
 	result := &ImportResult{}
-	if err := svc.importProviderKeys(ctx, keys, result); err != nil {
+	if err := svc.importProviderKeys(ctx, db, keys, result); err != nil {
 		t.Fatalf("importProviderKeys: %v", err)
 	}
 	if result.ProviderKeys != 1 {
@@ -146,7 +146,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 		{Name: "Emby A", Type: "emby", URL: "http://emby.local:8096", APIKey: "key1", Enabled: true},
 	}
 	result := &ImportResult{}
-	if err := svc.importConnections(ctx, conns, result, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, result, true, true); err != nil {
 		t.Fatalf("importConnections (insert): %v", err)
 	}
 	if result.Connections != 1 {
@@ -157,7 +157,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 	conns[0].Name = "Emby A Renamed"
 	conns[0].APIKey = "key2"
 	result2 := &ImportResult{}
-	if err := svc.importConnections(ctx, conns, result2, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, result2, true, true); err != nil {
 		t.Fatalf("importConnections (update): %v", err)
 	}
 	if result2.Connections != 1 {
@@ -213,7 +213,7 @@ func TestImportConnections_PreV14EnvelopePreservesV14Fields(t *testing.T) {
 		APIKey: "key2", Enabled: true,
 		// v1.4-only fields explicitly left zero to model a pre-1.4 payload.
 	}}
-	if err := svc.importConnections(ctx, conns, &ImportResult{}, false); err != nil {
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, false, false); err != nil {
 		t.Fatalf("importConnections (legacy envelope): %v", err)
 	}
 
@@ -255,6 +255,7 @@ func TestEnvelopeCarriesConnectionV14Fields(t *testing.T) {
 		{"1.2", false},
 		{"1.3", false},
 		{"1.4", true},
+		{"1.5", true},
 		{"", false},
 		{"99.0", false},
 	}
@@ -262,6 +263,81 @@ func TestEnvelopeCarriesConnectionV14Fields(t *testing.T) {
 		if got := envelopeCarriesConnectionV14Fields(tc.version); got != tc.want {
 			t.Errorf("envelopeCarriesConnectionV14Fields(%q) = %v, want %v", tc.version, got, tc.want)
 		}
+	}
+}
+
+// TestEnvelopeCarriesConnectionV15Fields locks the v1.5 allow-set. Same
+// motivation as the v1.4 test: a future version bump that forgets to add
+// itself here would silently disable VerifyPathAfterUpdate on legacy
+// imports because the field would decode to its zero value.
+func TestEnvelopeCarriesConnectionV15Fields(t *testing.T) {
+	cases := []struct {
+		version string
+		want    bool
+	}{
+		{"1.0", false},
+		{"1.1", false},
+		{"1.2", false},
+		{"1.3", false},
+		{"1.4", false},
+		{"1.5", true},
+		{"", false},
+		{"99.0", false},
+	}
+	for _, tc := range cases {
+		if got := envelopeCarriesConnectionV15Fields(tc.version); got != tc.want {
+			t.Errorf("envelopeCarriesConnectionV15Fields(%q) = %v, want %v", tc.version, got, tc.want)
+		}
+	}
+}
+
+// TestImportConnections_PreV15EnvelopePreservesV15Fields proves that a
+// pre-1.5 envelope updating an existing target connection does NOT clear
+// VerifyPathAfterUpdate. Without the gate, a 1.4 backup would silently
+// disable the Lidarr path-verification opt-in after restore.
+func TestImportConnections_PreV15EnvelopePreservesV15Fields(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	// Seed the target with VerifyPathAfterUpdate=true, simulating an
+	// operator who upgraded to a v1.5 binary and then enabled the toggle.
+	seed := &connection.Connection{
+		Name:                  "Lidarr A",
+		Type:                  "lidarr",
+		URL:                   "http://lidarr.local:8686",
+		APIKey:                "key1",
+		Enabled:               true,
+		VerifyPathAfterUpdate: true,
+	}
+	if err := connSvc.Create(ctx, seed); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+
+	// Pre-1.5 envelope: the v1.5 field is absent and decodes to zero.
+	conns := []ConnectionExport{{
+		Name: "Lidarr A", Type: "lidarr", URL: "http://lidarr.local:8686",
+		APIKey: "key2", Enabled: true,
+		// VerifyPathAfterUpdate explicitly left zero to model a pre-1.5 payload.
+	}}
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, false); err != nil {
+		t.Fatalf("importConnections (legacy envelope): %v", err)
+	}
+
+	all, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(all))
+	}
+	got := all[0]
+	if got.APIKey != "key2" {
+		t.Errorf("APIKey: got %q, want key2 (legacy import must still rotate keys)", got.APIKey)
+	}
+	if !got.VerifyPathAfterUpdate {
+		t.Error("VerifyPathAfterUpdate was cleared by a legacy import; target value must be preserved")
 	}
 }
 
@@ -280,7 +356,7 @@ func TestImportPlatformProfiles_CreateAndUpdate(t *testing.T) {
 		{Name: "Test Profile", NFOEnabled: true, NFOFormat: "kodi"},
 	}
 	result := &ImportResult{}
-	if err := svc.importPlatformProfiles(ctx, profiles, result); err != nil {
+	if err := svc.importPlatformProfiles(ctx, db, profiles, result); err != nil {
 		t.Fatalf("importPlatformProfiles (create): %v", err)
 	}
 	if result.Profiles != 1 {
@@ -290,7 +366,7 @@ func TestImportPlatformProfiles_CreateAndUpdate(t *testing.T) {
 	// Re-import the same profile with a changed NFOFormat: must update, not insert.
 	profiles[0].NFOFormat = "emby"
 	result2 := &ImportResult{}
-	if err := svc.importPlatformProfiles(ctx, profiles, result2); err != nil {
+	if err := svc.importPlatformProfiles(ctx, db, profiles, result2); err != nil {
 		t.Fatalf("importPlatformProfiles (update): %v", err)
 	}
 
@@ -330,7 +406,7 @@ func TestImportWebhooks_CreateAndUpdate(t *testing.T) {
 		{Name: "Hook A", URL: "https://hook.example/a", Type: "generic", Events: []string{"artist.new"}, Enabled: true},
 	}
 	result := &ImportResult{}
-	if err := svc.importWebhooks(ctx, hooks, result); err != nil {
+	if err := svc.importWebhooks(ctx, db, hooks, result); err != nil {
 		t.Fatalf("importWebhooks (create): %v", err)
 	}
 	if result.Webhooks != 1 {
@@ -340,7 +416,7 @@ func TestImportWebhooks_CreateAndUpdate(t *testing.T) {
 	// Re-import with disabled=true: must update, not duplicate.
 	hooks[0].Enabled = false
 	result2 := &ImportResult{}
-	if err := svc.importWebhooks(ctx, hooks, result2); err != nil {
+	if err := svc.importWebhooks(ctx, db, hooks, result2); err != nil {
 		t.Fatalf("importWebhooks (update): %v", err)
 	}
 
@@ -382,7 +458,7 @@ func TestImportRules_SkipsNilService(t *testing.T) {
 		{ID: "thumb_exists", Enabled: false, AutomationMode: "auto"},
 	}
 	result := &ImportResult{}
-	if err := svc.importRules(ctx, rules, result); err != nil {
+	if err := svc.importRules(ctx, db, rules, result); err != nil {
 		t.Fatalf("importRules with nil service: %v", err)
 	}
 	if result.Rules != 0 {
@@ -403,7 +479,7 @@ func TestImportRules_SkipsEmptyID(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).WithRuleService(ruleSvc)
 
 	result := &ImportResult{}
-	if err := svc.importRules(ctx, []RuleExport{{ID: "", Enabled: true, AutomationMode: "auto"}}, result); err != nil {
+	if err := svc.importRules(ctx, db, []RuleExport{{ID: "", Enabled: true, AutomationMode: "auto"}}, result); err != nil {
 		t.Fatalf("importRules with empty ID: %v", err)
 	}
 	if result.Rules != 0 {
@@ -424,7 +500,7 @@ func TestImportRules_SkipsUnknownID(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).WithRuleService(ruleSvc)
 
 	result := &ImportResult{}
-	if err := svc.importRules(ctx, []RuleExport{{ID: "future_unknown_rule", Enabled: true, AutomationMode: "auto"}}, result); err != nil {
+	if err := svc.importRules(ctx, db, []RuleExport{{ID: "future_unknown_rule", Enabled: true, AutomationMode: "auto"}}, result); err != nil {
 		t.Fatalf("importRules with unknown ID: %v", err)
 	}
 	if result.Rules != 0 {
@@ -452,7 +528,7 @@ func TestImportRules_SkipsInvalidAutomationMode(t *testing.T) {
 	originalMode := before.AutomationMode
 
 	result := &ImportResult{}
-	if err := svc.importRules(ctx, []RuleExport{
+	if err := svc.importRules(ctx, db, []RuleExport{
 		{ID: rule.RuleThumbExists, Enabled: true, AutomationMode: "invalid_value"},
 	}, result); err != nil {
 		t.Fatalf("importRules with invalid mode: %v", err)
@@ -483,7 +559,7 @@ func TestImportRules_UpdatesValidRule(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).WithRuleService(ruleSvc)
 
 	result := &ImportResult{}
-	if err := svc.importRules(ctx, []RuleExport{
+	if err := svc.importRules(ctx, db, []RuleExport{
 		{ID: rule.RuleThumbExists, Enabled: false, AutomationMode: rule.AutomationModeAuto},
 	}, result); err != nil {
 		t.Fatalf("importRules: %v", err)
@@ -515,7 +591,7 @@ func TestImportScraperPreferences_SkipsNilService(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc) // no WithScraperService
 
 	result := &ImportResult{}
-	if err := svc.importScraperPreferences(ctx, []ScraperConfigExport{
+	if err := svc.importScraperPreferences(ctx, db, []ScraperConfigExport{
 		{Scope: "global"},
 	}, result); err != nil {
 		t.Fatalf("importScraperPreferences with nil service: %v", err)
@@ -535,7 +611,7 @@ func TestImportScraperPreferences_SkipsEmptyScope(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).WithScraperService(scraperSvc)
 
 	result := &ImportResult{}
-	if err := svc.importScraperPreferences(ctx, []ScraperConfigExport{{Scope: ""}}, result); err != nil {
+	if err := svc.importScraperPreferences(ctx, db, []ScraperConfigExport{{Scope: ""}}, result); err != nil {
 		t.Fatalf("importScraperPreferences with empty scope: %v", err)
 	}
 	if result.ScraperConfigs != 0 {
@@ -560,7 +636,7 @@ func TestImportScraperPreferences_UpsertAndCount(t *testing.T) {
 		{Scope: "custom-scope", Config: scraper.ScraperConfig{}},
 	}
 	result := &ImportResult{}
-	if err := svc.importScraperPreferences(ctx, configs, result); err != nil {
+	if err := svc.importScraperPreferences(ctx, db, configs, result); err != nil {
 		t.Fatalf("importScraperPreferences: %v", err)
 	}
 	if result.ScraperConfigs != 2 {
@@ -585,7 +661,7 @@ func TestImportProviderPriorities_CountsAndPersists(t *testing.T) {
 		},
 	}
 	result := &ImportResult{}
-	if err := svc.importProviderPriorities(ctx, priorities, result); err != nil {
+	if err := svc.importProviderPriorities(ctx, db, priorities, result); err != nil {
 		t.Fatalf("importProviderPriorities: %v", err)
 	}
 	if result.Priorities != 1 {
@@ -631,7 +707,7 @@ func TestImportProviderPriorities_DisabledPersisted(t *testing.T) {
 		},
 	}
 	result := &ImportResult{}
-	if err := svc.importProviderPriorities(ctx, priorities, result); err != nil {
+	if err := svc.importProviderPriorities(ctx, db, priorities, result); err != nil {
 		t.Fatalf("importProviderPriorities: %v", err)
 	}
 
@@ -673,7 +749,7 @@ func TestImportProviderPriorities_EmptyDisabledClears(t *testing.T) {
 		},
 	}
 	result := &ImportResult{}
-	if err := svc.importProviderPriorities(ctx, priorities, result); err != nil {
+	if err := svc.importProviderPriorities(ctx, db, priorities, result); err != nil {
 		t.Fatalf("importProviderPriorities: %v", err)
 	}
 
@@ -717,7 +793,7 @@ func TestImportProviderKeys_DBError(t *testing.T) {
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
-	err := svc.importProviderKeys(t.Context(), map[string]string{string(provider.NameFanartTV): "key"}, &ImportResult{})
+	err := svc.importProviderKeys(t.Context(), db, map[string]string{string(provider.NameFanartTV): "key"}, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -730,7 +806,7 @@ func TestImportConnections_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
 	conns := []ConnectionExport{{Name: "x", Type: "emby", URL: "http://localhost:8096"}}
-	err := svc.importConnections(t.Context(), conns, &ImportResult{}, true)
+	err := svc.importConnections(t.Context(), db, conns, &ImportResult{}, true, true)
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -743,7 +819,7 @@ func TestImportPlatformProfiles_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
 	profiles := []platform.Profile{{Name: "Test"}}
-	err := svc.importPlatformProfiles(t.Context(), profiles, &ImportResult{})
+	err := svc.importPlatformProfiles(t.Context(), db, profiles, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -756,7 +832,7 @@ func TestImportWebhooks_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
 	hooks := []webhook.Webhook{{Name: "h", URL: "https://example.com/h", Type: "generic"}}
-	err := svc.importWebhooks(t.Context(), hooks, &ImportResult{})
+	err := svc.importWebhooks(t.Context(), db, hooks, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -769,7 +845,7 @@ func TestImportProviderPriorities_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
 	priorities := []PriorityExport{{Field: "biography", Providers: []provider.ProviderName{provider.NameMusicBrainz}}}
-	err := svc.importProviderPriorities(t.Context(), priorities, &ImportResult{})
+	err := svc.importProviderPriorities(t.Context(), db, priorities, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -789,7 +865,7 @@ func TestImportRules_DBError(t *testing.T) {
 	// Use a known rule ID so the GetByID path is exercised (unknown IDs are
 	// silently skipped; a closed-DB error is not ErrNotFound and must surface).
 	rules := []RuleExport{{ID: rule.RuleThumbExists, Enabled: false, AutomationMode: rule.AutomationModeAuto}}
-	err := svc.importRules(t.Context(), rules, &ImportResult{})
+	err := svc.importRules(t.Context(), db, rules, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}
@@ -803,7 +879,7 @@ func TestImportScraperPreferences_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).WithScraperService(scraperSvc)
 	_ = db.Close()
 	configs := []ScraperConfigExport{{Scope: "global", Config: scraper.ScraperConfig{}}}
-	err := svc.importScraperPreferences(t.Context(), configs, &ImportResult{})
+	err := svc.importScraperPreferences(t.Context(), db, configs, &ImportResult{})
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}

@@ -220,6 +220,64 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRoundTrip_ConnectionVerifyPathAfterUpdate pins that the Lidarr
+// VerifyPathAfterUpdate opt-in (#1640 toggle) survives the connection
+// export/import round-trip introduced in envelope v1.5 (#1692). Without
+// this, a backup taken after the operator enables the toggle would
+// silently restore with the toggle off.
+func TestRoundTrip_ConnectionVerifyPathAfterUpdate(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+	c := &connection.Connection{
+		Name:                  "Lidarr A",
+		Type:                  "lidarr",
+		URL:                   "http://lidarr.local:8686",
+		APIKey:                "lidarr-key",
+		Enabled:               true,
+		VerifyPathAfterUpdate: true,
+	}
+	if err := connSvc.Create(ctx, c); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	envelope, err := svc.Export(ctx, "test-passphrase")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if envelope.Version != CurrentEnvelopeVersion {
+		t.Errorf("envelope version: got %q, want %q", envelope.Version, CurrentEnvelopeVersion)
+	}
+
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	if _, err := svc2.Import(ctx, envelope, "test-passphrase"); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	conns, err := connSvc2.List(ctx)
+	if err != nil {
+		t.Fatalf("listing imported connections: %v", err)
+	}
+	var got *connection.Connection
+	for i := range conns {
+		if conns[i].Name == "Lidarr A" {
+			got = &conns[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("imported connections missing %q; got %d rows", "Lidarr A", len(conns))
+	}
+	if !got.VerifyPathAfterUpdate {
+		t.Error("VerifyPathAfterUpdate did not survive export/import round-trip")
+	}
+}
+
 // TestRoundTrip_UpdaterSettings pins that updater.channel and
 // updater.auto_check survive the settings export/import round-trip, so a
 // future per-key allowlist in the exporter cannot silently drop them.
@@ -944,11 +1002,11 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
-	// Envelope version was bumped to 1.4 when UserExport.id and
-	// UserPrefsExport.user_id were added (#1114). Older versions remain
+	// Envelope version travels with CurrentEnvelopeVersion so this
+	// assertion stays accurate across schema bumps. Older versions remain
 	// importable; see TestImport_LegacyEnvelopeWithoutUsers.
-	if envelope.Version != "1.4" {
-		t.Errorf("envelope version: got %q, want 1.4", envelope.Version)
+	if envelope.Version != CurrentEnvelopeVersion {
+		t.Errorf("envelope version: got %q, want %q", envelope.Version, CurrentEnvelopeVersion)
 	}
 	if envelope.Summary == nil {
 		t.Fatal("expected non-nil export summary")

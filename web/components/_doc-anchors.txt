@@ -225,6 +225,7 @@ how-to/export-import-settings#migrating-to-a-new-host
 how-to/export-import-settings#save-the-bundle-somewhere-durable
 how-to/export-import-settings#troubleshooting
 how-to/export-import-settings#what-import-does-on-conflict
+how-to/export-import-settings#what-survives-the-round-trip
 how-to/export-import-settings#whats-in-the-bundle
 how-to/export-import-settings#when-the-sources-owner-is-missing-on-the-target
 how-to/fetch-and-crop-images#comparison-view
