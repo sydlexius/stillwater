@@ -125,9 +125,9 @@ hooks:
 doctor:
 	@./scripts/check-hooks.sh
 
-## worktree: Create a sibling worktree with hooks wired and tracker entry appended
-##   Usage: make worktree NAME=<slug> BRANCH=<branch> [ISSUE=<number>]
-##   Example: make worktree NAME=m49.5-merge-policy BRANCH=refactor/m49.5-1395-merge-policy ISSUE=1395
+## worktree: Create a sibling worktree with hooks wired and tracker row inserted into the Active table
+##   Usage: make worktree NAME=<slug> BRANCH=<branch> [ISSUE=<number>] [WAVE=<label>]
+##   Example: make worktree NAME=m49.5-merge-policy BRANCH=refactor/m49.5-1395-merge-policy ISSUE=1395 WAVE="M49.5 W1"
 WORKTREES_MD ?= $(HOME)/.claude/projects/-Users-jesse-Developer-stillwater/memory/worktrees.md
 worktree:
 	@test -n "$(NAME)"   || (echo "error: NAME is required (e.g. make worktree NAME=my-feature BRANCH=feat/my-feature)"; exit 1)
@@ -135,8 +135,31 @@ worktree:
 	git worktree add ../stillwater-$(NAME) -b $(BRANCH)
 	@$(MAKE) -C ../stillwater-$(NAME) hooks
 	@mkdir -p "$(dir $(WORKTREES_MD))"
-	@printf "| stillwater-$(NAME) | $(BRANCH) | $(if $(ISSUE),#$(ISSUE),--) | In Progress |\n" >> "$(WORKTREES_MD)"
-	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Tracker updated."
+	@touch "$(WORKTREES_MD)"
+	@if ! grep -q '^|---' "$(WORKTREES_MD)"; then \
+		printf '# Active Worktrees\n\n## Active\n\n| Worktree | Branch | Issues | Wave | Status |\n|----------|--------|--------|------|--------|\n' >> "$(WORKTREES_MD)"; \
+	fi
+	@row='| stillwater-$(NAME) | $(BRANCH) | $(if $(ISSUE),#$(ISSUE),--) | $(if $(WAVE),$(WAVE),--) | In progress |'; \
+	awk -v row="$$row" 'BEGIN{ins=0} {print} !ins && /^\|---/ {print row; ins=1}' \
+		"$(WORKTREES_MD)" > "$(WORKTREES_MD).tmp" && mv "$(WORKTREES_MD).tmp" "$(WORKTREES_MD)"
+	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Active table updated."
+
+## remove-worktree: Remove a sibling worktree (via cleanup-worktree.sh) and delete its Active-table row
+##   Usage: make remove-worktree NAME=<slug>
+##   Example: make remove-worktree NAME=m49.5-merge-policy
+remove-worktree:
+	@test -n "$(NAME)" || (echo "error: NAME is required (e.g. make remove-worktree NAME=my-feature)"; exit 1)
+	@$(HOME)/.claude/scripts/cleanup-worktree.sh "$(NAME)" || \
+		echo "warning: cleanup-worktree.sh exited non-zero (worktree or branch may already be gone); continuing with tracker row removal"
+	@if [ -f "$(WORKTREES_MD)" ]; then \
+		if grep -q '^| stillwater-$(NAME) ' "$(WORKTREES_MD)"; then \
+			awk -v prefix='| stillwater-$(NAME) ' 'index($$0, prefix) != 1' \
+				"$(WORKTREES_MD)" > "$(WORKTREES_MD).tmp" && mv "$(WORKTREES_MD).tmp" "$(WORKTREES_MD)"; \
+			echo "Removed stillwater-$(NAME) row from $(WORKTREES_MD)"; \
+		else \
+			echo "no stillwater-$(NAME) row found in $(WORKTREES_MD); nothing to remove"; \
+		fi; \
+	fi
 
 ## clean: Remove build artifacts
 clean:

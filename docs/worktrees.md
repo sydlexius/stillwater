@@ -16,17 +16,30 @@ Branch naming:
 
 ## Creating a worktree
 
+Preferred path is `make worktree`, which creates the worktree, runs `make hooks` inside it, and inserts a row into the Active table in `memory/worktrees.md` automatically:
+
 ```bash
 # Single issue:
-git worktree add -b feat/315-musicbrainz-mirror ../stillwater-315 main
+make worktree NAME=315 BRANCH=feat/315-musicbrainz-mirror ISSUE=315
 
-# Milestone sub-issue (branching from umbrella):
+# Milestone sub-issue (with wave label):
+make worktree NAME=m17-320 BRANCH=feat/320-short-desc ISSUE=320 WAVE="M17 W1"
+```
+
+`NAME` is the suffix after `stillwater-`. `BRANCH` is required. `ISSUE` and `WAVE` are optional; both default to `--` in the tracker row.
+
+For cases the Makefile target does not cover (branching off something other than the current `HEAD`, for example a milestone umbrella branch), fall back to raw `git worktree add` and then update the Active table by hand:
+
+```bash
 git worktree add -b feat/320-short-desc ../stillwater-m17-320 feat/m17-umbrella
+make -C ../stillwater-m17-320 hooks
+# then manually add the row to the Active table in memory/worktrees.md
+# row format: | stillwater-<NAME> | <BRANCH> | #<ISSUE> | <WAVE> | In progress |
 ```
 
 ## Tracking
 
-Active worktrees are tracked in `memory/worktrees.md` inside `~/.claude/projects/<project>/memory/`. Update it whenever a worktree is created or removed.
+Active worktrees are tracked in the `## Active` table at the top of `memory/worktrees.md` inside `~/.claude/projects/<project>/memory/`. `make worktree` inserts the row on create and `make remove-worktree` strips it on cleanup, so the table stays current automatically for worktrees managed through those targets. Manual edits are only needed for the fallback `git worktree add` path described above.
 
 ## Hook installation per worktree
 
@@ -52,15 +65,19 @@ Multiple rule PRs conflict on merge (all modify `engine.go`, `service.go`, `chec
 
 ## Cleanup after merge
 
+Preferred path is `make remove-worktree`, which delegates to `cleanup-worktree.sh` (removes worktree + branches + caches, prunes refs) and then strips the matching row from the Active table in `memory/worktrees.md`:
+
 ```bash
-bash $HOME/.claude/scripts/cleanup-worktree.sh <suffix>
+make remove-worktree NAME=1180          # single-issue
+make remove-worktree NAME=m36-639       # milestone sub-issue
+make remove-worktree NAME=fanart-dup    # slug
 ```
 
-`<suffix>` is whatever follows `stillwater-` in the worktree directory name. Examples (one per worktree shape above):
+`NAME` is whatever follows `stillwater-` in the worktree directory name (same value passed to `make worktree`).
 
-- `1180` for `stillwater-1180` (single-issue)
-- `m36` for `stillwater-m36` (milestone umbrella)
-- `m36-639` for `stillwater-m36-639` (milestone sub-issue)
-- `fanart-dup` for `stillwater-fanart-dup` (slug)
+For repos other than Stillwater, or for invocations from outside the main checkout, the underlying script can be called directly. It is repo-agnostic (detects the repo prefix from the current main worktree's basename), but it does not know about Stillwater's tracker file, so the Active table row must be removed by hand:
 
-The helper is repo-agnostic: it detects the repo prefix from the current main worktree's basename, so the same script works from any checkout. It removes the worktree, deletes local and remote branches, and prunes stale refs. Then update `memory/worktrees.md`.
+```bash
+bash $HOME/.claude/scripts/cleanup-worktree.sh <suffix>
+# then manually delete the matching row from memory/worktrees.md
+```
