@@ -706,6 +706,33 @@ func (p *Pipeline) logEvalCounters(a *artist.Artist, counters func() (uint64, ui
 	)
 }
 
+// logPassCounters emits the pass-level PassContext counter summary at the
+// end of a RunAllScoped invocation. This captures the Phase 2 (#1134)
+// signal: provider_cache_hit_total measures how many provider calls were
+// served from the pass-scoped LRU rather than from the network or even
+// the per-artist EvaluationContext. Eviction and invalidation counts are
+// informational for diagnosing cache-size tuning and rule-fix side-effect
+// patterns.
+//
+// We log at Info (not Debug) because this is a pass-level summary that
+// fire once per Run-All invocation, not once per artist, and is the
+// primary telemetry signal for the W4 (#1135) decision point.
+func (p *Pipeline) logPassCounters(pc *PassContext) {
+	if pc == nil {
+		return
+	}
+	hits, evictions, invalidations := pc.Counters()
+	if hits == 0 && evictions == 0 && invalidations == 0 {
+		// Nothing to report -- pass had no pass-cache activity.
+		return
+	}
+	p.logger.Info("pass context provider-fetch cache summary",
+		slog.Uint64("provider_cache_hit_total", hits),
+		slog.Uint64("pass_cache_eviction_total", evictions),
+		slog.Uint64("pass_cache_invalidation_total", invalidations),
+	)
+}
+
 // dispatchViolations is the strategy-dispatch loop pulled out of
 // runForArtistFiltered. It walks the violation list (skipping any that do
 // not match categoryFilter), looks up each rule, hands off to the
@@ -985,6 +1012,29 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		p.logger.Warn("counting eligible artists for run-all progress", "error", totalErr)
 	}
 	result.ArtistsTotal = total
+
+	// Issue #1134 (M54 W3): pass-scoped provider-fetch cache. Construct a
+	// PassContext for the lifetime of this RunAllScoped invocation and
+	// plumb it onto the context so every per-artist EvaluationContext built
+	// inside processArtist finds it via passContextFromContext. When an
+	// artist is re-evaluated later in the same pass (e.g. dirtied by a
+	// prior fix), its new EvaluationContext will find the cached provider
+	// payload in the PassContext instead of issuing a fresh network call.
+	// The PassContext falls out of scope when this function returns; there
+	// is no cross-pass sharing.
+	//
+	// The nil check on p.orchestrator ensures we only construct a
+	// PassContext when the pipeline is actually wired for coalescing.
+	// Without an orchestrator the EvaluationContext path is skipped
+	// entirely, so building a PassContext would be dead weight.
+	p.orchestratorMu.RLock()
+	hasOrch := p.orchestrator != nil
+	p.orchestratorMu.RUnlock()
+	if hasOrch {
+		passCtx := NewPassContext(DefaultPassCacheSize, p.logger)
+		ctx = WithPassContext(ctx, passCtx)
+		defer p.logPassCounters(passCtx)
+	}
 
 	// Cache rule lookups to avoid repeated DB queries across artists.
 	ruleCache := map[string]*Rule{}
