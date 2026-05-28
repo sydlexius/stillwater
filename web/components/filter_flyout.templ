@@ -300,7 +300,8 @@ func filterItemSelectedAttr(selected bool) string {
 templ FilterRange(flyoutID, key, label string, min, max int) {
 	<div class="sw-filter-section">
 		<div class="sw-filter-section-legend">{ label }</div>
-		<div class="flex items-center gap-2"
+		<div
+			class="flex items-center gap-2"
 			data-filter-flyout={ flyoutID }
 			data-filter-range-key={ key }
 		>
