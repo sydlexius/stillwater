@@ -20,7 +20,7 @@ Stillwater is a containerized, self-hosted web application for managing artist/c
 
 ```
 cmd/stillwater/       - Main entry point
-cmd/gen-*/            - Doc generators (env-reference, provider-matrix, rules-catalogue, settings-reference)
+cmd/gen-*/            - Doc generators (env-reference, provider-matrix, rules-catalogue, settings-reference, doc-anchors)
 internal/api/         - HTTP handlers, middleware, and SSE hub
 internal/artist/      - Artist domain model, service, and repository interfaces
 internal/auth/        - Authentication (session-based)
@@ -65,22 +65,41 @@ build/swag/           - LSIO SWAG reverse proxy configs
 ## Common Commands
 
 ```bash
+# Build / run
 make build          # Build binary (runs templ generate + tailwind first)
 make run            # Build and run locally with debug logging
 make dev            # Hot reload with air
-make test           # Run all tests with race detector
-make test-race      # Race detector explicitly (matches `go test -race ./...`)
+make clean          # Remove build artifacts
+
+# Tests
+make test           # Run all tests with race detector and verbose output
+make test-race      # Race detector only, non-verbose; explicit CGO_ENABLED=1 (native on macOS)
+make test-shuffle   # Random ordering to surface order-dependent tests
+make test-cover     # Coverage report
+make bruno-ci       # Build, run ephemeral server, execute Bruno API tests
+
+# Code / docs generation
 make generate       # Regenerate templ + tailwind (umbrella)
+make generate-docs  # Regenerate docs-site content from code (provider matrix, env-var reference, rules catalogue, settings reference, doc anchors)
+
+# Quality
 make lint           # Run golangci-lint
 make hadolint       # Lint Dockerfile(s)
 make fmt            # Format Go + Templ files
-make hooks          # Install git pre-commit hook
+make check-openapi  # Validate OpenAPI spec against handler implementations
+
+# Hooks / worktrees
+make hooks          # Install git pre-commit + pre-push hooks
+make doctor         # Verify hook wiring without modifying anything
+make worktree       # Create a sibling worktree (see Worktrees section)
+make remove-worktree # Remove a sibling worktree (see Worktrees section)
+
+# Database / Docker
 make migrate        # Apply database migrations
-make check-openapi  # Validate OpenAPI spec
-make clean          # Remove build artifacts
-make scan           # Build Docker image (no cache) and scan for CVEs
+make scan           # Build Docker image (no cache) and scan for CVEs (grype)
 make docker-build   # Build Docker image
 make docker-run     # Start via docker compose
+make docker-stop    # Stop Docker container
 ```
 
 ## Running Long Tests
@@ -124,17 +143,32 @@ Default when no hint: Sonnet + Plan Mode + medium effort for features; Sonnet + 
 
 ## PR Workflow
 
-Run `bash scripts/pre-push-gate.sh` (deterministic checks), then `/pr-review-toolkit:review-pr`, then squash and push. Never open a PR until both pass. See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround and Copilot policy.
+The pre-push git hook runs `scripts/pre-push-gate.sh` automatically on every push, so do **not** invoke it manually as a separate step -- the manual call duplicates the hook's work without adding signal. The pre-push action that actually does something useful is the AI code-review pass, which catches the kind of finding the deterministic gate cannot.
+
+Sequence before opening / pushing to a PR:
+
+1. Run a local CodeRabbit review against the squashed HEAD via the `/coderabbit:code-review` skill (or `coderabbit review --plain` from the CLI). Address findings, re-squash if needed.
+2. Push (the pre-push hook runs the deterministic gate; if the gate fails, the push aborts).
+3. Open / update the PR with `gh pr create` (use the template; set labels).
+
+See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround and Copilot policy. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge), not as a standalone pre-push ceremony.
 
 **Review comment scope:** Default: fix now. Defer only for architectural changes or unrelated subsystems. Never defer without creating a tracking issue.
 
 ## Worktrees
 
-Use git worktrees for concurrent issue/agent work. Naming: `../stillwater-{issue}/`, `../stillwater-m{N}-{issue}/`. Track in `~/.claude/projects/<project>/memory/worktrees.md`. See `docs/worktrees.md` for full protocol. After merge: `bash $HOME/.claude/scripts/cleanup-worktree.sh <suffix>` (where `<suffix>` is whatever follows `stillwater-` in the worktree dirname -- e.g. `1180`, `m36-639`, or a slug like `fanart-dup`).
+Use git worktrees for concurrent issue/agent work. Naming: `../stillwater-{issue}/`, `../stillwater-m{N}-{issue}/`. Track in `~/.claude/projects/<project>/memory/worktrees.md`.
+
+**Canonical lifecycle (use these targets; they maintain the Active table in `worktrees.md` automatically):**
+
+- Create: `make worktree NAME=<slug> BRANCH=<branch> [ISSUE=<n>] [WAVE=<label>]`
+- Remove: `make remove-worktree NAME=<slug>` (delegates to `cleanup-worktree.sh` then strips the row)
+
+These supersede any older instruction, skill, or memory entry that calls `git worktree add` / `cleanup-worktree.sh` directly inside this repo -- including the worktree-removal step in the global `/post-merge-cleanup` skill. Fallback to raw commands only when branching off a non-`HEAD` ref (umbrella branches, named refs); the fallback path is documented in `docs/worktrees.md`. The `cleanup-worktree.sh` script remains the underlying tool and stays repo-agnostic.
 
 ## Milestone Work
 
-See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude/plans/m<N>-<slug>-plan.md` (out-of-repo; `.gitignore` backstops `docs/plans/`, `docs/milestone-*/`, `docs/milestone-*.md`, `docs/prototypes/`), use per-issue worktrees, ship docs in the same PR, run cleanup after all merges.
+See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude/plans/m<N>-<slug>-plan.md` (out-of-repo; `.gitignore` backstops `docs/plans/`, `docs/milestone-*/`, `docs/milestone-*.md`, `docs/prototypes/`, `docs/superpowers/`), use per-issue worktrees, ship docs in the same PR, run cleanup after all merges.
 
 ## CI/CD
 
@@ -146,13 +180,17 @@ Do not use `paths-ignore` on triggers when required status checks exist (GitHub 
 
 ## Helper Scripts
 
-- `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files)
+- `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files, lint, patch coverage). Run automatically by the pre-push git hook; do not invoke manually as a standalone pre-PR step (see PR Workflow).
+- `scripts/safe-push.sh [branch] [--force-with-lease]` -- `git push` wrapper that writes the full transcript to a per-worktree log under `.git/` and verifies `origin/<branch>` matches local HEAD after push. Catches silent failures that `cmd | tail` would swallow.
 - `scripts/dev-restart.sh` -- canonical dev rebuild + restart (use this; never kill by port)
 - `scripts/patch-coverage.sh` -- patch-level coverage check (called by pre-push-gate)
+- `scripts/coverage-floor.sh` -- per-package coverage floor enforcement (called by pre-push-gate)
 - `scripts/smoke.sh` -- API smoke tests against a running instance
-- `scripts/check-generated.sh` -- verify *_templ.go was regenerated after .templ changes
-- `~/.claude/scripts/cleanup-worktree.sh <suffix>` -- remove worktree, delete local/remote branches, prune refs (repo-agnostic; auto-detects the main worktree's basename as the prefix)
-- `~/.claude/scripts/pr-unreplied-comments.sh [--wait] [--count-only] <PR>` -- unreplied bot comments
+- `scripts/smoke-provider-failure.sh` -- fault-injection smoke harness for provider failure surfaces
+- `scripts/check-generated.sh` -- verify `*_templ.go` was regenerated after `.templ` changes
+- `scripts/check-hooks.sh` -- verify `core.hooksPath` points at `.githooks` and the hook files are executable
+- `~/.claude/scripts/cleanup-worktree.sh <suffix>` -- remove worktree, delete local/remote branches, prune refs (repo-agnostic; auto-detects the main worktree's basename as the prefix). In Stillwater, prefer `make remove-worktree NAME=<slug>` (see Worktrees section); the make target wraps this script and additionally strips the Active-table row in `worktrees.md`.
+- `~/.claude/scripts/pr-unreplied-comments.sh [--allow-stale] [--pending-only] [--count-only] [--coverage-only] [--wait] <PR>` -- unreplied bot comments + codecov advisory
 
 ## License
 

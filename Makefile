@@ -30,7 +30,7 @@ run: build
 dev:
 	air
 
-## test: Run all tests
+## test: Run all tests with race detector and verbose output
 test:
 	go test -v -race -count=1 ./...
 
@@ -38,10 +38,9 @@ test:
 test-shuffle:
 	go test -race -count=1 -shuffle=on ./...
 
-## test-race: Run tests with race detector via WSL2 (requires WSL2 with Go and GCC installed)
+## test-race: Run tests with race detector (native; CGO required for the race instrumentation)
 test-race:
-	@wsl_path=$$(echo "$(CURDIR)" | sed 's|^/\([a-zA-Z]\)/|/mnt/\1/|'); \
-	wsl -e bash -c "cd $$wsl_path && CGO_ENABLED=1 go test -race -count=1 ./..."
+	CGO_ENABLED=1 go test -race -count=1 ./...
 
 ## test-cover: Run tests with coverage
 test-cover:
