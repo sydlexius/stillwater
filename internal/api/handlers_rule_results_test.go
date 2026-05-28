@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -201,6 +202,9 @@ func TestHandleRuleResults_PageAndPageSizeClamps(t *testing.T) {
 		{"page<1 normalizes to 1", "page=0&page_size=10", 1, 10},
 		{"page_size<1 explicit clamps to 1", "page=1&page_size=0", 1, 1},
 		{"page_size>200 clamps to 200", "page=1&page_size=500", 1, 200},
+		// page > math.MaxInt/pageSize triggers the overflow guard;
+		// pick a value comfortably above the clamp for pageSize=10.
+		{"page overflow clamps to maxPage", "page=999999999999999999&page_size=10", math.MaxInt / 10, 10},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

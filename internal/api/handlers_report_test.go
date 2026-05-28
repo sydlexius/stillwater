@@ -163,6 +163,72 @@ func TestHandleReportHealth_HTMX(t *testing.T) {
 	}
 }
 
+// TestHandleReportHealth_WithRuleResults seeds artists + rules + rule_results
+// (one passing, two failing) so the handler's TopViolations and RulePassRates
+// loops actually populate. Without seeded rule_results, those loop bodies
+// never execute and the new patch lines stay uncovered.
+func TestHandleReportHealth_WithRuleResults(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	a := addTestArtist(t, artistSvc, "Seeded Artist")
+	b := addTestArtist(t, artistSvc, "Seeded Artist B")
+	seedRuleRow(t, r, "rr-pass", "Pass Rule")
+	seedRuleRow(t, r, "rr-fail", "Fail Rule")
+	mustSeedAPI(t, "pass a", r.ruleService.UpsertRuleResultPass(ctx, a.ID, "rr-pass", now))
+	mustSeedAPI(t, "fail a", r.ruleService.UpsertRuleResultFail(ctx, a.ID, "rr-fail", "v1", "msg", now))
+	mustSeedAPI(t, "fail b", r.ruleService.UpsertRuleResultFail(ctx, b.ID, "rr-fail", "v2", "msg", now))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
+	w := httptest.NewRecorder()
+	r.handleReportHealth(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	var resp healthSummary
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if len(resp.TopViolations) == 0 {
+		t.Errorf("TopViolations: got 0, want > 0 (seeded 1 failing rule)")
+	}
+	if len(resp.RulePassRates) == 0 {
+		t.Errorf("RulePassRates: got 0, want > 0 (seeded 2 rules with evaluations)")
+	}
+}
+
+// TestHandleReportHealth_HTMX_WithRuleResults exercises the HTMX render path
+// with seeded rule_results so the template's RulePassRates block and the
+// BasePath-prefixed drill-down href both execute. Sets a non-empty BasePath
+// to confirm the prefix is applied to the rendered link.
+func TestHandleReportHealth_HTMX_WithRuleResults(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	r.basePath = "/musicbrainz"
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	a := addTestArtist(t, artistSvc, "HTMX Seeded")
+	seedRuleRow(t, r, "rr-htmx", "HTMX Rule")
+	mustSeedAPI(t, "pass htmx", r.ruleService.UpsertRuleResultPass(ctx, a.ID, "rr-htmx", now))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handleReportHealth(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "/musicbrainz/rules/rr-htmx/results") {
+		t.Errorf("expected BasePath-prefixed drill-down link in body; got:\n%s", body)
+	}
+}
+
 func TestHandleReportHealth_Empty(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
