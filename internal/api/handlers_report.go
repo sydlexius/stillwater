@@ -152,6 +152,7 @@ func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, 
 			MissingMBID:      summary.MissingMBID,
 			TopViolations:    toTemplateViolations(summary.TopViolations),
 			RulePassRates:    toTemplateRulePassRates(summary.RulePassRates),
+			BasePath:         r.basePath,
 		}
 		renderTempl(w, req, templates.HealthSummaryFragment(data))
 		return

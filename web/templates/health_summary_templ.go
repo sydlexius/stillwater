@@ -21,6 +21,10 @@ type HealthSummaryData struct {
 	MissingMBID      int
 	TopViolations    []ViolationSummaryData
 	RulePassRates    []RulePassRateData
+	// BasePath is the SW_BASE_PATH prefix used for sub-path deployments
+	// (e.g. "/musicbrainz"). Empty in the default root-mount case. Drill-down
+	// links concatenate this so they resolve correctly under any mount point.
+	BasePath string
 }
 
 // ViolationSummaryData represents a rule violation count for display.
@@ -91,7 +95,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "health.compliance_score"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 44, Col: 101}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 48, Col: 101}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -130,7 +134,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", data.Score))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 53, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 57, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -143,7 +147,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "health.fully_compliant", data.CompliantArtists, data.TotalArtists))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 56, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 60, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -173,7 +177,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "health.top_violations"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 64, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 68, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -191,7 +195,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(v.RuleName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 68, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 72, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -230,7 +234,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "health.artist_count", v.Count))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 78, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 82, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -253,7 +257,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "health.rule_pass_rates"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 87, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 91, Col: 108}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -274,9 +278,9 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var15 templ.SafeURL
-				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/rules/%s/results", pr.RuleID)))
+				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/rules/%s/results", data.BasePath, pr.RuleID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 92, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 96, Col: 88}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -289,7 +293,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(pr.RuleName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 95, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 99, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -302,7 +306,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "health.rule_pass_rate_format", pr.Passed, pr.Evaluated))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 98, Col: 74}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 102, Col: 74}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -341,7 +345,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f%%", pr.PassRate*100))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 108, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 112, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -364,7 +368,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "health.no_rule_data"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 115, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 119, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -411,7 +415,7 @@ func quickStatCard(label string, count int, link string) templ.Component {
 		var templ_7745c5c3_Var23 templ.SafeURL
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(link))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 122, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 126, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -424,7 +428,7 @@ func quickStatCard(label string, count int, link string) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 125, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 129, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -462,7 +466,7 @@ func quickStatCard(label string, count int, link string) templ.Component {
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(count))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 133, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 137, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {

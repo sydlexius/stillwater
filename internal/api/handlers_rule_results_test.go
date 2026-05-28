@@ -174,6 +174,59 @@ func TestHandleRuleResults_UnknownRuleReturns200WithEmptyRows(t *testing.T) {
 	}
 }
 
+// TestHandleRuleResults_PageAndPageSizeClamps exercises the clamp
+// branches around page / page_size. Covers:
+//   - page < 1 normalizes to 1
+//   - page_size < 1 (explicitly provided) clamps to 1, NOT the default 50
+//     (this distinction matters: the absent-param case keeps the default)
+//   - page_size > 200 clamps to 200
+//
+// The body shape is checked rather than the row payload; the seed has
+// one passing artist, so the row count is at most 1 in every case.
+func TestHandleRuleResults_PageAndPageSizeClamps(t *testing.T) {
+	r, _ := testRouter(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	seedArtistRow(t, r, "clamp-a", "Alpha")
+	seedRuleRow(t, r, "rule-clamp", "Clamp Rule")
+	mustSeedAPI(t, "seed pass", r.ruleService.UpsertRuleResultPass(ctx, "clamp-a", "rule-clamp", now))
+
+	cases := []struct {
+		name         string
+		query        string
+		wantPage     int
+		wantPageSize int
+	}{
+		{"page<1 normalizes to 1", "page=0&page_size=10", 1, 10},
+		{"page_size<1 explicit clamps to 1", "page=1&page_size=0", 1, 1},
+		{"page_size>200 clamps to 200", "page=1&page_size=500", 1, 200},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet,
+				"/api/v1/rules/rule-clamp/results?"+tc.query, nil)
+			req.SetPathValue("id", "rule-clamp")
+			w := httptest.NewRecorder()
+			r.handleRuleResults(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status: %d body=%s", w.Code, w.Body.String())
+			}
+			var env struct {
+				Page     int `json:"page"`
+				PageSize int `json:"page_size"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+				t.Fatalf("decoding: %v body=%s", err, w.Body.String())
+			}
+			if env.Page != tc.wantPage || env.PageSize != tc.wantPageSize {
+				t.Errorf("got page=%d page_size=%d, want %d/%d",
+					env.Page, env.PageSize, tc.wantPage, tc.wantPageSize)
+			}
+		})
+	}
+}
+
 // TestHandleArtistRuleResults_ReturnsEnabledOnly seeds two rules (one
 // enabled, one disabled) for the same artist, both evaluated, and asserts
 // the disabled rule is filtered out and the response includes the joined
