@@ -210,7 +210,37 @@ echo "=== Mkdocs config YAML ==="
 if [ -f docs/site/mkdocs.yml ]; then
     if command -v python3 >/dev/null 2>&1; then
         if python3 -c 'import yaml' 2>/dev/null; then
-            if ! python3 -c 'import sys, yaml; yaml.safe_load(open("docs/site/mkdocs.yml"))' 2>&1; then
+            # MkDocs configs use PyYAML "!!python/name:" / "!!python/object"
+            # tags (e.g. the pymdownx.superfences custom fence that enables
+            # Mermaid rendering). safe_load rejects those legitimate tags, so
+            # validate with a SafeLoader extended to treat the python-specific
+            # tag families as opaque. This still catches real syntax errors
+            # (residual conflict markers, indentation slips) without requiring
+            # mkdocs itself to be importable here.
+            if ! python3 - docs/site/mkdocs.yml 2>&1 <<'PY'
+import sys
+import yaml
+
+
+class MkDocsLoader(yaml.SafeLoader):
+    """SafeLoader that tolerates MkDocs/pymdownx python tags."""
+
+
+def _ignore_python_tag(loader, suffix, node):
+    return None
+
+
+for _prefix in (
+    "tag:yaml.org,2002:python/name:",
+    "tag:yaml.org,2002:python/object:",
+    "tag:yaml.org,2002:python/object/apply:",
+):
+    MkDocsLoader.add_multi_constructor(_prefix, _ignore_python_tag)
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    yaml.load(fh, Loader=MkDocsLoader)
+PY
+            then
                 echo "FAIL: docs/site/mkdocs.yml is not valid YAML (see error above)."
                 exit 1
             fi
