@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -176,7 +177,11 @@ func TestHandleRunRule_Returns202(t *testing.T) {
 	r, _ := testRouterWithStubPipeline(t, stub)
 	t.Cleanup(func() {
 		close(blockCh)
-		<-doneCh
+		select {
+		case <-doneCh:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for run-rule goroutine to finish")
+		}
 	})
 
 	ruleID := firstRuleID(t, r.ruleService)
