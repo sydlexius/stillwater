@@ -17,6 +17,7 @@ core-concepts/auto-provisioning#emby-and-jellyfin-guard-rails
 core-concepts/auto-provisioning#enabling-auto-provisioning
 core-concepts/auto-provisioning#guard-rails
 core-concepts/auto-provisioning#oidc-guard-rails
+core-concepts/auto-provisioning#returning-to-the-requested-page-after-sign-in
 core-concepts/auto-provisioning#the-sign-in-flow
 core-concepts/auto-provisioning#what-happens-when-an-upstream-user-is-removed
 core-concepts/conflict-gate#banner-states

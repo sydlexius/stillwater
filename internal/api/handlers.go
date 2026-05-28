@@ -289,8 +289,7 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 
 	// If the login form included a return URL (from session timeout redirect),
 	// send the user back to that page instead of the default root.
-	// Strip basePath prefix if already present to avoid double-prefixing.
-	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
+	dest := sanitizeReturnTo(req.FormValue("return_url"), r.basePath)
 	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -367,55 +366,29 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 
 	r.setSessionCookie(w, req, token)
 
-	// Honor a return URL from the form, query parameter, or OIDC cookie.
-	var rawReturn string
-	if v := validateReturnURL(req.FormValue("return_url")); v != "" {
-		rawReturn = v
-	} else if c, err := req.Cookie("oidc_return"); err == nil && c.Value != "" {
-		rawReturn = validateReturnURL(c.Value)
-		// Clear the cookie after use. Match the Secure/SameSite attributes from
-		// the original cookie set in handleOIDCLogin so browsers delete it.
-		// gosec G124 wants Secure=true literal; we derive it from request scheme
-		// so plain-HTTP dev installs still work. HttpOnly/SameSite are set.
-		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure derived from request scheme; HttpOnly+SameSite set explicitly.
-			Name:     "oidc_return",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
-		})
+	// Honor a return URL from the form first, falling back to the OIDC state
+	// cookie populated when the user initiated the OIDC redirect.
+	raw := req.FormValue("return_url")
+	if raw == "" {
+		if c, cookieErr := req.Cookie("oidc_return"); cookieErr == nil {
+			raw = c.Value
+			// Clear the cookie after use. Match the Secure/SameSite attributes
+			// from the original cookie set in handleOIDCLogin so browsers
+			// delete it. gosec G124 wants a literal Secure=true; we derive it
+			// from the request scheme so plain-HTTP dev installs still work.
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure derived from request scheme; HttpOnly+SameSite set explicitly.
+				Name:     "oidc_return",
+				Value:    "",
+				Path:     "/",
+				MaxAge:   -1,
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+				Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
+			})
+		}
 	}
-	dest := buildSafeRedirect(r.basePath, rawReturn)
+	dest := sanitizeReturnTo(raw, r.basePath)
 	http.Redirect(w, req, dest, http.StatusFound)
-}
-
-// buildSafeRedirect constructs a redirect URL from a validated return path.
-// The return path is re-parsed with url.Parse and only the Path component is
-// used, which breaks any taint chain from user input to the redirect target.
-// This satisfies CodeQL's go/unvalidated-url-redirection rule.
-func buildSafeRedirect(basePath, returnPath string) string {
-	dest := basePath + "/"
-	if returnPath == "" {
-		return dest
-	}
-	parsed, err := url.Parse(returnPath)
-	if err != nil || parsed.Host != "" || parsed.Scheme != "" {
-		return dest
-	}
-	safePath := parsed.Path
-	if basePath != "" && strings.HasPrefix(safePath, basePath+"/") {
-		safePath = strings.TrimPrefix(safePath, basePath)
-	}
-	dest = basePath + safePath
-	if parsed.RawQuery != "" {
-		dest += "?" + parsed.RawQuery
-	}
-	if parsed.Fragment != "" {
-		dest += "#" + parsed.Fragment
-	}
-	return dest
 }
 
 // redirectWithError redirects the user to the login page with an error message
@@ -423,57 +396,6 @@ func buildSafeRedirect(basePath, returnPath string) string {
 // JSON responses are not appropriate.
 func (r *Router) redirectWithError(w http.ResponseWriter, req *http.Request, msg string) {
 	http.Redirect(w, req, r.basePath+"/?error="+url.QueryEscape(msg), http.StatusFound)
-}
-
-// validateReturnURL checks that a return URL is a safe relative path.
-// It rejects absolute URLs, protocol-relative URLs, and other open-redirect
-// vectors. Returns the validated path or empty string if the input is invalid.
-func validateReturnURL(rawURL string) string {
-	if rawURL == "" {
-		return ""
-	}
-
-	// Reject URLs containing ASCII control characters (CR, LF, null, etc.)
-	// to prevent header injection via Location or HX-Redirect headers.
-	for _, c := range rawURL {
-		if c < 0x20 || c == 0x7f {
-			slog.Debug("rejected return URL: contains control character", "raw", rawURL)
-			return ""
-		}
-	}
-
-	// Strip backslashes to prevent bypass via "\" which some browsers
-	// normalize to "/", turning "\evil.com" into "//evil.com".
-	cleaned := strings.ReplaceAll(rawURL, "\\", "")
-	if cleaned == "" {
-		slog.Debug("rejected return URL: empty after backslash strip", "raw", rawURL)
-		return ""
-	}
-
-	// Must start with a single forward slash (relative path).
-	if !strings.HasPrefix(cleaned, "/") {
-		slog.Debug("rejected return URL: no leading slash", "raw", rawURL)
-		return ""
-	}
-
-	// Reject protocol-relative URLs ("//evil.com").
-	if strings.HasPrefix(cleaned, "//") {
-		slog.Debug("rejected return URL: protocol-relative", "raw", rawURL)
-		return ""
-	}
-
-	// Reject any URL with a scheme (e.g. "javascript:", "data:", "http:").
-	parsed, err := url.Parse(cleaned)
-	if err != nil {
-		slog.Debug("rejected return URL: parse error", "raw", rawURL, "error", err)
-		return ""
-	}
-	if parsed.Scheme != "" || parsed.Host != "" {
-		slog.Debug("rejected return URL: has scheme or host", "raw", rawURL)
-		return ""
-	}
-
-	return cleaned
 }
 
 // handleLoginLocal performs local username/password authentication.
@@ -487,7 +409,7 @@ func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, user
 	}
 
 	r.setSessionCookie(w, req, token)
-	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
+	dest := sanitizeReturnTo(req.FormValue("return_url"), r.basePath)
 	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -536,7 +458,7 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 	r.updateConnectionToken(req.Context(), authMethod, serverURL, result.User.ID, result.AccessToken)
 
 	r.setSessionCookie(w, req, token)
-	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
+	dest := sanitizeReturnTo(req.FormValue("return_url"), r.basePath)
 	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -560,13 +482,40 @@ func (r *Router) setSessionCookie(w http.ResponseWriter, req *http.Request, toke
 // Reads the enabled state of each provider from the database settings so that
 // toggling a provider in Settings is reflected on the login page immediately
 // without a server restart.
+//
+// Captures the original request URI (path+query) so the template can wire it
+// into the hidden return_url form input and the OIDC redirect link, letting
+// successful login bounce the user back to the page they originally tried to
+// reach. The sanitizer at /api/v1/auth/login rejects anything unsafe, so a
+// bookmarked /login or hostile ?return= cannot turn into an open redirect.
 func (r *Router) renderLoginPage(w http.ResponseWriter, req *http.Request) {
 	providers := r.enabledAuthProviders(req.Context())
 	oidcInfo := templates.OIDCLoginInfo{
 		DisplayName: r.getStringSetting(req.Context(), "auth.providers.oidc.display_name", ""),
 		LogoURL:     r.getStringSetting(req.Context(), "auth.providers.oidc.logo_url", ""),
 	}
-	renderTempl(w, req, templates.LoginPage(r.assets(), providers, oidcInfo))
+	// Capture the page the user was trying to reach so the login form can
+	// bounce back to it. Two sources, in order of preference:
+	//
+	//   1. ?return=<path> query param. session.js attaches this when an
+	//      HTMX request gets a 401, so the user lands on / (login) with
+	//      ?return=/their/page already in the URL.
+	//   2. req.URL.RequestURI() -- the path the user typed directly. This
+	//      covers deep bookmarks like /reports/duplicates that hit a
+	//      page-level auth gate.
+	//
+	// The sanitizer at /api/v1/auth/login re-validates this before
+	// redirecting, so an attacker cannot smuggle an open redirect through
+	// the hidden form input.
+	raw := req.URL.Query().Get("return")
+	if raw == "" {
+		raw = req.URL.RequestURI()
+	}
+	returnTo := sanitizeReturnTo(raw, r.basePath)
+	if returnTo == r.basePath+"/" {
+		returnTo = ""
+	}
+	renderTempl(w, req, templates.LoginPage(r.assets(), providers, oidcInfo, returnTo))
 }
 
 // enabledAuthProviders builds the provider list for login and registration
