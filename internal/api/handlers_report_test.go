@@ -224,8 +224,8 @@ func TestHandleReportHealth_HTMX_WithRuleResults(t *testing.T) {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "/musicbrainz/rules/rr-htmx/results") {
-		t.Errorf("expected BasePath-prefixed drill-down link in body; got:\n%s", body)
+	if !strings.Contains(body, "/musicbrainz/?rule=rr-htmx") {
+		t.Errorf("expected BasePath-prefixed drill-down link to dashboard rule filter in body; got:\n%s", body)
 	}
 }
 
