@@ -1,8 +1,25 @@
 package provider
 
 import (
+	"io"
+	"log/slog"
+	"os"
 	"testing"
 )
+
+// TestMain swaps the default slog handler to discard for this package's test
+// run so ShouldInjectFailure's "provider injection hook fired" Info line does
+// not leak into the test runner's stderr (which bypasses per-test output
+// capture and would noise up `go test ./internal/provider/...` output).
+// The original default is restored on exit so other packages that share the
+// test binary (none today) see no spillover.
+func TestMain(m *testing.M) {
+	orig := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	code := m.Run()
+	slog.SetDefault(orig)
+	os.Exit(code)
+}
 
 func TestParseInjectedSet_Unset(t *testing.T) {
 	m := parseInjectedSet("")
@@ -113,5 +130,50 @@ func TestShouldInjectFailure_AllProviders(t *testing.T) {
 		if !ShouldInjectFailure(name) {
 			t.Errorf("ShouldInjectFailure should return true for %q when all providers are injected", name)
 		}
+	}
+}
+
+func TestInjectedFailureCount_IncrementsOnHit(t *testing.T) {
+	t.Cleanup(func() {
+		SetInjectedProviders(nil)
+		resetInjectedFailureCount()
+	})
+
+	resetInjectedFailureCount()
+	SetInjectedProviders([]string{"musicbrainz"})
+
+	if got := injectedFailureCount(); got != 0 {
+		t.Fatalf("counter must be 0 after reset, got %d", got)
+	}
+
+	// Hits on injected provider increment the counter.
+	for i := 0; i < 3; i++ {
+		ShouldInjectFailure(NameMusicBrainz)
+	}
+	if got := injectedFailureCount(); got != 3 {
+		t.Errorf("counter must be 3 after 3 injected hits, got %d", got)
+	}
+
+	// Misses (provider not in the set) do not increment the counter.
+	ShouldInjectFailure(NameFanartTV)
+	if got := injectedFailureCount(); got != 3 {
+		t.Errorf("counter must remain 3 after miss on non-injected provider, got %d", got)
+	}
+}
+
+func TestInjectedFailureCount_NoIncrementWhenSetEmpty(t *testing.T) {
+	t.Cleanup(func() {
+		SetInjectedProviders(nil)
+		resetInjectedFailureCount()
+	})
+
+	resetInjectedFailureCount()
+	SetInjectedProviders(nil)
+
+	for i := 0; i < 5; i++ {
+		ShouldInjectFailure(NameMusicBrainz)
+	}
+	if got := injectedFailureCount(); got != 0 {
+		t.Errorf("counter must remain 0 when injectedSet is empty, got %d", got)
 	}
 }
