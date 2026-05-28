@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -158,10 +159,32 @@ func TestHandleRunRule_NilPipeline(t *testing.T) {
 	requireErrorBody(t, w, "rule pipeline not configured")
 }
 
+// TestHandleRunRule_Returns202 uses a blocking stub so the background
+// goroutine cannot flip r.ruleRun.Status from "running" to "completed"
+// before the 202 snapshot is written (CI flake on main, issue #1707;
+// mirrors the run-all de-flake from PR #1644 round 5).
 func TestHandleRunRule_Returns202(t *testing.T) {
 	t.Parallel()
-	r, _, ruleSvc := testRouterWithPipelineFull(t)
-	ruleID := firstRuleID(t, ruleSvc)
+	blockCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	stub := &stubPipeline{
+		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
+			defer close(doneCh)
+			<-blockCh
+			return &rule.RunResult{}, nil
+		},
+	}
+	r, _ := testRouterWithStubPipeline(t, stub)
+	t.Cleanup(func() {
+		close(blockCh)
+		select {
+		case <-doneCh:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for run-rule goroutine to finish")
+		}
+	})
+
+	ruleID := firstRuleID(t, r.ruleService)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/"+ruleID+"/run", nil)
 	req.SetPathValue("id", ruleID)
