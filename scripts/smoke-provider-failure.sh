@@ -367,6 +367,90 @@ echo "  Test artist ID: $ARTIST_ID"
 echo ""
 
 # ---------------------------------------------------------------------------
+# Seed provider IDs on the fixture artist (#1697)
+# ---------------------------------------------------------------------------
+#
+# The fixture artist created by the bare-folder scan above has no external IDs
+# (no MBID, no Discogs ID, etc.) because the identify path that would
+# populate them is exactly the path being injected against. Several surfaces
+# early-return when the artist lacks an MBID (refresh, image search, etc.),
+# so without seeding the provider-failure handlers downstream of those gates
+# never run and the matrix cannot assert injection actually fired.
+#
+# Seed via the public PATCH /fields/{field} API rather than a direct SQL
+# INSERT so the seeding path stays at the API boundary -- service-layer
+# validation, NFO write-back, and event bus all behave identically to a
+# user-initiated edit. Each call is its own injection-free request.
+#
+# IDs below all reference the canonical UAT artist "12 Stones" (a real,
+# stable, public band) so the smoke harness's fixture artist is shaped like
+# a realistic post-identify record. Sources:
+#   MBID:    https://musicbrainz.org/artist/6f81a7dc-be31-4498-ae95-6d994ffec614
+#   Discogs: https://www.discogs.com/artist/901359  (from MB url-rels)
+#   Wikidata: https://www.wikidata.org/wiki/Q175044 (from MB url-rels)
+#   AudioDB: https://www.theaudiodb.com/api/v1/json/2/search.php?s=12+Stones (idArtist=113824)
+#   Deezer:  https://api.deezer.com/search/artist?q=12+Stones (id=5269)
+echo "--- Seed provider IDs (#1697) ---"
+echo ""
+
+SEED_MBID="6f81a7dc-be31-4498-ae95-6d994ffec614"
+SEED_DISCOGS_ID="901359"
+SEED_WIKIDATA_ID="Q175044"
+SEED_AUDIODB_ID="113824"
+SEED_DEEZER_ID="5269"
+
+seed_field() {
+  local field="$1"
+  local value="$2"
+  local payload
+  payload=$(jq -nc --arg v "$value" '{value:$v}')
+  local resp code
+  resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+    -X PATCH "$SW_BASE/api/v1/artists/$ARTIST_ID/fields/$field" \
+    -H "Content-Type: application/json" \
+    -H "X-CSRF-Token: $CSRF_TOKEN" \
+    -d "$payload")
+  code=$(echo "$resp" | tail -n 1)
+  if [[ "$code" != "200" ]]; then
+    local body
+    body=$(echo "$resp" | sed '$d')
+    echo "FATAL: seed $field=$value returned HTTP $code: ${body:0:300}" >&2
+    exit 2
+  fi
+  echo "  seeded $field=$value"
+}
+
+seed_field musicbrainz_id "$SEED_MBID"
+seed_field discogs_id     "$SEED_DISCOGS_ID"
+seed_field wikidata_id    "$SEED_WIKIDATA_ID"
+seed_field audiodb_id     "$SEED_AUDIODB_ID"
+seed_field deezer_id      "$SEED_DEEZER_ID"
+echo ""
+
+# Snapshot the injection counter via the server log marker BEFORE driving
+# the matrix. Each ShouldInjectFailure=true emits a single
+# "provider injection hook fired" line at slog.Info; counting occurrences
+# before vs after the matrix lets the new assertion verify that the
+# matrix's call paths actually entered injected adapters (issue #1697).
+INJECTION_MARKER='provider injection hook fired'
+# grep -c prints the count to stdout AND exits 1 on zero matches; route the
+# exit-1 path explicitly so the captured variable holds the literal count
+# (avoids "0\n0" when both the grep output and the fallback echo fire).
+count_marker() {
+  local f="$1"
+  local n
+  if [[ ! -f "$f" ]]; then
+    echo 0
+    return
+  fi
+  n=$(grep -c "$INJECTION_MARKER" "$f" 2>/dev/null) || n=0
+  echo "$n"
+}
+PRE_MATRIX_HITS=$(count_marker "$SPF_LOG")
+echo "  Pre-matrix injection-hook hits in server log: $PRE_MATRIX_HITS"
+echo ""
+
+# ---------------------------------------------------------------------------
 # Coverage matrix assertions
 # ---------------------------------------------------------------------------
 
@@ -491,45 +575,84 @@ else
 fi
 echo ""
 
-# ---- Row 5: Image search (WARN-NOT-FAIL) -----------------------------------
+# ---- Row 5: Image search (flipped to hard-fail post-seed -- #1697) ---------
 # GET /api/v1/artists/{id}/images/search
-# Should carry warning when all image providers errored. Currently silent.
-# TODO: flip to hard-fail once follow-up surface-fix issue lands.
-echo "[ Row 5: Image search (warn-not-fail -- surface fix pending) ]"
+# Pre-seed this row was WARN because the handler 400'd on missing MBID before
+# any adapter was reached (no determinism = no fair hard-fail). Post-seed the
+# MBID-gated path runs through orchestrator.FetchImages, fanart.tv /
+# wikidata / spotify / etc. all hit the injection hook, and the response
+# carries result.Errors populated with "<provider>: image fetch failed". The
+# grep below recognizes both the JSON envelope shape and the historic
+# warnings / failed_providers / providers-unreachable shapes so any future
+# response refactor that keeps one or the other still passes.
+echo "[ Row 5: Image search (hard-fail post-seed) ]"
 img_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/images/search")
 img_code=$(echo "$img_resp" | tail -n 1)
 img_body=$(echo "$img_resp" | sed '$d')
 if [[ "$img_code" == "200" ]]; then
-  if echo "$img_body" | grep -qE '"warnings"|"failed_providers"|providers-unreachable'; then
+  if echo "$img_body" | grep -qE '"errors":\["|"warnings"|"failed_providers"|providers-unreachable'; then
     assert_pass "GET /api/v1/artists/$ARTIST_ID/images/search -- failure signal present"
   else
-    echo "[WARN] GET /api/v1/artists/$ARTIST_ID/images/search -- no failure signal (silent failure)"
-    echo "       TODO surface-fix: add warnings field for all-providers-failed (tracked in #1666)"
+    assert_fail "GET /api/v1/artists/$ARTIST_ID/images/search -- no failure signal post-seed" \
+      "expected one of: errors[], warnings, failed_providers, providers-unreachable; body[0:300]=${img_body:0:300}"
   fi
 else
-  echo "[WARN] GET /api/v1/artists/$ARTIST_ID/images/search returned HTTP $img_code (non-fatal; surface fix pending)"
+  assert_fail "GET /api/v1/artists/$ARTIST_ID/images/search returned HTTP $img_code" \
+    "expected 200 with seeded MBID; body[0:300]=${img_body:0:300}"
 fi
 echo ""
 
-# ---- Row 6: Per-field provider lookup (partial -- verify) ------------------
+# ---- Row 6: Per-field provider lookup (flipped to hard-fail post-seed) -----
 # GET /api/v1/artists/{id}/fields/{field}/providers
-# Should carry per-provider error state.
-echo "[ Row 6: Per-field provider lookup ]"
+# Pre-seed the bare-folder fixture caused this row to be defensive WARN
+# because the orchestrator's per-provider call path depended on name-
+# fallback behavior that was hard to reason about. Post-seed the orchestrator
+# runs every priority-listed biography provider against the seeded MBID;
+# every injected adapter returns ErrInjectedFailure -> FieldProviderResult
+# carries Error="metadata fetch failed". A response without any per-provider
+# error post-seed would mean either the orchestrator silently dropped the
+# providers (regression) or the field-provider handler is hiding errors
+# (regression). Either case is now in-scope to break the gate.
+echo "[ Row 6: Per-field provider lookup (hard-fail post-seed) ]"
 field_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/fields/biography/providers")
 field_code=$(echo "$field_resp" | tail -n 1)
 field_body=$(echo "$field_resp" | sed '$d')
 if [[ "$field_code" == "200" ]]; then
-  # Each provider should report an error rather than silently return empty data.
   if echo "$field_body" | grep -qE '"error"|"failed"|"unavailable"'; then
     assert_pass "GET /api/v1/artists/$ARTIST_ID/fields/biography/providers -- per-provider error state present"
   else
-    echo "[WARN] GET /api/v1/artists/$ARTIST_ID/fields/biography/providers -- no per-provider error state"
-    echo "       TODO surface-fix: surface per-provider errors in field provider response (tracked in #1666)"
+    assert_fail "GET /api/v1/artists/$ARTIST_ID/fields/biography/providers -- no per-provider error state" \
+      "expected at least one error/failed/unavailable token; body[0:300]=${field_body:0:300}"
   fi
 else
-  echo "[WARN] GET /api/v1/artists/$ARTIST_ID/fields/biography/providers returned HTTP $field_code (non-fatal)"
+  assert_fail "GET /api/v1/artists/$ARTIST_ID/fields/biography/providers returned HTTP $field_code" \
+    "expected 200 with seeded MBID; body[0:300]=${field_body:0:300}"
+fi
+echo ""
+
+# ---- Row 7: Injection hook actually reached (#1697) ------------------------
+# Counts "provider injection hook fired" lines in the server log emitted by
+# ShouldInjectFailure each time the hook returns true. With provider IDs
+# seeded above, the surfaces driven by rows 1-6 enter MBID-gated adapters
+# (fanart.tv, wikidata image search, musicbrainz GetReleaseGroups, etc.)
+# that early-return when the fixture artist lacks the relevant ID. A POST_HITS
+# delta of zero would mean every PASS / WARN in this run was decided BEFORE
+# any injected method was actually called -- the false-positive class that
+# motivated this issue. Hard-fail when no new hits land.
+echo "[ Row 7: Injection hook actually reached ]"
+# Race avoidance: server writes async, give a brief settle window before
+# reading the count.
+sleep 1
+POST_MATRIX_HITS=$(count_marker "$SPF_LOG")
+HITS_DELTA=$((POST_MATRIX_HITS - PRE_MATRIX_HITS))
+echo "  Post-matrix injection-hook hits in server log: $POST_MATRIX_HITS (delta: $HITS_DELTA)"
+if [[ $HITS_DELTA -gt 0 ]]; then
+  assert_pass "Injection hook fired during matrix (delta $HITS_DELTA > 0)"
+else
+  assert_fail "Injection hook never fired during matrix" \
+    "expected delta > 0; got pre=$PRE_MATRIX_HITS post=$POST_MATRIX_HITS"
 fi
 echo ""
 
