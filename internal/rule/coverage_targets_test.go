@@ -315,7 +315,7 @@ func TestImageFixer_Fix_NoImageType(t *testing.T) {
 	// produces an error rather than a no-op FixResult. This pins the
 	// "no image type for rule" branch.
 	f := NewImageFixer(&mockImageProvider{}, nil, nonSharedFSCheck(), testLogger())
-	a := &artist.Artist{Name: "Bad Rule", MusicBrainzID: "mbid-bad", LibraryID: "lib-test"}
+	a := &artist.Artist{Name: "Bad Rule", MusicBrainzID: "mbid-bad", LibraryID: "lib-test", Path: t.TempDir()}
 	v := &Violation{RuleID: RuleNFOExists} // not an image rule
 	_, err := f.Fix(context.Background(), a, v)
 	if err == nil {
@@ -488,8 +488,8 @@ func TestImageFixer_Fix_AllDownloadsFail(t *testing.T) {
 	if res.Fixed {
 		t.Error("Fixed = true; want false when every download fails")
 	}
-	if !strings.Contains(res.Message, "image downloads failed") {
-		t.Errorf("Message = %q; want it to mention 'image downloads failed'", res.Message)
+	if !strings.Contains(res.Message, "download failures") {
+		t.Errorf("Message = %q; want it to mention 'download failures'", res.Message)
 	}
 }
 

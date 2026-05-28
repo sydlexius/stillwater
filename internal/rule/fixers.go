@@ -387,164 +387,236 @@ func (f *ImageFixer) CanFix(v *Violation) bool {
 // set (manual mode) or when multiple candidates exist without SelectBestCandidate.
 func (f *ImageFixer) SupportsCandidateDiscovery() bool { return true }
 
-// Fix fetches the best available image from providers and saves it.
-//
-//nolint:gocognit // ImageFixer.Fix (cog 51): dispatches across manual discovery, auto-select-best, and auto-with-candidates modes; each mode has its own provider walk, candidate-list construction, and persistence path (FixResult vs Candidates field). Refactoring to per-mode method dispatch on a strategy type would clear the cog hot spot while keeping the per-mode persistence shape. Refactor tracked in #1548.
+// imageFixContext bundles the per-call state ImageFixer.Fix derives from the
+// (artist, violation) pair so the discover / filter / download stages can be
+// invoked without re-deriving it. The type is local to the package and never
+// crosses the API boundary.
+type imageFixContext struct {
+	imageType string
+	minW      int
+	minH      int
+	existW    int
+	existH    int
+}
+
+// imageFilterResult is the output of filterCandidatesByQuality. When the
+// resolution gate eliminates every candidate, result is the user-visible
+// FixResult to return and ok is false; otherwise candidates holds the
+// quality-ordered survivors.
+type imageFilterResult struct {
+	candidates []provider.ImageResult
+	result     *FixResult
+	ok         bool
+}
+
+// Fix fetches the best available image from providers and saves it. The
+// per-stage helpers (validatePreconditions, discoverCandidates,
+// filterCandidatesByQuality, downloadAndPersist) own their own edge-case
+// FixResults; Fix is a thin orchestrator that dispatches across the manual
+// discovery, awaiting-user-selection, and auto-select paths.
 func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	fctx, pre, err := f.validatePreconditions(ctx, a, v)
+	if err != nil {
+		return nil, err
+	}
+	if pre != nil {
+		return pre, nil
+	}
+
+	candidates, discoverResult, err := f.discoverCandidates(ctx, a, v, fctx)
+	if err != nil {
+		return nil, err
+	}
+	if discoverResult != nil {
+		return discoverResult, nil
+	}
+
+	filtered := f.filterCandidatesByQuality(ctx, a, v, fctx, candidates)
+	if !filtered.ok {
+		return filtered.result, nil
+	}
+
+	// Discovery-only mode (manual automation): return all candidates as a list
+	// without downloading or saving anything.
+	if v.Config.DiscoveryOnly {
+		return f.candidateListResult(v, fctx, filtered.candidates,
+			fmt.Sprintf("found %d %s candidate(s) for user selection", len(filtered.candidates), fctx.imageType)), nil
+	}
+
+	// When multiple candidates exist and SelectBestCandidate is not set,
+	// return the list for the user to choose from the Notifications inbox.
+	if len(filtered.candidates) > 1 && !v.Config.SelectBestCandidate {
+		return f.candidateListResult(v, fctx, filtered.candidates,
+			fmt.Sprintf("found %d %s candidates; awaiting user selection", len(filtered.candidates), fctx.imageType)), nil
+	}
+
+	return f.downloadAndPersist(ctx, a, v, fctx, filtered.candidates), nil
+}
+
+// validatePreconditions guards the (artist, violation) pair against the
+// states that make image fetching impossible: no MBID, shared-filesystem
+// library, or a rule the fixer cannot map to an image type. Returns a
+// populated imageFixContext when the call should proceed; otherwise returns
+// a non-nil *FixResult that Fix surfaces verbatim.
+func (f *ImageFixer) validatePreconditions(ctx context.Context, a *artist.Artist, v *Violation) (*imageFixContext, *FixResult, error) {
 	if a.MusicBrainzID == "" {
-		return &FixResult{
+		return nil, &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   false,
 			Message: "no MBID, cannot search image providers",
 		}, nil
 	}
-
+	// API-only artists carry no on-disk path. Without it
+	// readExistingImageDimensions would call os.ReadDir("") and read the
+	// current working directory; downloadAndPersist would write to an
+	// arbitrary CWD-relative location. Refuse early instead.
+	if a.Path == "" {
+		return nil, &FixResult{
+			RuleID:  v.RuleID,
+			Fixed:   false,
+			Message: "artist has no local path; image download requires filesystem access",
+		}, nil
+	}
 	if f.fsCheck.IsShared(ctx, a) {
-		return &FixResult{
+		return nil, &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   false,
 			Message: "skipped: image download disabled for shared-filesystem library",
 		}, nil
 	}
-
 	imageType := ruleToImageType(v.RuleID)
 	if imageType == "" {
-		return nil, fmt.Errorf("no image type for rule %s", v.RuleID)
+		return nil, nil, fmt.Errorf("no image type for rule %s", v.RuleID)
 	}
+	existW, existH := readExistingImageDimensions(ctx, a.Path, imageType, f.platformService)
+	return &imageFixContext{
+		imageType: imageType,
+		minW:      v.Config.MinWidth,
+		minH:      v.Config.MinHeight,
+		existW:    existW,
+		existH:    existH,
+	}, nil, nil
+}
 
+// discoverCandidates calls the image provider and returns the type-matched,
+// quality-sorted candidate list. When the provider returns zero candidates
+// of the requested type, returns a populated FixResult that Fix surfaces
+// verbatim.
+func (f *ImageFixer) discoverCandidates(ctx context.Context, a *artist.Artist, v *Violation, fctx *imageFixContext) ([]provider.ImageResult, *FixResult, error) {
 	result, err := f.fetchImages(ctx, a.MusicBrainzID, a.ProviderIDMap())
 	if err != nil {
-		return nil, fmt.Errorf("fetching images: %w", err)
+		return nil, nil, fmt.Errorf("fetching images: %w", err)
 	}
-
-	// Filter by image type and sort by quality
+	if result == nil {
+		return nil, nil, fmt.Errorf("fetching images: provider returned nil result")
+	}
 	var candidates []provider.ImageResult
 	for _, im := range result.Images {
-		if string(im.Type) == imageType {
+		if string(im.Type) == fctx.imageType {
 			candidates = append(candidates, im)
 		}
 	}
-
 	if len(candidates) == 0 {
-		return &FixResult{
+		return nil, &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   false,
-			Message: fmt.Sprintf("no %s images found from providers", imageType),
+			Message: fmt.Sprintf("no %s images found from providers", fctx.imageType),
 		}, nil
 	}
-
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].Likes != candidates[j].Likes {
 			return candidates[i].Likes > candidates[j].Likes
 		}
 		return (candidates[i].Width * candidates[i].Height) > (candidates[j].Width * candidates[j].Height)
 	})
+	return candidates, nil, nil
+}
 
-	// Resolution gate: drop candidates below the configured minimum or below
-	// the existing image's pixel count (to prevent accidental downgrades).
-	// Existing dimensions are read for all image rules, not only min-res ones,
-	// because rules like thumb_square can also fire on a high-res image and
-	// must not replace it with a lower-res candidate.
-	minW, minH := v.Config.MinWidth, v.Config.MinHeight
-	existW, existH := readExistingImageDimensions(ctx, a.Path, imageType, f.platformService)
-	candidates = filterCandidatesByResolution(candidates, minW, minH, existW, existH, f.logger)
-
-	if len(candidates) == 0 {
-		hasMinConstraint := minW > 0 || minH > 0
-		hasExistingConstraint := existW > 0 && existH > 0
-
-		var constraintDesc string
-		switch {
-		case hasMinConstraint && hasExistingConstraint:
-			constraintDesc = "minimum and existing image resolution requirements"
-		case hasMinConstraint:
-			constraintDesc = "minimum resolution requirements"
-		case hasExistingConstraint:
-			constraintDesc = "existing image resolution requirements"
-		default:
-			constraintDesc = "resolution requirements"
-		}
-
-		return &FixResult{
+// filterCandidatesByQuality drops candidates below the configured minimum or
+// the existing image's pixel count. Existing dimensions are read for all
+// image rules, not only min-res ones, because rules like thumb_square can
+// fire on a high-res image and must not replace it with a lower-res
+// candidate. When every candidate is eliminated, the returned result
+// contains the user-visible FixResult; otherwise ok is true and candidates
+// holds the survivors.
+func (f *ImageFixer) filterCandidatesByQuality(_ context.Context, _ *artist.Artist, v *Violation, fctx *imageFixContext, candidates []provider.ImageResult) imageFilterResult {
+	survivors := filterCandidatesByResolution(candidates, fctx.minW, fctx.minH, fctx.existW, fctx.existH, f.logger)
+	if len(survivors) > 0 {
+		return imageFilterResult{candidates: survivors, ok: true}
+	}
+	return imageFilterResult{
+		ok: false,
+		result: &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   false,
-			Message: fmt.Sprintf("no %s candidates meet %s", imageType, constraintDesc),
-		}, nil
+			Message: fmt.Sprintf("no %s candidates meet %s", fctx.imageType, resolutionConstraintDesc(fctx.minW, fctx.minH, fctx.existW, fctx.existH)),
+		},
 	}
+}
 
-	// Discovery-only mode (manual automation): return all candidates as a list
-	// without downloading or saving anything.
-	if v.Config.DiscoveryOnly {
-		imageCandidates := make([]ImageCandidate, 0, len(candidates))
-		for _, c := range candidates {
-			imageCandidates = append(imageCandidates, ImageCandidate{
-				URL:       c.URL,
-				Width:     c.Width,
-				Height:    c.Height,
-				Source:    c.Source,
-				ImageType: imageType,
-			})
-		}
-		return &FixResult{
-			RuleID:     v.RuleID,
-			Fixed:      false,
-			Message:    fmt.Sprintf("found %d %s candidate(s) for user selection", len(candidates), imageType),
-			Candidates: imageCandidates,
-		}, nil
+// resolutionConstraintDesc renders the human-readable description of the
+// resolution gate that eliminated every candidate. Pulled out so the
+// switch does not inflate filterCandidatesByQuality's complexity.
+func resolutionConstraintDesc(minW, minH, existW, existH int) string {
+	hasMinConstraint := minW > 0 || minH > 0
+	hasExistingConstraint := existW > 0 && existH > 0
+	switch {
+	case hasMinConstraint && hasExistingConstraint:
+		return "minimum and existing image resolution requirements"
+	case hasMinConstraint:
+		return "minimum resolution requirements"
+	case hasExistingConstraint:
+		return "existing image resolution requirements"
+	default:
+		return "resolution requirements"
 	}
+}
 
-	// When multiple candidates exist and SelectBestCandidate is not set,
-	// return the list for the user to choose from the Notifications inbox.
-	if len(candidates) > 1 && !v.Config.SelectBestCandidate {
-		imageCandidates := make([]ImageCandidate, 0, len(candidates))
-		for _, c := range candidates {
-			imageCandidates = append(imageCandidates, ImageCandidate{
-				URL:       c.URL,
-				Width:     c.Width,
-				Height:    c.Height,
-				Source:    c.Source,
-				ImageType: imageType,
-			})
-		}
-		return &FixResult{
-			RuleID:     v.RuleID,
-			Fixed:      false,
-			Message:    fmt.Sprintf("found %d %s candidates; awaiting user selection", len(candidates), imageType),
-			Candidates: imageCandidates,
-		}, nil
+// candidateListResult builds the FixResult used by the manual-discovery and
+// awaiting-user-selection paths: a non-fixed result whose Candidates field
+// carries the quality-ordered survivors for the UI to display.
+func (f *ImageFixer) candidateListResult(v *Violation, fctx *imageFixContext, candidates []provider.ImageResult, message string) *FixResult {
+	imageCandidates := make([]ImageCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		imageCandidates = append(imageCandidates, ImageCandidate{
+			URL:       c.URL,
+			Width:     c.Width,
+			Height:    c.Height,
+			Source:    c.Source,
+			ImageType: fctx.imageType,
+		})
 	}
+	return &FixResult{
+		RuleID:     v.RuleID,
+		Fixed:      false,
+		Message:    message,
+		Candidates: imageCandidates,
+	}
+}
 
-	// Try downloading candidates until one succeeds
+// downloadAndPersist walks the candidate list in priority order and
+// downloads the first one whose post-download dimensions clear the
+// resolution gate, then saves it via the shared save pipeline.
+// Provenance recording is intentionally NOT performed here: the pipeline
+// calls Update() after Fix returns to create the artist_images row, so the
+// SavedPath/ImageType fields on the returned FixResult drive the
+// downstream UpdateImageProvenance call.
+func (f *ImageFixer) downloadAndPersist(ctx context.Context, a *artist.Artist, v *Violation, fctx *imageFixContext, candidates []provider.ImageResult) *FixResult {
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
+	var downloadFails, dimGateFails, saveFails int
 	for _, c := range candidates {
 		data, err := fetchImageURL(ctx, f.httpClient, c.URL)
 		if err != nil {
-			f.logger.Debug("image download failed", "url", c.URL, "error", err)
+			// Source identifies the provider without leaking the signed URL.
+			f.logger.Debug("image download failed", "source", c.Source, "error", err)
+			downloadFails++
+			continue
+		}
+		if !passesPostDownloadDimensionGate(data, fctx, f.logger) {
+			dimGateFails++
 			continue
 		}
 
-		// Verify actual image dimensions post-download. Providers (FanartTV, Deezer)
-		// do not report dimensions in their API responses, so all candidates arrive
-		// with Width=0/Height=0 and slip past the pre-filter above. Checking here
-		// catches low-res downloads before they overwrite a better existing image.
-		if minW > 0 || minH > 0 || (existW > 0 && existH > 0) {
-			if dw, dh, dimErr := img.GetDimensions(bytes.NewReader(data)); dimErr == nil && dw > 0 && dh > 0 {
-				if (minW > 0 && dw < minW) || (minH > 0 && dh < minH) {
-					f.logger.Debug("skipping candidate below configured minimum (actual)",
-						"url", c.URL, "actual_width", dw, "actual_height", dh,
-						"min_width", minW, "min_height", minH)
-					continue
-				}
-				if existW > 0 && existH > 0 && dw*dh < existW*existH {
-					f.logger.Debug("skipping candidate below existing resolution (actual)",
-						"url", c.URL, "actual_width", dw, "actual_height", dh,
-						"existing_width", existW, "existing_height", existH)
-					continue
-				}
-			}
-		}
-
-		// Build provenance metadata for the saved image.
 		saveMeta := &img.ExifMeta{
 			Source:  c.Source,
 			Fetched: time.Now().UTC(),
@@ -553,35 +625,64 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			Mode:    "auto",
 		}
 
-		// Use the shared save pipeline: convert -> platform-aware naming -> save -> set flag
-		saved, err := SaveImageFromData(ctx, a, imageType, data, nil, useSymlinks, saveMeta, f.platformService, f.logger)
+		saved, err := SaveImageFromData(ctx, a, fctx.imageType, data, nil, useSymlinks, saveMeta, f.platformService, f.logger)
 		if err != nil {
-			f.logger.Debug("image save failed", "url", c.URL, "error", err)
+			// Source identifies the provider without leaking the signed URL.
+			f.logger.Debug("image save failed", "source", c.Source, "error", err)
+			saveFails++
 			continue
 		}
 
-		// Store the saved path so the pipeline can record provenance after
-		// Update() creates the artist_images row. Provenance cannot be recorded
-		// here because the pipeline calls Update() after Fix() returns.
 		savedPath := ""
 		if len(saved) > 0 && a.Path != "" {
 			savedPath = filepath.Join(a.Path, saved[0])
 		}
-
 		return &FixResult{
 			RuleID:    v.RuleID,
 			Fixed:     true,
-			Message:   fmt.Sprintf("saved %s from %s (%v)", imageType, c.Source, saved),
+			Message:   fmt.Sprintf("saved %s from %s (%v)", fctx.imageType, c.Source, saved),
 			SavedPath: savedPath,
-			ImageType: imageType,
-		}, nil
+			ImageType: fctx.imageType,
+		}
 	}
-
 	return &FixResult{
-		RuleID:  v.RuleID,
-		Fixed:   false,
-		Message: fmt.Sprintf("all %d image downloads failed", len(candidates)),
-	}, nil
+		RuleID: v.RuleID,
+		Fixed:  false,
+		Message: fmt.Sprintf("no suitable image saved from %d candidates: %d download failures, %d below resolution gate, %d save failures",
+			len(candidates), downloadFails, dimGateFails, saveFails),
+	}
+}
+
+// passesPostDownloadDimensionGate re-checks dimensions against the resolution
+// gate using the actual decoded image bytes. Providers (FanartTV, Deezer)
+// do not report dimensions in their API responses, so candidates arrive
+// with Width=0/Height=0 and slip past the pre-download filter. Returns
+// true when the candidate is unknown-sized (skip the gate) or clears both
+// the minimum and existing constraints. The URL is intentionally omitted
+// from the debug-log fields: provider URLs frequently carry signed query
+// parameters or short-lived tokens that should not surface in operator
+// logs (per CLAUDE.md "Scrub sensitive values from logs").
+func passesPostDownloadDimensionGate(data []byte, fctx *imageFixContext, logger *slog.Logger) bool {
+	if fctx.minW == 0 && fctx.minH == 0 && (fctx.existW == 0 || fctx.existH == 0) {
+		return true
+	}
+	dw, dh, dimErr := img.GetDimensions(bytes.NewReader(data))
+	if dimErr != nil || dw == 0 || dh == 0 {
+		return true
+	}
+	if (fctx.minW > 0 && dw < fctx.minW) || (fctx.minH > 0 && dh < fctx.minH) {
+		logger.Debug("skipping candidate below configured minimum (actual)",
+			"actual_width", dw, "actual_height", dh,
+			"min_width", fctx.minW, "min_height", fctx.minH)
+		return false
+	}
+	if fctx.existW > 0 && fctx.existH > 0 && dw*dh < fctx.existW*fctx.existH {
+		logger.Debug("skipping candidate below existing resolution (actual)",
+			"actual_width", dw, "actual_height", dh,
+			"existing_width", fctx.existW, "existing_height", fctx.existH)
+		return false
+	}
+	return true
 }
 
 // ruleToImageType maps a rule ID to a provider image type string.
@@ -747,13 +848,13 @@ func filterCandidatesByResolution(
 		if c.Width > 0 && c.Height > 0 {
 			if (minW > 0 && c.Width < minW) || (minH > 0 && c.Height < minH) {
 				logger.Debug("skipping candidate below configured minimum",
-					"url", c.URL, "width", c.Width, "height", c.Height,
+					"source", c.Source, "width", c.Width, "height", c.Height,
 					"min_width", minW, "min_height", minH)
 				continue
 			}
 			if existingW > 0 && existingH > 0 && c.Width*c.Height < existingW*existingH {
 				logger.Debug("skipping candidate below existing resolution",
-					"url", c.URL, "width", c.Width, "height", c.Height,
+					"source", c.Source, "width", c.Width, "height", c.Height,
 					"existing_width", existingW, "existing_height", existingH)
 				continue
 			}
