@@ -1316,17 +1316,37 @@ func (s *Service) Search(ctx context.Context, query string) ([]Artist, error) {
 }
 
 // validLockSources enumerates the allowed values for lock_source.
+//
+// "user"           -- explicit toggle in the Stillwater UI / API.
+// "initial_import" -- first-time discovery of an artist whose NFO already
+//
+//	carries <lockdata>true</lockdata>; written by the
+//	scanner only on the new-artist path, never on re-scan
+//	(issue #1726).
+//
+// "platform"       -- platform-side lock pulled from Emby/Jellyfin
+//
+//	IsLocked by the scheduled LockSync pull.
+//
+// "imported"       -- legacy value, no longer written. Pre-#1726 the scanner
+//
+//	stamped this on every re-scan, driving the silent
+//	re-lock loop. Migration 014 clears existing rows;
+//	accepted here so a downgrade does not break Lock().
 var validLockSources = map[string]bool{
-	"user":     true,
-	"imported": true,
+	"user":           true,
+	"initial_import": true,
+	"platform":       true,
+	"imported":       true,
 }
 
-// Lock sets the metadata lock on an artist with the given source ("user" or "imported").
+// Lock sets the metadata lock on an artist with the given source.
+// Allowed values: "user", "initial_import", "platform", "imported".
 // When locked, automated operations (rule fixers, metadata fetchers, image operations)
 // skip the artist. Manual edits remain allowed.
 func (s *Service) Lock(ctx context.Context, id, source string) error {
 	if !validLockSources[source] {
-		return fmt.Errorf("invalid lock source %q: must be \"user\" or \"imported\"", source)
+		return fmt.Errorf("invalid lock source %q: must be one of \"user\", \"initial_import\", \"platform\", \"imported\"", source)
 	}
 	return s.artists.SetLock(ctx, id, true, source)
 }

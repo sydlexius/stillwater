@@ -1,13 +1,18 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/nfo"
 )
 
 // TestHandleLockArtistField exercises the POST and DELETE field-lock
@@ -252,6 +257,81 @@ func TestHandleUnlockArtist_NotFound(t *testing.T) {
 	r.handleUnlockArtist(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+// TestHandleLockArtist_RewritesNFO is the regression fixture for issue #1726.
+// Locking an artist via the API must rewrite the on-disk NFO so its
+// <lockdata> matches the new DB state; otherwise the next scan would
+// re-import the stale value and undo the toggle.
+func TestHandleLockArtist_RewritesNFO(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouter(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Lock NFO Rewrite", Path: dir}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Seed an NFO with lockdata=false so the lock path has something to
+	// overwrite. The handler's WriteBackNFO is a no-op when no NFO is
+	// present on disk (that is by design: creating new NFOs is the rule
+	// engine's job, not the lock handler's).
+	nfoPath := filepath.Join(dir, "artist.nfo")
+	seed := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Lock NFO Rewrite</name>
+  <lockdata>false</lockdata>
+</artist>`)
+	if err := os.WriteFile(nfoPath, seed, 0o644); err != nil {
+		t.Fatalf("seed NFO: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/lock", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleLockArtist(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("lock status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	data, err := os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("read NFO: %v", err)
+	}
+	parsed, err := nfo.Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parse NFO: %v", err)
+	}
+	if !parsed.LockData {
+		t.Error("NFO LockData = false after lock; expected true (#1726)")
+	}
+
+	// Unlock and verify the NFO flips back.
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/lock", nil)
+	req.SetPathValue("id", a.ID)
+	w = httptest.NewRecorder()
+	r.handleUnlockArtist(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("unlock status = %d, body = %s", w.Code, w.Body.String())
+	}
+	data, err = os.ReadFile(nfoPath)
+	if err != nil {
+		t.Fatalf("read NFO after unlock: %v", err)
+	}
+	parsed, err = nfo.Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parse NFO after unlock: %v", err)
+	}
+	if parsed.LockData {
+		t.Error("NFO LockData = true after unlock; expected false (#1726)")
+	}
+	// Belt-and-braces: also assert the literal element disappeared from
+	// the serialized form, so a future parser change cannot mask a
+	// regression by always returning false for the LockData field.
+	if strings.Contains(string(data), "<lockdata>true</lockdata>") {
+		t.Errorf("NFO still contains <lockdata>true</lockdata> after unlock:\n%s", data)
 	}
 }
 

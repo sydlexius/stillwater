@@ -157,6 +157,7 @@ type Application struct {
 	webhookDispatcher   *webhook.Dispatcher
 	backupService       *backup.Service
 	maintenanceService  *maintenance.Service
+	lockSyncService     *connection.LockSync
 	settingsIOService   *settingsio.Service
 	updaterService      *updater.Service
 	probeCache          *watcher.ProbeCache
@@ -727,6 +728,11 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		// the event bus so the SSE hub can surface them as toasts.
 		Notifier: publish.NewBusNotifier(a.eventBus),
 	})
+	// LockSync pulls platform-side <lockdata> changes back into Stillwater
+	// (issue #1726 Part C). Wired here because all three dependencies
+	// (DB, connection service, artist service) are now ready.
+	a.lockSyncService = connection.NewLockSync(db, a.connectionService, a.artistService, publish.LockSyncClientFactory(), logger)
+
 	// Wire the rename-time platform syncer so Service.RenameDirectory
 	// re-issues the artist path on Emby/Jellyfin/Lidarr after a successful
 	// directory rename (#1222, #1231). The publisher already owns
@@ -746,7 +752,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	a.ruleEngine.SetReleaseGroupFetcher(releaseGroupFetcher)
 
 	fixers := []rule.Fixer{
-		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites),
+		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites, a.publisher),
 		rule.NewMetadataFixer(a.orchestrator, logger),
 		rule.NewNameLanguageFixer(a.orchestrator, logger),
 		rule.NewImageFixer(a.orchestrator, a.platformService, a.fsCheck, logger),
@@ -799,6 +805,28 @@ func resolveReleaseGroupFetcher(registry *provider.Registry) provider.ReleaseGro
 //
 // logManager.Close, eventBus.Stop, and db.Close are deferred in run() so
 // they fire even if this phase returns early.
+// startLockSyncScheduler launches the LockSync platform-pull scheduler if
+// lockSyncService is wired and lock_sync.interval_minutes is not 0
+// (explicit disable). Negative values fall back to the 30-minute default,
+// which matches the cadence at which most Stillwater users notice and react
+// to platform-side changes without hammering Emby/Jellyfin for libraries
+// with thousands of artists. Extracted from startListeners to keep that
+// method's cognitive complexity under the lint cap.
+func (a *Application) startLockSyncScheduler(ctx context.Context, db *sql.DB, logger *slog.Logger) {
+	if a.lockSyncService == nil {
+		return
+	}
+	lockSyncMinutes := getDBIntSetting(ctx, db, "lock_sync.interval_minutes", 30)
+	if lockSyncMinutes < 0 {
+		lockSyncMinutes = 30
+	}
+	if lockSyncMinutes == 0 {
+		logger.Info("lock-sync scheduler disabled", slog.String("setting", "lock_sync.interval_minutes"))
+		return
+	}
+	go a.lockSyncService.StartScheduler(ctx, time.Duration(lockSyncMinutes)*time.Minute, 60*time.Second)
+}
+
 func (a *Application) startListeners() error {
 	if a.router == nil {
 		return errors.New("startListeners: buildServices must run first")
@@ -854,6 +882,9 @@ func (a *Application) startListeners() error {
 		}
 		go a.maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
+
+	// LockSync platform-pull scheduler (issue #1726 Part C).
+	a.startLockSyncScheduler(ctx, db, logger)
 
 	// Foreign-file scanner.
 	{
