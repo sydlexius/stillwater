@@ -758,6 +758,12 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	}
 	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)
 	a.pipeline.SetHistoryService(a.historyService)
+	// Wire the provider Orchestrator so the pipeline can build a per-artist
+	// EvaluationContext that coalesces upstream fetches across the rule
+	// fixer chain (M54 #1133). Without this setter the pipeline still
+	// runs -- fixers fall back to direct orchestrator calls -- but every
+	// rule that needs the same provider data triggers its own fetch.
+	a.pipeline.SetOrchestrator(a.orchestrator)
 
 	a.bulkService = rule.NewBulkService(db)
 	a.bulkExecutor = rule.NewBulkExecutor(a.bulkService, a.artistService, a.orchestrator, a.pipeline, a.nfoSnapshotService, a.platformService, a.expectedWrites, a.publisher, logger)
