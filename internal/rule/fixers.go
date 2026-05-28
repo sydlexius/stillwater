@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/text/unicode/norm"
@@ -40,16 +39,53 @@ type metadataOrchestrator interface {
 	FetchFieldFromProviders(ctx context.Context, mbid, name, field string, providerIDs map[provider.ProviderName]string) ([]provider.FieldProviderResult, error)
 }
 
-// imageCacheEntry holds a cached FetchImages result (or error) for one MBID.
-type imageCacheEntry struct {
-	result *provider.FetchResult
-	err    error
-}
-
 const (
 	fetchTimeout  = 30 * time.Second
 	maxImageBytes = 25 << 20 // 25 MB
 )
+
+// coalescedSearch routes Search through the per-evaluation context when
+// one is attached to ctx (the canonical pipeline path), or falls back to
+// the raw orchestrator. The fallback path matters for callers like
+// FixViolation that operate on a single violation outside an evaluation
+// pass; they still benefit from the unified telemetry tag the helper
+// applies but do not get coalescing for free.
+func coalescedSearch(ctx context.Context, orch metadataOrchestrator, name string) ([]provider.ArtistSearchResult, error) {
+	if ec := EvaluationContextFromContext(ctx); ec != nil {
+		return ec.Search(ctx, name)
+	}
+	return orch.Search(ctx, name)
+}
+
+// coalescedFetchMetadata routes FetchMetadata through the per-evaluation
+// context when one is attached to ctx, falling back to the raw
+// orchestrator otherwise.
+func coalescedFetchMetadata(ctx context.Context, orch metadataOrchestrator, mbid, name string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	if ec := EvaluationContextFromContext(ctx); ec != nil {
+		return ec.FetchMetadata(ctx, mbid, name, providerIDs)
+	}
+	return orch.FetchMetadata(ctx, mbid, name, providerIDs)
+}
+
+// coalescedFetchField routes FetchFieldFromProviders through the
+// per-evaluation context when one is attached to ctx, falling back to the
+// raw orchestrator otherwise.
+func coalescedFetchField(ctx context.Context, orch metadataOrchestrator, mbid, name, field string, providerIDs map[provider.ProviderName]string) ([]provider.FieldProviderResult, error) {
+	if ec := EvaluationContextFromContext(ctx); ec != nil {
+		return ec.FetchFieldFromProviders(ctx, mbid, name, field, providerIDs)
+	}
+	return orch.FetchFieldFromProviders(ctx, mbid, name, field, providerIDs)
+}
+
+// coalescedFetchImages routes FetchImages through the per-evaluation
+// context when one is attached to ctx, falling back to the raw image
+// orchestrator (or its test stub) otherwise.
+func coalescedFetchImages(ctx context.Context, orch imageProvider, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	if ec := EvaluationContextFromContext(ctx); ec != nil {
+		return ec.FetchImages(ctx, mbid, providerIDs)
+	}
+	return orch.FetchImages(ctx, mbid, providerIDs)
+}
 
 // NFOFixer creates missing artist.nfo files from the artist's current metadata.
 type NFOFixer struct {
@@ -174,7 +210,7 @@ func (f *MetadataFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation)
 }
 
 func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResult, error) {
-	results, err := f.orchestrator.Search(ctx, a.Name)
+	results, err := coalescedSearch(ctx, f.orchestrator, a.Name)
 	if err != nil {
 		return nil, fmt.Errorf("searching providers: %w", err)
 	}
@@ -216,7 +252,7 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 }
 
 func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResult, error) {
-	result, err := f.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
+	result, err := coalescedFetchMetadata(ctx, f.orchestrator, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		return nil, fmt.Errorf("fetching metadata: %w", err)
 	}
@@ -245,7 +281,7 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 	oldBio := a.Biography
 	a.Biography = "" // clear junk so providers are queried fresh
 
-	result, err := f.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
+	result, err := coalescedFetchMetadata(ctx, f.orchestrator, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		a.Biography = oldBio // restore on error
 		return nil, fmt.Errorf("fetching metadata: %w", err)
@@ -277,7 +313,7 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 // first result with data is the highest-priority non-empty value. This is the
 // same first-non-empty-wins behavior used for other single-value fields.
 func (f *MetadataFixer) fixOrigin(ctx context.Context, a *artist.Artist) (*FixResult, error) {
-	results, err := f.orchestrator.FetchFieldFromProviders(ctx, a.MusicBrainzID, a.Name, "origin", a.ProviderIDMap())
+	results, err := coalescedFetchField(ctx, f.orchestrator, a.MusicBrainzID, a.Name, "origin", a.ProviderIDMap())
 	if err != nil {
 		return nil, fmt.Errorf("fetching origin from providers: %w", err)
 	}
@@ -337,7 +373,6 @@ type ImageFixer struct {
 	// the download path against httptest.NewServer (which binds to 127.0.0.1)
 	// must override this field with a plain *http.Client after construction.
 	httpClient *http.Client
-	imageCache sync.Map // keyed by MBID; value: *imageCacheEntry
 }
 
 // NewImageFixer creates an ImageFixer.
@@ -351,24 +386,19 @@ func NewImageFixer(orchestrator imageProvider, platformService *platform.Service
 	}
 }
 
-// fetchImages returns provider images for the given MBID and provider IDs,
-// using a per-instance cache to avoid duplicate provider calls when an artist
-// has multiple violations.
+// fetchImages returns provider images for the given MBID and provider IDs.
+//
+// Routes through the per-evaluation EvaluationContext when one is attached
+// to ctx (the canonical pipeline path) so multiple image rules on the same
+// artist coalesce into a single provider call -- the load-bearing
+// behavior issue #1133 introduces. Without an EvaluationContext (e.g.
+// direct unit-test invocation that does not seed one) it falls through to
+// the raw orchestrator without caching. The historical per-fixer
+// sync.Map cache was unbounded across passes (no eviction) and is
+// superseded by the per-evaluation cache, which is bounded by the
+// pass lifetime.
 func (f *ImageFixer) fetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
-	cacheKey := fmt.Sprintf("%s|audiodb=%s|discogs=%s|deezer=%s|spotify=%s",
-		mbid,
-		providerIDs[provider.NameAudioDB],
-		providerIDs[provider.NameDiscogs],
-		providerIDs[provider.NameDeezer],
-		providerIDs[provider.NameSpotify],
-	)
-	if entry, ok := f.imageCache.Load(cacheKey); ok {
-		e := entry.(*imageCacheEntry)
-		return e.result, e.err
-	}
-	result, err := f.orchestrator.FetchImages(ctx, mbid, providerIDs)
-	f.imageCache.Store(cacheKey, &imageCacheEntry{result: result, err: err})
-	return result, err
+	return coalescedFetchImages(ctx, f.orchestrator, mbid, providerIDs)
 }
 
 // CanFix returns true for image-related rules.

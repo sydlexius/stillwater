@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
 
@@ -151,6 +152,71 @@ type Pipeline struct {
 
 	ruleCacheMu sync.RWMutex
 	ruleCache   map[string]*Rule
+
+	// orchestratorMu guards orchestrator. SetOrchestrator is the
+	// canonical wiring path (main.go installs it after construction),
+	// kept symmetric with SetWriteGate / SetHistoryService so the
+	// NewPipeline signature stays stable for the many test call sites.
+	// Reads happen on the per-artist hot path that builds the
+	// EvaluationContext (#1133), so the read lock is mandatory rather
+	// than optional.
+	orchestratorMu   sync.RWMutex
+	orchestrator     *provider.Orchestrator
+	testEvalProvider evalProvider // test-only override; see setEvalProviderForTest.
+}
+
+// SetOrchestrator installs (or replaces) the provider Orchestrator the
+// pipeline uses to construct a per-artist EvaluationContext (#1133). The
+// EvaluationContext coalesces upstream fetches so multiple rules on the
+// same artist share a single provider call per (artist, provider)
+// combination per evaluation pass. Passing nil disables coalescing --
+// the fixers fall through to their bare orchestrator references, which
+// preserves the legacy uncoalesced behavior for tests that have not
+// wired this setter.
+func (p *Pipeline) SetOrchestrator(o *provider.Orchestrator) {
+	p.orchestratorMu.Lock()
+	p.orchestrator = o
+	p.orchestratorMu.Unlock()
+}
+
+// setEvalProviderForTest installs a test-only evalProvider override that
+// takes precedence over the real Orchestrator when constructing the
+// per-artist EvaluationContext. This is the test seam for #1133
+// integration coverage: a counting stub can stand in for the full
+// provider stack so the test asserts coalescing behavior without
+// network IO or DB-backed provider state. Production code never calls
+// this method.
+func (p *Pipeline) setEvalProviderForTest(ep evalProvider) {
+	p.orchestratorMu.Lock()
+	p.testEvalProvider = ep
+	p.orchestratorMu.Unlock()
+}
+
+// withEvalContext returns ctx augmented with a fresh per-artist
+// EvaluationContext when the pipeline has an Orchestrator installed.
+// Without an orchestrator we return ctx unchanged; the fixers see no
+// EvaluationContext and fall back to their bare orchestrator references.
+//
+// The returned counters function reads the fetch/dedup totals at the end
+// of the pass so the pipeline can warn-log them for the W4 (#1135)
+// telemetry-gated decision. When no eval context is created the
+// function returns zeros.
+func (p *Pipeline) withEvalContext(ctx context.Context, a *artist.Artist) (context.Context, func() (uint64, uint64)) {
+	// Test override takes precedence so the integration test can
+	// inject a counting stub. Production callers never set the
+	// override and fall straight through to the real Orchestrator.
+	p.orchestratorMu.RLock()
+	prov := p.testEvalProvider
+	if prov == nil && p.orchestrator != nil {
+		prov = p.orchestrator
+	}
+	p.orchestratorMu.RUnlock()
+
+	if prov == nil {
+		return ctx, func() (uint64, uint64) { return 0, 0 }
+	}
+	ec := NewEvaluationContext(a, prov, p.logger)
+	return WithEvaluationContext(ctx, ec), ec.Counters
 }
 
 // SetWriteGate installs (or replaces) the conflict gate the pipeline
@@ -285,6 +351,15 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 		// startedAt is captured before evaluation so every rule_results
 		// row written during this pass shares a timestamp (issue #699).
 		startedAt := time.Now().UTC()
+
+		// Issue #1133: per-artist EvaluationContext for fetch coalescing.
+		// Rebinding ctx (rather than introducing artistCtx everywhere) is
+		// deliberate: every downstream call within the closure picks up
+		// the eval-context-tagged ctx automatically, and the lexical
+		// scope keeps the outer RunRuleScoped ctx unchanged for the
+		// walkScopedArtists call below.
+		ctx, counters := p.withEvalContext(ctx, a)
+		defer p.logEvalCounters(a, counters)
 
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
@@ -597,7 +672,15 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	// strictly greater than rules_evaluated_at.
 	startedAt := time.Now().UTC()
 
-	eval, err := p.engine.Evaluate(ctx, a)
+	// Issue #1133 (M54 W2A): wrap ctx with a per-artist EvaluationContext
+	// so multiple fixers needing the same provider payload share one
+	// upstream call. The context lifetime is the artist's evaluation
+	// pass; cleanup is via the defer'd telemetry log, which also serves
+	// as the W4 (#1135) gating signal.
+	evalCtx, counters := p.withEvalContext(ctx, a)
+	defer p.logEvalCounters(a, counters)
+
+	eval, err := p.engine.Evaluate(evalCtx, a)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating artist %s: %w", a.Name, err)
 	}
@@ -607,9 +690,35 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	// post-filter pass-row writer share a single set of DB reads.
 	ruleCache := map[string]*Rule{}
 
-	p.dispatchViolations(ctx, a, eval.Violations, categoryFilter, ruleCache, acc, result)
-	p.finalizeArtistRun(ctx, a, ruleCache, acc, categoryFilter, startedAt)
+	p.dispatchViolations(evalCtx, a, eval.Violations, categoryFilter, ruleCache, acc, result)
+	p.finalizeArtistRun(evalCtx, a, ruleCache, acc, categoryFilter, startedAt)
 	return result, nil
+}
+
+// logEvalCounters emits the per-artist provider_fetch_total /
+// provider_fetch_dedup_total signals at the end of an evaluation pass.
+// These are the gating signals for the W4 (#1135) telemetry-gated
+// decision: if a substantial fraction of fetches dedup, the coalescing
+// layer earns its keep; if not, the milestone closes #1135 without
+// implementing batch endpoints.
+//
+// We log at debug to avoid bloating production logs; a future metrics
+// scrape can pick up the structured keys directly.
+func (p *Pipeline) logEvalCounters(a *artist.Artist, counters func() (uint64, uint64)) {
+	if counters == nil {
+		return
+	}
+	fetches, dedups := counters()
+	if fetches == 0 && dedups == 0 {
+		// No provider calls touched the eval ctx; nothing to report.
+		return
+	}
+	p.logger.Debug("evaluation context provider counters",
+		slog.String("artist_id", a.ID),
+		slog.String("artist", a.Name),
+		slog.Uint64("provider_fetch_total", fetches),
+		slog.Uint64("provider_fetch_dedup_total", dedups),
+	)
 }
 
 // dispatchViolations is the strategy-dispatch loop pulled out of
@@ -913,6 +1022,12 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		// startedAt captured pre-Evaluate so every rule_results pass row
 		// written during this pass shares a timestamp (issue #699).
 		startedAt := time.Now().UTC()
+
+		// Issue #1133: per-artist EvaluationContext for fetch coalescing.
+		// Shadows the outer ctx so every downstream call inside this
+		// closure inherits the coalescer without an artistCtx rename.
+		ctx, counters := p.withEvalContext(ctx, a)
+		defer p.logEvalCounters(a, counters)
 
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
@@ -1290,6 +1405,15 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		Fixable:  rv.Fixable,
 		Config:   r.Config,
 	}
+
+	// Issue #1133: even single-violation FixViolation runs under an
+	// EvaluationContext so the post-fix updateHealthScore re-evaluate
+	// (which may issue checker-side provider calls) shares the cache
+	// the fixer just primed. The win is small (typically a single
+	// fetch), but the unified telemetry tag matters for the W4 (#1135)
+	// gating signal.
+	ctx, counters := p.withEvalContext(ctx, a)
+	defer p.logEvalCounters(a, counters)
 
 	fr := p.attemptFix(ctx, a, v)
 

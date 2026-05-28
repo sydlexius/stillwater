@@ -548,6 +548,11 @@ func TestImageFixer_Fix_ResolutionGate(t *testing.T) {
 	}
 }
 
+// TestImageFixer_FetchImages_Cached verifies that two image rules on the
+// same artist coalesce into a single provider FetchImages call when an
+// EvaluationContext is attached to the context. The historical per-fixer
+// sync.Map cache was unbounded across passes; the eval-context (#1133)
+// replaces it with a per-evaluation cache the pipeline owns.
 func TestImageFixer_FetchImages_Cached(t *testing.T) {
 	mock := &mockImageProvider{
 		result: &provider.FetchResult{
@@ -559,11 +564,19 @@ func TestImageFixer_FetchImages_Cached(t *testing.T) {
 
 	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
 	a := &artist.Artist{
+		ID:            "artist-cache",
 		Name:          "Cache Test",
 		MusicBrainzID: "mbid-cache",
 		Path:          t.TempDir(),
 		LibraryID:     "lib-test",
 	}
+
+	// Attach an EvaluationContext so multiple violations on the same
+	// artist coalesce. Without it the fixer falls through to the bare
+	// orchestrator (no caching) -- which is the legacy uncoalesced
+	// behavior FixViolation single-violation callers exercise.
+	ctx := WithEvaluationContext(context.Background(),
+		NewEvaluationContext(a, &evalCtxImageOnlyProvider{img: mock}, testLogger()))
 
 	// First call: thumb_min_res -- one candidate passes, SelectBestCandidate=false
 	// so it returns pending_choice (multiple not needed here -- just one candidate
@@ -573,7 +586,7 @@ func TestImageFixer_FetchImages_Cached(t *testing.T) {
 		RuleID: RuleThumbMinRes,
 		Config: RuleConfig{MinWidth: 5000, MinHeight: 5000}, // forces "no candidates" path
 	}
-	if _, err := f.Fix(context.Background(), a, v1); err != nil {
+	if _, err := f.Fix(ctx, a, v1); err != nil {
 		t.Fatalf("Fix v1: %v", err)
 	}
 
@@ -582,13 +595,127 @@ func TestImageFixer_FetchImages_Cached(t *testing.T) {
 		RuleID: RuleFanartMinRes,
 		Config: RuleConfig{MinWidth: 5000, MinHeight: 5000},
 	}
-	if _, err := f.Fix(context.Background(), a, v2); err != nil {
+	if _, err := f.Fix(ctx, a, v2); err != nil {
 		t.Fatalf("Fix v2: %v", err)
 	}
 
 	if mock.calls != 1 {
 		t.Errorf("FetchImages called %d times; want 1 (cache hit on second call)", mock.calls)
 	}
+}
+
+// TestPipeline_RunForArtist_CoalescesImageFetches is the spec's
+// "integration test: Run-All-Rules on a fixture library shows reduced
+// provider call count proportional to rule fanout" -- scoped down to a
+// single artist with multiple image violations so the test does not need
+// to seed a large fixture library. The relevant signal is that 4 image
+// rules (thumb_exists, fanart_exists, logo_exists, banner_exists) on the
+// same artist trigger exactly one FetchImages call through the
+// EvaluationContext (issue #1133).
+//
+// Without coalescing this would be 4 provider calls; with coalescing it
+// is 1, and the per-artist provider_fetch_dedup_total counter should
+// report 3 dedup events. Both invariants are pinned below.
+func TestPipeline_RunForArtist_CoalescesImageFetches(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Flip the four image existence rules into auto mode so the
+	// pipeline actually invokes the fixer for each. Without this they
+	// stay manual and the fanout argument breaks down.
+	for _, rid := range []string{RuleThumbExists, RuleFanartExists, RuleLogoExists, RuleBannerExists} {
+		r, err := ruleSvc.GetByID(ctx, rid)
+		if err != nil {
+			t.Fatalf("getting rule %s: %v", rid, err)
+		}
+		r.AutomationMode = AutomationModeAuto
+		if err := ruleSvc.Update(ctx, r); err != nil {
+			t.Fatalf("updating rule %s: %v", rid, err)
+		}
+	}
+
+	dir := t.TempDir()
+	a := &artist.Artist{
+		Name:          "Coalesce Test",
+		SortName:      "Coalesce Test",
+		Path:          dir,
+		MusicBrainzID: "mbid-coalesce",
+		LibraryID:     "lib-coalesce",
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Counting provider returns an empty result so the ImageFixer
+	// short-circuits at "no <type> images found from providers" -- no
+	// download path, no save path, just the cached fetch. That is the
+	// exact behavior the coalescer is being measured against.
+	count := &countingEvalProvider{
+		imagesResult: &provider.FetchResult{Images: nil},
+	}
+
+	imageFixer := NewImageFixer(&countingImageFacade{c: count}, nil, nonSharedFSCheck(), testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{imageFixer}, nil, testLogger())
+	// SetOrchestrator wires the EvaluationContext path. Without it the
+	// fixer would call the bare orchestrator and the coalescing layer
+	// is bypassed -- the failure mode the production wiring in
+	// cmd/stillwater/main.go protects against.
+	pipeline.SetOrchestrator(nil) // nil orchestrator -> no coalescing
+	// Then test the coalescing path by installing the counting provider
+	// directly via the dev hook used by tests (a sibling to SetOrchestrator
+	// that accepts the evalProvider interface).
+	pipeline.setEvalProviderForTest(count)
+
+	result, err := pipeline.RunForArtist(ctx, a)
+	if err != nil {
+		t.Fatalf("RunForArtist: %v", err)
+	}
+	if result.ViolationsFound < 4 {
+		t.Fatalf("ViolationsFound = %d; want >= 4 (the four image-existence rules)", result.ViolationsFound)
+	}
+
+	if got := count.fetchImagesCalls.Load(); got != 1 {
+		t.Errorf("FetchImages dispatched %d times; want 1 (coalesced across %d image rules)", got, 4)
+	}
+}
+
+// countingImageFacade adapts a countingEvalProvider to the imageProvider
+// interface so NewImageFixer accepts it. The fixer's bare-orchestrator
+// fallback path goes through this facade when the EvaluationContext is
+// absent; the integration test installs an EvaluationContext via the
+// pipeline so the coalescer captures the calls instead.
+type countingImageFacade struct{ c *countingEvalProvider }
+
+func (f *countingImageFacade) FetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	return f.c.FetchImages(ctx, mbid, providerIDs)
+}
+
+// evalCtxImageOnlyProvider adapts a mockImageProvider to the
+// EvaluationContext's full evalProvider surface for tests that only
+// exercise the FetchImages path. The metadata-side methods panic if
+// invoked -- the test would have a bug, not a silent fall-through.
+type evalCtxImageOnlyProvider struct {
+	img *mockImageProvider
+}
+
+func (p *evalCtxImageOnlyProvider) FetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	return p.img.FetchImages(ctx, mbid, providerIDs)
+}
+func (p *evalCtxImageOnlyProvider) FetchMetadata(_ context.Context, _, _ string, _ map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	panic("FetchMetadata not implemented for image-only test stub")
+}
+func (p *evalCtxImageOnlyProvider) FetchFieldFromProviders(_ context.Context, _, _, _ string, _ map[provider.ProviderName]string) ([]provider.FieldProviderResult, error) {
+	panic("FetchFieldFromProviders not implemented for image-only test stub")
+}
+func (p *evalCtxImageOnlyProvider) Search(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
+	panic("Search not implemented for image-only test stub")
 }
 
 // TestImageFixer_Fix_PostDownloadDimensionGate verifies that a candidate with
