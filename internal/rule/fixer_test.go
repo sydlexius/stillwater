@@ -2687,6 +2687,31 @@ func TestPassesPostDownloadDimensionGate_NoConstraints(t *testing.T) {
 	}
 }
 
+// TestImageFixer_discoverCandidates_FetchImagesNilNil pins the nil-guard at
+// fixers.go:510. When an upstream orchestrator returns (nil, nil) from
+// FetchImages -- legal but unusual -- discoverCandidates must surface an
+// error instead of panicking on `for _, im := range result.Images`.
+func TestImageFixer_discoverCandidates_FetchImagesNilNil(t *testing.T) {
+	mock := &mockImageProvider{} // result: nil, err: nil
+	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
+	a := &artist.Artist{Name: "NilNil", MusicBrainzID: "mbid-nilnil", LibraryID: "lib-test", Path: t.TempDir()}
+	fctx := &imageFixContext{imageType: "thumb"}
+
+	cands, fr, err := f.discoverCandidates(context.Background(), a, &Violation{RuleID: RuleThumbExists}, fctx)
+	if err == nil {
+		t.Fatal("expected error from (nil, nil) provider response, got nil")
+	}
+	if !strings.Contains(err.Error(), "nil result") {
+		t.Errorf("error = %q; want it to mention 'nil result'", err.Error())
+	}
+	if cands != nil {
+		t.Errorf("candidates = %+v; want nil", cands)
+	}
+	if fr != nil {
+		t.Errorf("FixResult = %+v; want nil", fr)
+	}
+}
+
 // ---- per-mode strategy unit tests for runForArtistFiltered (#1416) ----
 
 // TestPipeline_ProcessManualViolation_WithCandidates verifies the manual

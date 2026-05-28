@@ -848,13 +848,13 @@ func filterCandidatesByResolution(
 		if c.Width > 0 && c.Height > 0 {
 			if (minW > 0 && c.Width < minW) || (minH > 0 && c.Height < minH) {
 				logger.Debug("skipping candidate below configured minimum",
-					"url", c.URL, "width", c.Width, "height", c.Height,
+					"source", c.Source, "width", c.Width, "height", c.Height,
 					"min_width", minW, "min_height", minH)
 				continue
 			}
 			if existingW > 0 && existingH > 0 && c.Width*c.Height < existingW*existingH {
 				logger.Debug("skipping candidate below existing resolution",
-					"url", c.URL, "width", c.Width, "height", c.Height,
+					"source", c.Source, "width", c.Width, "height", c.Height,
 					"existing_width", existingW, "existing_height", existingH)
 				continue
 			}
