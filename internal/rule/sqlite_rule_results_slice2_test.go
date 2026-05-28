@@ -3,6 +3,7 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -311,6 +312,45 @@ func TestTopFailingRuleResults_LimitClamped(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("limit=-5 with empty DB: got %d rows, want 0", len(got))
+	}
+
+	// Upper-bound clamp: with an empty DB, a huge limit must still
+	// return cleanly (no SQL error). The interesting cap is verified
+	// below once the DB has more than 100 distinct failing rules.
+	got, err = svc.TopFailingRuleResults(ctx, 10000)
+	if err != nil {
+		t.Fatalf("limit=10000 empty DB: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("limit=10000 with empty DB: got %d rows, want 0", len(got))
+	}
+
+	// Seed 150 distinct rules + one failing artist each so the COUNT
+	// per rule_id is 1 across 150 groups, exceeding the server cap of
+	// 100. A huge requested limit must be clamped to that cap.
+	const seeded = 150
+	seedArtistAndRule(t, db, "art-cap", "rule-cap-0")
+	if err := svc.UpsertRuleResultFail(ctx, "art-cap", "rule-cap-0", "v", "msg", time.Now().UTC()); err != nil {
+		t.Fatalf("seeding rule-cap-0: %v", err)
+	}
+	for i := 1; i < seeded; i++ {
+		ruleID := fmt.Sprintf("rule-cap-%d", i)
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO rules (id, name, description, category, enabled, automation_mode, config)
+			VALUES (?, ?, 'desc', 'nfo', 1, 'auto', '{}')`,
+			ruleID, "Rule "+ruleID); err != nil {
+			t.Fatalf("inserting %s: %v", ruleID, err)
+		}
+		if err := svc.UpsertRuleResultFail(ctx, "art-cap", ruleID, "v", "msg", time.Now().UTC()); err != nil {
+			t.Fatalf("seeding %s: %v", ruleID, err)
+		}
+	}
+	got, err = svc.TopFailingRuleResults(ctx, 10000)
+	if err != nil {
+		t.Fatalf("limit=10000 populated: %v", err)
+	}
+	if len(got) > 100 {
+		t.Errorf("limit=10000: got %d rows, want <= 100 (server cap)", len(got))
 	}
 }
 

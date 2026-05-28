@@ -89,7 +89,7 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 			<div class="space-y-2">
 				for _, pr := range data.RulePassRates {
 					<a
-						href={ templ.SafeURL(fmt.Sprintf("rules/%s/results", pr.RuleID)) }
+						href={ templ.SafeURL(fmt.Sprintf("/rules/%s/results", pr.RuleID)) }
 						class="flex items-center justify-between text-sm hover:bg-gray-50 dark:hover:bg-gray-700/40 rounded px-2 py-1 -mx-2 transition-colors"
 					>
 						<span class="text-gray-600 dark:text-gray-400">{ pr.RuleName }</span>

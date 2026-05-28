@@ -405,7 +405,11 @@ func (s *Service) GetRuleResultsForRule(
 // emits both as {rows, total} so the front-end can render pagination
 // without a second round-trip.
 func (s *Service) CountRuleResultsForRule(ctx context.Context, ruleID string, filter PassedFilter) (int, error) {
-	query := `SELECT COUNT(*) FROM rule_results rr WHERE rr.rule_id = ?` + passedWhere(filter)
+	// Mirror the INNER JOIN artists in GetRuleResultsForRule so the total
+	// excludes orphaned rule_results rows whose artist has been hard-deleted;
+	// otherwise the paginated rows can never sum to the reported total and
+	// the UI's page math breaks.
+	query := `SELECT COUNT(*) FROM rule_results rr JOIN artists a ON a.id = rr.artist_id WHERE rr.rule_id = ?` + passedWhere(filter)
 	var n int
 	if err := s.db.QueryRowContext(ctx, query, ruleID).Scan(&n); err != nil {
 		return 0, fmt.Errorf("counting rule_results for rule: %w", err)

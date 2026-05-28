@@ -206,16 +206,18 @@ func (r *Router) handleRuleResults(w http.ResponseWriter, req *http.Request) {
 		page = 1
 	}
 	pageSize := intQuery(req, "page_size", 50)
-	switch {
-	case pageSize < 1:
-		pageSize = 50
-	case pageSize > 200:
+	if _, ok := req.URL.Query()["page_size"]; ok && pageSize < 1 {
+		pageSize = 1
+	}
+	if pageSize > 200 {
 		pageSize = 200
 	}
 	// Clamp page so (page-1)*pageSize cannot overflow int. The bound
 	// matters in principle (a hostile or buggy caller could pass an
 	// enormous page value); in practice no real client gets near it.
-	if maxPage := (math.MaxInt / pageSize) + 1; page > maxPage {
+	// Note: MaxInt/pageSize is already the largest safe page-1 even when
+	// pageSize=1 -- adding +1 here wraps to MinInt under two's complement.
+	if maxPage := math.MaxInt / pageSize; page > maxPage {
 		page = maxPage
 	}
 

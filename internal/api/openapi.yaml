@@ -5353,9 +5353,10 @@ paths:
           in: query
           required: false
           description: Tri-state filter on pass/fail. Empty == any.
+          allowEmptyValue: true
           schema:
             type: string
-            enum: [passed, failed, any]
+            enum: [passed, failed, any, ""]
             default: any
       responses:
         "200":
