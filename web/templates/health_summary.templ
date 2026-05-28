@@ -12,6 +12,7 @@ type HealthSummaryData struct {
 	MissingFanart    int
 	MissingMBID      int
 	TopViolations    []ViolationSummaryData
+	RulePassRates    []RulePassRateData
 }
 
 // ViolationSummaryData represents a rule violation count for display.
@@ -20,6 +21,19 @@ type ViolationSummaryData struct {
 	RuleName string
 	Count    int
 	Severity string
+}
+
+// RulePassRateData is the templ-layer view of rule.RulePassRate. Mirrors
+// the API shape but uses ints directly; the template formats the
+// percentage in-line so the data layer stays a simple struct.
+type RulePassRateData struct {
+	RuleID    string
+	RuleName  string
+	Severity  string
+	Passed    int
+	Failed    int
+	Evaluated int
+	PassRate  float64
 }
 
 // HealthSummaryFragment renders the quick stat cards for the dashboard.
@@ -69,6 +83,38 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 			</div>
 		</div>
 	}
+	<div class="sw-card sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{ t(ctx, "health.rule_pass_rates") }</h3>
+		if len(data.RulePassRates) > 0 {
+			<div class="space-y-2">
+				for _, pr := range data.RulePassRates {
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("rules/%s/results", pr.RuleID)) }
+						class="flex items-center justify-between text-sm hover:bg-gray-50 dark:hover:bg-gray-700/40 rounded px-2 py-1 -mx-2 transition-colors"
+					>
+						<span class="text-gray-600 dark:text-gray-400">{ pr.RuleName }</span>
+						<div class="flex items-center gap-2">
+							<span class="text-xs text-gray-500 dark:text-gray-400">
+								{ tf(ctx, "health.rule_pass_rate_format", pr.Passed, pr.Evaluated) }
+							</span>
+							<span
+								class={
+									"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+									templ.KV("bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200", pr.PassRate >= 0.8),
+									templ.KV("bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200", pr.PassRate >= 0.5 && pr.PassRate < 0.8),
+									templ.KV("bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200", pr.PassRate < 0.5),
+								}
+							>
+								{ fmt.Sprintf("%.0f%%", pr.PassRate*100) }
+							</span>
+						</div>
+					</a>
+				}
+			</div>
+		} else {
+			<p class="text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "health.no_rule_data") }</p>
+		}
+	</div>
 }
 
 templ quickStatCard(label string, count int, link string) {

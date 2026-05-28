@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -178,6 +179,79 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, existing)
 }
 
+// handleRuleResults returns a paginated list of per-artist current
+// pass/fail state for a single rule, sourced from the rule_results table
+// (issue #699 slice 2). The JSON envelope matches /reports/compliance so
+// the front-end pagination component can be reused unchanged.
+//
+// Query parameters:
+//
+//	page      (default 1, clamped >= 1)
+//	page_size (default 50, clamped to [1, 200])
+//	passed    ("passed" | "failed" | "any" | "") -- empty == any
+//
+// Unknown rule IDs return 200 with total=0 and an empty rows array; this
+// is the same shape the front-end already handles and is friendlier than
+// 404 for a UI that polls during rule (re)configuration.
+//
+// GET /api/v1/rules/{id}/results
+func (r *Router) handleRuleResults(w http.ResponseWriter, req *http.Request) {
+	ruleID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+
+	page := intQuery(req, "page", 1)
+	if page < 1 {
+		page = 1
+	}
+	pageSize := intQuery(req, "page_size", 50)
+	switch {
+	case pageSize < 1:
+		pageSize = 50
+	case pageSize > 200:
+		pageSize = 200
+	}
+	// Clamp page so (page-1)*pageSize cannot overflow int. The bound
+	// matters in principle (a hostile or buggy caller could pass an
+	// enormous page value); in practice no real client gets near it.
+	if maxPage := (math.MaxInt / pageSize) + 1; page > maxPage {
+		page = maxPage
+	}
+
+	filter := rule.PassedFilterAny
+	switch req.URL.Query().Get("passed") {
+	case "passed":
+		filter = rule.PassedFilterPassed
+	case "failed":
+		filter = rule.PassedFilterFailed
+	}
+
+	ctx := req.Context()
+	total, err := r.ruleService.CountRuleResultsForRule(ctx, ruleID, filter)
+	if err != nil {
+		r.logger.Error("counting rule_results for drill-down", "rule_id", ruleID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to count rule results")
+		return
+	}
+	rows, err := r.ruleService.GetRuleResultsForRule(ctx, ruleID, filter, pageSize, (page-1)*pageSize)
+	if err != nil {
+		r.logger.Error("listing rule_results for drill-down", "rule_id", ruleID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to list rule results")
+		return
+	}
+	if rows == nil {
+		rows = []rule.RuleResultWithArtist{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rows":      rows,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
 // handleEvaluateArtist runs all enabled rules against an artist and returns the results.
 // GET /api/v1/artists/{id}/health
 func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) {
@@ -217,6 +291,44 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 		*rule.EvaluationResult
 		Warning string `json:"warning,omitempty"`
 	}{result, warning})
+}
+
+// handleArtistRuleResults returns the per-rule pass/fail breakdown for a
+// single artist, restricted to currently-enabled rules (#699 slice 2).
+// Returns 404 if the artist does not exist so callers get the same
+// contract as /api/v1/artists/{id}/health; an artist that exists but
+// has not been evaluated yet returns an empty rule_results array.
+//
+// GET /api/v1/artists/{id}/rule-results
+func (r *Router) handleArtistRuleResults(w http.ResponseWriter, req *http.Request) {
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+
+	ctx := req.Context()
+	if _, err := r.artistService.GetByID(ctx, artistID); err != nil {
+		if errors.Is(err, artist.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+			return
+		}
+		r.logger.Error("looking up artist for rule-results", "artist_id", artistID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to look up artist")
+		return
+	}
+
+	rows, err := r.ruleService.GetEnabledRuleResultsForArtist(ctx, artistID)
+	if err != nil {
+		r.logger.Error("listing rule_results for artist", "artist_id", artistID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to list rule results for artist")
+		return
+	}
+	if rows == nil {
+		rows = []rule.RuleResultWithRule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rule_results": rows,
+	})
 }
 
 // handleRunRule starts an async evaluation of a single rule against all artists.
