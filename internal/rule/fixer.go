@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
 
@@ -159,41 +158,33 @@ type Pipeline struct {
 	// NewPipeline signature stays stable for the many test call sites.
 	// Reads happen on the per-artist hot path that builds the
 	// EvaluationContext (#1133), so the read lock is mandatory rather
-	// than optional.
-	orchestratorMu   sync.RWMutex
-	orchestrator     *provider.Orchestrator
-	testEvalProvider evalProvider // test-only override; see setEvalProviderForTest.
+	// than optional. Stored as the EvalProvider interface so tests can
+	// exercise this exact wiring with a stub orchestrator without
+	// needing the test to live in the same package as a concrete
+	// *provider.Orchestrator constructor.
+	orchestratorMu sync.RWMutex
+	orchestrator   EvalProvider
 }
 
-// SetOrchestrator installs (or replaces) the provider Orchestrator the
-// pipeline uses to construct a per-artist EvaluationContext (#1133). The
+// SetOrchestrator installs (or replaces) the EvalProvider the pipeline
+// uses to construct a per-artist EvaluationContext (#1133). The
 // EvaluationContext coalesces upstream fetches so multiple rules on the
 // same artist share a single provider call per (artist, provider)
-// combination per evaluation pass. Passing nil disables coalescing --
-// the fixers fall through to their bare orchestrator references, which
-// preserves the legacy uncoalesced behavior for tests that have not
-// wired this setter.
-func (p *Pipeline) SetOrchestrator(o *provider.Orchestrator) {
+// combination per evaluation pass. The production caller in main.go
+// passes a *provider.Orchestrator (which satisfies EvalProvider);
+// integration tests can pass a counting stub here to exercise this
+// exact wiring rather than a bypass seam. Passing nil disables
+// coalescing -- the fixers fall through to their bare orchestrator
+// references, which preserves the legacy uncoalesced behavior for tests
+// that have not wired this setter.
+func (p *Pipeline) SetOrchestrator(o EvalProvider) {
 	p.orchestratorMu.Lock()
 	p.orchestrator = o
 	p.orchestratorMu.Unlock()
 }
 
-// setEvalProviderForTest installs a test-only evalProvider override that
-// takes precedence over the real Orchestrator when constructing the
-// per-artist EvaluationContext. This is the test seam for #1133
-// integration coverage: a counting stub can stand in for the full
-// provider stack so the test asserts coalescing behavior without
-// network IO or DB-backed provider state. Production code never calls
-// this method.
-func (p *Pipeline) setEvalProviderForTest(ep evalProvider) {
-	p.orchestratorMu.Lock()
-	p.testEvalProvider = ep
-	p.orchestratorMu.Unlock()
-}
-
 // withEvalContext returns ctx augmented with a fresh per-artist
-// EvaluationContext when the pipeline has an Orchestrator installed.
+// EvaluationContext when the pipeline has an orchestrator installed.
 // Without an orchestrator we return ctx unchanged; the fixers see no
 // EvaluationContext and fall back to their bare orchestrator references.
 //
@@ -202,14 +193,8 @@ func (p *Pipeline) setEvalProviderForTest(ep evalProvider) {
 // telemetry-gated decision. When no eval context is created the
 // function returns zeros.
 func (p *Pipeline) withEvalContext(ctx context.Context, a *artist.Artist) (context.Context, func() (uint64, uint64)) {
-	// Test override takes precedence so the integration test can
-	// inject a counting stub. Production callers never set the
-	// override and fall straight through to the real Orchestrator.
 	p.orchestratorMu.RLock()
-	prov := p.testEvalProvider
-	if prov == nil && p.orchestrator != nil {
-		prov = p.orchestrator
-	}
+	prov := p.orchestrator
 	p.orchestratorMu.RUnlock()
 
 	if prov == nil {

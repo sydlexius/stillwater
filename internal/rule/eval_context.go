@@ -3,6 +3,7 @@ package rule
 import (
 	"context"
 	"log/slog"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -10,13 +11,13 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
-// evalProvider is the union of provider-call surfaces the
+// EvalProvider is the union of provider-call surfaces the
 // EvaluationContext coalesces. Defining it as an interface (rather than
-// holding a *provider.Orchestrator) lets tests inject a stub provider
-// without spinning up the full orchestrator dependency chain, while the
-// production wiring (Pipeline.SetOrchestrator -> NewEvaluationContext)
-// passes the real *provider.Orchestrator which satisfies it.
-type evalProvider interface {
+// holding a *provider.Orchestrator) lets tests drive the production
+// SetOrchestrator wiring with a stub instead of spinning up the full
+// orchestrator dependency chain; the real *provider.Orchestrator
+// satisfies it for production wiring.
+type EvalProvider interface {
 	FetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error)
 	FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error)
 	FetchFieldFromProviders(ctx context.Context, mbid, name, field string, providerIDs map[provider.ProviderName]string) ([]provider.FieldProviderResult, error)
@@ -57,7 +58,7 @@ type evalProvider interface {
 // does not need to rename anything.
 type EvaluationContext struct {
 	artistID string
-	orch     evalProvider
+	orch     EvalProvider
 	logger   *slog.Logger
 
 	mu    sync.Mutex
@@ -88,12 +89,32 @@ type evalCacheKey struct {
 // evalCacheEntry stores the cached outcome of a coalesced fetch. Errors
 // are cached so a flapping provider does not amplify a single failure
 // into N retries across N rules in the same pass.
+//
+// done is closed once the entry's payload fields are populated. The
+// publishing goroutine inserts the placeholder under the cache lock,
+// releases the lock, runs the actual fetch, populates the fields, and
+// closes done. Late callers that find the placeholder in the cache wait
+// on done before reading the payload -- the singleflight pattern that
+// guarantees one upstream fetch per cache key even under parallel
+// callers (the W4 telemetry decision depends on the counter staying
+// honest under Phase 2 parallel evaluation).
 type evalCacheEntry struct {
 	fetch  *provider.FetchResult
 	search []provider.ArtistSearchResult
 	field  []provider.FieldProviderResult
 	err    error
+	done   chan struct{}
 }
+
+// alreadyDoneCh is a closed channel reused as the done signal for cache
+// entries that are populated synchronously (notably the nil-orchestrator
+// sentinel in dispatch). Sharing one closed channel keeps the hot path
+// from allocating per call when we know the entry is already terminal.
+var alreadyDoneCh = func() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}()
 
 // NewEvaluationContext constructs a fresh per-artist context. orch is the
 // real provider orchestrator; logger is used to emit cache-hit / fetch
@@ -103,7 +124,7 @@ type evalCacheEntry struct {
 // Passing a nil orchestrator is supported for tests that exercise paths
 // not reaching a provider call -- methods will return a sentinel error
 // instead of panicking.
-func NewEvaluationContext(a *artist.Artist, orch evalProvider, logger *slog.Logger) *EvaluationContext {
+func NewEvaluationContext(a *artist.Artist, orch EvalProvider, logger *slog.Logger) *EvaluationContext {
 	id := ""
 	if a != nil {
 		id = a.ID
@@ -136,15 +157,18 @@ func (e *EvaluationContext) Counters() (fetches, dedups uint64) {
 // Two violations that arrive with the same MBID but different provider-ID
 // hints must NOT coalesce, otherwise a re-evaluation triggered after a
 // provider-ID enrichment would silently reuse the pre-enrichment payload.
+//
+// Output layout: the canonical priority-order subset first (the common
+// case from the existing ImageFixer cache key), then every remaining map
+// key sorted alphabetically. The sort over extras keeps the fingerprint
+// stable across Go's randomized map iteration so two equivalent maps
+// produce the same string. Skipping the extras path -- as the first
+// version of this function did -- silently collides any two calls that
+// differ only in an unlisted provider name.
 func providerIDFingerprint(ids map[provider.ProviderName]string) string {
 	if len(ids) == 0 {
 		return ""
 	}
-	// Emit in the canonical priority-order subset the existing
-	// ImageFixer cache key already used, plus any other names that
-	// appear in the map. The fixed prefix keeps the common case
-	// (audiodb/discogs/deezer/spotify) deterministic; the trailing
-	// extras path handles provider IDs added by future enrichment.
 	canonical := []provider.ProviderName{
 		provider.NameAudioDB,
 		provider.NameDiscogs,
@@ -156,12 +180,28 @@ func providerIDFingerprint(ids map[provider.ProviderName]string) string {
 		provider.NameWikidata,
 		provider.NameWikipedia,
 	}
+	seen := make(map[provider.ProviderName]struct{}, len(canonical))
 	var buf []byte
 	for _, n := range canonical {
+		seen[n] = struct{}{}
 		buf = append(buf, byte('|'))
 		buf = append(buf, string(n)...)
 		buf = append(buf, '=')
 		buf = append(buf, ids[n]...)
+	}
+	extras := make([]string, 0, len(ids))
+	for n := range ids {
+		if _, isCanonical := seen[n]; isCanonical {
+			continue
+		}
+		extras = append(extras, string(n))
+	}
+	sort.Strings(extras)
+	for _, raw := range extras {
+		buf = append(buf, byte('|'))
+		buf = append(buf, raw...)
+		buf = append(buf, '=')
+		buf = append(buf, ids[provider.ProviderName(raw)]...)
 	}
 	return string(buf)
 }
@@ -184,6 +224,7 @@ func (e *EvaluationContext) FetchImages(ctx context.Context, mbid string, provid
 	e.mu.Lock()
 	if cached, ok := e.cache[key]; ok {
 		e.mu.Unlock()
+		<-cached.done
 		e.dedupTotal.Add(1)
 		e.logger.Debug("provider fetch dedup",
 			slog.String("method", "images"),
@@ -192,13 +233,12 @@ func (e *EvaluationContext) FetchImages(ctx context.Context, mbid string, provid
 		)
 		return cached.fetch, cached.err
 	}
-	// Unlock before the orchestrator call so unrelated keys can fetch
-	// concurrently. dispatch() performs a second cache check under the
-	// lock to handle the narrow race where another goroutine populated
-	// the entry between our miss and the dispatch call. For Phase 1 the
-	// rule loop is sequential per artist so the race is unlikely;
-	// Phase 2 (#1134) may revisit if duplicate fetches show up in the
-	// telemetry.
+	// Unlock before dispatch so unrelated keys can fetch concurrently.
+	// dispatch publishes a singleflight placeholder under the lock and
+	// closes its done channel after the upstream fetch completes; any
+	// parallel caller that races past this fast-path miss will see the
+	// placeholder under dispatch's own lock check, wait on done, and
+	// dedup-count without re-issuing the upstream call.
 	e.mu.Unlock()
 	result, err := e.dispatch(ctx, key, func() *evalCacheEntry {
 		fr, ferr := e.orch.FetchImages(ctx, mbid, providerIDs)
@@ -221,6 +261,7 @@ func (e *EvaluationContext) FetchMetadata(ctx context.Context, mbid, name string
 	e.mu.Lock()
 	if cached, ok := e.cache[key]; ok {
 		e.mu.Unlock()
+		<-cached.done
 		e.dedupTotal.Add(1)
 		e.logger.Debug("provider fetch dedup",
 			slog.String("method", "metadata"),
@@ -252,6 +293,7 @@ func (e *EvaluationContext) FetchFieldFromProviders(ctx context.Context, mbid, n
 	e.mu.Lock()
 	if cached, ok := e.cache[key]; ok {
 		e.mu.Unlock()
+		<-cached.done
 		e.dedupTotal.Add(1)
 		e.logger.Debug("provider fetch dedup",
 			slog.String("method", "field"),
@@ -284,6 +326,7 @@ func (e *EvaluationContext) Search(ctx context.Context, name string) ([]provider
 	e.mu.Lock()
 	if cached, ok := e.cache[key]; ok {
 		e.mu.Unlock()
+		<-cached.done
 		e.dedupTotal.Add(1)
 		e.logger.Debug("provider fetch dedup",
 			slog.String("method", "search"),
@@ -300,63 +343,71 @@ func (e *EvaluationContext) Search(ctx context.Context, name string) ([]provider
 	return result.search, err
 }
 
-// dispatch runs fetch, stores the resulting entry under key, and bumps the
-// fetch counter. The lock is held only across the map mutation, not across
-// the network call, so unrelated keys can fetch concurrently. The current
-// rule loop is sequential per artist so the lock is effectively
-// uncontended; Phase 2 / #1135 may parallelize.
+// dispatch is the singleflight publisher for a coalesced provider call.
+// It guarantees exactly one fetch() per cache key by inserting an
+// in-flight placeholder entry under the cache lock BEFORE running fetch;
+// any parallel goroutine that arrives between the per-method fast-path
+// miss and this point finds the placeholder under dispatch's own lock
+// check, waits on placeholder.done, and dedup-counts without re-issuing
+// the upstream call. This is the contract change that makes
+// provider_fetch_total stay honest under Phase 2 (#1134) parallel
+// evaluation -- without it, two racers both miss the initial check,
+// both call fetch(), and the second one's increment inflates the
+// telemetry by one with no compensating dedup hit (the Greptile P2
+// finding).
+//
+// nil-orchestrator path: surfaces the typed sentinel instead of a
+// nil-deref panic inside fetch(). The sentinel entry is cached the same
+// way any other failure is, so subsequent rules in the same pass do not
+// retry; it uses the shared alreadyDoneCh so callers waiting on done
+// observe the populated entry immediately.
 func (e *EvaluationContext) dispatch(_ context.Context, key evalCacheKey, fetch func() *evalCacheEntry) (*evalCacheEntry, error) {
-	// Guard nil orchestrator so a misconfigured context surfaces the
-	// typed sentinel instead of a nil-deref panic inside fetch(). This
-	// keeps the doc promise on NewEvaluationContext consistent with the
-	// runtime behavior for tests that construct a context without an
-	// orchestrator. The sentinel entry is cached the same way any other
-	// failure is, so subsequent rules in the same pass do not retry.
 	if e.orch == nil {
-		entry := &evalCacheEntry{err: errNilEvalContext}
+		entry := &evalCacheEntry{err: errNilEvalContext, done: alreadyDoneCh}
 		e.mu.Lock()
 		if existing, ok := e.cache[key]; ok {
 			e.mu.Unlock()
+			<-existing.done
+			e.dedupTotal.Add(1)
 			return existing, existing.err
 		}
 		e.cache[key] = entry
 		e.mu.Unlock()
 		return entry, entry.err
 	}
-	// Re-check under the lock in case another goroutine populated the
-	// key between our initial miss and now. Without this, two concurrent
-	// callers for the same key both miss, both dispatch, and the second
-	// to finish overwrites the first's entry -- benign for correctness
-	// but doubles the fetch count we are trying to eliminate.
+
+	// Singleflight publish: re-check the cache under the lock to absorb
+	// any racer that arrived between the per-method fast-path miss and
+	// this point; if absent, insert a placeholder with an unclosed done
+	// channel so late callers will wait rather than redispatch.
 	e.mu.Lock()
 	if cached, ok := e.cache[key]; ok {
 		e.mu.Unlock()
+		<-cached.done
 		e.dedupTotal.Add(1)
 		return cached, cached.err
 	}
+	placeholder := &evalCacheEntry{done: make(chan struct{})}
+	e.cache[key] = placeholder
 	e.mu.Unlock()
 
-	entry := fetch()
+	// Fetch outside the lock so unrelated keys can fetch concurrently.
+	// The placeholder is already published, so its identity is what
+	// every caller will observe -- copying the populated fields into it
+	// after the fetch is the standard singleflight finish.
+	filled := fetch()
+	placeholder.fetch = filled.fetch
+	placeholder.search = filled.search
+	placeholder.field = filled.field
+	placeholder.err = filled.err
 	e.fetchTotal.Add(1)
-
-	e.mu.Lock()
-	// If a concurrent caller raced ahead and populated the slot while
-	// we were fetching, prefer the earlier entry to keep cache identity
-	// stable for any consumer that compared pointers. Either entry is
-	// correct because the underlying orchestrator call is idempotent on
-	// this layer.
-	if existing, ok := e.cache[key]; ok {
-		e.mu.Unlock()
-		return existing, existing.err
-	}
-	e.cache[key] = entry
-	e.mu.Unlock()
+	close(placeholder.done)
 
 	e.logger.Debug("provider fetch dispatched",
 		slog.String("method", key.method),
 		slog.String("artist_id", key.artistID),
 	)
-	return entry, entry.err
+	return placeholder, placeholder.err
 }
 
 // evalContextKey is the unexported context.Context value key used to

@@ -626,14 +626,18 @@ func TestPipeline_RunForArtist_CoalescesImageFetches(t *testing.T) {
 		t.Fatalf("seeding rules: %v", err)
 	}
 
-	// Flip the four image existence rules into auto mode so the
-	// pipeline actually invokes the fixer for each. Without this they
-	// stay manual and the fanout argument breaks down.
+	// Flip the four image-existence rules into enabled + auto mode so
+	// the pipeline actually invokes the fixer for each. RuleBannerExists
+	// defaults to Enabled=false (legacy Kodi-list-view image) so this
+	// loop must set Enabled=true explicitly; without it banner_exists
+	// silently does not fire and the fanout argument collapses to three
+	// rules instead of four.
 	for _, rid := range []string{RuleThumbExists, RuleFanartExists, RuleLogoExists, RuleBannerExists} {
 		r, err := ruleSvc.GetByID(ctx, rid)
 		if err != nil {
 			t.Fatalf("getting rule %s: %v", rid, err)
 		}
+		r.Enabled = true
 		r.AutomationMode = AutomationModeAuto
 		if err := ruleSvc.Update(ctx, r); err != nil {
 			t.Fatalf("updating rule %s: %v", rid, err)
@@ -663,15 +667,13 @@ func TestPipeline_RunForArtist_CoalescesImageFetches(t *testing.T) {
 	imageFixer := NewImageFixer(&countingImageFacade{c: count}, nil, nonSharedFSCheck(), testLogger())
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{imageFixer}, nil, testLogger())
-	// SetOrchestrator wires the EvaluationContext path. Without it the
-	// fixer would call the bare orchestrator and the coalescing layer
-	// is bypassed -- the failure mode the production wiring in
-	// cmd/stillwater/main.go protects against.
-	pipeline.SetOrchestrator(nil) // nil orchestrator -> no coalescing
-	// Then test the coalescing path by installing the counting provider
-	// directly via the dev hook used by tests (a sibling to SetOrchestrator
-	// that accepts the evalProvider interface).
-	pipeline.setEvalProviderForTest(count)
+	// Drive the production wiring directly: SetOrchestrator is the
+	// method main.go calls (with a real *provider.Orchestrator) to
+	// attach the EvaluationContext path; here we hand it the counting
+	// stub. Exercising this method -- rather than a test-only bypass
+	// seam -- is what protects against a future refactor that
+	// silently breaks the main.go glue.
+	pipeline.SetOrchestrator(count)
 
 	result, err := pipeline.RunForArtist(ctx, a)
 	if err != nil {
@@ -679,6 +681,26 @@ func TestPipeline_RunForArtist_CoalescesImageFetches(t *testing.T) {
 	}
 	if result.ViolationsFound < 4 {
 		t.Fatalf("ViolationsFound = %d; want >= 4 (the four image-existence rules)", result.ViolationsFound)
+	}
+	// Assert the four image-existence RuleIDs are actually present
+	// before measuring coalescing. ViolationsFound >= 4 could be
+	// satisfied by any unrelated rules; we want to know thumb / fanart
+	// / logo / banner specifically were the rules that coalesced.
+	want := map[string]bool{
+		RuleThumbExists:  false,
+		RuleFanartExists: false,
+		RuleLogoExists:   false,
+		RuleBannerExists: false,
+	}
+	for _, r := range result.Results {
+		if _, ok := want[r.RuleID]; ok {
+			want[r.RuleID] = true
+		}
+	}
+	for rid, found := range want {
+		if !found {
+			t.Errorf("result.Results missing RuleID %q -- coalescing assertion below would not exercise the intended fanout", rid)
+		}
 	}
 
 	if got := count.fetchImagesCalls.Load(); got != 1 {

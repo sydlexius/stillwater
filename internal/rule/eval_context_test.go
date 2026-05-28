@@ -160,6 +160,70 @@ func TestEvaluationContext_DistinctKeysDoNotCoalesce(t *testing.T) {
 	}
 }
 
+// TestEvaluationContext_NonCanonicalProviderIDsDifferentiate verifies the
+// open reviewer concern from PR #1718 round 1 (Greptile P1 / CR Major):
+// providerIDFingerprint must include non-canonical provider IDs so two
+// calls that differ only in an unlisted provider produce distinct cache
+// keys. Without this, a Phase 2 enrichment that adds a new provider hint
+// would silently reuse the pre-enrichment payload.
+func TestEvaluationContext_NonCanonicalProviderIDsDifferentiate(t *testing.T) {
+	count := &countingEvalProvider{
+		imagesResult: &provider.FetchResult{},
+	}
+	a := &artist.Artist{ID: "artist-fp", Name: "Test"}
+	ec := NewEvaluationContext(a, count, testLogger())
+
+	// Two calls that share an MBID and ALL canonical provider IDs but
+	// differ only in a non-canonical provider name's value. Pre-fix
+	// behavior was to drop the non-canonical entry from the fingerprint
+	// so these would collide; the post-fix fingerprint must include
+	// every key.
+	canonicalIDs := map[provider.ProviderName]string{
+		provider.NameAudioDB:  "audio-1",
+		provider.NameDiscogs:  "disc-1",
+		provider.NameDeezer:   "deez-1",
+		provider.NameSpotify:  "spot-1",
+		provider.NameLastFM:   "lfm-1",
+		provider.NameFanartTV: "fan-1",
+	}
+	nonCanonical := provider.ProviderName("hypothetical-future-provider")
+
+	a1 := make(map[provider.ProviderName]string, len(canonicalIDs)+1)
+	for k, v := range canonicalIDs {
+		a1[k] = v
+	}
+	a1[nonCanonical] = "v1"
+
+	a2 := make(map[provider.ProviderName]string, len(canonicalIDs)+1)
+	for k, v := range canonicalIDs {
+		a2[k] = v
+	}
+	a2[nonCanonical] = "v2"
+
+	if _, err := ec.FetchImages(context.Background(), "mbid-fp", a1); err != nil {
+		t.Fatalf("FetchImages a1: %v", err)
+	}
+	if _, err := ec.FetchImages(context.Background(), "mbid-fp", a2); err != nil {
+		t.Fatalf("FetchImages a2: %v", err)
+	}
+	if got := count.fetchImagesCalls.Load(); got != 2 {
+		t.Errorf("FetchImages dispatched %d times; want 2 (non-canonical IDs must differentiate)", got)
+	}
+
+	// Sanity: two calls with identical non-canonical IDs DO coalesce.
+	a3 := make(map[provider.ProviderName]string, len(canonicalIDs)+1)
+	for k, v := range canonicalIDs {
+		a3[k] = v
+	}
+	a3[nonCanonical] = "v2"
+	if _, err := ec.FetchImages(context.Background(), "mbid-fp", a3); err != nil {
+		t.Fatalf("FetchImages a3: %v", err)
+	}
+	if got := count.fetchImagesCalls.Load(); got != 2 {
+		t.Errorf("FetchImages dispatched %d times after duplicate-keys call; want still 2 (a3 should coalesce with a2)", got)
+	}
+}
+
 // TestEvaluationContext_ErrorsAreCached verifies the spec's error
 // semantics: "if a fetch fails, the failure is cached ... so subsequent
 // rules in the same pass do not retry and compound the failure".
@@ -261,11 +325,15 @@ func TestEvaluationContext_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Shared-mbid: must collapse to 1 call. Distinct-mbid: 8 unique
-	// keys -> 8 calls. Total upper bound is 9.
-	got := count.fetchImagesCalls.Load()
-	if got < 1 || got > 9 {
-		t.Errorf("FetchImages dispatched %d times; want in [1, 9]", got)
+	// Shared-mbid must collapse to exactly 1 call (singleflight in
+	// dispatch). Distinct-mbid keys produce 8 unique calls. With the
+	// singleflight publication this must be exactly 9; a looser bound
+	// would not catch a regression in the coalescing contract. The
+	// exact equality is what makes this test a meaningful guard for
+	// Phase 2 (#1134) when the cache lifetime widens and parallel
+	// callers become routine.
+	if got := count.fetchImagesCalls.Load(); got != 9 {
+		t.Errorf("FetchImages dispatched %d times; want 9 (8 unique keys + 1 shared key)", got)
 	}
 }
 
