@@ -101,4 +101,15 @@ if [ -f docs/_generated/envelope-versions.md ]; then
   fi
 fi
 
+# Verify the make-command reference is in sync with the Makefile's "## target:"
+# help comments. Run whenever the docs/ directory is present; -check fails when
+# the generated file is missing or stale, so a deletion cannot silently evade
+# validation. Skip only in docs-stripped checkouts (no docs/ dir at all).
+if [ -d docs ]; then
+  if ! go run ./cmd/gen-make-reference -check; then
+    echo "ERROR: docs/_generated/make-commands.md is stale or missing. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"
