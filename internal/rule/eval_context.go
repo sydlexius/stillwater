@@ -37,11 +37,15 @@ type EvalProvider interface {
 // violations and lets it fall out of scope once the artist's pass
 // completes. There is no cross-artist leakage.
 //
-// Phase 2 (issue #1134) will widen the lifetime to one context per
-// Run-All-Rules pass so a single artist's payload survives across re-entries
-// inside the same pass. The cache key already includes artist_id so Phase 2
-// can adopt the same struct without renaming counters or restructuring the
-// map.
+// Phase 2 lifetime (issue #1134): if the calling context carries a
+// PassContext (see pass_context.go), dispatch first checks the pass-scoped
+// LRU cache before its own per-artist cache. On a pass-cache hit the entry
+// is promoted into the local cache so subsequent same-pass rules on the
+// same artist also hit the fast path without re-consulting the PassContext.
+// On a pass-cache miss, the completed entry is stored into the PassContext
+// after the upstream fetch so that a future re-entry of the same artist
+// (within the same RunAllScoped invocation) finds it there. The key already
+// includes artist_id, so no struct changes are needed.
 //
 // Error caching: failed fetches are cached for the duration of the context
 // per the issue spec, so a flapping provider does not amplify a single
@@ -356,12 +360,21 @@ func (e *EvaluationContext) Search(ctx context.Context, name string) ([]provider
 // telemetry by one with no compensating dedup hit (the Greptile P2
 // finding).
 //
+// Phase 2 pass-cache path: before inserting a placeholder, dispatch
+// checks whether the calling context carries a PassContext. If the
+// PassContext has a completed entry for this key, the entry is promoted
+// into the local per-artist cache and returned immediately (the Phase 2
+// provider_cache_hit_total counter is incremented on the PassContext). On
+// a successful upstream fetch the completed entry is stored into the
+// PassContext so that future re-entries of the same artist in the same
+// RunAllScoped pass find it there.
+//
 // nil-orchestrator path: surfaces the typed sentinel instead of a
 // nil-deref panic inside fetch(). The sentinel entry is cached the same
 // way any other failure is, so subsequent rules in the same pass do not
 // retry; it uses the shared alreadyDoneCh so callers waiting on done
 // observe the populated entry immediately.
-func (e *EvaluationContext) dispatch(_ context.Context, key evalCacheKey, fetch func() *evalCacheEntry) (*evalCacheEntry, error) {
+func (e *EvaluationContext) dispatch(ctx context.Context, key evalCacheKey, fetch func() *evalCacheEntry) (*evalCacheEntry, error) {
 	if e.orch == nil {
 		entry := &evalCacheEntry{err: errNilEvalContext, done: alreadyDoneCh}
 		e.mu.Lock()
@@ -374,6 +387,96 @@ func (e *EvaluationContext) dispatch(_ context.Context, key evalCacheKey, fetch 
 		e.cache[key] = entry
 		e.mu.Unlock()
 		return entry, entry.err
+	}
+
+	// Phase 2: consult the pass-scoped LRU cache before acquiring the
+	// per-artist lock. getOrReserve returns one of three outcomes:
+	//
+	//   reserved=false, entry=nil: key not in pass cache (impossible;
+	//     getOrReserve inserts a placeholder in this case).
+	//
+	//   reserved=false, entry non-nil: key already in pass cache
+	//     (completed or in-flight). Wait on entry.done, then promote
+	//     into the local cache and return. This is the cross-artist
+	//     cache-hit path.
+	//
+	//   reserved=true: we own the placeholder; fall through to the
+	//     upstream fetch and call finalize when done.
+	passCtx := passContextFromContext(ctx)
+	if passCtx != nil {
+		passEntry, reserved := passCtx.getOrReserve(key)
+		if !reserved {
+			// Another EC already has (or is fetching) this key.
+			// Wait for completion, promote into local cache, return.
+			<-passEntry.done
+			// dispatch is the sole incrementer of cacheHitTotal: this single
+			// Add(1) counts both the already-completed case (entry.done was
+			// already closed when getOrReserve returned) and the in-flight-
+			// then-completed case (we just waited on entry.done above). The
+			// getOrReserve path is deliberately silent on this counter; see
+			// pass_context.go for the matching invariant.
+			passCtx.cacheHitTotal.Add(1)
+			e.mu.Lock()
+			if _, alreadyLocal := e.cache[key]; !alreadyLocal {
+				e.cache[key] = passEntry
+			}
+			e.mu.Unlock()
+			e.dedupTotal.Add(1)
+			e.logger.Debug("provider fetch pass-cache hit",
+				slog.String("method", key.method),
+				slog.String("artist_id", key.artistID),
+			)
+			return passEntry, passEntry.err
+		}
+		// reserved=true: we own the pass-cache placeholder (passEntry) for
+		// this key. Re-use it directly as the per-artist placeholder below
+		// so the pass-level and EC-level singleflight share one done
+		// channel; after the upstream fetch we copy the result into
+		// passEntry and call finalize.
+		// Re-use the pass-cache placeholder as the per-artist placeholder
+		// by inserting it directly into the local cache under the lock.
+		// This way any goroutine using THIS EvaluationContext that races
+		// on the same key also waits on the one shared done channel.
+		e.mu.Lock()
+		if cached, ok := e.cache[key]; ok {
+			// Another goroutine using THIS EC snuck in; release the
+			// pass-cache reservation by populating its placeholder from
+			// the existing local entry (which is either completing or
+			// complete).
+			e.mu.Unlock()
+			<-cached.done
+			// Populate the pass-cache placeholder with the same result
+			// so other ECs waiting on it get the right payload.
+			passEntry.fetch = cached.fetch
+			passEntry.search = cached.search
+			passEntry.field = cached.field
+			passEntry.err = cached.err
+			close(passEntry.done)
+			passCtx.finalize(key)
+			e.dedupTotal.Add(1)
+			return cached, cached.err
+		}
+		// Insert the pass-cache placeholder into the per-artist local
+		// cache so both the pass-level and the EC-level singleflight
+		// point at the same done channel.
+		e.cache[key] = passEntry
+		e.mu.Unlock()
+
+		// Fetch outside the lock.
+		filled := fetch()
+		passEntry.fetch = filled.fetch
+		passEntry.search = filled.search
+		passEntry.field = filled.field
+		passEntry.err = filled.err
+		e.fetchTotal.Add(1)
+		close(passEntry.done)
+		passCtx.finalize(key)
+
+		e.logger.Debug("provider fetch dispatched (pass-cache reserved)",
+			slog.String("method", key.method),
+			slog.String("artist_id", key.artistID),
+		)
+		return passEntry, passEntry.err
 	}
 
 	// Singleflight publish: re-check the cache under the lock to absorb
@@ -395,6 +498,10 @@ func (e *EvaluationContext) dispatch(_ context.Context, key evalCacheKey, fetch 
 	// The placeholder is already published, so its identity is what
 	// every caller will observe -- copying the populated fields into it
 	// after the fetch is the standard singleflight finish.
+	// This path is only reached when no PassContext is on ctx (single-artist
+	// endpoints like RunRule, FixViolation). When a PassContext is present
+	// the entire dispatch is handled in the pass-ctx block above, which
+	// returns early in all code paths.
 	filled := fetch()
 	placeholder.fetch = filled.fetch
 	placeholder.search = filled.search
