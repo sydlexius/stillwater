@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -224,8 +225,45 @@ func TestHandleReportHealth_HTMX_WithRuleResults(t *testing.T) {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "/musicbrainz/rules/rr-htmx/results") {
-		t.Errorf("expected BasePath-prefixed drill-down link in body; got:\n%s", body)
+	if !strings.Contains(body, "/musicbrainz/?rule=rr-htmx") {
+		t.Errorf("expected BasePath-prefixed drill-down link to dashboard rule filter in body; got:\n%s", body)
+	}
+}
+
+// TestHandleReportHealth_HTMX_DrillDownEscapesRuleID seeds a rule whose ID
+// contains URL-reserved characters and asserts the rendered href URL-encodes
+// the value. Guards against regressions in the templ's url.QueryEscape call:
+// raw interpolation would emit `?rule=rule:with/odd&chars` which the dashboard
+// would split on `&` and stop at the first reserved char.
+func TestHandleReportHealth_HTMX_DrillDownEscapesRuleID(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	r.basePath = "/musicbrainz"
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	const reservedID = "rule:with/odd&chars"
+	a := addTestArtist(t, artistSvc, "Reserved")
+	seedRuleRow(t, r, reservedID, "Reserved-Char Rule")
+	mustSeedAPI(t, "pass reserved", r.ruleService.UpsertRuleResultPass(ctx, a.ID, reservedID, now))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handleReportHealth(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	wantHref := "/musicbrainz/?rule=" + url.QueryEscape(reservedID)
+	if !strings.Contains(body, wantHref) {
+		t.Errorf("expected encoded drill-down href %q in body; got:\n%s", wantHref, body)
+	}
+	// Belt-and-braces: the raw form must NOT appear (catches a regression that
+	// passes pr.RuleID raw alongside the encoded form by accident).
+	if strings.Contains(body, "/musicbrainz/?rule="+reservedID) {
+		t.Errorf("raw (unencoded) RuleID leaked into href; body:\n%s", body)
 	}
 }
 
