@@ -5,6 +5,7 @@
 /gen-env-reference
 /gen-provider-matrix
 /gen-settings-reference
+/gen-envelope-changelog
 
 # Standalone tool binaries
 /tailwindcss
