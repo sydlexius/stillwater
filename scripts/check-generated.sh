@@ -91,4 +91,14 @@ if [ -f docs/site/src/reference/_doc-anchors.txt ] || [ -f web/components/_doc-a
   fi
 fi
 
+# Verify the envelope-versions file is in sync with the CurrentEnvelopeVersion
+# doc-comment in internal/settingsio/export.go. Skip silently if the generated
+# file is absent (e.g., a docs-stripped checkout).
+if [ -f docs/_generated/envelope-versions.md ]; then
+  if ! go run ./cmd/gen-envelope-changelog -check; then
+    echo "ERROR: docs/_generated/envelope-versions.md is stale. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"

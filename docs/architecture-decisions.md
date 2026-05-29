@@ -46,11 +46,6 @@ The encrypted settings export/import bundle (`internal/settingsio`) is the porta
 
 Envelope versions:
 
-- `1.0`: original (settings, connections, platform profiles, webhooks, provider keys, priorities)
-- `1.1`: adds rules, scraper configs, user preferences, plaintext summary
-- `1.2`: adds libraries (connection refs remapped by type+url) and api_tokens (token_hash + metadata, never plaintext)
-- `1.3`: adds users so cross-instance restore can recreate absent owners before the api_tokens / user_preferences username remap
-- `1.4`: adds `id` to each exported user and `user_id` to each user-preferences row so the target instance matches users by stable UUID instead of remapping by username. A username collision under a different id now fails the import instead of silently remapping, and restore-from-OOBE flows rely on the id stability so downstream references stay intact.
-- `1.5`: adds `verify_path_after_update` to each exported connection so the Lidarr post-update path-verification opt-in survives export/import (#1706, #1692). Pre-1.5 envelopes lack the field, so legacy imports preserve the target's existing value instead of clobbering it with a decoded zero.
+--8<-- "docs/_generated/envelope-versions.md"
 
 Older envelopes remain importable. The `password_hash` inside the users block is a bcrypt digest -- never plaintext -- and only crosses the wire inside the passphrase-encrypted payload.
