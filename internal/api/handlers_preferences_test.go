@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -174,6 +178,61 @@ func TestValidateScalarPref(t *testing.T) {
 				t.Errorf("validateScalarPref(%q,%q) = (%q,%v), want (%q,%v)", tt.key, tt.val, got, ok, tt.want, tt.wantOK)
 			}
 		})
+	}
+}
+
+// TestPatchPreferences_PublishesSettingsChanged verifies a successful merge
+// publishes a settings.changed event (so other open tabs can refetch/toast),
+// carrying the user that made the change, and that a rejected PATCH publishes
+// nothing.
+func TestPatchPreferences_PublishesSettingsChanged(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	bus := event.NewBus(logger, 16)
+	r.eventBus = bus
+
+	got := make(chan event.Event, 1)
+	bus.Subscribe(event.SettingsChanged, func(e event.Event) { got <- e })
+	go bus.Start()
+	defer bus.Stop()
+
+	patch := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/preferences", strings.NewReader(body))
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handlePatchPreferences(w, req)
+		return w
+	}
+
+	if w := patch(`{"theme":"dark"}`); w.Code != http.StatusOK {
+		t.Fatalf("PATCH expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	select {
+	case e := <-got:
+		sectionID, ok := e.Data["sectionId"].(string)
+		if !ok || sectionID != "preferences" {
+			t.Errorf("sectionId = %v (type %T), want %q", e.Data["sectionId"], e.Data["sectionId"], "preferences")
+		}
+		// settings.changed is broadcast to every client, so it must not leak
+		// the actor's user id to other users.
+		if _, leaked := e.Data["updatedBy"]; leaked {
+			t.Errorf("settings.changed must not carry updatedBy (cross-user broadcast leak), got %v", e.Data["updatedBy"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("settings.changed not published after a successful PATCH")
+	}
+
+	// A rejected PATCH (unknown key) must not publish settings.changed.
+	if w := patch(`{"totally_unknown_key":"x"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("unknown-key PATCH expected 400, got %d", w.Code)
+	}
+	select {
+	case e := <-got:
+		t.Errorf("unexpected settings.changed published after a rejected PATCH: %+v", e.Data)
+	case <-time.After(200 * time.Millisecond):
+		// expected: nothing published
 	}
 }
 

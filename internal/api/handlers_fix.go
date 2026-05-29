@@ -122,6 +122,7 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 			} else {
 				// No undo toast -- trigger queue refresh immediately.
 				w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+				r.emitActionResolved()
 				w.WriteHeader(http.StatusOK)
 			}
 		} else {
@@ -309,6 +310,7 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 	if isHTMXRequest(req) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+		r.emitActionResolved()
 		w.WriteHeader(http.StatusOK)
 		// Empty response removes the toast element via outerHTML swap.
 		return

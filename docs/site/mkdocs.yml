@@ -152,6 +152,7 @@ nav:
           - Providers and coalesce: contributing/architecture/providers-and-coalesce.md
           - Settings import/export: contributing/architecture/settings-import-export.md
           - Event bus and workers: contributing/architecture/event-bus-and-workers.md
+          - SSE event catalog: contributing/architecture/sse-events.md
       - PR workflow: contributing/pr-workflow.md
       - Worktrees: contributing/worktrees.md
       - Milestone protocol: contributing/milestone-protocol.md

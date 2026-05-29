@@ -547,6 +547,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 	// refreshed list inline instead of having to navigate away. Pages that
 	// do not listen for it are unaffected.
 	w.Header().Set("HX-Trigger", "dashboard:action-resolved, artist:show-violations-tab")
+	r.emitActionResolved()
 
 	// Dashboard URL pre-filtered to this artist, kept in the JSON response
 	// below for non-HTMX clients. The HTMX fragment omits the link because

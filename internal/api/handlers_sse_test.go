@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -147,6 +148,274 @@ func TestSSEHub_SubscribeToEventBus(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not receive event within timeout")
 	}
+}
+
+// TestSSEHub_BroadcastAssignsMonotonicIDs verifies every broadcast event is
+// stamped with a distinct, increasing decimal id. The id is what the browser
+// EventSource echoes back as the Last-Event-ID header on reconnect, so it must
+// be present and strictly increasing for replay to work.
+func TestSSEHub_BroadcastAssignsMonotonicIDs(t *testing.T) {
+	t.Parallel()
+	hub := NewSSEHub(slog.Default())
+	c := hub.Register("u1")
+	defer hub.Unregister(c)
+
+	hub.Broadcast(SSEEvent{Type: "test"})
+	hub.Broadcast(SSEEvent{Type: "test"})
+
+	first := <-c.ch
+	second := <-c.ch
+
+	if first.ID != "1" {
+		t.Errorf("first event ID = %q, want %q", first.ID, "1")
+	}
+	if second.ID != "2" {
+		t.Errorf("second event ID = %q, want %q", second.ID, "2")
+	}
+}
+
+// TestSSEHub_ReplayReturnsEventsAfterLastID verifies a client that reconnects
+// with a Last-Event-ID inside the buffer window is handed exactly the events it
+// missed, in order, plus the boundary id used to dedupe live delivery.
+func TestSSEHub_ReplayReturnsEventsAfterLastID(t *testing.T) {
+	t.Parallel()
+	hub := NewSSEHub(slog.Default())
+	for i := 0; i < 5; i++ {
+		hub.Broadcast(SSEEvent{Type: "test"})
+	}
+
+	events, boundary, complete := hub.Replay("2")
+	if !complete {
+		t.Fatal("expected complete replay, got buffer loss")
+	}
+	if boundary != 5 {
+		t.Errorf("boundary = %d, want 5", boundary)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 replayed events (ids 3,4,5), got %d", len(events))
+	}
+	if events[0].ID != "3" || events[2].ID != "5" {
+		t.Errorf("replayed ids = %q..%q, want 3..5", events[0].ID, events[2].ID)
+	}
+}
+
+// TestSSEHub_ReplayDetectsBufferLoss verifies that a Last-Event-ID older than
+// the retained window reports buffer loss (so the client refetches derived
+// state), while a client already at the newest id replays nothing and is
+// considered current.
+func TestSSEHub_ReplayDetectsBufferLoss(t *testing.T) {
+	t.Parallel()
+	hub := NewSSEHub(slog.Default())
+	hub.bufMax = 3 // force eviction of the oldest events
+	for i := 0; i < 10; i++ {
+		hub.Broadcast(SSEEvent{Type: "test"})
+	}
+
+	// Client last saw id 2, but only ids 8,9,10 remain buffered -> gap.
+	if _, _, complete := hub.Replay("2"); complete {
+		t.Error("expected buffer loss for evicted id, got complete replay")
+	}
+
+	// A client already at the newest id is current: complete, no events.
+	events, _, complete := hub.Replay("10")
+	if !complete {
+		t.Error("expected complete replay for a current client")
+	}
+	if len(events) != 0 {
+		t.Errorf("expected no replay for a current client, got %d", len(events))
+	}
+}
+
+// TestSSEHub_ReplayEnforcesTTLAtReadTime verifies replay honors the retention
+// window even when no new broadcast has arrived to trigger eviction: head only
+// advances in recordEvent, so during an idle period Replay must apply the TTL
+// cutoff itself rather than hand back stale events.
+func TestSSEHub_ReplayEnforcesTTLAtReadTime(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cur := base
+	hub := NewSSEHub(slog.Default())
+	hub.now = func() time.Time { return cur }
+	hub.bufTTL = 5 * time.Minute
+
+	for i := 0; i < 3; i++ {
+		hub.Broadcast(SSEEvent{Type: "x"})
+	}
+
+	// Advance past the TTL with no new broadcasts (idle period) so eviction
+	// never ran in recordEvent.
+	cur = base.Add(6 * time.Minute)
+
+	// A client reconnecting with an old id: every buffered event now falls
+	// outside the window, so replay must report buffer loss (refetch), not
+	// hand back stale events.
+	if _, _, complete := hub.Replay("1"); complete {
+		t.Error("expected buffer loss when all buffered events aged out of the TTL window")
+	}
+	// A client already at the newest id is still current: no replay, complete.
+	events, _, complete := hub.Replay("3")
+	if !complete || len(events) != 0 {
+		t.Errorf("current client: complete=%v events=%d, want true/0", complete, len(events))
+	}
+}
+
+// TestSSEHub_ReplayRejectsUnparsableID treats a malformed Last-Event-ID as
+// buffer loss rather than guessing, so a corrupt header forces a clean refetch.
+func TestSSEHub_ReplayRejectsUnparsableID(t *testing.T) {
+	t.Parallel()
+	hub := NewSSEHub(slog.Default())
+	hub.Broadcast(SSEEvent{Type: "test"})
+	if _, _, complete := hub.Replay("not-a-number"); complete {
+		t.Error("expected buffer loss for an unparsable Last-Event-ID")
+	}
+}
+
+// TestHandleSSEStream_ReplaysFromLastEventID verifies the stream handler reads
+// the Last-Event-ID request header and replays the buffered events the client
+// missed, each carrying its `id:` frame.
+func TestHandleSSEStream_ReplaysFromLastEventID(t *testing.T) {
+	t.Parallel()
+	logger := slog.Default()
+	hub := NewSSEHub(logger)
+	r := &Router{sseHub: hub, logger: logger}
+
+	// Buffer three events before any client connects.
+	for i := 0; i < 3; i++ {
+		hub.Broadcast(SSEEvent{Type: "scan.completed", Message: "done"})
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := middleware.WithTestUserID(req.Context(), "test-user")
+		r.handleSSEStream(w, req.WithContext(ctx))
+	})
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpReq.Header.Set("Last-Event-ID", "1") // client last saw event 1
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	var got []string
+	sawID2, sawID3 := false, false
+	for scanner.Scan() {
+		line := scanner.Text()
+		got = append(got, line)
+		if line == "id: 2" {
+			sawID2 = true
+		}
+		if line == "id: 3" {
+			sawID3 = true
+		}
+		if sawID2 && sawID3 {
+			break
+		}
+	}
+	if !sawID2 || !sawID3 {
+		t.Errorf("expected replay of ids 2 and 3, got frames:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+// TestSSEHub_BroadcastsNextChannelEvents verifies the new next-channel event
+// types defined for M55 are mapped through SubscribeToEventBus and reach
+// connected clients with their structured Data preserved. These are the
+// cross-tab / dashboard events that flow through the main events stream;
+// logs.line / logs.throttled are deliberately NOT mapped here because they are
+// emitted on the dedicated logs stream (#1338).
+func TestSSEHub_BroadcastsNextChannelEvents(t *testing.T) {
+	t.Parallel()
+	logger := slog.Default()
+	hub := NewSSEHub(logger)
+	bus := event.NewBus(logger, 64)
+	hub.SubscribeToEventBus(bus)
+
+	c := hub.Register("u1")
+	defer hub.Unregister(c)
+
+	go bus.Start()
+	defer bus.Stop()
+
+	cases := []struct {
+		typ  event.Type
+		data map[string]any
+	}{
+		{event.SettingsChanged, map[string]any{"sectionId": "preferences", "updatedBy": "u1"}},
+		{event.DashboardActionResolved, map[string]any{}},
+		{event.ActivityRecent, map[string]any{"kind": "scan", "text": "Scan finished"}},
+	}
+	for _, tc := range cases {
+		bus.Publish(event.Event{Type: tc.typ, Data: tc.data})
+	}
+
+	got := map[string]bool{}
+	for range cases {
+		select {
+		case e := <-c.ch:
+			got[e.Type] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("did not receive all next-channel events within timeout")
+		}
+	}
+	for _, tc := range cases {
+		if !got[string(tc.typ)] {
+			t.Errorf("missing broadcast for event type %q", tc.typ)
+		}
+	}
+}
+
+// TestSSEHub_ConcurrentBroadcastReplay hammers Broadcast (write lock + buffer
+// mutation), Replay (read lock + buffer read), and client churn concurrently so
+// the race detector can catch any unsynchronized access to the replay buffer.
+func TestSSEHub_ConcurrentBroadcastReplay(t *testing.T) {
+	t.Parallel()
+	hub := NewSSEHub(slog.Default())
+	hub.bufMax = 50 // small window so eviction/compaction runs under contention
+
+	reader := hub.Register("reader")
+	// Drain the reader so Broadcast never blocks on a full client buffer; the
+	// range ends when Unregister closes reader.ch after the workload.
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for range reader.ch {
+		}
+	}()
+
+	const iters = 2000
+	var wg sync.WaitGroup
+	for w := 0; w < 4; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iters; i++ {
+				hub.Broadcast(SSEEvent{Type: "x"})
+			}
+		}()
+	}
+	for w := 0; w < 4; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iters; i++ {
+				hub.Replay("10")
+				_ = hub.ClientCount()
+			}
+		}()
+	}
+	wg.Wait()
+
+	hub.Unregister(reader)
+	<-drained
 }
 
 func TestHandleSSEStream(t *testing.T) {

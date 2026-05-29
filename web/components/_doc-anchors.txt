@@ -42,6 +42,13 @@ contributing/architecture/settings-import-export#settings-importexport
 contributing/architecture/settings-import-export#transactional-per-section-apply
 contributing/architecture/settings-import-export#user-remap-role-coercion-and-oobe-restore
 contributing/architecture/settings-import-export#where-to-look
+contributing/architecture/sse-events#catalog
+contributing/architecture/sse-events#endpoint
+contributing/architecture/sse-events#frame-format
+contributing/architecture/sse-events#logs-events-planned-dedicated-stream
+contributing/architecture/sse-events#reconnect-and-replay
+contributing/architecture/sse-events#sse-event-catalog
+contributing/architecture/sse-events#where-to-look
 core-concepts/artists-and-libraries#artist-directories
 core-concepts/artists-and-libraries#artists
 core-concepts/artists-and-libraries#artists-and-libraries

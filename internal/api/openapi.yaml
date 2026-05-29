@@ -12348,15 +12348,30 @@ paths:
       description: |
         Server-Sent Events endpoint that streams real-time system events to
         connected browser clients. Events include scan completions, rule
-        violations, bulk operation results, and artist updates.
+        violations, bulk operation results, artist updates, and the
+        next-channel events settings.changed, dashboard.action-resolved, and
+        activity.recent. Log events (`logs.line`, `logs.throttled`) are
+        deliberately NOT delivered on this stream -- they are reserved for a
+        dedicated logs stream so a high-volume log feed never fans out to every
+        connected tab.
 
-        The connection sends a heartbeat comment every 30 seconds to keep
-        the connection alive. Clients should auto-reconnect on disconnect.
+        Each event carries a monotonic `id:` frame. The browser EventSource
+        echoes the last id back as the `Last-Event-ID` header on reconnect; the
+        server then replays the events the client missed from a bounded ring
+        buffer (1000 events / 5 minutes, whichever is hit first). The initial
+        `connected` frame carries `data.replayed` (count replayed) and
+        `data.bufferLoss` (true when the gap could not be bridged, in which case
+        the client should refetch derived state). A heartbeat comment is sent
+        every 30 seconds to keep the connection alive.
+
+        See the SSE event catalog (Contributing > Architecture > SSE event
+        catalog) for the full event list, frame format, and reconnect semantics.
 
         Event format follows the SSE specification with named events:
         ```
+        id: 42
         event: scan.completed
-        data: {"type":"scan.completed","title":"Scan completed","message":"Library scan finished","timestamp":"...","data":{}}
+        data: {"id":"42","type":"scan.completed","title":"Scan completed","message":"Library scan finished","timestamp":"...","data":{}}
         ```
       operationId: getEventStream
       tags:
