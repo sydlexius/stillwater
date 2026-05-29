@@ -3,6 +3,7 @@ package wikidata
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -104,13 +105,6 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: id}
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikidata,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	langPrefs := provider.MetadataLanguages(ctx)
 	query := buildArtistQuery(id, langPrefs)
 	bindings, err := a.executeSPARQL(ctx, query)
@@ -131,6 +125,79 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	return mapArtist(mbidForMap, bindings), nil
 }
 
+// commonsImageEntry pairs a Commons filename with the image type it was found
+// under (P18 thumb vs P154 logo) while resolving SPARQL bindings to URLs.
+type commonsImageEntry struct {
+	filename string
+	imgType  provider.ImageType
+}
+
+// dedupeImageEntries collects unique Commons filenames from the P18 (image) and
+// P154 (logo) bindings. The SPARQL response may repeat rows when both properties
+// exist, so entries are deduped by (imageType, filename) -- the same file can
+// still appear as both a thumb and a logo.
+func dedupeImageEntries(bindings []SPARQLBinding) []commonsImageEntry {
+	seen := make(map[string]bool)
+	var entries []commonsImageEntry
+	add := func(value string, imgType provider.ImageType) {
+		if value == "" {
+			return
+		}
+		fn := extractCommonsFilename(value)
+		if fn == "" {
+			return
+		}
+		key := string(imgType) + ":" + fn
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		entries = append(entries, commonsImageEntry{filename: fn, imgType: imgType})
+	}
+	for i := range bindings {
+		b := &bindings[i]
+		add(b.Image.Value, provider.ImageThumb)
+		add(b.Logo.Value, provider.ImageLogo)
+	}
+	return entries
+}
+
+// resolveImageEntries resolves each Commons filename to a direct URL. It returns
+// the resolved images, the last transient (rate-limited) failure seen (so its
+// RetryAfter hint can be propagated when every candidate fails), and whether any
+// resolution errored at all (to distinguish "no images" from "all failed").
+func (a *Adapter) resolveImageEntries(ctx context.Context, entries []commonsImageEntry) ([]provider.ImageResult, *provider.ErrProviderUnavailable, bool) {
+	var results []provider.ImageResult
+	var lastUnavailable *provider.ErrProviderUnavailable
+	var hadResolveErrors bool
+	for _, e := range entries {
+		info, err := a.resolveCommonsURL(ctx, e.filename)
+		if err != nil {
+			hadResolveErrors = true
+			var unavailable *provider.ErrProviderUnavailable
+			if errors.As(err, &unavailable) {
+				lastUnavailable = unavailable
+			}
+			a.logger.Warn("failed to resolve commons image",
+				slog.String("filename", e.filename),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		if info == nil {
+			continue
+		}
+		results = append(results, provider.ImageResult{
+			URL:    info.URL,
+			Type:   e.imgType,
+			Width:  info.Width,
+			Height: info.Height,
+			Source: string(provider.NameWikidata),
+		})
+	}
+	return results, lastUnavailable, hadResolveErrors
+}
+
 // GetImages fetches artist images from Wikimedia Commons via Wikidata properties
 // P18 (image/photo) and P154 (logo). The SPARQL query returns Commons filenames
 // which are then resolved to direct URLs via the Wikimedia Commons API.
@@ -143,13 +210,6 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikidata,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	query := buildImageQuery(mbid)
 	bindings, err := a.executeSPARQL(ctx, query)
 	if err != nil {
@@ -160,79 +220,23 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
 	}
 
-	// Collect unique filenames from P18 (image) and P154 (logo) properties.
-	// The SPARQL response may contain multiple rows if both properties exist.
-	// Dedupe by (imageType, filename) so the same Commons file can appear as
-	// both a thumb (P18) and a logo (P154) without the second being dropped.
-	type imageEntry struct {
-		filename string
-		imgType  provider.ImageType
-	}
-	seen := make(map[string]bool)
-	var entries []imageEntry
-
-	for i := range bindings {
-		b := &bindings[i]
-		if b.Image.Value != "" {
-			fn := extractCommonsFilename(b.Image.Value)
-			key := string(provider.ImageThumb) + ":" + fn
-			if fn != "" && !seen[key] {
-				seen[key] = true
-				entries = append(entries, imageEntry{filename: fn, imgType: provider.ImageThumb})
-			}
-		}
-		if b.Logo.Value != "" {
-			fn := extractCommonsFilename(b.Logo.Value)
-			key := string(provider.ImageLogo) + ":" + fn
-			if fn != "" && !seen[key] {
-				seen[key] = true
-				entries = append(entries, imageEntry{filename: fn, imgType: provider.ImageLogo})
-			}
-		}
-	}
-
+	entries := dedupeImageEntries(bindings)
 	if len(entries) == 0 {
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
 	}
 
 	// Resolve each filename to a direct URL via the Commons API.
-	// Track whether any resolution attempt returned an error so we can
-	// distinguish "no images found" from "all resolutions failed."
-	var results []provider.ImageResult
-	var hadResolveErrors bool
-	for _, e := range entries {
-		if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
-			return nil, &provider.ErrProviderUnavailable{
-				Provider: provider.NameWikidata,
-				Cause:    fmt.Errorf("rate limiter: %w", err),
-			}
-		}
-
-		info, err := a.resolveCommonsURL(ctx, e.filename)
-		if err != nil {
-			hadResolveErrors = true
-			a.logger.Warn("failed to resolve commons image",
-				slog.String("filename", e.filename),
-				slog.String("error", err.Error()),
-			)
-			continue
-		}
-		if info == nil {
-			continue
-		}
-
-		results = append(results, provider.ImageResult{
-			URL:    info.URL,
-			Type:   e.imgType,
-			Width:  info.Width,
-			Height: info.Height,
-			Source: string(provider.NameWikidata),
-		})
-	}
+	results, lastUnavailable, hadResolveErrors := a.resolveImageEntries(ctx, entries)
 
 	if len(results) == 0 {
 		// If resolution errors occurred, the failure is transient, not "not found."
 		if hadResolveErrors {
+			// Propagate the typed unavailable error (with its RetryAfter) when we
+			// captured one, so upstream logging and a future adaptive limiter keep
+			// the Commons backoff signal.
+			if lastUnavailable != nil {
+				return nil, lastUnavailable
+			}
 			return nil, &provider.ErrProviderUnavailable{
 				Provider: provider.NameWikidata,
 				Cause:    fmt.Errorf("commons image resolution failed for all candidates"),
@@ -258,17 +262,33 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 	}
 	reqURL := a.endpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikidata,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
+		req.Header.Set("Accept", "application/sparql-results+json")
+		a.logger.Debug("executing SPARQL query")
+		return a.client.Do(req)
 	}
-	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
-	req.Header.Set("Accept", "application/sparql-results+json")
 
-	a.logger.Debug("executing SPARQL query")
-
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503, so the status handling below only sees
+	// 200/other.
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameWikidata, provider.DefaultRetryPolicy(), do)
 	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikidata,
 			Cause:    err,
@@ -482,16 +502,35 @@ func (a *Adapter) resolveCommonsURL(ctx context.Context, filename string) (*Comm
 	}
 	reqURL := a.commonsEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating commons request: %w", err)
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikidata,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating commons request: %w", err)
+		}
+		req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
+		a.logger.Debug("resolving commons image", slog.String("filename", filename))
+		return a.client.Do(req)
 	}
-	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 
-	a.logger.Debug("resolving commons image", slog.String("filename", filename))
-
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503; the prefix is preserved so callers still
+	// recognize commons-resolution failures (which are logged, not fatal).
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameWikidata, provider.DefaultRetryPolicy(), do)
 	if err != nil {
+		// Preserve a typed *ErrProviderUnavailable unchanged so its RetryAfter
+		// hint survives for the GetImages aggregation below; wrap only other
+		// errors with call-site context.
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, unavailable
+		}
 		return nil, fmt.Errorf("commons request: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup

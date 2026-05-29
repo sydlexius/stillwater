@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -686,6 +687,49 @@ func TestFreeKeyNumericIDRoutesToV1Direct(t *testing.T) {
 	}
 	if !strings.Contains(capturedPath, "/artist.php") {
 		t.Errorf("numeric ID with free key should route to /artist.php, got %q", capturedPath)
+	}
+}
+
+func TestFetchArtistsRetriesOn429(t *testing.T) {
+	limiter, settings := setupTest(t)
+
+	// Count every request the server receives so we can prove the retry
+	// loop is bounded by DefaultRetryPolicy.MaxAttempts (3).
+	var hits atomic.Int32
+
+	// Always reply 429 with "Retry-After: 0". The zero value makes
+	// provider.DoWithRetry compute a zero backoff, so the real clock never
+	// sleeps and the test runs instantly while still exercising the full
+	// retry-then-give-up path.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
+
+	// SearchArtist routes through fetchArtists, which wraps its HTTP call in
+	// provider.DoWithRetry (with limiter.Wait inside the retried closure).
+	_, err := a.SearchArtist(context.Background(), "radiohead")
+	if err == nil {
+		t.Fatal("expected error after exhausting retries, got nil")
+	}
+
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Errorf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+
+	// The adapter uses provider.DefaultRetryPolicy(), so the server is hit
+	// exactly MaxAttempts times: the initial attempt plus the bounded retries.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected %d requests (bounded retries), got %d", want, got)
 	}
 }
 

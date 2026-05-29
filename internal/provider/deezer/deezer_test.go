@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -254,6 +255,117 @@ func TestGetImagesDefaultPhoto(t *testing.T) {
 	}
 	if len(images) != 0 {
 		t.Errorf("expected 0 images for artist with default placeholder, got %d", len(images))
+	}
+}
+
+func TestDoRequestRetriesOn429(t *testing.T) {
+	// The server always returns 429 with "Retry-After: 0". The zero-second
+	// Retry-After makes provider.DoWithRetry compute a zero wait between
+	// attempts, so the real clock never actually sleeps and the test runs
+	// instantly while still exercising the full retry path. Returning 429 on
+	// every request forces DoWithRetry to exhaust its budget, proving the
+	// retries are bounded (no retry storm) and surface as
+	// *provider.ErrProviderUnavailable.
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+
+	// "27" is a valid numeric Deezer ID, so the adapter performs the HTTP call
+	// instead of short-circuiting with ErrNotFound.
+	_, err := a.GetArtist(context.Background(), "27")
+	if err == nil {
+		t.Fatal("expected error after exhausting retries, got nil")
+	}
+
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Errorf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+
+	// The adapter uses provider.DefaultRetryPolicy(), so the server must be hit
+	// exactly MaxAttempts times: one initial attempt plus the bounded retries.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected exactly %d requests (MaxAttempts), got %d", want, got)
+	}
+}
+
+func TestDoRequestRecoversAfter429(t *testing.T) {
+	// End-to-end recovery path: the first request is rate-limited (429 with a
+	// zero-second Retry-After so the test stays fast), and the retry succeeds
+	// with real artist JSON. This proves the adapter does not give up on a
+	// transient 429 -- it backs off and then returns the data.
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if hits.Add(1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "artist_radiohead.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+
+	meta, err := a.GetArtist(context.Background(), "27")
+	if err != nil {
+		t.Fatalf("expected success after one retry, got error: %v", err)
+	}
+	if meta == nil || meta.Name == "" {
+		t.Fatalf("expected populated artist metadata, got %+v", meta)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("expected 2 requests (one 429, one success), got %d", got)
+	}
+}
+
+func TestDoRequestWrapsTransportError(t *testing.T) {
+	// A connection-level failure (the server is already closed) is not a 429/503,
+	// so DoWithRetry returns it as a raw, untyped error. doRequest must wrap it in
+	// *provider.ErrProviderUnavailable so callers still see a transient failure.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+
+	a := newTestAdapter(t, url)
+
+	_, err := a.GetArtist(context.Background(), "27")
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestDoRequestHonorsCanceledContext(t *testing.T) {
+	// A canceled context makes the in-closure limiter wait fail before any HTTP
+	// call, surfacing as *provider.ErrProviderUnavailable from the rate-limiter
+	// branch. The server should therefore never be contacted.
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Write(loadFixture(t, "artist_radiohead.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := a.GetArtist(ctx, "27")
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("expected 0 requests (limiter rejected before HTTP), got %d", got)
 	}
 }
 

@@ -553,6 +553,38 @@ func okServer(t *testing.T) *httptest.Server {
 	}))
 }
 
+func TestDoGetRetriesOn429(t *testing.T) {
+	// The shared doGet helper routes every Wikipedia/Wikidata round-trip through
+	// provider.DoWithRetry. A UUID lookup resolves via the SPARQL endpoint
+	// (resolveFromMBID -> doGet), so pointing that endpoint at an always-429
+	// server exercises the retry path. "Retry-After: 0" keeps the wait at zero
+	// so the real clock never sleeps while the full bounded retry loop still
+	// runs.
+	var hits atomic.Int64
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer sparqlSrv.Close()
+
+	// Only the SPARQL endpoint is reached; resolveFromMBID fails before any
+	// action/entity call, so those URLs are placeholders.
+	a := newTestAdapter(t, "http://localhost", sparqlSrv.URL, "http://localhost")
+
+	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	// The adapter uses provider.DefaultRetryPolicy(), so the endpoint is hit
+	// exactly MaxAttempts times for a 429: bounded retries, no storm.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Fatalf("expected exactly %d requests (MaxAttempts), got %d", want, got)
+	}
+}
+
 func TestTestConnection(t *testing.T) {
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}})

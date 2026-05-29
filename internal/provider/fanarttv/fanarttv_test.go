@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,6 +149,48 @@ func TestGetImagesNoKey(t *testing.T) {
 	var authRequired *provider.ErrAuthRequired
 	if !errors.As(err, &authRequired) {
 		t.Errorf("expected ErrAuthRequired, got %T", err)
+	}
+}
+
+// TestGetImagesRetriesOn429 proves that GetImages routes through
+// provider.DoWithRetry and gives up after a bounded number of attempts when the
+// server keeps returning HTTP 429.
+//
+// The handler always answers "Retry-After: 0" alongside the 429 status. A
+// Retry-After of zero makes provider.DoWithRetry compute a zero backoff wait, so
+// the retries fire back-to-back against the real clock without any actual sleep.
+// That keeps the test fast and deterministic while still exercising the live
+// retry loop. provider.DefaultRetryPolicy uses MaxAttempts=3, so the server must
+// be hit exactly 3 times before the loop surfaces *ErrProviderUnavailable.
+func TestGetImagesRetriesOn429(t *testing.T) {
+	limiter, settings := setupTest(t)
+
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		// Retry-After: 0 -> zero backoff, so DoWithRetry does not sleep.
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
+
+	_, err := a.GetImages(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error after exhausting retries on 429")
+	}
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected server to be hit %d times (bounded retries), got %d", want, got)
 	}
 }
 

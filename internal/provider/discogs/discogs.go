@@ -3,6 +3,7 @@ package discogs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -59,13 +60,6 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDiscogs,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
 	}
 
 	params := url.Values{
@@ -139,13 +133,6 @@ func (a *Adapter) getArtistByID(ctx context.Context, id string) (*provider.Artis
 		return nil, err
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDiscogs,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	reqURL := fmt.Sprintf("%s/artists/%s", a.baseURL, url.PathEscape(id))
 	body, err := a.doRequest(ctx, reqURL, token)
 	if err != nil {
@@ -205,13 +192,6 @@ func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageRes
 		return nil, err
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDiscogs,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	reqURL := fmt.Sprintf("%s/artists/%s", a.baseURL, url.PathEscape(id))
 	body, err := a.doRequest(ctx, reqURL, token)
 	if err != nil {
@@ -264,18 +244,34 @@ func (a *Adapter) getToken(ctx context.Context) (string, error) {
 }
 
 func (a *Adapter) doRequest(ctx context.Context, reqURL, token string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameDiscogs,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("Authorization", "Discogs token="+token)
+		req.Header.Set("User-Agent", version.UserAgent("Stillwater", ""))
+		req.Header.Set("Accept", "application/json")
+		a.logger.Debug("requesting", slog.String("url", reqURL))
+		return a.client.Do(req)
 	}
-	req.Header.Set("Authorization", "Discogs token="+token)
-	req.Header.Set("User-Agent", version.UserAgent("Stillwater", ""))
-	req.Header.Set("Accept", "application/json")
 
-	a.logger.Debug("requesting", slog.String("url", reqURL))
-
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503, so the status handling below only sees
+	// 200/404/401/403/other.
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameDiscogs, provider.DefaultRetryPolicy(), do)
 	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDiscogs,
 			Cause:    err,
@@ -304,12 +300,6 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL, token string) ([]byte, 
 
 // getArtistReleases fetches a single page of releases for an artist from Discogs.
 func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string, page int) (*ArtistReleasesResponse, error) {
-	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDiscogs,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
 	reqURL := fmt.Sprintf("%s/artists/%s/releases?sort=year&sort_order=desc&per_page=50&page=%d",
 		a.baseURL, url.PathEscape(artistID), page)
 	body, err := a.doRequest(ctx, reqURL, token)
@@ -325,12 +315,6 @@ func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string,
 
 // getMasterRelease fetches genre/style info from a master release.
 func (a *Adapter) getMasterRelease(ctx context.Context, masterID int, token string) (*MasterRelease, error) {
-	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDiscogs,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
 	reqURL := fmt.Sprintf("%s/masters/%d", a.baseURL, masterID)
 	body, err := a.doRequest(ctx, reqURL, token)
 	if err != nil {

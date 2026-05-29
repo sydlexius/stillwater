@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -350,6 +351,48 @@ func TestTopStylesEmpty(t *testing.T) {
 	got := topStyles(nil, 10)
 	if got != nil {
 		t.Errorf("expected nil for empty counts, got %v", got)
+	}
+}
+
+func TestDoRequestRetriesOn429(t *testing.T) {
+	limiter, settings := setupTest(t)
+
+	// Count every request the adapter makes. The handler always replies
+	// with 429 and "Retry-After: 0". The zero Retry-After makes
+	// provider.DoWithRetry's backoff wait evaluate to zero, so the real
+	// clock never sleeps and the test stays fast while still exercising
+	// the full retry loop inside doRequest.
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
+
+	// "1" is a valid numeric Discogs ID (isNumericID), so GetArtist routes
+	// through getArtistByID -> doRequest. The primary artist fetch returns
+	// 429 and errors out, so aggregateStyles never runs and only the
+	// primary doRequest path is exercised.
+	_, err := a.GetArtist(context.Background(), "1")
+	if err == nil {
+		t.Fatal("expected error from persistent 429, got nil")
+	}
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected ErrProviderUnavailable, got: %T: %v", err, err)
+	}
+
+	// The adapter uses provider.DefaultRetryPolicy(), so the single doRequest
+	// call hits the server exactly MaxAttempts times.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected exactly %d server hits (MaxAttempts), got %d", want, got)
 	}
 }
 

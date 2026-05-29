@@ -332,7 +332,8 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			}
 			o.logger.Warn("provider image fetch failed",
 				slog.String("provider", string(p.Name())),
-				slog.String("error", ScrubError(err)))
+				slog.String("error", ScrubError(err)),
+				retryAfterAttr(err))
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", p.Name()))
 			continue
 		}
@@ -356,13 +357,28 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 		if err != nil {
 			o.logger.Warn("provider search failed",
 				slog.String("provider", string(p.Name())),
-				slog.String("error", ScrubError(err)))
+				slog.String("error", ScrubError(err)),
+				retryAfterAttr(err))
 			continue
 		}
 		allResults = append(allResults, results...)
 	}
 
 	return allResults, nil
+}
+
+// retryAfterAttr returns a slog attribute carrying the server-advised backoff
+// from an *ErrProviderUnavailable, or an empty (elided) attribute when the error
+// is not provider-unavailable or carried no Retry-After. This is the consumer of
+// the formerly-dead ErrProviderUnavailable.RetryAfter field: it surfaces the
+// backoff hint in logs today and gives a future adaptive rate limiter a signal
+// to hook. slog drops a zero Attr, so passing this unconditionally is safe.
+func retryAfterAttr(err error) slog.Attr {
+	var unavailable *ErrProviderUnavailable
+	if errors.As(err, &unavailable) && unavailable.RetryAfter > 0 {
+		return slog.Duration("retry_after", unavailable.RetryAfter)
+	}
+	return slog.Attr{}
 }
 
 // availableProviders returns only the registered providers whose API keys are
@@ -503,7 +519,8 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 			} else {
 				o.logger.Debug("provider GetArtist failed",
 					slog.String("provider", string(name)),
-					slog.String("error", err.Error()))
+					slog.String("error", ScrubError(err)),
+					retryAfterAttr(err))
 				pr.err = err
 			}
 		} else {
@@ -535,7 +552,8 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 			} else {
 				o.logger.Warn("provider GetImages failed, preserving existing image data",
 					slog.String("provider", string(name)),
-					slog.String("error", ScrubError(err)))
+					slog.String("error", ScrubError(err)),
+					retryAfterAttr(err))
 				// Transient failure: store in imageErr so image fields are NOT
 				// marked as attempted. This prevents clearing existing image data
 				// when the provider was merely unreachable.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -293,28 +294,26 @@ func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (
 	return tokenResp.AccessToken, expiry, nil
 }
 
-// doRequest executes an authenticated GET request with rate limiting.
-// On 401, invalidates the cached token and retries once.
+// doRequest executes an authenticated GET request with rate limiting and
+// rate-limit backoff. On 401, it invalidates the cached token and retries once
+// with a fresh token; 429/503 backoff is handled separately by DoWithRetry.
 func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) {
-	if err := a.limiter.Wait(ctx, provider.NameSpotify); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameSpotify,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	body, statusCode, err := a.executeRequest(ctx, reqURL, token)
+	resp, err := a.doWithToken(ctx, reqURL, token)
 	if err != nil {
 		return nil, err
 	}
 
-	// On 401, invalidate token and retry once
-	if statusCode == http.StatusUnauthorized {
+	// On 401, invalidate the cached token and retry once with a fresh one. The
+	// stale response must be drained and closed before issuing the retry.
+	if resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4*1024))
+		_ = resp.Body.Close()
+
 		a.mu.Lock()
 		a.cachedToken = ""
 		a.tokenExpiry = time.Time{}
@@ -325,68 +324,64 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 			return nil, err
 		}
 
+		resp, err = a.doWithToken(ctx, reqURL, token)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
+	case http.StatusUnauthorized, http.StatusForbidden:
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, &provider.ErrAuthRequired{Provider: provider.NameSpotify}
+	case http.StatusNotFound:
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, &provider.ErrNotFound{Provider: provider.NameSpotify, ID: reqURL}
+	default:
+		// 429/503 are consumed by DoWithRetry (it returns an error on
+		// exhaustion), so anything reaching here is an unexpected status.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, &provider.ErrProviderUnavailable{
+			Provider: provider.NameSpotify,
+			Cause:    fmt.Errorf("unexpected status %d", resp.StatusCode),
+		}
+	}
+}
+
+// doWithToken performs a single rate-limited GET with the given bearer token,
+// retrying on a 429/503 via DoWithRetry, and returns the first non-rate-limited
+// response. The caller owns closing the returned body.
+func (a *Adapter) doWithToken(ctx context.Context, reqURL, token string) (*http.Response, error) {
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry still respects the per-provider request budget.
+	do := func(ctx context.Context) (*http.Response, error) {
 		if err := a.limiter.Wait(ctx, provider.NameSpotify); err != nil {
 			return nil, &provider.ErrProviderUnavailable{
 				Provider: provider.NameSpotify,
 				Cause:    fmt.Errorf("rate limiter: %w", err),
 			}
 		}
-
-		body, statusCode, err = a.executeRequest(ctx, reqURL, token)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+		return a.client.Do(req)
+	}
+
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameSpotify, provider.DefaultRetryPolicy(), do)
+	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
 			return nil, err
 		}
+		return nil, &provider.ErrProviderUnavailable{Provider: provider.NameSpotify, Cause: err}
 	}
-
-	switch statusCode {
-	case http.StatusOK:
-		return body, nil
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, &provider.ErrAuthRequired{Provider: provider.NameSpotify}
-	case http.StatusNotFound:
-		return nil, &provider.ErrNotFound{Provider: provider.NameSpotify, ID: reqURL}
-	case http.StatusTooManyRequests:
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameSpotify,
-			Cause:    fmt.Errorf("rate limited by server"),
-		}
-	default:
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameSpotify,
-			Cause:    fmt.Errorf("unexpected status %d", statusCode),
-		}
-	}
-}
-
-// executeRequest performs a single HTTP GET with the given bearer token.
-func (a *Adapter) executeRequest(ctx context.Context, reqURL, token string) ([]byte, int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return nil, 0, &provider.ErrProviderUnavailable{
-			Provider: provider.NameSpotify,
-			Cause:    err,
-		}
-	}
-	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
-
-	// For non-200 responses, drain body
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, resp.StatusCode, nil
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
-	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", err)
-	}
-	return body, resp.StatusCode, nil
+	return resp, nil
 }
 
 // IsSpotifyID reports whether id is a valid Spotify artist ID.

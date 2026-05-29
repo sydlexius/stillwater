@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -621,6 +622,98 @@ func TestGetArtist_LangPrefPassedToSPARQL(t *testing.T) {
 	}
 }
 
+// TestExecuteSPARQLRetriesOn429 verifies that executeSPARQL routes through
+// provider.DoWithRetry so that HTTP 429 responses trigger bounded retries.
+//
+// The server always replies with "Retry-After: 0" alongside status 429. The
+// zero-second Retry-After makes DoWithRetry's backoff wait elapse immediately,
+// so the real clock never actually sleeps and the test stays fast. Because the
+// server never recovers, DoWithRetry exhausts its budget and the call surfaces
+// *provider.ErrProviderUnavailable. The hit counter proves the retry loop is
+// bounded at DefaultRetryPolicy's MaxAttempts (3), not infinite.
+func TestExecuteSPARQLRetriesOn429(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		// Retry-After: 0 means DoWithRetry waits zero time between attempts.
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
+
+	// GetArtist routes through executeSPARQL for the retry-wired request path.
+	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error when server always returns 429")
+	}
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+
+	// The adapter uses provider.DefaultRetryPolicy(), so the server must be hit
+	// exactly MaxAttempts times: retries are bounded, not unbounded.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected exactly %d requests (bounded retries), got %d", want, got)
+	}
+}
+
+func TestExecuteSPARQLWrapsTransportError(t *testing.T) {
+	// A connection-level failure (the endpoint is already closed) is not a
+	// 429/503, so DoWithRetry returns the raw transport error. executeSPARQL must
+	// wrap it in *provider.ErrProviderUnavailable for callers.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, url)
+	useLoopbackTestClient(a)
+
+	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestExecuteSPARQLHonorsCanceledContext(t *testing.T) {
+	// A canceled context makes the in-closure limiter wait fail before any HTTP
+	// call, surfacing as *provider.ErrProviderUnavailable from the rate-limiter
+	// branch. The endpoint should never be contacted.
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := a.GetArtist(ctx, "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("expected 0 requests (limiter rejected before HTTP), got %d", got)
+	}
+}
+
 func TestGetImagesCommonsResolutionFailure(t *testing.T) {
 	// SPARQL returns valid image filenames but the Commons endpoint returns
 	// HTTP 500 for all requests. GetImages should return ErrProviderUnavailable.
@@ -655,5 +748,43 @@ func TestGetImagesCommonsResolutionFailure(t *testing.T) {
 	var unavail *provider.ErrProviderUnavailable
 	if !errors.As(err, &unavail) {
 		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestGetImagesCommonsRateLimitedPreservesRetryAfter(t *testing.T) {
+	// SPARQL returns valid image filenames but the Commons endpoint always
+	// rate-limits with a Retry-After. GetImages must surface a typed
+	// ErrProviderUnavailable whose RetryAfter is preserved from the Commons
+	// 429, rather than collapsing to a generic error.
+	sparqlData := loadFixture(t, "images_p18_only.json")
+
+	commonsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer commonsSrv.Close()
+
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		if r.URL.Query().Get("query") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write(sparqlData)
+	}))
+	defer sparqlSrv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
+	useLoopbackTestClient(a)
+
+	_, err := a.GetImages(context.Background(), "11111111-1111-1111-1111-111111111111")
+	var unavail *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavail) {
+		t.Fatalf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	if unavail.RetryAfter != time.Second {
+		t.Fatalf("RetryAfter = %v, want 1s (preserved from the Commons 429)", unavail.RetryAfter)
 	}
 }
