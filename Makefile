@@ -150,6 +150,18 @@ worktree:
 ##   Example: make remove-worktree NAME=m49.5-merge-policy
 remove-worktree:
 	@test -n "$(NAME)" || (echo "error: NAME is required (e.g. make remove-worktree NAME=my-feature)"; exit 1)
+	@wt="../stillwater-$(NAME)"; \
+	if [ -d "$$wt" ]; then \
+		cur=$$(git -C "$$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || true); \
+		def=$$(git -C "$$wt" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'); \
+		if [ -n "$$cur" ] && [ -n "$$def" ] && [ "$$cur" = "$$def" ]; then \
+			echo "!!! WARNING: $$wt is on the default branch ('$$def')."; \
+			echo "!!! This is the 'gh pr merge --delete-branch' aftermath: gh checked out the default"; \
+			echo "!!! branch here before deleting the feature branch, so the feature branch is already"; \
+			echo "!!! gone. Branch deletion will be SKIPPED by cleanup-worktree.sh (issue #1741);"; \
+			echo "!!! continuing with worktree + tracker cleanup only."; \
+		fi; \
+	fi
 	@$(HOME)/.claude/scripts/cleanup-worktree.sh "$(NAME)" || \
 		echo "warning: cleanup-worktree.sh exited non-zero (worktree or branch may already be gone); continuing with tracker row removal"
 	@if [ -f "$(WORKTREES_MD)" ]; then \
