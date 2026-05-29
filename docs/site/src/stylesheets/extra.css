@@ -1,3 +1,46 @@
+/* --- M55 palette ---------------------------------------------------------
+   mkdocs.yml sets primary/accent to "custom" so the brand color is defined
+   here rather than via a Material built-in. These match the app's M55 blue:
+   blue-600 (#2563eb, the site theme_color / Scalar button hover) for primary
+   and blue-500 (#3b82f6, the app's --scalar-color-accent) for accent. Applies
+   to both the slate (dark) and default (light) schemes. */
+/* The "custom" palette keyword only sets the base --md-*-fg-color; Material
+   does NOT regenerate the --light / --dark / --transparent companion shades,
+   so they keep the default indigo. We must set them explicitly. The
+   --transparent accent (10% alpha, "1a") drives every highlight background:
+   hover/active nav + TOC items, search-term highlights, and Mermaid fills. */
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: #2563eb;
+  --md-primary-fg-color--light: #3b82f6;
+  --md-primary-fg-color--dark: #1d4ed8;
+  --md-primary-fg-color--transparent: #2563eb1a;
+}
+
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: #3b82f6;
+  --md-accent-fg-color--transparent: #3b82f61a;
+}
+
+/* Code syntax tokens. Material's defaults lean purple/magenta/pink for the
+   keyword/function/constant/special tokens. Retarget them to a cool
+   blue-family set that matches M55. Done per scheme because a token color must
+   contrast against both the dark slate and the light code background, and a
+   single value cannot do both. Strings (green), numbers (coral), and the
+   neutral slate tokens are already on-palette, so they are left untouched. */
+[data-md-color-scheme="slate"] {
+  --md-code-hl-keyword-color: #60a5fa;   /* blue-400  */
+  --md-code-hl-function-color: #22d3ee;  /* cyan-400  */
+  --md-code-hl-constant-color: #7dd3fc;  /* sky-300   */
+  --md-code-hl-special-color: #2dd4bf;   /* teal-400  */
+}
+
+[data-md-color-scheme="default"] {
+  --md-code-hl-keyword-color: #1d4ed8;   /* blue-700  */
+  --md-code-hl-function-color: #0e7490;  /* cyan-700  */
+  --md-code-hl-constant-color: #0369a1;  /* sky-700   */
+  --md-code-hl-special-color: #0f766e;   /* teal-700  */
+}
+
 /* Bottom-align the trailing link in grid cards so calls-to-action sit on a
    common baseline regardless of description length. */
 .md-typeset .grid.cards > ul > li {
