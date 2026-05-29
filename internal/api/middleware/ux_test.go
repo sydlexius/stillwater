@@ -1,0 +1,83 @@
+package middleware
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestResolveUX(t *testing.T) {
+	tests := []struct {
+		name   string
+		mode   string
+		cookie string
+		want   UXChannel
+	}{
+		{"stable mode ignores next cookie", "stable", "next", UXStable},
+		{"stable mode default", "stable", "", UXStable},
+		{"next mode default is next", "next", "", UXNext},
+		{"next mode cookie can opt out to stable", "next", "stable", UXStable},
+		{"next mode next cookie stays next", "next", "next", UXNext},
+		{"dual mode default is stable", "dual", "", UXStable},
+		{"dual mode next cookie opts in", "dual", "next", UXNext},
+		{"dual mode stable cookie stays stable", "dual", "stable", UXStable},
+		{"unknown mode falls back to stable", "bogus", "next", UXStable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolveUX(tt.mode, tt.cookie); got != tt.want {
+				t.Errorf("ResolveUX(%q, %q) = %q, want %q", tt.mode, tt.cookie, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUXMiddleware_HeaderAndContext(t *testing.T) {
+	const bp = "" // empty base path (root deployment)
+	tests := []struct {
+		name   string
+		mode   string
+		cookie string
+		path   string
+		want   UXChannel
+	}{
+		{"stable mode stable path", "stable", "", "/dashboard", UXStable},
+		{"stable mode next path still stable (preview off)", "stable", "", "/next/dashboard", UXStable},
+		{"dual no cookie stable path", "dual", "", "/dashboard", UXStable},
+		{"dual next-path forces next", "dual", "", "/next/dashboard", UXNext},
+		{"dual cookie next on stable path", "dual", "next", "/dashboard", UXNext},
+		{"next mode stable path defaults next", "next", "", "/dashboard", UXNext},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotCtx UXChannel
+			next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				gotCtx = UXChannelFromContext(r.Context())
+			})
+			h := UX(tt.mode, bp)(next)
+
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: "sw_ux", Value: tt.cookie})
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if got := rec.Header().Get("X-Stillwater-UX"); got != string(tt.want) {
+				t.Errorf("X-Stillwater-UX header = %q, want %q", got, tt.want)
+			}
+			if gotCtx != tt.want {
+				t.Errorf("UXChannelFromContext = %q, want %q", gotCtx, tt.want)
+			}
+		})
+	}
+}
+
+// UXChannelFromContext must default to stable when no channel was stashed
+// (e.g. requests that never passed through the UX middleware).
+func TestUXChannelFromContext_DefaultsStable(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if got := UXChannelFromContext(req.Context()); got != UXStable {
+		t.Errorf("UXChannelFromContext(empty) = %q, want stable", got)
+	}
+}

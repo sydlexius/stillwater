@@ -1,0 +1,18 @@
+package next
+
+import "github.com/sydlexius/stillwater/web/templates"
+
+// Sidebar is the next/ channel's primary navigation. For the #1340 scaffold it
+// delegates to the existing stable sidebar so navigation is at full parity; later
+// screen issues restyle it independently without touching the v1 chrome.
+templ Sidebar(assets templates.AssetPaths) {
+	@templates.Sidebar(templates.SidebarData{
+		BasePath:    assets.BasePath,
+		IsAdmin:     assets.IsAdmin,
+		Username:    assets.Username,
+		DisplayName: assets.DisplayName,
+		AvatarURL:   assets.AvatarURL,
+		Role:        assets.Role,
+		Version:     assets.Version,
+	})
+}

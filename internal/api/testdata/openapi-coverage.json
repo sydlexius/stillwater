@@ -1169,6 +1169,13 @@
     "covered": true
   },
   {
+    "operationId": "patchPreferences",
+    "method": "PATCH",
+    "path": "/preferences",
+    "handler": "handlePatchPreferences",
+    "covered": true
+  },
+  {
     "operationId": "populateLibrary",
     "method": "POST",
     "path": "/connections/{id}/libraries/{libId}/populate",

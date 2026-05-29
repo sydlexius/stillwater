@@ -118,6 +118,220 @@ func TestUpdatePreference_ThenGet(t *testing.T) {
 	}
 }
 
+func TestValidateSectionList(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{"valid array", `["bio","artwork"]`, `["bio","artwork"]`, true},
+		{"empty array", `[]`, `[]`, true},
+		{"json null normalizes to empty", `null`, `[]`, true},
+		{"not an array", `"bio"`, "", false},
+		{"non-string element", `["bio",1]`, "", false},
+		{"empty-string element", `["bio",""]`, "", false},
+		{"malformed json", `[`, "", false},
+		{"too many entries", `[` + strings.TrimSuffix(strings.Repeat(`"x",`, 51), ",") + `]`, "", false},
+		{"entry too long", `["` + strings.Repeat("a", 65) + `"]`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := validateSectionList(tt.in)
+			if ok != tt.wantOK || (ok && got != tt.want) {
+				t.Errorf("validateSectionList(%q) = (%q, %v), want (%q, %v)", tt.in, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestValidateScalarPref(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		key    string
+		val    string
+		want   string
+		wantOK bool
+	}{
+		{"known valid", PrefTheme, "dark", "dark", true},
+		{"known invalid", PrefTheme, "neon", "", false},
+		{"suppress true", "suppress_confirm_delete", "true", "true", true},
+		{"suppress bad", "suppress_confirm_delete", "maybe", "", false},
+		{"page_size in range normalized", PrefPageSize, "010", "10", true},
+		{"page_size out of range", PrefPageSize, "5", "", false},
+		{"page_size non-int", PrefPageSize, "lots", "", false},
+		{"bg_opacity in range", PrefBgOpacity, "65", "65", true},
+		{"bg_opacity out of range", PrefBgOpacity, "5", "", false},
+		{"unknown key", "totally_unknown", "x", "", false},
+		{"metadata_languages not patchable here", PrefMetadataLanguages, `["en"]`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := validateScalarPref(tt.key, tt.val)
+			if ok != tt.wantOK || (ok && got != tt.want) {
+				t.Errorf("validateScalarPref(%q,%q) = (%q,%v), want (%q,%v)", tt.key, tt.val, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestPatchPreferences_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	// Unauthenticated: no user in context.
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/preferences", strings.NewReader(`{"theme":"dark"}`))
+	w := httptest.NewRecorder()
+	r.handlePatchPreferences(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated PATCH expected 401, got %d", w.Code)
+	}
+
+	// Malformed JSON body.
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/preferences", strings.NewReader(`{not json`))
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handlePatchPreferences(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("malformed-JSON PATCH expected 400, got %d", w.Code)
+	}
+}
+
+func TestPreferenceLayoutKey_GetOneAndPutOne(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	getOne := func(key string) (int, string) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+key, nil)
+		req.SetPathValue("key", key)
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handleGetPreference(w, req)
+		var resp map[string]string
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		return w.Code, resp["value"]
+	}
+	putOne := func(key, value string) int {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+key, strings.NewReader(`{"value":`+value+`}`))
+		req.SetPathValue("key", key)
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handleUpdatePreference(w, req)
+		return w.Code
+	}
+
+	// No stored row -> default empty array.
+	if code, val := getOne(PrefArtistDetailSectionOrder); code != http.StatusOK || val != "[]" {
+		t.Errorf("GET-one no-row = (%d,%q), want (200,\"[]\")", code, val)
+	}
+
+	// PUT a valid array (value is a JSON-array string), then GET reflects canonical form.
+	if code := putOne(PrefArtistDetailSectionOrder, `"[\"bio\",\"artwork\"]"`); code != http.StatusOK {
+		t.Fatalf("PUT valid layout array expected 200, got %d", code)
+	}
+	if code, val := getOne(PrefArtistDetailSectionOrder); code != http.StatusOK || val != `["bio","artwork"]` {
+		t.Errorf("GET-one stored = (%d,%q), want (200,[\"bio\",\"artwork\"])", code, val)
+	}
+
+	// PUT an invalid (non-array) value -> 400.
+	if code := putOne(PrefArtistDetailHiddenSections, `"notanarray"`); code != http.StatusBadRequest {
+		t.Errorf("PUT invalid layout value expected 400, got %d", code)
+	}
+
+	// A malformed stored row canonicalizes to [] on read.
+	if _, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+		userID, PrefArtistDetailHiddenSections, "garbage{"); err != nil {
+		t.Fatalf("seeding malformed row: %v", err)
+	}
+	if code, val := getOne(PrefArtistDetailHiddenSections); code != http.StatusOK || val != "[]" {
+		t.Errorf("GET-one malformed = (%d,%q), want (200,\"[]\")", code, val)
+	}
+}
+
+func TestPatchPreferences_MergesAndValidates(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	patch := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/preferences", strings.NewReader(body))
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handlePatchPreferences(w, req)
+		return w
+	}
+	getPrefs := func() map[string]string {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences", nil)
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handleGetPreferences(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET preferences expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var prefs map[string]string
+		if err := json.NewDecoder(w.Body).Decode(&prefs); err != nil {
+			t.Fatalf("decoding preferences: %v", err)
+		}
+		return prefs
+	}
+
+	// 1. PATCH a scalar pref and an array-valued pref together.
+	if w := patch(`{"theme":"light","artist_detail_section_order":["bio","artwork"]}`); w.Code != http.StatusOK {
+		t.Fatalf("PATCH expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	prefs := getPrefs()
+	if prefs["theme"] != "light" {
+		t.Errorf("theme = %q, want light", prefs["theme"])
+	}
+	if prefs["artist_detail_section_order"] != `["bio","artwork"]` {
+		t.Errorf("artist_detail_section_order = %q, want [\"bio\",\"artwork\"]", prefs["artist_detail_section_order"])
+	}
+	// Merge must not clobber untouched defaults.
+	if prefs["sidebar_state"] != "full" {
+		t.Errorf("sidebar_state = %q, want full (untouched default)", prefs["sidebar_state"])
+	}
+
+	// 2. A second PATCH updates only theme; the array key must persist (merge).
+	if w := patch(`{"theme":"dark"}`); w.Code != http.StatusOK {
+		t.Fatalf("second PATCH expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	prefs = getPrefs()
+	if prefs["theme"] != "dark" {
+		t.Errorf("theme = %q, want dark", prefs["theme"])
+	}
+	if prefs["artist_detail_section_order"] != `["bio","artwork"]` {
+		t.Errorf("array key not preserved across merge: got %q", prefs["artist_detail_section_order"])
+	}
+
+	// 3. An unknown key rejects the whole request (atomic; nothing written).
+	if w := patch(`{"bogus_key":"x"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown-key PATCH expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 3b. A mixed valid+invalid request rejects atomically: the valid key must
+	// NOT be written when another key in the same request is invalid. theme is
+	// "dark" from step 2; the rejected PATCH must leave it unchanged.
+	if w := patch(`{"theme":"light","bogus_key":"x"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("mixed valid+invalid PATCH expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if prefs := getPrefs(); prefs["theme"] != "dark" {
+		t.Errorf("theme = %q after rejected mixed PATCH, want dark (no partial write)", prefs["theme"])
+	}
+
+	// 4. A non-array value for an array key is rejected.
+	if w := patch(`{"artist_detail_hidden_sections":"notanarray"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("invalid array value expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 5. Empty body is a no-op success (nothing to merge).
+	if w := patch(`{}`); w.Code != http.StatusOK {
+		t.Errorf("empty PATCH expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestUpdatePreference_RejectsInvalidKey(t *testing.T) {
 	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)

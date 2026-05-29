@@ -76,6 +76,7 @@ func Logging(logger *slog.Logger, basePath string) func(http.Handler) http.Handl
 						slog.String("path", r.URL.Path),
 						slog.Int("status", sw.status),
 						slog.Duration("duration", time.Since(start)),
+						slog.String("ux", string(UXChannelFromContext(r.Context()))),
 					)
 				}
 				return
@@ -90,6 +91,7 @@ func Logging(logger *slog.Logger, basePath string) func(http.Handler) http.Handl
 				slog.Int("status", sw.status),
 				slog.Duration("duration", time.Since(start)),
 				slog.String("remote", r.RemoteAddr),
+				slog.String("ux", string(UXChannelFromContext(r.Context()))),
 			}
 
 			level := slog.LevelDebug

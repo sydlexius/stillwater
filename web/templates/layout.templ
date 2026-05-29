@@ -50,60 +50,9 @@ type AssetPaths struct {
 templ Layout(title string, assets AssetPaths) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
-		<head>
-			<meta charset="UTF-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<title>{ tf(ctx, "layout.page_title", title) }</title>
-			<link rel="stylesheet" href={ assets.CSS }/>
-			if assets.DriverCSS != "" {
-				<link rel="stylesheet" href={ assets.DriverCSS }/>
-			}
-			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
-			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
-			<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
-			<link rel="apple-touch-icon" sizes="180x180" href={ assets.BasePath + "/static/img/apple-touch-icon.png" }/>
-			<link rel="manifest" href={ assets.BasePath + "/static/site.webmanifest" }/>
-			@themeInitScript()
-			<script src={ assets.HTMX }></script>
-			// htmx-base-path provides the base path to JavaScript at runtime. The
-			// htmx:configRequest listener uses it to prefix every absolute HTMX
-			// request path so sub-path deployments work without modifying each
-			// individual hx-get / hx-post attribute.
-			<meta name="htmx-base-path" content={ assets.BasePath }/>
-			<meta name="app-version" content={ assets.Version }/>
-			<script>
-				(function() {
-					var el = document.querySelector('meta[name="htmx-base-path"]');
-					var bp = el ? el.content : '';
-					document.addEventListener('htmx:configRequest', function(evt) {
-						var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
-						if (csrfToken) {
-							evt.detail.headers['X-CSRF-Token'] = csrfToken;
-						}
-						if (bp && evt.detail.path.startsWith('/')) {
-							evt.detail.path = bp + evt.detail.path;
-						}
-					});
-				})();
-			</script>
-		</head>
+		@LayoutHead(title, assets)
 		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" style="font-family: var(--sw-font-family)">
-			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none" aria-hidden="true"/>
-			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
-			<!-- Ambient backdrop: heavily blurred random artist fanart behind content -->
-			<div
-				class="ambient-bg fixed inset-0 -z-10 pointer-events-none select-none overflow-hidden"
-				aria-hidden="true"
-				id="ambient-backdrop"
-			>
-				<img
-					id="ambient-backdrop-img"
-					alt=""
-					class="h-full w-full object-cover"
-					style="filter: blur(60px) brightness(0.7) saturate(1.4); transform: scale(1.1)"
-					onerror="this.style.display='none'"
-				/>
-			</div>
+			@LayoutBackdrop(assets)
 			@Sidebar(SidebarData{
 				BasePath:    assets.BasePath,
 				IsAdmin:     assets.IsAdmin,
@@ -123,33 +72,110 @@ templ Layout(title string, assets AssetPaths) {
 				</main>
 			</div>
 			@BottomTabs(assets.BasePath, assets.CurrentPath, assets.IsAdmin)
-			@components.ConfirmModal()
-			@components.FieldProviderModal()
-			@components.PathPickerModal()
-			@components.ProgressPill()
-			@components.ContextMenuGlobalJS()
-			@HelpOverlay()
-			<script src={ assets.PollingJS }></script>
-			<script src={ assets.SessionJS }></script>
-			<script src={ assets.PreferencesJS }></script>
-			<script src={ assets.SidebarJS }></script>
-			<script src={ assets.FilterFlyoutJS }></script>
-			if assets.ConflictGateJS != "" {
-				<script src={ assets.ConflictGateJS }></script>
-			}
-			<script src={ assets.HelpJS }></script>
-			if assets.DriverJS != "" {
-				<script src={ assets.DriverJS }></script>
-			}
-			if assets.TourJS != "" {
-				<script src={ assets.TourJS }></script>
-				<!-- Translated tour step strings consumed by tour.js -->
-				@tourI18nJSON()
-			}
-			<!-- Translated strings for the global toast/modal/undo infrastructure -->
-			@layoutI18nBlob()
-			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
-			<script>
+			@LayoutGlobalChrome(assets)
+		</body>
+	</html>
+}
+
+// LayoutHead renders the shared document <head>: meta tags, favicons,
+// stylesheets, the theme-init script, HTMX, and the base-path/CSRF request
+// configuration. Extracted from Layout (M55 #1340) so the next/ channel's
+// LayoutNext composes the same head without forking it.
+templ LayoutHead(title string, assets AssetPaths) {
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>{ tf(ctx, "layout.page_title", title) }</title>
+		<link rel="stylesheet" href={ assets.CSS }/>
+		if assets.DriverCSS != "" {
+			<link rel="stylesheet" href={ assets.DriverCSS }/>
+		}
+		<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
+		<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
+		<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
+		<link rel="apple-touch-icon" sizes="180x180" href={ assets.BasePath + "/static/img/apple-touch-icon.png" }/>
+		<link rel="manifest" href={ assets.BasePath + "/static/site.webmanifest" }/>
+		@themeInitScript()
+		<script src={ assets.HTMX }></script>
+		// htmx-base-path provides the base path to JavaScript at runtime. The
+		// htmx:configRequest listener uses it to prefix every absolute HTMX
+		// request path so sub-path deployments work without modifying each
+		// individual hx-get / hx-post attribute.
+		<meta name="htmx-base-path" content={ assets.BasePath }/>
+		<meta name="app-version" content={ assets.Version }/>
+		<script>
+				(function() {
+					var el = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = el ? el.content : '';
+					document.addEventListener('htmx:configRequest', function(evt) {
+						var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+						if (csrfToken) {
+							evt.detail.headers['X-CSRF-Token'] = csrfToken;
+						}
+						if (bp && evt.detail.path.startsWith('/')) {
+							evt.detail.path = bp + evt.detail.path;
+						}
+					});
+				})();
+			</script>
+	</head>
+}
+
+// LayoutBackdrop renders the fixed login-background image, dimming overlay,
+// and the blurred ambient artist-fanart backdrop shared by every page.
+templ LayoutBackdrop(assets AssetPaths) {
+	<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none" aria-hidden="true"/>
+	<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
+	<!-- Ambient backdrop: heavily blurred random artist fanart behind content -->
+	<div
+		class="ambient-bg fixed inset-0 -z-10 pointer-events-none select-none overflow-hidden"
+		aria-hidden="true"
+		id="ambient-backdrop"
+	>
+		<img
+			id="ambient-backdrop-img"
+			alt=""
+			class="h-full w-full object-cover"
+			style="filter: blur(60px) brightness(0.7) saturate(1.4); transform: scale(1.1)"
+			onerror="this.style.display='none'"
+		/>
+	</div>
+}
+
+// LayoutGlobalChrome renders the shared global UI infrastructure every page
+// (stable and next channels) depends on: the four global modals, the
+// ProgressPill status bar, the context-menu and help overlays, the toast
+// manager, theme + ambient-backdrop bootstrapping, the HTMX error handlers, and
+// the SSE client. Extracted from Layout (M55 #1340) so LayoutNext composes the
+// same chrome without forking 880 lines; collapses back at promotion.
+templ LayoutGlobalChrome(assets AssetPaths) {
+	@components.ConfirmModal()
+	@components.FieldProviderModal()
+	@components.PathPickerModal()
+	@components.ProgressPill()
+	@components.ContextMenuGlobalJS()
+	@HelpOverlay()
+	<script src={ assets.PollingJS }></script>
+	<script src={ assets.SessionJS }></script>
+	<script src={ assets.PreferencesJS }></script>
+	<script src={ assets.SidebarJS }></script>
+	<script src={ assets.FilterFlyoutJS }></script>
+	if assets.ConflictGateJS != "" {
+		<script src={ assets.ConflictGateJS }></script>
+	}
+	<script src={ assets.HelpJS }></script>
+	if assets.DriverJS != "" {
+		<script src={ assets.DriverJS }></script>
+	}
+	if assets.TourJS != "" {
+		<script src={ assets.TourJS }></script>
+		<!-- Translated tour step strings consumed by tour.js -->
+		@tourI18nJSON()
+	}
+	<!-- Translated strings for the global toast/modal/undo infrastructure -->
+	@layoutI18nBlob()
+	<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
+	<script>
 				// -- Toast Manager -----------------------------------------------
 				// Provides grouping (same type+message within 2s collapses into a
 				// count badge), a max of 3 visible toasts with queueing, and solid
@@ -503,7 +529,7 @@ templ Layout(title string, assets AssetPaths) {
 					window.swI18n = i18n;
 				})();
 			</script>
-			<script>
+	<script>
 				// Theme toggle: cycles Light -> Dark -> System.
 				// Uses the preferences API (via swPreferences) as the single source
 				// of truth. Falls back to localStorage for the initial paint before
@@ -537,7 +563,7 @@ templ Layout(title string, assets AssetPaths) {
 					document.documentElement.classList.toggle('dark', isDark);
 				}
 			</script>
-			<script>
+	<script>
 				// Ambient backdrop: fetch a random artist backdrop and display it
 				// behind the main content with heavy blur. Respects the ambient_bg
 				// preference and lite mode (CSS hides .ambient-bg when data-lite="on").
@@ -565,7 +591,7 @@ templ Layout(title string, assets AssetPaths) {
 					img.src = bp + '/api/v1/images/random-backdrop';
 				})();
 			</script>
-			<script>
+	<script>
 				document.body.addEventListener('htmx:responseError', function(evt) {
 					// Suppress 403 errors from HTMX requests. These occur
 					// when a non-admin user's page includes a stale admin-only
@@ -642,7 +668,7 @@ templ Layout(title string, assets AssetPaths) {
 					msgs.forEach(function(m) { showWarningToast(m); });
 				});
 			</script>
-			<script>
+	<script>
 				// Confirmation modal interceptor for HTMX hx-confirm events.
 				// Replaces the native browser confirm() with a styled modal.
 				//
@@ -922,7 +948,7 @@ templ Layout(title string, assets AssetPaths) {
 					};
 				})();
 			</script>
-			<script>
+	<script>
 				document.addEventListener('keydown', function(e) {
 					if (e.key === '?') {
 						var tag = document.activeElement && document.activeElement.tagName;
@@ -933,9 +959,7 @@ templ Layout(title string, assets AssetPaths) {
 					}
 				});
 			</script>
-			<script src={ assets.SSEJS }></script>
-		</body>
-	</html>
+	<script src={ assets.SSEJS }></script>
 }
 
 // layoutI18nBlob renders a hidden element with translated strings for the

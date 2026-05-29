@@ -1364,6 +1364,27 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // JSON API clients (Accept: application/json or /api/ path prefix) and HTMX
 // partial requests (HX-Request: true) receive a JSON error body so they are
 // not served a full HTML document in a swap target.
+// nextFallback returns the handler for the /next/* UI-channel lane (M55 #1340).
+// Until a screen's next template lands, it re-dispatches the request to the
+// stable route by stripping the /next prefix and forwarding through the mux, so
+// navigation never breaks and no /next path 404s (decision 12). The UX
+// middleware has already set X-Stillwater-UX: next on the response. Each screen
+// issue replaces this generic fallback with a flag-aware handler as its next
+// template lands. No per-route auth wrapper is applied here because the
+// re-dispatched stable route applies its own auth.
+func (r *Router) nextFallback(mux *http.ServeMux) http.HandlerFunc {
+	bp := r.basePath
+	return func(w http.ResponseWriter, req *http.Request) {
+		// {path...} captures everything after /next/ (empty for /next/ itself,
+		// which maps to the stable index).
+		target := bp + "/" + req.PathValue("path")
+		fwd := req.Clone(req.Context())
+		fwd.URL.Path = target
+		fwd.URL.RawPath = ""
+		mux.ServeHTTP(w, fwd)
+	}
+}
+
 func (r *Router) handle404(w http.ResponseWriter, req *http.Request) {
 	isJSON := strings.Contains(req.Header.Get("Accept"), "application/json")
 	isHTMX := req.Header.Get("HX-Request") == "true"

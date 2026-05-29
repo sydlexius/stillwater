@@ -1,0 +1,46 @@
+package api
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+// TestNextFallback_ReDispatchesToStablePath verifies that a /next/* request
+// falls back to the stable route for the same path (M55 #1340, decision 12):
+// the handler strips the /next prefix and re-dispatches through the mux, so the
+// v1 page is served and navigation never breaks.
+func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
+	t.Parallel()
+
+	r := &Router{basePath: ""}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /dashboard", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("V1 DASHBOARD"))
+	})
+	mux.HandleFunc("GET /artists/{id}", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("V1 ARTIST " + req.PathValue("id")))
+	})
+	mux.HandleFunc("GET /next/{path...}", r.nextFallback(mux))
+
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/next/dashboard", "V1 DASHBOARD"},
+		{"/next/artists/42", "V1 ARTIST 42"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s: status = %d, want 200", tt.path, rec.Code)
+			}
+			if got := rec.Body.String(); got != tt.want {
+				t.Errorf("%s: body = %q, want %q (should fall back to stable page)", tt.path, got, tt.want)
+			}
+		})
+	}
+}

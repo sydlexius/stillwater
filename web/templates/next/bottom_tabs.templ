@@ -1,0 +1,10 @@
+package next
+
+import "github.com/sydlexius/stillwater/web/templates"
+
+// BottomTabs is the next/ channel's mobile bottom tab bar. For the #1340 scaffold
+// it delegates to the existing stable component (full parity); screen issues
+// restyle it later.
+templ BottomTabs(assets templates.AssetPaths) {
+	@templates.BottomTabs(assets.BasePath, assets.CurrentPath, assets.IsAdmin)
+}

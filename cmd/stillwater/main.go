@@ -465,6 +465,7 @@ func (a *Application) buildServices() error {
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
 		BasePathFromEnv:    cfg.Server.BasePathFromEnv,
+		UX:                 cfg.Server.UX,
 		TLSStatus:          buildTLSStatus(cfg),
 		HTTP3Port:          server.EffectiveHTTP3Port(cfg),
 		StaticFS:           static.FS,

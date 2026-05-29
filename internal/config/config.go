@@ -41,6 +41,7 @@ type ServerConfig struct {
 	Port            int                `yaml:"port" toml:"port" env:"SW_PORT" default:"1973" desc:"TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup."`
 	BasePath        string             `yaml:"base_path" toml:"base_path" env:"SW_BASE_PATH" default:"/" desc:"URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only."`
 	BasePathFromEnv bool               `yaml:"-" toml:"-"`
+	UX              string             `yaml:"ux" toml:"ux" env:"SW_UX" default:"stable" desc:"Web UI channel: stable (the current UI), next (the in-development preview UI), or dual (both served; defaults to stable, users opt into the preview via the sw_ux cookie or /next/ paths). Default stable means no behavior change."`
 	TLS             TLSConfig          `yaml:"tls" toml:"tls"`
 	HTTPRedirect    HTTPRedirectConfig `yaml:"http_redirect" toml:"http_redirect"`
 	HTTP3           HTTP3Config        `yaml:"http3" toml:"http3"`
@@ -161,6 +162,7 @@ func Default() *Config {
 		Server: ServerConfig{
 			Port:     1973,
 			BasePath: "/",
+			UX:       "stable",
 		},
 		Database: DatabaseConfig{
 			Path: "/config/stillwater.db",
@@ -211,6 +213,7 @@ const scaffoldTOML = `# Stillwater configuration
 [server]
 # port = 1973
 # base_path = "/"
+# ux = "stable"  # Web UI channel: stable | next | dual. Default stable (no change).
 
 # Direct TLS (BYO certificate). When both files are set, Stillwater serves
 # HTTPS itself instead of plain HTTP. Leave unset to keep terminating TLS at
@@ -512,6 +515,7 @@ func (c *Config) loadFromEnv() error {
 	bindings := []envBinding{
 		// Server
 		{Key: "SW_PORT", Apply: setInt("SW_PORT", &c.Server.Port)},
+		{Key: "SW_UX", Apply: setString(&c.Server.UX)},
 		{Key: "SW_DB_PATH", Apply: setString(&c.Database.Path)},
 		// Auth / encryption
 		{Key: "SW_SESSION_SECRET", Apply: setString(&c.Auth.SessionSecret)},
@@ -716,6 +720,18 @@ func (c *Config) validate() error {
 	// config sources honoring the same "non-positive is ignored" contract.
 	if c.RuleEngine.ArtistWorkers <= 0 {
 		c.RuleEngine.ArtistWorkers = Default().RuleEngine.ArtistWorkers
+	}
+
+	// Normalize and validate the UI channel flag. An empty value (file-backed
+	// config that omits the key) falls back to the documented default; any other
+	// non-legal value is a hard error so a typo never silently serves the wrong UI.
+	if c.Server.UX == "" {
+		c.Server.UX = Default().Server.UX
+	}
+	switch c.Server.UX {
+	case "stable", "next", "dual":
+	default:
+		return fmt.Errorf("invalid SW_UX %q: must be stable, next, or dual", c.Server.UX)
 	}
 
 	// Cross-field rules.
