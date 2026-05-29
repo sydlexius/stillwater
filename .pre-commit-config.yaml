@@ -2,8 +2,10 @@
 # pre-commit framework (https://pre-commit.com). The canonical hook
 # wired via `core.hooksPath = .githooks` is `.githooks/pre-commit`,
 # which mirrors these checks in plain bash and is what CI expects.
-# Tool version pins below should stay in sync with the canonical hook
-# (notably: markdownlint-cli2 v0.22.1, golangci-lint v2.12.2, typos v1.44.0).
+# Tool version pins below should stay in sync with the canonical hook and CI
+# (notably: markdownlint-cli2 v0.22.1, golangci-lint v2.12.2, typos v1.46.2).
+# scripts/check-tool-versions.sh asserts these agree across all entrypoints
+# and runs in the pre-push gate, so a drift here fails before push.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -23,7 +25,8 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.44.0
+    # Keep in sync with .github/workflows/docs.yml (crate-ci/typos SHA pin).
+    rev: v1.46.2
     hooks:
       - id: typos
 

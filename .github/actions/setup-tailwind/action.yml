@@ -1,0 +1,25 @@
+# Composite action: install the pinned standalone Tailwind CSS binary.
+#
+# Single source of truth for the linux-x64 (glibc) Tailwind binary used by CI
+# jobs (gate.yml, bruno-ci.yml). To bump Tailwind, update TAILWIND_VERSION and
+# recompute TAILWIND_SHA256 from the release page here -- all CI callers pick
+# it up automatically.
+#
+# NOT shared with build/docker/Dockerfile: the image uses the -musl variant,
+# which is a different binary with a different checksum. Keep the Dockerfile's
+# pin in sync manually when bumping this one.
+name: Setup Tailwind CSS
+description: Install the pinned standalone Tailwind CSS v4 linux-x64 binary.
+runs:
+  using: composite
+  steps:
+    - name: Install Tailwind CSS
+      shell: bash
+      env:
+        TAILWIND_VERSION: v4.2.0
+        TAILWIND_SHA256: 8f65e2d21c675f1e8d265219979d17d10634c1f553a2f583265b7edb28726432
+      run: |
+        curl -fsSLO --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64"
+        echo "${TAILWIND_SHA256}  tailwindcss-linux-x64" | sha256sum -c -
+        chmod +x tailwindcss-linux-x64
+        sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
