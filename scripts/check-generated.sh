@@ -112,4 +112,14 @@ if [ -d docs ]; then
   fi
 fi
 
+# Verify the platform-profiles table is in sync with the platform_profiles
+# INSERT block in 001_initial_schema.sql. Skip silently if the generated file
+# is absent (e.g., a docs-stripped checkout).
+if [ -f docs/_generated/platform-profiles.md ]; then
+  if ! go run ./cmd/gen-platform-profiles -check; then
+    echo "ERROR: docs/_generated/platform-profiles.md is stale. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"
