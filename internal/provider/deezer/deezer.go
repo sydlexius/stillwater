@@ -3,6 +3,7 @@ package deezer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -60,13 +61,6 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		return nil, nil
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameDeezer); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDeezer,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	params := url.Values{
 		"q":     {name},
 		"limit": {"10"},
@@ -117,13 +111,6 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		return nil, &provider.ErrNotFound{Provider: provider.NameDeezer, ID: id}
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameDeezer); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDeezer,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	reqURL := fmt.Sprintf("%s/artist/%s", a.baseURL, url.PathEscape(id))
 	body, err := a.doRequest(ctx, reqURL)
 	if err != nil {
@@ -156,13 +143,6 @@ func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageRes
 		return nil, &provider.ErrNotFound{Provider: provider.NameDeezer, ID: id}
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameDeezer); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDeezer,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	reqURL := fmt.Sprintf("%s/artist/%s", a.baseURL, url.PathEscape(id))
 	body, err := a.doRequest(ctx, reqURL)
 	if err != nil {
@@ -177,16 +157,34 @@ func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageRes
 	return imagesFromResult(&result), nil
 }
 
-// doRequest executes a GET request and returns the response body.
+// doRequest executes a GET request and returns the response body, backing off
+// and retrying on a rate-limited (429) or unavailable (503) response via
+// provider.DoWithRetry.
 func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, err
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameDeezer); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameDeezer,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/json")
+		return a.client.Do(req)
 	}
-	req.Header.Set("Accept", "application/json")
 
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503, so the switch below only sees 200/404/other.
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameDeezer, provider.DefaultRetryPolicy(), do)
 	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDeezer,
 			Cause:    err,
@@ -200,12 +198,6 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	case http.StatusNotFound:
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrNotFound{Provider: provider.NameDeezer, ID: reqURL}
-	case http.StatusTooManyRequests:
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameDeezer,
-			Cause:    fmt.Errorf("rate limited by server"),
-		}
 	default:
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{

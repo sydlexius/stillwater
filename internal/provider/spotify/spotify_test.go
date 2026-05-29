@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -516,6 +517,50 @@ func TestDoRequestRetryOn401(t *testing.T) {
 	}
 	if apiCalls != 2 {
 		t.Errorf("expected 2 API calls (initial + retry), got %d", apiCalls)
+	}
+}
+
+func TestDoRequestRetriesOn429(t *testing.T) {
+	// Spotify routes the data round-trip through provider.DoWithRetry, which
+	// retries 429 responses up to DefaultRetryPolicy().MaxAttempts (3) times.
+	//
+	// The token request happens BEFORE the data request, so the token endpoint
+	// must return a valid 200 + token JSON or the test fails before it ever
+	// reaches the 429 path. Only the data endpoint returns 429.
+	//
+	// The "Retry-After: 0" header makes DoWithRetry's computed wait zero, so the
+	// real clock never sleeps and the test runs without artificial delay while
+	// still exercising the full retry loop.
+	var dataHits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/token" {
+			// Token request must succeed first.
+			w.Write(loadFixture(t, "token_response.json"))
+			return
+		}
+		// All other (data) paths: count the hit and force a 429 with a
+		// zero-second Retry-After so the backoff wait is instant.
+		dataHits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL, srv.URL+"/token", map[provider.ProviderName]string{
+		provider.NameSpotify: validCredentialsJSON(),
+	})
+
+	_, err := a.GetArtist(context.Background(), "4Z8W4fKeB5YxbusRsdQVPb")
+	if err == nil {
+		t.Fatal("expected error after exhausting 429 retries")
+	}
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Errorf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	if got := dataHits.Load(); got != 3 {
+		t.Errorf("expected data endpoint hit 3 times (MaxAttempts=3), got %d", got)
 	}
 }
 

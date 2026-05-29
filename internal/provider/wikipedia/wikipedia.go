@@ -151,12 +151,6 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 			candidateTitle = enTitle
 		case qid != "":
 			// Look up the localized sitelink via Wikidata.
-			if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-				return nil, &provider.ErrProviderUnavailable{
-					Provider: provider.NameWikipedia,
-					Cause:    fmt.Errorf("rate limiter: %w", err),
-				}
-			}
 			localized, err := a.resolveToLocalizedTitle(ctx, qid, lang)
 			if err != nil {
 				var notFound *provider.ErrNotFound
@@ -186,12 +180,6 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		}
 
 		// Fetch the article intro extract for biography text.
-		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-			return nil, &provider.ErrProviderUnavailable{
-				Provider: provider.NameWikipedia,
-				Cause:    fmt.Errorf("rate limiter: %w", err),
-			}
-		}
 		actionEP := a.actionEndpointForLang(lang)
 		gotName, gotExtract, err := a.fetchExtractFrom(ctx, actionEP, candidateTitle)
 		if err != nil {
@@ -250,15 +238,8 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	// so we always use the English endpoint even when the biography came from a
 	// localized wiki. This is best-effort: if it fails, we still return the
 	// biography. Context cancellation is propagated because it signals the
-	// caller wants to stop entirely.
-	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		a.logger.Warn("rate limiter wait failed for wikitext fetch",
-			slog.String("title", title), slog.Any("error", err))
-		return meta, nil
-	}
+	// caller wants to stop entirely (handled by the fetchWikitext error check
+	// below, which now owns the limiter wait via DoWithRetry).
 	wikitext, err := a.fetchWikitext(ctx, title)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -342,36 +323,59 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 	return nil, nil
 }
 
+// doGet issues a single GET to reqURL, retrying on a rate-limited (429) or
+// unavailable (503) response via provider.DoWithRetry. The limiter wait lives
+// inside each attempt so retries still respect the per-provider budget. accept,
+// when non-empty, sets the Accept header (the User-Agent is always set). The
+// caller owns closing the returned body and handling every non-rate-limited
+// status (200/404/other); DoWithRetry consumes 429/503.
+func (a *Adapter) doGet(ctx context.Context, reqURL, accept string) (*http.Response, error) {
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikipedia,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikipedia,
+				Cause:    fmt.Errorf("creating request: %w", err),
+			}
+		}
+		req.Header.Set("User-Agent", userAgent)
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		return a.client.Do(req)
+	}
+
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameWikipedia, provider.DefaultRetryPolicy(), do)
+	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
+		return nil, &provider.ErrProviderUnavailable{Provider: provider.NameWikipedia, Cause: err}
+	}
+	return resp, nil
+}
+
 // TestConnection verifies connectivity to the Wikipedia Action API, the
 // Wikidata SPARQL endpoint, and the Wikidata entity API, since GetArtist
 // depends on all three services for MBID, Q-ID, and article title lookups.
 func (a *Adapter) TestConnection(ctx context.Context) error {
 	// Probe 1: Wikipedia Action API
-	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-		return &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	params := url.Values{
 		"action": {"query"},
 		"meta":   {"siteinfo"},
 		"siprop": {"general"},
 		"format": {"json"},
 	}
-	wikiReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		a.actionEndpoint+"?"+params.Encode(), http.NoBody)
+	wikiResp, err := a.doGet(ctx, a.actionEndpoint+"?"+params.Encode(), "")
 	if err != nil {
 		return err
-	}
-	wikiReq.Header.Set("User-Agent", userAgent)
-	wikiResp, err := a.client.Do(wikiReq)
-	if err != nil {
-		return &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("wikipedia Action API: %w", err),
-		}
 	}
 	defer wikiResp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	_, _ = io.Copy(io.Discard, wikiResp.Body)
@@ -383,30 +387,13 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	}
 
 	// Probe 2: Wikidata SPARQL endpoint
-	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-		return &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	sparqlQuery := url.Values{
 		"query":  {`ASK { wd:Q5 wdt:P31 wd:Q16521 }`},
 		"format": {"json"},
 	}
-	sparqlReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		a.wikidataEndpoint+"?"+sparqlQuery.Encode(), http.NoBody)
+	sparqlResp, err := a.doGet(ctx, a.wikidataEndpoint+"?"+sparqlQuery.Encode(), "application/sparql-results+json")
 	if err != nil {
 		return err
-	}
-	sparqlReq.Header.Set("User-Agent", userAgent)
-	sparqlReq.Header.Set("Accept", "application/sparql-results+json")
-	sparqlResp, err := a.client.Do(sparqlReq)
-	if err != nil {
-		return &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("wikidata SPARQL: %w", err),
-		}
 	}
 	defer sparqlResp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	_, _ = io.Copy(io.Discard, sparqlResp.Body)
@@ -418,31 +405,15 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	}
 
 	// Probe 3: Wikidata entity API (used for Q-ID sitelink resolution)
-	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-		return &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	entityParams := url.Values{
 		"action": {"wbgetentities"},
 		"ids":    {"Q5"},
 		"props":  {"sitelinks"},
 		"format": {"json"},
 	}
-	entityReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		a.wikidataAPIEndpoint+"?"+entityParams.Encode(), http.NoBody)
+	entityResp, err := a.doGet(ctx, a.wikidataAPIEndpoint+"?"+entityParams.Encode(), "")
 	if err != nil {
 		return err
-	}
-	entityReq.Header.Set("User-Agent", userAgent)
-	entityResp, err := a.client.Do(entityReq)
-	if err != nil {
-		return &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("wikidata entity API: %w", err),
-		}
 	}
 	defer entityResp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	_, _ = io.Copy(io.Discard, entityResp.Body)
@@ -462,21 +433,9 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 func (a *Adapter) resolveToTitleAndQID(ctx context.Context, id string) (string, string, error) {
 	switch {
 	case provider.IsUUID(id):
-		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-			return "", "", &provider.ErrProviderUnavailable{
-				Provider: provider.NameWikipedia,
-				Cause:    fmt.Errorf("rate limiter: %w", err),
-			}
-		}
 		return a.resolveFromMBID(ctx, id)
 
 	case isQID(id):
-		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-			return "", "", &provider.ErrProviderUnavailable{
-				Provider: provider.NameWikipedia,
-				Cause:    fmt.Errorf("rate limiter: %w", err),
-			}
-		}
 		title, err := a.resolveFromQID(ctx, id)
 		if err != nil {
 			return "", "", err
@@ -547,24 +506,11 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, str
 	}
 	reqURL := a.wikidataEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return "", "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("creating SPARQL request: %w", err),
-		}
-	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/sparql-results+json")
-
 	a.logger.Debug("resolving MBID to Wikipedia title via Wikidata", slog.String("mbid", mbid))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.doGet(ctx, reqURL, "application/sparql-results+json")
 	if err != nil {
-		return "", "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    err,
-		}
+		return "", "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
@@ -638,24 +584,12 @@ func (a *Adapter) resolveToLocalizedTitle(ctx context.Context, qid, lang string)
 	}
 	reqURL := a.wikidataAPIEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("creating Wikidata API request: %w", err),
-		}
-	}
-	req.Header.Set("User-Agent", userAgent)
-
 	a.logger.Debug("resolving localized Wikipedia title via Wikidata sitelinks",
 		slog.String("qid", qid), slog.String("lang", lang))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.doGet(ctx, reqURL, "")
 	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    err,
-		}
+		return "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
@@ -708,23 +642,11 @@ func (a *Adapter) resolveFromQID(ctx context.Context, qid string) (string, error
 	}
 	reqURL := a.wikidataAPIEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("creating Wikidata API request: %w", err),
-		}
-	}
-	req.Header.Set("User-Agent", userAgent)
-
 	a.logger.Debug("resolving Q-ID to Wikipedia title via Wikidata sitelinks", slog.String("qid", qid))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.doGet(ctx, reqURL, "")
 	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    err,
-		}
+		return "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
@@ -808,23 +730,11 @@ func (a *Adapter) fetchExtractFrom(ctx context.Context, endpoint, title string) 
 	}
 	reqURL := endpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return "", "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("creating extract request: %w", err),
-		}
-	}
-	req.Header.Set("User-Agent", userAgent)
-
 	a.logger.Debug("fetching Wikipedia extract", slog.String("title", title))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.doGet(ctx, reqURL, "")
 	if err != nil {
-		return "", "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    err,
-		}
+		return "", "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
@@ -881,23 +791,11 @@ func (a *Adapter) fetchWikitext(ctx context.Context, title string) (string, erro
 	}
 	reqURL := a.actionEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("creating wikitext request: %w", err),
-		}
-	}
-	req.Header.Set("User-Agent", userAgent)
-
 	a.logger.Debug("fetching Wikipedia wikitext", slog.String("title", title))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.doGet(ctx, reqURL, "")
 	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    err,
-		}
+		return "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 

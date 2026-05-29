@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -618,6 +619,97 @@ func TestGetArtist_LangPrefPassedToSPARQL(t *testing.T) {
 	}
 	if !strings.Contains(capturedQuery, "fr") {
 		t.Errorf("SPARQL query does not include 'fr' lang preference; query: %s", capturedQuery)
+	}
+}
+
+// TestExecuteSPARQLRetriesOn429 verifies that executeSPARQL routes through
+// provider.DoWithRetry so that HTTP 429 responses trigger bounded retries.
+//
+// The server always replies with "Retry-After: 0" alongside status 429. The
+// zero-second Retry-After makes DoWithRetry's backoff wait elapse immediately,
+// so the real clock never actually sleeps and the test stays fast. Because the
+// server never recovers, DoWithRetry exhausts its budget and the call surfaces
+// *provider.ErrProviderUnavailable. The hit counter proves the retry loop is
+// bounded at DefaultRetryPolicy's MaxAttempts (3), not infinite.
+func TestExecuteSPARQLRetriesOn429(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		// Retry-After: 0 means DoWithRetry waits zero time between attempts.
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
+
+	// GetArtist routes through executeSPARQL for the retry-wired request path.
+	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error when server always returns 429")
+	}
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+
+	// DefaultRetryPolicy uses MaxAttempts=3, so the server must be hit exactly
+	// three times: retries are bounded, not unbounded.
+	if got := hits.Load(); got != 3 {
+		t.Errorf("expected exactly 3 requests (bounded retries), got %d", got)
+	}
+}
+
+func TestExecuteSPARQLWrapsTransportError(t *testing.T) {
+	// A connection-level failure (the endpoint is already closed) is not a
+	// 429/503, so DoWithRetry returns the raw transport error. executeSPARQL must
+	// wrap it in *provider.ErrProviderUnavailable for callers.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, url)
+	useLoopbackTestClient(a)
+
+	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestExecuteSPARQLHonorsCanceledContext(t *testing.T) {
+	// A canceled context makes the in-closure limiter wait fail before any HTTP
+	// call, surfacing as *provider.ErrProviderUnavailable from the rate-limiter
+	// branch. The endpoint should never be contacted.
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := a.GetArtist(ctx, "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	var unavailable *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("expected 0 requests (limiter rejected before HTTP), got %d", got)
 	}
 }
 

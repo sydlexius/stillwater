@@ -3,6 +3,7 @@ package musicbrainz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -665,26 +666,44 @@ func (a *Adapter) unmarshalWithFallback(ctx context.Context, base, pathAndQuery 
 	return nil
 }
 
-// doRequest executes an HTTP GET with rate limiting and standard headers.
+// doRequest executes an HTTP GET with rate limiting and standard headers,
+// backing off and retrying on a rate-limited (429) or unavailable (503)
+// response via provider.DoWithRetry.
 func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) {
-	if err := a.limiter.Wait(ctx, provider.NameMusicBrainz); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameMusicBrainz,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
+	// do performs one HTTP attempt. The limiter wait lives inside it so that
+	// every retry triggered by DoWithRetry still respects the per-provider
+	// request budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameMusicBrainz); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameMusicBrainz,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
 		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("User-Agent", userAgent())
+		req.Header.Set("Accept", "application/json")
+
+		a.logger.Debug("requesting", slog.String("url", reqURL))
+		return a.client.Do(req)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+	// DoWithRetry honors a 429 Retry-After (and backs off conservatively on a
+	// 503) before giving up. It returns the first non-rate-limited response, so
+	// the status handling below only sees 200/404/other.
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameMusicBrainz, provider.DefaultRetryPolicy(), do)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("User-Agent", userAgent())
-	req.Header.Set("Accept", "application/json")
-
-	a.logger.Debug("requesting", slog.String("url", reqURL))
-
-	resp, err := a.client.Do(req)
-	if err != nil {
+		// Either a transport error from client.Do or an exhausted-retry error
+		// (already an *ErrProviderUnavailable). Wrap the former so callers still
+		// see a provider-unavailable error.
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameMusicBrainz,
 			Cause:    err,
@@ -697,15 +716,6 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 		return nil, &provider.ErrNotFound{
 			Provider: provider.NameMusicBrainz,
 			ID:       reqURL,
-		}
-	}
-
-	if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, &provider.ErrProviderUnavailable{
-			Provider:   provider.NameMusicBrainz,
-			Cause:      fmt.Errorf("HTTP %d", resp.StatusCode),
-			RetryAfter: 2 * time.Second,
 		}
 	}
 

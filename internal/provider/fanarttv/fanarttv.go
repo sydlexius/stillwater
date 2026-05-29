@@ -78,23 +78,33 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 		return nil, &provider.ErrAuthRequired{Provider: provider.NameFanartTV}
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameFanartTV); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameFanartTV,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	reqURL := fmt.Sprintf("%s/%s?api_key=%s", a.baseURL, mbid, apiKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameFanartTV); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameFanartTV,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		a.logger.Debug("requesting images", slog.String("mbid", mbid))
+		return a.client.Do(req)
 	}
 
-	a.logger.Debug("requesting images", slog.String("mbid", mbid))
-
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503, so the status handling below only sees
+	// 200/404/other.
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameFanartTV, provider.DefaultRetryPolicy(), do)
 	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameFanartTV,
 			Cause:    err,

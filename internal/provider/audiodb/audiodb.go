@@ -3,6 +3,7 @@ package audiodb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -79,13 +80,6 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		return nil, err
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameAudioDB); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameAudioDB,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	reqURL := a.buildSearchURL(apiKey, name)
 	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
@@ -125,13 +119,6 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		return nil, err
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameAudioDB); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameAudioDB,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	var reqURL string
 	if isNumericID(id) {
 		reqURL = a.buildDirectLookupURL(apiKey, id)
@@ -158,13 +145,6 @@ func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageRes
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	if err := a.limiter.Wait(ctx, provider.NameAudioDB); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameAudioDB,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
 	}
 
 	var reqURL string
@@ -240,18 +220,34 @@ func (a *Adapter) buildLookupURL(apiKey, mbid string) string {
 // fetchArtists performs an HTTP GET and parses the artist list from the response.
 // Premium keys are sent in the X-API-KEY header (v2); the free key is embedded in the URL (v1).
 func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string) ([]AudioDBArtist, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	if isPremiumKey(apiKey) {
-		req.Header.Set("X-API-KEY", apiKey)
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameAudioDB); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameAudioDB,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		if isPremiumKey(apiKey) {
+			req.Header.Set("X-API-KEY", apiKey)
+		}
+		a.logger.Debug("requesting", slog.String("url", reqURL))
+		return a.client.Do(req)
 	}
 
-	a.logger.Debug("requesting", slog.String("url", reqURL))
-
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503, so the status handling below only sees
+	// 200/other.
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameAudioDB, provider.DefaultRetryPolicy(), do)
 	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameAudioDB,
 			Cause:    err,

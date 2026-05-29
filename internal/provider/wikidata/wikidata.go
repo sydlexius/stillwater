@@ -3,6 +3,7 @@ package wikidata
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -104,13 +105,6 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: id}
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikidata,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
 	langPrefs := provider.MetadataLanguages(ctx)
 	query := buildArtistQuery(id, langPrefs)
 	bindings, err := a.executeSPARQL(ctx, query)
@@ -141,13 +135,6 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	// Validate MBID format before interpolating into SPARQL query to prevent injection.
 	if !provider.IsUUID(mbid) {
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
-	}
-
-	if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikidata,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
 	}
 
 	query := buildImageQuery(mbid)
@@ -201,13 +188,6 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	var results []provider.ImageResult
 	var hadResolveErrors bool
 	for _, e := range entries {
-		if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
-			return nil, &provider.ErrProviderUnavailable{
-				Provider: provider.NameWikidata,
-				Cause:    fmt.Errorf("rate limiter: %w", err),
-			}
-		}
-
 		info, err := a.resolveCommonsURL(ctx, e.filename)
 		if err != nil {
 			hadResolveErrors = true
@@ -258,17 +238,33 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 	}
 	reqURL := a.endpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikidata,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
+		req.Header.Set("Accept", "application/sparql-results+json")
+		a.logger.Debug("executing SPARQL query")
+		return a.client.Do(req)
 	}
-	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
-	req.Header.Set("Accept", "application/sparql-results+json")
 
-	a.logger.Debug("executing SPARQL query")
-
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503, so the status handling below only sees
+	// 200/other.
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameWikidata, provider.DefaultRetryPolicy(), do)
 	if err != nil {
+		var unavailable *provider.ErrProviderUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, err
+		}
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikidata,
 			Cause:    err,
@@ -482,15 +478,27 @@ func (a *Adapter) resolveCommonsURL(ctx context.Context, filename string) (*Comm
 	}
 	reqURL := a.commonsEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating commons request: %w", err)
+	// do performs one HTTP attempt. The limiter wait lives inside it so each
+	// retry triggered by DoWithRetry still respects the per-provider budget.
+	do := func(ctx context.Context) (*http.Response, error) {
+		if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikidata,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating commons request: %w", err)
+		}
+		req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
+		a.logger.Debug("resolving commons image", slog.String("filename", filename))
+		return a.client.Do(req)
 	}
-	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 
-	a.logger.Debug("resolving commons image", slog.String("filename", filename))
-
-	resp, err := a.client.Do(req)
+	// DoWithRetry consumes 429/503; the prefix is preserved so callers still
+	// recognize commons-resolution failures (which are logged, not fatal).
+	resp, err := provider.DoWithRetry(ctx, provider.SystemClock(), provider.NameWikidata, provider.DefaultRetryPolicy(), do)
 	if err != nil {
 		return nil, fmt.Errorf("commons request: %w", err)
 	}
