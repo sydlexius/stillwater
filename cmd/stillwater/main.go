@@ -770,6 +770,11 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// runs -- fixers fall back to direct orchestrator calls -- but every
 	// rule that needs the same provider data triggers its own fetch.
 	a.pipeline.SetOrchestrator(a.orchestrator)
+	// Issue #1730: size the per-pass artist worker pool. Default 2 overlaps
+	// two artists' fetch latency; 1 forces the original strictly-sequential
+	// walk. The shared per-provider rate limiter bounds total throughput
+	// regardless of this value.
+	a.pipeline.SetArtistWorkers(cfg.RuleEngine.ArtistWorkers)
 
 	a.bulkService = rule.NewBulkService(db)
 	a.bulkExecutor = rule.NewBulkExecutor(a.bulkService, a.artistService, a.orchestrator, a.pipeline, a.nfoSnapshotService, a.platformService, a.expectedWrites, a.publisher, logger)

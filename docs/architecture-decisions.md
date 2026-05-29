@@ -16,6 +16,8 @@ One per metadata provider, created at application startup, shared across all han
 
 The reactive complement to the limiter is a shared, context-aware retry helper (`DoWithRetry` in `internal/provider/retry.go`) that wraps each provider HTTP round-trip. It honors Retry-After (delta-seconds and HTTP-date) with a jittered, bounded exponential fallback, and applies distinct policies for 429 (more attempts) and 503 (fewer, for a possibly-unhealthy server).
 
+These singleton limiters are also what make the rule engine's artist-level parallelism safe (`SW_RULE_ENGINE_ARTIST_WORKERS`, default 2; set to 1 for the original sequential walk). The bounded worker pool in `walkScopedArtists` overlaps the per-artist provider-fetch latency of independent artists, but because every request still passes through the same FIFO-fair limiter, more workers cannot exceed any provider's request budget; they only hide latency.
+
 ## Adaptive batched transactions
 
 Small batches (< 100): single transaction. Medium (100-1000): transactions of 50. Large (1000+): transactions of 25 with short sleep. User actions get priority over background jobs.

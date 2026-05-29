@@ -27,6 +27,7 @@ type Config struct {
 	Backup     BackupConfig     `yaml:"backup" toml:"backup"`
 	Logging    LoggingConfig    `yaml:"logging" toml:"logging"`
 	ACME       ACMEConfig       `yaml:"acme" toml:"acme"`
+	RuleEngine RuleEngineConfig `yaml:"rule_engine" toml:"rule_engine"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -141,6 +142,19 @@ type LoggingConfig struct {
 	Format string `yaml:"format" toml:"format" env:"SW_LOG_FORMAT" default:"json" desc:"Log output format. Use json for log aggregators or text for friendlier console output."`
 }
 
+// RuleEngineConfig holds rule-engine execution settings.
+type RuleEngineConfig struct {
+	// ArtistWorkers bounds how many artists the rule engine evaluates and
+	// fixes concurrently during a RunAll/RunRule pass. The default of 2
+	// overlaps two artists' provider-fetch latency for a conservative
+	// speedup; set it to 1 to force the original strictly-sequential walk,
+	// or higher to overlap more. Concurrency is always bounded by the shared
+	// per-provider rate limiter (internal/provider/ratelimit.go), so more
+	// workers never exceed any provider's request budget -- they only hide
+	// fetch latency. Issue #1730.
+	ArtistWorkers int `yaml:"artist_workers" toml:"artist_workers" env:"SW_RULE_ENGINE_ARTIST_WORKERS" default:"2" desc:"Number of artists the rule engine processes concurrently during a Run Rules pass. Default 2. Set to 1 for the original strictly-sequential walk; higher values overlap more per-artist provider fetches. The shared per-provider rate limiter still caps total request throughput. Must be a positive integer; non-positive or non-numeric values are silently ignored."`
+}
+
 // Default returns a Config with sensible defaults.
 func Default() *Config {
 	return &Config{
@@ -177,6 +191,9 @@ func Default() *Config {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		RuleEngine: RuleEngineConfig{
+			ArtistWorkers: 2,
 		},
 	}
 }
@@ -265,6 +282,9 @@ const scaffoldTOML = `# Stillwater configuration
 [logging]
 # level = "info"
 # format = "json"
+
+[rule_engine]
+# artist_workers = 2
 `
 
 // EnsureScaffold writes a default config.toml at path if the file does not
@@ -510,6 +530,9 @@ func (c *Config) loadFromEnv() error {
 		// Logging
 		{Key: "SW_LOG_LEVEL", Apply: setString(&c.Logging.Level)},
 		{Key: "SW_LOG_FORMAT", Apply: setString(&c.Logging.Format)},
+		// Rule engine (lenient int; non-positive values are silently ignored,
+		// matching the backup retention/interval knobs).
+		{Key: "SW_RULE_ENGINE_ARTIST_WORKERS", Apply: setIntPositive(&c.RuleEngine.ArtistWorkers)},
 		// TLS -- SW_TLS_CERT_FILE/KEY_FILE/PORT have behavior today; the
 		// remaining entries keep the env-var surface stable so future
 		// milestones only add behavior, not new env knobs.

@@ -10,6 +10,7 @@ contributing/architecture/index#architecture-overview
 contributing/architecture/index#how-a-typical-scan-flows-end-to-end
 contributing/architecture/index#package-map
 contributing/architecture/index#system-topology
+contributing/architecture/rule-engine#artist-level-concurrency
 contributing/architecture/rule-engine#deferred-resolved-rows-and-the-persistence-chain
 contributing/architecture/rule-engine#fix-all-dispatch-flow
 contributing/architecture/rule-engine#pass-level-provider-cache

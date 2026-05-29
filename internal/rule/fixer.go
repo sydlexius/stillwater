@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
@@ -164,6 +166,15 @@ type Pipeline struct {
 	// *provider.Orchestrator constructor.
 	orchestratorMu sync.RWMutex
 	orchestrator   EvalProvider
+
+	// artistWorkersMu guards artistWorkers. SetArtistWorkers is wired from
+	// main.go after construction (mirrors SetOrchestrator/SetWriteGate so the
+	// NewPipeline signature stays stable for the wide set of test call sites).
+	// walkScopedArtists reads it once per pass to size its worker pool, so a
+	// read lock guards against a concurrent setter. A value <= 1 selects the
+	// original strictly-sequential walk; > 1 enables a bounded pool. Issue #1730.
+	artistWorkersMu sync.RWMutex
+	artistWorkers   int
 }
 
 // SetOrchestrator installs (or replaces) the EvalProvider the pipeline
@@ -245,6 +256,35 @@ func (p *Pipeline) getHistoryService() *artist.HistoryService {
 	return p.historyService
 }
 
+// SetArtistWorkers configures how many artists RunAll/RunRule passes evaluate
+// concurrently (issue #1730). main.go wires this from
+// config.RuleEngine.ArtistWorkers after construction (default 2). A value
+// <= 1 preserves the original strictly-sequential walk; a higher value caps
+// the bounded worker pool walkScopedArtists builds. The shared per-provider
+// rate limiter still bounds total request throughput, so raising this only
+// overlaps per-artist fetch latency.
+//
+// Setter form (rather than a NewPipeline parameter) keeps the constructor
+// signature stable for the wide set of existing test call sites.
+func (p *Pipeline) SetArtistWorkers(n int) {
+	p.artistWorkersMu.Lock()
+	p.artistWorkers = n
+	p.artistWorkersMu.Unlock()
+}
+
+// getArtistWorkers returns the configured worker count under the read lock,
+// normalized so callers can treat the result as "at least 1". A stored value
+// of 0 (never set) or any negative value collapses to 1, i.e. sequential.
+func (p *Pipeline) getArtistWorkers() int {
+	p.artistWorkersMu.RLock()
+	n := p.artistWorkers
+	p.artistWorkersMu.RUnlock()
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 // recordRuleFixHistory emits a single Recent Activity entry for a successful
 // auto-fix. The entry uses the canonical "rule:<rule_id>" source and a
 // dedicated "rule_fix" pseudo-field name so the existing activity feed UI:
@@ -317,7 +357,12 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 	}
 	result.ArtistsTotal = total
 
-	processArtist := func(a *artist.Artist) bool {
+	processArtist := func(a *artist.Artist) (artistContribution, bool) {
+		// contrib accumulates this artist's counters/results locally instead
+		// of mutating the shared run-level result. walkScopedArtists merges
+		// it (under a mutex when the pool runs >1 worker), which keeps the
+		// per-artist hot path lock-free. Issue #1730.
+		var contrib artistContribution
 		var perRuleMetadata bool
 		var perRuleImages []string
 		var perRuleDirty bool
@@ -349,7 +394,7 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
 			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
-			return false
+			return contrib, false
 		}
 
 		for j := range eval.Violations {
@@ -357,7 +402,7 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			if v.RuleID != ruleID {
 				continue
 			}
-			result.ViolationsFound++
+			contrib.violationsFound++
 
 			// Manual mode: discover candidates but never auto-apply.
 			// Only invoke fixers that support candidate discovery
@@ -384,8 +429,8 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 
 				v.Config.DiscoveryOnly = true
 				fr := p.attemptFix(ctx, a, v)
-				result.Results = append(result.Results, *fr)
-				result.FixesAttempted++
+				contrib.results = append(contrib.results, *fr)
+				contrib.fixesAttempted++
 
 				status := ViolationStatusOpen
 				if len(fr.Candidates) > 0 {
@@ -428,8 +473,8 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			}
 
 			fr := p.attemptFix(ctx, a, v)
-			result.Results = append(result.Results, *fr)
-			result.FixesAttempted++
+			contrib.results = append(contrib.results, *fr)
+			contrib.fixesAttempted++
 
 			// Issue #983: defer the resolved upsert until AFTER
 			// updateHealthScore persists the mutated artist. Writing
@@ -439,7 +484,7 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			// unchanged. Stash the resolved rows here and upsert them
 			// only once we know the artist row landed.
 			if fr.Fixed {
-				result.FixesSucceeded++
+				contrib.fixesSucceeded++
 				perRuleDirty = true
 				if fr.ImageType != "" {
 					perRuleImages = append(perRuleImages, fr.ImageType)
@@ -527,13 +572,13 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			}
 		}
 		p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
-		return persistOK
+		return contrib, persistOK
 	}
 
 	// Single-rule run does not cover every enabled rule, so leave
 	// rules_evaluated_at untouched. Otherwise running rule A would mark
 	// the artist clean and rule B's RunRule pass would silently skip it.
-	processed, err := p.walkScopedArtists(ctx, scope, false, processArtist)
+	processed, err := p.walkScopedArtists(ctx, scope, false, result, processArtist)
 	if err != nil {
 		return nil, err
 	}
@@ -1006,6 +1051,10 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 //nolint:gocognit // Full-sweep pipeline (cog 77): rule registry walk, per-rule artist iteration with scope-aware source, evaluate-fix-persist + #983 deferred resolved-status writes, automation-mode dispatch, per-rule and global counters; the rule-major iteration order is required so that all violations of a given rule see a coherent before/after view of the artist within a single pipeline pass. Refactor tracked in #1542.
 func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult, error) {
 	result := &RunResult{Scope: scope.String()}
+	// passStart drives the pass_wall_clock_ms telemetry emitted at the end so
+	// the artist-worker setting (#1730) can be evaluated against real
+	// end-to-end pass duration.
+	passStart := time.Now()
 
 	total, totalErr := p.artistService.CountEligibleArtists(ctx)
 	if totalErr != nil {
@@ -1036,10 +1085,11 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		defer p.logPassCounters(passCtx)
 	}
 
-	// Cache rule lookups to avoid repeated DB queries across artists.
-	ruleCache := map[string]*Rule{}
-
-	processArtist := func(a *artist.Artist) bool {
+	processArtist := func(a *artist.Artist) (artistContribution, bool) {
+		// contrib accumulates this artist's counters/results locally instead
+		// of mutating the shared run-level result, so walkScopedArtists can
+		// run artists concurrently and merge under a mutex. Issue #1730.
+		var contrib artistContribution
 		var perArtistMetadata bool
 		var perArtistImages []string
 		var perArtistDirty bool
@@ -1067,23 +1117,21 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
 			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
-			return false
+			return contrib, false
 		}
 
 		for j := range eval.Violations {
 			v := &eval.Violations[j]
-			result.ViolationsFound++
+			contrib.violationsFound++
 
-			// Look up rule to determine automation mode.
-			r, ok := ruleCache[v.RuleID]
-			if !ok {
-				r, err = p.ruleService.GetByID(ctx, v.RuleID)
-				if err != nil {
-					p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-					persistOK = false
-					continue
-				}
-				ruleCache[v.RuleID] = r
+			// Look up rule to determine automation mode. getCachedRule uses
+			// the pipeline-level ruleCache (RWMutex-guarded), so it is safe
+			// to share across concurrent artist workers. Issue #1730.
+			r, lookupErr := p.getCachedRule(ctx, v.RuleID)
+			if lookupErr != nil {
+				p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", lookupErr)
+				persistOK = false
+				continue
 			}
 
 			// Manual mode: discover candidates but never auto-apply.
@@ -1110,8 +1158,8 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 
 				v.Config.DiscoveryOnly = true
 				fr := p.attemptFix(ctx, a, v)
-				result.Results = append(result.Results, *fr)
-				result.FixesAttempted++
+				contrib.results = append(contrib.results, *fr)
+				contrib.fixesAttempted++
 
 				status := ViolationStatusOpen
 				if len(fr.Candidates) > 0 {
@@ -1154,14 +1202,14 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 			}
 
 			fr := p.attemptFix(ctx, a, v)
-			result.Results = append(result.Results, *fr)
-			result.FixesAttempted++
+			contrib.results = append(contrib.results, *fr)
+			contrib.fixesAttempted++
 
 			// Issue #983: defer the resolved upsert until AFTER
 			// updateHealthScore persists the mutated artist. See the
 			// matching comment in RunRuleScoped.processArtist.
 			if fr.Fixed {
-				result.FixesSucceeded++
+				contrib.fixesSucceeded++
 				perArtistDirty = true
 				if fr.ImageType != "" {
 					perArtistImages = append(perArtistImages, fr.ImageType)
@@ -1238,13 +1286,13 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 			}
 		}
 		p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
-		return persistOK
+		return contrib, persistOK
 	}
 
 	// RunAll covers every enabled rule, so it owns rules_evaluated_at:
 	// after this pass the artist is fully up-to-date and falls out of
 	// the dirty set until the next mutation.
-	processed, err := p.walkScopedArtists(ctx, scope, true, processArtist)
+	processed, err := p.walkScopedArtists(ctx, scope, true, result, processArtist)
 	if err != nil {
 		return nil, err
 	}
@@ -1255,7 +1303,40 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		result.ArtistsSkipped = result.ArtistsTotal - processed
 	}
 
+	p.logRunSummary(scope, result, time.Since(passStart))
 	return result, nil
+}
+
+// logRunSummary emits the pass-level execution summary at Info once per
+// RunAllScoped invocation. Alongside the violation/fix counters it reports the
+// configured artist-worker count and the wall-clock duration so the #1730
+// parallelism setting can be evaluated from logs without a profiler. Per-artist
+// counters stay at Debug (see logEvalCounters); this is the single pass-level
+// line operators watch when tuning SW_RULE_ENGINE_ARTIST_WORKERS.
+func (p *Pipeline) logRunSummary(scope RunScope, result *RunResult, wallClock time.Duration) {
+	p.logger.Info("rule pass summary",
+		slog.String("scope", scope.String()),
+		slog.Int("artist_workers", p.getArtistWorkers()),
+		slog.Int("artists_processed", result.ArtistsProcessed),
+		slog.Int("artists_total", result.ArtistsTotal),
+		slog.Int("violations_found", result.ViolationsFound),
+		slog.Int("fixes_attempted", result.FixesAttempted),
+		slog.Int("fixes_succeeded", result.FixesSucceeded),
+		slog.Int64("pass_wall_clock_ms", wallClock.Milliseconds()),
+	)
+}
+
+// artistContribution holds the per-artist counters and fix results a single
+// processArtist invocation produces. Returning it (rather than mutating the
+// shared run-level *RunResult) is what lets walkScopedArtists evaluate
+// artists concurrently: the hot per-artist path touches only this local
+// struct, and the walker folds each contribution into the run result under a
+// single mutex. Issue #1730.
+type artistContribution struct {
+	violationsFound int
+	fixesAttempted  int
+	fixesSucceeded  int
+	results         []FixResult
 }
 
 // walkScopedArtists invokes fn for every artist that matches the requested
@@ -1285,22 +1366,93 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 // the protection against silent data loss flagged in the #698 review:
 // without the stricter bool, a transient DB error on a later step would
 // stamp the artist as evaluated and the dropped violation (or stale health
-// score) would be hidden until the next mutation.
+// score) would be hidden until the next mutation. fn also returns an
+// artistContribution carrying that artist's counters/results, which the
+// walker folds into result under a mutex.
 //
 // processed counts artists fn was actually invoked on (regardless of return
 // value), since both successes and failures consumed pipeline work.
 //
-//nolint:gocognit // Scope walker (cog 45): dirty/all/single-artist scopes with per-scope source enumeration (ListDirtyIDs vs ListEligible vs single ID) and per-artist evaluated-mark policy gated on fn outcome; the markEvaluated bool flips meaning per scope, which is the structural smell driving the cog score. Refactor tracked in #1551.
-func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEvaluated bool, fn func(a *artist.Artist) bool) (int, error) {
+// Concurrency (issue #1730): the configured artist-worker count sizes a
+// bounded pool. With workers == 1 the walk is exactly the original
+// strictly-sequential path. With workers > 1, artists are dispatched to an
+// errgroup whose SetLimit caps concurrency; the shared per-provider rate
+// limiter still bounds total request throughput, so more workers only overlap
+// per-artist fetch latency. One consequence is that result.Results is no
+// longer ordered by artist enumeration when workers > 1; callers that need a
+// stable order must sort.
+//
+//nolint:gocognit // Scope walker: dirty/all scope enumeration (ListDirtyIDs vs paginated List), per-artist evaluated-mark policy gated on fn outcome, plus the bounded-pool dispatch/merge/wait orchestration (#1730). The markEvaluated bool flipping meaning per scope is the structural smell driving the cog score. Refactor tracked in #1551.
+func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEvaluated bool, result *RunResult, fn func(a *artist.Artist) (artistContribution, bool)) (int, error) {
+	workers := p.getArtistWorkers()
+
+	// mu guards the shared run-level result and the processed counter while
+	// workers merge their contributions. With workers == 1 the lock is
+	// uncontended, so the sequential path pays only a cheap lock/unlock per
+	// artist.
+	var mu sync.Mutex
+	processed := 0
+
+	// runOne evaluates a single artist and folds its contribution into the
+	// run result. The merge (counter adds + slice append) happens under mu;
+	// markArtistEvaluated, which issues a DB write, runs outside the lock so
+	// workers do not serialize on it. markArtistEvaluated is safe to call
+	// concurrently (distinct artist IDs, idempotent, warn-logs on error).
+	runOne := func(a *artist.Artist, startedAt time.Time) {
+		contrib, ok := fn(a)
+		mu.Lock()
+		result.ViolationsFound += contrib.violationsFound
+		result.FixesAttempted += contrib.fixesAttempted
+		result.FixesSucceeded += contrib.fixesSucceeded
+		result.Results = append(result.Results, contrib.results...)
+		// Only count + stamp artists that actually completed evaluation. A
+		// false ok means fn bailed (engine error) and intentionally left the
+		// artist dirty for retry; counting it would over-report the
+		// "evaluated X of Y (Z unchanged)" summary and stamping
+		// rules_evaluated_at would hide the next run.
+		if ok {
+			processed++
+		}
+		mu.Unlock()
+		if ok && markEvaluated {
+			p.markArtistEvaluated(ctx, a, startedAt)
+		}
+	}
+
+	// With more than one worker, dispatch through an errgroup whose SetLimit
+	// caps concurrency. g.Go blocks until a slot frees, which also throttles
+	// the scope=all page advance so memory stays bounded on large libraries.
+	// fn never returns an error (failures are warn-logged and surface via the
+	// ok bool), so each g.Go returns nil and g.Wait cannot report an error.
+	var g *errgroup.Group
+	if workers > 1 {
+		g = &errgroup.Group{}
+		g.SetLimit(workers)
+	}
+	dispatch := func(a *artist.Artist, startedAt time.Time) {
+		if g == nil {
+			runOne(a, startedAt)
+			return
+		}
+		g.Go(func() error {
+			runOne(a, startedAt)
+			return nil
+		})
+	}
+	wait := func() {
+		if g != nil {
+			_ = g.Wait()
+		}
+	}
+
 	if scope == RunScopeIncremental {
 		ids, err := p.artistService.ListDirtyIDs(ctx)
 		if err != nil {
 			return 0, fmt.Errorf("listing dirty artists: %w", err)
 		}
-		processed := 0
 		for _, id := range ids {
 			if ctx.Err() != nil {
-				return processed, ctx.Err()
+				break
 			}
 			a, err := p.artistService.GetByID(ctx, id)
 			if err != nil {
@@ -1312,31 +1464,24 @@ func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEv
 			if a.IsExcluded || a.Locked {
 				continue
 			}
-			startedAt := time.Now().UTC()
-			ok := fn(a)
-			// Only count + stamp artists that actually completed
-			// evaluation. A false return means fn bailed (engine
-			// error) and intentionally left the artist dirty for
-			// retry; counting it as processed would over-report in
-			// the "evaluated X of Y (Z unchanged)" summary and
-			// stamping rules_evaluated_at would hide the next run.
-			if ok {
-				processed++
-				if markEvaluated {
-					p.markArtistEvaluated(ctx, a, startedAt)
-				}
-			}
+			dispatch(a, time.Now().UTC())
 		}
-		return processed, nil
+		// Drain in-flight workers before reading processed so the count and
+		// the merged result are final.
+		wait()
+		return processed, ctx.Err()
 	}
 
-	// scope=all: paginated walk over every artist, identical to the legacy path.
+	// scope=all: paginated walk over every artist, identical enumeration to
+	// the legacy path. Each &page[i] is a stable pointer into that page's
+	// backing array, so reassigning page on the next iteration does not
+	// disturb workers still processing a previous page.
 	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
-	processed := 0
 	for ctx.Err() == nil {
 		page, _, err := p.artistService.List(ctx, params)
 		if err != nil {
+			wait()
 			return processed, fmt.Errorf("listing artists: %w", err)
 		}
 		if len(page) == 0 {
@@ -1350,25 +1495,17 @@ func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEv
 			if a.IsExcluded || a.Locked {
 				continue
 			}
-			startedAt := time.Now().UTC()
-			ok := fn(a)
-			// See the scope=incremental branch above: failed
-			// evaluations must not count toward processed nor get
-			// their rules_evaluated_at stamped.
-			if ok {
-				processed++
-				if markEvaluated {
-					p.markArtistEvaluated(ctx, a, startedAt)
-				}
-			}
+			dispatch(a, time.Now().UTC())
 		}
 		if len(page) < pageSize {
 			break
 		}
 		params.Page++
 	}
-	// Propagate ctx.Err() if the walk exited because of cancellation so
-	// callers can distinguish a partial run from a clean completion.
+	// Drain in-flight workers, then propagate ctx.Err() if the walk exited
+	// because of cancellation so callers can distinguish a partial run from a
+	// clean completion.
+	wait()
 	return processed, ctx.Err()
 }
 
