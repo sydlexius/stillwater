@@ -60,11 +60,13 @@ jobs:
       - name: Lint OpenAPI spec
         run: npx --yes "@redocly/cli@${REDOCLY_CLI_VERSION}" lint internal/api/openapi.yaml
 
-      - name: Build API reference
-        run: |
-          mkdir -p docs/site/site/api
-          npx --yes "@redocly/cli@${REDOCLY_CLI_VERSION}" build-docs internal/api/openapi.yaml \
-            --output docs/site/site/api/index.html
+      - name: Build API reference (Scalar)
+        # Render the API reference with Scalar, reusing the exact vendored
+        # bundle + theme the app serves (internal/api/handlers_docs.go) so the
+        # published reference matches the in-app one: M55 palette, native
+        # light/dark toggle. The redocly lint step above still validates the
+        # spec; we no longer use redocly to render.
+        run: docs/site/build-api-reference.sh docs/site/site
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
