@@ -20,7 +20,7 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
 
     ---
 
-    All 22 built-in rules with their defaults, configurable knobs, and what each fix does.
+    All 24 built-in rules with their defaults, configurable knobs, and what each fix does.
 
     [Read more](rules-catalogue.md)
 

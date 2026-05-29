@@ -6,7 +6,7 @@ Prerequisites and instructions for building Stillwater from source.
 
 | Tool | Version | Purpose | Install |
 |------|---------|---------|---------|
-| Go | 1.26.1+ | Compiler and runtime | https://go.dev/dl/ |
+| Go | 1.26.3+ | Compiler and runtime | https://go.dev/dl/ |
 | templ | pinned in `go.mod` (`tool` directive) | HTML template code generation | No separate install; run via `go tool templ generate` |
 | Tailwind CSS | see `ARG TAILWIND_VERSION` in [`build/docker/Dockerfile`](https://github.com/sydlexius/stillwater/blob/main/build/docker/Dockerfile) | CSS build (standalone CLI) | See below |
 | Git | any | Version control | https://git-scm.com/ |

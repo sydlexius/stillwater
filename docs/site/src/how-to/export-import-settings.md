@@ -2,7 +2,7 @@
 description: Move your Stillwater configuration to another instance with an encrypted bundle.
 ---
 
-<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.4, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, UserExport, ImportOptions.AdminFallbackTokens, pbkdf2Iterations 600_000, transactional Import wrapping the per-section apply), internal/settingsio/users.go (id-first probe with ErrUserIDCollision halt), internal/settingsio/tokens.go (admin-fallback path), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import, POST /api/v1/setup/restore), internal/api/handlers_setup_restore.go (pre-admin OOBE restore handler with HasUsers gate + serialization mutex), web/templates/settings.templ maintenance tab (export passphrase + import upload + admin-fallback checkbox), web/templates/setup.templ (Start fresh / Restore from backup mode cards). -->
+<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.5, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, UserExport, ImportOptions.AdminFallbackTokens, pbkdf2Iterations 600_000, transactional Import wrapping the per-section apply), internal/settingsio/users.go (id-first probe with ErrUserIDCollision halt), internal/settingsio/tokens.go (admin-fallback path), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import, POST /api/v1/setup/restore), internal/api/handlers_setup_restore.go (pre-admin OOBE restore handler with HasUsers gate + serialization mutex), web/templates/settings.templ maintenance tab (export passphrase + import upload + admin-fallback checkbox), web/templates/setup.templ (Start fresh / Restore from backup mode cards). -->
 
 # Export and import settings
 
@@ -85,6 +85,10 @@ This path is gated on the receiving instance being truly empty (no admin user ye
 The bundle carries a schema version (the **envelope version**). Newer Stillwater versions can import older bundles -- newer fields are simply absent in the older payload, and the receiving instance leaves its defaults in place for those.
 
 You **cannot** import a newer bundle into an older Stillwater. If the bundle's envelope version is higher than what the receiving instance understands, the import fails with a clear error. Upgrade the receiving instance before attempting the import.
+
+The envelope versions and what each one added:
+
+--8<-- "docs/_generated/envelope-versions.md"
 
 ## What import does on conflict
 

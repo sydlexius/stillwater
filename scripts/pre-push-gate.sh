@@ -201,6 +201,13 @@ echo "=== Generated files ==="
 bash "$SCRIPT_DIR/check-generated.sh"
 
 echo ""
+echo "=== Doc facts ==="
+# Assert hand-written docs still cite code-derived facts (rule count, envelope
+# version, Go minimum, reverse-proxy body-size) correctly. Catches the silent
+# drift documented in #1711; the surrounding prose stays hand-written.
+bash "$SCRIPT_DIR/check-doc-facts.sh"
+
+echo ""
 echo "=== Mkdocs config YAML ==="
 # Catch syntax errors (incl. residual conflict markers, indentation slips,
 # duplicate keys) in the mkdocs config before CI's "Build site" job does.
