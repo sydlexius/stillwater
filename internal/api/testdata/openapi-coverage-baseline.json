@@ -15,7 +15,6 @@
   "deleteProviderKey",
   "deleteProviderMirror",
   "deleteWebhook",
-  "dismissViolation",
   "exportComplianceReport",
   "getAPIDocs",
   "getArtist",

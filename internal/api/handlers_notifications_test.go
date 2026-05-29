@@ -3,14 +3,51 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
+
+// TestDismissViolation_EmitsDashboardActionResolved verifies dismissing a
+// violation both preserves the same-tab HX-Trigger header AND re-emits
+// dashboard.action-resolved on the SSE bus so the action-queue badge updates
+// in other open tabs.
+func TestDismissViolation_EmitsDashboardActionResolved(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	bus := event.NewBus(logger, 16)
+	r.eventBus = bus
+	got := make(chan event.Event, 1)
+	bus.Subscribe(event.DashboardActionResolved, func(e event.Event) { got <- e })
+	go bus.Start()
+	defer bus.Stop()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/v1/dismiss", nil)
+	req.SetPathValue("id", "v1")
+	w := httptest.NewRecorder()
+	r.handleDismissViolation(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("dismiss expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if trig := w.Header().Get("HX-Trigger"); trig != "dashboard:action-resolved" {
+		t.Errorf("HX-Trigger = %q, want dashboard:action-resolved (same-tab preserved)", trig)
+	}
+	select {
+	case <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dashboard.action-resolved not published on dismiss")
+	}
+}
 
 func seedNotificationViolations(t *testing.T, svc *rule.Service) {
 	t.Helper()

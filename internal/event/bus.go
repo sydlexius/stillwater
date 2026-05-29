@@ -46,6 +46,29 @@ const (
 	// caller, so there is no other way for the operator to learn that the
 	// platform write failed.
 	ConnectionPushFailed Type = "connection.push_failed"
+
+	// --- M55 next-channel events (catalog defined by #1341) ---
+
+	// ActivityRecent carries a single recent-activity item for the next
+	// dashboard's live activity rail. Data: {ts, kind, text, artistId?}.
+	// Emission is wired by the dashboard work (#1334); the type and SSE
+	// mapping live here so that issue does not have to touch the catalog.
+	ActivityRecent Type = "activity.recent"
+	// SettingsChanged fires after a successful preferences/settings write so
+	// other open tabs can refetch or toast. Data: {sectionId, updatedBy, ts}.
+	SettingsChanged Type = "settings.changed"
+	// DashboardActionResolved mirrors the existing "dashboard:action-resolved"
+	// HTMX trigger onto the SSE bus so the action-queue badge updates across
+	// tabs, not just in the tab that resolved the action.
+	DashboardActionResolved Type = "dashboard.action-resolved"
+	// LogsLine and LogsThrottled are emitted by the dedicated logs stream
+	// (#1338 GET /api/v1/logs/stream), NOT broadcast through the main events
+	// hub (a raw log firehose must not fan out to every connected client).
+	// The types are cataloged here so #1338 can rely on the envelope shapes:
+	// LogsLine Data carries a structured log record; LogsThrottled Data
+	// carries {dropped, window} when the server-side rate limit sheds lines.
+	LogsLine      Type = "logs.line"
+	LogsThrottled Type = "logs.throttled"
 )
 
 // Event represents something that happened in the system.

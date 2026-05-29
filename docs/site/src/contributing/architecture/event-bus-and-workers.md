@@ -89,6 +89,10 @@ early-exit error path.
 | Filesystem watcher (`fsnotify` + poll fallback) | `internal/watcher/watcher.go` |
 | Scanner background goroutine and `Shutdown` | `internal/scanner/scanner.go` |
 
+The browser-facing contract for the SSE stream -- the endpoint, frame format,
+the full event catalog, and `Last-Event-ID` reconnect/replay semantics -- is
+documented in [SSE event catalog](sse-events.md).
+
 The scanner's own walk and the events it emits are detailed in
 [Scanner pipeline](scanner-pipeline.md).
 

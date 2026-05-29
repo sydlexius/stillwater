@@ -375,7 +375,7 @@
     "method": "POST",
     "path": "/notifications/{id}/dismiss",
     "handler": "handleDismissViolation",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "downloadBackup",

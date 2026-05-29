@@ -171,6 +171,7 @@ func (r *Router) handleDismissViolation(w http.ResponseWriter, req *http.Request
 	// Return empty HTML for HTMX hx-swap="outerHTML" to remove the row.
 	// Trigger dashboard counter refresh when called from the dashboard.
 	w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+	r.emitActionResolved()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 }
@@ -215,6 +216,7 @@ func (r *Router) handleBulkDismissViolations(w http.ResponseWriter, req *http.Re
 	r.InvalidateHealthCache()
 
 	w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+	r.emitActionResolved()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "%d", n) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable

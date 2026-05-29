@@ -22,6 +22,13 @@
   var maxRetryDelay = 30000; // cap at 30 seconds
   var retryTimer = null;
 
+  // maxSeenId is the highest SSE event id we have already surfaced. On
+  // reconnect the server replays buffered events (Last-Event-ID), some of
+  // which we already toasted; event ids are monotonic, so we only toast an
+  // id greater than this mark. Events missed while offline still carry ids
+  // above the mark, so their toasts fire exactly once.
+  var maxSeenId = 0;
+
   // wasDisconnected gates the reconnect-rehydrate path so the initial
   // page-load `connected` event does NOT fire status fetches (the page
   // already rendered with the latest in-flight state from server-side
@@ -49,7 +56,17 @@
   // name has no addEventListener registration, so each new server-side
   // event type must appear here or its sse:<name> CustomEvent never
   // fires.
-  var structuredEvents = ["operation.progress", "connection.push_failed"];
+  var structuredEvents = [
+    "operation.progress",
+    "connection.push_failed",
+    // M55 next-channel events. Cross-tab / dashboard signals that render via
+    // their own consumers (no generic toast). Each must be listed here or
+    // EventSource silently drops the frame and its sse:<name> CustomEvent
+    // never fires.
+    "settings.changed",
+    "activity.recent",
+    "dashboard.action-resolved"
+  ];
 
   function connect() {
     if (source) {
@@ -116,6 +133,21 @@
     };
   }
 
+  // noteSeenID advances the toast high-water mark from an SSE frame's id and
+  // reports whether the frame is a replay duplicate (id at or below the mark).
+  // Frames without a numeric id (the connected handshake) never dedupe.
+  function noteSeenID(evt) {
+    var evtId = evt && evt.lastEventId ? parseInt(evt.lastEventId, 10) : 0;
+    if (!evtId || isNaN(evtId)) {
+      return false;
+    }
+    if (evtId <= maxSeenId) {
+      return true;
+    }
+    maxSeenId = evtId;
+    return false;
+  }
+
   function handleEvent(eventType, evt) {
     var data;
     try {
@@ -124,16 +156,24 @@
       return;
     }
 
+    // Suppress toasts for events already surfaced before a reconnect: replayed
+    // frames carry ids at or below the high-water mark. We still advance the
+    // mark and refresh derived UI below so missed-while-offline events (ids
+    // above the mark) toast exactly once.
+    var isReplayDuplicate = noteSeenID(evt);
+
     // Show toast notification.
     var toastType = toastEvents[eventType];
     var message = data.message || data.title || "Event received";
 
-    if (toastType === "success" && typeof window.showSuccessToast === "function") {
-      window.showSuccessToast(message);
-    } else if (toastType === "warning" && typeof window.showWarningToast === "function") {
-      window.showWarningToast(message);
-    } else if (typeof window.showToast === "function") {
-      window.showToast(message);
+    if (!isReplayDuplicate) {
+      if (toastType === "success" && typeof window.showSuccessToast === "function") {
+        window.showSuccessToast(message);
+      } else if (toastType === "warning" && typeof window.showWarningToast === "function") {
+        window.showWarningToast(message);
+      } else if (typeof window.showToast === "function") {
+        window.showToast(message);
+      }
     }
 
     // Refresh the notification badge count. The badge is loaded via HTMX
@@ -162,6 +202,20 @@
       data = JSON.parse(evt.data);
     } catch (e) {
       return;
+    }
+
+    // Keep the toast high-water mark in step with the shared id sequence so a
+    // later toast event is not mistaken for a replay duplicate.
+    noteSeenID(evt);
+
+    // dashboard.action-resolved is the cross-tab counterpart of the
+    // "dashboard:action-resolved" HTMX trigger the resolving tab sets on its
+    // response. Re-dispatch that same body event here so the action-queue and
+    // notification badge refresh in other open tabs via the existing HTMX
+    // wiring (which listens for "dashboard:action-resolved from:body").
+    if (eventType === "dashboard.action-resolved") {
+      document.body.dispatchEvent(new CustomEvent("dashboard:action-resolved", {bubbles: true}));
+      refreshNotificationBadge();
     }
 
     // connection.push_failed is the user-visible surface from #1088; the
