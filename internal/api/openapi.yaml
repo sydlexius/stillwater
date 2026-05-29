@@ -12350,7 +12350,10 @@ paths:
         connected browser clients. Events include scan completions, rule
         violations, bulk operation results, artist updates, and the
         next-channel events settings.changed, dashboard.action-resolved, and
-        activity.recent.
+        activity.recent. Log events (`logs.line`, `logs.throttled`) are
+        deliberately NOT delivered on this stream -- they are reserved for a
+        dedicated logs stream so a high-volume log feed never fans out to every
+        connected tab.
 
         Each event carries a monotonic `id:` frame. The browser EventSource
         echoes the last id back as the `Last-Event-ID` header on reconnect; the

@@ -27,7 +27,7 @@
   // which we already toasted; event ids are monotonic, so we only toast an
   // id greater than this mark. Events missed while offline still carry ids
   // above the mark, so their toasts fire exactly once.
-  var maxSeenId = 0;
+  var maxSeenId = -1;
 
   // wasDisconnected gates the reconnect-rehydrate path so the initial
   // page-load `connected` event does NOT fire status fetches (the page
@@ -137,8 +137,13 @@
   // reports whether the frame is a replay duplicate (id at or below the mark).
   // Frames without a numeric id (the connected handshake) never dedupe.
   function noteSeenID(evt) {
-    var evtId = evt && evt.lastEventId ? parseInt(evt.lastEventId, 10) : 0;
-    if (!evtId || isNaN(evtId)) {
+    // Distinguish "no id" (empty Last-Event-ID, e.g. the connected handshake)
+    // from a valid id of 0: the replay contract only requires a monotonic
+    // decimal id, so 0 must advance the mark rather than fold into the no-id
+    // path. maxSeenId starts at -1 so a first id of 0 is not its own duplicate.
+    var rawId = evt && typeof evt.lastEventId === "string" ? evt.lastEventId : "";
+    var evtId = rawId === "" ? NaN : parseInt(rawId, 10);
+    if (isNaN(evtId)) {
       return false;
     }
     if (evtId <= maxSeenId) {
@@ -205,8 +210,10 @@
     }
 
     // Keep the toast high-water mark in step with the shared id sequence so a
-    // later toast event is not mistaken for a replay duplicate.
-    noteSeenID(evt);
+    // later toast event is not mistaken for a replay duplicate. Capture the
+    // flag: connection.push_failed renders a user-visible toast below and must
+    // not re-toast replayed frames on reconnect.
+    var isReplayDuplicate = noteSeenID(evt);
 
     // dashboard.action-resolved is the cross-tab counterpart of the
     // "dashboard:action-resolved" HTMX trigger the resolving tab sets on its
@@ -224,7 +231,7 @@
     // write actually failed. The connection name + error class come from
     // the publish.busNotifier event data; an optional artist context lets
     // the message disambiguate when N platforms failed for the same item.
-    if (eventType === "connection.push_failed" && typeof window.showToast === "function") {
+    if (eventType === "connection.push_failed" && !isReplayDuplicate && typeof window.showToast === "function") {
       var conn = (data && data.connection) || "";
       var errClass = (data && data.error_class) || "push failed";
       var artist = (data && data.artist_name) || "";

@@ -173,10 +173,18 @@ func (h *SSEHub) Replay(lastEventID string) (events []SSEEvent, boundary uint64,
 	defer h.mu.RUnlock()
 
 	boundary = h.nextID
-	live := h.buffer[h.head:]
+	// Apply the TTL cutoff at read time as well: head only advances on
+	// broadcast (recordEvent), so during an idle period a reconnect could
+	// otherwise be handed events older than the retention window.
+	start := h.head
+	now := h.now()
+	for start < len(h.buffer) && now.Sub(h.buffer[start].at) > h.bufTTL {
+		start++
+	}
+	live := h.buffer[start:]
 	if len(live) == 0 {
-		// Nothing buffered: the client is current only if it already saw the
-		// latest id we assigned.
+		// Nothing live: the client is current only if it already saw the
+		// latest id we assigned (anything older fell outside the window).
 		return nil, boundary, id == h.nextID
 	}
 

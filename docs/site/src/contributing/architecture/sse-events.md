@@ -74,12 +74,13 @@ notification on their own.
 own response: the resolving tab updates via HTMX, and the SSE event drives the
 same refresh in other open tabs.
 
-### Logs events (dedicated stream)
+### Logs events (planned dedicated stream)
 
-`logs.line` and `logs.throttled` are part of this catalog but are **not**
+`logs.line` and `logs.throttled` are reserved in this catalog but are **not**
 broadcast over `/api/v1/events/stream` -- a raw log firehose must not fan out to
-every connected tab. They are emitted on the dedicated logs stream
-(`GET /api/v1/logs/stream`). Their envelopes:
+every connected tab. They are **not emitted yet**: a dedicated logs stream
+(`GET /api/v1/logs/stream`) is planned in #1338 and will produce them. The event
+names and envelopes are documented here so #1338 can rely on a frozen contract:
 
 | Event | `data` payload |
 |---|---|

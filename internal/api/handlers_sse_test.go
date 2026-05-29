@@ -226,6 +226,39 @@ func TestSSEHub_ReplayDetectsBufferLoss(t *testing.T) {
 	}
 }
 
+// TestSSEHub_ReplayEnforcesTTLAtReadTime verifies replay honors the retention
+// window even when no new broadcast has arrived to trigger eviction: head only
+// advances in recordEvent, so during an idle period Replay must apply the TTL
+// cutoff itself rather than hand back stale events.
+func TestSSEHub_ReplayEnforcesTTLAtReadTime(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cur := base
+	hub := NewSSEHub(slog.Default())
+	hub.now = func() time.Time { return cur }
+	hub.bufTTL = 5 * time.Minute
+
+	for i := 0; i < 3; i++ {
+		hub.Broadcast(SSEEvent{Type: "x"})
+	}
+
+	// Advance past the TTL with no new broadcasts (idle period) so eviction
+	// never ran in recordEvent.
+	cur = base.Add(6 * time.Minute)
+
+	// A client reconnecting with an old id: every buffered event now falls
+	// outside the window, so replay must report buffer loss (refetch), not
+	// hand back stale events.
+	if _, _, complete := hub.Replay("1"); complete {
+		t.Error("expected buffer loss when all buffered events aged out of the TTL window")
+	}
+	// A client already at the newest id is still current: no replay, complete.
+	events, _, complete := hub.Replay("3")
+	if !complete || len(events) != 0 {
+		t.Errorf("current client: complete=%v events=%d, want true/0", complete, len(events))
+	}
+}
+
 // TestSSEHub_ReplayRejectsUnparsableID treats a malformed Last-Event-ID as
 // buffer loss rather than guessing, so a corrupt header forces a clean refetch.
 func TestSSEHub_ReplayRejectsUnparsableID(t *testing.T) {

@@ -805,11 +805,14 @@ func (r *Router) handlePatchPreferences(w http.ResponseWriter, req *http.Request
 		// emitted when a write actually landed (an empty PATCH is a no-op).
 		// The hub is in-process, so delivery is effectively immediate.
 		if r.eventBus != nil {
+			// settings.changed is broadcast to every connected client, so the
+			// payload must not carry the actor's user id (that would leak who
+			// changed a per-user preference to all other users). A bare
+			// section + timestamp is enough for other tabs to refetch.
 			r.eventBus.Publish(event.Event{
 				Type: event.SettingsChanged,
 				Data: map[string]any{
 					"sectionId": "preferences",
-					"updatedBy": userID,
 					"ts":        time.Now().UTC().Format(time.RFC3339),
 				},
 			})

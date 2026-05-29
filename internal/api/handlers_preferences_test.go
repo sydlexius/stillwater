@@ -211,12 +211,14 @@ func TestPatchPreferences_PublishesSettingsChanged(t *testing.T) {
 	}
 	select {
 	case e := <-got:
-		if e.Data["updatedBy"] != userID {
-			t.Errorf("updatedBy = %v, want %v", e.Data["updatedBy"], userID)
-		}
 		sectionID, ok := e.Data["sectionId"].(string)
-		if !ok || sectionID == "" {
-			t.Errorf("expected non-empty string sectionId in settings.changed data, got %v (type %T)", e.Data["sectionId"], e.Data["sectionId"])
+		if !ok || sectionID != "preferences" {
+			t.Errorf("sectionId = %v (type %T), want %q", e.Data["sectionId"], e.Data["sectionId"], "preferences")
+		}
+		// settings.changed is broadcast to every client, so it must not leak
+		// the actor's user id to other users.
+		if _, leaked := e.Data["updatedBy"]; leaked {
+			t.Errorf("settings.changed must not carry updatedBy (cross-user broadcast leak), got %v", e.Data["updatedBy"])
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("settings.changed not published after a successful PATCH")
