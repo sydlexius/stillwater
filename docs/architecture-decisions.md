@@ -14,6 +14,8 @@ All file writes (NFO, images) use a shared utility in `internal/filesystem/`: wr
 
 One per metadata provider, created at application startup, shared across all handlers and background jobs. MusicBrainz: 1 req/sec globally.
 
+The reactive complement to the limiter is a shared, context-aware retry helper (`DoWithRetry` in `internal/provider/retry.go`) that wraps each provider HTTP round-trip. It honors Retry-After (delta-seconds and HTTP-date) with a jittered, bounded exponential fallback, and applies distinct policies for 429 (more attempts) and 503 (fewer, for a possibly-unhealthy server).
+
 ## Adaptive batched transactions
 
 Small batches (< 100): single transaction. Medium (100-1000): transactions of 50. Large (1000+): transactions of 25 with short sleep. User actions get priority over background jobs.

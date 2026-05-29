@@ -83,6 +83,12 @@ Each provider has its own rate limit. The capability matrix above lists them. St
 
 If you're driving heavy bulk evaluation, two knobs help: increase library scope to spread fetches over time, and stagger Fix-all runs rather than running multiple at once.
 
+The per-provider limit above is the proactive defense: it spaces requests so they stay under quota. Reactive backoff handles the case where a rate-limit response comes back anyway.
+
+On a 429 Too Many Requests, Stillwater honors the server's Retry-After hint. It parses both the seconds form and the HTTP-date form. When no hint is present, it falls back to a jittered exponential backoff. Retries are bounded to a few attempts, after which the call surfaces a transient error rather than blocking indefinitely.
+
+A 503 Service Unavailable is treated more conservatively, with a smaller bounded number of attempts and jittered backoff. This is how MusicBrainz usually signals throttling, typically with no Retry-After. The conservative retry lets a throttled call recover instead of being dropped, without hammering a server that may genuinely be unhealthy.
+
 ## What to configure where
 
 | You want to | Go to |

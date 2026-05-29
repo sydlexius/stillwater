@@ -26,7 +26,7 @@ flowchart TD
     API -->|NFO + image writes| FS
     API -->|metadata, image, and lock push| MediaServers
     API -->|folder-rename path push + write-back control| Lidarr
-    Lidarr -->|artist roster + events (webhooks)| API
+    Lidarr -->|"artist roster + events (webhooks)"| API
     API -->|fetch metadata + images| Providers
     FS -->|fsnotify events| API
 ```
