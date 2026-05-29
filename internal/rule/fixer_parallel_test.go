@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -231,8 +232,13 @@ func TestRunAllScoped_ConcurrentWorkersMatchSequential(t *testing.T) {
 	if seq.FixesSucceeded != par.FixesSucceeded {
 		t.Errorf("FixesSucceeded mismatch: seq=%d par=%d", seq.FixesSucceeded, par.FixesSucceeded)
 	}
-	if len(seq.Results) != len(par.Results) {
-		t.Errorf("len(Results) mismatch: seq=%d par=%d", len(seq.Results), len(par.Results))
+	// Compare Results by content, not just length. Multi-worker ordering is
+	// allowed to differ, so build an order-insensitive multiset keyed on the
+	// stable identifying FixResult fields. A len-only check would miss a
+	// duplicated, dropped, or substituted entry that happens to preserve the
+	// total count.
+	if seqCounts, parCounts := fixResultCounts(seq.Results), fixResultCounts(par.Results); !reflect.DeepEqual(seqCounts, parCounts) {
+		t.Errorf("Results content mismatch (order-insensitive):\n seq=%v\n par=%v", seqCounts, parCounts)
 	}
 	if seqFixer.callCount() != parFixer.callCount() {
 		t.Errorf("fixer call count mismatch: seq=%d par=%d", seqFixer.callCount(), parFixer.callCount())
@@ -242,4 +248,19 @@ func TestRunAllScoped_ConcurrentWorkersMatchSequential(t *testing.T) {
 	if seq.ViolationsFound == 0 {
 		t.Fatal("expected violations for bare artists; test would be vacuous")
 	}
+}
+
+// fixResultCounts projects a slice of FixResult into an order-insensitive
+// multiset keyed on the stable identifying fields (RuleID, Fixed, Dismissed,
+// Message, and candidate count). Comparing two such maps detects duplicated,
+// dropped, or substituted entries that a length-only check would miss, while
+// tolerating the differing result order a multi-worker pass is allowed to
+// produce.
+func fixResultCounts(results []FixResult) map[string]int {
+	counts := make(map[string]int, len(results))
+	for _, r := range results {
+		key := fmt.Sprintf("%s|%t|%t|%s|%d", r.RuleID, r.Fixed, r.Dismissed, r.Message, len(r.Candidates))
+		counts[key]++
+	}
+	return counts
 }

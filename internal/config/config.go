@@ -708,6 +708,16 @@ func (c *Config) validate() error {
 	// unambiguous (e.g. /app/ becomes /app).
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
 
+	// Normalize a non-positive artist_workers to the documented default. The
+	// env path (setIntPositive) already ignores non-positive values, but
+	// file-backed config (TOML/YAML) writes straight into the field, so a
+	// 0 or -1 would otherwise flow through to the pipeline and silently
+	// collapse the default of 2 to sequential. Resetting here keeps both
+	// config sources honoring the same "non-positive is ignored" contract.
+	if c.RuleEngine.ArtistWorkers <= 0 {
+		c.RuleEngine.ArtistWorkers = Default().RuleEngine.ArtistWorkers
+	}
+
 	// Cross-field rules.
 	for _, rule := range crossFieldRules {
 		if err := rule(c); err != nil {
