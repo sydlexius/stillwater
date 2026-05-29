@@ -577,10 +577,11 @@ func TestDoGetRetriesOn429(t *testing.T) {
 	if !errors.As(err, &unavailable) {
 		t.Fatalf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
 	}
-	// DefaultRetryPolicy uses MaxAttempts=3 for 429, so the endpoint is hit
-	// exactly three times: bounded retries, no storm.
-	if got := hits.Load(); got != 3 {
-		t.Fatalf("expected exactly 3 requests (MaxAttempts=3), got %d", got)
+	// The adapter uses provider.DefaultRetryPolicy(), so the endpoint is hit
+	// exactly MaxAttempts times for a 429: bounded retries, no storm.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Fatalf("expected exactly %d requests (MaxAttempts), got %d", want, got)
 	}
 }
 

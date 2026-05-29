@@ -725,10 +725,11 @@ func TestFetchArtistsRetriesOn429(t *testing.T) {
 		t.Errorf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
 	}
 
-	// MaxAttempts=3 means the server is hit exactly three times: the initial
-	// attempt plus two retries.
-	if got := hits.Load(); got != 3 {
-		t.Errorf("expected 3 requests (bounded retries), got %d", got)
+	// The adapter uses provider.DefaultRetryPolicy(), so the server is hit
+	// exactly MaxAttempts times: the initial attempt plus the bounded retries.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected %d requests (bounded retries), got %d", want, got)
 	}
 }
 

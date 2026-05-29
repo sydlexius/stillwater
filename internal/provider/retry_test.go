@@ -459,6 +459,28 @@ func TestSystemClockSleepRespectsContext(t *testing.T) {
 	}
 }
 
+func TestDoWithRetryNilResponseIsAnError(t *testing.T) {
+	// A misbehaving closure that returns (nil, nil) must not panic; DoWithRetry
+	// turns it into a typed transient error.
+	clk := &stubClock{now: time.Now()}
+	policy := RetryPolicy{MaxAttempts: 3, MaxAttempts503: 2, BaseDelay: time.Second, MaxDelay: 30 * time.Second}
+
+	do := func(context.Context) (*http.Response, error) { return nil, nil }
+
+	resp, err := DoWithRetry(context.Background(), clk, NameMusicBrainz, policy, do)
+	if resp != nil {
+		_ = resp.Body.Close()
+		t.Fatalf("expected nil response")
+	}
+	var unavailable *ErrProviderUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("error = %v, want *ErrProviderUnavailable", err)
+	}
+	if len(clk.sleeps) != 0 {
+		t.Fatalf("sleeps = %v, want none (nil response is not retried)", clk.sleeps)
+	}
+}
+
 func TestSystemClockNowAndSleepCompletes(t *testing.T) {
 	clk := SystemClock()
 

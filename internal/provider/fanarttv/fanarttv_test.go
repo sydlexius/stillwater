@@ -188,8 +188,9 @@ func TestGetImagesRetriesOn429(t *testing.T) {
 		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
 	}
 
-	if got := hits.Load(); got != 3 {
-		t.Errorf("expected server to be hit 3 times (bounded retries), got %d", got)
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected server to be hit %d times (bounded retries), got %d", want, got)
 	}
 }
 

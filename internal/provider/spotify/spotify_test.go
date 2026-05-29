@@ -559,8 +559,9 @@ func TestDoRequestRetriesOn429(t *testing.T) {
 	if !errors.As(err, &unavailable) {
 		t.Errorf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
 	}
-	if got := dataHits.Load(); got != 3 {
-		t.Errorf("expected data endpoint hit 3 times (MaxAttempts=3), got %d", got)
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(dataHits.Load()); got != want {
+		t.Errorf("expected data endpoint hit %d times (MaxAttempts), got %d", want, got)
 	}
 }
 

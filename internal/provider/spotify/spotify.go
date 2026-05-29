@@ -366,7 +366,7 @@ func (a *Adapter) doWithToken(ctx context.Context, reqURL, token string) (*http.
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("creating request: %w", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/json")

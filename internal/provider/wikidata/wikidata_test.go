@@ -657,10 +657,11 @@ func TestExecuteSPARQLRetriesOn429(t *testing.T) {
 		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
 	}
 
-	// DefaultRetryPolicy uses MaxAttempts=3, so the server must be hit exactly
-	// three times: retries are bounded, not unbounded.
-	if got := hits.Load(); got != 3 {
-		t.Errorf("expected exactly 3 requests (bounded retries), got %d", got)
+	// The adapter uses provider.DefaultRetryPolicy(), so the server must be hit
+	// exactly MaxAttempts times: retries are bounded, not unbounded.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected exactly %d requests (bounded retries), got %d", want, got)
 	}
 }
 
@@ -747,5 +748,43 @@ func TestGetImagesCommonsResolutionFailure(t *testing.T) {
 	var unavail *provider.ErrProviderUnavailable
 	if !errors.As(err, &unavail) {
 		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestGetImagesCommonsRateLimitedPreservesRetryAfter(t *testing.T) {
+	// SPARQL returns valid image filenames but the Commons endpoint always
+	// rate-limits with a Retry-After. GetImages must surface a typed
+	// ErrProviderUnavailable whose RetryAfter is preserved from the Commons
+	// 429, rather than collapsing to a generic error.
+	sparqlData := loadFixture(t, "images_p18_only.json")
+
+	commonsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer commonsSrv.Close()
+
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		if r.URL.Query().Get("query") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write(sparqlData)
+	}))
+	defer sparqlSrv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
+	useLoopbackTestClient(a)
+
+	_, err := a.GetImages(context.Background(), "11111111-1111-1111-1111-111111111111")
+	var unavail *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavail) {
+		t.Fatalf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	if unavail.RetryAfter != time.Second {
+		t.Fatalf("RetryAfter = %v, want 1s (preserved from the Commons 429)", unavail.RetryAfter)
 	}
 }

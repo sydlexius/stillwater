@@ -288,10 +288,11 @@ func TestDoRequestRetriesOn429(t *testing.T) {
 		t.Errorf("expected *provider.ErrProviderUnavailable, got %T: %v", err, err)
 	}
 
-	// provider.DefaultRetryPolicy uses MaxAttempts=3, so the server must be hit
-	// exactly 3 times: one initial attempt plus two retries.
-	if got := hits.Load(); got != 3 {
-		t.Errorf("expected exactly 3 requests (MaxAttempts=3), got %d", got)
+	// The adapter uses provider.DefaultRetryPolicy(), so the server must be hit
+	// exactly MaxAttempts times: one initial attempt plus the bounded retries.
+	want := provider.DefaultRetryPolicy().MaxAttempts
+	if got := int(hits.Load()); got != want {
+		t.Errorf("expected exactly %d requests (MaxAttempts), got %d", want, got)
 	}
 }
 

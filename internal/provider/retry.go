@@ -133,6 +133,14 @@ func DoWithRetry(
 			// closure). Not retryable here; hand it straight back.
 			return nil, err
 		}
+		if resp == nil {
+			// Defensive: a closure must not return (nil, nil). Treat it as a
+			// transient provider failure rather than panicking on resp.StatusCode.
+			return nil, &ErrProviderUnavailable{
+				Provider: name,
+				Cause:    fmt.Errorf("nil HTTP response from retry closure"),
+			}
+		}
 
 		status := resp.StatusCode
 		if status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable {

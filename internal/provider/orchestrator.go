@@ -519,7 +519,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 			} else {
 				o.logger.Debug("provider GetArtist failed",
 					slog.String("provider", string(name)),
-					slog.String("error", err.Error()),
+					slog.String("error", ScrubError(err)),
 					retryAfterAttr(err))
 				pr.err = err
 			}
