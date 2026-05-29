@@ -69,7 +69,11 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.highlight:
@@ -138,6 +142,11 @@ nav:
       - Overview: contributing/index.md
       - Dev setup: contributing/dev-setup.md
       - Architecture decisions: contributing/architecture-decisions.md
+      - Architecture:
+          - Overview: contributing/architecture/index.md
+          - Rule engine: contributing/architecture/rule-engine.md
+          - Scanner pipeline: contributing/architecture/scanner-pipeline.md
+          - Conflict gate: contributing/architecture/conflict-gate.md
       - PR workflow: contributing/pr-workflow.md
       - Worktrees: contributing/worktrees.md
       - Milestone protocol: contributing/milestone-protocol.md
