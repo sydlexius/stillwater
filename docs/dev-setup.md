@@ -7,7 +7,7 @@ Prerequisites and instructions for building Stillwater from source.
 | Tool | Version | Purpose | Install |
 |------|---------|---------|---------|
 | Go | 1.26.1+ | Compiler and runtime | https://go.dev/dl/ |
-| templ | latest | HTML template code generation | `go install github.com/a-h/templ/cmd/templ@latest` |
+| templ | pinned in `go.mod` (`tool` directive) | HTML template code generation | No separate install; run via `go tool templ generate` |
 | Tailwind CSS | see `ARG TAILWIND_VERSION` in [`build/docker/Dockerfile`](https://github.com/sydlexius/stillwater/blob/main/build/docker/Dockerfile) | CSS build (standalone CLI) | See below |
 | Git | any | Version control | https://git-scm.com/ |
 
@@ -19,6 +19,9 @@ Prerequisites and instructions for building Stillwater from source.
 | golangci-lint | Linting (`make lint`) | https://golangci-lint.run/welcome/install/ |
 | Bruno | API testing (collections in `api/bruno/`) | https://www.usebruno.com/ |
 | air | Hot reload during development (`make dev`) | `go install github.com/air-verse/air@latest` |
+| mermaid-cli (mmdc) | Validate Mermaid diagrams in docs (pre-commit mermaid check) | `brew install mermaid-cli` (or `npm install -g @mermaid-js/mermaid-cli`) |
+| hadolint | Lint Dockerfiles (`make hadolint`, pre-commit hadolint check) | `brew install hadolint` |
+| markdownlint-cli2 | Lint Markdown (pre-commit markdownlint check; CI Docs job) | `brew install markdownlint-cli2` (or `npx markdownlint-cli2`) |
 
 ## Installing Tailwind CSS Standalone CLI
 
@@ -62,7 +65,8 @@ cd stillwater
 go mod download
 
 # Generate templ code (converts .templ files to Go code)
-templ generate
+# templ is pinned via the go.mod tool directive; invoke it with `go tool`.
+go tool templ generate
 
 # Build Tailwind CSS
 tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
@@ -117,7 +121,7 @@ The Docker build handles templ generation implicitly (committed `_templ.go` file
 
 1. **Modify Go files** in `internal/` or `cmd/stillwater/`
 2. **Edit Templ templates** in `web/templates/` or `web/components/`
-   - Changes to `.templ` files require regeneration: `templ generate`
+   - Changes to `.templ` files require regeneration: `go tool templ generate`
    - Generated `_templ.go` files should be committed alongside source templates
 3. **Update CSS** in `web/static/css/input.css`
    - Rebuild: `tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify`
@@ -152,7 +156,7 @@ Before committing or opening a PR:
 
 ```bash
 # Format code
-make fmt          # or: go fmt ./... && templ fmt web/
+make fmt          # or: go fmt ./... && go tool templ fmt web/
 
 # Run linter
 make lint         # or: golangci-lint run ./...

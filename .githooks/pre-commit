@@ -12,6 +12,7 @@
 #   6. govulncheck -- known vulnerabilities in dependencies
 #   7. hadolint -- Dockerfile best-practice linting
 #   8. markdownlint -- staged markdown files (mirrors CI Docs / Markdown Lint job)
+#   9. mermaid -- parse Mermaid diagrams in staged markdown (opt-in; needs mmdc)
 #
 # Skip with: git commit --no-verify (use sparingly)
 
@@ -280,6 +281,59 @@ if [ "${#STAGED_MD[@]}" -gt 0 ]; then
     fi
 else
     warn "markdownlint (no staged .md files)"
+fi
+
+# --------------------------------------------------------------------------
+# 9. mermaid -- parse Mermaid diagrams in staged markdown.
+# --------------------------------------------------------------------------
+# mkdocs renders Mermaid client-side (pymdownx.superfences custom_fence), so
+# `mkdocs build` never parses the diagram: a syntax error ships a broken page
+# that GitHub's stricter renderer rejects. mmdc parses every ```mermaid block
+# and exits non-zero on a parse error. It drives headless Chromium, so this is
+# an opt-in graceful skip. Install with:
+#   brew install mermaid-cli      (macOS / Linuxbrew)
+#   npm install -g @mermaid-js/mermaid-cli   (cross-platform alternative)
+# Only staged markdown that actually contains a ```mermaid fence is checked;
+# files without a diagram (and any unmodified file) are skipped. Detection and
+# validation both read the STAGED blob (`git show :path`) rather than the
+# working-tree file, so the gate validates exactly what is being committed: a
+# staged-but-unsaved fix is honored, and a working-tree fix that was not staged
+# cannot let a broken diagram slip through. This matters more here than for the
+# style linters above because this gate's whole job is to block broken diagrams.
+STAGED_MERMAID=()
+while IFS= read -r -d '' f; do
+    git show ":$f" 2>/dev/null | grep -q '```mermaid' && STAGED_MERMAID+=("$f")
+done < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
+if [ "${#STAGED_MERMAID[@]}" -gt 0 ]; then
+    if command -v mmdc &>/dev/null; then
+        MERMAID_OUT_DIR=$(mktemp -d)
+        MERMAID_SRC_DIR=$(mktemp -d)
+        MERMAID_FAILED=0
+        for mdfile in "${STAGED_MERMAID[@]}"; do
+            # mmdc reads from a path, so materialize the staged blob to a temp
+            # file. Flatten the path into the filename to avoid basename
+            # collisions across directories while preserving the .md suffix.
+            staged_copy="$MERMAID_SRC_DIR/$(printf '%s' "$mdfile" | tr '/' '_')"
+            git show ":$mdfile" > "$staged_copy"
+            if ! MMDC_OUT=$(mmdc --input "$staged_copy" --output "$MERMAID_OUT_DIR/out.md" 2>&1); then
+                echo -e "${RED}${BOLD}FAIL${RESET} mermaid: $mdfile"
+                echo "$MMDC_OUT" | sed 's/^/  /'
+                MERMAID_FAILED=1
+            fi
+        done
+        rm -rf "$MERMAID_OUT_DIR" "$MERMAID_SRC_DIR"
+        if [ "$MERMAID_FAILED" -eq 1 ]; then
+            echo ""
+            echo "Fix the Mermaid syntax above. GitHub and the published docs site"
+            echo "reject it even though 'mkdocs build' renders client-side and does not."
+            exit 1
+        fi
+        pass "mermaid"
+    else
+        warn "mermaid (mmdc not installed -- brew install mermaid-cli)"
+    fi
+else
+    warn "mermaid (no staged .md with diagrams)"
 fi
 
 echo ""
