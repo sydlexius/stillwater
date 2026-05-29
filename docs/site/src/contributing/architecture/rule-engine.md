@@ -28,7 +28,7 @@ flowchart TD
     Incremental["Collect dirty artists only\n(dirty_subscriber tracks changes)"]
     All["Collect all eligible artists\n(paginated, page size 200)"]
     PassCtx["Build shared provider cache\nfor the whole pass (LRU, 500 entries)"]
-    EvalLoop["Evaluate each artist\nagainst every enabled rule"]
+    EvalLoop["Evaluate each artist\n(bounded worker pool, default 2)"]
     CheckEnabled{"Rule enabled?"}
     SkipRule["Skip rule"]
     RunChecker["Run checker function\n(returns nil or Violation)"]
@@ -69,6 +69,34 @@ flowchart TD
     PublishFix --> StoreResult
     StoreResult --> BusEvent
 ```
+
+## Artist-level concurrency
+
+`RunAllScoped` and `RunRuleScoped` walk artists through a shared iterator
+(`walkScopedArtists`). The walk is a bounded worker pool: independent artists
+are evaluated, fixed, and persisted concurrently so their provider-fetch
+latency overlaps instead of summing. The pool size is
+`SW_RULE_ENGINE_ARTIST_WORKERS` (or `rule_engine.artist_workers` in the config
+file), default **2**. Setting it to `1` restores the original strictly-
+sequential walk (no pool, no goroutines); higher values overlap more.
+
+Two invariants keep this safe:
+
+- **Throughput is still capped by the limiter.** Every provider request goes
+  through the shared, FIFO-fair per-provider rate limiter (see
+  [Singleton rate limiters](../architecture-decisions.md#singleton-rate-limiters)).
+  More workers never exceed a provider's request budget; they only hide latency.
+  MusicBrainz stays at one request per second across the whole pool.
+- **Per-artist work is isolated.** Each worker accumulates its counters and fix
+  results in a local value and the walker folds them into the run result under a
+  single mutex, so concurrent artists never race on shared state. The
+  pass-level provider cache (`PassContext`) and per-artist `EvaluationContext`
+  are already concurrency-safe.
+
+One visible consequence: with more than one worker the order of `FixResult`
+entries in the run result follows completion order, not artist enumeration
+order. Setting the count to `1` restores the original ordering and fully
+sequential behavior; raise it deliberately after benchmarking your deployment.
 
 ## Deferred-resolved rows and the persistence chain
 

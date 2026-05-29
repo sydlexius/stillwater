@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,7 @@ func clearSWEnv(t *testing.T) {
 		"SW_ENCRYPTION_KEY", "SW_MUSIC_PATH", "SW_SCANNER_EXCLUSIONS",
 		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
 		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
+		"SW_RULE_ENGINE_ARTIST_WORKERS",
 		"SW_TLS_CERT_FILE", "SW_TLS_KEY_FILE", "SW_TLS_PORT",
 		"SW_HTTP_REDIRECT_PORT", "SW_HTTP3_ENABLED", "SW_HTTP3_PORT",
 		"SW_ACME_DOMAIN", "SW_ACME_EMAIL", "SW_ACME_CA",
@@ -198,6 +200,48 @@ database:
 	}
 	if cfg.Server.BasePath != "/app" {
 		t.Errorf("Server.BasePath = %q, want /app (trailing slash stripped)", cfg.Server.BasePath)
+	}
+}
+
+// TestValidate_ArtistWorkersNonPositive verifies that a non-positive
+// artist_workers from file-backed config (TOML/YAML, which bypass the env
+// path's setIntPositive) is normalized to the documented default rather than
+// flowing through and collapsing concurrency to sequential.
+func TestValidate_ArtistWorkersNonPositive(t *testing.T) {
+	wantDefault := Default().RuleEngine.ArtistWorkers
+	cases := []struct {
+		name    string
+		workers int
+		want    int
+	}{
+		{"zero normalizes to default", 0, wantDefault},
+		{"negative normalizes to default", -3, wantDefault},
+		{"positive passes through", 8, 8},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clearSWEnv(t)
+			dir := t.TempDir()
+			yamlPath := filepath.Join(dir, "config.yaml")
+			body := fmt.Sprintf(`
+server:
+  port: 1973
+database:
+  path: /tmp/test.db
+rule_engine:
+  artist_workers: %d
+`, tc.workers)
+			if err := os.WriteFile(yamlPath, []byte(body), 0o644); err != nil {
+				t.Fatalf("writing config file: %v", err)
+			}
+			cfg, err := Load(yamlPath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.RuleEngine.ArtistWorkers != tc.want {
+				t.Errorf("RuleEngine.ArtistWorkers = %d, want %d", cfg.RuleEngine.ArtistWorkers, tc.want)
+			}
+		})
 	}
 }
 
