@@ -72,7 +72,7 @@ tailwind:
 ## generate: Run all code generation (templ + tailwind)
 generate: templ tailwind
 
-## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference)
+## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles)
 generate-docs:
 	go run ./cmd/gen-provider-matrix
 	go run ./cmd/gen-env-reference
@@ -81,6 +81,7 @@ generate-docs:
 	go run ./cmd/gen-doc-anchors
 	go run ./cmd/gen-envelope-changelog
 	go run ./cmd/gen-make-reference
+	go run ./cmd/gen-platform-profiles
 
 ## tailwind-watch: Watch and rebuild Tailwind CSS
 tailwind-watch:

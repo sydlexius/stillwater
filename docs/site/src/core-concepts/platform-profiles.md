@@ -2,7 +2,7 @@
 description: How platform profiles bundle image filename conventions and NFO field-map settings so Stillwater writes files in the shape each media server expects.
 ---
 
-<!-- code: internal/platform/model.go (Profile, ImageNaming, NFOFormat), internal/platform/service.go (GetActive, SetActive), internal/nfo/fieldmap.go (NFOFieldMap, ApplyFieldMap, DefaultFieldMap), internal/nfo/writeback.go (WriteBackArtistNFOWithFieldMap), internal/publish/publisher.go (getActiveNamingConfig, getActiveFanartPrimary), web/templates/settings.templ (General tab platform profile picker) -->
+<!-- code: internal/database/migrations/001_initial_schema.sql (platform_profiles INSERT), internal/platform/model.go (Profile, ImageNaming, NFOFormat), internal/platform/service.go (GetActive, SetActive), internal/nfo/fieldmap.go (NFOFieldMap, ApplyFieldMap, DefaultFieldMap), internal/nfo/writeback.go (WriteBackArtistNFOWithFieldMap), internal/publish/publisher.go (getActiveNamingConfig, getActiveFanartPrimary), web/templates/settings.templ (General tab platform profile picker) -->
 
 # Platform profiles
 
@@ -18,12 +18,7 @@ A profile's image naming table covers four slots -- thumb, fanart, logo, banner 
 
 The built-in profiles ship with the conventions each platform actually uses:
 
-| Profile | Thumb | Fanart | Logo | Banner |
-|---|---|---|---|---|
-| Kodi | folder.jpg | fanart.jpg | logo.png | banner.jpg |
-| Emby | folder.jpg | backdrop.jpg | logo.png | banner.jpg |
-| Jellyfin | folder.jpg | backdrop.jpg | logo.png | banner.jpg |
-| Plex | artist.jpg | fanart.jpg | logo.png | banner.jpg |
+--8<-- "docs/_generated/platform-profiles.md"
 
 Emby and Jellyfin use identical conventions in the built-in profiles. Kodi differs on the fanart filename; Plex differs on the thumb filename. The Custom profile is a copy of the Kodi defaults that you can edit freely.
 
