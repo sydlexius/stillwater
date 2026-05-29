@@ -6,9 +6,13 @@ Key decisions from the risk review that affect implementation across milestones.
 
 When MBIDs are available (from Lidarr, NFO, embedded tags), use them directly. Skip name-based matching. Configurable priority: "Prefer ID match" (default), "Prefer name match", "Always prompt". Minimum confidence floor even in YOLO mode.
 
+*Where it lives: [Providers and coalesce](architecture/providers-and-coalesce.md).*
+
 ## Atomic filesystem writes
 
 All file writes (NFO, images) use a shared utility in `internal/filesystem/`: write to .tmp, rename existing to .bak, rename .tmp to target, delete .bak. Fall back to copy+delete with fsync for cross-mount/network shares.
+
+*Where it lives: [Scanner pipeline](architecture/scanner-pipeline.md).*
 
 ## Singleton rate limiters
 
@@ -17,6 +21,8 @@ One per metadata provider, created at application startup, shared across all han
 The reactive complement to the limiter is a shared, context-aware retry helper (`DoWithRetry` in `internal/provider/retry.go`) that wraps each provider HTTP round-trip. It honors Retry-After (delta-seconds and HTTP-date) with a jittered, bounded exponential fallback, and applies distinct policies for 429 (more attempts) and 503 (fewer, for a possibly-unhealthy server).
 
 These singleton limiters are also what make the rule engine's artist-level parallelism safe (`SW_RULE_ENGINE_ARTIST_WORKERS`, default 2; set to 1 for the original sequential walk). The bounded worker pool in `walkScopedArtists` overlaps the per-artist provider-fetch latency of independent artists, but because every request still passes through the same FIFO-fair limiter, more workers cannot exceed any provider's request budget; they only hide latency.
+
+*Where it lives: [Providers and coalesce](architecture/providers-and-coalesce.md).*
 
 ## Adaptive batched transactions
 
@@ -34,9 +40,13 @@ Prefer per-artist refresh (Emby/Jellyfin/Lidarr) over full library scan. Full sc
 
 Check last-modified timestamp before writing. If changed externally, warn instead of overwriting. Also check Lidarr/Emby/Jellyfin metadata saver settings via API.
 
+*Where it lives: [Conflict gate](architecture/conflict-gate.md).*
+
 ## Scanner exclusions
 
 Default skip list: "Various Artists", "Various", "VA", "Soundtrack", "OST". Excluded directories appear greyed out and unfetchable.
+
+*Where it lives: [Scanner pipeline](architecture/scanner-pipeline.md).*
 
 ## Portable settings contract
 
@@ -53,3 +63,5 @@ Envelope versions:
 --8<-- "docs/_generated/envelope-versions.md"
 
 Older envelopes remain importable. The `password_hash` inside the users block is a bcrypt digest -- never plaintext -- and only crosses the wire inside the passphrase-encrypted payload.
+
+*Where it lives: [Settings import/export](architecture/settings-import-export.md).*
