@@ -240,8 +240,15 @@ func TestRunAllScoped_ConcurrentWorkersMatchSequential(t *testing.T) {
 	if seqCounts, parCounts := fixResultCounts(seq.Results), fixResultCounts(par.Results); !reflect.DeepEqual(seqCounts, parCounts) {
 		t.Errorf("Results content mismatch (order-insensitive):\n seq=%v\n par=%v", seqCounts, parCounts)
 	}
-	if seqFixer.callCount() != parFixer.callCount() {
-		t.Errorf("fixer call count mismatch: seq=%d par=%d", seqFixer.callCount(), parFixer.callCount())
+	seqCalls, parCalls := seqFixer.callCount(), parFixer.callCount()
+	if seqCalls != parCalls {
+		t.Errorf("fixer call count mismatch: seq=%d par=%d", seqCalls, parCalls)
+	}
+	// Guard against a vacuous pass: if the default rules ever drift to only
+	// non-fixable violations, both counts stay 0 and the equality above would
+	// pass without exercising the concurrent Fix path at all.
+	if seqCalls == 0 {
+		t.Fatal("expected at least one fixer invocation; call-count comparison would be vacuous")
 	}
 	// Sanity: the bare artists must actually produce work, otherwise the
 	// equality checks above would pass vacuously.
