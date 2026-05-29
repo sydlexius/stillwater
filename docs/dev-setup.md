@@ -73,26 +73,12 @@ go build -o stillwater ./cmd/stillwater
 
 ## Quick Start with Make
 
-If `make` is available, the build process is simplified:
+If `make` is available, it wraps the common build, test, and tooling commands.
+The full target list below is generated from the Makefile's own `## target:`
+help comments (the same source as `make help`), so it always reflects the
+current targets:
 
-```bash
-make build          # templ generate + tailwind + go build
-make run            # build + run with debug logging
-make test           # run all tests with race detector
-make lint           # run golangci-lint
-make fmt            # format Go and Templ code
-make clean          # remove build artifacts
-make dev            # hot reload with air
-make hooks          # install git pre-commit hook
-make check-openapi  # validate OpenAPI spec
-```
-
-Equivalent Docker commands:
-
-```bash
-make docker-build   # build Docker image
-make docker-run     # start via docker-compose.yml
-```
+--8<-- "docs/_generated/make-commands.md"
 
 ## Running Locally
 
@@ -220,24 +206,6 @@ For the Docker container, two additional variables control file ownership:
 ## Project Structure
 
 See `CLAUDE.md` for the full architecture overview and coding conventions.
-
-## Build Targets (if `make` is available)
-
-```
-make build          Build binary (runs templ generate + tailwind first)
-make run            Build and run locally with debug logging
-make dev            Hot reload with air
-make test           Run all tests with race detector
-make lint           Run golangci-lint
-make fmt            Format Go + Templ files
-make hooks          Install git pre-commit hook
-make check-openapi  Validate OpenAPI spec
-make clean          Remove build artifacts
-make docker-build   Build Docker image
-make docker-run     Start via docker compose
-```
-
-When `make` is not available, run the equivalent commands directly as shown in the sections above.
 
 ## Releasing
 
