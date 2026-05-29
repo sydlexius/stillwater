@@ -43,7 +43,8 @@
 # Inputs (all via environment; all optional):
 #   COVER_OUT                  path to coverage profile (default: coverage.out)
 #   BASE                       diff base (default: git merge-base main HEAD)
-#   PATCH_COVERAGE_THRESHOLD   required percent (default: 70)
+#   PATCH_COVERAGE_THRESHOLD   required percent (default: 75, matching
+#                              codecov.yml and the pre-push gate)
 #   PATCH_COVERAGE_EXCLUDE     extra pathspec excludes, space-separated
 #                              (default: empty; *_test.go is always added)
 #
@@ -54,7 +55,7 @@
 set -euo pipefail
 
 COVER_OUT="${COVER_OUT:-coverage.out}"
-THRESHOLD="${PATCH_COVERAGE_THRESHOLD:-70}"
+THRESHOLD="${PATCH_COVERAGE_THRESHOLD:-75}"
 EXTRA_EXCLUDES="${PATCH_COVERAGE_EXCLUDE:-}"
 
 # Validate the threshold up front. awk's numeric coercion quietly maps a
