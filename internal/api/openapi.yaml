@@ -7005,16 +7005,43 @@ paths:
         write, so an unknown key or invalid value rejects the whole request with
         400 and applies nothing.
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
               description: >
-                Map of preference key to value. Scalar keys take a JSON string;
-                artist_detail_section_order and artist_detail_hidden_sections
-                take a JSON array of strings.
-              additionalProperties: true
+                Map of preference key to value, merged into the user's existing
+                preferences. Scalar keys take a JSON string; the artist-detail
+                layout keys take a JSON array of strings. An empty object is a
+                valid no-op. metadata_languages is not patchable here (use
+                PUT /preferences/{key}, which has reset-to-default semantics).
+              additionalProperties: false
+              properties:
+                theme: { type: string }
+                sidebar_state: { type: string }
+                content_width: { type: string }
+                font_family: { type: string }
+                font_size: { type: string }
+                letter_spacing: { type: string }
+                thumbnail_size: { type: string }
+                reduced_motion: { type: string }
+                lite_mode: { type: string }
+                language: { type: string }
+                notification_enabled: { type: string }
+                auto_fetch_images: { type: string }
+                metadata_name_romanization_fallback: { type: string }
+                page_size: { type: string }
+                bg_opacity: { type: string }
+                artist_detail_section_order:
+                  type: array
+                  items: { type: string }
+                artist_detail_hidden_sections:
+                  type: array
+                  items: { type: string }
+              patternProperties:
+                "^suppress_confirm_":
+                  type: string
               example:
                 theme: dark
                 artist_detail_section_order: ["bio", "artwork", "providers"]

@@ -110,8 +110,8 @@ In container deployments, mount a Docker volume at `/config` so these files surv
 `SW_UX` selects which web UI channel Stillwater serves. It is a presentation flag, not an API version: every channel uses the same handlers and `/api/v1/*` endpoints.
 
 - `stable` (default) renders the current UI. No behavior change.
-- `next` renders the in-development preview UI under `/next/*`. Screens that have not been rebuilt yet fall back to their stable page, so navigation never breaks.
-- `dual` makes both channels reachable. The stable UI is served by default and users opt into the preview explicitly; there is no chooser screen.
+- `next` makes the preview UI the default serving channel for **every** route, not just `/next/*`. `/next/*` is additionally a forced-next lane, and any screen not yet rebuilt falls back to its stable page so navigation never breaks.
+- `dual` makes both channels reachable. The stable UI is served by default and users opt into the preview explicitly (via the `sw_ux` cookie or a `/next/*` path); there is no chooser screen.
 
 Per-user opt-in uses the `sw_ux` cookie (`stable` or `next`), which overrides the environment default. Every response carries an `X-Stillwater-UX: stable|next` header indicating the channel that served it, and each request log line includes a `ux=` field.
 

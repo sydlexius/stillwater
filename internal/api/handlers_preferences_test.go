@@ -311,6 +311,16 @@ func TestPatchPreferences_MergesAndValidates(t *testing.T) {
 		t.Errorf("unknown-key PATCH expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 
+	// 3b. A mixed valid+invalid request rejects atomically: the valid key must
+	// NOT be written when another key in the same request is invalid. theme is
+	// "dark" from step 2; the rejected PATCH must leave it unchanged.
+	if w := patch(`{"theme":"light","bogus_key":"x"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("mixed valid+invalid PATCH expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if prefs := getPrefs(); prefs["theme"] != "dark" {
+		t.Errorf("theme = %q after rejected mixed PATCH, want dark (no partial write)", prefs["theme"])
+	}
+
 	// 4. A non-array value for an array key is rejected.
 	if w := patch(`{"artist_detail_hidden_sections":"notanarray"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("invalid array value expected 400, got %d: %s", w.Code, w.Body.String())
