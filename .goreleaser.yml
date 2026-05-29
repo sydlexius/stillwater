@@ -153,8 +153,6 @@ release:
   # Footer below appends Docker pull + full-changelog link regardless,
   # so even a minimal tag annotation produces a useful release page.
   header: |
-    ## Stillwater {{ .Tag }}
-
     {{ if .Prerelease }}> This is a pre-release version. Use the `beta` Docker tag to try it out.{{ end }}
 
     {{ .TagBody }}
