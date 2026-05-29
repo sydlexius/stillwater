@@ -135,6 +135,26 @@ func TestLogging_LogLevels(t *testing.T) {
 	}
 }
 
+func TestLogging_IncludesUXField(t *testing.T) {
+	t.Parallel()
+	// The UX middleware must wrap Logging so the resolved channel is in the
+	// request context when Logging reads it for the ux= field.
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	handler := UX("dual", "")(Logging(logger, "")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	// dual mode + a /next/ path resolves to the next channel.
+	req := httptest.NewRequest(http.MethodGet, "/next/dashboard", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if got := buf.String(); !strings.Contains(got, "ux=next") {
+		t.Errorf("expected ux=next in log output, got: %s", got)
+	}
+}
+
 func TestLogging_QuietPaths(t *testing.T) {
 	t.Parallel()
 	// Requests to quiet paths (/api/v1/logs, /static/) should not produce

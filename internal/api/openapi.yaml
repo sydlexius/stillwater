@@ -6991,6 +6991,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    patch:
+      tags: [Preferences]
+      summary: Merge a partial set of user preferences
+      operationId: patchPreferences
+      description: >
+        Merges a partial set of preferences for the authenticated user in a
+        single request. Only the keys present in the body are written; absent
+        keys are left untouched (merge semantics). Scalar preferences take a
+        JSON string value (e.g. {"theme": "dark"}); the artist-detail layout
+        keys (artist_detail_section_order, artist_detail_hidden_sections) take a
+        JSON array of section identifiers. Every entry is validated before any
+        write, so an unknown key or invalid value rejects the whole request with
+        400 and applies nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                Map of preference key to value. Scalar keys take a JSON string;
+                artist_detail_section_order and artist_detail_hidden_sections
+                take a JSON array of strings.
+              additionalProperties: true
+              example:
+                theme: dark
+                artist_detail_section_order: ["bio", "artwork", "providers"]
+      responses:
+        "200":
+          description: >
+            The canonical stored form of the keys that were written. An empty
+            request body returns an empty object (no-op).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        "400":
+          description: Unknown preference key or invalid value (nothing written)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /preferences/{key}:
     get:
       tags: [Preferences]

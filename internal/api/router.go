@@ -77,7 +77,11 @@ type RouterDeps struct {
 	Logger             *slog.Logger
 	BasePath           string
 	BasePathFromEnv    bool
-	TLSStatus          templates.TLSStatusData
+	// UX is the SW_UX UI-channel mode: "stable", "next", or "dual". Drives the
+	// UX middleware (X-Stillwater-UX header + ux= log field) and the /next/*
+	// lane. Empty is treated as "stable".
+	UX        string
+	TLSStatus templates.TLSStatusData
 	// HTTP3Port is the UDP port advertised in the Alt-Svc response header.
 	// Zero disables the header (HTTP/3 not enabled). Set to the effective
 	// HTTP/3 listener port when SW_HTTP3_ENABLED is true.
@@ -131,6 +135,7 @@ type Router struct {
 	logger             *slog.Logger
 	basePath           string
 	basePathFromEnv    bool
+	ux                 string
 	tlsStatus          templates.TLSStatusData
 	http3Port          int
 	imageCacheDir      string
@@ -256,6 +261,7 @@ func NewRouter(deps RouterDeps) *Router {
 		logger:                   deps.Logger,
 		basePath:                 deps.BasePath,
 		basePathFromEnv:          deps.BasePathFromEnv,
+		ux:                       deps.UX,
 		tlsStatus:                deps.TLSStatus,
 		http3Port:                deps.HTTP3Port,
 		imageCacheDir:            deps.ImageCacheDir,
@@ -403,6 +409,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("DELETE "+bp+"/api/v1/auth/tokens/{id}/permanent", wrapAuth(r.handleDeleteAPIToken, authMw))
 	// User preferences routes (per-user, no admin required)
 	mux.HandleFunc("GET "+bp+"/api/v1/preferences", wrapAuth(r.handleGetPreferences, authMw))
+	mux.HandleFunc("PATCH "+bp+"/api/v1/preferences", wrapAuth(r.handlePatchPreferences, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/preferences/{key}", wrapAuth(r.handleGetPreference, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/preferences/{key}", wrapAuth(r.handleUpdatePreference, authMw))
 	// User management routes (multi-user gate + admin role required)
@@ -806,6 +813,16 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		r.logger.Warn("SW_PPROF is set but not recognized; use '1' or 'true' to enable", "value", v)
 	}
 
+	// next/ UI channel lane (M55 #1340). Until a screen's next template lands,
+	// every /next/* path falls back to its stable counterpart so navigation
+	// never breaks and no /next path 404s. The handler strips the /next prefix
+	// and re-dispatches through the mux to the existing v1 handler; the UX
+	// middleware has already set the X-Stillwater-UX: next header. Registered
+	// before the catch-all; each screen issue replaces this generic fallback
+	// with a flag-aware handler as its next template lands. No per-route auth
+	// wrapper here: the re-dispatched stable route applies its own auth.
+	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
+
 	// Catch-all: unmatched routes render the custom 404 page. Registered last
 	// so all explicit routes above take precedence. Uses optional auth so the
 	// sidebar can show the logged-in state when the user is authenticated.
@@ -825,6 +842,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	var handler http.Handler = mux
 	handler = csrfWithExemptions(csrf, handler, csrfExempt)
 	handler = middleware.Logging(r.logger, bp)(handler)
+	// UX wraps Logging (outside it) so the resolved channel is in the request
+	// context when Logging emits the per-request ux= field. It also sets the
+	// X-Stillwater-UX response header and drives the /next/* lane.
+	handler = middleware.UX(r.ux, bp)(handler)
 	if r.i18nBundle != nil {
 		handler = i18n.Middleware(r.i18nBundle)(handler)
 	}

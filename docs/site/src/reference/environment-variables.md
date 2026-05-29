@@ -41,6 +41,7 @@ The table below is generated from the configuration definition; do not edit it b
 | `SW_TLS_CERT_FILE` | string | unset | Path to a PEM-encoded TLS certificate. When set together with SW_TLS_KEY_FILE Stillwater serves HTTPS directly instead of plain HTTP. |
 | `SW_TLS_KEY_FILE` | string | unset | Path to the PEM-encoded private key for SW_TLS_CERT_FILE. Both files must be readable by the Stillwater process. |
 | `SW_TLS_PORT` | integer | unset | Optional dedicated HTTPS port. When unset Stillwater serves HTTPS on SW_PORT (collapse semantics, single listener). Numeric values outside 1-65535 are rejected at startup. |
+| `SW_UX` | string | `stable` | Web UI channel: stable (the current UI), next (the in-development preview UI), or dual (both served; defaults to stable, users opt into the preview via the sw_ux cookie or /next/ paths). Default stable means no behavior change. |
 <!-- END GENERATED: env-reference -->
 
 `SW_CONFIG_PATH` is also honored at startup but lives outside the configuration struct: set it to point at a TOML or YAML config file. When unset, Stillwater attempts to read `/config/config.toml`; if that file does not exist, it starts with defaults plus environment overrides only. YAML files are still accepted for existing installs; the loader picks the parser from the file extension (`.toml` -> TOML; `.yaml` or `.yml` -> YAML).
@@ -103,6 +104,16 @@ Anything else disables backups -- `True`, `TRUE`, and `yes` all disable. Pin to 
 If you don't set `SW_SESSION_SECRET` and `SW_ENCRYPTION_KEY`, Stillwater writes generated values into the config directory on first run. **Back these files up.** Losing the encryption key means losing the ability to decrypt stored provider API keys (you'd have to re-enter them); losing the session secret signs everyone out.
 
 In container deployments, mount a Docker volume at `/config` so these files survive container recreation. The [install with Docker Compose](../getting-started/install-docker-compose.md) page covers this.
+
+### UI channel (`SW_UX`)
+
+`SW_UX` selects which web UI channel Stillwater serves. It is a presentation flag, not an API version: every channel uses the same handlers and `/api/v1/*` endpoints.
+
+- `stable` (default) renders the current UI. No behavior change.
+- `next` renders the in-development preview UI under `/next/*`. Screens that have not been rebuilt yet fall back to their stable page, so navigation never breaks.
+- `dual` makes both channels reachable. The stable UI is served by default and users opt into the preview explicitly; there is no chooser screen.
+
+Per-user opt-in uses the `sw_ux` cookie (`stable` or `next`), which overrides the environment default. Every response carries an `X-Stillwater-UX: stable|next` header indicating the channel that served it, and each request log line includes a `ux=` field.
 
 ## What's *not* an environment variable
 

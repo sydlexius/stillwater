@@ -31,6 +31,60 @@ func TestDefault(t *testing.T) {
 	}
 }
 
+// TestUX_DefaultEnvAndValidation covers the SW_UX UI-channel flag (M55 #1340):
+// it defaults to "stable", accepts the env override for the three legal values,
+// and rejects an unknown value at load time.
+func TestUX_DefaultEnvAndValidation(t *testing.T) {
+	t.Run("default is stable", func(t *testing.T) {
+		clearSWEnv(t)
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.Server.UX != "stable" {
+			t.Errorf("Server.UX = %q, want stable", cfg.Server.UX)
+		}
+	})
+
+	for _, val := range []string{"stable", "next", "dual"} {
+		t.Run("env accepts "+val, func(t *testing.T) {
+			clearSWEnv(t)
+			t.Setenv("SW_UX", val)
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load() with SW_UX=%q error = %v", val, err)
+			}
+			if cfg.Server.UX != val {
+				t.Errorf("Server.UX = %q, want %q", cfg.Server.UX, val)
+			}
+		})
+	}
+
+	t.Run("rejects unknown value", func(t *testing.T) {
+		clearSWEnv(t)
+		t.Setenv("SW_UX", "v2")
+		if _, err := Load(""); err == nil {
+			t.Error("Load() with SW_UX=v2 returned nil error, want validation failure")
+		}
+	})
+
+	t.Run("empty value in file normalizes to stable", func(t *testing.T) {
+		clearSWEnv(t)
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		if err := os.WriteFile(path, []byte("[server]\nux = \"\"\n"), 0o600); err != nil {
+			t.Fatalf("writing config: %v", err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.Server.UX != "stable" {
+			t.Errorf("Server.UX = %q, want stable (empty normalizes to default)", cfg.Server.UX)
+		}
+	})
+}
+
 // clearSWEnv unsets all SW_* environment variables to prevent env overrides
 // from interfering with tests that assert YAML/default behavior.
 func clearSWEnv(t *testing.T) {
@@ -45,7 +99,7 @@ func clearSWEnv(t *testing.T) {
 		"SW_HTTP_REDIRECT_PORT", "SW_HTTP3_ENABLED", "SW_HTTP3_PORT",
 		"SW_ACME_DOMAIN", "SW_ACME_EMAIL", "SW_ACME_CA",
 		"SW_ACME_EAB_KEY_ID", "SW_ACME_EAB_MAC_KEY",
-		"SW_ACME_IP", "SW_ACME_CACHE_DIR",
+		"SW_ACME_IP", "SW_ACME_CACHE_DIR", "SW_UX",
 	} {
 		t.Setenv(key, "")
 	}

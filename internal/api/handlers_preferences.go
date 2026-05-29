@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -34,6 +35,14 @@ const (
 	PrefAutoFetchImages          = "auto_fetch_images"
 	PrefBgOpacity                = "bg_opacity"
 	PrefPageSize                 = "page_size"
+
+	// PrefArtistDetailSectionOrder and PrefArtistDetailHiddenSections are the
+	// per-user artist-detail layout preferences (M55 #1336/#1339). Each stores a
+	// JSON array of section identifiers. They are not in preferenceDefaults
+	// because their value is a free-form ordered/visibility list rather than a
+	// fixed set of strings; validateSectionList enforces their shape.
+	PrefArtistDetailSectionOrder   = "artist_detail_section_order"
+	PrefArtistDetailHiddenSections = "artist_detail_hidden_sections"
 
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
 	// preferences. Keys have the form "suppress_confirm_{action}" and accept
@@ -109,6 +118,114 @@ const (
 	BgOpacityMin     = 20
 	BgOpacityMax     = 100
 )
+
+// artistDetailLayoutMaxEntries and artistDetailLayoutMaxEntryLen bound an
+// artist-detail layout preference so a single preference row can never hold an
+// unbounded blob (each entry is a short section identifier).
+const (
+	artistDetailLayoutMaxEntries  = 50
+	artistDetailLayoutMaxEntryLen = 64
+)
+
+// isArtistDetailLayoutKey reports whether key is one of the artist-detail layout
+// preferences, which store a JSON array of section identifiers.
+func isArtistDetailLayoutKey(key string) bool {
+	return key == PrefArtistDetailSectionOrder || key == PrefArtistDetailHiddenSections
+}
+
+// validateSectionList parses value as a JSON array of non-empty section
+// identifiers and returns its canonical compact JSON form (a JSON null or
+// missing array normalizes to "[]"). It enforces upper bounds on the count and
+// length of entries. ok is false for malformed input.
+func validateSectionList(value string) (string, bool) {
+	var ids []string
+	if err := json.Unmarshal([]byte(value), &ids); err != nil {
+		return "", false
+	}
+	if len(ids) > artistDetailLayoutMaxEntries {
+		return "", false
+	}
+	for _, id := range ids {
+		if id == "" || len(id) > artistDetailLayoutMaxEntryLen {
+			return "", false
+		}
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// validateScalarPref validates a string-valued preference for the PATCH merge
+// path, mirroring the per-key PUT validation for known keys, suppress_confirm_*,
+// page_size, and bg_opacity. It returns the canonical stored form. ok is false
+// for unknown keys or invalid values. metadata_languages is intentionally not
+// handled here: its reset-to-default (empty-array deletes the row) semantics
+// live on the dedicated PUT endpoint.
+func validateScalarPref(key, value string) (string, bool) {
+	switch {
+	case isSuppressConfirmKey(key):
+		if value == "true" || value == "false" {
+			return value, true
+		}
+		return "", false
+	case isPageSizeKey(key):
+		n, err := strconv.Atoi(value)
+		if err != nil || n < PageSizeMin || n > PageSizeMax {
+			return "", false
+		}
+		return strconv.Itoa(n), true
+	case isBgOpacityKey(key):
+		n, err := strconv.Atoi(value)
+		if err != nil || n < BgOpacityMin || n > BgOpacityMax {
+			return "", false
+		}
+		return strconv.Itoa(n), true
+	default:
+		def, known := preferenceDefaults[key]
+		if !known {
+			return "", false
+		}
+		for _, allowed := range def.allowedValues {
+			if value == allowed {
+				return value, true
+			}
+		}
+		return "", false
+	}
+}
+
+// canonicalLayoutValue returns the canonical JSON-array form of a stored
+// artist-detail layout value, falling back to "[]" (and logging) when the
+// stored row is malformed.
+func (r *Router) canonicalLayoutValue(userID, key, value string) string {
+	if canonical, ok := validateSectionList(value); ok {
+		return canonical
+	}
+	r.logger.Warn("stored artist-detail layout preference malformed; returning []",
+		"user_id", userID, "key", key, "raw_value", value)
+	return "[]"
+}
+
+// normalizePatchPref validates and normalizes a single PATCH preference entry,
+// returning the canonical string to store. Array-valued layout keys take a JSON
+// array; every other supported key takes a JSON string validated against the
+// same rules as the PUT-per-key endpoint. ok is false for unknown keys or
+// invalid values.
+func normalizePatchPref(key string, raw json.RawMessage) (string, bool) {
+	if isArtistDetailLayoutKey(key) {
+		return validateSectionList(string(raw))
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", false
+	}
+	return validateScalarPref(key, s)
+}
 
 // normalizeBoolPref returns "true" or "false". If raw is already one of those
 // it is returned unchanged; otherwise fallback is returned. Callers that have
@@ -310,7 +427,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	pageSizeKey := isPageSizeKey(key)
 	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
-	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey {
+	layoutKey := isArtistDetailLayoutKey(key)
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey && !layoutKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -334,6 +452,10 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			value = strconv.Itoa(BgOpacityDefault)
 		case metaLangKey:
 			value = MetadataLanguagesDefault
+		case layoutKey:
+			// No stored row: an empty array means "use the renderer's default
+			// section order / nothing hidden".
+			value = "[]"
 		case key == PrefAutoFetchImages:
 			// Fall back to the app-level setting so the API reflects the same
 			// default behavior as the artist image search handler.
@@ -370,6 +492,12 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 				"user_id", userID, "raw_value", value, "normalized", normalized)
 			value = normalized
 		}
+	}
+
+	// Canonicalize artist-detail layout arrays so malformed or manually edited
+	// DB rows always return a valid JSON array (falling back to []).
+	if layoutKey {
+		value = r.canonicalLayoutValue(userID, key, value)
 	}
 
 	// Canonicalize boolean preferences so malformed DB values always return
@@ -478,6 +606,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 					"user_id", userID, "raw_value", v, "normalized", normalized)
 			}
 			prefs[k] = normalized
+		} else if isArtistDetailLayoutKey(k) {
+			if canonical, ok := validateSectionList(v); ok {
+				prefs[k] = canonical
+			} else {
+				r.logger.Warn("stored artist-detail layout preference malformed; omitting on read",
+					"user_id", userID, "key", k, "raw_value", v)
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -508,7 +643,8 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	pageSizeKey := isPageSizeKey(key)
 	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
-	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey {
+	layoutKey := isArtistDetailLayoutKey(key)
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey && !layoutKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -568,6 +704,12 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 		if valid {
 			body.Value = canonical
 		}
+	case layoutKey:
+		canonical, ok := validateSectionList(body.Value)
+		valid = ok
+		if valid {
+			body.Value = canonical
+		}
 	default:
 		for _, allowed := range def.allowedValues {
 			if body.Value == allowed {
@@ -593,6 +735,72 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": body.Value})
+}
+
+// handlePatchPreferences merges a partial set of preferences for the
+// authenticated user in a single request. PATCH /api/v1/preferences
+//
+// The body is a JSON object mapping preference keys to values: scalar
+// preferences take a JSON string (e.g. {"theme":"dark"}); the artist-detail
+// layout keys take a JSON array of section ids (e.g.
+// {"artist_detail_section_order":["bio","artwork"]}). Only the keys present in
+// the body are written; absent keys are left untouched (merge semantics). Every
+// entry is validated before any write, so an unknown key or invalid value
+// rejects the whole request atomically with no partial application. The
+// response echoes the canonical stored form of the keys that were written.
+func (r *Router) handlePatchPreferences(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var body map[string]json.RawMessage
+	if !DecodeJSON(w, req, &body) {
+		return
+	}
+
+	// Validate + normalize every entry before writing anything so the merge is
+	// all-or-nothing: a single bad key never leaves a partially applied change.
+	normalized := make(map[string]string, len(body))
+	for key, raw := range body {
+		val, ok := normalizePatchPref(key, raw)
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid value or unknown key: " + key})
+			return
+		}
+		normalized[key] = val
+	}
+
+	if len(normalized) > 0 {
+		tx, err := r.db.BeginTx(req.Context(), nil)
+		if err != nil {
+			r.logger.Error("begin tx for preferences patch", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		for key, val := range normalized {
+			if _, err := tx.ExecContext(req.Context(),
+				`INSERT INTO user_preferences (user_id, key, value, updated_at)
+				 VALUES (?, ?, ?, datetime('now'))
+				 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+				userID, key, val); err != nil {
+				r.logger.Error("upserting preference in patch", "key", key, "error", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+				return
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			r.logger.Error("commit preferences patch", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, normalized)
 }
 
 // handleUserPreferencesPage renders the user preferences page (accessible to
