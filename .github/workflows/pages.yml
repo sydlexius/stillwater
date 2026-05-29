@@ -6,12 +6,22 @@ on:
     paths:
       - 'docs/site/**'
       - 'internal/api/openapi.yaml'
+      # Vendored Scalar assets the API reference is built from
+      # (build-api-reference.sh copies these); rebuild when the app theme
+      # or bundle changes so the published reference stays in lockstep.
+      - 'web/static/js/scalar-api-reference.min.js'
+      - 'web/static/css/scalar-theme.css'
       - '.github/workflows/pages.yml'
   pull_request:
     branches: [main]
     paths:
       - 'docs/site/**'
       - 'internal/api/openapi.yaml'
+      # Vendored Scalar assets the API reference is built from
+      # (build-api-reference.sh copies these); rebuild when the app theme
+      # or bundle changes so the published reference stays in lockstep.
+      - 'web/static/js/scalar-api-reference.min.js'
+      - 'web/static/css/scalar-theme.css'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
