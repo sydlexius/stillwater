@@ -147,6 +147,9 @@ nav:
           - Rule engine: contributing/architecture/rule-engine.md
           - Scanner pipeline: contributing/architecture/scanner-pipeline.md
           - Conflict gate: contributing/architecture/conflict-gate.md
+          - Providers and coalesce: contributing/architecture/providers-and-coalesce.md
+          - Settings import/export: contributing/architecture/settings-import-export.md
+          - Event bus and workers: contributing/architecture/event-bus-and-workers.md
       - PR workflow: contributing/pr-workflow.md
       - Worktrees: contributing/worktrees.md
       - Milestone protocol: contributing/milestone-protocol.md
