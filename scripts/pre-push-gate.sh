@@ -122,6 +122,20 @@ fi
 echo "OK"
 
 echo ""
+echo "=== Tool version drift ==="
+# Assert the lint/spell tool versions pinned independently in the bash hook,
+# the pre-commit framework config, and the CI workflows all agree. A drift
+# lets a local hook pass while CI fails on the same tree (and vice versa);
+# golangci-lint minor versions also resolve //nolint differently (#1560).
+# Fast grep-only check, so it fail-fasts before the multi-minute test suite.
+TOOL_VERSIONS_HELPER="$SCRIPT_DIR/check-tool-versions.sh"
+if [ ! -x "$TOOL_VERSIONS_HELPER" ]; then
+  echo "pre-push-gate: check-tool-versions.sh not found or not executable in scripts/" >&2
+  exit 1
+fi
+bash "$TOOL_VERSIONS_HELPER"
+
+echo ""
 echo "=== Tests ==="
 go test -race -count=1 -covermode=atomic -coverprofile="$COVER_OUT" ./...
 

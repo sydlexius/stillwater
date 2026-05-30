@@ -8,6 +8,9 @@ on:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
       - '.markdownlint-cli2.yaml'
+      # Spell-check config consumed by the crate-ci/typos step: a rule change
+      # here alters lint outcomes on unchanged markdown, so it must re-trigger.
+      - '.typos.toml'
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
@@ -15,6 +18,9 @@ on:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
       - '.markdownlint-cli2.yaml'
+      # Spell-check config consumed by the crate-ci/typos step: a rule change
+      # here alters lint outcomes on unchanged markdown, so it must re-trigger.
+      - '.typos.toml'
       - '.github/workflows/docs.yml'
 
 concurrency:

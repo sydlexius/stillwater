@@ -12,7 +12,10 @@ WORKDIR /src
 # Compute fresh hashes via:
 #   curl -fsSLO https://github.com/tailwindlabs/tailwindcss/releases/download/<vX>/tailwindcss-linux-{x64,arm64}-musl
 #   shasum -a 256 tailwindcss-linux-*-musl
-# Keep .github/workflows/bruno-ci.yml in sync with TAILWIND_VERSION + TAILWIND_SHA256_X64.
+# This Dockerfile pins the musl binaries (x64 + arm64). The CI workflows pin the
+# glibc linux-x64 binary in .github/actions/setup-tailwind, which owns
+# TAILWIND_VERSION + its x64 SHA. Bump TAILWIND_VERSION in both places together,
+# but the musl SHAs here differ from the action's x64 SHA and stay separate.
 ARG TAILWIND_VERSION=v4.2.0
 ARG TAILWIND_SHA256_X64=44b85e87dd1812b5b7e46b6522c80cfa045474c736afa6c9ad2279b7d4944354
 ARG TAILWIND_SHA256_ARM64=2db78c3d59d0b7f75fee28a7ea0d0dc6284761bd039bf633a9f5daac80060829

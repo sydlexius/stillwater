@@ -40,7 +40,10 @@ theme:
         icon: material/weather-night
         name: Switch to dark mode
   features:
-    - navigation.instant
+    # navigation.instant is intentionally NOT enabled: the /api/ page is a
+    # standalone Scalar document (see the API Reference nav entry below and
+    # docs/site/build-api-reference.sh) with none of Material's DOM structure,
+    # so instant loading silently fails to mount it (#1760). Do not re-add.
     - navigation.tabs
     - navigation.sections
     - navigation.top
@@ -157,7 +160,8 @@ nav:
       - Worktrees: contributing/worktrees.md
       - Milestone protocol: contributing/milestone-protocol.md
   # /api/ is overwritten at deploy time with the standalone Scalar reference
-  # (see docs/site/build-api-reference.sh). A relative link is correct: clicking
-  # it does a normal full-page load to that document. navigation.instant falls
-  # back to a real navigation for non-Material pages, so it does not break.
+  # (see docs/site/build-api-reference.sh), a document with none of Material's
+  # DOM structure. With navigation.instant disabled (see theme.features above),
+  # clicking this entry does a normal full-page load and Scalar mounts cleanly.
+  # Re-enabling instant loading would intercept the click and break it (#1760).
   - API Reference: api/index.md
