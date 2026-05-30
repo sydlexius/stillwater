@@ -111,9 +111,6 @@ if [ -n "$STAGED_TEMPL" ]; then
     # Always use the version pinned in go.mod via the tool directive.
     TEMPL_CMD="go tool templ"
 
-    # Save current state of generated files, regenerate, compare
-    TEMPL_GEN_FILES=$(git diff --cached --name-only -- '*_templ.go' || true)
-
     if ! $TEMPL_CMD generate 2>/tmp/pre-commit-templ.log; then
         echo -e "${RED}${BOLD}FAIL${RESET} templ generate:"
         cat /tmp/pre-commit-templ.log | head -20
@@ -195,27 +192,47 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# 5. golangci-lint -- full linter suite (matches CI exactly)
+# 5. golangci-lint -- lint the packages touched by staged .go files
 # --------------------------------------------------------------------------
-if [ -n "$STAGED_GO_ANY" ]; then
+# Scoped to the packages of staged .go files rather than the whole module.
+# pre-commit runs on every commit, and a full `golangci-lint run ./...` adds
+# ~30s cold to each one. The pre-push gate (diff-only + gocognit measurement
+# re-pass) and CI's lint job (full ./...) both lint comprehensively, so the
+# per-commit pass only needs fast feedback on what is being committed.
+# Package directories (not bare file paths) are passed so the typechecker can
+# resolve cross-file symbols defined in sibling files of the same package;
+# feeding bare *.go paths breaks typecheck and silently drops findings (#1650).
+if [ -n "$STAGED_GO" ]; then
     if ! command -v golangci-lint &>/dev/null; then
         warn "golangci-lint (not installed, skipping)"
     else
-        if ! LINT_OUTPUT=$(golangci-lint run ./... 2>&1); then
+        STAGED_GO_PKGS=$(printf '%s\n' "$STAGED_GO" \
+            | xargs -n1 dirname \
+            | sort -u \
+            | sed 's|^|./|; s|$|/...|')
+        # shellcheck disable=SC2086  # newline-split into package args is intentional
+        if ! LINT_OUTPUT=$(golangci-lint run $STAGED_GO_PKGS 2>&1); then
             echo -e "${RED}${BOLD}FAIL${RESET} golangci-lint:"
             echo "$LINT_OUTPUT"
             exit 1
         fi
-        pass "golangci-lint"
+        pass "golangci-lint (staged packages)"
     fi
 else
-    warn "golangci-lint (no staged .go / go.mod / go.sum files)"
+    warn "golangci-lint (no staged .go files)"
 fi
 
 # --------------------------------------------------------------------------
-# 6. govulncheck -- check for known vulnerabilities in dependencies
+# 6. govulncheck -- scan dependencies only when go.mod / go.sum changed
 # --------------------------------------------------------------------------
-if [ -n "$STAGED_GO_ANY" ]; then
+# govulncheck scans the whole module against a network-fetched vuln DB, which
+# is too slow to run on every code commit. Its result can only change when the
+# dependency set changes, so gate it on staged go.mod / go.sum. CI's
+# security.yml runs govulncheck unconditionally against the live DB as the
+# authoritative backstop, and the pre-push gate deliberately skips it (see
+# reference_govulncheck_local_vs_ci), so nothing is lost by scoping here.
+STAGED_GO_MOD=$(git diff --cached --name-only --diff-filter=ACM -- 'go.mod' 'go.sum' || true)
+if [ -n "$STAGED_GO_MOD" ]; then
     if ! command -v govulncheck &>/dev/null; then
         warn "govulncheck (not installed, skipping)"
     else
@@ -227,7 +244,7 @@ if [ -n "$STAGED_GO_ANY" ]; then
         pass "govulncheck"
     fi
 else
-    warn "govulncheck (no staged .go / go.mod / go.sum files)"
+    warn "govulncheck (no staged go.mod / go.sum changes)"
 fi
 
 # --------------------------------------------------------------------------

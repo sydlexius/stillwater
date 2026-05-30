@@ -14,6 +14,10 @@
 #      compares against the local floor file.
 #   3. Fuzz matrix drift: verifies fuzz.yml matrix matches live Fuzz* funcs.
 #      fuzz.yml runs the drift check only on a weekly schedule, not on PRs.
+#   4. Provider failure smoke: asserts every covered handler surface reports
+#      provider failures explicitly instead of returning empty data.
+#   5. Tool version drift: asserts the lint/spell tool versions pinned in the
+#      bash hook, the pre-commit config, and the CI workflows all agree.
 #
 # Trigger design:
 #   Runs unconditionally on every push to main and every PR targeting main
@@ -72,19 +76,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Install Tailwind CSS standalone binary.
-      # Version and SHA must match build/docker/Dockerfile and bruno-ci.yml.
-      # To update: bump TAILWIND_VERSION, recompute SHA256 from the release page,
-      # and update all three locations together.
-      - name: Install Tailwind CSS
-        env:
-          TAILWIND_VERSION: v4.2.0
-          TAILWIND_SHA256: 8f65e2d21c675f1e8d265219979d17d10634c1f553a2f583265b7edb28726432
-        run: |
-          curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64"
-          echo "${TAILWIND_SHA256}  tailwindcss-linux-x64" | sha256sum -c -
-          chmod +x tailwindcss-linux-x64
-          sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+      # Install Tailwind CSS via the shared composite action (single source of
+      # truth for version + SHA; see .github/actions/setup-tailwind).
+      - uses: ./.github/actions/setup-tailwind
 
       - name: Regenerate templ
         run: go tool templ generate
@@ -271,16 +265,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install Tailwind CSS
+      - uses: ./.github/actions/setup-tailwind
         if: steps.filter.outputs.relevant == 'true'
-        env:
-          TAILWIND_VERSION: v4.2.0
-          TAILWIND_SHA256: 8f65e2d21c675f1e8d265219979d17d10634c1f553a2f583265b7edb28726432
-        run: |
-          curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64"
-          echo "${TAILWIND_SHA256}  tailwindcss-linux-x64" | sha256sum -c -
-          chmod +x tailwindcss-linux-x64
-          sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
 
       - name: Run provider failure smoke test
         if: steps.filter.outputs.relevant == 'true'
@@ -289,3 +275,24 @@ jobs:
       - name: Skip (no relevant changes)
         if: steps.filter.outputs.relevant != 'true'
         run: echo "No Go source or smoke script changes; provider failure smoke skipped."
+
+  # ---------------------------------------------------------------------------
+  # Tool version drift
+  #
+  # Replicates the '=== Tool version drift ===' step in
+  # scripts/pre-push-gate.sh.  Asserts the lint/spell tool versions pinned
+  # independently in .githooks/pre-commit, .pre-commit-config.yaml, ci.yml,
+  # and docs.yml all agree.  A grep-only check, so no Go toolchain is needed;
+  # always runs and always emits a terminal status.
+  # ---------------------------------------------------------------------------
+  tool-versions:
+    name: Tool Version Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Check tool version alignment
+        run: bash scripts/check-tool-versions.sh

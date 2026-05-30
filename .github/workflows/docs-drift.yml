@@ -3,6 +3,13 @@ name: Docs Drift
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
+    # The job's internal dorny/paths-filter also reads `docs/**`, but that is
+    # deliberately NOT in this trigger: the advisory ("code changed without
+    # docs") is only meaningful when a code path is present in the PR. The
+    # pull_request paths filter and the internal filter both evaluate the full
+    # PR diff (head vs base), so a docs-only follow-up push still re-triggers
+    # and clears the advisory as long as the PR still touches one of these
+    # code paths -- which is the only case the advisory applies to.
     paths:
       - 'internal/provider/**'
       - 'internal/connection/**'
