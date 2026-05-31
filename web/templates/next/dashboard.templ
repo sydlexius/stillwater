@@ -1,0 +1,483 @@
+package next
+
+import (
+	"fmt"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+func dashHealthScoreTextClass(score float64) string {
+	if score >= 80 {
+		return "text-sm font-semibold text-green-600 dark:text-green-400"
+	}
+	return "text-sm font-semibold text-red-600 dark:text-red-400"
+}
+
+func dashHealthArcClass(score float64) string {
+	if score >= 80 {
+		return "text-green-500 dark:text-green-400"
+	}
+	return "text-red-500 dark:text-red-400"
+}
+
+templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResult, healthStatsError bool, initialQuery string) {
+	@LayoutNext(t(ctx, "dashboard.title"), assets) {
+		<div class="sw-next-dashboard space-y-2">
+			<h1 class="sr-only">{ t(ctx, "dashboard.title") }</h1>
+			<div class="sw-next-header-strip flex h-14 items-center gap-4 rounded-lg border border-gray-200 bg-white px-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+				if healthStatsError {
+					<span class="text-sm text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+				} else {
+					<a href={ templ.SafeURL(assets.BasePath + "/next/artists") } class="text-sm text-gray-700 hover:underline dark:text-gray-200">
+						{ tn(ctx, "dashboard.artist_count", stats.TotalArtists) }
+					</a>
+				}
+				<div class="h-6 w-px bg-gray-200 dark:bg-gray-700"></div>
+				<div class="flex items-center gap-2">
+					<svg width="28" height="28" class="health-ring inline-block shrink-0" aria-hidden="true">
+						<circle cx="14" cy="14" r="11" fill="none" stroke-width="3" class="text-gray-200 dark:text-gray-700" stroke="currentColor"></circle>
+						if !healthStatsError {
+							<circle cx="14" cy="14" r="11" fill="none" stroke-width="3"
+								stroke-dasharray="69.11"
+								stroke-dashoffset={ fmt.Sprintf("%.2f", 69.11*(1.0-stats.Score/100.0)) }
+								stroke-linecap="round"
+								transform="rotate(-90 14 14)"
+								class={ dashHealthArcClass(stats.Score) }
+								stroke="currentColor"></circle>
+						} else {
+							<circle cx="14" cy="14" r="11" fill="none" stroke-width="3" stroke-dasharray="3 3" class="text-gray-300 dark:text-gray-600" stroke="currentColor"></circle>
+						}
+					</svg>
+					if healthStatsError {
+						<span class="text-sm text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+					} else {
+						<span class={ dashHealthScoreTextClass(stats.Score) }>
+							{ tf(ctx, "dashboard.health_compliant", stats.Score) }
+						</span>
+					}
+				</div>
+				<div class="h-6 w-px bg-gray-200 dark:bg-gray-700"></div>
+				<button type="button" id="last-evaluated-text" class="text-xs text-gray-500 hover:underline dark:text-gray-400">
+					{ t(ctx, "common.loading") }
+				</button>
+			</div>
+			<div class="sw-next-toolbar sticky top-0 z-10 flex items-center gap-2 rounded-lg bg-gray-50/80 px-2 py-2 backdrop-blur dark:bg-gray-900/80">
+				<input
+					id="dashboard-search"
+					type="search"
+					name="search"
+					placeholder={ t(ctx, "dashboard.search_placeholder") }
+					hx-get="/dashboard/actions"
+					hx-trigger="input changed delay:200ms"
+					hx-target="#action-queue"
+					hx-swap="innerHTML"
+					class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+				/>
+				<button
+					id="dashboard-filters-trigger"
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-2 text-sm"
+					aria-expanded="false"
+					aria-controls="dashboard-filter-flyout"
+					onclick="swDashboardPanels && swDashboardPanels.toggleFilters()"
+				>
+					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z"></path>
+					</svg>
+				</button>
+				<span id="next-dash-count" class="text-xs text-gray-500 ml-auto"></span>
+				<button
+					id="activity-drawer-trigger"
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-2 text-sm"
+					aria-expanded="false"
+					aria-controls="next-dash-activity-feed"
+					onclick="swDashboardPanels && swDashboardPanels.toggleActivity()"
+					aria-label={ t(ctx, "dashboard.recent_activity") }
+				>
+					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"></path>
+					</svg>
+					<span class="hidden sm:inline">{ t(ctx, "dashboard.recent_activity") }</span>
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white"
+					onclick="swDashboardPanels && swDashboardPanels.openRunRules()"
+				>
+					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"></path>
+					</svg>
+					<span>{ t(ctx, "artist.run_rules") }</span>
+				</button>
+			</div>
+			<div class="grid grid-cols-1 min-[1100px]:grid-cols-[minmax(0,1fr)_320px] gap-4">
+				<div
+					id="action-queue"
+					hx-get={ "/dashboard/actions" + initialQuery }
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				>
+					<div class="space-y-1.5" aria-busy="true">
+						<div class="sw-card animate-pulse rounded-lg p-4">
+							<div class="flex items-start gap-3">
+								<div class="h-4 w-4 rounded bg-gray-200"></div>
+								<div class="flex-1 space-y-2">
+									<div class="h-4 w-2/3 rounded bg-gray-200"></div>
+									<div class="h-3 w-1/2 rounded bg-gray-200"></div>
+								</div>
+								<div class="h-8 w-16 rounded bg-gray-200"></div>
+							</div>
+						</div>
+						<div class="sw-card animate-pulse rounded-lg p-4">
+							<div class="flex items-start gap-3">
+								<div class="h-4 w-4 rounded bg-gray-200"></div>
+								<div class="flex-1 space-y-2">
+									<div class="h-4 w-1/2 rounded bg-gray-200"></div>
+									<div class="h-3 w-2/5 rounded bg-gray-200"></div>
+								</div>
+								<div class="h-8 w-16 rounded bg-gray-200"></div>
+							</div>
+						</div>
+						<div class="sw-card animate-pulse rounded-lg p-4">
+							<div class="flex items-start gap-3">
+								<div class="h-4 w-4 rounded bg-gray-200"></div>
+								<div class="flex-1 space-y-2">
+									<div class="h-4 w-3/4 rounded bg-gray-200"></div>
+									<div class="h-3 w-1/3 rounded bg-gray-200"></div>
+								</div>
+								<div class="h-8 w-16 rounded bg-gray-200"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<aside class="sw-card hidden min-[1100px]:flex flex-col rounded-lg shadow-sm sticky top-4 max-h-[calc(100vh-6rem)] overflow-hidden">
+					<div class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+						<h2 class="text-sm font-semibold text-gray-900">{ t(ctx, "dashboard.recent_activity") }</h2>
+						<span id="next-dash-activity-status" class="text-xs text-gray-400"></span>
+					</div>
+					<div
+						id="next-dash-activity-feed"
+						class="flex-1 overflow-y-auto divide-y divide-gray-100"
+						hx-get="/dashboard/activity"
+						hx-trigger="load"
+						hx-swap="innerHTML"
+					></div>
+					<script>
+						(function() {
+							var feed = document.getElementById('next-dash-activity-feed');
+							var status = document.getElementById('next-dash-activity-status');
+							if (!feed || !status) return;
+							var bp = (function() {
+								var m = document.querySelector('meta[name="htmx-base-path"]');
+								return m ? m.content : '';
+							})();
+							var src;
+							try { src = new EventSource(bp + '/api/v1/events/stream'); } catch(e) { return; }
+							src.onopen = function() { status.textContent = 'Live'; status.className = 'text-xs text-green-500'; };
+							src.onerror = function() { status.textContent = 'Reconnecting...'; status.className = 'text-xs text-amber-500'; };
+							function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+							src.addEventListener('activity.recent', function(e) {
+								var d = {}; try { d = JSON.parse(e.data||'{}'); } catch(_) { return; }
+								var row = document.createElement('div');
+								row.className = 'px-4 py-2.5 text-sm';
+								var ts = d.ts ? new Date(d.ts) : new Date();
+								row.innerHTML = '<div class="flex items-start justify-between gap-2"><span class="text-gray-800 truncate">' + esc(d.text||'') + '</span><span class="text-[10px] text-gray-400 shrink-0">' + ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) + '</span></div>';
+								feed.insertBefore(row, feed.firstChild);
+								while (feed.children.length > 50) feed.removeChild(feed.lastChild);
+								status.textContent = 'Live'; status.className = 'text-xs text-green-500';
+							});
+						})();
+					</script>
+				</aside>
+			</div>
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "artists.shortcuts.tip_label") }:</span>
+				<span><kbd class="sw-kbd">/</kbd> { t(ctx, "dashboard.search_placeholder") }</span>
+				<span><kbd class="sw-kbd">f</kbd> { t(ctx, "common.filters") }</span>
+				<span><kbd class="sw-kbd">?</kbd> shortcuts</span>
+			</p>
+			<div
+				id="bulk-bar"
+				data-label-selected-one={ t(ctx, "dashboard.n_selected.one") }
+				data-label-selected-other={ t(ctx, "dashboard.n_selected.other") }
+				data-label-fix-selected={ t(ctx, "dashboard.fix_selected") }
+				data-label-fixing-progress={ t(ctx, "dashboard.fixing_progress") }
+				data-label-fixes-failed-one={ t(ctx, "dashboard.fixes_failed.one") }
+				data-label-fixes-failed-other={ t(ctx, "dashboard.fixes_failed.other") }
+				class="fixed bottom-0 left-0 right-0 z-40 hidden border-t border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95"
+			>
+				<div class="mx-auto flex max-w-3xl items-center justify-between">
+					<div class="flex items-center gap-3">
+						<span id="bulk-count" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "dashboard.zero_selected") }</span>
+						<button id="bulk-select-all-btn" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "common.select_all") }</button>
+						<button id="bulk-deselect-btn" class="text-xs text-gray-500 dark:text-gray-400 hover:underline">{ t(ctx, "common.clear") }</button>
+					</div>
+					<div class="flex gap-2">
+						<button id="bulk-fix-btn" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors">
+							{ t(ctx, "dashboard.fix_selected") }
+						</button>
+						<button id="bulk-dismiss-btn" class="inline-flex items-center gap-1.5 rounded-lg bg-gray-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-gray-700 transition-colors">
+							{ t(ctx, "dashboard.dismiss_selected") }
+						</button>
+					</div>
+				</div>
+			</div>
+			<script>
+				(function() {
+					var FILTER_ID = 'dashboard-filter-flyout';
+
+					function panel(id) { return document.getElementById(id); }
+					function isOpen(el) { return el && el.classList.contains('sw-filter-flyout--open'); }
+
+					function closeFilter() {
+						if (window.swFilterFlyout && typeof window.swFilterFlyout.close === 'function') {
+							window.swFilterFlyout.close(FILTER_ID);
+						}
+					}
+					function openFilter() {
+						if (window.swFilterFlyout && typeof window.swFilterFlyout.open === 'function') {
+							window.swFilterFlyout.open(FILTER_ID);
+						}
+					}
+
+					window.swDashboardPanels = {
+						toggleFilters: function() {
+							if (isOpen(panel(FILTER_ID))) closeFilter(); else openFilter();
+						},
+						close: function() { closeFilter(); }
+					};
+
+					var filterWasOpen = false;
+					document.body.addEventListener('htmx:beforeSwap', function(evt) {
+						var target = evt.detail && evt.detail.target;
+						if (!target || target.id !== 'action-queue') return;
+						filterWasOpen = isOpen(panel(FILTER_ID));
+					});
+					document.body.addEventListener('htmx:afterSettle', function(evt) {
+						var target = evt.detail && evt.detail.target;
+						if (!target || target.id !== 'action-queue') return;
+						if (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {
+							window.swFilterFlyout.initFromURL(FILTER_ID);
+						}
+						if (filterWasOpen) openFilter();
+						filterWasOpen = false;
+					});
+					document.body.addEventListener('sw:filter-applied', function(evt) {
+						if (!evt.target || evt.target.id !== 'action-queue') return;
+						var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+						var bp = bpMeta ? bpMeta.content : '';
+						htmx.ajax('GET', bp + '/dashboard/actions' + window.location.search, {target: '#action-queue', swap: 'innerHTML'});
+					});
+					document.addEventListener('DOMContentLoaded', function() {
+						if (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {
+							window.swFilterFlyout.initFromURL(FILTER_ID);
+						}
+					});
+				})();
+			</script>
+			<script>
+				(function() {
+					var bp = (function() {
+						var el = document.querySelector('meta[name="htmx-base-path"]');
+						return el ? el.content : '';
+					})();
+
+					var queue = document.getElementById('action-queue');
+					var bulkBar = document.getElementById('bulk-bar');
+					var bulkCount = document.getElementById('bulk-count');
+					var bulkDismissBtn = document.getElementById('bulk-dismiss-btn');
+					var bulkFixBtn = document.getElementById('bulk-fix-btn');
+					var selectAllBtn = document.getElementById('bulk-select-all-btn');
+					var deselectBtn = document.getElementById('bulk-deselect-btn');
+					if (!queue || !bulkBar) return;
+
+					var lastChecked = null;
+
+					function pluralize(count, one, other) {
+						var tpl = count === 1 ? one : other;
+						return tpl.replaceAll('{count}', String(count));
+					}
+
+					function updateBulkBar() {
+						var checked = queue.querySelectorAll('.bulk-check:checked');
+						var total = queue.querySelectorAll('.bulk-check').length;
+						if (checked.length > 0) {
+							bulkBar.classList.remove('hidden');
+							bulkCount.textContent = pluralize(checked.length, bulkBar.dataset.labelSelectedOne || '1 selected', bulkBar.dataset.labelSelectedOther || '{count} selected');
+						} else {
+							bulkBar.classList.add('hidden');
+						}
+						var toggle = document.getElementById('select-all-toggle');
+						if (toggle) {
+							toggle.checked = total > 0 && checked.length === total;
+							toggle.indeterminate = checked.length > 0 && checked.length < total;
+						}
+					}
+
+					function getCSRF() {
+						var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+						return match ? decodeURIComponent(match[1]) : '';
+					}
+
+					function getCheckedIDs() {
+						var checked = queue.querySelectorAll('.bulk-check:checked');
+						return Array.prototype.map.call(checked, function(cb) { return cb.value; });
+					}
+
+					function setAllChecked(state) {
+						queue.querySelectorAll('.bulk-check').forEach(function(cb) { cb.checked = state; });
+						updateBulkBar();
+					}
+
+					queue.addEventListener('click', function(e) {
+						var cb = e.target;
+						if (!cb.classList.contains('bulk-check')) return;
+						if (e.shiftKey && lastChecked && lastChecked !== cb) {
+							var boxes = Array.from(queue.querySelectorAll('.bulk-check'));
+							var start = boxes.indexOf(lastChecked);
+							var end = boxes.indexOf(cb);
+							if (start > -1 && end > -1) {
+								var lo = Math.min(start, end);
+								var hi = Math.max(start, end);
+								for (var i = lo; i <= hi; i++) { boxes[i].checked = cb.checked; }
+							}
+						}
+						lastChecked = cb;
+						updateBulkBar();
+					});
+					queue.addEventListener('change', function(e) {
+						if (e.target.id === 'select-all-toggle') { setAllChecked(e.target.checked); return; }
+						if (e.target.classList.contains('bulk-check')) updateBulkBar();
+					});
+					if (selectAllBtn) selectAllBtn.addEventListener('click', function() { setAllChecked(true); });
+					if (deselectBtn) deselectBtn.addEventListener('click', function() { setAllChecked(false); });
+
+					if (bulkDismissBtn) {
+						bulkDismissBtn.addEventListener('click', function() {
+							var ids = getCheckedIDs();
+							if (ids.length === 0) return;
+							fetch(bp + '/api/v1/notifications/bulk-dismiss', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+								body: JSON.stringify({ids: ids})
+							}).then(function(res) {
+								if (res.ok) {
+									bulkBar.classList.add('hidden');
+									htmx.ajax('GET', bp + '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});
+								} else {
+									window.showToast && window.showToast('Dismiss failed (' + res.status + ')');
+								}
+							}).catch(function() { window.showToast && window.showToast('Network error'); });
+						});
+					}
+
+					if (bulkFixBtn) {
+						bulkFixBtn.addEventListener('click', function() {
+							var ids = getCheckedIDs();
+							if (ids.length === 0) return;
+							bulkFixBtn.disabled = true;
+							var total = ids.length, failed = 0;
+							function fixNext(i) {
+								if (i >= ids.length) {
+									bulkBar.classList.add('hidden');
+									bulkFixBtn.disabled = false;
+									bulkFixBtn.textContent = bulkBar.dataset.labelFixSelected || 'Fix Selected';
+									if (failed > 0) {
+										var tpl = pluralize(failed, bulkBar.dataset.labelFixesFailedOne || '1 of {total} fixes failed', bulkBar.dataset.labelFixesFailedOther || '{failed} of {total} fixes failed');
+										window.showToast && window.showToast(tpl.replace('{failed}', failed).replace('{total}', total));
+									}
+									htmx.ajax('GET', bp + '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});
+									return;
+								}
+								bulkFixBtn.textContent = (bulkBar.dataset.labelFixingProgress || 'Fixing {current}/{total}...').replace('{current}', i + 1).replace('{total}', total);
+								fetch(bp + '/api/v1/notifications/' + ids[i] + '/fix', {
+									method: 'POST', headers: { 'X-CSRF-Token': getCSRF() }
+								}).then(function(res) { if (!res.ok) failed++; })
+								  .catch(function() { failed++; })
+								  .finally(function() { fixNext(i + 1); });
+							}
+							fixNext(0);
+						});
+					}
+
+					document.body.addEventListener('htmx:afterSwap', function(e) {
+						if (e.detail.target && e.detail.target.id === 'action-queue') {
+							bulkBar.classList.add('hidden');
+						}
+					});
+					document.body.addEventListener('dashboard:action-resolved', function() {
+						htmx.ajax('GET', bp + '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});
+					});
+				})();
+			</script>
+			<script>
+				(function() {
+					var bp = (function() {
+						var el = document.querySelector('meta[name="htmx-base-path"]');
+						return el ? el.content : '';
+					})();
+					function updateLastEvaluated() {
+						fetch(bp + '/api/v1/rules/status')
+							.then(function(res) { return res.ok ? res.json() : null; })
+							.then(function(data) {
+								var el = document.getElementById('last-evaluated-text');
+								if (!el || !data) { if (el) el.textContent = 'Status unavailable'; return; }
+								if (!data.last_evaluation_at) { el.textContent = 'Never evaluated'; return; }
+								var evalTime = new Date(data.last_evaluation_at);
+								if (isNaN(evalTime.getTime())) { el.textContent = 'Status unavailable'; return; }
+								var diffMin = Math.floor((Date.now() - evalTime) / 60000);
+								var label;
+								if (diffMin < 1) label = 'just now';
+								else if (diffMin < 60) label = diffMin + 'm ago';
+								else if (diffMin < 1440) { var h = Math.floor(diffMin / 60); label = h + 'h ago'; }
+								else { var d = Math.floor(diffMin / 1440); label = d + 'd ago'; }
+								el.textContent = 'Evaluated ' + label;
+							})
+							.catch(function() {
+								var el = document.getElementById('last-evaluated-text');
+								if (el) el.textContent = 'Status unavailable';
+							});
+					}
+					updateLastEvaluated();
+				})();
+			</script>
+		</div>
+	}
+}
+
+// DashboardActionQueue renders the next-channel action queue fragment served by
+// GET /dashboard/actions when the resolved channel is "next". It deliberately
+// OMITS the stable DashboardActionHeader and DashboardSearchBar: the next/
+// dashboard page (DashboardPageNext) provides its own compact header strip and
+// single sticky toolbar (search + filter trigger + run-rules), so reusing the
+// full stable DashboardActionQueue here would double-render that chrome. The
+// flyout, active-filter chips, select-all, cards, and load-more are reused
+// byte-for-byte from the exported stable sub-templates (no fork).
+templ DashboardActionQueue(data templates.ActionQueueData) {
+	@templates.DashboardFilterFlyout(data)
+	@templates.DashboardActiveFilters(data)
+	if len(data.Violations) == 0 && data.Offset == 0 {
+		@templates.DashboardEmptyState(data.HealthScore, data.HealthStatsError)
+	} else {
+		<div class="flex items-center gap-3 mt-1 mb-1 px-1">
+			<label class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+				<input
+					type="checkbox"
+					id="select-all-toggle"
+					class="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+				/>
+				{ t(ctx, "dashboard.select_all") }
+			</label>
+		</div>
+		<div id="action-queue-entries" class="space-y-1.5">
+			for _, v := range data.Violations {
+				@templates.DashboardActionCard(v, data.BasePath)
+			}
+		</div>
+		if data.Offset+len(data.Violations) < data.Total {
+			@templates.DashboardLoadMoreButton(data)
+		}
+	}
+}

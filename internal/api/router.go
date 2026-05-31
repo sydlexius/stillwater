@@ -826,6 +826,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// each renders the next template only when the resolved channel is "next"
 	// (otherwise it falls back to the stable page itself). M55 #1335: artists.
 	mux.HandleFunc("GET "+bp+"/next/artists", wrapOptionalAuth(r.handleNextArtistsPage, optAuthMw))
+	// M55 #1334: the next/ dashboard is the next channel's INDEX, mirroring how
+	// the stable dashboard is the site root ("/"). It is served at the next root
+	// "/next/" (and the no-slash "/next"), not a "/next/dashboard" sub-path, so
+	// there are no redirect shenanigans between the two. {$} matches the next
+	// root exactly; both registrations sit before the catch-all wildcard so Go's
+	// mux prefers them over /next/{path...}.
+	mux.HandleFunc("GET "+bp+"/next/{$}", wrapOptionalAuth(r.handleNextDashboardPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/next", wrapOptionalAuth(r.handleNextDashboardPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

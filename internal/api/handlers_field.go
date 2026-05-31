@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
@@ -126,6 +127,17 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		r.eventBus.Publish(event.Event{
 			Type: event.ArtistUpdated,
 			Data: map[string]any{"artist_id": a.ID},
+		})
+		// Emit activity.recent so the next/ dashboard live activity rail
+		// (M55 #1334) can prepend a row without polling.
+		r.eventBus.Publish(event.Event{
+			Type: event.ActivityRecent,
+			Data: map[string]any{
+				"ts":       time.Now().UTC().Format(time.RFC3339),
+				"kind":     "changed",
+				"text":     field + " updated",
+				"artistId": a.ID,
+			},
 		})
 	}
 	r.InvalidateHealthCache()

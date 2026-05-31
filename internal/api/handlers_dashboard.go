@@ -11,6 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
+	"github.com/sydlexius/stillwater/web/templates/next"
 )
 
 // dashboardFilterParams holds the parsed filter state from a dashboard request.
@@ -206,7 +207,28 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	// at template render time. Only set on HTMX requests (non-HTMX callers
 	// already have the correct URL in their bar).
 	if req.Header.Get("HX-Request") == "true" {
-		filterparams.WriteHXPushURL(w, r.basePath, urlValuesFromFilters(filters))
+		// The push URL must track the user-facing screen URL, which differs by
+		// channel: the stable dashboard is the app root ("$basePath/"), but the
+		// next/ dashboard is "$basePath/next/dashboard". Without the channel
+		// branch the shared "$basePath/" push would rewrite the next address bar
+		// back to the root on the action-queue's load-time swap.
+		if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+			// The next dashboard is the next channel's index at "/next/", so the
+			// address bar must track that root (with a trailing slash), not a
+			// "/next/dashboard" sub-path.
+			filterparams.WriteHXPushURLForPath(w, r.basePath+"/next/", urlValuesFromFilters(filters))
+		} else {
+			filterparams.WriteHXPushURL(w, r.basePath, urlValuesFromFilters(filters))
+		}
+	}
+
+	// The next/ channel renders a slimmer fragment: the next dashboard page owns
+	// the header strip + sticky toolbar (search, filter trigger, run-rules), so
+	// the next fragment omits the stable header/search bar to avoid duplicate
+	// chrome. Cards, flyout, active-filter chips, and load-more are reused.
+	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+		renderTempl(w, req, next.DashboardActionQueue(data))
+		return
 	}
 	renderTempl(w, req, templates.DashboardActionQueue(data))
 }

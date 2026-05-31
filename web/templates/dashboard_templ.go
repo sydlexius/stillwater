@@ -189,7 +189,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if data.Offset+len(data.Violations) < data.Total {
-				templ_7745c5c3_Err = dashboardLoadMoreButton(data).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = DashboardLoadMoreButton(data).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -222,7 +222,7 @@ func DashboardActionMoreRows(data ActionQueueData) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if data.Offset+len(data.Violations) < data.Total {
-			templ_7745c5c3_Err = dashboardLoadMoreButton(data).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = DashboardLoadMoreButton(data).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -250,10 +250,10 @@ func DashboardActionMoreRows(data ActionQueueData) templ.Component {
 	})
 }
 
-// dashboardLoadMoreButton renders the load-more button for the action queue.
+// DashboardLoadMoreButton renders the load-more button for the action queue.
 // Uses outerHTML swap (not the shared LoadMore component which uses beforeend)
 // so the button replaces itself with the response from DashboardActionMoreRows.
-func dashboardLoadMoreButton(data ActionQueueData) templ.Component {
+func DashboardLoadMoreButton(data ActionQueueData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

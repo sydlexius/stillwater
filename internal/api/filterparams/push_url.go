@@ -32,3 +32,18 @@ func WriteHXPushURL(w http.ResponseWriter, basePath string, vals url.Values) {
 	}
 	w.Header().Set("HX-Push-Url", base+"?"+vals.Encode())
 }
+
+// WriteHXPushURLForPath is like WriteHXPushURL but pushes an explicit,
+// fully-qualified path (already including the basePath) instead of the
+// basePath root. Channel-aware handlers use it when the user-facing URL is
+// not the application root: the stable dashboard lives at "$basePath/" (use
+// WriteHXPushURL), but the next/ dashboard lives at "$basePath/next/dashboard"
+// (use this). The path is emitted verbatim with no forced trailing slash, so
+// it must already be the canonical screen URL.
+func WriteHXPushURLForPath(w http.ResponseWriter, path string, vals url.Values) {
+	if len(vals) == 0 {
+		w.Header().Set("HX-Push-Url", path)
+		return
+	}
+	w.Header().Set("HX-Push-Url", path+"?"+vals.Encode())
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -498,6 +499,20 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("performing revert", "change_id", changeID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "revert failed")
 		return
+	}
+
+	// Emit activity.recent so the next/ dashboard live activity rail
+	// (M55 #1334) shows the revert without polling.
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ActivityRecent,
+			Data: map[string]any{
+				"ts":       time.Now().UTC().Format(time.RFC3339),
+				"kind":     "reverted",
+				"text":     change.Field + " reverted",
+				"artistId": change.ArtistID,
+			},
+		})
 	}
 
 	// For HTMX requests (undo button click), return an HTML fragment showing

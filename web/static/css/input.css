@@ -1767,11 +1767,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * a full hairline border and a soft shadow over the rounded-lg + translucent
  * backdrop set inline, so it stays legible as content scrolls beneath it.
  * Light + dark. */
-.sw-next-artists .sw-next-toolbar {
+.sw-next-artists .sw-next-toolbar,
+.sw-next-dashboard .sw-next-toolbar {
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-.dark .sw-next-artists .sw-next-toolbar {
+.dark .sw-next-artists .sw-next-toolbar,
+.dark .sw-next-dashboard .sw-next-toolbar {
   border-color: rgba(255, 255, 255, 0.07);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }

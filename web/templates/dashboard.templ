@@ -135,7 +135,7 @@ templ DashboardActionQueue(data ActionQueueData) {
 			}
 		</div>
 		if data.Offset+len(data.Violations) < data.Total {
-			@dashboardLoadMoreButton(data)
+			@DashboardLoadMoreButton(data)
 		}
 	}
 }
@@ -143,7 +143,7 @@ templ DashboardActionQueue(data ActionQueueData) {
 // DashboardActionMoreRows renders additional violation cards for load-more appends.
 templ DashboardActionMoreRows(data ActionQueueData) {
 	if data.Offset+len(data.Violations) < data.Total {
-		@dashboardLoadMoreButton(data)
+		@DashboardLoadMoreButton(data)
 	} else {
 		<div id="action-queue-load-more"></div>
 	}
@@ -154,10 +154,10 @@ templ DashboardActionMoreRows(data ActionQueueData) {
 	</div>
 }
 
-// dashboardLoadMoreButton renders the load-more button for the action queue.
+// DashboardLoadMoreButton renders the load-more button for the action queue.
 // Uses outerHTML swap (not the shared LoadMore component which uses beforeend)
 // so the button replaces itself with the response from DashboardActionMoreRows.
-templ dashboardLoadMoreButton(data ActionQueueData) {
+templ DashboardLoadMoreButton(data ActionQueueData) {
 	<div id="action-queue-load-more" class="flex justify-center py-3">
 		<button
 			type="button"
