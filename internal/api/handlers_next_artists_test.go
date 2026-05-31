@@ -189,3 +189,20 @@ func TestHandleNextArtistsPage_HTMXFragmentDispatch(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleNextArtistsPage_InvalidSortReturnsBadRequest(t *testing.T) {
+	t.Parallel()
+
+	r, _, _ := testRouterWithLibrary(t)
+	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextArtistsPage))
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists?sort=invalid_sort_key", nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}

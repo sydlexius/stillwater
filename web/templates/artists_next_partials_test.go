@@ -31,6 +31,8 @@ func TestArtistFilterFlyout_RendersAllFamilies(t *testing.T) {
 		"filter_in_emby",        // platform family
 		"filter_excluded",       // status family
 		"filter_type_person",    // artist-type family
+		"filter_type_orchestra", // artist-type facet (orchestra/choir)
+		"filter_type_other",     // artist-type facet (other/unset)
 		"filter_library_l1",     // per-library family (Libraries > 1 path)
 	} {
 		if !strings.Contains(out, marker) {
