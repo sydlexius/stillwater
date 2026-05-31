@@ -467,6 +467,23 @@ func (s *Service) AddLibraryMembership(ctx context.Context, artistID, libraryID,
 	return s.memberships.Add(ctx, artistID, libraryID, source)
 }
 
+// EnsureLibraryMembership guarantees the artist holds a membership row for the
+// given library, deriving the source from the library's connection (or
+// 'filesystem' when the library has no connection). Idempotent: a repeat call
+// preserves the existing row's source and added_at. No-op when no membership
+// repository is configured or when the target library does not exist.
+//
+// The filesystem scanner calls this on every visit to an existing artist so an
+// on-disk artist first created by a connection import (Emby/Jellyfin) still
+// acquires its filesystem membership, healing the missing-from-local-filter and
+// missing-folder-badge symptoms of issue #1780.
+func (s *Service) EnsureLibraryMembership(ctx context.Context, artistID, libraryID string) error {
+	if s.memberships == nil {
+		return nil
+	}
+	return s.memberships.AddDerivingSource(ctx, artistID, libraryID)
+}
+
 // RemoveLibraryMembership removes a single (artist, library) pair from the
 // membership table
 func (s *Service) RemoveLibraryMembership(ctx context.Context, artistID, libraryID string) error {

@@ -1841,3 +1841,147 @@ func TestScan_NearDuplicateDetected(t *testing.T) {
 		t.Error("expected AC-DC artist row to be created despite the duplicate flag")
 	}
 }
+
+// membershipSources returns the set of source strings on the artist_libraries
+// rows for the given artist, keyed by library_id, so a test can assert which
+// library/source pairs exist after a scan.
+func membershipSources(t *testing.T, db *sql.DB, artistID string) map[string]string {
+	t.Helper()
+	rows, err := db.QueryContext(context.Background(),
+		`SELECT library_id, source FROM artist_libraries WHERE artist_id = ?`, artistID)
+	if err != nil {
+		t.Fatalf("querying memberships: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]string)
+	for rows.Next() {
+		var lib, src string
+		if err := rows.Scan(&lib, &src); err != nil {
+			t.Fatalf("scanning membership: %v", err)
+		}
+		out[lib] = src
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating memberships: %v", err)
+	}
+	return out
+}
+
+// TestScan_ExistingArtistGainsFilesystemMembership proves the issue #1780 fix:
+// an artist first created by a connection import (so it holds only an
+// emby-sourced membership) and whose path matches a directory under a manual
+// filesystem library acquires a 'filesystem'-sourced artist_libraries row after
+// that library is scanned. Re-scanning is idempotent (no duplicate row, the
+// added_at timestamp does not move), and an artist that already holds the
+// filesystem membership is left untouched.
+func TestScan_ExistingArtistGainsFilesystemMembership(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	// Seed an emby connection plus a connection-backed library, and a manual
+	// (connection_id NULL) filesystem library that points at libDir. The
+	// filesystem library is the one we scan.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key)
+		 VALUES ('conn-emby', 'Emby', 'emby', 'http://emby.local', 'x')`); err != nil {
+		t.Fatalf("seeding connection: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+		 VALUES ('lib-emby', 'Emby Music', '', 'regular', 'emby', 'conn-emby', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatalf("seeding emby library: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		 VALUES ('lib-fs', 'FS Music', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		libDir); err != nil {
+		t.Fatalf("seeding filesystem library: %v", err)
+	}
+
+	// Create the artist as a connection import would: LibraryID points at the
+	// emby library, so Create records an 'emby'-sourced membership only. Its
+	// path matches a directory under the filesystem library.
+	artistPath := filepath.Join(libDir, "Pink Floyd")
+	a := &artist.Artist{
+		Name:      "Pink Floyd",
+		SortName:  "Pink Floyd",
+		Path:      artistPath,
+		LibraryID: "lib-emby",
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Sanity: only the emby membership exists pre-scan.
+	pre := membershipSources(t, db, a.ID)
+	if pre["lib-emby"] != "emby" {
+		t.Fatalf("pre-scan emby membership = %q, want 'emby'", pre["lib-emby"])
+	}
+	if _, ok := pre["lib-fs"]; ok {
+		t.Fatalf("pre-scan should not yet hold a filesystem membership, got %v", pre)
+	}
+
+	createArtistDir(t, libDir, "Pink Floyd")
+	svc.SetLibraryLister(&stubLibraryLister{
+		libs: []library.Library{
+			{ID: "lib-fs", Name: "FS Music", Path: libDir, Type: library.TypeRegular},
+		},
+	})
+
+	// Scan 1: the existing artist is matched by path and must gain the
+	// filesystem membership.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	after1 := membershipSources(t, db, a.ID)
+	if after1["lib-emby"] != "emby" {
+		t.Errorf("after scan 1 emby membership = %q, want 'emby'", after1["lib-emby"])
+	}
+	if after1["lib-fs"] != "filesystem" {
+		t.Errorf("after scan 1 filesystem membership = %q, want 'filesystem'", after1["lib-fs"])
+	}
+
+	// Capture the filesystem row's added_at to prove idempotency below.
+	var addedAt1 string
+	if err := db.QueryRowContext(ctx,
+		`SELECT added_at FROM artist_libraries WHERE artist_id = ? AND library_id = 'lib-fs'`,
+		a.ID).Scan(&addedAt1); err != nil {
+		t.Fatalf("reading filesystem added_at: %v", err)
+	}
+
+	// Scan 2: idempotent. Exactly one filesystem membership, added_at unchanged.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	var fsCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = ? AND library_id = 'lib-fs'`,
+		a.ID).Scan(&fsCount); err != nil {
+		t.Fatalf("counting filesystem memberships: %v", err)
+	}
+	if fsCount != 1 {
+		t.Errorf("after scan 2 filesystem membership count = %d, want 1", fsCount)
+	}
+
+	var addedAt2 string
+	if err := db.QueryRowContext(ctx,
+		`SELECT added_at FROM artist_libraries WHERE artist_id = ? AND library_id = 'lib-fs'`,
+		a.ID).Scan(&addedAt2); err != nil {
+		t.Fatalf("reading filesystem added_at after scan 2: %v", err)
+	}
+	if addedAt2 != addedAt1 {
+		t.Errorf("filesystem added_at moved on rescan: %q -> %q", addedAt1, addedAt2)
+	}
+
+	// The emby membership must be untouched throughout.
+	after2 := membershipSources(t, db, a.ID)
+	if after2["lib-emby"] != "emby" {
+		t.Errorf("after scan 2 emby membership = %q, want 'emby'", after2["lib-emby"])
+	}
+}
