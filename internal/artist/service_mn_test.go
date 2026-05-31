@@ -290,6 +290,9 @@ func TestMembershipMethods_NoMembershipRepo(t *testing.T) {
 	if err := svc.AddLibraryMembership(ctx, "any", "any", "filesystem"); err != nil {
 		t.Errorf("AddLibraryMembership returned err with nil repo: %v", err)
 	}
+	if err := svc.EnsureLibraryMembership(ctx, "any", "any"); err != nil {
+		t.Errorf("EnsureLibraryMembership returned err with nil repo: %v", err)
+	}
 	if err := svc.RemoveLibraryMembership(ctx, "any", "any"); err != nil {
 		t.Errorf("RemoveLibraryMembership returned err with nil repo: %v", err)
 	}
@@ -306,5 +309,65 @@ func TestMembershipMethods_NoMembershipRepo(t *testing.T) {
 	}
 	if got != 0 {
 		t.Errorf("CountLibrariesForArtist with nil repo = %d, want 0", got)
+	}
+}
+
+// TestEnsureLibraryMembership covers the issue #1780 healing path: an artist
+// whose initial membership is for a different library gains a filesystem
+// membership for the scanned library when EnsureLibraryMembership runs, and a
+// repeat call is idempotent (no duplicate row).
+func TestEnsureLibraryMembership(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedLibForMNTests(t, ctx, db, "lib-other", "manual")
+	seedLibForMNTests(t, ctx, db, "lib-fs", "manual")
+
+	// Create the artist with its initial membership pointing at lib-other, so
+	// lib-fs is genuinely absent at the start (mirrors a connection-first
+	// artist that has no filesystem membership yet).
+	a := testArtist("Portishead", "/music/Portishead")
+	a.LibraryID = "lib-other"
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if got, err := svc.CountLibrariesForArtist(ctx, a.ID); err != nil {
+		t.Fatalf("baseline count: %v", err)
+	} else if got != 1 {
+		t.Fatalf("baseline count = %d, want 1", got)
+	}
+
+	// Ensure adds the filesystem membership for lib-fs.
+	if err := svc.EnsureLibraryMembership(ctx, a.ID, "lib-fs"); err != nil {
+		t.Fatalf("EnsureLibraryMembership: %v", err)
+	}
+	// Idempotent: a repeat call must not add a duplicate row.
+	if err := svc.EnsureLibraryMembership(ctx, a.ID, "lib-fs"); err != nil {
+		t.Fatalf("EnsureLibraryMembership (idempotent): %v", err)
+	}
+
+	libs, err := svc.LibrariesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("LibrariesForArtist: %v", err)
+	}
+	if len(libs) != 2 {
+		t.Fatalf("LibrariesForArtist = %d rows, want 2", len(libs))
+	}
+	var fsSource string
+	found := false
+	for _, m := range libs {
+		if m.LibraryID == "lib-fs" {
+			found = true
+			fsSource = m.Source
+		}
+	}
+	if !found {
+		t.Fatalf("no membership for lib-fs after EnsureLibraryMembership")
+	}
+	// lib-fs has no connection_id, so the derived source is filesystem.
+	if fsSource != "filesystem" {
+		t.Errorf("lib-fs membership source = %q, want filesystem", fsSource)
 	}
 }

@@ -381,7 +381,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 	if existing == nil {
 		return s.processNewArtist(ctx, dirPath, name, libraryID, excluded, detected, preloadedKeys, result)
 	}
-	return s.processExistingArtist(ctx, dirPath, existing, excluded, detected, result)
+	return s.processExistingArtist(ctx, dirPath, libraryID, existing, excluded, detected, result)
 }
 
 // processNewArtist creates a new artist record for a directory not yet in the
@@ -502,7 +502,23 @@ func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID
 // the current filesystem state. It preserves placeholders and dimensions on
 // transient probe failures, applies NFO re-import for unlocked artists, and
 // falls back to a lightweight ReconcileImages call when nothing has changed.
-func (s *Service) processExistingArtist(ctx context.Context, dirPath string, existing *artist.Artist, excluded bool, detected detectedFiles, result *ScanResult) error {
+func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID string, existing *artist.Artist, excluded bool, detected detectedFiles, result *ScanResult) error {
+	// Heal the artist_libraries membership on EVERY visit, before any
+	// early-return branch below. An artist first created by a connection
+	// import (Emby/Jellyfin) and matched here by path would otherwise never
+	// acquire the filesystem-library membership for the library being
+	// scanned, so it would be absent from local-library filtering and show
+	// no folder badge (issue #1780). EnsureLibraryMembership is idempotent
+	// and derives the source from the library's connection (filesystem when
+	// none), so re-running a scan does not duplicate or move the row. Placed
+	// ahead of the quiet-rescan early return so steady-state libraries (which
+	// take that early-return path) still self-heal.
+	if libraryID != "" {
+		if err := s.artistService.EnsureLibraryMembership(ctx, existing.ID, libraryID); err != nil {
+			return fmt.Errorf("ensuring library membership: %w", err)
+		}
+	}
+
 	// Protect existing placeholders from transient I/O failures: if the image
 	// file still exists on disk but placeholder generation failed (returned
 	// empty), preserve the existing placeholder.
