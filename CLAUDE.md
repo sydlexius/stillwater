@@ -155,6 +155,8 @@ See `docs/pr-workflow.md` for full details including the gh `!=` bash history wo
 
 **Review comment scope:** Default: fix now. Defer only for architectural changes or unrelated subsystems. Never defer without creating a tracking issue.
 
+**Decompose before building.** Land shared/foundation refactors (extractions, exported helpers, new shared components) as their own small PR *before* building features on them; the feature PR then targets a clean base. When the foundation is not known up front, spike a throwaway rough-cut (delegate it to a subagent that returns a "foundation manifest") to discover what needs sharing, then split. If a feature cannot fit under the ~800 hand-written-LOC / 10-file size gate, that is a signal it bundles a foundation refactor that should have landed first. For complex multi-session screens/features, run the main session as an orchestrator (delegate implementation, tests, RCA, and UAT-evidence gathering to subagents), gate per chunk rather than once at the end, and never report work "done" without the verifying evidence in the same message. See the screen-build playbook in the M55 plan and the `feedback_screen_build_playbook` memory.
+
 ## Worktrees
 
 Use git worktrees for concurrent issue/agent work. Naming: `../stillwater-{issue}/`, `../stillwater-m{N}-{issue}/`. Track in `~/.claude/projects/<project>/memory/worktrees.md`.
