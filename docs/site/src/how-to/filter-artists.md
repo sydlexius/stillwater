@@ -38,7 +38,20 @@ Exclude are exact opposites, so the two together account for every artist.
 - **Images** -- presence of a thumb, fanart, logo, or banner.
 - **Platform** -- membership in an Emby or Jellyfin library, or a Lidarr mapping.
 - **Status** -- whether an artist has open rule violations.
-- **Artist Type** and **Library** -- narrow to a specific type or library.
+- **Artist Type** and **Library** -- narrow to a kind of artist or to a library.
+
+## The Artist Type filter
+
+The **Artist Type** section sorts artists into four groups:
+
+- **Person** -- a single individual.
+- **Group** -- a band or other group of people.
+- **Orchestra/Choir** -- a large ensemble of performers.
+- **Other** -- anything that is not one of the above, including fictional or
+  character acts and artists that do not have a type set yet.
+
+Together these four groups account for every artist, so **Other** is the
+catch-all: anything that is not a person, a group, or an ensemble lands here.
 
 ## The Library filter
 

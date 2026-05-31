@@ -2591,7 +2591,13 @@ paths:
             enum: ["+y", "-y"]
         - name: filter_type_orchestra
           in: query
-          description: Include (+y) or exclude (-y) artists of type "orchestra"
+          description: Include (+y) or exclude (-y) artists of type "orchestra" or "choir"
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_type_other
+          in: query
+          description: Include (+y) or exclude (-y) artists of any other or unset type (not person, group, orchestra, or choir)
           schema:
             type: string
             enum: ["+y", "-y"]

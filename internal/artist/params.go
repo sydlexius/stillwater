@@ -16,7 +16,9 @@ type ListParams struct {
 	//
 	// Legacy / composite keys: missing_meta, missing_images, missing_mbid,
 	// excluded, locked. Artist-type keys: type_person, type_group,
-	// type_orchestra. Per-library keys: library_{id}.
+	// type_orchestra (orchestra + choir), type_other (the negation facet:
+	// everything not in the named types, incl. untyped). Per-library keys:
+	// library_{id}.
 	//
 	// Metadata-presence keys: has_biography, has_years_active, has_formed,
 	// has_disbanded, has_born, has_died, has_gender, has_type, has_country,

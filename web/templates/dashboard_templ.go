@@ -1166,7 +1166,7 @@ func DashboardFilterFlyout(data ActionQueueData) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.FilterFlyout("dashboard-filter-flyout", t(ctx, "dashboard.filters_title"), "dashboard-filters-trigger", dashboardActiveFilterCount(data), "#action-queue").Render(templ.WithChildren(ctx, templ_7745c5c3_Var36), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.FilterFlyout("dashboard-filter-flyout", t(ctx, "dashboard.filters_title"), "dashboard-filters-trigger", dashboardActiveFilterCount(data), "#action-queue", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var36), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -493,7 +493,7 @@ func dashboardClearAllHref(data ActionQueueData) string {
 // selects (or deselects) within that dimension. URL state is written on Apply
 // by the shared filter-flyout.js (key=value form, no +y/-y prefix).
 templ DashboardFilterFlyout(data ActionQueueData) {
-	@components.FilterFlyout("dashboard-filter-flyout", t(ctx, "dashboard.filters_title"), "dashboard-filters-trigger", dashboardActiveFilterCount(data), "#action-queue") {
+	@components.FilterFlyout("dashboard-filter-flyout", t(ctx, "dashboard.filters_title"), "dashboard-filters-trigger", dashboardActiveFilterCount(data), "#action-queue", nil) {
 		@components.FilterSection(t(ctx, "common.severity")) {
 			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "error", t(ctx, "common.severity_error"), data.Severity == "error", data.SeverityCounts["error"])
 			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "warning", t(ctx, "common.severity_warning"), data.Severity == "warning", data.SeverityCounts["warning"])

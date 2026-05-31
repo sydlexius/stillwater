@@ -1,0 +1,240 @@
+package next
+
+import (
+	"fmt"
+
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// ArtistsPage is the next/ channel artists list (M55 #1335). It is a visual
+// refresh of the stable page: a compact header and a single-row sticky toolbar,
+// wrapped in the .sw-next-artists scope so CSS can restyle the reused row/badge
+// markup without forking it. The page composes a mix of FORKED next/ partials
+// (for the body, where the prototype's Sources/Coverage/Score vocabulary
+// diverges from stable) and REUSED templates.* partials (for the chrome and
+// shared behaviour):
+//
+//   - the table / grid body is FORKED into the next package: @ArtistsTable /
+//     @ArtistsGrid (artists_table.templ). The fork drops the active-filter chips
+//     row (the flyout already surfaces active filters) and replaces stable's
+//     single BulkActionBar with the nextBulkStrip / nextBulkActions split
+//     (bulk.templ). It still carries the off-page-selection #1227 contract and
+//     the sortable Type/Origin/Score columns.
+//   - the tri-state filter flyout is REUSED: @templates.ArtistFilterFlyout.
+//   - the bulk-progress-pill i18n carrier is REUSED: @templates.BulkProgressPill.
+//   - the page behaviour JS (selection, sort, filter-sync, keyboard nav) is
+//     REUSED: @templates.ArtistsPageScripts.
+//
+// All element ids, hx-* attributes, and onclick handler names on the forked
+// partials match the stable page verbatim so the shared JS binds identically;
+// only the chrome layout, the body's cell vocabulary, and the scoping class are
+// new.
+templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
+	@LayoutNext(t(ctx, "artists.title"), assets) {
+		<div class="sw-next-artists space-y-2" data-density="comfy">
+			<!-- Header ditched (M55 #1335, maintainer 2026-05-30): a separate PageHead block
+			     sat bare on the photographic backdrop and read poorly in light mode. The
+			     title is redundant with the active sidebar nav + document <title>, and the
+			     "N of M" count duplicates the pagination footer, so both are dropped. The
+			     Scan action moves into the toolbar row below. A visually-hidden h1 preserves
+			     the document outline for assistive tech. -->
+			<h1 class="sr-only">{ t(ctx, "artists.title") }</h1>
+			<input type="hidden" name="view" id="artist-view-input" value={ data.View }/>
+			<input type="hidden" name="sort" id="artist-sort-input" value={ data.Sort }/>
+			<input type="hidden" name="order" id="artist-order-input" value={ data.Order }/>
+			<!-- Single-row sticky toolbar (search · library · filters · sort · columns · view). -->
+			<div class="sw-next-toolbar sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-lg bg-gray-50/80 px-1 py-2 backdrop-blur dark:bg-gray-900/80">
+				<div class="relative min-w-[12rem] flex-1">
+					<kbd class="sw-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex" aria-hidden="true">/</kbd>
+					<input
+						id="artist-search"
+						type="search"
+						name="search"
+						value={ data.Search }
+						placeholder={ t(ctx, "artists.search_placeholder") }
+						aria-label={ t(ctx, "artists.search_placeholder") }
+						hx-get="/next/artists"
+						hx-trigger="keyup changed delay:300ms"
+						hx-target="#artist-content"
+						hx-swap="outerHTML"
+						hx-include="[name='library_id'],[name='view'],[name='sort'],[name='order']"
+						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-3 pr-8 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<!-- Library dropdown ditched (M55 #1335, maintainer 2026-05-30): the filter
+				     flyout already exposes every library as a tri-state pill (the "library"
+				     FilterSection / filter_library_<id>), so a single-select toolbar dropdown
+				     was duplicative. Library filtering now lives solely in the flyout. The
+				     hidden library_id input below preserves the param for shared script /
+				     hx-include selectors that reference it. -->
+				<input type="hidden" name="library_id" id="artist-library-input" value={ data.LibraryID }/>
+				<button
+					id="artist-filter-trigger"
+					type="button"
+					class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activeFilterCount(data.Filters) > 0), templ.KV(filterTriggerNeutral, activeFilterCount(data.Filters) == 0) }
+					data-active-classes={ filterTriggerActive }
+					data-neutral-classes={ filterTriggerNeutral }
+					data-badge-classes={ filterTriggerBadge }
+					aria-label={ t(ctx, "common.open_filter_panel") }
+					aria-expanded="false"
+					aria-controls="artist-filters-flyout"
+					title={ t(ctx, "common.filters") }
+					onclick={ components.OpenFilterFlyout("artist-filters-flyout") }
+				>
+					<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+						<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+					</svg>
+					<!-- Label is tooltip-only (M55 #1335, maintainer 2026-05-30): the funnel
+					     icon + [f] kbd carry the meaning; "Filters" moves to the title
+					     tooltip to save toolbar width. -->
+					<kbd class="sw-kbd ml-1 hidden sm:inline-flex" aria-hidden="true">f</kbd>
+					if activeFilterCount(data.Filters) > 0 {
+						<span class={ filterTriggerBadge }>
+							{ fmt.Sprintf("%d", activeFilterCount(data.Filters)) }
+						</span>
+					}
+				</button>
+				<!-- Sort dropdown is hidden in TABLE view (M55 #1335, maintainer 2026-05-30):
+				     the clickable column headers own sorting there. It is surfaced in GRID
+				     view (no headers); setView toggles .hidden, scoped to next/ via the
+				     .sw-next-artists marker so the stable channel is untouched. -->
+				<details id="sort-dropdown" class={ "relative", templ.KV("hidden", data.View == "table") }>
+					<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title={ t(ctx, "common.sort") }>
+						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"></path>
+						</svg>
+						<span id="sort-field-label" class="hidden sm:inline">{ sortLabel(ctx, data.Sort) }</span>
+						<span id="sort-order-label" class="hidden sm:inline text-gray-400">{ orderLabel(ctx, data.Order) }</span>
+					</summary>
+					<div class="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1">
+						<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.sort_by") }</div>
+						<button type="button" onclick="setSort('name')" class={ sortDropdownItem(data.Sort == "name") }>{ t(ctx, "artists.sort.name") }</button>
+						<button type="button" onclick="setSort('sort_name')" class={ sortDropdownItem(data.Sort == "sort_name") }>{ t(ctx, "artists.sort.sort_name") }</button>
+						<button type="button" onclick="setSort('type')" class={ sortDropdownItem(data.Sort == "type") }>{ t(ctx, "artists.sort.type") }</button>
+						<button type="button" onclick="setSort('origin')" class={ sortDropdownItem(data.Sort == "origin") }>{ t(ctx, "artists.sort.origin") }</button>
+						<button type="button" onclick="setSort('health_score')" class={ sortDropdownItem(data.Sort == "health_score") }>{ t(ctx, "artists.sort.health_score") }</button>
+						<button type="button" onclick="setSort('updated_at')" class={ sortDropdownItem(data.Sort == "updated_at") }>{ t(ctx, "artists.sort.last_updated") }</button>
+						<button type="button" onclick="setSort('created_at')" class={ sortDropdownItem(data.Sort == "created_at") }>{ t(ctx, "artists.sort.date_added") }</button>
+						<div class="my-1 border-t border-gray-100 dark:border-gray-700"></div>
+						<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.direction") }</div>
+						<button type="button" onclick="setOrder('asc')" class={ sortDropdownItem(data.Order == "asc") }>{ t(ctx, "artists.sort.ascending") }</button>
+						<button type="button" onclick="setOrder('desc')" class={ sortDropdownItem(data.Order == "desc") }>{ t(ctx, "artists.sort.descending") }</button>
+					</div>
+				</details>
+				<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
+					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
+						{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
+						{Key: "library", Label: t(ctx, "artists.col.library")},
+						{Key: "type", Label: t(ctx, "artists.sort.type")},
+						{Key: "origin", Label: t(ctx, "artists.sort.origin")},
+						{Key: "sources", Label: t(ctx, "artists.col.sources")},
+						{Key: "coverage", Label: t(ctx, "artists.col.coverage")},
+						{Key: "score", Label: t(ctx, "artists.col.score")},
+					})
+				</div>
+				<div id="view-toggle" class="ml-auto flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
+					<button
+						type="button"
+						title={ t(ctx, "artists.view.table") }
+						aria-label={ t(ctx, "artists.view.table") }
+						hx-get="/next/artists"
+						hx-target="#artist-content"
+						hx-swap="outerHTML"
+						hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
+						hx-vals='{"view":"table","page":"1"}'
+						onclick="setView('table')"
+						class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
+					>
+						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5"></path>
+						</svg>
+					</button>
+					<button
+						type="button"
+						title={ t(ctx, "artists.view.grid") }
+						aria-label={ t(ctx, "artists.view.grid") }
+						hx-get="/next/artists"
+						hx-target="#artist-content"
+						hx-swap="outerHTML"
+						hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
+						hx-vals='{"view":"grid","page":"1"}'
+						onclick="setView('grid')"
+						class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }
+					>
+						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"></path>
+						</svg>
+					</button>
+				</div>
+				@nextBulkActions(data)
+				<button
+					id="scan-btn"
+					hx-post="/api/v1/scanner/run"
+					hx-swap="none"
+					data-label-scan={ t(ctx, "artists.scan_library") }
+					data-label-scanning={ t(ctx, "artists.scanning") }
+					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					<span id="scan-spinner" class="hidden">
+						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+					</span>
+					<span id="scan-label">{ t(ctx, "artists.scan_library") }</span>
+				</button>
+			</div>
+			@templates.ArtistFilterFlyout(data)
+			if data.View == "grid" {
+				@ArtistsGrid(data)
+			} else {
+				@ArtistsTable(data)
+			}
+			<!-- Keyboard tip line (M55 #1335): discoverability hint mirroring the
+			     prototype. Handlers live in ArtistsKeyboardShortcuts; that script also
+			     swaps .sw-mod-key to the Cmd glyph on macOS. Sits outside #artist-content
+			     so it persists across HTMX table swaps. -->
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "artists.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Shift</kbd>{ t(ctx, "artists.shortcuts.tip_range") }</span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center gap-0.5"><kbd class="sw-kbd sw-mod-key inline-flex">Ctrl</kbd><kbd class="sw-kbd inline-flex">A</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_select_all") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Esc</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_clear") }</span></span>
+			</p>
+		</div>
+		@templates.BulkProgressPill()
+		@templates.ArtistsPageScripts()
+		@templates.ArtistsKeyboardShortcuts()
+		@components.ContextHelpScript()
+		<!-- Density auto-flip REMOVED (M55 #1335, maintainer 2026-05-30): the list
+		     previously flipped data-density comfy->compact while a selection was active,
+		     which shrank row height on checkbox select. That "compactify on selection"
+		     motif is unexpected and unwanted, so density is now static "comfy". The
+		     data-density attribute + scoped CSS are kept so a future user-controlled
+		     "coziness" appearance preference can drive density deliberately. -->
+			<!-- Freeze offset (M55 #1335): publish the live toolbar height as the
+			     sw-next-toolbar-h custom property so the sticky selection strip pins
+			     directly below the sticky toolbar, even when the toolbar wraps to two
+			     rows at narrow widths. -->
+			<script>
+				(function () {
+					if (window.__swNextStickyOffset) return;
+					window.__swNextStickyOffset = true;
+					var root = document.querySelector('.sw-next-artists');
+					var toolbar = root && root.querySelector('.sw-next-toolbar');
+					if (!root || !toolbar) return;
+					function setOffset() {
+						root.style.setProperty('--sw-next-toolbar-h', toolbar.offsetHeight + 'px');
+					}
+					setOffset();
+					if (window.ResizeObserver) {
+						new ResizeObserver(setOffset).observe(toolbar);
+					} else {
+						window.addEventListener('resize', setOffset);
+					}
+				})();
+			</script>
+	}
+}

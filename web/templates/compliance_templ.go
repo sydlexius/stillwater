@@ -2005,7 +2005,7 @@ func ComplianceFilterFlyout(data ComplianceData) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.FilterFlyout("compliance-filter-flyout", t(ctx, "report.filters_title"), "compliance-filter-trigger", complianceActiveFilterCount(data), "#compliance-results").Render(templ.WithChildren(ctx, templ_7745c5c3_Var99), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.FilterFlyout("compliance-filter-flyout", t(ctx, "report.filters_title"), "compliance-filter-trigger", complianceActiveFilterCount(data), "#compliance-results", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var99), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

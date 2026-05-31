@@ -17,7 +17,7 @@ import "strconv"
 //                  shown as a badge in the footer when > 0
 //   - targetSel:   CSS selector for the HTMX content region to reload when the
 //                  user applies filters (e.g. "#artist-grid")
-templ FilterFlyout(id, title, triggerID string, activeCount int, targetSel string) {
+templ FilterFlyout(id, title, triggerID string, activeCount int, targetSel string, headerHelp templ.Component) {
 	<!-- Scrim: clicking it closes the flyout -->
 	<div
 		id={ id + "-scrim" }
@@ -38,7 +38,12 @@ templ FilterFlyout(id, title, triggerID string, activeCount int, targetSel strin
 	>
 		<!-- Header -->
 		<div class="sw-filter-flyout-header">
-			<h2 class="sw-filter-flyout-title">{ title }</h2>
+			<div class="flex items-center gap-1.5">
+				<h2 class="sw-filter-flyout-title">{ title }</h2>
+				if headerHelp != nil {
+					@headerHelp
+				}
+			</div>
 			<button
 				type="button"
 				class="sw-filter-flyout-close"
