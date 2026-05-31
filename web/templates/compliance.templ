@@ -1109,7 +1109,7 @@ func complianceLibraryName(libs []library.Library, id string) string {
 // shared FilterItemSingle component; the health score range uses FilterRange.
 // URL state is written on Apply by the shared filter-flyout.js.
 templ ComplianceFilterFlyout(data ComplianceData) {
-	@components.FilterFlyout("compliance-filter-flyout", t(ctx, "report.filters_title"), "compliance-filter-trigger", complianceActiveFilterCount(data), "#compliance-results") {
+	@components.FilterFlyout("compliance-filter-flyout", t(ctx, "report.filters_title"), "compliance-filter-trigger", complianceActiveFilterCount(data), "#compliance-results", nil) {
 		@components.FilterSection(t(ctx, "report.status_legend")) {
 			@components.FilterItemSingle("compliance-filter-flyout", "status", "compliant", t(ctx, "report.compliant"), data.Status == "compliant", 0)
 			@components.FilterItemSingle("compliance-filter-flyout", "status", "non_compliant", t(ctx, "report.non_compliant"), data.Status == "non_compliant", 0)

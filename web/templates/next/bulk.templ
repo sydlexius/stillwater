@@ -1,0 +1,145 @@
+package next
+
+import (
+	"strconv"
+
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// Bulk-selection UI for the next/ artists list (M55 #1335). The maintainer
+// dissolved the single stable BulkActionBar into three placements:
+//   - the page select-all -> a checkbox in the TABLE HEADER (left of Name),
+//     rendered by artists_table.templ; the grid view (no header) hosts it in
+//     the strip below instead;
+//   - the action dropdown + Apply -> the toolbar (left of Scan), nextBulkActions;
+//   - the count + "Show selected" + "Select all N matching" -> a contextual
+//     strip at the top of #artist-content, nextBulkStrip.
+//
+// The shared bulk controller (templates.ArtistsPageScripts) binds every element
+// by GLOBAL id (document.getElementById), so the pieces work wherever they sit
+// as long as the ids are preserved. The strip keeps id="bulk-action-bar" and
+// all the data-* attributes the controller reads. The selection bookkeeping is
+// NOT forked -- the controller stamps data-selection-active on the bar and the
+// contextual strip hides via CSS when it is "false".
+
+// nextBulkActions renders the bulk action dropdown + Apply for the toolbar,
+// positioned left of Scan Library. Same ids the controller binds
+// (#bulk-action-select, #bulk-action-apply); both stay disabled until a
+// selection exists (the controller manages the disabled state).
+templ nextBulkActions(data templates.ArtistListData) {
+	<select
+		id="bulk-action-select"
+		class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+		disabled
+		aria-label={ t(ctx, "artists.bulk.action_label") }
+	>
+		<option value="">{ t(ctx, "artists.bulk.choose_action") }</option>
+		<option value="run_rules">{ t(ctx, "artists.bulk.action.run_rules") }</option>
+		<option value="re_identify_auto">{ t(ctx, "artists.bulk.action.re_identify_auto") }</option>
+		<option value="re_identify_review">{ t(ctx, "artists.bulk.action.re_identify_review") }</option>
+		<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
+		<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
+		<option value="lock">{ t(ctx, "artists.bulk.action.lock") }</option>
+		<option value="unlock">{ t(ctx, "artists.bulk.action.unlock") }</option>
+	</select>
+	<button
+		id="bulk-action-apply"
+		type="button"
+		class="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+		disabled
+	>
+		{ t(ctx, "artists.bulk.apply") }
+	</button>
+}
+
+// nextBulkStrip renders the contextual selection strip at the top of
+// #artist-content. It IS the #bulk-action-bar element (carrying the data-*
+// attrs the shared controller reads), restyled as a thin strip.
+//
+// contextual=true (table view): the strip hides via CSS until a selection
+// exists (data-selection-active, stamped by the controller); the page
+// select-all lives in the table header instead, so it is omitted here.
+// contextual=false (grid view, which has no table header): the strip is always
+// visible and hosts the page select-all.
+templ nextBulkStrip(data templates.ArtistListData, contextual bool) {
+	<div
+		id="bulk-action-bar"
+		class={ "sw-next-bulk-strip flex flex-wrap items-center gap-3 mb-3 rounded-md px-3 py-2", templ.KV("sw-next-bulk-strip-contextual", contextual) }
+		role="toolbar"
+		aria-label={ t(ctx, "artists.bulk.toolbar") }
+		data-contextual={ strconv.FormatBool(contextual) }
+		data-selection-active={ strconv.FormatBool(len(data.IDs) > 0) }
+		data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
+		data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
+		data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
+		data-i18n-selected-split-one={ t(ctx, "artists.bulk.selected.split.one") }
+		data-i18n-selected-split-other={ t(ctx, "artists.bulk.selected.split.other") }
+		data-i18n-busy={ t(ctx, "artists.bulk.busy") }
+		data-i18n-failed={ t(ctx, "artists.bulk.failed") }
+		data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
+		data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
+		data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
+		data-i18n-select-all-matching={ t(ctx, "artists.bulk.select_all_matching") }
+		data-i18n-select-all-matching-aria={ t(ctx, "artists.bulk.select_all_matching.aria") }
+		data-i18n-select-all-matching-capped={ t(ctx, "artists.bulk.select_all_matching.capped") }
+		data-i18n-select-all-matching-failed={ t(ctx, "artists.bulk.select_all_matching.failed") }
+		data-total-matching={ strconv.Itoa(data.Pagination.TotalItems) }
+		data-total-pages={ strconv.Itoa(data.Pagination.TotalPages) }
+	>
+		if !contextual {
+			<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+				<input
+					id="bulk-select-all"
+					type="checkbox"
+					class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+					aria-controls="artist-content"
+					aria-label={ t(ctx, "artists.bulk.select_all") }
+				/>
+				<span id="bulk-select-all-label">{ t(ctx, "artists.bulk.select_all") }</span>
+			</label>
+		}
+		<span id="bulk-selected-count" class="text-sm text-gray-600 dark:text-gray-300" aria-live="polite">
+			{ t(ctx, "artists.bulk.none_selected") }
+		</span>
+		<button
+			id="bulk-show-selected"
+			type="button"
+			class="hidden ml-1 items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+			aria-label={ t(ctx, "artists.bulk.show_selected.aria") }
+			disabled
+		>
+			{ t(ctx, "artists.bulk.show_selected") }
+		</button>
+		<button
+			id="bulk-select-all-matching"
+			type="button"
+			class="hidden ml-1 items-center rounded-md border border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+			aria-label={ t(ctx, "artists.bulk.select_all_matching.aria") }
+			disabled
+		>
+			{ t(ctx, "artists.bulk.select_all_matching") }
+		</button>
+	</div>
+	if len(data.IDs) > 0 {
+		<div class="flex flex-wrap items-center gap-2 mb-3" aria-label={ t(ctx, "artists.bulk.toolbar") }>
+			<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-2.5 py-0.5 text-xs font-medium">
+				{ tn(ctx, "artists.bulk.showing_selected", len(data.IDs)) }
+				<a
+					href={ templ.SafeURL(templates.BasePath() + nextShowAllPath(data)) }
+					hx-get={ nextShowAllPath(data) }
+					hx-target="#artist-content"
+					hx-swap="outerHTML"
+					hx-push-url="true"
+					data-clear-ids="true"
+					class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+					aria-label={ t(ctx, "artists.bulk.show_all.aria") }
+					title={ t(ctx, "artists.bulk.show_all") }
+				>
+					<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+						<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+					</svg>
+				</a>
+			</span>
+		</div>
+	}
+}

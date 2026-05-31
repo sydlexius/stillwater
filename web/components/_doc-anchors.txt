@@ -301,6 +301,7 @@ how-to/filter-artists#active-filters-and-sharing-a-view
 how-to/filter-artists#filter-the-artists-list
 how-to/filter-artists#open-the-flyout
 how-to/filter-artists#select-every-matching-artist
+how-to/filter-artists#the-artist-type-filter
 how-to/filter-artists#the-library-filter
 how-to/filter-artists#the-same-flyout-on-the-dashboard-and-reports
 how-to/filter-artists#tri-state-filters

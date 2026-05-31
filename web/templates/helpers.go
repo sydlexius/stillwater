@@ -55,6 +55,11 @@ func basePath() string {
 	return bp
 }
 
+// BasePath is the exported accessor for the configured URL prefix, so the
+// separate next/ template package can build the same base-path-aware hrefs as
+// the stable templates without duplicating the SetBasePath global.
+func BasePath() string { return basePath() }
+
 // logoSrc returns the static path to a logo file for the given key.
 // Most logos are SVG; audiodb and emby use PNG (128px variant).
 func logoSrc(key string) string {

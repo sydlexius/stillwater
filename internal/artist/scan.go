@@ -302,9 +302,9 @@ func platformPresencePredicate(connectionType string) filterPredicate {
 // fragment and any bound arguments for that state. Predicates that produce no
 // SQL for a given state return an empty fragment.
 //
-// Type filters (type_person, type_group, type_orchestra) and library filters
-// (library_{id}) are NOT in this map; they aggregate across multiple keys and
-// are handled separately in buildWhereClause.
+// Type filters (type_person, type_group, type_orchestra, and the type_other
+// negation facet) and library filters (library_{id}) are NOT in this map; they
+// aggregate across multiple keys and are handled separately in buildWhereClause.
 //
 // Metadata-presence filters (has_biography, has_years_active, etc.) use
 // nonEmptyStringPredicate. Image-presence filters (has_thumb, has_fanart, etc.)
@@ -421,14 +421,28 @@ var artistFilterPredicates = map[string]filterPredicate{
 	},
 }
 
-// typeFilterKeys maps flyout type-filter keys to their database type name
-// values. type_person maps to two values because MusicBrainz stores Person as
-// "solo" while legacy imports may use "person".
+// typeFilterKeys maps flyout type-filter keys to the database type values each
+// facet matches. type_person maps to two values because MusicBrainz stores
+// Person as "solo" while legacy imports may use "person". type_orchestra backs
+// the "Orchestra/Choir" ensemble facet -- the key name is kept stable so
+// existing filter URLs and the openapi param do not break even though it now
+// covers two values. The "Other" facet is deliberately NOT in this map: it is
+// the complement of every value here, handled by negation in buildWhereClause
+// (see type_other), so it also catches untyped artists and any future
+// MusicBrainz type the mapper lowercases through its default branch.
 var typeFilterKeys = map[string][]string{
 	"type_person":    {"person", "solo"},
 	"type_group":     {"group"},
-	"type_orchestra": {"orchestra"},
+	"type_orchestra": {"orchestra", "choir"},
 }
+
+// namedTypeValues is the union of every value in typeFilterKeys -- all stored
+// type values that have an explicit facet. The "Other" facet (type_other) is
+// defined as the complement: type NOT IN namedTypeValues (plus NULL), which
+// sweeps up Character, MusicBrainz "Other", untyped (”/NULL), and any future
+// type. Kept sorted so the SQL placeholder binding is deterministic for tests;
+// TestNamedTypeValuesMatchFacets guards it against drift from typeFilterKeys.
+var namedTypeValues = []string{"choir", "group", "orchestra", "person", "solo"}
 
 // buildPlaceholders returns a comma-separated "?,?,?" string of length n.
 func buildPlaceholders(n int) string {
@@ -499,9 +513,22 @@ func buildWhereClause(params ListParams) (string, []any) {
 	// Flyout multi-filter: each key dispatches through the predicate map.
 	// Type and library keys are accumulated separately below.
 	var typeIncludes, typeExcludes []string
+	var otherInclude, otherExclude bool
 	var libIncludes, libExcludes []string
 
 	for key, state := range params.Filters {
+		// The "Other" facet is the complement of the named type facets, so it
+		// has no value list -- it is recorded as a flag and turned into a
+		// negation clause below.
+		if key == "type_other" {
+			switch state {
+			case "include":
+				otherInclude = true
+			case "exclude":
+				otherExclude = true
+			}
+			continue
+		}
 		if typeNames, ok := typeFilterKeys[key]; ok {
 			switch state {
 			case "include":
@@ -532,17 +559,42 @@ func buildWhereClause(params ListParams) (string, []any) {
 		}
 	}
 
-	// Aggregate type filters into a single IN / NOT IN clause so that
-	// selecting multiple types produces OR logic (not impossible AND).
+	// Aggregate type filters. Multiple INCLUDE facets are OR'd (an artist may be
+	// any of the chosen types); the "Other" facet contributes the complement
+	// (type NOT IN namedTypeValues, plus NULL for untyped artists). EXCLUDE facets
+	// are AND'd as separate NOT conditions; excluding "Other" keeps only the named
+	// types.
+	var typeIncludeClauses []string
 	if len(typeIncludes) > 0 {
-		conditions = append(conditions, "type IN ("+buildPlaceholders(len(typeIncludes))+")")
+		typeIncludeClauses = append(typeIncludeClauses, "type IN ("+buildPlaceholders(len(typeIncludes))+")")
 		for _, t := range typeIncludes {
 			args = append(args, t)
 		}
 	}
+	if otherInclude {
+		// SQLite evaluates `NULL NOT IN (...)` as NULL (not true), so untyped
+		// artists stored as NULL need an explicit OR; '' is caught by NOT IN.
+		typeIncludeClauses = append(typeIncludeClauses, "(type NOT IN ("+buildPlaceholders(len(namedTypeValues))+") OR type IS NULL)")
+		for _, t := range namedTypeValues {
+			args = append(args, t)
+		}
+	}
+	if len(typeIncludeClauses) == 1 {
+		conditions = append(conditions, typeIncludeClauses[0])
+	} else if len(typeIncludeClauses) > 1 {
+		conditions = append(conditions, "("+strings.Join(typeIncludeClauses, " OR ")+")")
+	}
 	if len(typeExcludes) > 0 {
 		conditions = append(conditions, "type NOT IN ("+buildPlaceholders(len(typeExcludes))+")")
 		for _, t := range typeExcludes {
+			args = append(args, t)
+		}
+	}
+	if otherExclude {
+		// Excluding "Other" == keep only the named types. NULL / '' rows fail
+		// `type IN (named)` and are correctly dropped.
+		conditions = append(conditions, "type IN ("+buildPlaceholders(len(namedTypeValues))+")")
+		for _, t := range namedTypeValues {
 			args = append(args, t)
 		}
 	}

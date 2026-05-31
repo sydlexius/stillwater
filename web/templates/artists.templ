@@ -42,7 +42,8 @@ type ArtistListData struct {
 	Filter           string
 	// Filters holds the flyout multi-filter state (key -> "include" or "exclude").
 	// Keys: missing_meta, missing_images, missing_mbid, excluded, locked,
-	// type_person, type_group, type_orchestra, library_{id}.
+	// type_person, type_group, type_orchestra (orchestra + choir), type_other
+	// (negation facet), library_{id}.
 	Filters     map[string]string
 	LibraryID   string
 	View        string // "table" or "grid"
@@ -287,6 +288,8 @@ func filterChipLabel(ctx context.Context, key, state string) string {
 		name = t(ctx, "artists.filter.group")
 	case "type_orchestra":
 		name = t(ctx, "artists.filter.orchestra")
+	case "type_other":
+		name = t(ctx, "artists.filter.other")
 	// Metadata field presence filters.
 	case "has_biography":
 		name = t(ctx, "artists.filter.has_biography")
@@ -367,11 +370,11 @@ func filterChipLabelFromData(ctx context.Context, key, state string, libs []libr
 	return filterChipLabel(ctx, key, state)
 }
 
-// artistActiveChips returns the slice of FilterChipSpec entries for the
+// ArtistActiveChips returns the slice of FilterChipSpec entries for the
 // active filters in `data.Filters`. Each chip dismisses to "#artist-content"
 // via the shared FilterChip; keys carry the "filter_" prefix to match the
 // tri-state URL encoding the artists handler reads.
-func artistActiveChips(ctx context.Context, data ArtistListData) []components.FilterChipSpec {
+func ArtistActiveChips(ctx context.Context, data ArtistListData) []components.FilterChipSpec {
 	chips := make([]components.FilterChipSpec, 0, len(data.Filters))
 	for _, key := range sortedFilterKeys(data.Filters) {
 		state := data.Filters[key]
@@ -495,7 +498,6 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							</span>
 						}
 					</button>
-					@components.ContextHelp("help-artists-filters", t(ctx, "artists.help.filters.label"), t(ctx, "artists.help.filters"), "core-concepts/artists-and-libraries#libraries")
 					<details id="sort-dropdown" class="relative">
 						<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title={ t(ctx, "common.sort") }>
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -568,71 +570,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					</div>
 				</div>
 			</div>
-			<!-- FilterFlyout panel for artist filters -->
-			@components.FilterFlyout("artist-filters-flyout", t(ctx, "artists.filters_title"), "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content") {
-				@components.FilterSection(t(ctx, "artists.filter_section.metadata")) {
-					@components.FilterItem("artist-filters-flyout", "filter_missing_meta", "y", t(ctx, "artists.filter.missing_metadata"), filterState(data.Filters, "missing_meta"))
-					@components.FilterItem("artist-filters-flyout", "filter_missing_mbid", "y", t(ctx, "artists.filter.missing_mbid"), filterState(data.Filters, "missing_mbid"))
-				}
-				@components.FilterSection(t(ctx, "artists.filter_section.metadata_fields")) {
-					@components.FilterItem("artist-filters-flyout", "filter_has_biography", "y", t(ctx, "artists.filter.has_biography"), filterState(data.Filters, "has_biography"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_years_active", "y", t(ctx, "artists.filter.has_years_active"), filterState(data.Filters, "has_years_active"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_formed", "y", t(ctx, "artists.filter.has_formed"), filterState(data.Filters, "has_formed"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_disbanded", "y", t(ctx, "artists.filter.has_disbanded"), filterState(data.Filters, "has_disbanded"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_born", "y", t(ctx, "artists.filter.has_born"), filterState(data.Filters, "has_born"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_died", "y", t(ctx, "artists.filter.has_died"), filterState(data.Filters, "has_died"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_gender", "y", t(ctx, "artists.filter.has_gender"), filterState(data.Filters, "has_gender"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_type", "y", t(ctx, "artists.filter.has_type"), filterState(data.Filters, "has_type"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_country", "y", t(ctx, "artists.filter.has_country"), filterState(data.Filters, "has_country"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_genres", "y", t(ctx, "artists.filter.has_genres"), filterState(data.Filters, "has_genres"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_styles", "y", t(ctx, "artists.filter.has_styles"), filterState(data.Filters, "has_styles"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_moods", "y", t(ctx, "artists.filter.has_moods"), filterState(data.Filters, "has_moods"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_members", "y", t(ctx, "artists.filter.has_members"), filterState(data.Filters, "has_members"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_discography", "y", t(ctx, "artists.filter.has_discography"), filterState(data.Filters, "has_discography"))
-				}
-				@components.FilterSection(t(ctx, "artists.filter_section.images")) {
-					@components.FilterItem("artist-filters-flyout", "filter_missing_images", "y", t(ctx, "artists.filter.missing_images"), filterState(data.Filters, "missing_images"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_thumb", "y", t(ctx, "artists.filter.has_thumb"), filterState(data.Filters, "has_thumb"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_fanart", "y", t(ctx, "artists.filter.has_fanart"), filterState(data.Filters, "has_fanart"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_logo", "y", t(ctx, "artists.filter.has_logo"), filterState(data.Filters, "has_logo"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_banner", "y", t(ctx, "artists.filter.has_banner"), filterState(data.Filters, "has_banner"))
-				}
-				@components.FilterSection(t(ctx, "artists.filter_section.platform")) {
-					@components.FilterItem("artist-filters-flyout", "filter_in_emby", "y", t(ctx, "artists.filter.in_emby"), filterState(data.Filters, "in_emby"))
-					@components.FilterItem("artist-filters-flyout", "filter_in_jellyfin", "y", t(ctx, "artists.filter.in_jellyfin"), filterState(data.Filters, "in_jellyfin"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_lidarr", "y", t(ctx, "artists.filter.has_lidarr"), filterState(data.Filters, "has_lidarr"))
-				}
-				@components.FilterSection(t(ctx, "artists.filter_section.status")) {
-					@components.FilterItem("artist-filters-flyout", "filter_excluded", "y", t(ctx, "artists.filter.excluded"), filterState(data.Filters, "excluded"))
-					@components.FilterItem("artist-filters-flyout", "filter_locked", "y", t(ctx, "artists.filter.locked"), filterState(data.Filters, "locked"))
-					@components.FilterItem("artist-filters-flyout", "filter_has_violations", "y", t(ctx, "artists.filter.has_violations"), filterState(data.Filters, "has_violations"))
-				}
-				@components.FilterSection(t(ctx, "artists.filter_section.artist_type")) {
-					@components.FilterItem("artist-filters-flyout", "filter_type_person", "y", t(ctx, "artists.filter.person"), filterState(data.Filters, "type_person"))
-					@components.FilterItem("artist-filters-flyout", "filter_type_group", "y", t(ctx, "artists.filter.group"), filterState(data.Filters, "type_group"))
-					@components.FilterItem("artist-filters-flyout", "filter_type_orchestra", "y", t(ctx, "artists.filter.orchestra"), filterState(data.Filters, "type_orchestra"))
-				}
-				if len(data.Libraries) > 1 {
-					@components.FilterSection(t(ctx, "artists.filter_section.library")) {
-						for _, lib := range data.Libraries {
-							{{ libState := filterState(data.Filters, "library_"+lib.ID) }}
-							{{ libLabel := libraryDropdownLabel(lib, data.LibrarySources) }}
-							// Whitelist mode (issue #1217): every library pill not
-							// set to Include is "out of scope" and rendered dimmed.
-							{{ libOutOfScope := libraryWhitelistActive(data.Filters) && libState != "include" }}
-							@components.FilterItemLibrary(
-								"artist-filters-flyout",
-								"filter_library_"+lib.ID,
-								"y",
-								libLabel,
-								libState,
-								libOutOfScope,
-								tf(ctx, "artists.filter.library_out_of_scope", libLabel),
-							)
-						}
-					}
-				}
-			}
+			@ArtistFilterFlyout(data)
 			if data.View == "grid" {
 				@ArtistGrid(data)
 			} else {
@@ -640,8 +578,608 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			}
 		</div>
 		@BulkProgressPill()
+		@ArtistsPageScripts()
+		@ArtistsKeyboardShortcuts()
+		@components.ContextHelpScript()
+	}
+}
+
+// ArtistTable is the HTMX-swappable table fragment.
+// BulkActionBar renders the Select-All control, "N selected" indicator, and
+// bulk action dropdown. It is only rendered when a filter is active so the
+// user cannot accidentally select the entire library in one click. The bar
+// is wired to a small client-side controller (initialized in ArtistsPage)
+// that manages checkbox state, Select-All indeterminate, and POSTs the
+// selected IDs to /api/v1/artists/bulk-actions.
+//
+// When a sort change moves selected artists off the current page, the toolbar
+// renders an "X selected (Y on this page, Z elsewhere)" form computed by the
+// JS controller, and exposes a "Show selected" button that filters the list
+// to only the selection (issue #1227). When the selection-filter is active
+// (data.IDs non-empty) the bar instead renders a dismissible chip with a
+// "Show all" link that clears the filter.
+templ BulkActionBar(data ArtistListData) {
+	<div
+		id="bulk-action-bar"
+		class="flex flex-wrap items-center gap-3 mb-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
+		role="toolbar"
+		aria-label={ t(ctx, "artists.bulk.toolbar") }
+		data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
+		data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
+		data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
+		data-i18n-selected-split-one={ t(ctx, "artists.bulk.selected.split.one") }
+		data-i18n-selected-split-other={ t(ctx, "artists.bulk.selected.split.other") }
+		data-i18n-busy={ t(ctx, "artists.bulk.busy") }
+		data-i18n-failed={ t(ctx, "artists.bulk.failed") }
+		data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
+		data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
+		data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
+		data-i18n-select-all-matching={ t(ctx, "artists.bulk.select_all_matching") }
+		data-i18n-select-all-matching-aria={ t(ctx, "artists.bulk.select_all_matching.aria") }
+		data-i18n-select-all-matching-capped={ t(ctx, "artists.bulk.select_all_matching.capped") }
+		data-i18n-select-all-matching-failed={ t(ctx, "artists.bulk.select_all_matching.failed") }
+		data-total-matching={ strconv.Itoa(data.Pagination.TotalItems) }
+		data-total-pages={ strconv.Itoa(data.Pagination.TotalPages) }
+	>
+		<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+			<input
+				id="bulk-select-all"
+				type="checkbox"
+				class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+				aria-controls="artist-content"
+				aria-label={ t(ctx, "artists.bulk.select_all") }
+			/>
+			<span id="bulk-select-all-label">{ t(ctx, "artists.bulk.select_all") }</span>
+		</label>
+		<span id="bulk-selected-count" class="text-sm text-gray-500 dark:text-gray-400" aria-live="polite">
+			{ t(ctx, "artists.bulk.none_selected") }
+		</span>
+		// "Show selected" affordance: visible only when at least one
+		// item is selected. Clicking issues an htmx GET to /artists with
+		// an `ids=` filter (preserving the current view) so the user
+		// can review or paginate through selections that the active sort
+		// pushed onto other pages. The button stays display:none until
+		// the JS controller sees a non-empty selection so a stale page
+		// (no selection) does not flash the affordance on first paint.
+		<button
+			id="bulk-show-selected"
+			type="button"
+			class="hidden ml-1 items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+			aria-label={ t(ctx, "artists.bulk.show_selected.aria") }
+			disabled
+		>
+			{ t(ctx, "artists.bulk.show_selected") }
+		</button>
+		// "Select all N matching" affordance: appears only after the user
+		// has selected all visible rows on a multi-page result set. Clicking
+		// it fetches the full cross-page ID list from
+		// GET /api/v1/artists/matching-ids and loads it into the `selected`
+		// Set, replacing the page-scoped selection. Hidden until JS shows it.
+		// The button text and aria-label are updated dynamically by updateBar().
+		<button
+			id="bulk-select-all-matching"
+			type="button"
+			class="hidden ml-1 items-center rounded-md border border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+			aria-label={ t(ctx, "artists.bulk.select_all_matching.aria") }
+			disabled
+		>
+			{ t(ctx, "artists.bulk.select_all_matching") }
+		</button>
+		<div class="ml-auto inline-flex items-center gap-2">
+			// docAnchor intentionally empty: the most relevant docs page
+			// (how-to/refresh-metadata) talks about a "Bulk actions > Refresh
+			// metadata" entry that the dropdown does not actually offer, so
+			// linking there would misdirect. The body text covers all five
+			// listed actions; a follow-up docs page can replace this with a
+			// real anchor.
+			@components.ContextHelp("help-artists-bulk-action", t(ctx, "artists.help.bulk_action.label"), t(ctx, "artists.help.bulk_action"), "")
+			<select
+				id="bulk-action-select"
+				class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+				disabled
+				aria-label={ t(ctx, "artists.bulk.action_label") }
+			>
+				<option value="">{ t(ctx, "artists.bulk.choose_action") }</option>
+				<option value="run_rules">{ t(ctx, "artists.bulk.action.run_rules") }</option>
+				<option value="re_identify_auto">{ t(ctx, "artists.bulk.action.re_identify_auto") }</option>
+				<option value="re_identify_review">{ t(ctx, "artists.bulk.action.re_identify_review") }</option>
+				<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
+				<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
+				<option value="lock">{ t(ctx, "artists.bulk.action.lock") }</option>
+				<option value="unlock">{ t(ctx, "artists.bulk.action.unlock") }</option>
+			</select>
+			<button
+				id="bulk-action-apply"
+				type="button"
+				class="ml-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+				disabled
+			>
+				{ t(ctx, "artists.bulk.apply") }
+			</button>
+		</div>
+	</div>
+	if len(data.IDs) > 0 {
+		// Selection-filter chip: only rendered when the server received a
+		// non-empty `ids=` parameter, so it stays in sync with the URL on
+		// reload, htmx swap, or shareable-link revisit. The "Show all"
+		// link drops the `ids` param and re-issues the htmx swap, which
+		// the existing pagination URL listener pushes onto window.location.
+		<div class="flex flex-wrap items-center gap-2 mb-3" aria-label={ t(ctx, "artists.bulk.toolbar") }>
+			<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-2.5 py-0.5 text-xs font-medium">
+				{ tn(ctx, "artists.bulk.showing_selected", len(data.IDs)) }
+				<a
+					href={ templ.SafeURL(basePath() + showAllPath(data)) }
+					hx-get={ showAllPath(data) }
+					hx-target="#artist-content"
+					hx-swap="outerHTML"
+					hx-push-url="true"
+					data-clear-ids="true"
+					class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+					aria-label={ t(ctx, "artists.bulk.show_all.aria") }
+					title={ t(ctx, "artists.bulk.show_all") }
+				>
+					<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+						<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+					</svg>
+				</a>
+			</span>
+		</div>
+	}
+}
+
+// showAllPath returns the current artist-list path with the IDs filter
+// removed. Used by the "Show all" affordance on the selection chip to
+// clear the #1227 filter without losing the user's view, sort, search,
+// or other filter state. Returns a root-relative path so the
+// document-level htmx:configRequest hook can prepend basePath() once
+// for HTMX requests; callers wrap with basePath() themselves for
+// non-HTMX href values.
+func showAllPath(data ArtistListData) string {
+	v := url.Values{}
+	if data.Search != "" {
+		v.Set("search", data.Search)
+	}
+	if data.Sort != "" {
+		v.Set("sort", data.Sort)
+	}
+	if data.Order != "" {
+		v.Set("order", data.Order)
+	}
+	if data.Filter != "" {
+		v.Set("filter", data.Filter)
+	}
+	if data.LibraryID != "" {
+		v.Set("library_id", data.LibraryID)
+	}
+	if data.View != "" {
+		v.Set("view", data.View)
+	}
+	for k, state := range data.Filters {
+		if state == "include" {
+			v.Set("filter_"+k, "+y")
+		} else if state == "exclude" {
+			v.Set("filter_"+k, "-y")
+		}
+	}
+	// Base the path on the channel-aware Pagination.BaseURL (set by
+	// buildArtistListData) so the next/ "Show all" chip clears the ids filter
+	// against /next/artists, not the stable /artists table (M55 #1335).
+	base := data.Pagination.BaseURL
+	if base == "" {
+		base = "/artists"
+	}
+	enc := v.Encode()
+	if enc == "" {
+		return base
+	}
+	return base + "?" + enc
+}
+
+templ ArtistTable(data ArtistListData) {
+	<div id="artist-content" data-filter-active?={ isFilterActive(data) }>
+		@BulkActionBar(data)
+		@components.ActiveFilters("#artist-content", "", "", t(ctx, "common.active_filters"), ArtistActiveChips(ctx, data))
+		<div class="overflow-x-auto">
+			<table id="artists-table" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+				<thead class="bg-gray-50 dark:bg-gray-800">
+					<tr>
+						<th scope="col" class="px-3 py-3 w-8">
+							<span class="sr-only">{ t(ctx, "artists.bulk.select_column") }</span>
+						</th>
+						<!-- Name column: three-state sort cycle (asc -> desc -> off) -->
+						<th scope="col" data-col="name" data-sort-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							<button
+								type="button"
+								onclick="setSortColumn('name')"
+								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
+								title={ t(ctx, "artists.sort_by_name") }
+							>
+								{ t(ctx, "artists.col.name") }
+								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "name" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "name" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
+							</button>
+						</th>
+						<!-- Type column: sortable, hidden by default via column toggle -->
+						<th scope="col" data-col="type" data-sort-col="type" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							<button
+								type="button"
+								onclick="setSortColumn('type')"
+								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
+								title={ t(ctx, "artists.sort_by_type") }
+							>
+								{ t(ctx, "artists.sort.type") }
+								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "type" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "type" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
+							</button>
+						</th>
+						<!-- Origin/Country column: sortable, hidden by default via column toggle -->
+						<th scope="col" data-col="origin" data-sort-col="origin" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							<button
+								type="button"
+								onclick="setSortColumn('origin')"
+								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
+								title={ t(ctx, "artists.sort_by_origin") }
+							>
+								{ t(ctx, "artists.sort.origin") }
+								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "origin" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "origin" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
+							</button>
+						</th>
+						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							{ t(ctx, "artists.col.metadata") }
+						</th>
+						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							{ img.ImageTermFor("thumb", data.ProfileName) }
+						</th>
+						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							{ img.ImageTermFor("fanart", data.ProfileName) }
+						</th>
+						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							{ img.ImageTermFor("logo", data.ProfileName) }
+						</th>
+						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							{ t(ctx, "artists.col.mbid") }
+						</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+					if len(data.Artists) == 0 {
+						<tr>
+							<td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+								{ t(ctx, "artists.empty_state") }
+							</td>
+						</tr>
+					}
+					for _, a := range data.Artists {
+						@ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName, true)
+					}
+				</tbody>
+			</table>
+		</div>
+		@components.Pagination(data.Pagination)
+	</div>
+}
+
+templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, profileName string, selectable bool) {
+	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
+		if selectable {
+			<td class="px-3 py-3 w-8 align-middle">
+				<input
+					type="checkbox"
+					class="sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+					data-artist-id={ a.ID }
+					aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
+				/>
+			</td>
+		}
+		<td data-col="name" class="px-4 py-3 text-sm">
+			<div class="flex items-center gap-1.5">
+				if complianceAvailable(compliance) {
+					<span
+						class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, compliance)) }
+						title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+						role="img"
+					></span>
+				}
+				@ArtistPlatformBadges(a, sources, platforms)
+				<a
+					href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
+					class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+				>
+					{ a.Name }
+				</a>
+				if a.SortName != "" && a.SortName != a.Name {
+					<span class="ml-1 text-xs text-gray-400">({ a.SortName })</span>
+				}
+				if a.IsExcluded {
+					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "artists.excluded") }</span>
+				}
+			</div>
+		</td>
+		<td data-col="type" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+			{ a.Type }
+		</td>
+		<td data-col="origin" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+			{ a.Origin }
+		</td>
+		<td data-col="metadata" class="px-4 py-3 text-center">
+			@components.StatusBadge(a.NFOExists, t(ctx, "artists.col.metadata"))
+		</td>
+		<td data-col="thumb" class="px-4 py-3 text-center">
+			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, img.ImageTermFor("thumb", profileName))
+		</td>
+		<td data-col="fanart" class="px-4 py-3 text-center">
+			@components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, img.ImageTermFor("fanart", profileName))
+		</td>
+		<td data-col="logo" class="px-4 py-3 text-center">
+			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, img.ImageTermFor("logo", profileName))
+		</td>
+		<td data-col="mbid" class="px-4 py-3 text-center">
+			@components.StatusBadge(a.MusicBrainzID != "", t(ctx, "artists.col.mbid"))
+		</td>
+	</tr>
+}
+
+// ArtistGrid is the HTMX-swappable grid fragment.
+templ ArtistGrid(data ArtistListData) {
+	<div id="artist-content" data-filter-active?={ isFilterActive(data) }>
+		@BulkActionBar(data)
+		@components.ActiveFilters("#artist-content", "", "", t(ctx, "common.active_filters"), ArtistActiveChips(ctx, data))
+		if len(data.Artists) == 0 {
+			<div class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "artists.empty_state") }
+			</div>
+		} else {
+			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+				for _, a := range data.Artists {
+					@ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, true)
+				}
+			</div>
+		}
+		@components.Pagination(data.Pagination)
+	</div>
+}
+
+templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, selectable bool) {
+	<div class="relative">
+		if selectable {
+			<label
+				class="absolute top-1.5 right-1.5 z-10 flex items-center justify-center rounded-full bg-white/90 dark:bg-gray-900/90 p-0.5 shadow cursor-pointer"
+				onclick="event.stopPropagation();"
+				aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
+			>
+				<input
+					type="checkbox"
+					class="sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+					data-artist-id={ a.ID }
+					onclick="event.stopPropagation();"
+					aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
+				/>
+			</label>
+		}
+		<a
+			href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
+			class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
+		>
+			<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
+				if a.ThumbExists {
+					if a.ThumbPlaceholder != "" {
+						<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
+					}
+					<img
+						src={ basePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file" }
+						alt={ a.Name }
+						loading="lazy"
+						class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+						onerror="this.style.display='none'"
+					/>
+				} else if a.ThumbPlaceholder != "" {
+					<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
+				} else {
+					<div class="h-full w-full flex items-center justify-center">
+						<svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
+						</svg>
+					</div>
+				}
+				if complianceAvailable(compliance) {
+					<span
+						class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
+						title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+						role="img"
+					></span>
+				}
+				@ArtistCardPlatformBadges(a, sources, platforms)
+			</div>
+			<div class="px-2 py-2">
+				<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={ a.Name }>
+					{ a.Name }
+				</p>
+				<p class={ "mt-0.5 text-xs font-medium", components.HealthScoreClass(a.HealthScore) }>
+					{ fmt.Sprintf("%.0f%%", a.HealthScore) }
+				</p>
+			</div>
+		</a>
+	</div>
+}
+
+// ArtistPlatformBadges renders inline platform badges for the table view name column.
+templ ArtistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
+	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
+		<span class="inline-flex items-center gap-0.5 shrink-0">
+			for _, b := range badges {
+				@components.PlatformBadge(b.Platform, b.Tooltip)
+			}
+		</span>
+	}
+}
+
+// ArtistCardPlatformBadges renders overlay platform badges for the grid card view.
+// Badges are positioned in the bottom-right corner of the card image area.
+templ ArtistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
+	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
+		<div class="absolute bottom-1 right-1 flex items-center gap-0.5">
+			for _, b := range badges {
+				<span class="rounded-full bg-black/60 p-0.5">
+					@components.PlatformBadge(b.Platform, b.Tooltip)
+				</span>
+			}
+		</div>
+	}
+}
+
+// NextArtistCardSources renders the next/ grid card's source overlay as a SINGLE
+// backdrop chip instead of one dark circle per platform (M55 #1335, maintainer
+// 2026-05-30). A single rounded-full backdrop wrapping the icon row reads as a
+// circle for one source and a pill/oval for multiple -- the shape falls out of the
+// geometry, no conditional needed, BUT only if the padding is SYMMETRIC: equal
+// p-* on all sides means a single icon yields a square (-> circle via rounded-full)
+// while multiple icons grow only horizontally (-> pill). Asymmetric px/py would make
+// even a single-source chip an oval (maintainer caught this on an Emby-only artist
+// 2026-05-30). Reuses the shared computeArtistBadges so the platform set, order, and
+// verbatim localised tooltips match the table exactly; kept next-only so stable's
+// ArtistCard overlay (ArtistCardPlatformBadges) is unchanged.
+templ NextArtistCardSources(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
+	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
+		<div class="absolute bottom-1 right-1 inline-flex items-center gap-0.5 rounded-full bg-black/55 p-0.5 shadow-sm">
+			for _, b := range badges {
+				@components.PlatformBadge(b.Platform, b.Tooltip)
+			}
+		</div>
+	}
+}
+
+// BulkProgressPill is now a hidden i18n data carrier: the actual pill
+// visual moved to the layout-level components.ProgressPill so it can
+// survive HTMX swaps and full page navigations and stack with other
+// long-running operations. This element only persists the i18n strings
+// the local bulk-controller JS still needs for the size-aware confirm
+// dialog and the per-action completion toast. Removing the element
+// would silently fall the JS back to its English hard-coded defaults
+// (see the `|| 'Apply ... artists?'` patterns in the bulk controller).
+templ BulkProgressPill() {
+	<div
+		id="bulk-progress-pill"
+		hidden
+		data-i18n-verb-run-rules={ t(ctx, "artists.bulk.progress.run_rules") }
+		data-i18n-verb-re-identify={ t(ctx, "artists.bulk.progress.re_identify") }
+		data-i18n-verb-re-identify-auto={ t(ctx, "artists.bulk.progress.re_identify_auto") }
+		data-i18n-verb-re-identify-review={ t(ctx, "artists.bulk.progress.re_identify_review") }
+		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
+		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
+		data-i18n-verb-lock={ t(ctx, "artists.bulk.progress.lock") }
+		data-i18n-verb-unlock={ t(ctx, "artists.bulk.progress.unlock") }
+		data-i18n-template={ t(ctx, "artists.bulk.progress.template") }
+		data-i18n-single={ t(ctx, "artists.bulk.progress.single") }
+		data-i18n-summary={ t(ctx, "artists.bulk.summary") }
+		data-i18n-reidentify-summary={ t(ctx, "artists.bulk.reidentify.summary") }
+		data-i18n-confirm-small={ t(ctx, "artists.bulk.confirm.small") }
+		data-i18n-confirm-large={ t(ctx, "artists.bulk.confirm.large") }
+	></div>
+}
+
+// ArtistsKeyboardShortcuts wires the artists-list keyboard surface shared by
+// both channels (M55 #1335): "/" focuses search, Cmd/Ctrl+A selects every
+// visible row, and Esc clears the selection. Shortcuts are ignored while the
+// user is typing in a field. Selection is driven by dispatching change events
+// on the existing .sw-bulk-select checkboxes, so the shared selection
+// bookkeeping stays the single source of truth -- no forked state. The
+// window guard makes a second render (e.g. an HTMX-boosted nav) idempotent.
+templ ArtistsKeyboardShortcuts() {
+	<script>
+		(function () {
+			if (window.__swArtistsKbd) return;
+			window.__swArtistsKbd = true;
+			// Show the platform-appropriate select-all modifier in any kbd tip
+			// chips (next/ tip line). The handler itself is cross-platform
+			// (metaKey || ctrlKey); only the DISPLAY differs: Cmd glyph on macOS,
+			// "Ctrl" elsewhere. No-op on the stable channel (no .sw-mod-key chips).
+			try {
+				var plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+				if (/Mac|iPhone|iPad|iPod/i.test(plat)) {
+					document.querySelectorAll('.sw-mod-key').forEach(function (k) { k.textContent = '⌘'; });
+				}
+			} catch (e) { /* non-fatal: chip keeps its "Ctrl" default */ }
+			document.addEventListener('keydown', function (e) {
+				var el = document.activeElement;
+				var tag = el && el.tagName;
+				// Only TEXT-ENTRY focus suppresses the shortcuts. A focused row
+				// checkbox is an <input type=checkbox>, which Firefox focuses on
+				// click (Safari does not) -- treating every INPUT as "typing" let a
+				// focused checkbox swallow ALL shortcuts (/, Cmd/Ctrl+A, Esc, f), not
+				// just one (M55 #1335, maintainer 2026-05-30). Narrow the guard: an
+				// INPUT counts as typing only for text-like types, never for
+				// checkbox/radio/button/etc.
+				var typing = tag === 'TEXTAREA' || tag === 'SELECT' || (el && el.isContentEditable);
+				if (tag === 'INPUT') {
+					var nonText = ['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'image', 'range', 'color'];
+					var itype = (el.getAttribute('type') || 'text').toLowerCase();
+					if (nonText.indexOf(itype) === -1) typing = true;
+				}
+				if (typing) return;
+				if (e.key === '/') {
+					var search = document.getElementById('artist-search');
+					if (search) { e.preventDefault(); search.focus(); }
+					return;
+				}
+				if ((e.key === 'a' || e.key === 'A') && (e.metaKey || e.ctrlKey)) {
+					var boxes = document.querySelectorAll('#artist-content .sw-bulk-select');
+					if (boxes.length) {
+						e.preventDefault();
+						boxes.forEach(function (b) {
+							if (!b.checked) { b.checked = true; b.dispatchEvent(new Event('change', { bubbles: true })); }
+						});
+					}
+					return;
+				}
+				if (e.key === 'f' || e.key === 'F') {
+					// "f" toggles the filter flyout (prototype-only affordance; the
+					// 02-artists.md keyboard table omits it). The trigger's
+					// aria-expanded is the open-state contract maintained by
+					// swFilterFlyout.open/close, so the toggle round-trips correctly.
+					var fTrigger = document.getElementById('artist-filter-trigger');
+					if (fTrigger && window.swFilterFlyout) {
+						e.preventDefault();
+						var fPanel = fTrigger.getAttribute('aria-controls') || 'artist-filters-flyout';
+						if (fTrigger.getAttribute('aria-expanded') === 'true') {
+							window.swFilterFlyout.close(fPanel);
+						} else {
+							window.swFilterFlyout.open(fPanel);
+						}
+					}
+					return;
+				}
+				if (e.key === 'Escape') {
+					var checked = document.querySelectorAll('#artist-content .sw-bulk-select:checked');
+					checked.forEach(function (b) { b.checked = false; b.dispatchEvent(new Event('change', { bubbles: true })); });
+				}
+			});
+		})();
+	</script>
+}
+
+// ArtistsPageScripts carries the artists-list behaviour JS (selection,
+// sort, filter-sync, off-page selection, keyboard nav). Extracted from
+// ArtistsPage (M55 #1335) so the next/ artists page composes the same
+// behaviour without forking it. Pure JS, no templ interpolation.
+templ ArtistsPageScripts() {
 		<script>
 			var _artistsBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+				// _artistsPath returns the current artist-list path (channel-aware:
+				// /artists or /next/artists) with the deployment base path stripped,
+				// so the document-level htmx:configRequest hook re-prepends basePath
+				// exactly once. Hardcoding '/artists' here swapped the STABLE table
+				// into the next/ page on every sort/selection action (M55 #1335
+				// routing fix); stable is unaffected because its pathname is /artists.
+				function _artistsPath() {
+					var p = window.location.pathname;
+					if (_artistsBp && p.indexOf(_artistsBp) === 0) {
+						p = p.slice(_artistsBp.length) || '/';
+					}
+					return p || '/artists';
+				}
 			// Inject flyout filter params from the URL into HTMX requests that
 			// target #artist-content. The flyout stores state in the URL only
 			// (not in named form elements), so hx-include cannot pick it up.
@@ -741,7 +1279,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				sortInput.value = newSort;
 				orderInput.value = newOrder;
 				updateSortUI(newSort, newOrder);
-				htmx.ajax('GET', '/artists', {
+				htmx.ajax('GET', _artistsPath(), {
 					target: '#artist-content',
 					swap: 'outerHTML',
 					values: buildArtistParams({page: '1'})
@@ -760,7 +1298,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				}
 				updateSortUI(sortInput.value, orderInput.value);
 				closeSortDropdown();
-				htmx.ajax('GET', '/artists', {
+				htmx.ajax('GET', _artistsPath(), {
 					target: '#artist-content',
 					swap: 'outerHTML',
 					values: buildArtistParams({page: '1'})
@@ -774,7 +1312,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				orderInput.value = dir;
 				updateSortUI(sortInput ? sortInput.value : '', dir);
 				closeSortDropdown();
-				htmx.ajax('GET', '/artists', {
+				htmx.ajax('GET', _artistsPath(), {
 					target: '#artist-content',
 					swap: 'outerHTML',
 					values: buildArtistParams({page: '1'})
@@ -833,6 +1371,18 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						colToggle.classList.remove('hidden');
 					} else {
 						colToggle.classList.add('hidden');
+					}
+				}
+				// next/ channel: in table view, sorting is driven by the clickable
+				// column headers, so hide the toolbar sort dropdown there; surface it
+				// in grid view (which has no headers). Scoped to next/ via the
+				// .sw-next-artists marker so the stable channel's dropdown is untouched.
+				var sortDd = document.getElementById('sort-dropdown');
+				if (sortDd && document.querySelector('.sw-next-artists')) {
+					if (view === 'table') {
+						sortDd.classList.add('hidden');
+					} else {
+						sortDd.classList.remove('hidden');
 					}
 				}
 				// Fire-and-forget save preference
@@ -1147,6 +1697,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					}
 					if (applyBtn) applyBtn.disabled = bulkActionRunning || selected.size === 0 || !selectEl || !selectEl.value;
 					if (selectEl) selectEl.disabled = bulkActionRunning || selected.size === 0;
+					// Stamp selection state on the bar so a channel that wants a
+					// contextual strip (next/) can hide it via CSS when the selection
+					// is empty. The stable bar ignores this attribute. Single source
+					// of truth -- the selection bookkeeping is never forked.
+					bar.dataset.selectionActive = selected.size > 0 ? 'true' : 'false';
 					// Toggle the "Show selected" affordance: hidden when no
 					// selection exists; visible (as inline-flex) once at least
 					// one item is in the selection store. We use a single
@@ -1533,7 +2088,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						// htmx:configRequest hook prepends basePath, so
 						// embedding _artistsBp would double-prefix on
 						// sub-path deployments.
-						window.htmx.ajax('GET', '/artists', {
+						window.htmx.ajax('GET', _artistsPath(), {
 							target: '#artist-content',
 							swap: 'outerHTML',
 							values: params
@@ -1817,474 +2372,79 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				});
 			})();
 		</script>
-		@components.ContextHelpScript()
-	}
 }
 
-// ArtistTable is the HTMX-swappable table fragment.
-// BulkActionBar renders the Select-All control, "N selected" indicator, and
-// bulk action dropdown. It is only rendered when a filter is active so the
-// user cannot accidentally select the entire library in one click. The bar
-// is wired to a small client-side controller (initialized in ArtistsPage)
-// that manages checkbox state, Select-All indeterminate, and POSTs the
-// selected IDs to /api/v1/artists/bulk-actions.
-//
-// When a sort change moves selected artists off the current page, the toolbar
-// renders an "X selected (Y on this page, Z elsewhere)" form computed by the
-// JS controller, and exposes a "Show selected" button that filters the list
-// to only the selection (issue #1227). When the selection-filter is active
-// (data.IDs non-empty) the bar instead renders a dismissible chip with a
-// "Show all" link that clears the filter.
-templ BulkActionBar(data ArtistListData) {
-	<div
-		id="bulk-action-bar"
-		class="flex flex-wrap items-center gap-3 mb-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
-		role="toolbar"
-		aria-label={ t(ctx, "artists.bulk.toolbar") }
-		data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
-		data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
-		data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
-		data-i18n-selected-split-one={ t(ctx, "artists.bulk.selected.split.one") }
-		data-i18n-selected-split-other={ t(ctx, "artists.bulk.selected.split.other") }
-		data-i18n-busy={ t(ctx, "artists.bulk.busy") }
-		data-i18n-failed={ t(ctx, "artists.bulk.failed") }
-		data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
-		data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
-		data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
-		data-i18n-select-all-matching={ t(ctx, "artists.bulk.select_all_matching") }
-		data-i18n-select-all-matching-aria={ t(ctx, "artists.bulk.select_all_matching.aria") }
-		data-i18n-select-all-matching-capped={ t(ctx, "artists.bulk.select_all_matching.capped") }
-		data-i18n-select-all-matching-failed={ t(ctx, "artists.bulk.select_all_matching.failed") }
-		data-total-matching={ strconv.Itoa(data.Pagination.TotalItems) }
-		data-total-pages={ strconv.Itoa(data.Pagination.TotalPages) }
-	>
-		<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-			<input
-				id="bulk-select-all"
-				type="checkbox"
-				class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-				aria-controls="artist-content"
-				aria-label={ t(ctx, "artists.bulk.select_all") }
-			/>
-			<span id="bulk-select-all-label">{ t(ctx, "artists.bulk.select_all") }</span>
-		</label>
-		<span id="bulk-selected-count" class="text-sm text-gray-500 dark:text-gray-400" aria-live="polite">
-			{ t(ctx, "artists.bulk.none_selected") }
-		</span>
-		// "Show selected" affordance: visible only when at least one
-		// item is selected. Clicking issues an htmx GET to /artists with
-		// an `ids=` filter (preserving the current view) so the user
-		// can review or paginate through selections that the active sort
-		// pushed onto other pages. The button stays display:none until
-		// the JS controller sees a non-empty selection so a stale page
-		// (no selection) does not flash the affordance on first paint.
-		<button
-			id="bulk-show-selected"
-			type="button"
-			class="hidden ml-1 items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
-			aria-label={ t(ctx, "artists.bulk.show_selected.aria") }
-			disabled
-		>
-			{ t(ctx, "artists.bulk.show_selected") }
-		</button>
-		// "Select all N matching" affordance: appears only after the user
-		// has selected all visible rows on a multi-page result set. Clicking
-		// it fetches the full cross-page ID list from
-		// GET /api/v1/artists/matching-ids and loads it into the `selected`
-		// Set, replacing the page-scoped selection. Hidden until JS shows it.
-		// The button text and aria-label are updated dynamically by updateBar().
-		<button
-			id="bulk-select-all-matching"
-			type="button"
-			class="hidden ml-1 items-center rounded-md border border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
-			aria-label={ t(ctx, "artists.bulk.select_all_matching.aria") }
-			disabled
-		>
-			{ t(ctx, "artists.bulk.select_all_matching") }
-		</button>
-		<div class="ml-auto inline-flex items-center gap-2">
-			// docAnchor intentionally empty: the most relevant docs page
-			// (how-to/refresh-metadata) talks about a "Bulk actions > Refresh
-			// metadata" entry that the dropdown does not actually offer, so
-			// linking there would misdirect. The body text covers all five
-			// listed actions; a follow-up docs page can replace this with a
-			// real anchor.
-			@components.ContextHelp("help-artists-bulk-action", t(ctx, "artists.help.bulk_action.label"), t(ctx, "artists.help.bulk_action"), "")
-			<select
-				id="bulk-action-select"
-				class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-				disabled
-				aria-label={ t(ctx, "artists.bulk.action_label") }
-			>
-				<option value="">{ t(ctx, "artists.bulk.choose_action") }</option>
-				<option value="run_rules">{ t(ctx, "artists.bulk.action.run_rules") }</option>
-				<option value="re_identify_auto">{ t(ctx, "artists.bulk.action.re_identify_auto") }</option>
-				<option value="re_identify_review">{ t(ctx, "artists.bulk.action.re_identify_review") }</option>
-				<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
-				<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
-				<option value="lock">{ t(ctx, "artists.bulk.action.lock") }</option>
-				<option value="unlock">{ t(ctx, "artists.bulk.action.unlock") }</option>
-			</select>
-			<button
-				id="bulk-action-apply"
-				type="button"
-				class="ml-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-				disabled
-			>
-				{ t(ctx, "artists.bulk.apply") }
-			</button>
-		</div>
-	</div>
-	if len(data.IDs) > 0 {
-		// Selection-filter chip: only rendered when the server received a
-		// non-empty `ids=` parameter, so it stays in sync with the URL on
-		// reload, htmx swap, or shareable-link revisit. The "Show all"
-		// link drops the `ids` param and re-issues the htmx swap, which
-		// the existing pagination URL listener pushes onto window.location.
-		<div class="flex flex-wrap items-center gap-2 mb-3" aria-label={ t(ctx, "artists.bulk.toolbar") }>
-			<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-2.5 py-0.5 text-xs font-medium">
-				{ tn(ctx, "artists.bulk.showing_selected", len(data.IDs)) }
-				<a
-					href={ templ.SafeURL(basePath() + showAllPath(data)) }
-					hx-get={ showAllPath(data) }
-					hx-target="#artist-content"
-					hx-swap="outerHTML"
-					hx-push-url="true"
-					data-clear-ids="true"
-					class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-					aria-label={ t(ctx, "artists.bulk.show_all.aria") }
-					title={ t(ctx, "artists.bulk.show_all") }
-				>
-					<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-						<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
-					</svg>
-				</a>
-			</span>
-		</div>
-	}
-}
-
-// showAllPath returns the current artist-list path with the IDs filter
-// removed. Used by the "Show all" affordance on the selection chip to
-// clear the #1227 filter without losing the user's view, sort, search,
-// or other filter state. Returns a root-relative path so the
-// document-level htmx:configRequest hook can prepend basePath() once
-// for HTMX requests; callers wrap with basePath() themselves for
-// non-HTMX href values.
-func showAllPath(data ArtistListData) string {
-	v := url.Values{}
-	if data.Search != "" {
-		v.Set("search", data.Search)
-	}
-	if data.Sort != "" {
-		v.Set("sort", data.Sort)
-	}
-	if data.Order != "" {
-		v.Set("order", data.Order)
-	}
-	if data.Filter != "" {
-		v.Set("filter", data.Filter)
-	}
-	if data.LibraryID != "" {
-		v.Set("library_id", data.LibraryID)
-	}
-	if data.View != "" {
-		v.Set("view", data.View)
-	}
-	for k, state := range data.Filters {
-		if state == "include" {
-			v.Set("filter_"+k, "+y")
-		} else if state == "exclude" {
-			v.Set("filter_"+k, "-y")
+// ArtistFilterFlyout renders the artists tri-state filter flyout panel.
+// Extracted from ArtistsPage (M55 #1335) so the next/ artists page composes
+// the identical flyout (same families, same URL encoding) instead of
+// forking it. The panel content is unchanged; only its call site moved.
+templ ArtistFilterFlyout(data ArtistListData) {
+	<!-- Filters help (M55 #1335, maintainer 2026-05-30): rendered in the flyout HEADER
+	     (right of the title) via FilterFlyout's headerHelp slot, not the toolbar. The
+	     flyout is shared by table + grid, so the help stays reachable from both views. -->
+	@components.FilterFlyout("artist-filters-flyout", t(ctx, "artists.filters_title"), "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content", components.ContextHelp("help-artists-filters", t(ctx, "artists.help.filters.label"), t(ctx, "artists.help.filters"), "core-concepts/artists-and-libraries#libraries")) {
+		@components.FilterSection(t(ctx, "artists.filter_section.metadata")) {
+			@components.FilterItem("artist-filters-flyout", "filter_missing_meta", "y", t(ctx, "artists.filter.missing_metadata"), filterState(data.Filters, "missing_meta"))
+			@components.FilterItem("artist-filters-flyout", "filter_missing_mbid", "y", t(ctx, "artists.filter.missing_mbid"), filterState(data.Filters, "missing_mbid"))
 		}
-	}
-	enc := v.Encode()
-	if enc == "" {
-		return "/artists"
-	}
-	return "/artists?" + enc
-}
-
-templ ArtistTable(data ArtistListData) {
-	<div id="artist-content" data-filter-active?={ isFilterActive(data) }>
-		@BulkActionBar(data)
-		@components.ActiveFilters("#artist-content", "", "", t(ctx, "common.active_filters"), artistActiveChips(ctx, data))
-		<div class="overflow-x-auto">
-			<table id="artists-table" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-				<thead class="bg-gray-50 dark:bg-gray-800">
-					<tr>
-						<th scope="col" class="px-3 py-3 w-8">
-							<span class="sr-only">{ t(ctx, "artists.bulk.select_column") }</span>
-						</th>
-						<!-- Name column: three-state sort cycle (asc -> desc -> off) -->
-						<th scope="col" data-col="name" data-sort-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							<button
-								type="button"
-								onclick="setSortColumn('name')"
-								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
-								title={ t(ctx, "artists.sort_by_name") }
-							>
-								{ t(ctx, "artists.col.name") }
-								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "name" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
-								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "name" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
-							</button>
-						</th>
-						<!-- Type column: sortable, hidden by default via column toggle -->
-						<th scope="col" data-col="type" data-sort-col="type" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							<button
-								type="button"
-								onclick="setSortColumn('type')"
-								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
-								title={ t(ctx, "artists.sort_by_type") }
-							>
-								{ t(ctx, "artists.sort.type") }
-								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "type" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
-								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "type" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
-							</button>
-						</th>
-						<!-- Origin/Country column: sortable, hidden by default via column toggle -->
-						<th scope="col" data-col="origin" data-sort-col="origin" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							<button
-								type="button"
-								onclick="setSortColumn('origin')"
-								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
-								title={ t(ctx, "artists.sort_by_origin") }
-							>
-								{ t(ctx, "artists.sort.origin") }
-								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "origin" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
-								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "origin" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
-							</button>
-						</th>
-						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ t(ctx, "artists.col.metadata") }
-						</th>
-						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ img.ImageTermFor("thumb", data.ProfileName) }
-						</th>
-						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ img.ImageTermFor("fanart", data.ProfileName) }
-						</th>
-						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ img.ImageTermFor("logo", data.ProfileName) }
-						</th>
-						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ t(ctx, "artists.col.mbid") }
-						</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
-					if len(data.Artists) == 0 {
-						<tr>
-							<td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-								{ t(ctx, "artists.empty_state") }
-							</td>
-						</tr>
-					}
-					for _, a := range data.Artists {
-						@ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName, true)
-					}
-				</tbody>
-			</table>
-		</div>
-		@components.Pagination(data.Pagination)
-	</div>
-}
-
-templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, profileName string, selectable bool) {
-	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
-		if selectable {
-			<td class="px-3 py-3 w-8 align-middle">
-				<input
-					type="checkbox"
-					class="sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-					data-artist-id={ a.ID }
-					aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
-				/>
-			</td>
+		@components.FilterSection(t(ctx, "artists.filter_section.metadata_fields")) {
+			@components.FilterItem("artist-filters-flyout", "filter_has_biography", "y", t(ctx, "artists.filter.has_biography"), filterState(data.Filters, "has_biography"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_years_active", "y", t(ctx, "artists.filter.has_years_active"), filterState(data.Filters, "has_years_active"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_formed", "y", t(ctx, "artists.filter.has_formed"), filterState(data.Filters, "has_formed"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_disbanded", "y", t(ctx, "artists.filter.has_disbanded"), filterState(data.Filters, "has_disbanded"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_born", "y", t(ctx, "artists.filter.has_born"), filterState(data.Filters, "has_born"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_died", "y", t(ctx, "artists.filter.has_died"), filterState(data.Filters, "has_died"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_gender", "y", t(ctx, "artists.filter.has_gender"), filterState(data.Filters, "has_gender"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_type", "y", t(ctx, "artists.filter.has_type"), filterState(data.Filters, "has_type"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_country", "y", t(ctx, "artists.filter.has_country"), filterState(data.Filters, "has_country"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_genres", "y", t(ctx, "artists.filter.has_genres"), filterState(data.Filters, "has_genres"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_styles", "y", t(ctx, "artists.filter.has_styles"), filterState(data.Filters, "has_styles"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_moods", "y", t(ctx, "artists.filter.has_moods"), filterState(data.Filters, "has_moods"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_members", "y", t(ctx, "artists.filter.has_members"), filterState(data.Filters, "has_members"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_discography", "y", t(ctx, "artists.filter.has_discography"), filterState(data.Filters, "has_discography"))
 		}
-		<td data-col="name" class="px-4 py-3 text-sm">
-			<div class="flex items-center gap-1.5">
-				if complianceAvailable(compliance) {
-					<span
-						class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, compliance)) }
-						title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
-						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
-						role="img"
-					></span>
-				}
-				@artistPlatformBadges(a, sources, platforms)
-				<a
-					href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
-					class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
-				>
-					{ a.Name }
-				</a>
-				if a.SortName != "" && a.SortName != a.Name {
-					<span class="ml-1 text-xs text-gray-400">({ a.SortName })</span>
-				}
-				if a.IsExcluded {
-					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "artists.excluded") }</span>
-				}
-			</div>
-		</td>
-		<td data-col="type" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-			{ a.Type }
-		</td>
-		<td data-col="origin" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-			{ a.Origin }
-		</td>
-		<td data-col="metadata" class="px-4 py-3 text-center">
-			@components.StatusBadge(a.NFOExists, t(ctx, "artists.col.metadata"))
-		</td>
-		<td data-col="thumb" class="px-4 py-3 text-center">
-			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, img.ImageTermFor("thumb", profileName))
-		</td>
-		<td data-col="fanart" class="px-4 py-3 text-center">
-			@components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, img.ImageTermFor("fanart", profileName))
-		</td>
-		<td data-col="logo" class="px-4 py-3 text-center">
-			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, img.ImageTermFor("logo", profileName))
-		</td>
-		<td data-col="mbid" class="px-4 py-3 text-center">
-			@components.StatusBadge(a.MusicBrainzID != "", t(ctx, "artists.col.mbid"))
-		</td>
-	</tr>
-}
-
-// ArtistGrid is the HTMX-swappable grid fragment.
-templ ArtistGrid(data ArtistListData) {
-	<div id="artist-content" data-filter-active?={ isFilterActive(data) }>
-		@BulkActionBar(data)
-		@components.ActiveFilters("#artist-content", "", "", t(ctx, "common.active_filters"), artistActiveChips(ctx, data))
-		if len(data.Artists) == 0 {
-			<div class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-				{ t(ctx, "artists.empty_state") }
-			</div>
-		} else {
-			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-				for _, a := range data.Artists {
-					@ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, true)
-				}
-			</div>
+		@components.FilterSection(t(ctx, "artists.filter_section.images")) {
+			@components.FilterItem("artist-filters-flyout", "filter_missing_images", "y", t(ctx, "artists.filter.missing_images"), filterState(data.Filters, "missing_images"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_thumb", "y", t(ctx, "artists.filter.has_thumb"), filterState(data.Filters, "has_thumb"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_fanart", "y", t(ctx, "artists.filter.has_fanart"), filterState(data.Filters, "has_fanart"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_logo", "y", t(ctx, "artists.filter.has_logo"), filterState(data.Filters, "has_logo"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_banner", "y", t(ctx, "artists.filter.has_banner"), filterState(data.Filters, "has_banner"))
 		}
-		@components.Pagination(data.Pagination)
-	</div>
-}
-
-templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, selectable bool) {
-	<div class="relative">
-		if selectable {
-			<label
-				class="absolute top-1.5 right-1.5 z-10 flex items-center justify-center rounded-full bg-white/90 dark:bg-gray-900/90 p-0.5 shadow cursor-pointer"
-				onclick="event.stopPropagation();"
-				aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
-			>
-				<input
-					type="checkbox"
-					class="sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
-					data-artist-id={ a.ID }
-					onclick="event.stopPropagation();"
-					aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
-				/>
-			</label>
+		@components.FilterSection(t(ctx, "artists.filter_section.platform")) {
+			@components.FilterItem("artist-filters-flyout", "filter_in_emby", "y", t(ctx, "artists.filter.in_emby"), filterState(data.Filters, "in_emby"))
+			@components.FilterItem("artist-filters-flyout", "filter_in_jellyfin", "y", t(ctx, "artists.filter.in_jellyfin"), filterState(data.Filters, "in_jellyfin"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_lidarr", "y", t(ctx, "artists.filter.has_lidarr"), filterState(data.Filters, "has_lidarr"))
 		}
-		<a
-			href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
-			class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
-		>
-			<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
-				if a.ThumbExists {
-					if a.ThumbPlaceholder != "" {
-						<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
-					}
-					<img
-						src={ basePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file" }
-						alt={ a.Name }
-						loading="lazy"
-						class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
-						onerror="this.style.display='none'"
-					/>
-				} else if a.ThumbPlaceholder != "" {
-					<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
-				} else {
-					<div class="h-full w-full flex items-center justify-center">
-						<svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
-						</svg>
-					</div>
+		@components.FilterSection(t(ctx, "artists.filter_section.status")) {
+			@components.FilterItem("artist-filters-flyout", "filter_excluded", "y", t(ctx, "artists.filter.excluded"), filterState(data.Filters, "excluded"))
+			@components.FilterItem("artist-filters-flyout", "filter_locked", "y", t(ctx, "artists.filter.locked"), filterState(data.Filters, "locked"))
+			@components.FilterItem("artist-filters-flyout", "filter_has_violations", "y", t(ctx, "artists.filter.has_violations"), filterState(data.Filters, "has_violations"))
+		}
+		@components.FilterSection(t(ctx, "artists.filter_section.artist_type")) {
+			@components.FilterItem("artist-filters-flyout", "filter_type_person", "y", t(ctx, "artists.filter.person"), filterState(data.Filters, "type_person"))
+			@components.FilterItem("artist-filters-flyout", "filter_type_group", "y", t(ctx, "artists.filter.group"), filterState(data.Filters, "type_group"))
+			@components.FilterItem("artist-filters-flyout", "filter_type_orchestra", "y", t(ctx, "artists.filter.orchestra"), filterState(data.Filters, "type_orchestra"))
+			@components.FilterItem("artist-filters-flyout", "filter_type_other", "y", t(ctx, "artists.filter.other"), filterState(data.Filters, "type_other"))
+		}
+		if len(data.Libraries) > 1 {
+			@components.FilterSection(t(ctx, "artists.filter_section.library")) {
+				for _, lib := range data.Libraries {
+					{{ libState := filterState(data.Filters, "library_"+lib.ID) }}
+					{{ libLabel := libraryDropdownLabel(lib, data.LibrarySources) }}
+					// Whitelist mode (issue #1217): every library pill not
+					// set to Include is "out of scope" and rendered dimmed.
+					{{ libOutOfScope := libraryWhitelistActive(data.Filters) && libState != "include" }}
+					@components.FilterItemLibrary(
+						"artist-filters-flyout",
+						"filter_library_"+lib.ID,
+						"y",
+						libLabel,
+						libState,
+						libOutOfScope,
+						tf(ctx, "artists.filter.library_out_of_scope", libLabel),
+					)
 				}
-				if complianceAvailable(compliance) {
-					<span
-						class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
-						title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
-						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
-						role="img"
-					></span>
-				}
-				@artistCardPlatformBadges(a, sources, platforms)
-			</div>
-			<div class="px-2 py-2">
-				<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={ a.Name }>
-					{ a.Name }
-				</p>
-				<p class={ "mt-0.5 text-xs font-medium", components.HealthScoreClass(a.HealthScore) }>
-					{ fmt.Sprintf("%.0f%%", a.HealthScore) }
-				</p>
-			</div>
-		</a>
-	</div>
-}
-
-// artistPlatformBadges renders inline platform badges for the table view name column.
-templ artistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
-	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
-		<span class="inline-flex items-center gap-0.5 shrink-0">
-			for _, b := range badges {
-				@components.PlatformBadge(b.Platform, b.Tooltip)
 			}
-		</span>
+		}
 	}
-}
-
-// artistCardPlatformBadges renders overlay platform badges for the grid card view.
-// Badges are positioned in the bottom-right corner of the card image area.
-templ artistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
-	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
-		<div class="absolute bottom-1 right-1 flex items-center gap-0.5">
-			for _, b := range badges {
-				<span class="rounded-full bg-black/60 p-0.5">
-					@components.PlatformBadge(b.Platform, b.Tooltip)
-				</span>
-			}
-		</div>
-	}
-}
-
-// BulkProgressPill is now a hidden i18n data carrier: the actual pill
-// visual moved to the layout-level components.ProgressPill so it can
-// survive HTMX swaps and full page navigations and stack with other
-// long-running operations. This element only persists the i18n strings
-// the local bulk-controller JS still needs for the size-aware confirm
-// dialog and the per-action completion toast. Removing the element
-// would silently fall the JS back to its English hard-coded defaults
-// (see the `|| 'Apply ... artists?'` patterns in the bulk controller).
-templ BulkProgressPill() {
-	<div
-		id="bulk-progress-pill"
-		hidden
-		data-i18n-verb-run-rules={ t(ctx, "artists.bulk.progress.run_rules") }
-		data-i18n-verb-re-identify={ t(ctx, "artists.bulk.progress.re_identify") }
-		data-i18n-verb-re-identify-auto={ t(ctx, "artists.bulk.progress.re_identify_auto") }
-		data-i18n-verb-re-identify-review={ t(ctx, "artists.bulk.progress.re_identify_review") }
-		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
-		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
-		data-i18n-verb-lock={ t(ctx, "artists.bulk.progress.lock") }
-		data-i18n-verb-unlock={ t(ctx, "artists.bulk.progress.unlock") }
-		data-i18n-template={ t(ctx, "artists.bulk.progress.template") }
-		data-i18n-single={ t(ctx, "artists.bulk.progress.single") }
-		data-i18n-summary={ t(ctx, "artists.bulk.summary") }
-		data-i18n-reidentify-summary={ t(ctx, "artists.bulk.reidentify.summary") }
-		data-i18n-confirm-small={ t(ctx, "artists.bulk.confirm.small") }
-		data-i18n-confirm-large={ t(ctx, "artists.bulk.confirm.large") }
-	></div>
 }

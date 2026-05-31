@@ -821,6 +821,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// before the catch-all; each screen issue replaces this generic fallback
 	// with a flag-aware handler as its next template lands. No per-route auth
 	// wrapper here: the re-dispatched stable route applies its own auth.
+	// Per-screen next/ routes land as their templates ship; each is more
+	// specific than the /next/{path...} fallback so Go's mux prefers it, and
+	// each renders the next template only when the resolved channel is "next"
+	// (otherwise it falls back to the stable page itself). M55 #1335: artists.
+	mux.HandleFunc("GET "+bp+"/next/artists", wrapOptionalAuth(r.handleNextArtistsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

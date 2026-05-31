@@ -1,6 +1,7 @@
 package artist
 
 import (
+	"sort"
 	"strings"
 	"testing"
 )
@@ -281,8 +282,9 @@ func TestBuildWhereClause_TypeFilter_Exclude(t *testing.T) {
 	if !strings.Contains(clause, "type NOT IN (") {
 		t.Errorf("expected type NOT IN clause, got %q", clause)
 	}
-	if len(args) != 1 || args[0] != "orchestra" {
-		t.Errorf("expected [orchestra], got %v", args)
+	// type_orchestra backs the Orchestra/Choir facet = two values.
+	if len(args) != 2 || args[0] != "orchestra" || args[1] != "choir" {
+		t.Errorf("expected [orchestra choir], got %v", args)
 	}
 }
 
@@ -435,8 +437,9 @@ func TestBuildWhereClause_NoUserInputInSQL(t *testing.T) {
 	}
 }
 
-// TestBuildWhereClause_TypeFilter_AllTypes verifies that all three type filter
-// keys (type_person, type_group, type_orchestra) are wired correctly.
+// TestBuildWhereClause_TypeFilter_AllTypes verifies that the named type filter
+// keys (type_person, type_group, type_orchestra) are wired to their value sets.
+// type_orchestra now backs the Orchestra/Choir facet, so it carries two values.
 func TestBuildWhereClause_TypeFilter_AllTypes(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -445,7 +448,7 @@ func TestBuildWhereClause_TypeFilter_AllTypes(t *testing.T) {
 	}{
 		{"type_person", []string{"person", "solo"}},
 		{"type_group", []string{"group"}},
-		{"type_orchestra", []string{"orchestra"}},
+		{"type_orchestra", []string{"orchestra", "choir"}},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -469,6 +472,107 @@ func TestBuildWhereClause_TypeFilter_AllTypes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestBuildWhereClause_TypeFilter_Other_Include verifies the "Other" facet is a
+// negation of the named types plus an explicit NULL match, so untyped artists
+// stored as NULL are included rather than silently dropped by SQLite's
+// `NULL NOT IN (...)` (which evaluates to NULL, not true).
+func TestBuildWhereClause_TypeFilter_Other_Include(t *testing.T) {
+	t.Parallel()
+	clause, args := buildWhereClause(ListParams{Filters: map[string]string{"type_other": "include"}})
+	if !strings.Contains(clause, "type NOT IN (") {
+		t.Errorf("expected a type NOT IN negation, got %q", clause)
+	}
+	if !strings.Contains(clause, "type IS NULL") {
+		t.Errorf("expected an IS NULL match for untyped artists, got %q", clause)
+	}
+	if len(args) != len(namedTypeValues) {
+		t.Fatalf("expected %d args (namedTypeValues), got %d: %v", len(namedTypeValues), len(args), args)
+	}
+}
+
+// TestBuildWhereClause_TypeFilter_Other_Exclude verifies that excluding "Other"
+// keeps only the named types (type IN namedTypeValues), which correctly drops
+// NULL / empty-typed artists.
+func TestBuildWhereClause_TypeFilter_Other_Exclude(t *testing.T) {
+	t.Parallel()
+	clause, args := buildWhereClause(ListParams{Filters: map[string]string{"type_other": "exclude"}})
+	if !strings.Contains(clause, "type IN (") {
+		t.Errorf("expected type IN (named) clause, got %q", clause)
+	}
+	if strings.Contains(clause, "type IS NULL") {
+		t.Errorf("exclude-Other must not match NULL rows, got %q", clause)
+	}
+	if len(args) != len(namedTypeValues) {
+		t.Fatalf("expected %d args, got %d: %v", len(namedTypeValues), len(args), args)
+	}
+}
+
+// TestBuildWhereClause_TypeFilter_OtherWithNamed_Include verifies that selecting
+// a named facet AND "Other" together OR-composes into one combined condition --
+// "any named value OR not-a-named-value" -- rather than an impossible AND.
+func TestBuildWhereClause_TypeFilter_OtherWithNamed_Include(t *testing.T) {
+	t.Parallel()
+	clause, _ := buildWhereClause(ListParams{Filters: map[string]string{
+		"type_group": "include",
+		"type_other": "include",
+	}})
+	if !strings.Contains(clause, " OR ") {
+		t.Errorf("expected an OR-composed include clause, got %q", clause)
+	}
+	if !strings.Contains(clause, "type IN (") || !strings.Contains(clause, "type NOT IN (") {
+		t.Errorf("expected both IN (group) and NOT IN (named) branches, got %q", clause)
+	}
+}
+
+// TestBuildWhereClause_TypeFilter_NamedAndOther_Exclude verifies that excluding
+// a named facet AND "Other" together emits BOTH clauses AND-joined: the named
+// exclusion (type NOT IN (group...)) and the Other exclusion (type IN (named)).
+// Excluding Other keeps only named types, so the two conditions coexist as
+// independent AND predicates (keep named types, but not the group ones).
+func TestBuildWhereClause_TypeFilter_NamedAndOther_Exclude(t *testing.T) {
+	t.Parallel()
+	clause, _ := buildWhereClause(ListParams{Filters: map[string]string{
+		"type_group": "exclude",
+		"type_other": "exclude",
+	}})
+	// The named exclusion: type NOT IN (group...).
+	if !strings.Contains(clause, "type NOT IN (") {
+		t.Errorf("expected the named exclusion (type NOT IN (group)), got %q", clause)
+	}
+	// The Other exclusion: keep only the named types (type IN (named)).
+	if !strings.Contains(clause, "type IN (") {
+		t.Errorf("expected the Other exclusion (type IN (named)), got %q", clause)
+	}
+	// Two EXCLUDE facets are AND-joined as separate conditions, never OR-composed
+	// (OR composition is for INCLUDE facets only).
+	if strings.Contains(clause, " OR ") {
+		t.Errorf("two EXCLUDE facets must be AND-joined, not OR-composed, got %q", clause)
+	}
+}
+
+// TestNamedTypeValuesMatchFacets guards namedTypeValues against drift from
+// typeFilterKeys: the "Other" negation must be the exact complement of every
+// value exposed by a named facet, or untyped/other artists would leak into a
+// named facet or be missed by Other.
+func TestNamedTypeValuesMatchFacets(t *testing.T) {
+	t.Parallel()
+	var union []string
+	for _, vals := range typeFilterKeys {
+		union = append(union, vals...)
+	}
+	sort.Strings(union)
+	got := append([]string(nil), namedTypeValues...)
+	sort.Strings(got)
+	if len(union) != len(got) {
+		t.Fatalf("namedTypeValues has %d values, union of typeFilterKeys has %d: %v vs %v", len(got), len(union), got, union)
+	}
+	for i := range union {
+		if union[i] != got[i] {
+			t.Errorf("namedTypeValues %v != union of typeFilterKeys values %v; update one to match", got, union)
+		}
 	}
 }
 

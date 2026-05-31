@@ -1741,3 +1741,181 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   .sw-settings [data-search-flash] { animation: none; }
 }
 [data-motion="on"] .sw-settings [data-search-flash] { animation: none; }
+
+/* M55 #1335: next/ channel artists list.
+ * The next/ artists page reuses the stable ArtistRow/ArtistCard markup and
+ * restyles it purely through this scoped block, so the stable channel is never
+ * touched and no class hooks are added to the shared components. The platform
+ * badges read calmer here -- desaturated by default, full colour when the row
+ * (table) or card (grid) is hovered -- matching the spec's "smaller, monochrome
+ * with hover-tint" direction. Badge media is the rounded-full logo imagery and
+ * the filesystem folder glyph; the cover image (object-cover, not rounded-full)
+ * is intentionally excluded. */
+.sw-next-artists td[data-col="name"] img.rounded-full,
+.sw-next-artists .group img.rounded-full {
+  filter: grayscale(0.85);
+  opacity: 0.82;
+  transition: filter 150ms ease, opacity 150ms ease;
+}
+.sw-next-artists tr:hover td[data-col="name"] img.rounded-full,
+.sw-next-artists .group:hover img.rounded-full {
+  filter: none;
+  opacity: 1;
+}
+
+/* The sticky toolbar reads as the prototype's raised, bordered band (.sw-fbar):
+ * a full hairline border and a soft shadow over the rounded-lg + translucent
+ * backdrop set inline, so it stays legible as content scrolls beneath it.
+ * Light + dark. */
+.sw-next-artists .sw-next-toolbar {
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.dark .sw-next-artists .sw-next-toolbar {
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* Density model (M55 #1335). "comfy" is the native row rhythm, so it needs no
+ * overrides; "compact" -- set on the root by the density script while a
+ * selection is active -- tightens the table's vertical padding and type so more
+ * rows stay in view during a bulk action. Mirrors design/tokens.css density
+ * vars (row-y 10px comfy -> 6px compact, fs 14px -> 13px). Table-scoped: the
+ * higher-specificity selector (.sw-next-artists[data-density] tbody td) wins
+ * over the per-cell Tailwind padding utility without an !important. */
+.sw-next-artists[data-density="compact"] tbody td {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+/* Checkbox treatment (M55 #1335; maintainer note 2026-05-30): the prototype's
+ * selection checkboxes carry a surface-tinted background instead of the
+ * browser-default white box, in BOTH themes. Restyle the reused native
+ * checkboxes in place (appearance:none + a custom check) so the row markup is
+ * not forked and the JS-hook classes / :checked / :indeterminate keep working.
+ * Mirrors design/styles.css .sw-checkbox. Scoped to next/ so stable is untouched. */
+.sw-next-artists input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 4px;
+  border: 1.5px solid #cbd5e1; /* slate-300 */
+  background-color: #f1f5f9; /* slate-100 -- tinted, not white */
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  flex: none;
+  vertical-align: middle;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.dark .sw-next-artists input[type="checkbox"] {
+  border-color: #475569; /* slate-600 */
+  background-color: #1e293b; /* slate-800 -- tinted, not white */
+}
+.sw-next-artists input[type="checkbox"]:hover {
+  border-color: #3b82f6; /* blue-500 */
+}
+.sw-next-artists input[type="checkbox"]:checked,
+.sw-next-artists input[type="checkbox"]:indeterminate {
+  background-color: #2563eb; /* blue-600 */
+  border-color: #2563eb;
+}
+.sw-next-artists input[type="checkbox"]:checked::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.28rem;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translate(0.5px, -1px);
+}
+.sw-next-artists input[type="checkbox"]:indeterminate::after {
+  content: "";
+  width: 0.5rem;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+.sw-next-artists input[type="checkbox"]:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Row/cell typography (M55 #1335): match the prototype's denser type scale
+ * (design/styles.css ~13px rows, 500-weight names, muted uppercase headers).
+ * The header h1 (22/600/-0.02em) already matches inline; this tunes the table
+ * body + cell tiers that were left at v1 defaults. */
+.sw-next-artists tbody td {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.sw-next-artists td[data-col="name"] {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.sw-next-artists thead th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Keyboard-hint badges (M55 #1335): the prototype surfaces shortcut keys as
+ * small kbd chips (/ in search, f on Filters) plus a tip line under the list.
+ * Mirrors design/styles.css .kbd. The tip-line prose is added during UAT. */
+.sw-next-artists .sw-kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid #cbd5e1;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: #64748b;
+  background: #f8fafc;
+  align-items: center;
+  gap: 2px;
+}
+.dark .sw-next-artists .sw-kbd {
+  border-color: #475569;
+  color: #94a3b8;
+  background: #0f172a;
+}
+.sw-next-artists .sw-list-tips {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* next/ bulk selection strip (M55 #1335): the dissolved bulk bar's contextual
+ * half (count + Show selected + Select all N matching). The action dropdown +
+ * Apply live in the toolbar; the page select-all lives in the table header.
+ * A "contextual" strip (table view) is hidden until the shared bulk controller
+ * stamps data-selection-active="true"; the grid view's strip is persistent
+ * (data-contextual="false") because it hosts the page select-all. */
+.sw-next-artists .sw-next-bulk-strip {
+  border: 1px solid #e5e7eb; /* gray-200 */
+  background: #f9fafb;       /* gray-50 */
+  /* Freeze the selection strip just below the sticky toolbar (M55 #1335,
+   * maintainer 2026-05-30) so bulk-selection context stays visible while
+   * scrolling. The offset tracks the toolbar's live height via a JS-set custom
+   * property (the toolbar can wrap to two rows at narrow widths); 3.5rem is the
+   * single-row fallback. z-index sits below the toolbar's z-10 but above rows,
+   * and the opaque background keeps rows from showing through. */
+  position: sticky;
+  top: var(--sw-next-toolbar-h, 3.5rem);
+  z-index: 9;
+}
+.dark .sw-next-artists .sw-next-bulk-strip {
+  border-color: #374151;     /* gray-700 */
+  background: #1f2937;       /* gray-800 */
+}
+.sw-next-artists .sw-next-bulk-strip-contextual[data-selection-active="false"] {
+  display: none;
+}

@@ -151,21 +151,28 @@ func parseIDsParam(raw string) []string {
 // handleArtistsPage renders the artist list HTML page.
 // GET /artists
 //
+// buildArtistListData assembles the ArtistListData for the artists list page
+// from the request query (sort/order/flyout filters/pagination/off-page ids)
+// plus best-effort compliance and platform-presence lookups. It returns
+// ok=false after writing a login or error response, so callers can simply
+// return. Shared by the stable handleArtistsPage and the next/ channel's
+// handleNextArtistsPage so both render byte-identical data (M55 #1335).
+//
 //nolint:gocognit // Artists page handler (cog 50): resolves auth, parses paging/sort/filter params, validates "show selected" IDs, queries the page slice + total counts + facet counts, then renders both full-page and HTMX-partial responses. The parse/query/render stages could move into named helpers reading from a shared request-context struct without reshuffling render-time fields. Refactor tracked in #1550.
-func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
+func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (templates.ArtistListData, bool) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
 		r.renderLoginPage(w, req)
-		return
+		return templates.ArtistListData{}, false
 	}
 
 	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
 	if !ok {
-		return
+		return templates.ArtistListData{}, false
 	}
 	order, ok := validateOrderParam(w, req)
 	if !ok {
-		return
+		return templates.ArtistListData{}, false
 	}
 	params := artist.ListParams{
 		Page:      intQuery(req, "page", 1),
@@ -192,7 +199,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		r.logger.Error("listing artists for page", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return templates.ArtistListData{}, false
 	}
 
 	totalPages := total / params.PageSize
@@ -233,6 +240,13 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// BaseURL drives pagination links, the "show all" affordance, and the shared
+	// sort/selection JS fragment-swap path; it must be channel-aware so the
+	// next/ page swaps the next/ fragment rather than the stable table (#1335).
+	listBaseURL := "/artists"
+	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+		listBaseURL = "/next/artists"
+	}
 	data := templates.ArtistListData{
 		Artists: artists,
 		Pagination: components.PaginationData{
@@ -240,7 +254,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			TotalPages:  totalPages,
 			PageSize:    params.PageSize,
 			TotalItems:  total,
-			BaseURL:     "/artists",
+			BaseURL:     listBaseURL,
 			Sort:        params.Sort,
 			Order:       params.Order,
 			Search:      params.Search,
@@ -298,15 +312,25 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	return data, true
+}
+
+// handleArtistsPage renders the stable artists list: the full page, or for an
+// HTMX request the table/grid fragment. The data assembly lives in
+// buildArtistListData so the next/ channel renders the identical data set.
+func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
+	data, ok := r.buildArtistListData(w, req)
+	if !ok {
+		return
+	}
 	if isHTMXRequest(req) {
-		if view == "grid" {
+		if data.View == "grid" {
 			renderTempl(w, req, templates.ArtistGrid(data))
 		} else {
 			renderTempl(w, req, templates.ArtistTable(data))
 		}
 		return
 	}
-
 	renderTempl(w, req, templates.ArtistsPage(r.assetsFor(req), data))
 }
 
@@ -319,7 +343,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 // "library_{id}" -> "include"/"exclude". Recognized single-value keys span
 // legacy composite filters (missing_meta, missing_images, missing_mbid,
 // excluded, locked), artist-type filters (type_person, type_group,
-// type_orchestra), metadata-field presence (has_biography, has_years_active,
+// type_orchestra, type_other), metadata-field presence (has_biography, has_years_active,
 // has_formed, has_disbanded, has_born, has_died, has_gender, has_type,
 // has_country, has_genres, has_styles, has_moods, has_members,
 // has_discography), image presence (has_thumb, has_fanart, has_logo,
@@ -330,7 +354,9 @@ func parseFlyoutFilters(req *http.Request) map[string]string {
 		// Legacy / composite filters.
 		"missing_meta", "missing_images", "missing_mbid", "excluded", "locked",
 		// Artist type filters (aggregated into IN/NOT IN by buildWhereClause).
-		"type_person", "type_group", "type_orchestra",
+		// type_other is the negation facet (everything not Person/Group/
+		// Orchestra-Choir, including untyped), resolved in buildWhereClause.
+		"type_person", "type_group", "type_orchestra", "type_other",
 		// Metadata field presence filters.
 		"has_biography", "has_years_active", "has_formed", "has_disbanded",
 		"has_born", "has_died", "has_gender", "has_type", "has_country",
