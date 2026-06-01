@@ -3,6 +3,7 @@ package rule
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
 	"time"
 )
 
@@ -214,21 +215,138 @@ type RulePassRate struct {
 	PassRate  float64 `json:"pass_rate"`
 }
 
+// TriFilter is a tri-state include/exclude filter over a single dimension's
+// values (severity, category, rule, library, or fixable). It is the backend
+// representation of the filter-flyout's three-state pills:
+//
+//   - A value in Include means "keep only rows that match one of these"
+//     (SQL: <col> IN (...)).
+//   - A value in Exclude means "drop rows that match one of these"
+//     (SQL: <col> NOT IN (...)).
+//   - A value in neither set is neutral: it does not constrain the query.
+//
+// Both sets may be populated at once (include some values, exclude others).
+// A zero-value TriFilter (both sets empty) adds no SQL clause, so an unset
+// dimension behaves exactly like the old empty scalar filter did.
+//
+// The URL contract the flyout JS emits (web/static/js/filter-flyout.js) repeats
+// the same query key once per value, each value carrying a state prefix:
+// "+value" = include, "-value" = exclude. A bare value with no prefix is
+// treated as include for backward compatibility with older links and the
+// legacy single-select form.
+type TriFilter struct {
+	Include []string
+	Exclude []string
+}
+
+// IsEmpty reports whether the filter constrains nothing (no include and no
+// exclude values). Callers use this to skip emitting any SQL clause.
+func (f TriFilter) IsEmpty() bool {
+	return len(f.Include) == 0 && len(f.Exclude) == 0
+}
+
+// Normalized returns a copy of f with the two invariants the SQL builder and
+// the flyout JS already assume applied up front, so every downstream consumer
+// (URL round-trip, chip rendering, count queries) sees the same canonical
+// state:
+//
+//   - Dedupe: each side keeps only the first occurrence of a value.
+//   - Exclude-wins: a value present in BOTH Include and Exclude is dropped
+//     from Include and kept only in Exclude, matching the SQL behavior where a
+//     NOT IN exclusion always removes a row even if an IN include would have
+//     kept it.
+//   - Whitelist: when Include is non-empty the dimension is in "whitelist"
+//     mode (SQL keeps only included values and ignores explicit excludes), so
+//     any leftover Exclude entries are stale and are dropped to neutral. This
+//     mirrors the client-side whitelist rule in filter-flyout.js (issue #1217)
+//     so a value is never simultaneously included-elsewhere and excluded here.
+//
+// The original f is not mutated; nil slices are preserved as nil.
+func (f TriFilter) Normalized() TriFilter {
+	if f.IsEmpty() {
+		return TriFilter{}
+	}
+
+	// Build the exclude set first so exclude-wins can drop matching includes.
+	excludeSet := make(map[string]struct{}, len(f.Exclude))
+	var exclude []string
+	for _, v := range f.Exclude {
+		if _, dup := excludeSet[v]; dup {
+			continue
+		}
+		excludeSet[v] = struct{}{}
+		exclude = append(exclude, v)
+	}
+
+	includeSet := make(map[string]struct{}, len(f.Include))
+	var include []string
+	for _, v := range f.Include {
+		if _, dup := includeSet[v]; dup {
+			continue
+		}
+		// Exclude-wins: skip a value that is also excluded.
+		if _, excluded := excludeSet[v]; excluded {
+			continue
+		}
+		includeSet[v] = struct{}{}
+		include = append(include, v)
+	}
+
+	// Whitelist: a non-empty Include means explicit excludes are ignored by the
+	// SQL, so drop them to neutral to keep the state self-consistent.
+	if len(include) > 0 {
+		exclude = nil
+	}
+
+	return TriFilter{Include: include, Exclude: exclude}
+}
+
+// AppendURLValues appends f's tri-state values to q under key, using the
+// flyout's URL contract: "+value" for include and "-value" for exclude. The
+// flyout's client-side hydration (filter-flyout.js initFromURL) recognizes
+// only these prefixed forms, so includes are always emitted with the "+"
+// prefix (never bare). This is the single shared emitter used by both the
+// push-URL handler and the dashboard template helpers so the wire form cannot
+// drift between them.
+func (f TriFilter) AppendURLValues(q url.Values, key string) {
+	for _, v := range f.Include {
+		q.Add(key, "+"+v)
+	}
+	for _, v := range f.Exclude {
+		q.Add(key, "-"+v)
+	}
+}
+
+// IncludeOnly builds a TriFilter that includes the single given value, or an
+// empty (neutral) TriFilter when value is "". It is the back-compat bridge for
+// callers that still pass a single bare value (the old scalar contract), such
+// as the notifications endpoint and tests: a bare value means "include".
+func IncludeOnly(value string) TriFilter {
+	if value == "" {
+		return TriFilter{}
+	}
+	return TriFilter{Include: []string{value}}
+}
+
 // ViolationListParams controls filtering, sorting, and grouping of violations.
+//
+// Severity, Category, RuleID, LibraryID, and Fixable are tri-state filters: each
+// can independently include and/or exclude a set of values (see TriFilter). An
+// empty TriFilter on any dimension adds no SQL clause.
 type ViolationListParams struct {
-	Status    string // "active", "open", "resolved", "dismissed", "pending_choice", "" (all)
-	Sort      string // "artist_name", "severity", "rule_id", "created_at"
-	Order     string // "asc", "desc"
-	Severity  string // filter: "error", "warning", "info"
-	Category  string // filter: "nfo", "image", "metadata"
-	RuleID    string // filter by specific rule
-	ArtistID  string // filter by specific artist
-	GroupBy   string // "artist", "rule", "severity", "category", ""
-	Limit     int    // pagination limit; 0 = no limit (backward compatible)
-	Offset    int    // pagination offset
-	Search    string // free-text search across artist_name, message, rule_id
-	LibraryID string // filter by library (via artist join)
-	Fixable   string // filter by fixable: "yes", "no", "" (all)
+	Status    string    // "active", "open", "resolved", "dismissed", "pending_choice", "" (all)
+	Sort      string    // "artist_name", "severity", "rule_id", "created_at"
+	Order     string    // "asc", "desc"
+	Severity  TriFilter // filter values: "error", "warning", "info"
+	Category  TriFilter // filter values: "nfo", "image", "metadata"
+	RuleID    TriFilter // filter by specific rule IDs
+	ArtistID  string    // filter by specific artist (scalar, programmatic; not user tri-state)
+	GroupBy   string    // "artist", "rule", "severity", "category", ""
+	Limit     int       // pagination limit; 0 = no limit (backward compatible)
+	Offset    int       // pagination offset
+	Search    string    // free-text search across artist_name, message, rule_id
+	LibraryID TriFilter // filter by library IDs (via artist join)
+	Fixable   TriFilter // filter values: "yes", "no"
 }
 
 // ViolationGroup holds a group of violations for grouped display.

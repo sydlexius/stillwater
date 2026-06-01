@@ -846,6 +846,14 @@ func historyFieldLabel(ctx context.Context, field string) string {
 	return fieldLabel(ctx, field)
 }
 
+// HistoryFieldLabel is the exported wrapper around the shared field-label
+// vocabulary so the next/ channel's activity rail can render field names with
+// the same localized labels the stable history view uses, without duplicating
+// the lookup table.
+func HistoryFieldLabel(ctx context.Context, field string) string {
+	return fieldLabel(ctx, field)
+}
+
 // historyTruncate trims a string to at most maxLen visible characters, adding
 // an ellipsis if truncation occurs. Uses rune-based length to handle multi-byte
 // Unicode correctly.

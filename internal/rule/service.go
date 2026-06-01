@@ -1002,9 +1002,81 @@ func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViol
 	return violations, rows.Err()
 }
 
+// triClauses appends parameterized IN / NOT IN clauses for a tri-state filter
+// over the given column expression. Include values produce "<col> IN (?,?...)",
+// exclude values produce "<col> NOT IN (?,?...)", and an empty side produces no
+// clause. Only "?" placeholders are concatenated into the SQL text; the values
+// themselves are always passed as args, never interpolated, so this is safe
+// against SQL injection.
+func triClauses(col string, f TriFilter, whereClauses []string, args []any) ([]string, []any) {
+	build := func(op string, values []string) {
+		if len(values) == 0 {
+			return
+		}
+		placeholders := make([]string, len(values))
+		for i, v := range values {
+			placeholders[i] = "?"
+			args = append(args, v)
+		}
+		whereClauses = append(whereClauses, col+" "+op+" ("+strings.Join(placeholders, ", ")+")")
+	}
+	build("IN", f.Include)
+	build("NOT IN", f.Exclude)
+	return whereClauses, args
+}
+
+// buildPlaceholders returns a comma-separated "?, ?, ..." string with one
+// placeholder per value, plus the values as an []any ready to append to a
+// query's arg list. Used by the library EXISTS subqueries, which embed an
+// IN (...) list. Values are never interpolated into SQL; only the "?" markers
+// are concatenated.
+func buildPlaceholders(values []string) (placeholders string, args []any) {
+	marks := make([]string, len(values))
+	args = make([]any, len(values))
+	for i, v := range values {
+		marks[i] = "?"
+		args[i] = v
+	}
+	return strings.Join(marks, ", "), args
+}
+
+// fixableToBits maps the user-facing fixable values ("yes"/"no") to the
+// rv.fixable column's stored integers (1/0), dropping any unrecognized value.
+// It is used to translate a fixable TriFilter into a tri-state filter over the
+// integer column.
+func fixableToBits(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		switch v {
+		case "yes":
+			out = append(out, "1")
+		case "no":
+			out = append(out, "0")
+		}
+	}
+	return out
+}
+
 // buildViolationFilter constructs WHERE clauses and args from ViolationListParams.
-// It returns the clauses, args, and whether a JOIN on the rules table is needed.
-func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []any, needJoin bool) {
+// It returns the clauses, args, whether a JOIN on the rules table is needed
+// (needJoin, for the category filter), and whether the artists table (`a`)
+// must be joined (needArtistJoin, set when either library side is non-empty
+// because the library [NOT] EXISTS subquery references the `a` alias). Callers
+// use needArtistJoin instead of scanning the emitted SQL for the
+// "FROM artist_libraries" substring.
+func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []any, needJoin bool, needArtistJoin bool) {
+	// Defensively normalize every tri-state dimension before emitting SQL so an
+	// overlapping include/exclude set can never produce clause semantics that
+	// disagree with TriFilter.Normalized() (dedupe, exclude-wins on single-value
+	// full overlap, whitelist: a non-empty Include drops a stale Exclude). The
+	// parse boundary (parseTriFilter) already normalizes user input, but internal
+	// or future callers that construct ViolationListParams directly may not.
+	p.Severity = p.Severity.Normalized()
+	p.Category = p.Category.Normalized()
+	p.RuleID = p.RuleID.Normalized()
+	p.LibraryID = p.LibraryID.Normalized()
+	p.Fixable = p.Fixable.Normalized()
+
 	// Status filter (same "active" logic as ListViolations)
 	switch p.Status {
 	case "active":
@@ -1017,29 +1089,22 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 		args = append(args, p.Status)
 	}
 
-	// Severity filter
-	if p.Severity != "" {
-		whereClauses = append(whereClauses, "rv.severity = ?")
-		args = append(args, p.Severity)
-	}
+	// Severity filter (tri-state include/exclude over rv.severity).
+	whereClauses, args = triClauses("rv.severity", p.Severity, whereClauses, args)
 
-	// Rule ID filter
-	if p.RuleID != "" {
-		whereClauses = append(whereClauses, "rv.rule_id = ?")
-		args = append(args, p.RuleID)
-	}
+	// Rule ID filter (tri-state include/exclude over rv.rule_id).
+	whereClauses, args = triClauses("rv.rule_id", p.RuleID, whereClauses, args)
 
-	// Artist ID filter
+	// Artist ID filter (scalar; programmatic single-artist scope, not user tri-state).
 	if p.ArtistID != "" {
 		whereClauses = append(whereClauses, "rv.artist_id = ?")
 		args = append(args, p.ArtistID)
 	}
 
-	// Category filter requires joining the rules table
-	if p.Category != "" {
+	// Category filter requires joining the rules table. Tri-state over r.category.
+	if !p.Category.IsEmpty() {
 		needJoin = true
-		whereClauses = append(whereClauses, "r.category = ?")
-		args = append(args, p.Category)
+		whereClauses, args = triClauses("r.category", p.Category, whereClauses, args)
 	}
 
 	// Free-text search across artist name, message, and rule ID.
@@ -1059,22 +1124,35 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 		args = append(args, like, like, like)
 	}
 
-	// Library filter via artist_libraries membership (the artists table
-	// is already joined for the library_name display column).
-	if p.LibraryID != "" {
-		whereClauses = append(whereClauses, "EXISTS (SELECT 1 FROM artist_libraries al WHERE al.artist_id = a.id AND al.library_id = ?)")
-		args = append(args, p.LibraryID)
+	// Library filter via artist_libraries membership (the artists table is
+	// already joined for the library_name display column). Tri-state: include
+	// means "artist belongs to one of these libraries" (EXISTS ... IN (...)),
+	// exclude means "artist belongs to none of these" (NOT EXISTS ... IN (...)).
+	// Either side sets needArtistJoin so the facet-count helpers materialize the
+	// `a` (artists) join the subquery references, without scanning the emitted
+	// SQL string.
+	if len(p.LibraryID.Include) > 0 {
+		needArtistJoin = true
+		placeholders, libArgs := buildPlaceholders(p.LibraryID.Include)
+		whereClauses = append(whereClauses, "EXISTS (SELECT 1 FROM artist_libraries al WHERE al.artist_id = a.id AND al.library_id IN ("+placeholders+"))")
+		args = append(args, libArgs...)
+	}
+	if len(p.LibraryID.Exclude) > 0 {
+		needArtistJoin = true
+		placeholders, libArgs := buildPlaceholders(p.LibraryID.Exclude)
+		whereClauses = append(whereClauses, "NOT EXISTS (SELECT 1 FROM artist_libraries al WHERE al.artist_id = a.id AND al.library_id IN ("+placeholders+"))")
+		args = append(args, libArgs...)
 	}
 
-	// Fixable filter
-	switch p.Fixable {
-	case "yes":
-		whereClauses = append(whereClauses, "rv.fixable = 1")
-	case "no":
-		whereClauses = append(whereClauses, "rv.fixable = 0")
+	// Fixable filter (tri-state). The user-facing values "yes"/"no" map to the
+	// rv.fixable integer column (1/0) before building the IN / NOT IN clause.
+	fixableBits := TriFilter{
+		Include: fixableToBits(p.Fixable.Include),
+		Exclude: fixableToBits(p.Fixable.Exclude),
 	}
+	whereClauses, args = triClauses("rv.fixable", fixableBits, whereClauses, args)
 
-	return whereClauses, args, needJoin
+	return whereClauses, args, needJoin, needArtistJoin
 }
 
 // buildViolationFromClause returns the FROM/JOIN portion of a violation query.
@@ -1120,7 +1198,9 @@ func buildViolationOrderClause(p ViolationListParams) string {
 
 // ListViolationsFiltered returns violations matching the given params with dynamic SQL.
 func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListParams) ([]RuleViolation, error) {
-	whereClauses, args, needJoin := buildViolationFilter(p)
+	// The artists table is always joined by buildViolationFromClause, so the
+	// library subquery's `a` alias is satisfied regardless of needArtistJoin.
+	whereClauses, args, needJoin, _ := buildViolationFilter(p)
 
 	// Build query -- always join artists/libraries for library_name context
 	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at`
@@ -1152,7 +1232,9 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 // When p.Limit <= 0, all results are returned (no LIMIT clause) but the total count is
 // still computed for caller convenience.
 func (s *Service) ListViolationsFilteredPaged(ctx context.Context, p ViolationListParams) ([]RuleViolation, int, error) {
-	whereClauses, args, needJoin := buildViolationFilter(p)
+	// The artists table is always joined by buildViolationFromClause, so the
+	// library subquery's `a` alias is satisfied regardless of needArtistJoin.
+	whereClauses, args, needJoin, _ := buildViolationFilter(p)
 
 	fromClause := buildViolationFromClause(needJoin)
 	whereClause := ""
@@ -1390,20 +1472,15 @@ func (s *Service) CountActiveViolationsForArtist(ctx context.Context, artistID s
 // filter dimensions in p EXCEPT severity are applied. Pass a zero-value
 // ViolationListParams to get global unfiltered counts.
 func (s *Service) CountActiveViolationsBySeverity(ctx context.Context, p ViolationListParams) (map[string]int, error) {
-	where, args, needJoin := countActiveWithFilter(p, "severity")
+	where, args, needJoin, needArtistJoin := countActiveWithFilter(p, "severity")
 	// Severity is on rv; use rv alias consistently even when no join.
 	from := ` FROM rule_violations rv`
 	if needJoin {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id JOIN rules r ON r.id = rv.rule_id`
-	} else if strings.Contains(where, "FROM artist_libraries") {
-		// buildViolationFilter (in this same file) emits an EXISTS
-		// (SELECT 1 FROM artist_libraries ... WHERE al.artist_id = a.id ...)
-		// clause whenever ViolationListParams.LibraryID is set. That
-		// subquery references the `a` alias, so we must materialize the
-		// join even when the facet-count filter does not otherwise need
-		// it. The string check is coupled to that emitted SQL pattern;
-		// any change to buildViolationFilter's library-scoping clause
-		// must update this guard too.
+	} else if needArtistJoin {
+		// The library [NOT] EXISTS subquery references the `a` alias, so we must
+		// materialize the artists join even when the rules-table join is not
+		// otherwise needed.
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
 	query := `SELECT rv.severity, COUNT(*)` + from + where + ` GROUP BY rv.severity` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
@@ -1448,25 +1525,29 @@ type RuleViolationCount struct {
 // excludeDim is the ViolationListParams field to clear before building the
 // filter: "severity", "category", "rule", "library", or "fixable". Pass ""
 // to apply the filter as-is.
-func countActiveWithFilter(p ViolationListParams, excludeDim string) (where string, args []any, needJoin bool) {
+//
+// needArtistJoin is true when the remaining filter still references the `a`
+// (artists) alias via a library [NOT] EXISTS subquery, so the caller must
+// materialize that join even when needJoin (the rules-table join) is false.
+func countActiveWithFilter(p ViolationListParams, excludeDim string) (where string, args []any, needJoin bool, needArtistJoin bool) {
 	p.Status = "active"
 	switch excludeDim {
 	case "severity":
-		p.Severity = ""
+		p.Severity = TriFilter{}
 	case "category":
-		p.Category = ""
+		p.Category = TriFilter{}
 	case "rule":
-		p.RuleID = ""
+		p.RuleID = TriFilter{}
 	case "library":
-		p.LibraryID = ""
+		p.LibraryID = TriFilter{}
 	case "fixable":
-		p.Fixable = ""
+		p.Fixable = TriFilter{}
 	}
-	clauses, args, needJoin := buildViolationFilter(p)
+	clauses, args, needJoin, needArtistJoin := buildViolationFilter(p)
 	if len(clauses) == 0 {
-		return "", args, needJoin
+		return "", args, needJoin, needArtistJoin
 	}
-	return " WHERE " + strings.Join(clauses, " AND "), args, needJoin
+	return " WHERE " + strings.Join(clauses, " AND "), args, needJoin, needArtistJoin
 }
 
 // CountActiveViolationsByRule returns the count of active (open + pending_choice)
@@ -1475,13 +1556,12 @@ func countActiveWithFilter(p ViolationListParams, excludeDim string) (where stri
 // all filter dimensions in p EXCEPT rule/rule_id are applied, so the caller
 // sees counts within the current filter context.
 func (s *Service) CountActiveViolationsByRule(ctx context.Context, p ViolationListParams) ([]RuleViolationCount, error) {
-	where, args, needJoin := countActiveWithFilter(p, "rule")
+	where, args, needJoin, needArtistJoin := countActiveWithFilter(p, "rule")
 	// The rule counts always need the rules join for r.name and category filtering.
 	from := ` FROM rule_violations rv JOIN rules r ON r.id = rv.rule_id`
 	// needJoin signals the category filter needs `r` (already joined above).
-	// The library filter independently requires the artists-table join because
-	// a.library_id is in the WHERE clause.
-	if needJoin || strings.Contains(where, "FROM artist_libraries") {
+	// needArtistJoin signals the library [NOT] EXISTS subquery references `a`.
+	if needJoin || needArtistJoin {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
 	query := `SELECT rv.rule_id, r.name, COUNT(*) AS cnt` + from + where + ` GROUP BY rv.rule_id ORDER BY cnt DESC, rv.rule_id ASC` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
@@ -1507,7 +1587,7 @@ func (s *Service) CountActiveViolationsByRule(ctx context.Context, p ViolationLi
 // violations grouped by library ID. Applies the facet-count pattern:
 // all filter dimensions in p EXCEPT library are applied.
 func (s *Service) CountActiveViolationsByLibrary(ctx context.Context, p ViolationListParams) (map[string]int, error) {
-	where, args, needJoin := countActiveWithFilter(p, "library")
+	where, args, needJoin, _ := countActiveWithFilter(p, "library")
 	// Library counts join artist_libraries (the M:N membership table)
 	// directly so per-library facets reflect the authoritative
 	// membership record. An artist that is a member of multiple
@@ -1541,11 +1621,11 @@ func (s *Service) CountActiveViolationsByLibrary(ctx context.Context, p Violatio
 // violations grouped by fixable status. Applies the facet-count pattern:
 // all filter dimensions in p EXCEPT fixable are applied.
 func (s *Service) CountActiveViolationsByFixable(ctx context.Context, p ViolationListParams) (fixable int, notFixable int, err error) {
-	where, args, needJoin := countActiveWithFilter(p, "fixable")
+	where, args, needJoin, needArtistJoin := countActiveWithFilter(p, "fixable")
 	from := ` FROM rule_violations rv`
 	if needJoin {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id JOIN rules r ON r.id = rv.rule_id`
-	} else if strings.Contains(where, "FROM artist_libraries") {
+	} else if needArtistJoin {
 		// The library filter requires the artist join even when category is not set.
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
@@ -1609,10 +1689,10 @@ func (s *Service) DismissViolationsForLibrary(ctx context.Context, libraryID str
 // facet-count pattern: all filter dimensions in p EXCEPT category are applied.
 // Pass a zero-value ViolationListParams to get global unfiltered counts.
 func (s *Service) CountActiveViolationsByCategory(ctx context.Context, p ViolationListParams) (map[string]int, error) {
-	where, args, _ := countActiveWithFilter(p, "category")
+	where, args, _, needArtistJoin := countActiveWithFilter(p, "category")
 	// Category counts always need the rules join (GROUP BY r.category).
 	from := ` FROM rule_violations rv JOIN rules r ON r.id = rv.rule_id`
-	if strings.Contains(where, "FROM artist_libraries") {
+	if needArtistJoin {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
 	query := `SELECT r.category, COUNT(*)` + from + where + ` GROUP BY r.category` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders

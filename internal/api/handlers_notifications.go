@@ -278,12 +278,14 @@ func parseNotificationParams(w http.ResponseWriter, req *http.Request) (rule.Vio
 	}
 
 	return rule.ViolationListParams{
-		Status:   status,
-		Sort:     sortKey,
-		Order:    order,
-		Severity: q.Get("severity"),
-		Category: q.Get("category"),
-		RuleID:   q.Get("rule_id"),
+		Status: status,
+		Sort:   sortKey,
+		Order:  order,
+		// The notifications endpoint keeps its single-select contract: a bare
+		// value means "include" (rule.IncludeOnly maps "" to a neutral filter).
+		Severity: rule.IncludeOnly(q.Get("severity")),
+		Category: rule.IncludeOnly(q.Get("category")),
+		RuleID:   rule.IncludeOnly(q.Get("rule_id")),
 		GroupBy:  groupBy,
 	}, true
 }

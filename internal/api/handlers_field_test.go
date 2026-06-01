@@ -3,13 +3,16 @@ package api
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/nfo"
 )
 
@@ -158,6 +161,62 @@ func TestHandleFieldClear_WritesBackNFO(t *testing.T) {
 	}
 	if parsed.Biography != "" {
 		t.Errorf("NFO biography = %q, want empty", parsed.Biography)
+	}
+}
+
+// TestHandleFieldClear_PublishesActivityRecentCleared verifies the producer
+// side of the next/ live activity rail (M55 #1334): clearing a field publishes
+// an event.ActivityRecent whose kind is "cleared" (not "changed"), carrying the
+// artist ID and a human-readable text. The "cleared" kind is what makes the
+// SSE-built row render the same minus-circle icon as the server-refreshed row.
+func TestHandleFieldClear_PublishesActivityRecentCleared(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+
+	// Attach a real event bus and record the activity.recent emission.
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	bus := event.NewBus(logger, 16)
+	r.eventBus = bus
+	got := make(chan event.Event, 1)
+	bus.Subscribe(event.ActivityRecent, func(e event.Event) { got <- e })
+	go bus.Start()
+	defer bus.Stop()
+
+	a := addTestArtist(t, artistSvc, "Clear Activity")
+	a.Biography = "Bio to clear"
+	if err := artistSvc.Update(context.Background(), a); err != nil {
+		t.Fatalf("updating artist: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/fields/biography", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("field", "biography")
+	w := httptest.NewRecorder()
+
+	r.handleFieldClear(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	select {
+	case e := <-got:
+		if e.Type != event.ActivityRecent {
+			t.Fatalf("event type = %q, want %q", e.Type, event.ActivityRecent)
+		}
+		data := e.Data
+		if data["kind"] != "cleared" {
+			t.Errorf("activity kind = %v, want \"cleared\"", data["kind"])
+		}
+		if data["artistId"] != a.ID {
+			t.Errorf("activity artistId = %v, want %q", data["artistId"], a.ID)
+		}
+		// The text references the cleared field so the rail row reads naturally.
+		if text, _ := data["text"].(string); !strings.Contains(text, "biography") {
+			t.Errorf("activity text = %q, want it to mention the cleared field", text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("activity.recent not published on field clear")
 	}
 }
 

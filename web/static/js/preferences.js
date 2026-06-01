@@ -35,7 +35,7 @@
     language: 'en',
     notification_enabled: 'true',
     auto_fetch_images: 'false',
-    bg_opacity: '65'
+    bg_opacity: '85'
   };
 
   // Mapping from preference key to the data attribute name set on <html>.
@@ -123,7 +123,7 @@
         root.style.removeProperty('--sw-glass-bg');
       } else {
         var cached = readCache() || {};
-        var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '65';
+        var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '85';
         applySingle('bg_opacity', opacityVal);
       }
     }
@@ -137,7 +137,7 @@
         return;
       }
       var n = parseInt(value, 10);
-      if (isNaN(n) || n < 20 || n > 100) n = 65;
+      if (isNaN(n) || n < 20 || n > 100) n = 85;
       var pct = n / 100;
       var isDark = root.classList.contains('dark');
       if (isDark) {
@@ -159,7 +159,7 @@
       }
       // Recompute theme-dependent background color after theme change.
       var cached = readCache() || {};
-      var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '65';
+      var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '85';
       applySingle('bg_opacity', opacityVal);
     }
   }

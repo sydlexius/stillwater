@@ -116,7 +116,7 @@ func isBgOpacityKey(key string) bool {
 // BgOpacityDefault is the default background opacity percentage.
 // BgOpacityMin and BgOpacityMax define the allowed range for the bg_opacity preference.
 const (
-	BgOpacityDefault = 65
+	BgOpacityDefault = 85
 	BgOpacityMin     = 20
 	BgOpacityMax     = 100
 )

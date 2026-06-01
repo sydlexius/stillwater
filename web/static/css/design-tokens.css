@@ -77,7 +77,10 @@
   --sw-content-text-secondary: #64748b;
 
   /* -- Glass -------------------------------------------------------------- */
-  --sw-glass-bg: rgba(30, 41, 59, 0.65);
+  /* Pre-hydration fallback alpha matches bg_opacity=85 (preferences.js maps
+     the 20-100 percent to a direct 0-1 alpha), so the no-JS / before-JS state
+     matches the runtime default. */
+  --sw-glass-bg: rgba(30, 41, 59, 0.85);
   --sw-glass-bg-light: rgba(255, 255, 255, 0.75);
   --sw-glass-border: rgba(255, 255, 255, 0.1);
   --sw-glass-blur: blur(32px) saturate(150%);
@@ -136,8 +139,10 @@
   --sw-sidebar-border: rgba(0, 0, 0, 0.08);
   --sw-sidebar-restore-hover-bg: rgba(241, 245, 249, 0.98);
 
-  /* Glass -- light mode uses a translucent white surface instead of dark navy */
-  --sw-glass-bg: rgba(255, 255, 255, 0.55);
+  /* Glass -- light mode uses a translucent white surface instead of dark navy.
+     Pre-hydration fallback alpha matches bg_opacity=85 (direct percent->alpha
+     mapping in preferences.js). */
+  --sw-glass-bg: rgba(255, 255, 255, 0.85);
   --sw-glass-border: rgba(0, 0, 0, 0.10);
 }
 
