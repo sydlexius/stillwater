@@ -357,6 +357,7 @@ func TestLayout_AssetPathsWithBasePath(t *testing.T) {
 	requiredPaths := []string{
 		basePath + "/static/css/styles.css",
 		basePath + "/static/js/htmx.min.js",
+		basePath + "/static/js/keyboard.js",
 		basePath + "/static/img/favicon.svg",
 	}
 

@@ -4,8 +4,11 @@
 // (hints pref) read. Inert until a screen declares data-sw-* attributes,
 // so the stable channel (which carries none) is unaffected.
 (function () {
-  if (window.__swKbd) return;
-  window.__swKbd = true;
+  'use strict';
+  // Re-init guard: the single window.swKeyboardShortcuts export (assigned at the
+  // bottom) doubles as the "already loaded" flag, so no extra global is leaked
+  // (web-frontend.instructions.md: one window.sw<Name> export only).
+  if (window.swKeyboardShortcuts) return;
 
   // registry: array of {key, label, scope, kind} rebuilt on every scan.
   var registry = [];
@@ -13,11 +16,16 @@
   function list() { return registry.slice(); }
 
   // rovingActive: index of the currently roving-focused item (-1 when none).
+  // pendingRovingPrevKey: the focused item's stable key captured on
+  // htmx:beforeSwap. Held in a module variable (NOT a DOM attribute on the list)
+  // because #artist-content is swapped with hx-swap="outerHTML" -- the list
+  // element itself is replaced, so an attribute on it would not survive the swap.
   // ctxHandler: optional handler for the contextual key, set via
   // swKeyboardShortcuts.onContext(); falls back to clicking the context target.
   // NOTE: ctxHandler is a single global (one next/ screen is live at a time), so
   // the scope arg on onContext() is reserved for forward-compat and ignored now.
   var rovingActive = -1;
+  var pendingRovingPrevKey = '';
   var ctxHandler = null;
 
   // isTyping: true when the focused element should swallow shortcuts (a real
@@ -173,8 +181,8 @@
       // (sort, view toggle, filter, pagination) focus has typically reverted to
       // body (isTyping=false), so the restore still runs.
       if (rovingActive >= 0) {
-        var prevKey = listEl.getAttribute('data-sw-roving-prevkey') || '';
-        listEl.removeAttribute('data-sw-roving-prevkey');
+        var prevKey = pendingRovingPrevKey;
+        pendingRovingPrevKey = '';
         var restored = -1;
         if (prevKey) {
           for (var r = 0; r < items.length; r++) {
@@ -341,15 +349,15 @@
   document.addEventListener('htmx:afterSwap', rebuild);
   document.addEventListener('htmx:load', rebuild);
 
-  // Before an HTMX swap replaces the list, record the focused item's key on
-  // the list so rebuild() can restore roving focus to the same logical row.
+  // Before an HTMX swap replaces the list, record the focused item's key in a
+  // module variable so rebuild() can restore roving focus to the same logical
+  // row. Stored off-DOM because the list is swapped with outerHTML (the element
+  // itself is replaced), so an attribute on it would be lost.
   document.addEventListener('htmx:beforeSwap', function () {
     if (rovingActive < 0) return;
-    var listEl = rovingList();
-    if (!listEl) return;
     var items = rovingItems();
     if (items[rovingActive]) {
-      listEl.setAttribute('data-sw-roving-prevkey', itemKey(items[rovingActive]));
+      pendingRovingPrevKey = itemKey(items[rovingActive]);
     }
   });
 
