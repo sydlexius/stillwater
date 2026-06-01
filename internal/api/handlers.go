@@ -53,6 +53,7 @@ func (r *Router) assets() templates.AssetPaths {
 		PreferencesJS:  r.basePath + r.staticAssets.Path("/js/preferences.js"),
 		SidebarJS:      r.basePath + r.staticAssets.Path("/js/sidebar.js"),
 		FilterFlyoutJS: r.basePath + r.staticAssets.Path("/js/filter-flyout.js"),
+		KeyboardJS:     r.basePath + r.staticAssets.Path("/js/keyboard.js"),
 		ConflictGateJS: r.basePath + r.staticAssets.Path("/js/conflict-gate.js"),
 		// DriverJS, DriverCSS, and TourJS are intentionally omitted here.
 		// They are conditionally set in assetsFor() based on the request path

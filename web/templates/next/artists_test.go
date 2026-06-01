@@ -255,9 +255,11 @@ func TestArtistsTable_UnratedScore(t *testing.T) {
 	}
 }
 
-// TestArtistsPage_KeyboardShortcuts verifies the shared keyboard surface
-// (/ focus-search, Cmd/Ctrl+A select-all-visible, Esc clear) is wired into the
-// next/ page.
+// TestArtistsPage_KeyboardShortcuts verifies the next/ page declares its
+// keyboard contract for the shared vendored helper (web/static/js/keyboard.js)
+// via data-sw-* attributes (/ focus-search, f filters, r scan, j/k/Enter
+// roving, bulk scope) and that the old inline ArtistsKeyboardShortcuts mount
+// (__swArtistsKbd) has been retired from next/.
 func TestArtistsPage_KeyboardShortcuts(t *testing.T) {
 	t.Parallel()
 	data := templates.ArtistListData{
@@ -272,9 +274,15 @@ func TestArtistsPage_KeyboardShortcuts(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"__swArtistsKbd", "artist-search", "Escape", "metaKey"} {
+	for _, want := range []string{
+		`data-sw-shortcut="/"`, `data-sw-shortcut="f"`, `data-sw-shortcut="r"`,
+		"data-sw-roving-list", "data-sw-bulk-scope",
+	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("ArtistsPage keyboard surface missing %q", want)
+			t.Errorf("next artists keyboard contract missing %q", want)
 		}
+	}
+	if strings.Contains(out, "__swArtistsKbd") {
+		t.Errorf("inline ArtistsKeyboardShortcuts must be retired from next/ artists")
 	}
 }

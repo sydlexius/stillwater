@@ -1845,6 +1845,16 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   outline-offset: 2px;
 }
 
+/* Roving keyboard focus (M55 #1789): j/k move focus between list rows/cards via
+ * the shared keyboard helper. A <tr>/<div> has no reliable default focus ring,
+ * so give the roving item an explicit visible outline for keyboard-only nav. */
+.sw-next-artists [data-sw-roving-item]:focus-visible,
+.sw-next-dashboard [data-sw-roving-item]:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
 /* Row/cell typography (M55 #1335): match the prototype's denser type scale
  * (design/styles.css ~13px rows, 500-weight names, muted uppercase headers).
  * The header h1 (22/600/-0.02em) already matches inline; this tunes the table

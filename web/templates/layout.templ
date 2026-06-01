@@ -18,6 +18,7 @@ type AssetPaths struct {
 	PreferencesJS  string
 	SidebarJS      string
 	FilterFlyoutJS string
+	KeyboardJS     string
 	DriverJS       string
 	DriverCSS      string
 	TourJS         string
@@ -158,6 +159,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	<script src={ assets.PollingJS }></script>
 	<script src={ assets.SessionJS }></script>
 	<script src={ assets.PreferencesJS }></script>
+	<script src={ assets.KeyboardJS }></script>
 	<script src={ assets.SidebarJS }></script>
 	<script src={ assets.FilterFlyoutJS }></script>
 	if assets.ConflictGateJS != "" {

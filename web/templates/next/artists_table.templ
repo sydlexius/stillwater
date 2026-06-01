@@ -30,7 +30,14 @@ func sortVis(data templates.ArtistListData, col, order string) string {
 // setSortColumn, #artist-content, data-filter-active) matches the stable table
 // so the shared ArtistsPageScripts bind identically.
 templ ArtistsTable(data templates.ArtistListData) {
-	<div id="artist-content" data-filter-active?={ nextIsFilterActive(data) }>
+	<div id="artist-content"
+		data-sw-roving-list
+		data-sw-bulk-scope
+		data-sw-scope="artists"
+		data-sw-roving-label-j={ t(ctx, "artists.shortcuts.tip_next") }
+		data-sw-roving-label-k={ t(ctx, "artists.shortcuts.tip_prev") }
+		data-sw-roving-label-Enter={ t(ctx, "artists.shortcuts.tip_open") }
+		data-filter-active?={ nextIsFilterActive(data) }>
 		@nextBulkStrip(data, true)
 		<!-- Active-filter chips row removed (M55 #1335, maintainer 2026-05-30): it
 		     duplicated the filter flyout, which already surfaces active filters via
@@ -95,7 +102,7 @@ templ nextSortTh(dataCol, sortCol, label, title string, rightAlign bool, data te
 // nextArtistRow renders one table row with the prototype's Sources / Coverage /
 // Score cells over the reused selection contract.
 templ nextArtistRow(a artist.Artist, data templates.ArtistListData) {
-	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
+	<tr data-sw-roving-item data-sw-roving-key={ a.ID } class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
 		<td class="px-3 py-3 w-8 align-middle">
 			<input
 				type="checkbox"
@@ -114,7 +121,7 @@ templ nextArtistRow(a artist.Artist, data templates.ArtistListData) {
 						role="img"
 					></span>
 				}
-				<a href={ templ.SafeURL(templates.BasePath() + "/artists/" + a.ID) } class="font-medium text-blue-600 dark:text-blue-400 hover:underline">{ a.Name }</a>
+				<a href={ templ.SafeURL(templates.BasePath() + "/artists/" + a.ID) } data-sw-roving-activate class="font-medium text-blue-600 dark:text-blue-400 hover:underline">{ a.Name }</a>
 				if a.IsExcluded {
 					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "artists.excluded") }</span>
 				}
@@ -165,7 +172,14 @@ templ nextScoreCell(a artist.Artist) {
 // the cards carry the same Sources / Coverage / Score vocabulary as the table,
 // over the spec's card layout (cover, name + dot, platform badges, status).
 templ ArtistsGrid(data templates.ArtistListData) {
-	<div id="artist-content" data-filter-active?={ nextIsFilterActive(data) }>
+	<div id="artist-content"
+		data-sw-roving-list
+		data-sw-bulk-scope
+		data-sw-scope="artists"
+		data-sw-roving-label-j={ t(ctx, "artists.shortcuts.tip_next") }
+		data-sw-roving-label-k={ t(ctx, "artists.shortcuts.tip_prev") }
+		data-sw-roving-label-Enter={ t(ctx, "artists.shortcuts.tip_open") }
+		data-filter-active?={ nextIsFilterActive(data) }>
 		@nextBulkStrip(data, false)
 		<!-- Active-filter chips row removed (M55 #1335, maintainer 2026-05-30): it
 		     duplicated the filter flyout, which already surfaces active filters via
@@ -188,7 +202,7 @@ templ ArtistsGrid(data templates.ArtistListData) {
 // platform badges (Sources); the footer adds the Coverage bubbles + Score so the
 // grid reads in the same vocabulary as the table.
 templ nextArtistCard(a artist.Artist, data templates.ArtistListData) {
-	<div class="relative">
+	<div data-sw-roving-item data-sw-roving-key={ a.ID } class="relative">
 		<label
 			class="absolute top-1.5 right-1.5 z-10 flex items-center justify-center rounded-full bg-white/90 dark:bg-gray-900/90 p-0.5 shadow cursor-pointer"
 			onclick="event.stopPropagation();"
@@ -204,6 +218,7 @@ templ nextArtistCard(a artist.Artist, data templates.ArtistListData) {
 		</label>
 		<a
 			href={ templ.SafeURL(templates.BasePath() + "/artists/" + a.ID) }
+			data-sw-roving-activate
 			class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
 		>
 			<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
