@@ -3,6 +3,14 @@
 // select, and the shortcut REGISTRY that #1775 (cheat sheet) and #1798
 // (hints pref) read. Inert until a screen declares data-sw-* attributes,
 // so the stable channel (which carries none) is unaffected.
+//
+// Public API (exposed as window.swKeyboardShortcuts):
+//   list()               -- snapshot of the registry: [{key,label,scope,kind}]
+//                           (consumed by #1775 cheat sheet + #1798 hints pref)
+//   rebuild()            -- re-scan the DOM and rebuild the registry (also run
+//                           automatically on htmx:afterSwap / htmx:load)
+//   onContext(scope, fn) -- register the per-screen contextual-key handler
+//                           (scope reserved for forward-compat, ignored today)
 (function () {
   'use strict';
   // Re-init guard: the single window.swKeyboardShortcuts export (assigned at the
