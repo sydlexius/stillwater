@@ -51,6 +51,8 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 						id="artist-search"
 						type="search"
 						name="search"
+						data-sw-shortcut="/"
+						data-sw-shortcut-label={ t(ctx, "artists.shortcuts.search") }
 						value={ data.Search }
 						placeholder={ t(ctx, "artists.search_placeholder") }
 						aria-label={ t(ctx, "artists.search_placeholder") }
@@ -72,6 +74,8 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 				<button
 					id="artist-filter-trigger"
 					type="button"
+					data-sw-shortcut="f"
+					data-sw-shortcut-label={ t(ctx, "artists.shortcuts.tip_filters") }
 					class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activeFilterCount(data.Filters) > 0), templ.KV(filterTriggerNeutral, activeFilterCount(data.Filters) == 0) }
 					data-active-classes={ filterTriggerActive }
 					data-neutral-classes={ filterTriggerNeutral }
@@ -170,6 +174,8 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 				@nextBulkActions(data)
 				<button
 					id="scan-btn"
+					data-sw-shortcut="r"
+					data-sw-shortcut-label={ t(ctx, "artists.scan_library") }
 					hx-post="/api/v1/scanner/run"
 					hx-swap="none"
 					data-label-scan={ t(ctx, "artists.scan_library") }
@@ -191,13 +197,22 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 			} else {
 				@ArtistsTable(data)
 			}
-			<!-- Keyboard tip line (M55 #1335): discoverability hint mirroring the
-			     prototype. Handlers live in ArtistsKeyboardShortcuts; that script also
-			     swaps .sw-mod-key to the Cmd glyph on macOS. Sits outside #artist-content
-			     so it persists across HTMX table swaps. -->
+			<!-- Keyboard tip line (M55 #1789): discoverability hint for the shared
+			     vendored helper (web/static/js/keyboard.js), which reads the page's
+			     data-sw-* contract and also swaps .sw-mod-key to the Cmd glyph on
+			     macOS. Sits outside #artist-content so it persists across HTMX table
+			     swaps. -->
 			<p class="sw-list-tips" role="note">
 				<span class="font-medium">{ t(ctx, "artists.shortcuts.tip_label") }:</span>
-				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Shift</kbd>{ t(ctx, "artists.shortcuts.tip_range") }</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">/</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.search") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_filters") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_open") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center gap-0.5"><kbd class="sw-kbd sw-mod-key inline-flex">Ctrl</kbd><kbd class="sw-kbd inline-flex">A</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_select_all") }</span></span>
 				<span aria-hidden="true">·</span>
@@ -206,7 +221,6 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 		</div>
 		@templates.BulkProgressPill()
 		@templates.ArtistsPageScripts()
-		@templates.ArtistsKeyboardShortcuts()
 		@components.ContextHelpScript()
 		<!-- Density auto-flip REMOVED (M55 #1335, maintainer 2026-05-30): the list
 		     previously flipped data-density comfy->compact while a selection was active,
