@@ -73,7 +73,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<main class=\"mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<main class=\"w-full px-4 py-6 sm:px-6 lg:px-8\" hx-headers='{\"X-Stillwater-UX\": \"next\"}'>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

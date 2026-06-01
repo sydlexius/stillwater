@@ -76,10 +76,29 @@ func UX(mode, basePath string) func(http.Handler) http.Handler {
 			ch := ResolveUX(mode, cookie)
 			// The /next lane is only reachable when explicitly enabled (next or
 			// dual). In stable mode (or any unrecognized/empty mode) the preview
-			// is fully off, so even /next/* paths resolve to stable.
+			// is fully off, so even /next/* paths and the opt-in header resolve
+			// to stable.
 			laneEnabled := mode == string(UXNext) || mode == "dual"
-			if laneEnabled && isNextPath(r.URL.Path, nextPrefix, nextExact) {
-				ch = UXNext
+			if laneEnabled {
+				// Path opt-in: visiting a /next/* URL is an explicit request for
+				// the preview lane, regardless of cookie.
+				if isNextPath(r.URL.Path, nextPrefix, nextExact) {
+					ch = UXNext
+				}
+				// Header opt-in: a next/ page tags its HTMX sub-requests with the
+				// X-Stillwater-UX request header (via LayoutNext's hx-headers) so
+				// those requests resolve to the same channel as the page that
+				// issued them, even though the shared fetch endpoints
+				// (e.g. /dashboard/actions) are not under /next/. This is what
+				// lets the next UI work without relying on the sw_ux cookie, in
+				// both next and dual modes. An explicit "stable" header value
+				// opts a request back out.
+				switch r.Header.Get("X-Stillwater-UX") {
+				case string(UXNext):
+					ch = UXNext
+				case string(UXStable):
+					ch = UXStable
+				}
 			}
 			w.Header().Set("X-Stillwater-UX", string(ch))
 			ctx := context.WithValue(r.Context(), uxChannelKey, ch)

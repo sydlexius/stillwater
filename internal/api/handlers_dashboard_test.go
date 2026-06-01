@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -311,6 +312,117 @@ func TestHandleDashboardActivityFeed_EmptyResultSet(t *testing.T) {
 	}
 }
 
+// TestHandleDashboardActivityFeed_NextChannelRendersRailFragment verifies that
+// when the resolved UI channel is "next", GET /dashboard/activity renders the
+// next/ rail fragment (DashboardActivityFeedNext) with its empty-on-boot idle
+// hint and run-rules affordance, not the stable "View all activity" feed. The
+// next/ rail's live SSE rows must match this fragment's row shape (M55 #1334).
+func TestHandleDashboardActivityFeed_NextChannelRendersRailFragment(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, true)
+
+	// Wrap the handler in the UX middleware in "next" mode so the request
+	// context carries UXNext, exactly as it would in production.
+	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActivityFeed))
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/activity", nil)
+	req = withTestUser(req)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	body := w.Body.String()
+	// The next/ empty-on-boot state shows the localized idle hint and a
+	// run-rules affordance, never the stable "View all activity" footer.
+	if !strings.Contains(body, "activity_idle") && !strings.Contains(body, "Stillwater is idle") {
+		t.Errorf("expected next/ idle hint in response, got: %s", body)
+	}
+	if strings.Contains(body, "view_all_activity") || strings.Contains(body, "View all activity") {
+		t.Errorf("next/ rail must not render the stable view-all-activity footer, got: %s", body)
+	}
+	// The run-rules affordance reuses the dashboard panels controller.
+	if !strings.Contains(body, "swDashboardPanels") {
+		t.Errorf("expected next/ idle hint to expose a run-rules affordance, got: %s", body)
+	}
+}
+
+// TestHandleDashboardActionQueue_NextChannel verifies the next-channel branch
+// of handleDashboardActionQueue: when the resolved UI channel is "next" the
+// handler (a) renders the slimmer next/ fragment (DashboardActionQueue in the
+// next package, identified by the next-dash-count OOB span the stable fragment
+// never emits) and (b) sets an HX-Push-Url that tracks the next/ screen root
+// ("$basePath/next/"), not the stable app root, while round-tripping a tri-state
+// exclude filter (?severity=-error -> push contains severity=-error). This is
+// the channel branch the stable-channel tests do not exercise.
+func TestHandleDashboardActionQueue_NextChannel(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, false)
+	ctx := context.Background()
+
+	// Seed one open violation so the queue renders a non-empty fragment.
+	a := &artist.Artist{
+		Name:     "Next Channel Artist",
+		SortName: "Next Channel Artist",
+		Type:     "group",
+		Path:     "/music/NextChannel",
+		Genres:   []string{"Rock"},
+	}
+	if err := r.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	v := &rule.RuleViolation{
+		RuleID: rule.RuleThumbExists, ArtistID: a.ID, ArtistName: a.Name,
+		Severity: "warning", Message: "missing thumb",
+		Fixable: true, Status: rule.ViolationStatusOpen,
+	}
+	if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+
+	// Wrap the handler in the UX middleware in "next" mode so the request
+	// context carries UXNext exactly as it would in production.
+	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActionQueue))
+
+	// Request an exclude tri-state filter (?severity=-error) over HTMX so the
+	// push-URL branch fires.
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?severity=-error", nil)
+	req.Header.Set("HX-Request", "true")
+	req = withTestUser(req)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// (a) The next/ fragment renders the next-dash-count OOB span; the stable
+	// DashboardActionQueue fragment never emits this id.
+	body := w.Body.String()
+	if !strings.Contains(body, "next-dash-count") {
+		t.Errorf("expected next/ fragment marker (next-dash-count) in body, got: %s", body)
+	}
+
+	// (b) The push URL must track the next/ screen root and round-trip the
+	// exclude filter under the canonical tri-state contract.
+	push := w.Header().Get("HX-Push-Url")
+	if push == "" {
+		t.Fatalf("expected HX-Push-Url to be set on HTMX next-channel request")
+	}
+	if !strings.HasPrefix(push, "/next/") {
+		t.Errorf("HX-Push-Url = %q, want it to start with /next/", push)
+	}
+	pushURL, err := url.Parse(push)
+	if err != nil {
+		t.Fatalf("HX-Push-Url is not a valid URL: %q (%v)", push, err)
+	}
+	if got := pushURL.Query()["severity"]; !sameStringSet(got, []string{"-error"}) {
+		t.Errorf("HX-Push-Url severity = %v, want [-error]; full=%q", got, push)
+	}
+}
+
 // TestHandleDashboardActionQueue_StatsError verifies that when GetHealthStats
 // returns an error the handler still returns 200 OK and renders the
 // stats-unavailable placeholder ("---") instead of a percentage like "0.0%".
@@ -362,46 +474,64 @@ func TestHandleDashboardActionQueue_StatsError(t *testing.T) {
 	}
 }
 
+// TestUrlValuesFromFilters verifies that the filter struct round-trips into the
+// flyout's URL contract: tri-state values carry a "+" (include) or "-"
+// (exclude) prefix and the same key may repeat. Includes are always emitted
+// with the "+" prefix (never bare) so the flyout's client-side hydration, which
+// recognizes only the prefixed forms, restores each pill's state.
 func TestUrlValuesFromFilters(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
 		input dashboardFilterParams
-		want  map[string]string // expected single-value per key; absent = key must not be set
+		// want maps each key to the exact set of values expected under it
+		// (order-independent). A key absent from want must not appear at all.
+		want map[string][]string
 	}{
 		{
 			name:  "empty filters produce empty values",
 			input: dashboardFilterParams{},
-			want:  map[string]string{},
+			want:  map[string][]string{},
 		},
 		{
-			name: "all fields populated map to their keys",
+			name: "single-include fields emit the + prefix",
 			input: dashboardFilterParams{
 				Search:    "indie",
-				Severity:  "error",
-				Category:  "image",
-				LibraryID: "lib-1",
-				RuleID:    "rule-1",
-				Fixable:   "yes",
+				Severity:  rule.IncludeOnly("error"),
+				Category:  rule.IncludeOnly("image"),
+				LibraryID: rule.IncludeOnly("lib-1"),
+				RuleID:    rule.IncludeOnly("rule-1"),
+				Fixable:   rule.IncludeOnly("yes"),
 			},
-			want: map[string]string{
-				"search":     "indie",
-				"severity":   "error",
-				"category":   "image",
-				"library_id": "lib-1",
-				"rule":       "rule-1",
-				"fixable":    "yes",
+			want: map[string][]string{
+				"search":     {"indie"},
+				"severity":   {"+error"},
+				"category":   {"+image"},
+				"library_id": {"+lib-1"},
+				"rule":       {"+rule-1"},
+				"fixable":    {"+yes"},
 			},
 		},
 		{
-			name: "empty fields are omitted so the URL stays clean",
+			name: "include and exclude on the same dimension both emit",
 			input: dashboardFilterParams{
-				Severity: "warning",
-				Fixable:  "no",
+				Severity: rule.TriFilter{Include: []string{"error"}, Exclude: []string{"info"}},
+				Category: rule.TriFilter{Exclude: []string{"nfo", "image"}},
 			},
-			want: map[string]string{
-				"severity": "warning",
-				"fixable":  "no",
+			want: map[string][]string{
+				"severity": {"+error", "-info"},
+				"category": {"-nfo", "-image"},
+			},
+		},
+		{
+			name: "empty dimensions are omitted so the URL stays clean",
+			input: dashboardFilterParams{
+				Severity: rule.IncludeOnly("warning"),
+				Fixable:  rule.IncludeOnly("no"),
+			},
+			want: map[string][]string{
+				"severity": {"+warning"},
+				"fixable":  {"+no"},
 			},
 		},
 	}
@@ -410,11 +540,12 @@ func TestUrlValuesFromFilters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := urlValuesFromFilters(tc.input)
 			if len(got) != len(tc.want) {
-				t.Errorf("result size = %d, want %d (got=%v)", len(got), len(tc.want), got)
+				t.Errorf("result key count = %d, want %d (got=%v)", len(got), len(tc.want), got)
 			}
-			for k, v := range tc.want {
-				if got.Get(k) != v {
-					t.Errorf("key %q = %q, want %q", k, got.Get(k), v)
+			for k, wantVals := range tc.want {
+				gotVals := got[k]
+				if !sameStringSet(gotVals, wantVals) {
+					t.Errorf("key %q = %v, want %v", k, gotVals, wantVals)
 				}
 			}
 			// Keys not in `want` must not appear.
@@ -427,28 +558,50 @@ func TestUrlValuesFromFilters(t *testing.T) {
 	}
 }
 
+// sameStringSet reports whether a and b contain the same values regardless of
+// order. Used by tri-state URL assertions where query-param order is not
+// significant.
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, v := range a {
+		counts[v]++
+	}
+	for _, v := range b {
+		counts[v]--
+		if counts[v] < 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // TestParseDashboardFiltersLibraryAlias verifies the legacy `library` query
 // param is accepted by parseDashboardFilters as an alias for `library_id` so
-// old bookmarks keep working after the rename. When both keys are present,
-// `library_id` (the canonical key) wins.
+// old bookmarks keep working after the rename. Under the tri-state contract
+// both keys merge into the same include/exclude set rather than one overriding
+// the other.
 func TestParseDashboardFiltersLibraryAlias(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
 		raw  string
-		want string
+		want []string // expected include set (order-independent)
 	}{
-		{name: "canonical key", raw: "library_id=lib-1", want: "lib-1"},
-		{name: "legacy alias", raw: "library=lib-2", want: "lib-2"},
-		{name: "canonical wins when both", raw: "library=legacy&library_id=canonical", want: "canonical"},
-		{name: "neither set", raw: "", want: ""},
+		{name: "canonical key", raw: "library_id=lib-1", want: []string{"lib-1"}},
+		{name: "legacy alias", raw: "library=lib-2", want: []string{"lib-2"}},
+		{name: "both keys merge into one set", raw: "library=legacy&library_id=canonical", want: []string{"canonical", "legacy"}},
+		{name: "exclude prefix on alias", raw: "library=-lib-x", want: nil},
+		{name: "neither set", raw: "", want: nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?"+tc.raw, nil)
-			got := parseDashboardFilters(req).LibraryID
-			if got != tc.want {
-				t.Errorf("LibraryID = %q, want %q (raw=%q)", got, tc.want, tc.raw)
+			lib := parseDashboardFilters(req).LibraryID
+			if !sameStringSet(lib.Include, tc.want) {
+				t.Errorf("LibraryID include = %v, want %v (raw=%q)", lib.Include, tc.want, tc.raw)
 			}
 		})
 	}
@@ -476,10 +629,22 @@ func TestHandleDashboardActionQueue_HXPushURL_LibraryID(t *testing.T) {
 	if push == "" {
 		t.Fatalf("expected HX-Push-Url to be set on HTMX request")
 	}
-	if !strings.Contains(push, "library_id=lib-xyz") {
-		t.Errorf("HX-Push-Url should carry canonical library_id; got %q", push)
+	// The pushed URL carries the tri-state contract: a bare request value
+	// parses as include and re-emits with the "+" prefix under the canonical
+	// `library_id` key. Parse the query so we compare decoded values rather
+	// than matching the URL-encoded "%2B" literal.
+	pushURL, err := url.Parse(push)
+	if err != nil {
+		t.Fatalf("HX-Push-Url is not a valid URL: %q (%v)", push, err)
 	}
-	if strings.Contains(push, "library=") && !strings.Contains(push, "library_id=") {
+	pushQ := pushURL.Query()
+	if got := pushQ["library_id"]; !sameStringSet(got, []string{"+lib-xyz"}) {
+		t.Errorf("HX-Push-Url library_id = %v, want [+lib-xyz]; full=%q", got, push)
+	}
+	if got := pushQ["severity"]; !sameStringSet(got, []string{"+error"}) {
+		t.Errorf("HX-Push-Url severity = %v, want [+error]; full=%q", got, push)
+	}
+	if _, ok := pushQ["library"]; ok {
 		t.Errorf("HX-Push-Url must not emit the legacy `library` key; got %q", push)
 	}
 }
@@ -503,10 +668,130 @@ func TestHandleDashboardActionQueue_HXPushURL_LegacyLibraryAlias(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	push := w.Header().Get("HX-Push-Url")
-	if !strings.Contains(push, "library_id=lib-legacy") {
-		t.Errorf("HX-Push-Url must rewrite `library` alias to `library_id`; got %q", push)
+	pushURL, err := url.Parse(push)
+	if err != nil {
+		t.Fatalf("HX-Push-Url is not a valid URL: %q (%v)", push, err)
 	}
-	if strings.Contains(push, "library=lib-legacy") {
+	pushQ := pushURL.Query()
+	// The legacy `library` value parses as include and re-emits under the
+	// canonical `library_id` key with the "+" include prefix.
+	if got := pushQ["library_id"]; !sameStringSet(got, []string{"+lib-legacy"}) {
+		t.Errorf("HX-Push-Url must rewrite `library` alias to `library_id`; library_id=%v, full=%q", got, push)
+	}
+	if _, ok := pushQ["library"]; ok {
 		t.Errorf("HX-Push-Url must NOT echo the legacy `library` key; got %q", push)
+	}
+}
+
+// TestParseDashboardFiltersTriState exercises the tri-state include/exclude
+// parsing across all five filter families. It verifies the "+"/"-"/bare value
+// contract: "+x" -> include, "-x" -> exclude, bare "x" -> include (back-compat),
+// repeated keys accumulate, and a dimension can both include and exclude values
+// at once.
+func TestParseDashboardFiltersTriState(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		raw         string
+		wantInclude map[string][]string // dimension -> expected include set
+		wantExclude map[string][]string // dimension -> expected exclude set
+	}{
+		{
+			name:        "bare value is treated as include (back-compat)",
+			raw:         "severity=error",
+			wantInclude: map[string][]string{"severity": {"error"}},
+		},
+		{
+			name:        "explicit plus prefix includes",
+			raw:         "severity=%2Berror",
+			wantInclude: map[string][]string{"severity": {"error"}},
+		},
+		{
+			name:        "minus prefix excludes",
+			raw:         "severity=-warning",
+			wantExclude: map[string][]string{"severity": {"warning"}},
+		},
+		{
+			// Normalization whitelist rule: when a dimension has any include,
+			// it is in whitelist mode and explicit excludes are dropped to
+			// neutral (matching the SQL, which ignores excludes once an include
+			// IN-list is present). So "+error" wins and "-warning" is stripped.
+			name:        "include plus exclude on one dimension drops the exclude (whitelist)",
+			raw:         "severity=%2Berror&severity=-warning",
+			wantInclude: map[string][]string{"severity": {"error"}},
+			wantExclude: map[string][]string{},
+		},
+		{
+			name:        "multi-value include accumulates",
+			raw:         "category=%2Bnfo&category=%2Bimage",
+			wantInclude: map[string][]string{"category": {"nfo", "image"}},
+		},
+		{
+			name: "all five families parse independently",
+			raw:  "severity=%2Berror&category=-nfo&library_id=%2Blib-1&rule=-rule_x&fixable=%2Byes",
+			wantInclude: map[string][]string{
+				"severity":   {"error"},
+				"library_id": {"lib-1"},
+				"fixable":    {"yes"},
+			},
+			wantExclude: map[string][]string{
+				"category": {"nfo"},
+				"rule":     {"rule_x"},
+			},
+		},
+		{
+			name: "empty values are skipped",
+			raw:  "severity=&severity=%2Berror",
+			wantInclude: map[string][]string{
+				"severity": {"error"},
+			},
+		},
+		{
+			// A bare "+" or "-" with no value after the prefix must be skipped,
+			// not injected as an empty-string filter value (which would build a
+			// degenerate IN ('') / NOT IN ('') clause). The surviving real value
+			// is the only one that lands.
+			name: "bare plus and minus with no value are skipped",
+			raw:  "severity=%2B&severity=-&severity=%2Berror",
+			wantInclude: map[string][]string{
+				"severity": {"error"},
+			},
+			wantExclude: map[string][]string{},
+		},
+		{
+			// Only a bare "+" / "-" -> the dimension stays neutral (no include,
+			// no exclude), so it adds no SQL clause.
+			name:        "only bare prefixes leave the dimension neutral",
+			raw:         "category=%2B&category=-",
+			wantInclude: map[string][]string{"category": nil},
+			wantExclude: map[string][]string{"category": nil},
+		},
+	}
+
+	dims := func(f dashboardFilterParams) map[string]rule.TriFilter {
+		return map[string]rule.TriFilter{
+			"severity":   f.Severity,
+			"category":   f.Category,
+			"library_id": f.LibraryID,
+			"rule":       f.RuleID,
+			"fixable":    f.Fixable,
+		}
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?"+tc.raw, nil)
+			got := dims(parseDashboardFilters(req))
+			for dim, f := range got {
+				wantInc := tc.wantInclude[dim] // nil when not expected
+				wantExc := tc.wantExclude[dim]
+				if !sameStringSet(f.Include, wantInc) {
+					t.Errorf("%s include = %v, want %v (raw=%q)", dim, f.Include, wantInc, tc.raw)
+				}
+				if !sameStringSet(f.Exclude, wantExc) {
+					t.Errorf("%s exclude = %v, want %v (raw=%q)", dim, f.Exclude, wantExc, tc.raw)
+				}
+			}
+		})
 	}
 }

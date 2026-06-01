@@ -1767,11 +1767,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * a full hairline border and a soft shadow over the rounded-lg + translucent
  * backdrop set inline, so it stays legible as content scrolls beneath it.
  * Light + dark. */
-.sw-next-artists .sw-next-toolbar {
+.sw-next-artists .sw-next-toolbar,
+.sw-next-dashboard .sw-next-toolbar {
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-.dark .sw-next-artists .sw-next-toolbar {
+.dark .sw-next-artists .sw-next-toolbar,
+.dark .sw-next-dashboard .sw-next-toolbar {
   border-color: rgba(255, 255, 255, 0.07);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
@@ -1864,8 +1866,11 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 
 /* Keyboard-hint badges (M55 #1335): the prototype surfaces shortcut keys as
  * small kbd chips (/ in search, f on Filters) plus a tip line under the list.
- * Mirrors design/styles.css .kbd. The tip-line prose is added during UAT. */
-.sw-next-artists .sw-kbd {
+ * Mirrors design/styles.css .kbd. The tip-line prose is added during UAT.
+ * Scoped to both next/ surfaces (artists + dashboard) so the same chip
+ * treatment applies on the dashboard toolbar and tip line without forking. */
+.sw-next-artists .sw-kbd,
+.sw-next-dashboard .sw-kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   line-height: 1;
@@ -1878,12 +1883,14 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   align-items: center;
   gap: 2px;
 }
-.dark .sw-next-artists .sw-kbd {
+.dark .sw-next-artists .sw-kbd,
+.dark .sw-next-dashboard .sw-kbd {
   border-color: #475569;
   color: #94a3b8;
   background: #0f172a;
 }
-.sw-next-artists .sw-list-tips {
+.sw-next-artists .sw-list-tips,
+.sw-next-dashboard .sw-list-tips {
   margin-top: 0.75rem;
   display: flex;
   flex-wrap: wrap;
@@ -1918,4 +1925,463 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 .sw-next-artists .sw-next-bulk-strip-contextual[data-selection-active="false"] {
   display: none;
+}
+
+/* =====================================================================
+ * M55 #1334 -- next/ dashboard design system (prototype-faithful).
+ *
+ * The prototype's refined slate/blue look (design/tokens.css +
+ * design/styles.css) is a DARK-only system. To honor the charter's
+ * both-themes-AA floor, the refined surface/ink/line/severity tokens are
+ * declared as scoped custom properties on `.sw-next-dashboard` for the
+ * LIGHT theme, then overridden under `.dark .sw-next-dashboard` with the
+ * prototype's exact dark values. Everything below references the tokens,
+ * so a single token swap re-themes the whole screen. Scoping to
+ * `.sw-next-dashboard` keeps the app-global `.sw-card` glass treatment and
+ * every stable screen untouched.
+ *
+ * Dark tokens are the prototype's verbatim values (tokens.css):
+ *   raised #111a2e, base #0b1220, elev #1a253f, line rgba(148,163,184,.14),
+ *   ink ramp #e6edf7/#b6c2d4/#7d8aa1, severity err/warn/info/ok + soft.
+ * Light tokens derive an equivalent ramp from the app's light surface
+ * (#f8f9fa content bg): white raised cards on a faint slate base, slate ink
+ * ramp (#0f172a / #475569 / #64748b -- all AA on white), and the same
+ * severity hues at darker, AA-on-tint shades.
+ *
+ * Contrast spot-checks (WCAG AA, 4.5:1 normal text / 3:1 large+UI):
+ *   Dark   .who #e6edf7 on #111a2e  ~= 13.3:1  (PASS)
+ *   Dark   .what #7d8aa1 on #111a2e ~=  4.7:1  (PASS, body)
+ *   Dark   .sev.warn #fbbf24 on warn-soft tint ~= 9:1+ over #111a2e (PASS large)
+ *   Light  .who #0f172a on #ffffff  ~= 17.4:1  (PASS)
+ *   Light  .what #64748b on #ffffff ~=  4.8:1  (PASS, body)
+ *   Light  .sev.err #b91c1c on #fee2e2 tint    ~=  6.5:1  (PASS)
+ * ===================================================================== */
+.sw-next-dashboard {
+  /* Light-theme token ramp (default). */
+  --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
+  --swd-bg-raised: #ffffff;     /* card */
+  --swd-bg-elev: #f8fafc;       /* row hover / popover */
+  /* Opacity-aware surface fills. The maintainer's Background Opacity
+   * preference drives --sw-glass-bg (set inline on :root by preferences.js),
+   * exactly as the app-global .sw-card consumes it. The dashboard's resting
+   * card/bubble/row/toolbar fills source from that same var so the pref
+   * governs their translucency: dialed up they read like the solid prototype
+   * raised surface, dialed down the photo backdrop bleeds through. The raised
+   * INK/BORDER/SHADOW tokens stay solid (above); only these fills track the
+   * pref. --swd-surface-elev keeps the higher-opacity elevated look for
+   * hover/popover surfaces that must stay legible. */
+  --swd-surface: var(--sw-glass-bg);
+  --swd-surface-elev: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-elev) 45%);
+  --swd-line: rgba(15, 23, 42, 0.10);
+  --swd-line-strong: rgba(15, 23, 42, 0.16);
+  --swd-ink: #0f172a;           /* slate-900 */
+  --swd-ink-2: #334155;         /* slate-700 */
+  --swd-ink-3: #64748b;         /* slate-500 -- AA body on white */
+  --swd-blue-ink: #2563eb;      /* blue-600 -- link/accent ink, AA on white */
+  --swd-r-2: 10px;
+  --swd-r-3: 14px;
+  --swd-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --swd-shadow-2: 0 8px 24px rgba(15, 23, 42, 0.18);
+  /* Severity: text ink (AA on its tint) + soft tint background. */
+  --swd-err: #b91c1c;           --swd-err-soft: rgba(248, 113, 113, 0.16);
+  --swd-warn: #b45309;          --swd-warn-soft: rgba(251, 191, 36, 0.18);
+  --swd-info: #4338ca;          --swd-info-soft: rgba(129, 140, 248, 0.16);
+  --swd-ok: #15803d;            --swd-ok-soft: rgba(74, 222, 128, 0.18);
+  /* Category left-accent (image/nfo/metadata), AA-saturated for light. */
+  --swd-cat-image: #ef4444;
+  --swd-cat-nfo: #6366f1;
+  --swd-cat-meta: #d97706;
+}
+.dark .sw-next-dashboard {
+  /* Prototype dark token ramp (design/tokens.css verbatim). */
+  --swd-bg-base: #0b1220;
+  --swd-bg-raised: #111a2e;
+  --swd-bg-elev: #1a253f;
+  --swd-line: rgba(148, 163, 184, 0.14);
+  --swd-line-strong: rgba(148, 163, 184, 0.28);
+  --swd-ink: #e6edf7;
+  --swd-ink-2: #b6c2d4;
+  --swd-ink-3: #7d8aa1;
+  --swd-blue-ink: #93c5fd;
+  --swd-shadow-1: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 1px 2px rgba(0, 0, 0, 0.25);
+  --swd-shadow-2: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --swd-err: #f87171;           --swd-err-soft: rgba(248, 113, 113, 0.14);
+  --swd-warn: #fbbf24;          --swd-warn-soft: rgba(251, 191, 36, 0.14);
+  --swd-info: #818cf8;          --swd-info-soft: rgba(129, 140, 248, 0.14);
+  --swd-ok: #4ade80;            --swd-ok-soft: rgba(74, 222, 128, 0.14);
+  --swd-cat-image: #f87171;
+  --swd-cat-nfo: #818cf8;
+  --swd-cat-meta: #fbbf24;
+}
+
+/* -- Layered card (.sw-dash-card): the prototype's `.sw-card` look (raised
+ * surface, hairline border, 14px radius, soft shadow). A bespoke class (not
+ * the app-global `.sw-card`) so the dashboard does NOT inherit the global
+ * glass/blur treatment; this reads as a solid raised card on the base, giving
+ * the prototype's card-on-base depth. head/body/foot mirror styles.css. */
+.sw-next-dashboard .sw-dash-card {
+  background: var(--swd-surface);
+  border: 1px solid var(--swd-line);
+  border-radius: var(--swd-r-3);
+  box-shadow: var(--swd-shadow-1);
+}
+.sw-next-dashboard .sw-dash-card > .head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--swd-line);
+}
+.sw-next-dashboard .sw-dash-card > .head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--swd-ink);
+}
+.sw-next-dashboard .sw-dash-card > .head .meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--swd-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.sw-next-dashboard .sw-dash-card > .body {
+  padding: 16px 18px;
+}
+.sw-next-dashboard .sw-dash-card > .body.tight {
+  padding: 8px;
+}
+.sw-next-dashboard .sw-dash-card > .foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-top: 1px solid var(--swd-line);
+}
+
+/* -- Stat bubbles (.sw-stat): 28px tabular value, 11.5px tracked-uppercase
+ * label, raised card, 12px radius (styles.css .sw-stat). The dashboard's five
+ * header bubbles carry `.sw-stat-bubble`; this maps that class onto the
+ * prototype's stat look in both themes, replacing the prior flat
+ * bg-white/gray-800 utility treatment. */
+.sw-next-dashboard .sw-stat-bubble {
+  background: var(--swd-surface);
+  border: 1px solid var(--swd-line);
+  border-radius: var(--swd-r-2);
+  box-shadow: var(--swd-shadow-1);
+}
+.sw-next-dashboard .sw-stat-bubble:where(a, button):hover {
+  border-color: var(--swd-line-strong);
+  background: var(--swd-surface-elev);
+}
+.sw-next-dashboard .sw-stat-label {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--swd-ink-3);
+}
+.sw-next-dashboard .sw-stat-val {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--swd-ink);
+}
+/* All five bubble values render at the same 28px scale for consistency; the
+ * --sm variant (placeholders and the last-evaluated relative time) matches the
+ * numeric bubbles rather than reading smaller. */
+.sw-next-dashboard .sw-stat-val--sm {
+  font-size: 28px;
+}
+/* Health score value: 28px tabular but NO token color, so the green/red
+ * status hue from dashHealthScoreTextClass survives (the score is the one
+ * stat whose color is a meaningful signal, not neutral ink). */
+.sw-next-dashboard .sw-stat-health-val {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+/* -- Sticky toolbar tint over the prototype base (replaces the gray-50/900
+ * inline backdrop so the toolbar sits on the same slate system as the cards).
+ * The border/shadow already come from the shared .sw-next-toolbar rule above. */
+.sw-next-dashboard .sw-next-toolbar {
+  background: var(--swd-surface);
+  border-color: var(--swd-line);
+}
+
+/* -- Select-all control (.sw-select-all): the prototype's `btn ghost sm` look
+ * for the queue's select-all. The native checkbox is sr-only; a styled box +
+ * check/dash glyph renders the state. The whole control reads as a small ghost
+ * button (hairline border, raised surface, hover to the elevated surface) so it
+ * matches the toolbar's other ghost controls. The glyphs swap on the native
+ * checkbox's :checked / :indeterminate state via the sibling box. */
+.sw-next-dashboard .sw-select-all {
+  font-size: 12px;
+  color: var(--swd-ink-2);
+  border: 1px solid var(--swd-line);
+  border-radius: var(--swd-r-2);
+  background: var(--swd-surface);
+  padding: 5px 10px 5px 8px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.sw-next-dashboard .sw-select-all:hover {
+  border-color: var(--swd-line-strong);
+  background: var(--swd-surface-elev);
+}
+/* Focus ring driven by the sr-only checkbox's focus state. */
+.sw-next-dashboard .sw-select-all:focus-within {
+  outline: 2px solid var(--swd-blue-ink);
+  outline-offset: 1px;
+}
+/* The check box: a 16px rounded square hairline tile that fills blue when the
+ * selection is complete (checked) or partial (indeterminate). */
+.sw-next-dashboard .sw-select-all-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--swd-line-strong);
+  color: transparent;
+  flex: none;
+}
+.sw-next-dashboard .sw-select-all-check,
+.sw-next-dashboard .sw-select-all-dash {
+  display: none;
+}
+/* Checked: filled blue tile with the check glyph. */
+.sw-next-dashboard .sw-select-all .peer:checked ~ .sw-select-all-box {
+  background: var(--swd-blue-ink);
+  border-color: var(--swd-blue-ink);
+  color: #ffffff;
+}
+.sw-next-dashboard .sw-select-all .peer:checked ~ .sw-select-all-box .sw-select-all-check {
+  display: block;
+}
+/* Indeterminate (some-but-not-all): filled blue tile with the dash glyph. The
+ * :indeterminate state is set by the bulk JS (updateBulkControls). */
+.sw-next-dashboard .sw-select-all .peer:indeterminate ~ .sw-select-all-box {
+  background: var(--swd-blue-ink);
+  border-color: var(--swd-blue-ink);
+  color: #ffffff;
+}
+.sw-next-dashboard .sw-select-all .peer:indeterminate ~ .sw-select-all-box .sw-select-all-dash {
+  display: block;
+}
+.sw-next-dashboard .sw-select-all .peer:indeterminate ~ .sw-select-all-box .sw-select-all-check {
+  display: none;
+}
+
+/* -- Bulk-actions split-button menu (.sw-bulk-menu): a raised popover anchored
+ * under the Fix/Dismiss caret. It uses the prototype's elevated-surface look
+ * (raised background, hairline border, soft shadow, rounded) so the Dismiss
+ * item reads as a real menu, not a bare list. z-30 (markup) lifts it above the
+ * queue cards; the sticky toolbar's own stacking context contains it. */
+.sw-next-dashboard .sw-bulk-menu {
+  /* Popover: stays near-opaque for readability even when the Background
+   * Opacity pref is dialed low, mirroring the interactive-panel precedent
+   * (the filter flyout floors --sw-glass-bg higher for the same reason).
+   * Floor the pref-driven surface against the solid raised color so the
+   * menu never goes more translucent than ~88%. */
+  background: color-mix(in srgb, var(--swd-bg-raised) 88%, var(--swd-surface));
+  border: 1px solid var(--swd-line-strong);
+  border-radius: var(--swd-r-2);
+  /* Explicit, clearly-floating drop shadow (light theme): the faint
+   * --swd-shadow-2 fallback let a white menu on the white page read as inline
+   * text. A two-layer shadow lifts it off the toolbar so it reads as a real
+   * floating dropdown. The dark-theme override below deepens it + adds the
+   * inset highlight. */
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.18),
+    0 2px 6px rgba(15, 23, 42, 0.10);
+}
+.dark .sw-next-dashboard .sw-bulk-menu {
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+.sw-next-dashboard .sw-bulk-menu-item {
+  color: var(--swd-ink-2);
+  border-radius: 6px;
+}
+.sw-next-dashboard .sw-bulk-menu-item:hover:not(:disabled),
+.sw-next-dashboard .sw-bulk-menu-item:focus-visible:not(:disabled) {
+  background: var(--swd-bg-elev);
+  color: var(--swd-ink);
+  outline: none;
+}
+
+/* -- Action rows (.sw-action grid). SCOPED restyle of the SHARED
+ * templates.DashboardActionCard markup (class `.action-card`); the shared
+ * template is NOT edited. A 2-class selector outranks the card's inline
+ * Tailwind utilities without !important. The card's inner row is
+ * `.flex.items-center.gap-2.5` holding: checkbox, 32px avatar, content, and a
+ * trailing `.flex.items-center` action cluster -- exactly the prototype's
+ * `auto 32px 1fr auto` grid once re-laid-out. */
+.sw-next-dashboard .action-card {
+  background: var(--swd-surface);
+  border: 1px solid var(--swd-line);
+  border-left-width: 3px;
+  border-radius: var(--swd-r-2);
+  box-shadow: none;
+  padding: 8px 12px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.sw-next-dashboard .action-card:hover {
+  background: var(--swd-surface-elev);
+  box-shadow: none;
+}
+/* Category left-accent color from the token, keyed by the card's own
+ * border-l-* utility (categoryBorderClass emits red/indigo/amber/gray). The
+ * shared utility sets the color; these scoped rules retint it to the
+ * prototype's exact cat hue in both themes. The utilities are
+ * `border-l-red-400 dark:border-l-red-500` etc. */
+.sw-next-dashboard .action-card.border-l-red-400 { border-left-color: var(--swd-cat-image); }
+.sw-next-dashboard .action-card.border-l-indigo-400 { border-left-color: var(--swd-cat-nfo); }
+.sw-next-dashboard .action-card.border-l-amber-400 { border-left-color: var(--swd-cat-meta); }
+/* Re-lay-out the card's inner flex row as the prototype's grid: the avatar
+ * column is a fixed 32px, content takes the 1fr, actions sit at the end. The
+ * inner row is the card's first `> div` (`.flex.items-center.gap-2.5`). */
+.sw-next-dashboard .action-card > .flex.items-center {
+  display: grid;
+  grid-template-columns: auto 32px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+/* Artist name (.who): 13px / 500. The name link is the card's content
+ * <a> (the only link with text-sm font-medium inside the content column). */
+.sw-next-dashboard .action-card a.font-medium {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--swd-ink);
+}
+.sw-next-dashboard .action-card a.font-medium:hover {
+  color: var(--swd-blue-ink);
+}
+/* Violation message (.what): 12px ink-3. The message is the card's only <p>. */
+.sw-next-dashboard .action-card p {
+  font-size: 12px;
+  color: var(--swd-ink-3);
+  margin-top: 1px;
+}
+/* Avatar (.av): the card ships a 32px (h-8 w-8) `relative` wrapper holding an
+ * initials fallback div + the real <img>. Keep the real thumbnail; just round
+ * the fallback's tint to the prototype's slate gradient so the initials read
+ * cleanly before the image loads (charter: real thumbnail, not monogram). */
+.sw-next-dashboard .action-card .relative.h-8.w-8 > div {
+  background: linear-gradient(135deg, #475569, #1e293b);
+  color: #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* -- Severity chip (.sev): the prototype's TIGHT 18px dot-chip, radius 4 (NOT
+ * a full pill). The severity badge is the only uppercase <span> in the card
+ * (severityBadgeClass emits `inline-flex items-center rounded ... uppercase
+ * tracking-wide`); restyle it to the `.sev` chip + leading 6px dot. Colors
+ * come from the severity tokens so the chip retints per theme. The original
+ * red/amber/blue text color from the utility is overridden by the token here;
+ * we cannot key off severity in CSS, so all three share the warn-style chrome
+ * UNLESS we re-detect -- so instead we map via the utility's own color class. */
+.sw-next-dashboard .action-card span.uppercase {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px 0 4px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.05em;
+}
+.sw-next-dashboard .action-card span.uppercase::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+/* Severity-keyed colors: severityBadgeClass emits a text-*-700 (light) class
+ * per severity, which we use as the hook to set the token-driven ink + tint.
+ * error -> text-red-700, warning -> text-amber-700, info -> text-blue-700. */
+.sw-next-dashboard .action-card span.text-red-700 {
+  color: var(--swd-err);
+  background: var(--swd-err-soft);
+}
+.sw-next-dashboard .action-card span.text-amber-700 {
+  color: var(--swd-warn);
+  background: var(--swd-warn-soft);
+}
+.sw-next-dashboard .action-card span.text-blue-700 {
+  color: var(--swd-info);
+  background: var(--swd-info-soft);
+}
+
+/* Tighten the inter-row gap to the prototype's 6px rhythm. The queue wraps the
+ * cards in `#action-queue-entries.space-y-1.5`; this is the body.tight stack. */
+.sw-next-dashboard #action-queue-entries > * + * {
+  margin-top: 6px;
+}
+
+/* -- Activity rail rows (.sw-activity): the prototype's flex row with a 22px
+ * soft-tinted kind-icon circle and a right-aligned mono timestamp
+ * (styles.css .sw-activity). Restyles the rail's `.sw-activity-row` markup,
+ * which is emitted identically by DashboardActivityRowNext and the SSE JS
+ * builder, so initial + live rows both pick this up. The icon <svg> is wrapped
+ * to a tinted circle; the kind tone comes from the svg's own text-* utility,
+ * mapped to the token here. */
+.sw-next-dashboard .sw-activity-row {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--swd-ink);
+}
+.sw-next-dashboard .sw-activity-row:hover {
+  background: var(--swd-bg-elev);
+}
+/* Feed scroll cap: a max-height (not a fixed height) so the card stays sized to
+ * its content until live SSE rows accumulate past the cap, at which point it
+ * scrolls instead of pushing the viewport. The rail itself is self-start, so a
+ * short feed leaves a short card. */
+.sw-next-dashboard .sw-activity-feed {
+  max-height: calc(100vh - 8rem);
+}
+.sw-next-dashboard .sw-activity-row > svg {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  padding: 5px;
+  border-radius: 50%;
+  flex: none;
+}
+/* Kind tints: the row svg carries activityKindToneClass (text-green/red/amber/
+ * blue-500), used as the hook for the soft circle background + glyph color. */
+.sw-next-dashboard .sw-activity-row > svg.text-green-500 { color: var(--swd-ok); background: var(--swd-ok-soft); }
+.sw-next-dashboard .sw-activity-row > svg.text-red-500 { color: var(--swd-err); background: var(--swd-err-soft); }
+.sw-next-dashboard .sw-activity-row > svg.text-amber-500 { color: var(--swd-warn); background: var(--swd-warn-soft); }
+.sw-next-dashboard .sw-activity-row > svg.text-blue-500 { color: var(--swd-blue-ink); background: rgba(59, 130, 246, 0.16); }
+/* Primary text + timestamp ramp. */
+.sw-next-dashboard .sw-activity-row span.truncate {
+  font-size: 13px;
+  color: var(--swd-ink-2);
+}
+/* Timestamp: the prototype's `.ts` is mono / 11px / ink-3. The app does NOT
+ * bundle JetBrains Mono (the prototype's --sw-mono), so this uses the system
+ * mono stack (no new web font; see the report's font-family flag). tabular-nums
+ * keeps the relative-time digits column-aligned. */
+.sw-next-dashboard .sw-activity-row time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--swd-ink-3);
+}
+.sw-next-dashboard .sw-activity-row a {
+  color: var(--swd-blue-ink);
 }

@@ -246,6 +246,37 @@ script DismissFilterChip(key string, targetSel string) {
 	htmx.ajax('GET', path + url.search, {target: sel, swap: 'outerHTML'});
 }
 
+// DismissFilterValueChip removes a single prefixed value (e.g. "+error" or
+// "-info") from a multi-valued tri-state filter key, leaving any sibling values
+// under the same key intact, then reloads the HTMX target region. Used by the
+// dashboard tri-state chips (M55 #1334) where one key (e.g. "severity") can hold
+// several include/exclude values. targetSel is the CSS selector for the HTMX
+// content region to reload; defaults to "#action-queue" when empty.
+
+script DismissFilterValueChip(key string, prefixedValue string, targetSel string) {
+	var url = new URL(window.location.href);
+	// Read every value under this key, drop the one matching prefixedValue,
+	// then rewrite the key with the survivors (URLSearchParams has no
+	// remove-one-value primitive, so delete-all + re-append is the idiom).
+	var remaining = url.searchParams.getAll(key).filter(function (v) {
+		return v !== prefixedValue;
+	});
+	url.searchParams.delete(key);
+	remaining.forEach(function (v) { url.searchParams.append(key, v); });
+	url.searchParams.delete('page');
+	history.pushState(null, '', url.toString());
+	// Strip the base path before htmx.ajax to avoid a double-prefix from the
+	// htmx:configRequest hook (it auto-prepends basePath for "/"-rooted paths).
+	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+	var bp = bpMeta ? bpMeta.content : '';
+	var path = url.pathname;
+	if (bp && path.startsWith(bp)) {
+		path = path.slice(bp.length) || '/';
+	}
+	var sel = targetSel || '#action-queue';
+	htmx.ajax('GET', path + url.search, {target: sel, swap: 'innerHTML'});
+}
+
 // FilterItemSingle renders a single-select chip for filters where exactly one
 // value (or none) is active across the section. Selecting an item clears any
 // other selection sharing the same data-filter-key, then writes the chosen
@@ -347,10 +378,21 @@ func filterRangeValue(v int) string {
 // FilterChipSpec describes one active filter chip. Label is the visible text;
 // Key is the URL query-param key the dismiss button removes; TargetSel is the
 // CSS selector for the HTMX content region to reload on dismiss.
+//
+// Value and Exclude support tri-state filters (dashboard, M55 #1334) where a
+// single Key can hold several +value / -value entries. When Value is non-empty
+// the dismiss button removes only that one prefixed entry (leaving sibling
+// values under the same Key intact) instead of deleting the whole Key. Exclude
+// selects the red "exclude" chip styling so an included value and an excluded
+// value are visually distinguishable. Both fields are zero-valued for the
+// single-value-per-key callers (artists, reports), which keep the original
+// whole-key dismiss + neutral styling.
 type FilterChipSpec struct {
 	Label     string
 	Key       string
 	TargetSel string
+	Value     string
+	Exclude   bool
 }
 
 // ActiveFilters renders the row of removable filter chips that sits below the
@@ -365,7 +407,7 @@ templ ActiveFilters(targetSel, clearAllHref, clearAllLabel, headerLabel string, 
 				<span class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">{ headerLabel }</span>
 			}
 			for _, c := range chips {
-				@FilterChip(c.Label, c.Key, targetSelOr(c.TargetSel, targetSel))
+				@FilterChip2(c, targetSelOr(c.TargetSel, targetSel))
 			}
 			if clearAllHref != "" && clearAllLabel != "" {
 				<a
@@ -406,4 +448,61 @@ templ FilterChip(label, key, targetSel string) {
 			</svg>
 		</button>
 	</span>
+}
+
+// FilterChip2 renders one removable chip from a FilterChipSpec, choosing
+// between two behaviors based on the spec:
+//
+//   - Single-value-per-key chips (Value == ""): whole-key dismiss + neutral
+//     blue styling. Identical to FilterChip (artists, reports).
+//   - Tri-state chips (Value != ""): per-value dismiss (removes only the one
+//     +value / -value entry under Key, keeping sibling values) and styling that
+//     distinguishes include (blue) from exclude (red). Used by the dashboard
+//     (M55 #1334) where a key such as "severity" can carry several values.
+templ FilterChip2(c FilterChipSpec, targetSel string) {
+	if c.Value == "" {
+		@FilterChip(c.Label, c.Key, targetSel)
+	} else {
+		<span class={ "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs", filterChipColorClasses(c.Exclude) }>
+			{ c.Label }
+			<button
+				type="button"
+				class={ "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full focus:outline-none focus:ring-1 focus:ring-blue-500", filterChipDismissHoverClasses(c.Exclude) }
+				aria-label={ tf(ctx, "common.remove_filter", c.Label) }
+				onclick={ DismissFilterValueChip(c.Key, filterChipPrefixedValue(c.Exclude, c.Value), targetSel) }
+			>
+				<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
+				</svg>
+			</button>
+		</span>
+	}
+}
+
+// filterChipColorClasses returns the pill background/text classes for a
+// tri-state chip: red for an excluded value, blue for an included one.
+func filterChipColorClasses(exclude bool) string {
+	if exclude {
+		return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+	}
+	return "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+}
+
+// filterChipDismissHoverClasses returns the hover background for the chip's
+// dismiss button, matching the chip color family.
+func filterChipDismissHoverClasses(exclude bool) string {
+	if exclude {
+		return "hover:bg-red-200 dark:hover:bg-red-800"
+	}
+	return "hover:bg-blue-200 dark:hover:bg-blue-800"
+}
+
+// filterChipPrefixedValue returns the URL-encoded value with its tri-state
+// prefix ("+" include, "-" exclude) so DismissFilterValueChip removes exactly
+// the entry the flyout JS wrote.
+func filterChipPrefixedValue(exclude bool, value string) string {
+	if exclude {
+		return "-" + value
+	}
+	return "+" + value
 }

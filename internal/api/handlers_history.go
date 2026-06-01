@@ -500,6 +500,10 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Emit activity.recent so the next/ dashboard live activity rail
+	// (M55 #1334) shows the revert without polling.
+	r.publishActivityRecent("reverted", change.Field+" reverted", change.ArtistID)
+
 	// For HTMX requests (undo button click), return an HTML fragment showing
 	// the new history entry. For plain API callers, return JSON.
 	if !isHTMXRequest(req) {

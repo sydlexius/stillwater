@@ -126,11 +126,14 @@ func TestParseNotificationParams(t *testing.T) {
 			if p.Order != tc.wantOrder {
 				t.Errorf("Order = %q, want %q", p.Order, tc.wantOrder)
 			}
-			if p.Severity != tc.wantSev {
-				t.Errorf("Severity = %q, want %q", p.Severity, tc.wantSev)
+			// Severity/Category are now tri-state filters; the notifications
+			// endpoint keeps its single-select contract via rule.IncludeOnly,
+			// so a bare value lands in the include set.
+			if gotSev := firstInclude(p.Severity); gotSev != tc.wantSev {
+				t.Errorf("Severity include = %q, want %q", gotSev, tc.wantSev)
 			}
-			if p.Category != tc.wantCat {
-				t.Errorf("Category = %q, want %q", p.Category, tc.wantCat)
+			if gotCat := firstInclude(p.Category); gotCat != tc.wantCat {
+				t.Errorf("Category include = %q, want %q", gotCat, tc.wantCat)
 			}
 			if p.GroupBy != tc.wantGB {
 				t.Errorf("GroupBy = %q, want %q", p.GroupBy, tc.wantGB)

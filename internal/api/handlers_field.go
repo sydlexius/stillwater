@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
@@ -128,6 +129,9 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 			Data: map[string]any{"artist_id": a.ID},
 		})
 	}
+	// Emit activity.recent so the next/ dashboard live activity rail
+	// (M55 #1334) can prepend a row without polling.
+	r.publishActivityRecent("changed", field+" updated", a.ID)
 	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {
@@ -147,6 +151,24 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		"status": "updated",
 		"field":  field,
 		"value":  artist.FieldValueFromArtist(a, field),
+	})
+}
+
+// publishActivityRecent emits an activity.recent event for the next/ dashboard
+// live activity rail (M55 #1334) so it can prepend a row without polling.
+// No-op when the event bus is not configured.
+func (r *Router) publishActivityRecent(kind, text, artistID string) {
+	if r.eventBus == nil {
+		return
+	}
+	r.eventBus.Publish(event.Event{
+		Type: event.ActivityRecent,
+		Data: map[string]any{
+			"ts":       time.Now().UTC().Format(time.RFC3339),
+			"kind":     kind,
+			"text":     text,
+			"artistId": artistID,
+		},
 	})
 }
 
@@ -193,6 +215,12 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 			Data: map[string]any{"artist_id": a.ID},
 		})
 	}
+	// Emit activity.recent so field clears also reach the next/ dashboard
+	// live activity rail (M55 #1334). Use the "cleared" kind so the live
+	// SSE-built row shows the same minus-circle icon as the HTMX-refreshed
+	// server row (activityChangeKind returns "cleared" for a clear); emitting
+	// "changed" here would mismatch with the pencil icon.
+	r.publishActivityRecent("cleared", field+" cleared", a.ID)
 	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {

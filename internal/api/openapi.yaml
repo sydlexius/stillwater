@@ -6967,7 +6967,7 @@ paths:
                     description: >
                       Background glass opacity percentage (integer 20-100
                       as a string).
-                    example: "65"
+                    example: "85"
                 required:
                   - theme
                   - sidebar_state

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,13 +31,27 @@ type ActionQueueData struct {
 	HealthStatsError bool
 
 	// Filter state (selected values). Empty string means "not filtering
-	// by this dimension". At most one value per dimension is honored.
+	// by this dimension". These scalar fields drive the current single-select
+	// chip UI and are populated best-effort from the first included value of
+	// the corresponding tri-state filter below. The tri-state flyout UI (a
+	// later chunk) will read the *Filter fields instead.
 	Search    string
 	Severity  string
 	Category  string
 	LibraryID string
 	RuleID    string
 	Fixable   string // "yes", "no", or ""
+
+	// Tri-state filter state (full include/exclude sets per dimension). The
+	// backend filter contract is tri-state (rule.TriFilter); these fields carry
+	// the complete parsed state so the tri-state flyout UI chunk can render
+	// each pill's include / exclude / neutral position. The scalar fields above
+	// are a lossy single-value view kept for the existing chip UI.
+	SeverityFilter rule.TriFilter
+	CategoryFilter rule.TriFilter
+	LibraryFilter  rule.TriFilter
+	RuleFilter     rule.TriFilter
+	FixableFilter  rule.TriFilter
 
 	// Counts keyed by value, used to render badge counts inside the filter flyout.
 	SeverityCounts map[string]int            // "error", "warning", "info"
@@ -135,7 +150,7 @@ templ DashboardActionQueue(data ActionQueueData) {
 			}
 		</div>
 		if data.Offset+len(data.Violations) < data.Total {
-			@dashboardLoadMoreButton(data)
+			@DashboardLoadMoreButton(data)
 		}
 	}
 }
@@ -143,7 +158,7 @@ templ DashboardActionQueue(data ActionQueueData) {
 // DashboardActionMoreRows renders additional violation cards for load-more appends.
 templ DashboardActionMoreRows(data ActionQueueData) {
 	if data.Offset+len(data.Violations) < data.Total {
-		@dashboardLoadMoreButton(data)
+		@DashboardLoadMoreButton(data)
 	} else {
 		<div id="action-queue-load-more"></div>
 	}
@@ -154,10 +169,10 @@ templ DashboardActionMoreRows(data ActionQueueData) {
 	</div>
 }
 
-// dashboardLoadMoreButton renders the load-more button for the action queue.
+// DashboardLoadMoreButton renders the load-more button for the action queue.
 // Uses outerHTML swap (not the shared LoadMore component which uses beforeend)
 // so the button replaces itself with the response from DashboardActionMoreRows.
-templ dashboardLoadMoreButton(data ActionQueueData) {
+templ DashboardLoadMoreButton(data ActionQueueData) {
 	<div id="action-queue-load-more" class="flex justify-center py-3">
 		<button
 			type="button"
@@ -183,43 +198,53 @@ templ dashboardLoadMoreButton(data ActionQueueData) {
 
 // dashboardLoadMoreURL builds the next-page URL preserving all active filter
 // and search params so load-more stays in-scope with what the user selected.
+// It emits the full tri-state (`+include` / `-exclude`) form for every filter
+// dimension via the shared rule.TriFilter.AppendURLValues emitter, so an
+// exclude or multi-value filter survives paging instead of being narrowed to
+// a single included value.
 func dashboardLoadMoreURL(data ActionQueueData) string {
 	nextOffset := data.Offset + len(data.Violations)
 	q := url.Values{}
 	q.Set("limit", fmt.Sprint(data.Limit))
 	q.Set("offset", fmt.Sprint(nextOffset))
 	addIfSet(q, "search", data.Search)
-	addIfSet(q, "severity", data.Severity)
-	addIfSet(q, "category", data.Category)
-	addIfSet(q, "library_id", data.LibraryID)
-	addIfSet(q, "rule", data.RuleID)
-	addIfSet(q, "fixable", data.Fixable)
+	data.SeverityFilter.AppendURLValues(q, "severity")
+	data.CategoryFilter.AppendURLValues(q, "category")
+	data.LibraryFilter.AppendURLValues(q, "library_id")
+	data.RuleFilter.AppendURLValues(q, "rule")
+	data.FixableFilter.AppendURLValues(q, "fixable")
 	return "/dashboard/actions?" + q.Encode()
 }
 
 // dashboardFilterQuery returns the query-param string (without the leading
-// "?") representing the filter state after setting key to value. An empty
-// value clears that key. Preserves all other currently active filters.
+// "?") representing the filter state after setting key to the single included
+// value. An empty value clears that key entirely (both include and exclude).
+// All OTHER dimensions are preserved in full tri-state (`+`/`-`) form via the
+// shared rule.TriFilter.AppendURLValues emitter, so editing one dimension
+// never silently drops another dimension's exclude or multi-value state.
 func dashboardFilterQuery(data ActionQueueData, key, value string) string {
 	q := url.Values{}
 	addIfSet(q, "search", data.Search)
 	if key != "severity" {
-		addIfSet(q, "severity", data.Severity)
+		data.SeverityFilter.AppendURLValues(q, "severity")
 	}
 	if key != "category" {
-		addIfSet(q, "category", data.Category)
+		data.CategoryFilter.AppendURLValues(q, "category")
 	}
 	if key != "library_id" {
-		addIfSet(q, "library_id", data.LibraryID)
+		data.LibraryFilter.AppendURLValues(q, "library_id")
 	}
 	if key != "rule" {
-		addIfSet(q, "rule", data.RuleID)
+		data.RuleFilter.AppendURLValues(q, "rule")
 	}
 	if key != "fixable" {
-		addIfSet(q, "fixable", data.Fixable)
+		data.FixableFilter.AppendURLValues(q, "fixable")
 	}
 	if value != "" {
-		q.Set(key, value)
+		// Set as an explicit include using the flyout's "+" contract so the
+		// parsed value round-trips as include (a bare value also parses as
+		// include, but "+" keeps the wire form uniform with the other dims).
+		q.Set(key, "+"+value)
 	}
 	return q.Encode()
 }
@@ -262,8 +287,13 @@ func addIfSet(q url.Values, key, value string) {
 // it would show an active-filter badge / clear-all affordance with nothing
 // individually removable (CR feedback on PR #1653).
 func hasActiveFilters(data ActionQueueData) bool {
-	return data.Severity != "" || data.Category != "" ||
-		data.LibraryID != "" || data.RuleID != "" || data.Fixable != ""
+	return dashboardActiveFilterCount(data) > 0
+}
+
+// triFilterCount returns the number of active (include + exclude) values in a
+// single tri-state filter dimension.
+func triFilterCount(f rule.TriFilter) int {
+	return len(f.Include) + len(f.Exclude)
 }
 
 // dashboardActiveFilterCount returns the number of distinct chip-controllable
@@ -272,23 +302,13 @@ func hasActiveFilters(data ActionQueueData) bool {
 // aligned: every counted dimension has a corresponding chip the user can
 // dismiss individually.
 func dashboardActiveFilterCount(data ActionQueueData) int {
-	n := 0
-	if data.Severity != "" {
-		n++
-	}
-	if data.Category != "" {
-		n++
-	}
-	if data.LibraryID != "" {
-		n++
-	}
-	if data.RuleID != "" {
-		n++
-	}
-	if data.Fixable != "" {
-		n++
-	}
-	return n
+	// Tri-state: every included or excluded value across all five dimensions is
+	// one removable chip, so each counts toward the badge total.
+	return triFilterCount(data.SeverityFilter) +
+		triFilterCount(data.CategoryFilter) +
+		triFilterCount(data.LibraryFilter) +
+		triFilterCount(data.RuleFilter) +
+		triFilterCount(data.FixableFilter)
 }
 
 // libraryNameByID returns a library's name, or its ID when the library is
@@ -455,74 +475,129 @@ templ DashboardActiveFilters(data ActionQueueData) {
 	@components.ActiveFilters("#action-queue", dashboardClearAllHref(data), t(ctx, "common.clear_all"), t(ctx, "dashboard.active_filters_label"), dashboardActiveChips(ctx, data))
 }
 
-// dashboardActiveChips returns the slice of FilterChipSpec entries that
-// reflect the currently active dashboard filters. Each chip's Key matches
-// the URL query param the shared DismissFilterChip script strips on click.
+// dashboardActiveChips returns the slice of FilterChipSpec entries that reflect
+// the currently active TRI-STATE dashboard filters. Each dimension can have
+// several included and excluded values, so each value becomes its own chip:
+// included values render as neutral blue chips, excluded values as red "Not X"
+// chips. Each chip's Key + Value let the per-value DismissFilterValueChip script
+// strip exactly that one +value / -value entry on click.
 func dashboardActiveChips(ctx context.Context, data ActionQueueData) []components.FilterChipSpec {
-	chips := make([]components.FilterChipSpec, 0, 5)
-	if data.Severity != "" {
-		chips = append(chips, components.FilterChipSpec{Key: "severity", Label: severityLabel(ctx, data.Severity)})
+	chips := make([]components.FilterChipSpec, 0, 8)
+	// labelFn maps a dimension value to its display label. One per family.
+	chips = appendTriChips(ctx, chips, "severity", data.SeverityFilter, func(v string) string { return severityLabel(ctx, v) })
+	chips = appendTriChips(ctx, chips, "category", data.CategoryFilter, func(v string) string { return dashboardCategoryLabel(ctx, v) })
+	chips = appendTriChips(ctx, chips, "library_id", data.LibraryFilter, func(v string) string { return libraryNameByID(data.Libraries, v) })
+	chips = appendTriChips(ctx, chips, "rule", data.RuleFilter, func(v string) string { return ruleNameByID(data.RuleCounts, v) })
+	chips = appendTriChips(ctx, chips, "fixable", data.FixableFilter, func(v string) string { return fixableLabel(ctx, v) })
+	return chips
+}
+
+// appendTriChips appends one chip per included value (blue) and one per excluded
+// value (red, "Not X" label) of a single tri-state dimension. labelFn resolves a
+// raw dimension value (e.g. a library ID) to its human-readable label.
+func appendTriChips(ctx context.Context, chips []components.FilterChipSpec, key string, f rule.TriFilter, labelFn func(string) string) []components.FilterChipSpec {
+	for _, v := range f.Include {
+		chips = append(chips, components.FilterChipSpec{Key: key, Value: v, Label: labelFn(v)})
 	}
-	if data.Category != "" {
-		chips = append(chips, components.FilterChipSpec{Key: "category", Label: dashboardCategoryLabel(ctx, data.Category)})
-	}
-	if data.LibraryID != "" {
-		chips = append(chips, components.FilterChipSpec{Key: "library_id", Label: libraryNameByID(data.Libraries, data.LibraryID)})
-	}
-	if data.RuleID != "" {
-		chips = append(chips, components.FilterChipSpec{Key: "rule", Label: ruleNameByID(data.RuleCounts, data.RuleID)})
-	}
-	if data.Fixable != "" {
-		chips = append(chips, components.FilterChipSpec{Key: "fixable", Label: fixableLabel(ctx, data.Fixable)})
+	for _, v := range f.Exclude {
+		// Excluded chips read "Not X" (localized) so the exclusion is legible
+		// even for users who do not perceive the red styling.
+		chips = append(chips, components.FilterChipSpec{Key: key, Value: v, Exclude: true, Label: tf(ctx, "common.filter_not_prefix", labelFn(v))})
 	}
 	return chips
 }
 
 // dashboardClearAllHref returns the href for the Clear All anchor in the
-// active-filters row. Empty when no filters are active so the link is
-// omitted by the shared ActiveFilters component.
+// active-filters row. Empty (so the shared ActiveFilters component omits the
+// link) unless at least two filter values are active: with a single chip the
+// chip's own X already clears everything, so a separate Clear all is redundant.
 func dashboardClearAllHref(data ActionQueueData) string {
-	if !hasActiveFilters(data) {
+	if dashboardActiveFilterCount(data) < 2 {
 		return ""
 	}
 	return data.BasePath + "/"
 }
 
+// dashFilterState returns the tri-state flyout state ("include", "exclude", or
+// "neutral") for a single dimension value, given that dimension's parsed
+// TriFilter. The flyout's FilterItem component renders the +/- chip from this
+// string, and the shared filter-flyout.js writes the matching key=+value /
+// key=-value URL param on Apply. A value present in f.Include wins over Exclude
+// (the 3a parser never puts a value in both, but Include-first keeps the
+// rendering deterministic if it ever did).
+func dashFilterState(f rule.TriFilter, value string) string {
+	for _, v := range f.Include {
+		if v == value {
+			return "include"
+		}
+	}
+	for _, v := range f.Exclude {
+		if v == value {
+			return "exclude"
+		}
+	}
+	return "neutral"
+}
+
 // DashboardFilterFlyout renders the right-side filter panel using the shared
-// FilterFlyout component. Single-select per dimension: clicking an item
-// selects (or deselects) within that dimension. URL state is written on Apply
-// by the shared filter-flyout.js (key=value form, no +y/-y prefix).
+// FilterFlyout component. Tri-state per value: clicking a pill cycles
+// neutral -> include -> exclude -> neutral. URL state is written on Apply by the
+// shared filter-flyout.js as key=+value (include) / key=-value (exclude), which
+// the 3a tri-state parser reads back. The per-family key must match that parser:
+// severity, category, library_id, rule, fixable.
 templ DashboardFilterFlyout(data ActionQueueData) {
 	@components.FilterFlyout("dashboard-filter-flyout", t(ctx, "dashboard.filters_title"), "dashboard-filters-trigger", dashboardActiveFilterCount(data), "#action-queue", nil) {
 		@components.FilterSection(t(ctx, "common.severity")) {
-			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "error", t(ctx, "common.severity_error"), data.Severity == "error", data.SeverityCounts["error"])
-			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "warning", t(ctx, "common.severity_warning"), data.Severity == "warning", data.SeverityCounts["warning"])
-			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "info", t(ctx, "common.severity_info"), data.Severity == "info", data.SeverityCounts["info"])
+			@dashFilterItem("severity", "error", t(ctx, "common.severity_error"), dashFilterState(data.SeverityFilter, "error"), data.SeverityCounts["error"])
+			@dashFilterItem("severity", "warning", t(ctx, "common.severity_warning"), dashFilterState(data.SeverityFilter, "warning"), data.SeverityCounts["warning"])
+			@dashFilterItem("severity", "info", t(ctx, "common.severity_info"), dashFilterState(data.SeverityFilter, "info"), data.SeverityCounts["info"])
 		}
 		@components.FilterSection(t(ctx, "common.category")) {
-			@components.FilterItemSingle("dashboard-filter-flyout", "category", "metadata", dashboardCategoryLabel(ctx, "metadata"), data.Category == "metadata", data.CategoryCounts["metadata"])
-			@components.FilterItemSingle("dashboard-filter-flyout", "category", "image", dashboardCategoryLabel(ctx, "image"), data.Category == "image", data.CategoryCounts["image"])
-			@components.FilterItemSingle("dashboard-filter-flyout", "category", "nfo", dashboardCategoryLabel(ctx, "nfo"), data.Category == "nfo", data.CategoryCounts["nfo"])
+			@dashFilterItem("category", "metadata", dashboardCategoryLabel(ctx, "metadata"), dashFilterState(data.CategoryFilter, "metadata"), data.CategoryCounts["metadata"])
+			@dashFilterItem("category", "image", dashboardCategoryLabel(ctx, "image"), dashFilterState(data.CategoryFilter, "image"), data.CategoryCounts["image"])
+			@dashFilterItem("category", "nfo", dashboardCategoryLabel(ctx, "nfo"), dashFilterState(data.CategoryFilter, "nfo"), data.CategoryCounts["nfo"])
 		}
 		if len(data.Libraries) > 0 {
+			// Library uses STANDARD tri-state (include/exclude), not the artists
+			// #1217 whitelist mode: 3a matches with EXISTS / NOT EXISTS, so an
+			// excluded library is meaningful (hide its violations).
 			@components.FilterSection(t(ctx, "common.library")) {
 				for _, lib := range data.Libraries {
-					@components.FilterItemSingle("dashboard-filter-flyout", "library_id", lib.ID, lib.Name, data.LibraryID == lib.ID, data.LibraryCounts[lib.ID])
+					@dashFilterItem("library_id", lib.ID, lib.Name, dashFilterState(data.LibraryFilter, lib.ID), data.LibraryCounts[lib.ID])
 				}
 			}
 		}
 		if len(data.RuleCounts) > 0 {
 			@components.FilterSection(t(ctx, "common.rule")) {
 				for _, rc := range data.RuleCounts {
-					@components.FilterItemSingle("dashboard-filter-flyout", "rule", rc.RuleID, rc.RuleName, data.RuleID == rc.RuleID, rc.Count)
+					@dashFilterItem("rule", rc.RuleID, rc.RuleName, dashFilterState(data.RuleFilter, rc.RuleID), rc.Count)
 				}
 			}
 		}
 		@components.FilterSection(t(ctx, "dashboard.filter.fixable")) {
-			@components.FilterItemSingle("dashboard-filter-flyout", "fixable", "yes", t(ctx, "dashboard.filter.fixable_yes"), data.Fixable == "yes", data.FixableYes)
-			@components.FilterItemSingle("dashboard-filter-flyout", "fixable", "no", t(ctx, "dashboard.filter.fixable_no"), data.Fixable == "no", data.FixableNo)
+			@dashFilterItem("fixable", "yes", t(ctx, "dashboard.filter.fixable_yes"), dashFilterState(data.FixableFilter, "yes"), data.FixableYes)
+			@dashFilterItem("fixable", "no", t(ctx, "dashboard.filter.fixable_no"), dashFilterState(data.FixableFilter, "no"), data.FixableNo)
 		}
 	}
+}
+
+// dashFilterItem wraps the shared tri-state FilterItem with the dashboard's
+// per-value count badge. FilterItem itself does not render a count (the artists
+// flyout has no facet counts), so the dashboard appends the badge as a sibling
+// after the pill. The count is rendered inside the pill via the label is not
+// possible without forking the component, so the badge sits beside the pill.
+templ dashFilterItem(key, value, label, state string, count int) {
+	@components.FilterItem("dashboard-filter-flyout", key, value, dashFilterItemLabel(label, count), state)
+}
+
+// dashFilterItemLabel appends the facet count to a filter label when non-zero,
+// e.g. "Error (12)". The flyout JS reads labelText via .sw-filter-item-label
+// .textContent for aria; the parenthesized count rides along harmlessly.
+func dashFilterItemLabel(label string, count int) string {
+	if count > 0 {
+		return label + " (" + strconv.Itoa(count) + ")"
+	}
+	return label
 }
 
 // DashboardActionCard renders a single violation card in the action queue.
@@ -540,7 +615,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 			/>
 			// Artist avatar with initials fallback
 			<div class="relative h-8 w-8 shrink-0">
-				<div class="absolute inset-0 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-xs font-semibold text-gray-500 dark:text-gray-400">
+				<div class="absolute inset-0 flex items-center justify-center rounded-full bg-gradient-to-br from-slate-600 to-slate-800 text-xs font-semibold text-slate-100">
 					{ artistInitials(v.ArtistName) }
 				</div>
 				<img
@@ -603,15 +678,6 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 				>
 					{ t(ctx, "dashboard.dismiss") }
 				</button>
-				<a
-					href={ templ.SafeURL(basePath + "/artists/" + v.ArtistID) }
-					class="inline-flex items-center rounded-md px-1.5 py-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-					title={ t(ctx, "dashboard.view_artist") }
-				>
-					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
-					</svg>
-				</a>
 			</div>
 		</div>
 	</div>

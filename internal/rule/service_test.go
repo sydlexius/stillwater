@@ -662,7 +662,7 @@ func TestCountActiveViolationsBySeverity(t *testing.T) {
 	// parameter, the dashboard's severity badges fall out of sync with
 	// the filtered list and none of the other assertions here would
 	// catch it.
-	facet, err := svc.CountActiveViolationsBySeverity(ctx, ViolationListParams{Severity: "error"})
+	facet, err := svc.CountActiveViolationsBySeverity(ctx, ViolationListParams{Severity: IncludeOnly("error")})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsBySeverity(facet): %v", err)
 	}
@@ -905,7 +905,7 @@ func TestListViolationsFiltered_FilterBySeverity(t *testing.T) {
 
 	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
 		Status:   "active",
-		Severity: "error",
+		Severity: IncludeOnly("error"),
 	})
 	if err != nil {
 		t.Fatalf("ListViolationsFiltered: %v", err)
@@ -943,7 +943,7 @@ func TestListViolationsFiltered_FilterByCategory(t *testing.T) {
 	// Filter by "nfo" category (only nfo_exists should match)
 	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
 		Status:   "active",
-		Category: "nfo",
+		Category: IncludeOnly("nfo"),
 	})
 	if err != nil {
 		t.Fatalf("ListViolationsFiltered: %v", err)
@@ -977,7 +977,7 @@ func TestListViolationsFiltered_FilterByRuleID(t *testing.T) {
 
 	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
 		Status: "active",
-		RuleID: RuleThumbExists,
+		RuleID: IncludeOnly(RuleThumbExists),
 	})
 	if err != nil {
 		t.Fatalf("ListViolationsFiltered: %v", err)
@@ -1048,8 +1048,8 @@ func TestListViolationsFiltered_CombinedFilters(t *testing.T) {
 	// Filter by category=nfo AND severity=error
 	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
 		Status:   "active",
-		Category: "nfo",
-		Severity: "error",
+		Category: IncludeOnly("nfo"),
+		Severity: IncludeOnly("error"),
 	})
 	if err != nil {
 		t.Fatalf("ListViolationsFiltered: %v", err)
@@ -1059,6 +1059,245 @@ func TestListViolationsFiltered_CombinedFilters(t *testing.T) {
 	}
 	if result[0].RuleID != RuleNFOExists {
 		t.Errorf("rule_id = %q, want %q", result[0].RuleID, RuleNFOExists)
+	}
+}
+
+// TestListViolationsFilteredPaged_TriStateSeverity exercises the tri-state
+// include/exclude contract on the severity dimension (an rv-column filter, so
+// no rules-table join). It covers include-only, exclude-only, the combination
+// of both, bare-value back-compat, and the empty (unfiltered == all) case.
+func TestListViolationsFilteredPaged_TriStateSeverity(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleNFOHasMBID, ArtistID: "a3", ArtistName: "A3", Severity: "info", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// countBySeverity returns the result-set severities for assertion.
+	countBySeverity := func(rows []RuleViolation) map[string]int {
+		m := map[string]int{}
+		for _, v := range rows {
+			m[v.Severity]++
+		}
+		return m
+	}
+
+	cases := []struct {
+		name     string
+		severity TriFilter
+		wantSev  map[string]int
+		wantLen  int
+	}{
+		{
+			name:    "empty filter returns all (unfiltered)",
+			wantSev: map[string]int{"error": 1, "warning": 1, "info": 1},
+			wantLen: 3,
+		},
+		{
+			name:     "include-only keeps just the included severities",
+			severity: TriFilter{Include: []string{"error", "info"}},
+			wantSev:  map[string]int{"error": 1, "info": 1},
+			wantLen:  2,
+		},
+		{
+			name:     "exclude-only drops just the excluded severity",
+			severity: TriFilter{Exclude: []string{"warning"}},
+			wantSev:  map[string]int{"error": 1, "info": 1},
+			wantLen:  2,
+		},
+		{
+			name:     "include and exclude combine (include set minus excluded)",
+			severity: TriFilter{Include: []string{"error", "warning"}, Exclude: []string{"warning"}},
+			wantSev:  map[string]int{"error": 1},
+			wantLen:  1,
+		},
+		{
+			name:     "bare-value back-compat (IncludeOnly) keeps only that value",
+			severity: IncludeOnly("warning"),
+			wantSev:  map[string]int{"warning": 1},
+			wantLen:  1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, total, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+				Status:   "active",
+				Severity: tc.severity,
+			})
+			if err != nil {
+				t.Fatalf("ListViolationsFilteredPaged: %v", err)
+			}
+			if total != tc.wantLen {
+				t.Errorf("total = %d, want %d", total, tc.wantLen)
+			}
+			if len(rows) != tc.wantLen {
+				t.Fatalf("len(rows) = %d, want %d", len(rows), tc.wantLen)
+			}
+			got := countBySeverity(rows)
+			for sev, want := range tc.wantSev {
+				if got[sev] != want {
+					t.Errorf("severity %q count = %d, want %d (got=%v)", sev, got[sev], want, got)
+				}
+			}
+		})
+	}
+}
+
+// TestListViolationsFilteredPaged_TriStateCategory exercises the tri-state
+// contract on the category dimension, which is the JOIN case: category lives on
+// the rules table (r.category), so the filter must force the rules-table join.
+// SeedDefaults provides the rule->category mapping (nfo_exists -> nfo,
+// thumb_exists -> image, bio_exists -> metadata).
+func TestListViolationsFilteredPaged_TriStateCategory(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleBioExists, ArtistID: "a3", ArtistName: "A3", Severity: "info", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	cases := []struct {
+		name     string
+		category TriFilter
+		wantRule map[string]bool // rule IDs expected in the result
+	}{
+		{
+			name:     "empty filter returns all categories",
+			wantRule: map[string]bool{RuleNFOExists: true, RuleThumbExists: true, RuleBioExists: true},
+		},
+		{
+			name:     "include-only keeps just the included categories",
+			category: TriFilter{Include: []string{"nfo", "metadata"}},
+			wantRule: map[string]bool{RuleNFOExists: true, RuleBioExists: true},
+		},
+		{
+			name:     "exclude-only drops just the excluded category",
+			category: TriFilter{Exclude: []string{"image"}},
+			wantRule: map[string]bool{RuleNFOExists: true, RuleBioExists: true},
+		},
+		{
+			name:     "include and exclude combine on the join column",
+			category: TriFilter{Include: []string{"nfo", "image"}, Exclude: []string{"image"}},
+			wantRule: map[string]bool{RuleNFOExists: true},
+		},
+		{
+			name:     "bare-value back-compat keeps only that category",
+			category: IncludeOnly("image"),
+			wantRule: map[string]bool{RuleThumbExists: true},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, total, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+				Status:   "active",
+				Category: tc.category,
+			})
+			if err != nil {
+				t.Fatalf("ListViolationsFilteredPaged: %v", err)
+			}
+			if total != len(tc.wantRule) {
+				t.Errorf("total = %d, want %d", total, len(tc.wantRule))
+			}
+			gotRule := map[string]bool{}
+			for _, v := range rows {
+				gotRule[v.RuleID] = true
+			}
+			for rid := range tc.wantRule {
+				if !gotRule[rid] {
+					t.Errorf("expected rule %q in result, missing (got=%v)", rid, gotRule)
+				}
+			}
+			for rid := range gotRule {
+				if !tc.wantRule[rid] {
+					t.Errorf("unexpected rule %q in result", rid)
+				}
+			}
+		})
+	}
+}
+
+// TestCountActiveViolationsFacet_TriStateCrossDimension pins the facet-count
+// semantics under the tri-state contract: a count query for dimension X must
+// apply an active filter on a DIFFERENT dimension Y while NOT applying X's own
+// filter to its counts. This keeps the flyout badges meaningful (each badge
+// shows "how many remain if I pick this value, given my other active filters")
+// while a value in the same dimension is being toggled. Here Y = severity
+// (tri-state) constrains the severity-by-rule and category counts.
+func TestCountActiveViolationsFacet_TriStateCrossDimension(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Two error rows (nfo + image categories) and one warning row (image).
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2", Severity: "error", Message: "m2", Fixable: false, Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "A3", Severity: "warning", Message: "m3", Fixable: true, Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Active cross-dimension filter: include only error-severity rows.
+	p := ViolationListParams{Severity: IncludeOnly("error")}
+
+	// Category counts must reflect the severity filter (the OTHER dimension):
+	// only the two error rows count -> nfo=1, image=1, metadata=0.
+	byCat, err := svc.CountActiveViolationsByCategory(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByCategory: %v", err)
+	}
+	if byCat["nfo"] != 1 || byCat["image"] != 1 || byCat["metadata"] != 0 {
+		t.Errorf("byCat under Severity=+error = %+v, want nfo=1 image=1 metadata=0", byCat)
+	}
+
+	// Fixable counts must also reflect the severity filter: the two error rows
+	// are one fixable + one not-fixable; the warning (fixable) row is excluded.
+	fixable, notFixable, err := svc.CountActiveViolationsByFixable(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByFixable: %v", err)
+	}
+	if fixable != 1 || notFixable != 1 {
+		t.Errorf("byFixable under Severity=+error = (%d,%d), want (1,1)", fixable, notFixable)
+	}
+
+	// Severity counts must NOT apply their own dimension's filter (self-exclusion):
+	// even with Severity=+error in p, the severity facet reports all severities.
+	bySev, err := svc.CountActiveViolationsBySeverity(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity: %v", err)
+	}
+	if bySev["error"] != 2 || bySev["warning"] != 1 {
+		t.Errorf("bySev self-exclusion leaked: %+v, want error=2 warning=1 (own filter must not apply)", bySev)
 	}
 }
 
@@ -2318,7 +2557,7 @@ func TestCountActiveViolationsByCategory(t *testing.T) {
 	// CountActiveViolationsByCategory ever starts honoring its own
 	// parameter, the dashboard's category badges silently fall out of
 	// sync with the filtered list.
-	facet, err := svc.CountActiveViolationsByCategory(ctx, ViolationListParams{Category: "nfo"})
+	facet, err := svc.CountActiveViolationsByCategory(ctx, ViolationListParams{Category: IncludeOnly("nfo")})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByCategory(facet): %v", err)
 	}
@@ -2394,7 +2633,7 @@ func TestCountActiveViolationsByRule(t *testing.T) {
 	// Severity filter applied by the facet pattern: only error-severity
 	// violations should remain, so RuleNFOExists drops to its error rows
 	// and the warning rules disappear from the count entirely.
-	filtered, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{Severity: "error"})
+	filtered, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{Severity: IncludeOnly("error")})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByRule(filter): %v", err)
 	}
@@ -2439,7 +2678,7 @@ func TestCountActiveViolationsByRule(t *testing.T) {
 	// pattern actually omits its own filter -- the Severity case above only
 	// exercises cross-dimension filtering and would still pass if the rule
 	// facet silently started honoring its own RuleID input.
-	facet, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{RuleID: RuleNFOExists})
+	facet, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{RuleID: IncludeOnly(RuleNFOExists)})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByRule(RuleID facet): %v", err)
 	}
@@ -2518,7 +2757,7 @@ func TestCountActiveViolationsByLibrary(t *testing.T) {
 
 	// Facet pattern: the library dimension is excluded from its own filter,
 	// so passing LibraryID should not shrink the result set.
-	filtered, err := svc.CountActiveViolationsByLibrary(ctx, ViolationListParams{LibraryID: "lib-a"})
+	filtered, err := svc.CountActiveViolationsByLibrary(ctx, ViolationListParams{LibraryID: IncludeOnly("lib-a")})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByLibrary(filter): %v", err)
 	}
@@ -2560,7 +2799,7 @@ func TestCountActiveViolationsByFixable(t *testing.T) {
 
 	// Facet pattern: filtering by Fixable must NOT restrict the result because
 	// the fixable dimension is omitted from its own filter.
-	fixable2, notFixable2, err := svc.CountActiveViolationsByFixable(ctx, ViolationListParams{Fixable: "yes"})
+	fixable2, notFixable2, err := svc.CountActiveViolationsByFixable(ctx, ViolationListParams{Fixable: IncludeOnly("yes")})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByFixable(filter): %v", err)
 	}
@@ -2967,12 +3206,12 @@ func TestResolveViolationIfActive(t *testing.T) {
 }
 
 // TestCountActiveViolations_LibraryFilterMaterializesArtistJoin exercises the
-// new `else if strings.Contains(where, "FROM artist_libraries")` guards added
-// to BySeverity, ByCategory, ByRule, and ByFixable. When the caller sets
-// LibraryID, buildViolationFilter emits an EXISTS subquery referencing the
-// `a` alias, so each facet count must materialize the LEFT JOIN to artists
-// even when its own filter dimension does not otherwise need it. Without
-// the guard the SQL would fail with "no such column: a.id".
+// needArtistJoin guard threaded through BySeverity, ByCategory, ByRule, and
+// ByFixable. When the caller sets LibraryID, buildViolationFilter emits an
+// EXISTS subquery referencing the `a` alias and returns needArtistJoin=true,
+// so each facet count must materialize the LEFT JOIN to artists even when its
+// own filter dimension does not otherwise need it. Without the join the SQL
+// would fail with "no such column: a.id".
 func TestCountActiveViolations_LibraryFilterMaterializesArtistJoin(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
@@ -3022,7 +3261,7 @@ func TestCountActiveViolations_LibraryFilterMaterializesArtistJoin(t *testing.T)
 		}
 	}
 
-	p := ViolationListParams{LibraryID: "lib-x"}
+	p := ViolationListParams{LibraryID: IncludeOnly("lib-x")}
 
 	bySev, err := svc.CountActiveViolationsBySeverity(ctx, p)
 	if err != nil {
@@ -3065,12 +3304,221 @@ func TestCountActiveViolations_LibraryFilterMaterializesArtistJoin(t *testing.T)
 	}
 
 	// Sanity: lib-y sees the inverse counts (the warning, non-fixable row).
-	pY := ViolationListParams{LibraryID: "lib-y"}
+	pY := ViolationListParams{LibraryID: IncludeOnly("lib-y")}
 	bySevY, err := svc.CountActiveViolationsBySeverity(ctx, pY)
 	if err != nil {
 		t.Fatalf("CountActiveViolationsBySeverity(lib-y): %v", err)
 	}
 	if bySevY["warning"] != 1 || bySevY["error"] != 0 {
 		t.Errorf("bySev (lib-y) = %+v, want warning=1 error=0", bySevY)
+	}
+}
+
+// seedTwoLibraryArtists inserts two libraries (lib-a, lib-b), one artist per
+// library, and one open violation per artist with the given fixability. It
+// returns nothing; the caller seeds further state and asserts. The lib-a
+// artist's violation is the "error" row, lib-b's is the "warning" row, so
+// callers can distinguish them by severity in the result set.
+func seedTwoLibraryArtists(t *testing.T, db *sql.DB, svc *Service, aFixable, bFixable bool) {
+	t.Helper()
+	ctx := context.Background()
+	for _, lib := range []struct{ id, name string }{
+		{"lib-a", "Library A"},
+		{"lib-b", "Library B"},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
+			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name); err != nil {
+			t.Fatalf("insert library %s: %v", lib.id, err)
+		}
+	}
+	for _, a := range []struct{ id, libID string }{
+		{"a-a", "lib-a"},
+		{"a-b", "lib-b"},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+			VALUES (?, ?, ?, 'person', '/music/'||?)`, a.id, a.id, a.id, a.id); err != nil {
+			t.Fatalf("insert artist %s: %v", a.id, err)
+		}
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+			a.id, a.libID); err != nil {
+			t.Fatalf("insert artist_libraries %s: %v", a.id, err)
+		}
+	}
+	for _, v := range []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a-a", ArtistName: "a-a",
+			Severity: "error", Message: "m", Fixable: aFixable, Status: ViolationStatusOpen},
+		{RuleID: RuleNFOExists, ArtistID: "a-b", ArtistName: "a-b",
+			Severity: "warning", Message: "m", Fixable: bFixable, Status: ViolationStatusOpen},
+	} {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation %s: %v", v.ArtistID, err)
+		}
+	}
+}
+
+// TestListViolationsFilteredPaged_TriStateLibraryExclude exercises the library
+// tri-state EXCLUDE branch (the NOT EXISTS subquery in buildViolationFilter):
+// excluding lib-a must return only the lib-b artist's violations, and the
+// inverse include must return only lib-a's. This pins the NOT EXISTS path that
+// the include-only existing tests do not cover.
+func TestListViolationsFilteredPaged_TriStateLibraryExclude(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedTwoLibraryArtists(t, db, svc, true, false)
+
+	// Exclude lib-a -> only the lib-b artist (the "warning" row) remains.
+	rows, total, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+		Status:    "active",
+		LibraryID: TriFilter{Exclude: []string{"lib-a"}},
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFilteredPaged(exclude lib-a): %v", err)
+	}
+	if total != 1 || len(rows) != 1 {
+		t.Fatalf("exclude lib-a: total=%d len=%d, want 1/1 (rows=%+v)", total, len(rows), rows)
+	}
+	if rows[0].ArtistID != "a-b" {
+		t.Errorf("exclude lib-a returned artist %q, want a-b", rows[0].ArtistID)
+	}
+
+	// Sanity: including lib-a is the inverse (only the lib-a artist).
+	rowsInc, totalInc, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+		Status:    "active",
+		LibraryID: TriFilter{Include: []string{"lib-a"}},
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFilteredPaged(include lib-a): %v", err)
+	}
+	if totalInc != 1 || len(rowsInc) != 1 || rowsInc[0].ArtistID != "a-a" {
+		t.Errorf("include lib-a: total=%d rows=%+v, want 1 row for a-a", totalInc, rowsInc)
+	}
+}
+
+// TestCountActiveViolations_LibraryExcludeMaterializesArtistJoin pins the
+// needArtistJoin path for the EXCLUDE side. With a library Exclude filter and
+// no Include, buildViolationFilter still sets needArtistJoin=true so the facet
+// counts (CountActiveViolationsBySeverity / ByFixable) materialize the `a`
+// join the NOT EXISTS subquery references. Excluding lib-a must yield only the
+// lib-b row's counts (warning, non-fixable).
+func TestCountActiveViolations_LibraryExcludeMaterializesArtistJoin(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// SeedDefaults so the ByRule/ByCategory facets (which JOIN rules) resolve.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	// lib-a artist fixable, lib-b artist not fixable.
+	seedTwoLibraryArtists(t, db, svc, true, false)
+
+	p := ViolationListParams{LibraryID: TriFilter{Exclude: []string{"lib-a"}}}
+
+	// Severity facet: only the lib-b (warning) row survives the exclude.
+	bySev, err := svc.CountActiveViolationsBySeverity(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity(exclude lib-a): %v", err)
+	}
+	if bySev["warning"] != 1 || bySev["error"] != 0 {
+		t.Errorf("bySev (exclude lib-a) = %+v, want warning=1 error=0", bySev)
+	}
+
+	// Fixable facet: the surviving lib-b row is not fixable -> (0, 1). If the
+	// `a` join were not materialized the NOT EXISTS subquery would fail to
+	// resolve and the counts would be wrong (or the query would error).
+	fixable, notFixable, err := svc.CountActiveViolationsByFixable(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByFixable(exclude lib-a): %v", err)
+	}
+	if fixable != 0 || notFixable != 1 {
+		t.Errorf("byFixable (exclude lib-a) = (%d, %d), want (0, 1)", fixable, notFixable)
+	}
+}
+
+// TestListViolationsFilteredPaged_TriStateFixable exercises the fixable
+// tri-state contract end to end, including the "no" -> 0 / "yes" -> 1 mapping
+// in fixableToBits. IncludeOnly("no") must return only non-fixable rows, and
+// Exclude:["yes"] must do the same (exclude the fixable rows). The inverse
+// include/exclude on "yes" returns only the fixable row.
+func TestListViolationsFilteredPaged_TriStateFixable(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Two fixable rows and one non-fixable row, all active.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "f1", ArtistName: "F1", Severity: "error", Message: "m1", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "f2", ArtistName: "F2", Severity: "warning", Message: "m2", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleBioExists, ArtistID: "f3", ArtistName: "F3", Severity: "info", Message: "m3", Fixable: false, Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// fixableArtists collapses the result set into the set of artist IDs.
+	fixableArtists := func(rows []RuleViolation) map[string]bool {
+		m := map[string]bool{}
+		for _, v := range rows {
+			m[v.ArtistID] = true
+		}
+		return m
+	}
+
+	cases := []struct {
+		name    string
+		fixable TriFilter
+		want    map[string]bool
+	}{
+		{
+			name:    "IncludeOnly no returns only non-fixable rows (no -> 0)",
+			fixable: IncludeOnly("no"),
+			want:    map[string]bool{"f3": true},
+		},
+		{
+			name:    "Exclude yes returns only non-fixable rows (yes -> 1 NOT IN)",
+			fixable: TriFilter{Exclude: []string{"yes"}},
+			want:    map[string]bool{"f3": true},
+		},
+		{
+			name:    "IncludeOnly yes returns only fixable rows",
+			fixable: IncludeOnly("yes"),
+			want:    map[string]bool{"f1": true, "f2": true},
+		},
+		{
+			name:    "Exclude no returns only fixable rows",
+			fixable: TriFilter{Exclude: []string{"no"}},
+			want:    map[string]bool{"f1": true, "f2": true},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, total, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+				Status:  "active",
+				Fixable: tc.fixable,
+			})
+			if err != nil {
+				t.Fatalf("ListViolationsFilteredPaged: %v", err)
+			}
+			if total != len(tc.want) {
+				t.Errorf("total = %d, want %d (rows=%+v)", total, len(tc.want), rows)
+			}
+			got := fixableArtists(rows)
+			for id := range tc.want {
+				if !got[id] {
+					t.Errorf("expected artist %q in result, missing (got=%v)", id, got)
+				}
+			}
+			for id := range got {
+				if !tc.want[id] {
+					t.Errorf("unexpected artist %q in result", id)
+				}
+			}
+		})
 	}
 }

@@ -59,8 +59,8 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 	// Verify bg_opacity is present with its default value.
 	if got, ok := prefs[PrefBgOpacity]; !ok {
 		t.Error("missing default key \"bg_opacity\"")
-	} else if got != "65" {
-		t.Errorf("key %q: expected default %q, got %q", PrefBgOpacity, "65", got)
+	} else if got != "85" {
+		t.Errorf("key %q: expected default %q, got %q", PrefBgOpacity, "85", got)
 	}
 
 	// Verify the romanization fallback preference is present with its default value.

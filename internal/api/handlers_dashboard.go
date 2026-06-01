@@ -11,18 +11,57 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
+	"github.com/sydlexius/stillwater/web/templates/next"
 )
 
 // dashboardFilterParams holds the parsed filter state from a dashboard request.
-// Each field holds at most one value (the first non-empty entry wins) because
-// the underlying rule.ViolationListParams is single-value per dimension.
+// Each filter dimension is a tri-state include/exclude set (rule.TriFilter): the
+// flyout repeats the same query key once per value, prefixing "+" for include
+// and "-" for exclude. A bare value with no prefix is treated as include for
+// backward compatibility with older links and the legacy single-select form.
 type dashboardFilterParams struct {
 	Search    string
-	Severity  string
-	Category  string
-	LibraryID string
-	RuleID    string
-	Fixable   string // "yes", "no", or ""
+	Severity  rule.TriFilter
+	Category  rule.TriFilter
+	LibraryID rule.TriFilter
+	RuleID    rule.TriFilter
+	Fixable   rule.TriFilter // values: "yes", "no"
+}
+
+// parseTriFilter reads a single multi-valued query parameter into a tri-state
+// include/exclude set. Each value is classified by its prefix:
+//
+//   - "+value" -> include
+//   - "-value" -> exclude
+//   - "value"  (bare, no prefix) -> include (backward compatible)
+//
+// Empty / whitespace-only values are skipped, as is a bare "+" or "-" with no
+// value after the prefix (which would otherwise inject an empty-string filter
+// value). The returned slices are nil when no value falls into that bucket, so
+// an absent key yields a zero-value (empty) TriFilter that adds no SQL clause.
+// The result is normalized (dedupe, exclude-wins, whitelist) before return.
+func parseTriFilter(values []string) rule.TriFilter {
+	var f rule.TriFilter
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		switch v[0] {
+		case '+':
+			if rest := v[1:]; rest != "" {
+				f.Include = append(f.Include, rest)
+			}
+		case '-':
+			if rest := v[1:]; rest != "" {
+				f.Exclude = append(f.Exclude, rest)
+			}
+		default:
+			// Bare value: include (back-compat with old single-select links).
+			f.Include = append(f.Include, v)
+		}
+	}
+	return f.Normalized()
 }
 
 // parseDashboardFilters reads search and filter parameters from the request
@@ -30,21 +69,20 @@ type dashboardFilterParams struct {
 //
 // `library_id` is the canonical key (matches the artists and compliance
 // pages); `library` is accepted as a parse-time alias so existing bookmarks
-// from the old dashboard URL form keep working. library_id wins when both
-// are present.
+// from the old dashboard URL form keep working. Both keys' values are merged
+// into the same tri-state filter.
 func parseDashboardFilters(req *http.Request) dashboardFilterParams {
 	q := req.URL.Query()
-	libraryID := q.Get("library_id")
-	if libraryID == "" {
-		libraryID = q.Get("library")
-	}
+	// Merge the canonical `library_id` key with the legacy `library` alias so
+	// old bookmarks keep working under the tri-state contract.
+	libraryValues := append(append([]string{}, q["library_id"]...), q["library"]...)
 	return dashboardFilterParams{
 		Search:    strings.TrimSpace(q.Get("search")),
-		Severity:  q.Get("severity"),
-		Category:  q.Get("category"),
-		LibraryID: libraryID,
-		RuleID:    q.Get("rule"),
-		Fixable:   q.Get("fixable"),
+		Severity:  parseTriFilter(q["severity"]),
+		Category:  parseTriFilter(q["category"]),
+		LibraryID: parseTriFilter(libraryValues),
+		RuleID:    parseTriFilter(q["rule"]),
+		Fixable:   parseTriFilter(q["fixable"]),
 	}
 }
 
@@ -102,11 +140,17 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 			BasePath:   r.basePath,
 			// Preserve filter state so dashboardLoadMoreURL can build the next page URL.
 			Search:    filters.Search,
-			Severity:  filters.Severity,
-			Category:  filters.Category,
-			LibraryID: filters.LibraryID,
-			RuleID:    filters.RuleID,
-			Fixable:   filters.Fixable,
+			Severity:  firstInclude(filters.Severity),
+			Category:  firstInclude(filters.Category),
+			LibraryID: firstInclude(filters.LibraryID),
+			RuleID:    firstInclude(filters.RuleID),
+			Fixable:   firstInclude(filters.Fixable),
+
+			SeverityFilter: filters.Severity,
+			CategoryFilter: filters.Category,
+			LibraryFilter:  filters.LibraryID,
+			RuleFilter:     filters.RuleID,
+			FixableFilter:  filters.Fixable,
 		}
 		renderTempl(w, req, templates.DashboardActionMoreRows(data))
 		return
@@ -185,11 +229,17 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 		HealthStatsError: healthStatsError,
 
 		Search:    filters.Search,
-		Severity:  filters.Severity,
-		Category:  filters.Category,
-		LibraryID: filters.LibraryID,
-		RuleID:    filters.RuleID,
-		Fixable:   filters.Fixable,
+		Severity:  firstInclude(filters.Severity),
+		Category:  firstInclude(filters.Category),
+		LibraryID: firstInclude(filters.LibraryID),
+		RuleID:    firstInclude(filters.RuleID),
+		Fixable:   firstInclude(filters.Fixable),
+
+		SeverityFilter: filters.Severity,
+		CategoryFilter: filters.Category,
+		LibraryFilter:  filters.LibraryID,
+		RuleFilter:     filters.RuleID,
+		FixableFilter:  filters.Fixable,
 
 		SeverityCounts: severityCounts,
 		CategoryCounts: categoryCounts,
@@ -206,36 +256,67 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	// at template render time. Only set on HTMX requests (non-HTMX callers
 	// already have the correct URL in their bar).
 	if req.Header.Get("HX-Request") == "true" {
-		filterparams.WriteHXPushURL(w, r.basePath, urlValuesFromFilters(filters))
+		// The push URL must track the user-facing screen URL, which differs by
+		// channel: the stable dashboard is the app root ("$basePath/"), but the
+		// next/ dashboard is "$basePath/next/dashboard". Without the channel
+		// branch the shared "$basePath/" push would rewrite the next address bar
+		// back to the root on the action-queue's load-time swap.
+		if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+			// The next dashboard is the next channel's index at "/next/", so the
+			// address bar must track that root (with a trailing slash), not a
+			// "/next/dashboard" sub-path.
+			filterparams.WriteHXPushURLForPath(w, r.basePath+"/next/", urlValuesFromFilters(filters))
+		} else {
+			filterparams.WriteHXPushURL(w, r.basePath, urlValuesFromFilters(filters))
+		}
+	}
+
+	// The next/ channel renders a slimmer fragment: the next dashboard page owns
+	// the header strip + sticky toolbar (search, filter trigger, run-rules), so
+	// the next fragment omits the stable header/search bar to avoid duplicate
+	// chrome. Cards, flyout, active-filter chips, and load-more are reused.
+	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+		renderTempl(w, req, next.DashboardActionQueue(data))
+		return
 	}
 	renderTempl(w, req, templates.DashboardActionQueue(data))
 }
 
+// firstInclude returns the first included value of a tri-state filter, or "" if
+// none. It is the lossy bridge that populates the dashboard template's scalar
+// filter fields (which back the current single-select chip UI) from the full
+// tri-state state.
+func firstInclude(f rule.TriFilter) string {
+	if len(f.Include) > 0 {
+		return f.Include[0]
+	}
+	return ""
+}
+
+// addTriValues appends the tri-state values for one dimension to q under the
+// given key, using the flyout's URL contract: "+value" for include and
+// "-value" for exclude. It delegates to rule.TriFilter.AppendURLValues so the
+// wire form has a single source of truth shared with the template helpers.
+func addTriValues(q url.Values, key string, f rule.TriFilter) {
+	f.AppendURLValues(q, key)
+}
+
 // urlValuesFromFilters converts a filter struct into url.Values, skipping
-// empty fields. Always writes the canonical `library_id` key so the URL
-// reflects the post-rename form; the legacy `library` alias is only honored
-// on parse (parseDashboardFilters). Kept small and dedicated so the test
-// can exercise it.
+// empty fields. Each tri-state dimension is emitted as repeated key=value pairs
+// carrying the "+"/"-" state prefix (the flyout URL contract). Always writes the
+// canonical `library_id` key so the URL reflects the post-rename form; the
+// legacy `library` alias is only honored on parse (parseDashboardFilters). Kept
+// small and dedicated so the test can exercise it.
 func urlValuesFromFilters(f dashboardFilterParams) url.Values {
 	q := url.Values{}
 	if f.Search != "" {
 		q.Set("search", f.Search)
 	}
-	if f.Severity != "" {
-		q.Set("severity", f.Severity)
-	}
-	if f.Category != "" {
-		q.Set("category", f.Category)
-	}
-	if f.LibraryID != "" {
-		q.Set("library_id", f.LibraryID)
-	}
-	if f.RuleID != "" {
-		q.Set("rule", f.RuleID)
-	}
-	if f.Fixable != "" {
-		q.Set("fixable", f.Fixable)
-	}
+	addTriValues(q, "severity", f.Severity)
+	addTriValues(q, "category", f.Category)
+	addTriValues(q, "library_id", f.LibraryID)
+	addTriValues(q, "rule", f.RuleID)
+	addTriValues(q, "fixable", f.Fixable)
 	return q
 }
 
@@ -272,6 +353,15 @@ func (r *Router) handleDashboardActivityFeed(w http.ResponseWriter, req *http.Re
 	data := templates.ActivityFeedData{
 		Changes:  changes,
 		BasePath: r.basePath,
+	}
+
+	// The next/ channel's activity rail renders its own fragment whose row
+	// markup matches the live SSE-appended rows (so initial and live rows look
+	// identical), with an empty-on-boot idle hint instead of the stable
+	// "View all activity" footer.
+	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+		renderTempl(w, req, next.DashboardActivityFeedNext(data))
+		return
 	}
 
 	renderTempl(w, req, templates.DashboardActivityFeed(data))
