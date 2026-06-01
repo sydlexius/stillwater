@@ -113,6 +113,22 @@ func TestWriteHXPushURLForPath(t *testing.T) {
 			vals: url.Values{"category": []string{"image"}},
 			want: "/stillwater/next/dashboard?category=image",
 		},
+		{
+			// Defensive: an empty path normalizes to "/" before the header is
+			// written (matching WriteHXPushURL), so a caller that passes "" never
+			// emits a relative/empty HX-Push-Url that the browser would resolve
+			// against the internal fetch endpoint.
+			name: "empty path normalizes to root, no values",
+			path: "",
+			vals: url.Values{},
+			want: "/",
+		},
+		{
+			name: "empty path normalizes to root, with values",
+			path: "",
+			vals: url.Values{"severity": []string{"error"}},
+			want: "/?severity=error",
+		},
 	}
 
 	for _, tc := range cases {

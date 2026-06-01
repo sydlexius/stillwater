@@ -457,14 +457,38 @@ templ DashboardSearchBar(data ActionQueueData) {
 				hx-preserve="true"
 				class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 py-1.5 pl-9 pr-8 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 			/>
-			// Hidden inputs carry the current filter state so hx-include above can forward it.
-			<input type="hidden" name="severity" value={ data.Severity }/>
-			<input type="hidden" name="category" value={ data.Category }/>
-			<input type="hidden" name="library_id" value={ data.LibraryID }/>
-			<input type="hidden" name="rule" value={ data.RuleID }/>
-			<input type="hidden" name="fixable" value={ data.Fixable }/>
+			// Hidden inputs carry the FULL tri-state filter state so the search
+			// box's hx-include above forwards every active filter value, not just
+			// the first included one. The flyout is tri-state (per #1334 it is the
+			// shared component used by this stable page too), so a single scalar
+			// input per dimension would drop every excluded value and every 2nd+
+			// included value when the user types in search. Emitting one hidden
+			// input per include (+value) and per exclude (-value) mirrors the same
+			// "+"/"-" wire contract TriFilter.AppendURLValues uses, so a search
+			// round-trips the complete multi-value set (e.g. ?severity=+error&
+			// severity=-warning).
+			@dashHiddenFilterInputs("severity", data.SeverityFilter)
+			@dashHiddenFilterInputs("category", data.CategoryFilter)
+			@dashHiddenFilterInputs("library_id", data.LibraryFilter)
+			@dashHiddenFilterInputs("rule", data.RuleFilter)
+			@dashHiddenFilterInputs("fixable", data.FixableFilter)
 		</div>
 	</div>
+}
+
+// dashHiddenFilterInputs renders one hidden form input per tri-state value of a
+// single filter dimension so the search box's hx-include forwards the COMPLETE
+// include/exclude set, not a lossy single scalar. Each included value is emitted
+// as "+value" and each excluded value as "-value" under the dimension's key,
+// matching TriFilter.AppendURLValues and the parseTriFilter reader, so the wire
+// form round-trips losslessly through a stable search.
+templ dashHiddenFilterInputs(key string, f rule.TriFilter) {
+	for _, v := range f.Include {
+		<input type="hidden" name={ key } value={ "+" + v }/>
+	}
+	for _, v := range f.Exclude {
+		<input type="hidden" name={ key } value={ "-" + v }/>
+	}
 }
 
 // DashboardActiveFilters renders a removable chip for each active filter so

@@ -1897,6 +1897,14 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   align-items: center;
   gap: 0.25rem 0.75rem;
   font-size: 12px;
+  /* slate-500: AA-legible for 12px copy on the light theme's white surface.
+   * The lighter slate-400 used here before was too faint at this size. The
+   * dark-theme override below restores slate-400, which reads correctly on the
+   * dark surface. Shared with the next/ artists screen (intended). */
+  color: #64748b;
+}
+.dark .sw-next-artists .sw-list-tips,
+.dark .sw-next-dashboard .sw-list-tips {
   color: #94a3b8;
 }
 

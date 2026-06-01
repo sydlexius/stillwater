@@ -95,6 +95,16 @@ func TestUXMiddleware_HeaderOptIn(t *testing.T) {
 		{"stable mode ignores next header (preview off)", "stable", "next", "/dashboard/actions", UXStable},
 		{"next mode header next stays next", "next", "next", "/dashboard/actions", UXNext},
 		{"dual unrecognized header value falls through to default", "dual", "bogus", "/dashboard/actions", UXStable},
+		// Path opt-in + header precedence on the /next lane itself. The path sets
+		// the channel to next first, then the X-Stillwater-UX header is applied
+		// afterward (see UX): so an explicit "stable" header overrides the path
+		// opt-in and forces the request back to stable, while a "next" header
+		// agrees with the path and stays next. This locks that the header is the
+		// final word, not the path.
+		{"dual next-path + stable header", "dual", "stable", "/next/dashboard", UXStable},
+		{"dual next-path + next header", "dual", "next", "/next/dashboard", UXNext},
+		{"dual next-path + unset header keeps path opt-in", "dual", "", "/next/dashboard", UXNext},
+		{"next next-path + stable header", "next", "stable", "/next/dashboard", UXStable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

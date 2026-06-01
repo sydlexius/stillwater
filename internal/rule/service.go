@@ -1065,6 +1065,18 @@ func fixableToBits(values []string) []string {
 // use needArtistJoin instead of scanning the emitted SQL for the
 // "FROM artist_libraries" substring.
 func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []any, needJoin bool, needArtistJoin bool) {
+	// Defensively normalize every tri-state dimension before emitting SQL so an
+	// overlapping include/exclude set can never produce clause semantics that
+	// disagree with TriFilter.Normalized() (dedupe, exclude-wins on single-value
+	// full overlap, whitelist: a non-empty Include drops a stale Exclude). The
+	// parse boundary (parseTriFilter) already normalizes user input, but internal
+	// or future callers that construct ViolationListParams directly may not.
+	p.Severity = p.Severity.Normalized()
+	p.Category = p.Category.Normalized()
+	p.RuleID = p.RuleID.Normalized()
+	p.LibraryID = p.LibraryID.Normalized()
+	p.Fixable = p.Fixable.Normalized()
+
 	// Status filter (same "active" logic as ListViolations)
 	switch p.Status {
 	case "active":

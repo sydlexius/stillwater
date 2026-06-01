@@ -88,7 +88,17 @@ func (r *Router) handleNextDashboardPage(w http.ResponseWriter, req *http.Reques
 	// is shared with handleIndex.
 	initialQuery := buildDashboardInitialQuery(req.URL.Query())
 
+	// Build the filter-flyout state (parsed selection + facet counts + library
+	// list) so the page can render the flyout in a PERSISTENT, page-level
+	// container. The flyout was previously rendered inside the HTMX-swapped
+	// /dashboard/actions fragment, so #dashboard-filter-flyout did not exist
+	// until the first queue load and the queue's error state destroyed it; the
+	// page-level Filters button then had nothing to open. Rendering it here at
+	// page level (mirroring what the stable channel's facet block computes) makes
+	// the button work from first paint, independent of the queue's load state.
+	flyoutData := r.buildDashboardFlyoutData(req)
+
 	renderTempl(w, req, next.DashboardPageNext(
 		r.assetsFor(req), stats, healthStatsError,
-		fixableCount, needsYouCount, fixableCountsError, initialQuery))
+		fixableCount, needsYouCount, fixableCountsError, initialQuery, flyoutData))
 }

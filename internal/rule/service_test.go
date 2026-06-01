@@ -1126,6 +1126,20 @@ func TestListViolationsFilteredPaged_TriStateSeverity(t *testing.T) {
 			wantSev:  map[string]int{"warning": 1},
 			wantLen:  1,
 		},
+		{
+			// Regression: a single-valued FULL overlap (the same value in both
+			// Include and Exclude) ONLY behaves correctly because buildViolationFilter
+			// normalizes via TriFilter.Normalized() (exclude-wins). Without that
+			// normalization the raw clauses would emit "severity IN ('warning') AND
+			// severity NOT IN ('warning')" -- self-contradictory, returning zero rows
+			// (or, if the include were dropped naively, all-but-warning by accident).
+			// The normalized contract is exclude-wins: "warning" is excluded, so the
+			// warning row is dropped and error+info remain.
+			name:     "full-overlap single value: exclude wins, warning excluded",
+			severity: TriFilter{Include: []string{"warning"}, Exclude: []string{"warning"}},
+			wantSev:  map[string]int{"error": 1, "info": 1},
+			wantLen:  2,
+		},
 	}
 
 	for _, tc := range cases {
@@ -3394,6 +3408,62 @@ func TestListViolationsFilteredPaged_TriStateLibraryExclude(t *testing.T) {
 	}
 	if totalInc != 1 || len(rowsInc) != 1 || rowsInc[0].ArtistID != "a-a" {
 		t.Errorf("include lib-a: total=%d rows=%+v, want 1 row for a-a", totalInc, rowsInc)
+	}
+}
+
+// TestListViolationsFilteredPaged_LibraryIncludeDropsStaleExclude is a
+// regression that ONLY passes because buildViolationFilter normalizes the
+// LibraryID filter via TriFilter.Normalized() (whitelist: a non-empty Include
+// drops a stale Exclude). It seeds one artist that belongs to BOTH lib-a and
+// lib-b, then filters with Include=[lib-a] AND Exclude=[lib-b]. Normalized()
+// puts the dimension in whitelist mode and drops the Exclude, so the shared
+// artist is kept (it IS in lib-a). Without normalization the leftover
+// "NOT EXISTS ... lib-b" clause would wrongly drop the shared artist, since it
+// is also a member of lib-b -- the include and exclude would contradict.
+func TestListViolationsFilteredPaged_LibraryIncludeDropsStaleExclude(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	for _, lib := range []struct{ id, name string }{
+		{"lib-a", "Library A"},
+		{"lib-b", "Library B"},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
+			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name); err != nil {
+			t.Fatalf("insert library %s: %v", lib.id, err)
+		}
+	}
+	// One artist, member of BOTH libraries (the shared-library case).
+	if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+		VALUES ('a-shared', 'a-shared', 'a-shared', 'person', '/music/a-shared')`); err != nil {
+		t.Fatalf("insert shared artist: %v", err)
+	}
+	for _, libID := range []string{"lib-a", "lib-b"} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES ('a-shared', ?, 'filesystem')`,
+			libID); err != nil {
+			t.Fatalf("insert artist_libraries %s: %v", libID, err)
+		}
+	}
+	if err := svc.UpsertViolation(ctx, &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a-shared", ArtistName: "a-shared",
+		Severity: "error", Message: "m", Status: ViolationStatusOpen,
+	}); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	// Include lib-a AND Exclude lib-b: whitelist mode drops the stale Exclude, so
+	// the shared artist (a member of lib-a) is kept.
+	rows, total, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+		Status:    "active",
+		LibraryID: TriFilter{Include: []string{"lib-a"}, Exclude: []string{"lib-b"}},
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFilteredPaged: %v", err)
+	}
+	if total != 1 || len(rows) != 1 || rows[0].ArtistID != "a-shared" {
+		t.Fatalf("include lib-a + exclude lib-b: total=%d rows=%+v, want 1 row for a-shared (whitelist drops stale exclude)", total, rows)
 	}
 }
 

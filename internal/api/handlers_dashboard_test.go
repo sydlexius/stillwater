@@ -586,14 +586,18 @@ func sameStringSet(a, b []string) bool {
 func TestParseDashboardFiltersLibraryAlias(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
-		raw  string
-		want []string // expected include set (order-independent)
+		name    string
+		raw     string
+		want    []string // expected include set (order-independent)
+		wantExc []string // expected exclude set (order-independent)
 	}{
 		{name: "canonical key", raw: "library_id=lib-1", want: []string{"lib-1"}},
 		{name: "legacy alias", raw: "library=lib-2", want: []string{"lib-2"}},
 		{name: "both keys merge into one set", raw: "library=legacy&library_id=canonical", want: []string{"canonical", "legacy"}},
-		{name: "exclude prefix on alias", raw: "library=-lib-x", want: nil},
+		// The "-" prefix on the legacy alias must route the value into the
+		// Exclude set, not silently drop it: asserting only Include==nil here
+		// would pass even if the exclude were lost, so pin Exclude too.
+		{name: "exclude prefix on alias", raw: "library=-lib-x", want: nil, wantExc: []string{"lib-x"}},
 		{name: "neither set", raw: "", want: nil},
 	}
 	for _, tc := range cases {
@@ -602,6 +606,9 @@ func TestParseDashboardFiltersLibraryAlias(t *testing.T) {
 			lib := parseDashboardFilters(req).LibraryID
 			if !sameStringSet(lib.Include, tc.want) {
 				t.Errorf("LibraryID include = %v, want %v (raw=%q)", lib.Include, tc.want, tc.raw)
+			}
+			if !sameStringSet(lib.Exclude, tc.wantExc) {
+				t.Errorf("LibraryID exclude = %v, want %v (raw=%q)", lib.Exclude, tc.wantExc, tc.raw)
 			}
 		})
 	}

@@ -272,14 +272,107 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	}
 
 	// The next/ channel renders a slimmer fragment: the next dashboard page owns
-	// the header strip + sticky toolbar (search, filter trigger, run-rules), so
-	// the next fragment omits the stable header/search bar to avoid duplicate
-	// chrome. Cards, flyout, active-filter chips, and load-more are reused.
+	// the header strip + sticky toolbar (search, filter trigger, run-rules) AND
+	// the persistent page-level filter flyout, so the next fragment omits the
+	// stable header/search bar/flyout to avoid duplicate chrome. Cards,
+	// active-filter chips, and load-more are reused.
 	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
 		renderTempl(w, req, next.DashboardActionQueue(data))
 		return
 	}
 	renderTempl(w, req, templates.DashboardActionQueue(data))
+}
+
+// buildDashboardFlyoutData assembles the filter-flyout state for an initial
+// page render: the parsed tri-state filter selection plus the per-dimension
+// facet counts and the library list the flyout needs to render its pills and
+// badge counts. It is the page-render counterpart to the facet-count block in
+// handleDashboardActionQueue, factored out so the next/ dashboard page can
+// render the flyout in a PERSISTENT page-level container (not inside the
+// HTMX-swapped #action-queue fragment, which would not exist until the first
+// queue load and would be destroyed by the queue's error state).
+//
+// It deliberately does NOT load violations or health stats (the page header and
+// the queue fragment own those); only the fields DashboardFilterFlyout reads are
+// populated. Facet-count queries are best-effort: a failed dimension renders an
+// empty map / list so the flyout still opens.
+func (r *Router) buildDashboardFlyoutData(req *http.Request) templates.ActionQueueData {
+	ctx := req.Context()
+	filters := parseDashboardFilters(req)
+
+	// Mirror the queue's count params (active status + current filter scope) so
+	// the page-load facet counts match what the first queue load computes. Limit
+	// and offset are irrelevant to the count queries.
+	params := rule.ViolationListParams{
+		Status:    "active",
+		Search:    filters.Search,
+		Severity:  filters.Severity,
+		Category:  filters.Category,
+		LibraryID: filters.LibraryID,
+		RuleID:    filters.RuleID,
+		Fixable:   filters.Fixable,
+	}
+
+	categoryCounts, err := r.ruleService.CountActiveViolationsByCategory(ctx, params)
+	if err != nil {
+		r.logger.Warn("dashboard flyout category counts", "error", err)
+		categoryCounts = map[string]int{}
+	}
+	severityCounts, err := r.ruleService.CountActiveViolationsBySeverity(ctx, params)
+	if err != nil {
+		r.logger.Warn("dashboard flyout severity counts", "error", err)
+		severityCounts = map[string]int{}
+	}
+	libraryCounts, err := r.ruleService.CountActiveViolationsByLibrary(ctx, params)
+	if err != nil {
+		r.logger.Warn("dashboard flyout library counts", "error", err)
+		libraryCounts = map[string]int{}
+	}
+	ruleCounts, err := r.ruleService.CountActiveViolationsByRule(ctx, params)
+	if err != nil {
+		r.logger.Warn("dashboard flyout rule counts", "error", err)
+		ruleCounts = []rule.RuleViolationCount{}
+	}
+	fixableYes, fixableNo, err := r.ruleService.CountActiveViolationsByFixable(ctx, params)
+	if err != nil {
+		r.logger.Warn("dashboard flyout fixable counts", "error", err)
+		fixableYes, fixableNo = 0, 0
+	}
+
+	var libraries []library.Library
+	if r.libraryService != nil {
+		libs, err := r.libraryService.List(ctx)
+		if err != nil {
+			r.logger.Warn("dashboard flyout libraries", "error", err)
+		} else {
+			libraries = libs
+		}
+	}
+
+	return templates.ActionQueueData{
+		BasePath: r.basePath,
+
+		Search:    filters.Search,
+		Severity:  firstInclude(filters.Severity),
+		Category:  firstInclude(filters.Category),
+		LibraryID: firstInclude(filters.LibraryID),
+		RuleID:    firstInclude(filters.RuleID),
+		Fixable:   firstInclude(filters.Fixable),
+
+		SeverityFilter: filters.Severity,
+		CategoryFilter: filters.Category,
+		LibraryFilter:  filters.LibraryID,
+		RuleFilter:     filters.RuleID,
+		FixableFilter:  filters.Fixable,
+
+		SeverityCounts: severityCounts,
+		CategoryCounts: categoryCounts,
+		LibraryCounts:  libraryCounts,
+		RuleCounts:     ruleCounts,
+		FixableYes:     fixableYes,
+		FixableNo:      fixableNo,
+		Libraries:      libraries,
+	}
 }
 
 // firstInclude returns the first included value of a tri-state filter, or "" if

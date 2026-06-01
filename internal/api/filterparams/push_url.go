@@ -41,6 +41,9 @@ func WriteHXPushURL(w http.ResponseWriter, basePath string, vals url.Values) {
 // this). The path is emitted verbatim with no forced trailing slash, so it
 // must already be the canonical screen URL.
 func WriteHXPushURLForPath(w http.ResponseWriter, path string, vals url.Values) {
+	if path == "" {
+		path = "/"
+	}
 	if len(vals) == 0 {
 		w.Header().Set("HX-Push-Url", path)
 		return

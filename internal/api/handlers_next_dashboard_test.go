@@ -148,13 +148,21 @@ func TestHandleNextDashboardPage_FixableCountsError(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	body := w.Body.String()
-	// The count-error placeholder must be present for the bubbles.
-	if !strings.Contains(body, "---") {
-		t.Errorf("expected count-unavailable placeholder (---) in body when counts error")
-	}
 	// The bubble links still render (only the values fall back).
 	if !strings.Contains(body, "/next/?fixable=yes") {
 		t.Errorf("expected Auto-fixable bubble link even on counts error")
+	}
+	// Scope the placeholder assertion to the Auto-fixable AND Needs-you bubbles
+	// specifically: a bare strings.Contains(body, "---") false-passes because
+	// the Last-evaluated bubble always renders "---" as its initial value (the
+	// JS fills it in client-side). Each bubble is an <a> element whose href is
+	// unique, so we slice out that bubble's HTML (from its href to the closing
+	// </a>) and assert "---" lives INSIDE the fixable-counts bubbles.
+	if !widgetContainsPlaceholder(body, "/next/?fixable=yes") {
+		t.Errorf("expected count-unavailable placeholder (---) inside the Auto-fixable bubble when counts error")
+	}
+	if !widgetContainsPlaceholder(body, "/next/?fixable=no") {
+		t.Errorf("expected count-unavailable placeholder (---) inside the Needs-you bubble when counts error")
 	}
 }
 
@@ -183,9 +191,49 @@ func TestHandleNextDashboardPage_HealthStatsError(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "---") {
-		t.Errorf("expected health-unavailable placeholder (---) in body when health stats error")
+	// Scope the placeholder to the HEALTH bubble specifically. A bare
+	// strings.Contains(body, "---") false-passes here: the Last-evaluated bubble
+	// always renders "---" initially, and on a health-stats error the Artists
+	// bubble ALSO falls back to "---". The health bubble is the only one carrying
+	// the unique "health-ring" SVG class, and it ends where the Artists bubble's
+	// link begins, so we slice that window and assert "---" lives inside it.
+	healthWidget := htmlBetween(body, "health-ring", "/next/artists")
+	if healthWidget == "" {
+		t.Fatalf("could not locate the health bubble (health-ring .. /next/artists) in body")
 	}
+	if !strings.Contains(healthWidget, "---") {
+		t.Errorf("expected health-unavailable placeholder (---) inside the health bubble when health stats error")
+	}
+}
+
+// widgetContainsPlaceholder reports whether the "---" unavailable placeholder
+// appears inside the dashboard bubble whose <a> element has the given href.
+// Each header bubble is an <a> with a unique href; this slices that anchor's
+// HTML (from the href attribute to its closing </a>) so a placeholder rendered
+// by an UNRELATED bubble (e.g. the Last-evaluated bubble's always-"---" initial
+// value) cannot false-pass the assertion.
+func widgetContainsPlaceholder(body, href string) bool {
+	widget := htmlBetween(body, href, "</a>")
+	return widget != "" && strings.Contains(widget, "---")
+}
+
+// htmlBetween returns the substring of body starting at the first occurrence of
+// start and ending at the first occurrence of end that follows it (end
+// exclusive). It returns "" when either marker is absent so callers can fail
+// loudly rather than asserting against an empty window. It is a deliberately
+// tiny, dependency-free way to scope a substring assertion to a single rendered
+// widget instead of the whole page.
+func htmlBetween(body, start, end string) string {
+	i := strings.Index(body, start)
+	if i < 0 {
+		return ""
+	}
+	rest := body[i:]
+	j := strings.Index(rest, end)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
 }
 
 // TestHandleNextDashboardPage_Unauthorized verifies that on the "next" channel
@@ -279,9 +327,13 @@ func TestHandleNextDashboardPage_InitialQueryForwarded(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	body := w.Body.String()
-	// The forwarded filter surfaces as the canonical tri-state include form in
-	// the initial query the page embeds for its first action-queue fetch.
-	if !strings.Contains(body, "severity") {
-		t.Errorf("expected forwarded severity filter to appear in rendered initial query")
+	// Assert the CONCRETE forwarded query fragment buildDashboardInitialQuery
+	// emits for the selected severity, not just the bare key "severity" (which
+	// the static filter-flyout UI text already contains, so a key-only check
+	// false-passes). The handler embeds the initial query both on the action
+	// queue's hx-get URL and its data-queue-query carrier, so the encoded
+	// "severity=warning" pair must appear verbatim in the rendered page.
+	if !strings.Contains(body, "severity=warning") {
+		t.Errorf("expected forwarded filter fragment %q in rendered initial query; body did not contain it", "severity=warning")
 	}
 }

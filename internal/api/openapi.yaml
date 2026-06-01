@@ -7038,7 +7038,7 @@ paths:
                 auto_fetch_images: { type: string }
                 metadata_name_romanization_fallback: { type: string }
                 page_size: { type: string }
-                bg_opacity: { type: string }
+                bg_opacity: { type: string, example: "85" }
                 artist_detail_section_order:
                   type: array
                   items: { type: string }

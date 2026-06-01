@@ -120,10 +120,23 @@ func dashHealthArcClass(score float64) string {
 	return "text-red-500 dark:text-red-400"
 }
 
-templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResult, healthStatsError bool, autoFixableCount int, needsYouCount int, fixableCountsError bool, initialQuery string) {
+templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResult, healthStatsError bool, autoFixableCount int, needsYouCount int, fixableCountsError bool, initialQuery string, flyoutData templates.ActionQueueData) {
 	@LayoutNext(t(ctx, "dashboard.title"), assets) {
 		<div class="sw-next-dashboard space-y-2">
 			<h1 class="sr-only">{ t(ctx, "dashboard.title") }</h1>
+			<!-- Filter flyout rendered at PAGE LEVEL (persistent, NOT inside the
+			     HTMX-swapped #action-queue fragment). The Filters button
+			     (#dashboard-filters-trigger, below) opens #dashboard-filter-flyout
+			     via swDashboardPanels.toggleFilters; rendering the flyout here means
+			     it exists from first paint (before the queue's first load) and is
+			     never destroyed by the queue's showQueueError() (which only rewrites
+			     #action-queue's innerHTML). The flyout's filter selection + facet
+			     counts come from the page handler's buildDashboardFlyoutData, the
+			     same facet queries the stable channel runs; the queue reload still
+			     refreshes the queue rows + the #next-dash-count meta, while the
+			     flyout keeps its page-load-time facet counts (matching the stable
+			     channel, which likewise does not OOB-refresh the flyout counts). -->
+			@templates.DashboardFilterFlyout(flyoutData)
 			<!-- Header metrics as discrete "bubble" stat cards (M55 #1334, UAT #10):
 			     the prototype's sw-stat-row treatment (design/dashboard.jsx:113-125),
 			     a Health bubble (28px donut + score), an Artists bubble (links to the
@@ -1285,8 +1298,11 @@ templ dashSkeletonRow(titleWidth, subtitleWidth string) {
 // dashboard page (DashboardPageNext) provides its own compact header strip and
 // single sticky toolbar (search + filter trigger + run-rules), so reusing the
 // full stable DashboardActionQueue here would double-render that chrome. The
-// flyout, select-all, cards, and load-more are reused byte-for-byte from the
-// exported stable sub-templates (no fork).
+// select-all, cards, and load-more are reused byte-for-byte from the exported
+// stable sub-templates (no fork). The filter flyout is rendered ONCE at page
+// level by DashboardPageNext (a persistent container), NOT in this swapped
+// fragment, so the Filters button works before the first queue load and the
+// queue's error state cannot destroy it.
 //
 // The shared DashboardActiveFilters active-filter chips are intentionally NOT
 // rendered here (M55 #1334 UAT: "no need for selected filter bubbles, already
@@ -1296,7 +1312,12 @@ templ dashSkeletonRow(titleWidth, subtitleWidth string) {
 // is dropped. dashboardActiveFilterCount + clear-all still work from the
 // flyout, and the #next-dash-count meta is unaffected.
 templ DashboardActionQueue(data templates.ActionQueueData) {
-	@templates.DashboardFilterFlyout(data)
+	// NOTE: the filter flyout is intentionally NOT rendered here. On the next/
+	// channel the flyout is a PERSISTENT page-level element rendered by
+	// DashboardPageNext, so the page-level Filters button works before the first
+	// queue load and survives the queue's error state (showQueueError rewrites
+	// only #action-queue). Rendering it inside this swapped fragment would
+	// re-create it on every queue reload and delete it on a queue load failure.
 	// The queue-card head's meta count ("Showing N of M, sorted by severity")
 	// is updated out-of-band on every full queue (re)load so it tracks the
 	// current filter scope without the page template needing the counts at
