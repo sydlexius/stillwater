@@ -32,7 +32,6 @@
   "getPlatformState",
   "getPriorities",
   "getRulesStatus",
-  "getRunAllRulesStatus",
   "getScannerStatus",
   "getScraperConfig",
   "getWebSearchProviders",

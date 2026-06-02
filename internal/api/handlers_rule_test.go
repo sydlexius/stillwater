@@ -379,6 +379,12 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 // actually CALLS it. The call runs in the background goroutine after RunAllScoped
 // returns, so the assertion polls until lastRunAt advances; a dropped
 // MarkEvaluated call would leave it nil and fail on timeout.
+//
+// It also guards the publish ORDERING (#1803): on every poll, if
+// /rules/run-all/status already reports "completed" while the scheduler's
+// LastEvaluationAt is still nil, the handler stamped the timestamp after
+// publishing completion, which is the stale-stat race a client hits by reading
+// run-all status then /rules/status. That ordering violation fails the test.
 func TestHandleRunAllRules_StampsLastEvaluated(t *testing.T) {
 	t.Parallel()
 	stub := &stubPipeline{}
@@ -398,8 +404,28 @@ func TestHandleRunAllRules_StampsLastEvaluated(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 
+	// runAllStatus reads the same handler clients poll, returning its published
+	// Status string ("idle"/"running"/"completed"/"failed").
+	runAllStatus := func() string {
+		sreq := httptest.NewRequest(http.MethodGet, "/api/v1/rules/run-all/status", nil)
+		sw := httptest.NewRecorder()
+		r.handleRunAllRulesStatus(sw, sreq)
+		var body struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal(sw.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decoding run-all status: %v (body: %s)", err, sw.Body.String())
+		}
+		return body.Status
+	}
+
 	deadline := time.Now().Add(3 * time.Second)
 	for r.ruleScheduler.Status().LastEvaluationAt == nil {
+		// Ordering invariant (#1803): completion must never be visible before
+		// the timestamp it is supposed to accompany.
+		if runAllStatus() == "completed" {
+			t.Fatal("#1803 race: /rules/run-all/status published \"completed\" before LastEvaluationAt was stamped")
+		}
 		if time.Now().After(deadline) {
 			t.Fatal("handleRunAllRules did not stamp LastEvaluationAt within 3s (#1796 regression: MarkEvaluated not called on a manual run)")
 		}

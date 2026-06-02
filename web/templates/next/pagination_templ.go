@@ -8,7 +8,14 @@ package next
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "strings"
+import "regexp"
+
+// bareHTMLID matches a target that is a plain element id (HTML id syntax: starts
+// with a letter, then letters/digits/hyphens/underscores). Only such bare ids
+// get a "#" prefix; class selectors (".queue"), extended HTMX selectors
+// ("closest ...", "find ..."), and anything already "#"-prefixed are left as-is
+// so NewNextPagination never corrupts a valid hx-target (#1803).
+var bareHTMLID = regexp.MustCompile(`^[A-Za-z][\w-]*$`)
 
 // NextPagination is the single pagination control shared by every next-channel
 // paginated screen (dashboard action queue, artists list, ...). It renders a
@@ -44,8 +51,10 @@ type NextPaginationData struct {
 //   - a DISABLED side carries NO URL. An enabled control always renders a real
 //     hx-get; an empty hx-get would silently re-request the current URL (a
 //     no-op/wrong-page nav on a button that still looks clickable).
-//   - Target is normalized to a "#"-prefixed selector, so a caller that passes a
-//     bare id ("artists-list") still yields a working hx-target.
+//   - Target is normalized so a caller that passes a bare id ("artists-list")
+//     still yields a working "#"-prefixed hx-target, while class selectors
+//     (".queue") and extended HTMX selectors ("closest ...", "find ...") pass
+//     through untouched (#1803).
 //
 // Route all builders through this rather than assembling the literal by hand.
 func NewNextPagination(hasPrev, hasNext bool, prevURL, nextURL, target string, oob bool) NextPaginationData {
@@ -55,7 +64,7 @@ func NewNextPagination(hasPrev, hasNext bool, prevURL, nextURL, target string, o
 	if !hasNext {
 		nextURL = ""
 	}
-	if target != "" && !strings.HasPrefix(target, "#") {
+	if bareHTMLID.MatchString(target) {
 		target = "#" + target
 	}
 	return NextPaginationData{
@@ -97,7 +106,7 @@ func NextPagination(data NextPaginationData) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "pagination.aria"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 68, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 77, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 			if templ_7745c5c3_Err != nil {
@@ -167,7 +176,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 86, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 95, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -180,7 +189,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(aria)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 89, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 98, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -193,7 +202,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 90, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 99, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
@@ -206,7 +215,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(target)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 91, Col: 21}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 100, Col: 21}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
@@ -219,7 +228,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 94, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 103, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -237,7 +246,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 98, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 107, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 			if templ_7745c5c3_Err != nil {
@@ -250,7 +259,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(aria)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 103, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 112, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
@@ -263,7 +272,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 105, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 114, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
