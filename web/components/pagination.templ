@@ -55,6 +55,20 @@ func (p PaginationData) target() string {
 	return "#artist-content"
 }
 
+// Target is the exported accessor for the hx-target selector. The next-channel
+// artists builder (next.buildArtistsPagination) maps this PaginationData into
+// the shared NextPagination component and needs the same target selector
+// without duplicating the #TargetID/#artist-content default logic.
+func (p PaginationData) Target() string { return p.target() }
+
+// PageURL is the exported accessor for pageURL. It lets cross-package callers
+// (the next-channel artists list, which renders the shared NextPagination
+// Prev/Next footer instead of this component) build a page link that carries
+// the identical query-param contract -- sort, order, search, filter, view,
+// library, status, health range, and the bulk "ids" selection -- rather than
+// re-implementing it and risking drift.
+func (p PaginationData) PageURL(page int) string { return p.pageURL(page) }
+
 func (p PaginationData) pageURL(page int) string {
 	v := url.Values{}
 	v.Set("page", strconv.Itoa(page))

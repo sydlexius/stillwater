@@ -684,7 +684,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ColumnToggle("compliance", "compliance-tbl", []components.ColumnDef{
+			templ_7745c5c3_Err = components.ColumnToggle("compliance", "compliance-tbl", t(ctx, "common.columns"), false, []components.ColumnDef{
 				{Key: "artist", Label: "Artist", Required: true},
 				{Key: "score", Label: "Score"},
 				{Key: "metadata", Label: "Metadata"},

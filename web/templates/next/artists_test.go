@@ -285,4 +285,194 @@ func TestArtistsPage_KeyboardShortcuts(t *testing.T) {
 	if strings.Contains(out, "__swArtistsKbd") {
 		t.Errorf("inline ArtistsKeyboardShortcuts must be retired from next/ artists")
 	}
+
+	// Roving layer (#1791), container half: the list advertises the j/k/Enter
+	// roving labels for the shared helper's registry even on an empty list.
+	for _, want := range []string{
+		"data-sw-roving-label-j", "data-sw-roving-label-k", "data-sw-roving-label-Enter",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("next artists roving container contract missing %q", want)
+		}
+	}
+}
+
+// TestArtistsTable_RovingItemContract verifies the #1791 per-row half of the
+// roving contract: with artists present, each row carries data-sw-roving-item +
+// a stable data-sw-roving-key (so focus survives HTMX swaps of the list) and an
+// inner data-sw-roving-activate target (so Enter opens the focused artist's
+// detail). These are absent on an empty list, so this test seeds rows.
+func TestArtistsTable_RovingItemContract(t *testing.T) {
+	t.Parallel()
+	data := templates.ArtistListData{
+		Artists: []artist.Artist{{ID: "a1", Name: "Alpha"}, {ID: "a2", Name: "Bravo"}},
+		Pagination: components.PaginationData{
+			CurrentPage: 1, TotalPages: 1, PageSize: 50, TotalItems: 2,
+			BaseURL: "/next/artists", View: "table",
+		},
+		View: "table",
+	}
+	var buf bytes.Buffer
+	if err := ArtistsTable(data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"data-sw-roving-list",
+		"data-sw-roving-item",
+		`data-sw-roving-key="a1"`,
+		"data-sw-roving-activate",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("next artists row roving contract missing %q", want)
+		}
+	}
+}
+
+// TestArtistsPage_ColumnsIconOnly verifies the #1792 toolbar change: the Columns
+// control on the next/ artists toolbar is icon-only (the literal "Columns" text
+// node is dropped) but still exposes the label via title + aria-label for
+// pointer + assistive-tech users, mirroring the toolbar's other icon-only
+// buttons. The shared ColumnToggle component keeps its text-bearing form on the
+// stable channel (iconOnly=false), so only the next/ caller is affected.
+func TestArtistsPage_ColumnsIconOnly(t *testing.T) {
+	t.Parallel()
+	data := templates.ArtistListData{
+		Artists: []artist.Artist{{ID: "a1", Name: "Alpha"}},
+		Pagination: components.PaginationData{
+			CurrentPage: 1, TotalPages: 1, PageSize: 50, TotalItems: 1,
+			BaseURL: "/next/artists", View: "table",
+		},
+		View: "table",
+	}
+	var buf bytes.Buffer
+	if err := ArtistsPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+
+	// Isolate the Columns control so the assertions can't be satisfied by an
+	// unrelated "Columns"/title elsewhere on the page.
+	start := strings.Index(out, `data-col-toggle="artists"`)
+	if start < 0 {
+		t.Fatalf("next artists toolbar missing the Columns control (data-col-toggle)")
+	}
+	// The control's <button> opens with the toggle onclick; scope the slice to it.
+	seg := out[start:]
+	if end := strings.Index(seg, "</button>"); end >= 0 {
+		seg = seg[:end]
+	}
+	if !strings.Contains(seg, `title="Columns"`) {
+		t.Errorf("icon-only Columns button must carry a title=\"Columns\" tooltip")
+	}
+	if !strings.Contains(seg, `aria-label="Columns"`) {
+		t.Errorf("icon-only Columns button must carry an aria-label=\"Columns\"")
+	}
+	// Icon-only: the visible "Columns" text node must be gone (only the SVG +
+	// the title/aria-label carry the meaning). The substring "Columns" still
+	// appears inside the title/aria-label attribute values above; assert there
+	// is no bare text node by checking it does not appear immediately before the
+	// button close (where the label text used to render).
+	if strings.Contains(seg, `>Columns<`) || strings.Contains(seg, "</svg>\n\t\t\tColumns") || strings.Contains(seg, "</svg>Columns") {
+		t.Errorf("icon-only Columns button must not render the visible label text node")
+	}
+}
+
+// TestArtistsTable_SharedNextPaginationAndRovingBoundary verifies the next/
+// artists table adopts the shared NextPagination footer (M55 #1791) and wires
+// the roving page-nav boundary contract instead of the stable components.
+// Pagination. With more than one page, the footer must render the shared
+// sw-page-prev/sw-page-next controls, the roving container must declare the
+// boundary selectors and the h/l page-nav labels, and the enabled control must
+// swap the WHOLE #artist-content fragment via outerHTML (matching the channel's
+// sort/filter/search swaps) rather than the dashboard's innerHTML rows-only +
+// OOB footer.
+func TestArtistsTable_SharedNextPaginationAndRovingBoundary(t *testing.T) {
+	t.Parallel()
+	data := templates.ArtistListData{
+		Artists: []artist.Artist{{ID: "a1", Name: "Alpha"}, {ID: "a2", Name: "Bravo"}},
+		Pagination: components.PaginationData{
+			CurrentPage: 1, TotalPages: 2, PageSize: 50, TotalItems: 80,
+			BaseURL: "/next/artists", View: "table", Sort: "name", Order: "asc",
+		},
+		View: "table",
+	}
+
+	var buf bytes.Buffer
+	if err := ArtistsTable(data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+
+	// Shared NextPagination footer + its fixed control ids the keyboard helper
+	// resolves via the boundary selectors.
+	for name, want := range map[string]string{
+		"shared pagination nav":   `id="sw-pagination"`,
+		"prev control id":         `id="sw-page-prev"`,
+		"next control id":         `id="sw-page-next"`,
+		"roving boundary next":    `data-sw-roving-boundary-next="#sw-page-next"`,
+		"roving boundary prev":    `data-sw-roving-boundary-prev="#sw-page-prev"`,
+		"page-prev label (h)":     `data-sw-roving-label-h="previous page"`,
+		"page-next label (l)":     `data-sw-roving-label-l="next page"`,
+		"outerHTML fragment swap": `hx-swap="outerHTML"`,
+		"footer targets fragment": `hx-target="#artist-content"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ArtistsTable missing %s (%q)", name, want)
+		}
+	}
+
+	// The stable page-counter component must be gone (no "Showing page X of Y").
+	if strings.Contains(out, "Showing page ") {
+		t.Errorf("ArtistsTable must not render the stable components.Pagination counter")
+	}
+	// On page 1 the previous control is disabled (no hx-get) while next is a real
+	// link, so the enabled Next must carry an hx-get to page 2.
+	if !strings.Contains(out, "page=2") {
+		t.Errorf("ArtistsTable Next control must hx-get the next page (page=2)")
+	}
+	// Artists replaces the whole fragment, so the footer must NOT be emitted
+	// out-of-band (that is the dashboard's rows-only model).
+	if strings.Contains(out, `hx-swap-oob="true"`) {
+		t.Errorf("ArtistsTable NextPagination must not use an out-of-band footer (outerHTML fragment swap carries it)")
+	}
+}
+
+// TestArtistsPage_NoControlPinnedKeycaps verifies step 4 of M55 #1791: the
+// inline "/" keycap pinned in the search box and the "f" keycap on the filter
+// button are removed (matching the next/ dashboard; the #1789 registry owns the
+// hints via data-sw-shortcut). The tip-line legend keeps its / and f keycaps.
+func TestArtistsPage_NoControlPinnedKeycaps(t *testing.T) {
+	t.Parallel()
+	data := templates.ArtistListData{
+		Artists:    []artist.Artist{{ID: "a1", Name: "Alpha"}},
+		Pagination: components.PaginationData{CurrentPage: 1, TotalPages: 1, PageSize: 50, TotalItems: 1, BaseURL: "/next/artists", View: "table"},
+		View:       "table",
+	}
+	var buf bytes.Buffer
+	if err := ArtistsPage(templates.AssetPaths{IsAdmin: true}, data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+
+	// The search-box pinned keycap used a unique absolute-position class set.
+	if strings.Contains(out, "pointer-events-none absolute right-2") {
+		t.Errorf("search box must not pin an inline / keycap (hint owned by the #1789 registry)")
+	}
+	// The filter-button keycap used the unique "sw-kbd ml-1 hidden" class set.
+	if strings.Contains(out, `class="sw-kbd ml-1 hidden sm:inline-flex"`) {
+		t.Errorf("filter button must not render an inline f keycap")
+	}
+	// The data-sw-shortcut attributes that advertise / and f to the registry must
+	// remain, and the tip-line legend must still teach both keys.
+	for name, want := range map[string]string{
+		"search shortcut attr": `data-sw-shortcut="/"`,
+		"filter shortcut attr": `data-sw-shortcut="f"`,
+		"legend keeps search":  `<kbd class="sw-kbd inline-flex">/</kbd>`,
+		"legend keeps filter":  `<kbd class="sw-kbd inline-flex">f</kbd>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ArtistsPage missing %s (%q)", name, want)
+		}
+	}
 }

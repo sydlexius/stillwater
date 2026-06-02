@@ -32,9 +32,19 @@ var bareHTMLID = regexp.MustCompile(`^[A-Za-z][\w-]*$`)
 // neither a previous nor a next page (single page = no chrome).
 
 // NextPaginationData is the render input. PrevURL/NextURL are the hx-get targets
-// the caller builds; Target is the hx-target container that swaps innerHTML per
-// page; OOB marks an out-of-band refresh emitted inside a page-nav fragment so
-// the footer's own enabled/disabled state updates after the rows swap.
+// the caller builds; Target is the hx-target container that swaps per page; OOB
+// marks an out-of-band refresh emitted inside a page-nav fragment so the
+// footer's own enabled/disabled state updates after the rows swap.
+//
+// Swap selects the hx-swap mode of the Prev/Next controls. It is empty for the
+// default "innerHTML" (the dashboard queue swaps only the rows of its roving
+// container and refreshes this footer out-of-band). The next/ artists list
+// instead replaces its WHOLE #artist-content fragment in one shot (matching the
+// channel's existing sort/filter/search swaps, which all target #artist-content
+// with outerHTML and re-render the footer as part of the returned fragment), so
+// it sets Swap = "outerHTML" and never needs OOB. Route this through
+// NewNextPagination, which leaves Swap empty; callers that need outerHTML set it
+// on the returned value.
 type NextPaginationData struct {
 	HasPrev bool
 	HasNext bool
@@ -42,6 +52,17 @@ type NextPaginationData struct {
 	NextURL string
 	Target  string
 	OOB     bool
+	Swap    string
+}
+
+// swap returns the effective hx-swap mode, defaulting an empty Swap to
+// "innerHTML" so existing callers (the dashboard's buildDashPagination) keep
+// their rows-only swap unchanged.
+func (d NextPaginationData) swap() string {
+	if d.Swap == "" {
+		return "innerHTML"
+	}
+	return d.Swap
 }
 
 // NewNextPagination is the single construction chokepoint that enforces
@@ -106,7 +127,7 @@ func NextPagination(data NextPaginationData) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "pagination.aria"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 77, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 98, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 			if templ_7745c5c3_Err != nil {
@@ -126,11 +147,11 @@ func NextPagination(data NextPaginationData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = nextPageButton("sw-page-prev", t(ctx, "common.previous"), t(ctx, "pagination.prev_aria"), data.PrevURL, data.Target, data.HasPrev).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = nextPageButton("sw-page-prev", t(ctx, "common.previous"), t(ctx, "pagination.prev_aria"), data.PrevURL, data.Target, data.swap(), data.HasPrev).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = nextPageButton("sw-page-next", t(ctx, "common.next"), t(ctx, "pagination.next_aria"), data.NextURL, data.Target, data.HasNext).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = nextPageButton("sw-page-next", t(ctx, "common.next"), t(ctx, "pagination.next_aria"), data.NextURL, data.Target, data.swap(), data.HasNext).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -147,7 +168,7 @@ func NextPagination(data NextPaginationData) templ.Component {
 // links (the keyboard helper clicks them); disabled controls keep the same id so
 // boundaryControl() in keyboard.js can resolve them and correctly skip an
 // edge/page-jump at the first/last page (it returns null on a disabled control).
-func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.Component {
+func nextPageButton(id, label, aria, hxURL, target, swap string, enabled bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -176,7 +197,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 95, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 116, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -189,7 +210,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(aria)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 98, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 119, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -202,7 +223,7 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 99, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 120, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
@@ -215,70 +236,83 @@ func nextPageButton(id, label, aria, hxURL, target string, enabled bool) templ.C
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(target)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 100, Col: 21}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 121, Col: 21}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" hx-swap=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(swap)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 103, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 122, Col: 17}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</button>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<button id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 107, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 124, Col: 10}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" type=\"button\" disabled aria-disabled=\"true\" class=\"inline-flex items-center rounded-md px-3.5 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 ring-1 ring-inset ring-gray-200 dark:ring-gray-700 bg-white dark:bg-gray-800 cursor-not-allowed\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</button>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<button id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(aria)
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 112, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 128, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" type=\"button\" disabled aria-disabled=\"true\" class=\"inline-flex items-center rounded-md px-3.5 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 ring-1 ring-inset ring-gray-200 dark:ring-gray-700 bg-white dark:bg-gray-800 cursor-not-allowed\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(aria)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 114, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 133, Col: 20}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var12 string
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/pagination.templ`, Line: 135, Col: 10}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

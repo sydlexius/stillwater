@@ -1945,6 +1945,51 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   display: none;
 }
 
+/* Opacity-aware surfaces (M55 #1792): the next/ artists list reuses ArtistRow /
+ * ArtistCard markup whose Tailwind utilities baked in opaque fills
+ * (bg-white / dark:bg-gray-900 on the table, bg-white / dark:bg-gray-800 on the
+ * cards), so #1335 regressed the Background Opacity preference -- the photo
+ * backdrop no longer bled through at the chosen opacity. FIX: source the
+ * card/table/strip fills from the same opacity-aware mechanism the rest of the
+ * app uses. The Background Opacity pref drives --sw-glass-bg (set inline on
+ * :root by web/static/js/preferences.js, with theme-aware fallbacks in
+ * design-tokens.css); the dashboard already consumes it via --swd-surface
+ * (.sw-next-dashboard), and this mirrors that approach for the artists screen so
+ * both next/ surfaces track the pref. --swa-surface-elev keeps a higher-opacity
+ * fill for surfaces that must stay legible while content scrolls beneath them
+ * (the sticky thead + the sticky bulk strip), matching the dashboard's
+ * --swd-surface-elev for its hover/popover surfaces. The override is scoped to
+ * .sw-next-artists, so the stable channel and the reused components are
+ * untouched; the higher-specificity scoped selectors win over the utility
+ * classes without !important. */
+.sw-next-artists {
+  --swa-surface: var(--sw-glass-bg);
+  --swa-surface-elev: color-mix(in srgb, var(--sw-glass-bg), #f8fafc 45%);
+}
+.dark .sw-next-artists {
+  --swa-surface-elev: color-mix(in srgb, var(--sw-glass-bg), #1a253f 45%);
+}
+/* Table body is the artists list's primary surface; the sticky thead sits above
+ * scrolling rows, so it uses the elevated (more opaque) fill to stay legible. */
+.sw-next-artists table#artists-table > tbody {
+  background: var(--swa-surface);
+}
+.sw-next-artists table#artists-table > thead {
+  background: var(--swa-surface-elev);
+}
+/* Grid card surface: the <a> card body that carried bg-white / dark:bg-gray-800. */
+.sw-next-artists [data-sw-roving-item] > a.group {
+  background: var(--swa-surface);
+}
+/* The sticky bulk strip floats over scrolling rows, so it tracks the pref via
+ * the elevated fill (legible while pinned) rather than the resting surface. */
+.sw-next-artists .sw-next-bulk-strip {
+  background: var(--swa-surface-elev);
+}
+.dark .sw-next-artists .sw-next-bulk-strip {
+  background: var(--swa-surface-elev);
+}
+
 /* =====================================================================
  * M55 #1334 -- next/ dashboard design system (prototype-faithful).
  *

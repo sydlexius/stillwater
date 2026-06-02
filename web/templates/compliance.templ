@@ -233,7 +233,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 							</span>
 						}
 					</button>
-					@components.ColumnToggle("compliance", "compliance-tbl", []components.ColumnDef{
+					@components.ColumnToggle("compliance", "compliance-tbl", t(ctx, "common.columns"), false, []components.ColumnDef{
 						{Key: "artist", Label: "Artist", Required: true},
 						{Key: "score", Label: "Score"},
 						{Key: "metadata", Label: "Metadata"},

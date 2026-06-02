@@ -24,9 +24,19 @@ var bareHTMLID = regexp.MustCompile(`^[A-Za-z][\w-]*$`)
 // neither a previous nor a next page (single page = no chrome).
 
 // NextPaginationData is the render input. PrevURL/NextURL are the hx-get targets
-// the caller builds; Target is the hx-target container that swaps innerHTML per
-// page; OOB marks an out-of-band refresh emitted inside a page-nav fragment so
-// the footer's own enabled/disabled state updates after the rows swap.
+// the caller builds; Target is the hx-target container that swaps per page; OOB
+// marks an out-of-band refresh emitted inside a page-nav fragment so the
+// footer's own enabled/disabled state updates after the rows swap.
+//
+// Swap selects the hx-swap mode of the Prev/Next controls. It is empty for the
+// default "innerHTML" (the dashboard queue swaps only the rows of its roving
+// container and refreshes this footer out-of-band). The next/ artists list
+// instead replaces its WHOLE #artist-content fragment in one shot (matching the
+// channel's existing sort/filter/search swaps, which all target #artist-content
+// with outerHTML and re-render the footer as part of the returned fragment), so
+// it sets Swap = "outerHTML" and never needs OOB. Route this through
+// NewNextPagination, which leaves Swap empty; callers that need outerHTML set it
+// on the returned value.
 type NextPaginationData struct {
 	HasPrev bool
 	HasNext bool
@@ -34,6 +44,17 @@ type NextPaginationData struct {
 	NextURL string
 	Target  string
 	OOB     bool
+	Swap    string
+}
+
+// swap returns the effective hx-swap mode, defaulting an empty Swap to
+// "innerHTML" so existing callers (the dashboard's buildDashPagination) keep
+// their rows-only swap unchanged.
+func (d NextPaginationData) swap() string {
+	if d.Swap == "" {
+		return "innerHTML"
+	}
+	return d.Swap
 }
 
 // NewNextPagination is the single construction chokepoint that enforces
@@ -79,8 +100,8 @@ templ NextPagination(data NextPaginationData) {
 				hx-swap-oob="true"
 			}
 		>
-			@nextPageButton("sw-page-prev", t(ctx, "common.previous"), t(ctx, "pagination.prev_aria"), data.PrevURL, data.Target, data.HasPrev)
-			@nextPageButton("sw-page-next", t(ctx, "common.next"), t(ctx, "pagination.next_aria"), data.NextURL, data.Target, data.HasNext)
+			@nextPageButton("sw-page-prev", t(ctx, "common.previous"), t(ctx, "pagination.prev_aria"), data.PrevURL, data.Target, data.swap(), data.HasPrev)
+			@nextPageButton("sw-page-next", t(ctx, "common.next"), t(ctx, "pagination.next_aria"), data.NextURL, data.Target, data.swap(), data.HasNext)
 		</nav>
 	}
 }
@@ -89,7 +110,7 @@ templ NextPagination(data NextPaginationData) {
 // links (the keyboard helper clicks them); disabled controls keep the same id so
 // boundaryControl() in keyboard.js can resolve them and correctly skip an
 // edge/page-jump at the first/last page (it returns null on a disabled control).
-templ nextPageButton(id, label, aria, hxURL, target string, enabled bool) {
+templ nextPageButton(id, label, aria, hxURL, target, swap string, enabled bool) {
 	if enabled {
 		<button
 			id={ id }
@@ -98,7 +119,7 @@ templ nextPageButton(id, label, aria, hxURL, target string, enabled bool) {
 			aria-label={ aria }
 			hx-get={ hxURL }
 			hx-target={ target }
-			hx-swap="innerHTML"
+			hx-swap={ swap }
 		>
 			{ label }
 		</button>
