@@ -55,6 +55,10 @@ func (r *Router) assets() templates.AssetPaths {
 		FilterFlyoutJS: r.basePath + r.staticAssets.Path("/js/filter-flyout.js"),
 		KeyboardJS:     r.basePath + r.staticAssets.Path("/js/keyboard.js"),
 		ConflictGateJS: r.basePath + r.staticAssets.Path("/js/conflict-gate.js"),
+		// Settings-screen first-party modules (M55 #1806). Extracted from the
+		// inline cacheScript()/badgeSettingScript().
+		SettingsImageCacheJS:  r.basePath + r.staticAssets.Path("/js/settings/image-cache.js"),
+		SettingsNotifBadgesJS: r.basePath + r.staticAssets.Path("/js/settings/notif-badges.js"),
 		// DriverJS, DriverCSS, and TourJS are intentionally omitted here.
 		// They are conditionally set in assetsFor() based on the request path
 		// so pages that do not use the guided tour avoid the extra JS/CSS.

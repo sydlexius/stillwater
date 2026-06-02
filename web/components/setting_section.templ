@@ -1,0 +1,46 @@
+package components
+
+// SettingSection is the shared settings-card shell (M55 #1806 spike). It
+// reproduces, byte-for-byte, the repeating card+header pattern that every
+// section on the Settings screen hand-rolls today:
+//
+//	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+//	  <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+//	    <div class="flex items-center gap-2">
+//	      <h2 class="text-lg font-semibold">{ title }</h2>
+//	      @ContextHelp(id, title, help, helpAnchor)
+//	    </div>
+//	    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ desc }</p>
+//	  </div>
+//	  <div class="px-6 py-4 space-y-4"> { children... } </div>
+//	</div>
+//
+// Strings are passed PRE-RESOLVED (the call site keeps its own t(ctx, ...)
+// lookups) so the wrapper stays i18n-agnostic and the adopted sections render
+// identical markup. The ContextHelp label argument is the section title, which
+// is exactly what the image-cache and notification-badges sections pass today
+// (e.g. ContextHelp("help-image-cache", t(ctx, "settings.image_cache.title"),
+// ...)). The body uses "px-6 py-4 space-y-4", matching the two target sections.
+//
+// Parameters:
+//   - id:         the ContextHelp DOM id for this section (e.g. "help-image-cache")
+//   - title:      pre-resolved section heading, also reused as the ContextHelp label
+//   - help:       pre-resolved help text shown in the ContextHelp popover
+//   - helpAnchor: docs anchor passed through to ContextHelp (e.g. "settings-general-image-cache")
+//   - desc:       pre-resolved one-line description under the heading
+templ SettingSection(id, title, help, helpAnchor, desc string) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ title }</h2>
+				@ContextHelp(id, title, help, helpAnchor)
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ desc }
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-4">
+			{ children... }
+		</div>
+	</div>
+}
