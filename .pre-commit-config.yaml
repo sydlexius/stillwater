@@ -3,7 +3,7 @@
 # wired via `core.hooksPath = .githooks` is `.githooks/pre-commit`,
 # which mirrors these checks in plain bash and is what CI expects.
 # Tool version pins below should stay in sync with the canonical hook and CI
-# (notably: markdownlint-cli2 v0.22.1, golangci-lint v2.12.2, typos v1.46.2).
+# (the tracked tools: markdownlint-cli2, golangci-lint, typos, and Tailwind).
 # scripts/check-tool-versions.sh asserts these agree across all entrypoints
 # and runs in the pre-push gate, so a drift here fails before push.
 repos:
@@ -26,7 +26,9 @@ repos:
 
   - repo: https://github.com/crate-ci/typos
     # Keep in sync with .github/workflows/docs.yml (crate-ci/typos SHA pin).
-    rev: v1.46.2
+    # Dependabot bumps the docs.yml pin; run `make sync-tool-versions` to mirror
+    # the new version here (Dependabot cannot edit pre-commit rev: pins itself).
+    rev: v1.47.0
     hooks:
       - id: typos
 

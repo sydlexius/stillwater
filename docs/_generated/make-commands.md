@@ -24,6 +24,7 @@
 | `make docker-run` | Run Docker container |
 | `make docker-stop` | Stop Docker container |
 | `make check-openapi` | Verify OpenAPI spec matches handler implementations |
+| `make sync-tool-versions` | Mirror CI-side tool versions into the pins Dependabot cannot edit |
 | `make hooks` | Install git hooks (pre-commit lint, pre-push gate) |
 | `make doctor` | Verify hook wiring without modifying anything |
 | `make worktree` | Create a sibling worktree with hooks wired and tracker row inserted into the Active table |
