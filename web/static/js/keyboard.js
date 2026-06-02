@@ -36,6 +36,17 @@
   var pendingRovingPrevKey = '';
   var ctxHandler = null;
 
+  // pendingBoundaryFocus: '' | 'first' | 'last'. OPT-IN seamless paging boundary
+  // (M55 #1790, next/ dashboard only). When a roving list declares
+  // data-sw-roving-boundary-next / -prev (CSS selectors for paginated Next/Prev
+  // controls), pressing j past the last item (or k before the first) clicks the
+  // paging control instead of clamping, then -- once the new page's items swap in
+  // and rebuild() runs -- seats focus at the first ('first') or last ('last')
+  // item of the new page so j/k advance feels seamless across the page boundary.
+  // Lists WITHOUT those attributes (e.g. next/ artists) never set this, so it
+  // stays '' and the roving-restore path behaves exactly as before.
+  var pendingBoundaryFocus = '';
+
   // isTyping: true when the focused element should swallow shortcuts (a real
   // text field, textarea, select, or contentEditable). Ported (refactored into
   // a function) from ArtistsKeyboardShortcuts, which is still live on the stable
@@ -119,6 +130,14 @@
   // collides with it would be silently shadowed.
   function reservedKey(key) {
     if (key === 'j' || key === 'k' || key === 'Enter') return true;
+    // h/l are reserved only on a list that opts into paging (declares boundary
+    // controls); elsewhere they are free for a screen's own use.
+    if (key === 'h' || key === 'l') {
+      var listEl = rovingList();
+      if (listEl && listEl.getAttribute(
+        key === 'h' ? 'data-sw-roving-boundary-prev' : 'data-sw-roving-boundary-next'
+      )) return true;
+    }
     return !!actionTarget(key);
   }
 
@@ -139,6 +158,21 @@
   // itemKey: stable per-item id used to restore focus across HTMX swaps.
   function itemKey(el) {
     return (el && el.getAttribute('data-sw-roving-key')) || '';
+  }
+
+  // boundaryControl: resolve the paging control for a roving boundary (#1790,
+  // opt-in). attr is 'data-sw-roving-boundary-next' or '-prev'; its value is a
+  // CSS selector for the Next/Prev control. Returns the element only when it
+  // exists AND is enabled (no disabled attribute / aria-disabled), so a list
+  // without the attribute (artists) or a control on the last/first page (which
+  // is disabled) yields null and the caller falls through to the normal clamp.
+  function boundaryControl(listEl, attr) {
+    var sel = listEl.getAttribute(attr);
+    if (!sel) return null;
+    var ctrl = document.querySelector(sel);
+    if (!ctrl) return null;
+    if (ctrl.disabled || ctrl.getAttribute('aria-disabled') === 'true') return null;
+    return ctrl;
   }
 
   // focusRoving: move roving focus to idx (clamped), managing tabindex so only
@@ -188,7 +222,23 @@
       // focus onto a card mid-typing would be bad UX. After a non-search swap
       // (sort, view toggle, filter, pagination) focus has typically reverted to
       // body (isTyping=false), so the restore still runs.
-      if (rovingActive >= 0) {
+      // Seamless paging boundary (opt-in, #1790): a j/k edge auto-advance OR an
+      // h/l page jump clicked the Next/Prev control, swapping in a new page of
+      // items. Honor it FIRST and regardless of the prior rovingActive (h/l can
+      // page from an UNFOCUSED list), seating focus at the new page's first
+      // ('first') or last ('last') item. Clearing pendingRovingPrevKey too
+      // prevents a stale pre-swap key from also matching. When pendingBoundaryFocus
+      // is '' (artists + every normal swap) this is skipped and the original
+      // key-match/clamp restore (gated on rovingActive >= 0) runs unchanged.
+      if (pendingBoundaryFocus) {
+        pendingRovingPrevKey = '';
+        if (items.length) {
+          focusRoving(pendingBoundaryFocus === 'first' ? 0 : items.length - 1, items);
+        } else {
+          rovingActive = -1;
+        }
+        pendingBoundaryFocus = '';
+      } else if (rovingActive >= 0) {
         var prevKey = pendingRovingPrevKey;
         pendingRovingPrevKey = '';
         var restored = -1;
@@ -236,6 +286,27 @@
         scope: rovingScope,
         kind: 'roving'
       });
+      // Page-nav keys (opt-in, #1790): advertised ONLY when the list declares
+      // paging boundary controls. h = previous page, l = next page (vim
+      // horizontal, pairing with j/k vertical). They reuse the same
+      // data-sw-roving-boundary-{prev,next} controls the j/k boundary
+      // auto-advance uses, and jump a whole page from anywhere in the list.
+      if (listEl.getAttribute('data-sw-roving-boundary-prev')) {
+        registry.push({
+          key: 'h',
+          label: listEl.getAttribute('data-sw-roving-label-h') || '',
+          scope: rovingScope,
+          kind: 'roving'
+        });
+      }
+      if (listEl.getAttribute('data-sw-roving-boundary-next')) {
+        registry.push({
+          key: 'l',
+          label: listEl.getAttribute('data-sw-roving-label-l') || '',
+          scope: rovingScope,
+          kind: 'roving'
+        });
+      }
       var ctxKey = listEl.getAttribute('data-sw-roving-context-key');
       if (ctxKey) {
         if (reservedKey(ctxKey) && window.console && console.warn) {
@@ -250,12 +321,31 @@
       }
     } else {
       // No roving list on the page: keep the global honest so a stale positive
-      // index can't be trusted by a future reader (#1775/#1798).
+      // index can't be trusted by a future reader (#1775/#1798). Also drop any
+      // pending boundary intent so it cannot leak into a later, unrelated list.
       rovingActive = -1;
+      pendingBoundaryFocus = '';
     }
   }
 
   document.addEventListener('keydown', function (e) {
+    // Esc exits the search box: on every screen where '/' focuses search,
+    // pressing Esc while focus is IN that box blurs it back to the page so j/k
+    // roving + page-nav resume. This runs BEFORE the isTyping guard because the
+    // search box IS a text field (isTyping true), which would otherwise swallow
+    // the key. We preventDefault() to suppress the native <input type="search">
+    // "clear on Escape" behavior: exit != reset, so the typed query (and the
+    // filtered results) are PRESERVED. Returns so Esc here is a dedicated "leave
+    // search" action and does not also clear a bulk selection in the same press.
+    if (e.key === 'Escape') {
+      var searchBox = actionTarget('/');
+      if (searchBox && document.activeElement === searchBox) {
+        e.preventDefault();
+        searchBox.blur();
+        return;
+      }
+    }
+
     if (isTyping(document.activeElement)) return;
 
     // Layer 3: bulk select parity. Cmd/Ctrl+A selects all, Esc clears, scoped
@@ -308,6 +398,17 @@
         if (e.key === 'j' || e.key === 'J') {
           if (items.length) {
             e.preventDefault();
+            // Seamless paging boundary (opt-in): only when focus is ALREADY on
+            // the last item, try to advance to the next page. rovingActive < 0
+            // still seats at 0 (never a boundary), matching prior behavior.
+            if (rovingActive >= 0 && rovingActive === items.length - 1) {
+              var nextCtrl = boundaryControl(listEl, 'data-sw-roving-boundary-next');
+              if (nextCtrl) {
+                pendingBoundaryFocus = 'first';
+                nextCtrl.click();
+                return;
+              }
+            }
             focusRoving(rovingActive < 0 ? 0 : rovingActive + 1, items);
           }
           return;
@@ -315,9 +416,45 @@
         if (e.key === 'k' || e.key === 'K') {
           if (items.length) {
             e.preventDefault();
+            // Symmetric boundary: only when focus is on the first item, try to
+            // step back to the previous page, landing on its last item.
+            if (rovingActive === 0) {
+              var prevCtrl = boundaryControl(listEl, 'data-sw-roving-boundary-prev');
+              if (prevCtrl) {
+                pendingBoundaryFocus = 'last';
+                prevCtrl.click();
+                return;
+              }
+            }
             focusRoving(rovingActive < 0 ? 0 : rovingActive - 1, items);
           }
           return;
+        }
+        // Page-nav keys (opt-in, #1790): h = previous page, l = next page. They
+        // jump a WHOLE page from anywhere in the list (independent of the j/k
+        // roving position), clicking the same boundary control the j/k edge
+        // auto-advance uses, then landing focus on the new page's FIRST item
+        // (the conventional "jump to a page, start at its top" behavior). Only
+        // active when the list opts in via data-sw-roving-boundary-{prev,next};
+        // otherwise these keys fall through untouched (no preventDefault) so a
+        // screen without paging is unaffected.
+        if (e.key === 'l' || e.key === 'L') {
+          var pageNext = boundaryControl(listEl, 'data-sw-roving-boundary-next');
+          if (pageNext) {
+            e.preventDefault();
+            pendingBoundaryFocus = 'first';
+            pageNext.click();
+            return;
+          }
+        }
+        if (e.key === 'h' || e.key === 'H') {
+          var pagePrev = boundaryControl(listEl, 'data-sw-roving-boundary-prev');
+          if (pagePrev) {
+            e.preventDefault();
+            pendingBoundaryFocus = 'first';
+            pagePrev.click();
+            return;
+          }
         }
         if (e.key === 'Enter') {
           if (rovingActive >= 0 && items[rovingActive]) {
@@ -356,6 +493,19 @@
   }
   document.addEventListener('htmx:afterSwap', rebuild);
   document.addEventListener('htmx:load', rebuild);
+
+  // A boundary key (h/l, or j/k at an edge) sets pendingBoundaryFocus BEFORE
+  // clicking the paging control, expecting the resulting swap's rebuild() to
+  // consume it. If that request ERRORS (e.g. a 500 on the page fragment), no
+  // afterSwap fires, so the intent would stay armed and the NEXT unrelated swap
+  // (a filter/sort) would wrongly yank focus to first/last. Clear it on a failed
+  // request so a stale intent can't leak across an error.
+  document.addEventListener('htmx:responseError', function () {
+    pendingBoundaryFocus = '';
+  });
+  document.addEventListener('htmx:sendError', function () {
+    pendingBoundaryFocus = '';
+  });
 
   // Before an HTMX swap replaces the list, record the focused item's key in a
   // module variable so rebuild() can restore roving focus to the same logical

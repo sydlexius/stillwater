@@ -117,6 +117,28 @@ func TestHandleNextDashboardPage_HappyPath(t *testing.T) {
 	if !strings.Contains(body, ">2<") {
 		t.Errorf("expected Needs-you count 2 in rendered body")
 	}
+
+	// Keyboard action-key adoption (#1790): the page wires the / f r action keys
+	// declaratively for the shared helper (#1789) via data-sw-shortcut on the
+	// search input, filter trigger, and run-rules button (replacing the prior
+	// bespoke keydown listener). Assert all three are present.
+	for _, marker := range []string{
+		`data-sw-shortcut="/"`,
+		`data-sw-shortcut="f"`,
+		`data-sw-shortcut="r"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("expected page action-key attribute %q in body", marker)
+		}
+	}
+	// The contextual u key is registered via swKeyboardShortcuts.onContext (a
+	// conditional key); the bespoke single-key keydown listener must be gone.
+	if !strings.Contains(body, "swKeyboardShortcuts.onContext") {
+		t.Errorf("expected onContext registration for the u contextual key in body")
+	}
+	if strings.Contains(body, "__swNextDashKbd") {
+		t.Errorf("bespoke keydown handler (__swNextDashKbd) should be removed after helper adoption")
+	}
 }
 
 // TestHandleNextDashboardPage_FixableCountsError verifies the fixable-counts

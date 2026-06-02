@@ -816,7 +816,7 @@
     "method": "GET",
     "path": "/rules/run-all/status",
     "handler": "handleRunAllRulesStatus",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getScannerStatus",

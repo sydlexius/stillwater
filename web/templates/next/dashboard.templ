@@ -3,9 +3,11 @@ package next
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -262,11 +264,10 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 				</a>
 			</div>
 			<div class="sw-next-toolbar sticky top-0 z-10 flex items-center gap-2 rounded-lg bg-gray-50/80 px-2 py-2 backdrop-blur dark:bg-gray-900/80">
-				<!-- Search wrapper carries the / keycap, mirroring the artists toolbar
-				     (artists.templ search box): a relatively-positioned input with the
-				     sw-kbd chip pinned right. -->
+				<!-- Search wrapper. The "/" shortcut is advertised once in the
+				     tip-line legend below (and the ? cheat sheet), so no inline
+				     sw-kbd keycap is pinned here (avoids duplicating the hint). -->
 				<div class="relative min-w-[12rem] flex-1">
-					<kbd class="sw-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex" aria-hidden="true">/</kbd>
 					// Search is driven by a debounced JS handler (next dashboard
 					// script), NOT a raw hx-get: the next channel keeps filter
 					// state in window.location.search (the flyout writes tri-state
@@ -281,6 +282,8 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 						name="search"
 						placeholder={ t(ctx, "dashboard.search_placeholder") }
 						aria-label={ t(ctx, "dashboard.search_placeholder") }
+						data-sw-shortcut="/"
+						data-sw-shortcut-label={ t(ctx, "dashboard.shortcuts.search") }
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-3 pr-8 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
@@ -291,14 +294,16 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 					aria-expanded="false"
 					aria-controls="dashboard-filter-flyout"
 					title={ t(ctx, "common.filters") }
+					data-sw-shortcut="f"
+					data-sw-shortcut-label={ t(ctx, "dashboard.shortcuts.tip_filters") }
 					onclick="swDashboardPanels && swDashboardPanels.toggleFilters()"
 				>
 					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z"></path>
 					</svg>
-					<!-- f keycap mirrors the artists filter trigger; icon + kbd carry
-					     the meaning, "Filters" lives in the title tooltip. -->
-					<kbd class="sw-kbd ml-1 hidden sm:inline-flex" aria-hidden="true">f</kbd>
+					<!-- The "f" shortcut is advertised once in the tip-line legend
+					     below (and the ? cheat sheet); "Filters" lives in the title
+					     tooltip. No inline sw-kbd keycap here (avoids duplication). -->
 				</button>
 				<span class="ml-auto"></span>
 				// The recent-activity rail is a PERSISTENT right column (spec
@@ -320,6 +325,8 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 					id="dashboard-run-rules-btn"
 					type="button"
 					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+					data-sw-shortcut="r"
+					data-sw-shortcut-label={ t(ctx, "dashboard.shortcuts.run_rules") }
 					onclick="swDashboardPanels && swDashboardPanels.openRunRules()"
 					data-confirm-title={ t(ctx, "report.confirm_run_title") }
 					data-confirm-body={ t(ctx, "report.confirm_run_body") }
@@ -338,16 +345,16 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 			<div class="grid grid-cols-1 min-[1100px]:grid-cols-[minmax(0,1fr)_320px] gap-4">
 				<!-- Action-queue CARD (M55 #1334, prototype dashboard.jsx:140-157): the
 				     queue reads as a contained .sw-dash-card. The HEAD carries the
-				     "Action queue" title, a "Showing N of M, sorted by severity" meta
+				     "Action Queue" title, a "Showing X-Y of Z, sorted by severity" meta
 				     (the #next-dash-count span, populated OOB from the queue fragment),
 				     and the select-all + fix-selected controls (relocated from the
 				     toolbar; ids preserved so the bulk JS binds unchanged). The rows
-				     load into the .body.tight via HTMX; the in-body load-more renders
-				     as a centered foot row. -->
+				     load into the .body.tight via HTMX; the in-body Prev/Next paging
+				     footer (shared NextPagination, #sw-pagination) renders as a foot row. -->
 				<section class="sw-dash-card flex flex-col" aria-labelledby="next-dash-queue-heading">
 					<div class="head">
 						<h2 id="next-dash-queue-heading">{ t(ctx, "dashboard.action_queue") }</h2>
-						<!-- "Showing N of M, sorted by severity", populated OOB from the
+						<!-- "Showing X-Y of Z, sorted by severity", populated OOB from the
 						     queue fragment on each (re)load. The .meta's margin-left:auto
 						     pushes it (and the bulk controls that follow) to the right of
 						     the title, mirroring the prototype's `.meta.row` group
@@ -703,11 +710,12 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 					</div>
 				</aside>
 			</div>
-			<!-- Keyboard tip line (M55 #1334, UAT C1): mirrors the artists .sw-list-tips
-			     footer (artists.templ) byte-for-byte in structure: a role=note line of
-			     sw-kbd chips. Shows only the dashboard's WORKING single-key shortcuts
-			     (/, f, r); the roving j/k/Enter/u keys land later (#1790), matching
-			     artists which is light-only too. The inline-flex utility on each kbd is
+			<!-- Keyboard tip line (M55 #1334/#1790, UAT C1): mirrors the artists
+			     .sw-list-tips footer (artists.templ) in structure: a role=note line of
+			     sw-kbd chips. Shows the dashboard's action keys (/, f, r) AND the
+			     roving layer adopted from the shared helper (#1789): j/k move card
+			     focus, Enter opens the focused artist, u undoes the focused card while
+			     its undo strip is showing. The inline-flex utility on each kbd is
 			     required for the .sw-kbd chip's align-items/gap to apply. -->
 			<p class="sw-list-tips" role="note">
 				<span class="font-medium">{ t(ctx, "dashboard.shortcuts.tip_label") }:</span>
@@ -716,6 +724,18 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.tip_filters") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">r</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.run_rules") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.tip_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.tip_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.page_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.page_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.tip_open") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">u</kbd><span class="ml-1">{ t(ctx, "dashboard.shortcuts.tip_undo") }</span></span>
 			</p>
 			<script>
 				(function() {
@@ -1219,55 +1239,47 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 							});
 					}
 					updateLastEvaluated();
+					// Re-resolve after every action-queue reload so the stat tracks a
+					// just-completed run without a full page refresh (#1796). A manual
+					// "Run rules" reloads the queue when it settles, and the run-all
+					// handler now advances last_evaluation_at (scheduler.MarkEvaluated),
+					// so this re-fetch surfaces the new time. Mirrors the stable
+					// dashboard, which re-runs updateLastEvaluated on the same event.
+					document.body.addEventListener('htmx:afterSwap', function(e) {
+						if (e.detail && e.detail.target && e.detail.target.id === 'action-queue') {
+							updateLastEvaluated();
+						}
+					});
 				})();
 			</script>
 			<script>
-				// Dashboard keyboard shortcuts (spec 01-dashboard.md:88). LIGHT
-				// single-key shortcuts only, each mapping to an existing action:
-				//   "/" focuses the queue search input
-				//   "f" toggles the filter flyout
-				//   "r" opens the Run rules confirm modal
-				// They are ignored while the user is typing in a text field so a
-				// search query containing "f" or "r" is not hijacked. The window
-				// guard makes a second render (HTMX-boosted nav) idempotent.
+				// Dashboard keyboard shortcuts (M55 #1790, spec 01-dashboard.md:88).
+				// The page-level action keys (/ f r) and the roving layer
+				// (j/k move card focus, Enter opens the focused artist) are handled
+				// entirely by the SHARED vendored helper (web/static/js/keyboard.js,
+				// #1789) from the declarative data-sw-* attributes on the search
+				// input, filter trigger, run-rules button, and #action-queue-entries
+				// roving list. No bespoke keydown listener remains here.
 				//
-				// DEFERRED (not implemented): the roving "j"/"k"/"Enter"/"u"
-				// card-focus system from the spec table. The project has a hard
-				// minimal-JS constraint and the merged #1335 artists screen ships
-				// no reusable roving-focus helper to build on, so a bespoke one is
-				// not added speculatively. Tracked as a follow-up.
+				// This block wires ONLY the per-screen CONTEXTUAL key u via the
+				// helper's onContext() hook. u undoes the focused card, but ONLY when
+				// that card currently shows its undo strip (the UndoToast that a Fix
+				// swaps in via outerHTML). Because the action is CONDITIONAL on the
+				// strip being present, the declarative data-sw-roving-context
+				// attribute (which would unconditionally click a fixed target) is the
+				// wrong mechanism; onContext lets the handler inspect the focused item
+				// at press time and act only when the Undo button is live.
 				(function () {
-					if (window.__swNextDashKbd) return;
-					window.__swNextDashKbd = true;
-					document.addEventListener('keydown', function (e) {
-						// Never hijack a key while a modifier is held (browser/OS
-						// shortcuts) or while the user is typing in a text field.
-						if (e.metaKey || e.ctrlKey || e.altKey) return;
-						var el = document.activeElement;
-						var tag = el && el.tagName;
-						// Only TEXT-ENTRY focus suppresses the shortcuts; a focused
-						// checkbox/button must not swallow them. Mirrors the artists
-						// screen guard (web/templates/artists.templ).
-						var typing = tag === 'TEXTAREA' || tag === 'SELECT' || (el && el.isContentEditable);
-						if (tag === 'INPUT') {
-							var nonText = ['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'image', 'range', 'color'];
-							var itype = (el.getAttribute('type') || 'text').toLowerCase();
-							if (nonText.indexOf(itype) === -1) typing = true;
-						}
-						if (typing) return;
-						if (e.key === '/') {
-							var search = document.getElementById('dashboard-search');
-							if (search) { e.preventDefault(); search.focus(); }
-							return;
-						}
-						if (e.key === 'f' || e.key === 'F') {
-							if (window.swDashboardPanels) { e.preventDefault(); window.swDashboardPanels.toggleFilters(); }
-							return;
-						}
-						if (e.key === 'r' || e.key === 'R') {
-							if (window.swDashboardPanels) { e.preventDefault(); window.swDashboardPanels.openRunRules(); }
-							return;
-						}
+					if (!window.swKeyboardShortcuts || typeof window.swKeyboardShortcuts.onContext !== 'function') return;
+					// scope matches data-sw-scope on the roving list; it is reserved
+					// for forward-compat (the helper has one global ctxHandler today).
+					window.swKeyboardShortcuts.onContext('dashboard', function (item) {
+						if (!item) return;
+						// The undo strip (UndoToast) replaces the card via outerHTML on
+						// a fix; its Undo button posts to /api/v1/fix-undo/<id>. Click it
+						// only when present, so u is a no-op on a not-yet-fixed card.
+						var undoBtn = item.querySelector('button[hx-post*="/fix-undo/"]');
+						if (undoBtn) undoBtn.click();
 					});
 				})();
 			</script>
@@ -1298,8 +1310,10 @@ templ dashSkeletonRow(titleWidth, subtitleWidth string) {
 // dashboard page (DashboardPageNext) provides its own compact header strip and
 // single sticky toolbar (search + filter trigger + run-rules), so reusing the
 // full stable DashboardActionQueue here would double-render that chrome. The
-// select-all, cards, and load-more are reused byte-for-byte from the exported
-// stable sub-templates (no fork). The filter flyout is rendered ONCE at page
+// select-all and cards are reused byte-for-byte from the exported stable
+// sub-templates (no fork); the next channel replaces the stable "Load more"
+// append with the shared NextPagination Prev/Next footer (#1790). The
+// filter flyout is rendered ONCE at page
 // level by DashboardPageNext (a persistent container), NOT in this swapped
 // fragment, so the Filters button works before the first queue load and the
 // queue's error state cannot destroy it.
@@ -1318,13 +1332,13 @@ templ DashboardActionQueue(data templates.ActionQueueData) {
 	// queue load and survives the queue's error state (showQueueError rewrites
 	// only #action-queue). Rendering it inside this swapped fragment would
 	// re-create it on every queue reload and delete it on a queue load failure.
-	// The queue-card head's meta count ("Showing N of M, sorted by severity")
-	// is updated out-of-band on every full queue (re)load so it tracks the
-	// current filter scope without the page template needing the counts at
-	// initial render. The empty state writes a 0-of-0 meta; a populated queue
-	// writes the shown-so-far / total summary.
+	// The queue-card head's meta ("Showing X-Y of Z, sorted by severity") is
+	// updated out-of-band on every full queue (re)load so it tracks the current
+	// filter scope without the page template needing the counts at initial
+	// render. The empty state writes a "0-0 of Z" meta; a populated queue writes
+	// the current page's 1-based inclusive range over the filtered total.
 	if len(data.Violations) == 0 && data.Offset == 0 {
-		<span id="next-dash-count" class="meta" hx-swap-oob="true">{ tf(ctx, "dashboard.queue_meta", 0, data.Total) }</span>
+		<span id="next-dash-count" class="meta" hx-swap-oob="true">{ tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total) }</span>
 		@templates.DashboardEmptyState(data.HealthScore, data.HealthStatsError)
 	} else {
 		// In-queue select-all toggle: kept as a hidden, JS-synced mirror of the
@@ -1335,16 +1349,159 @@ templ DashboardActionQueue(data templates.ActionQueueData) {
 		// references (updateBulkBar syncs it; the change-listener handles its
 		// events) so no JS path is orphaned.
 		<input type="checkbox" id="select-all-toggle" class="hidden" aria-hidden="true" tabindex="-1"/>
-		<span id="next-dash-count" class="meta" hx-swap-oob="true">{ tf(ctx, "dashboard.queue_meta", data.Offset+len(data.Violations), data.Total) }</span>
-		<div id="action-queue-entries" class="space-y-1.5">
+		<span id="next-dash-count" class="meta" hx-swap-oob="true">{ tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total) }</span>
+		// Roving-focus list (M55 #1790): #action-queue-entries is the single
+		// [data-sw-roving-list] the shared keyboard helper (#1789) scans, so j/k
+		// move card focus, Enter opens the focused artist, and the per-screen
+		// contextual key u undoes the focused card while its undo strip is showing
+		// (wired via swKeyboardShortcuts.onContext in the script below -- a
+		// CONDITIONAL key, so the declarative data-sw-roving-context attribute is
+		// deliberately NOT used). Labels feed the shortcut registry the cheat sheet
+		// reads. data-sw-scope namespaces this list so a future multi-scope helper
+		// can target it.
+		//
+		// Paging (M55 #1790 follow-up): the next channel uses PAGE-WISE Prev/Next
+		// (below), not the stable channel's beforeend load-more append. So this
+		// list is swapped two ways: innerHTML on filter/search/page-nav (the rows
+		// replace in place), and outerHTML when a fix collapses a card into its
+		// undo strip. The helper restores focus by data-sw-roving-key across both.
+		// data-sw-roving-boundary-next/-prev declare the Prev/Next controls so the
+		// helper can auto-advance roving across a page boundary (j past the last
+		// row clicks Next and lands on the new page's first row; k symmetric).
+		<div
+			id="action-queue-entries"
+			class="space-y-1.5"
+			data-sw-roving-list
+			data-sw-scope="dashboard"
+			data-sw-roving-label-j={ t(ctx, "dashboard.shortcuts.tip_next") }
+			data-sw-roving-label-k={ t(ctx, "dashboard.shortcuts.tip_prev") }
+			data-sw-roving-label-Enter={ t(ctx, "dashboard.shortcuts.tip_open") }
+			data-sw-roving-label-h={ t(ctx, "dashboard.shortcuts.page_prev") }
+			data-sw-roving-label-l={ t(ctx, "dashboard.shortcuts.page_next") }
+			data-sw-roving-context-key="u"
+			data-sw-roving-context-label={ t(ctx, "dashboard.shortcuts.tip_undo") }
+			data-sw-roving-boundary-next="#sw-page-next"
+			data-sw-roving-boundary-prev="#sw-page-prev"
+		>
 			for _, v := range data.Violations {
-				@templates.DashboardActionCard(v, data.BasePath)
+				@dashActionRovingItem(v, data.BasePath)
 			}
 		</div>
-		if data.Offset+len(data.Violations) < data.Total {
-			@templates.DashboardLoadMoreButton(data)
-		}
+		@NextPagination(buildDashPagination(data, false))
 	}
+}
+
+// buildDashPagination maps the action-queue's existing offset/limit/total into
+// the shared NextPagination component (M55 #1790). The page size is the user's
+// Page Size preference via getUserPageSize (carried in data.Limit) -- there is
+// NO next-channel page-size constant. Prev offset = offset-limit (clamped in
+// dashboardPageURL); Next offset = offset+limit, enabled only when another page
+// remains. Both URLs carry the FULL filter/search state and target
+// #action-queue-entries with innerHTML so the rows replace in place and the
+// roving list element is preserved. oob=true is passed only by the page-nav
+// fragment (DashboardActionQueuePage) so the footer refreshes out-of-band.
+func buildDashPagination(data templates.ActionQueueData, oob bool) NextPaginationData {
+	return NewNextPagination(
+		data.Offset > 0,
+		data.Offset+data.Limit < data.Total,
+		dashboardPageURL(data, data.Offset-data.Limit),
+		dashboardPageURL(data, data.Offset+data.Limit),
+		"#action-queue-entries",
+		oob,
+	)
+}
+
+// dashQueueRangeStart / dashQueueRangeEnd compute the 1-based inclusive range of
+// the CURRENT page for the "Showing X-Y of Z, sorted by severity" queue-head
+// meta. Start is offset+1 (0 when the page is empty); end is offset + the number
+// of rows actually shown, clamped to total. With page-wise Prev/Next this reads
+// e.g. "Showing 31-60 of 690" rather than a single cumulative count.
+func dashQueueRangeStart(data templates.ActionQueueData) int {
+	if len(data.Violations) == 0 {
+		return 0
+	}
+	return data.Offset + 1
+}
+
+func dashQueueRangeEnd(data templates.ActionQueueData) int {
+	// Empty page (e.g. an out-of-range offset): end is 0 so the meta reads
+	// "Showing 0-0 of Z" rather than "0-Z" -- offset+len would otherwise clamp
+	// up to total and render a nonsense range.
+	if len(data.Violations) == 0 {
+		return 0
+	}
+	end := data.Offset + len(data.Violations)
+	if end > data.Total {
+		end = data.Total
+	}
+	return end
+}
+
+// DashboardActionQueuePage renders ONLY a page of action-queue rows for a
+// Prev/Next navigation: the cards swap into #action-queue-entries (innerHTML)
+// and the shared NextPagination footer re-renders out-of-band via its
+// #sw-pagination id. This is the next-channel page-nav fragment the handler
+// returns for an offset>0 request, replacing the removed beforeend
+// DashboardActionMoreRows append path.
+templ DashboardActionQueuePage(data templates.ActionQueueData) {
+	<span id="next-dash-count" class="meta" hx-swap-oob="true">{ tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total) }</span>
+	for _, v := range data.Violations {
+		@dashActionRovingItem(v, data.BasePath)
+	}
+	@NextPagination(buildDashPagination(data, true))
+}
+
+// dashboardPageURL builds the /dashboard/actions URL for a page navigation,
+// preserving the full filter/search state. It mirrors the stable
+// dashboardLoadMoreURL but takes an explicit absolute offset and OMITS limit so
+// the user's Page Size preference (getUserPageSize) governs the page size on the
+// nav request exactly as it does on the initial load -- no hardcoded page size.
+func dashboardPageURL(data templates.ActionQueueData, offset int) string {
+	if offset < 0 {
+		offset = 0
+	}
+	q := url.Values{}
+	q.Set("offset", fmt.Sprint(offset))
+	if data.Search != "" {
+		q.Set("search", data.Search)
+	}
+	data.SeverityFilter.AppendURLValues(q, "severity")
+	data.CategoryFilter.AppendURLValues(q, "category")
+	data.LibraryFilter.AppendURLValues(q, "library_id")
+	data.RuleFilter.AppendURLValues(q, "rule")
+	data.FixableFilter.AppendURLValues(q, "fixable")
+	return "/dashboard/actions?" + q.Encode()
+}
+
+// dashActionRovingItem wraps a shared DashboardActionCard in the next-channel
+// roving-focus item contract (#1790) WITHOUT forking the shared card (which the
+// stable channel also renders, roving-free). The wrapper carries
+// data-sw-roving-item + a stable data-sw-roving-key (the violation ID) so the
+// #1789 helper can focus it and restore focus across HTMX swaps.
+//
+// IMPORTANT (outerHTML swap survival): the Fix button inside the shared card
+// targets "#action-card-<id>" with hx-swap="outerHTML", so a fix replaces the
+// INNER card with the UndoToast strip. This wrapper is a DISTINCT element
+// (id "queue-item-<id>", NOT "action-card-<id>"), so it survives that swap and
+// keeps its roving key -- the focused row stays focused as it collapses to its
+// undo strip.
+//
+// Enter activation: the helper clicks the first [data-sw-roving-activate] inside
+// the item. The shared card's artist link is not tagged (it is shared), so a
+// next-only screen-reader-only anchor to the same artist-detail URL carries the
+// attribute. It is sr-only + tabindex=-1 so it adds no visible chrome and no
+// extra tab stop; pressing Enter on the focused row navigates to the artist.
+templ dashActionRovingItem(v rule.RuleViolation, basePath string) {
+	<div id={ "queue-item-" + v.ID } data-sw-roving-item data-sw-roving-key={ v.ID }>
+		<a
+			href={ templ.SafeURL(basePath + "/artists/" + v.ArtistID) }
+			data-sw-roving-activate
+			class="sr-only"
+			tabindex="-1"
+			aria-hidden="true"
+		>{ v.ArtistName }</a>
+		@templates.DashboardActionCard(v, basePath)
+	</div>
 }
 
 // DashboardActivityFeedNext renders the recent-activity rail's initial content

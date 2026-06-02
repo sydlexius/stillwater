@@ -2129,24 +2129,19 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   border-color: var(--swd-line);
 }
 
-/* -- Select-all control (.sw-select-all): the prototype's `btn ghost sm` look
- * for the queue's select-all. The native checkbox is sr-only; a styled box +
- * check/dash glyph renders the state. The whole control reads as a small ghost
- * button (hairline border, raised surface, hover to the elevated surface) so it
- * matches the toolbar's other ghost controls. The glyphs swap on the native
- * checkbox's :checked / :indeterminate state via the sibling box. */
+/* -- Select-all control (.sw-select-all): the queue's select-all, rendered as a
+ * bare check-glyph + label (NO pill backdrop -- the maintainer dropped the chip
+ * border/surface). The native checkbox is sr-only; a styled box + check/dash
+ * glyph renders the state, hover darkens the label, and the glyphs swap on the
+ * native checkbox's :checked / :indeterminate state via the sibling box. */
 .sw-next-dashboard .sw-select-all {
   font-size: 12px;
   color: var(--swd-ink-2);
-  border: 1px solid var(--swd-line);
-  border-radius: var(--swd-r-2);
-  background: var(--swd-surface);
-  padding: 5px 10px 5px 8px;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  padding: 5px 4px;
+  transition: color 120ms ease;
 }
 .sw-next-dashboard .sw-select-all:hover {
-  border-color: var(--swd-line-strong);
-  background: var(--swd-surface-elev);
+  color: var(--swd-ink);
 }
 /* Focus ring driven by the sr-only checkbox's focus state. */
 .sw-next-dashboard .sw-select-all:focus-within {
@@ -2372,19 +2367,18 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   max-height: calc(100vh - 8rem);
 }
 .sw-next-dashboard .sw-activity-row > svg {
-  width: 22px;
-  height: 22px;
+  /* Sized by the Tailwind h-4 w-4 class on the element. No padding/border-radius/
+   * background here: the glyph rides bare (no soft circle backdrop), per the
+   * maintainer's preference. */
   margin-top: 1px;
-  padding: 5px;
-  border-radius: 50%;
   flex: none;
 }
 /* Kind tints: the row svg carries activityKindToneClass (text-green/red/amber/
- * blue-500), used as the hook for the soft circle background + glyph color. */
-.sw-next-dashboard .sw-activity-row > svg.text-green-500 { color: var(--swd-ok); background: var(--swd-ok-soft); }
-.sw-next-dashboard .sw-activity-row > svg.text-red-500 { color: var(--swd-err); background: var(--swd-err-soft); }
-.sw-next-dashboard .sw-activity-row > svg.text-amber-500 { color: var(--swd-warn); background: var(--swd-warn-soft); }
-.sw-next-dashboard .sw-activity-row > svg.text-blue-500 { color: var(--swd-blue-ink); background: rgba(59, 130, 246, 0.16); }
+ * blue-500) as the hook for the glyph color. */
+.sw-next-dashboard .sw-activity-row > svg.text-green-500 { color: var(--swd-ok); }
+.sw-next-dashboard .sw-activity-row > svg.text-red-500 { color: var(--swd-err); }
+.sw-next-dashboard .sw-activity-row > svg.text-amber-500 { color: var(--swd-warn); }
+.sw-next-dashboard .sw-activity-row > svg.text-blue-500 { color: var(--swd-blue-ink); }
 /* Primary text + timestamp ramp. */
 .sw-next-dashboard .sw-activity-row span.truncate {
   font-size: 13px;

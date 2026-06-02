@@ -372,6 +372,67 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 	}
 }
 
+// TestHandleRunAllRules_StampsLastEvaluated is the handler-level guard for #1796:
+// a successful manual "Run rules" must advance the scheduler's lastRunAt (the
+// source of the dashboards' "Last evaluated" stat), not just the scheduled tick.
+// TestScheduler_MarkEvaluated proves the primitive works; this proves the handler
+// actually CALLS it. The call runs in the background goroutine after RunAllScoped
+// returns, so the assertion polls until lastRunAt advances; a dropped
+// MarkEvaluated call would leave it nil and fail on timeout.
+//
+// It also guards the publish ORDERING (#1803): on every poll, if
+// /rules/run-all/status already reports "completed" while the scheduler's
+// LastEvaluationAt is still nil, the handler stamped the timestamp after
+// publishing completion, which is the stale-stat race a client hits by reading
+// run-all status then /rules/status. That ordering violation fails the test.
+func TestHandleRunAllRules_StampsLastEvaluated(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+	// A real but un-started scheduler as the MarkEvaluated target -- not Start()ed,
+	// so no ticker runs; it serves only as the lastRunAt holder the handler stamps.
+	r.ruleScheduler = rule.NewScheduler(stub, r.ruleService, r.artistService, r.logger)
+
+	if r.ruleScheduler.Status().LastEvaluationAt != nil {
+		t.Fatalf("precondition: expected no prior evaluation, got %v", r.ruleScheduler.Status().LastEvaluationAt)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
+	w := httptest.NewRecorder()
+	r.handleRunAllRules(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	// runAllStatus reads the same handler clients poll, returning its published
+	// Status string ("idle"/"running"/"completed"/"failed").
+	runAllStatus := func() string {
+		sreq := httptest.NewRequest(http.MethodGet, "/api/v1/rules/run-all/status", nil)
+		sw := httptest.NewRecorder()
+		r.handleRunAllRulesStatus(sw, sreq)
+		var body struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal(sw.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decoding run-all status: %v (body: %s)", err, sw.Body.String())
+		}
+		return body.Status
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for r.ruleScheduler.Status().LastEvaluationAt == nil {
+		// Ordering invariant (#1803): completion must never be visible before
+		// the timestamp it is supposed to accompany.
+		if runAllStatus() == "completed" {
+			t.Fatal("#1803 race: /rules/run-all/status published \"completed\" before LastEvaluationAt was stamped")
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("handleRunAllRules did not stamp LastEvaluationAt within 3s (#1796 regression: MarkEvaluated not called on a manual run)")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // TestHandleRunAllRules_409WhenAlreadyRunning exercises the ruleRunMu gate on
 // POST /rules/run-all. A blocking stub keeps the first run in-progress so the
 // second call must observe r.ruleRun.Running == true and return 409.

@@ -675,6 +675,23 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
+		// Record the evaluation time and reset the scheduler timer BEFORE
+		// publishing Status = "completed", while ruleRunMu is still held.
+		// MarkEvaluated advances last_evaluation_at (read by the dashboards'
+		// "Last evaluated" stat via /api/v1/rules/status) so a manual run
+		// updates the timestamp; without it the stat stayed frozen at the last
+		// scheduled tick (or "Never" when none had fired) even right after a
+		// manual evaluation (#1796). Reset then starts a full interval from now,
+		// preventing a redundant scheduled evaluation shortly after this manual
+		// run. Ordering matters: a client that reads /rules/run-all/status as
+		// "completed" and immediately polls /rules/status must already see the
+		// fresh last_evaluation_at. Stamping after we publish "completed" (or
+		// after unlocking) reopens the stale-stat race this change closes.
+		if r.ruleScheduler != nil {
+			r.ruleScheduler.MarkEvaluated()
+			r.ruleScheduler.Reset()
+		}
+
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
 		r.ruleRun.ArtistsTotal = result.ArtistsTotal
@@ -686,12 +703,6 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
 		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRunMu.Unlock()
-
-		// Reset scheduler timer so the next tick starts a full interval from now,
-		// preventing a redundant scheduled evaluation shortly after a manual run.
-		if r.ruleScheduler != nil {
-			r.ruleScheduler.Reset()
-		}
 	}()
 
 	r.ruleRunMu.Lock()

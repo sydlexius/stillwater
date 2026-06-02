@@ -94,6 +94,34 @@ func TestScheduler_Status_BeforeRun(t *testing.T) {
 	}
 }
 
+// TestScheduler_MarkEvaluated verifies that MarkEvaluated advances the
+// last-evaluation timestamp that Status() surfaces as last_evaluation_at, even
+// without a scheduled tick. This is the path a MANUAL "Run rules" uses (#1796):
+// before the fix, last_evaluation_at stayed "Never" / frozen after a manual run
+// because only the scheduler tick recorded it, so the dashboards' "Last
+// evaluated" stat never reflected a user-triggered evaluation.
+func TestScheduler_MarkEvaluated(t *testing.T) {
+	logger := slog.Default()
+	pipeline := &Pipeline{logger: logger.With(slog.String("component", "fix-pipeline"))}
+	sched := NewScheduler(pipeline, nil, nil, logger)
+
+	if sched.Status().LastEvaluationAt != nil {
+		t.Fatal("LastEvaluationAt should be nil before MarkEvaluated")
+	}
+
+	before := time.Now().UTC()
+	sched.MarkEvaluated()
+	after := time.Now().UTC()
+
+	got := sched.Status().LastEvaluationAt
+	if got == nil {
+		t.Fatal("LastEvaluationAt should be set after MarkEvaluated")
+	}
+	if got.Before(before) || got.After(after) {
+		t.Errorf("LastEvaluationAt = %v, want within [%v, %v]", got, before, after)
+	}
+}
+
 func TestScheduler_Status_AfterRun(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
