@@ -147,15 +147,14 @@ func TestSettingSection_Structure(t *testing.T) {
 // shared layer.
 func TestSettingSection_WithSettingRow(t *testing.T) {
 	var buf bytes.Buffer
-	// Inner control wrapped in a SettingRow with an associated inputID.
-	rowChild := textChild(`<input type="text" id="cache-max-size" value="256">`)
-	rowCtx := templ.WithChildren(context.Background(), rowChild)
-	rowHTML := new(bytes.Buffer)
-	if err := SettingRow("Cache Size", "Maximum size of the image cache.", "cache-max-size").Render(rowCtx, rowHTML); err != nil {
-		t.Fatalf("render row: %v", err)
-	}
-	// Wrap the rendered row as a child of SettingSection.
-	sectionChild := textChild(rowHTML.String())
+	// Compose SettingRow directly as a child component of SettingSection so
+	// the test exercises real nested templ rendering rather than a
+	// pre-rendered string injection (which would bypass the composition path).
+	sectionChild := templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
+		rowChild := textChild(`<input type="text" id="cache-max-size" value="256">`)
+		rowCtx := templ.WithChildren(ctx, rowChild)
+		return SettingRow("Cache Size", "Maximum size of the image cache.", "cache-max-size").Render(rowCtx, w)
+	})
 	sectionCtx := templ.WithChildren(context.Background(), sectionChild)
 	if err := SettingSection(
 		"help-image-cache",
