@@ -128,6 +128,20 @@ func (s *Scheduler) Reset() {
 	}
 }
 
+// MarkEvaluated records that a rule evaluation just completed, advancing the
+// lastRunAt timestamp Status() surfaces as last_evaluation_at. The scheduled
+// tick (runEnabledRules) sets lastRunAt itself, but a MANUAL "Run rules" run
+// goes through the HTTP handler and the pipeline directly, bypassing the tick.
+// Without this call the dashboards' "Last evaluated" stat (which reads
+// /api/v1/rules/status) would stay frozen at the last scheduled tick (or
+// "Never" if none has fired), even though a manual run just evaluated every
+// rule. Callers invoke this on a successful manual run alongside Reset().
+func (s *Scheduler) MarkEvaluated() {
+	s.mu.Lock()
+	s.lastRunAt = time.Now().UTC()
+	s.mu.Unlock()
+}
+
 // Status returns the current scheduler state for the status endpoint.
 func (s *Scheduler) Status() SchedulerStatus {
 	s.mu.RLock()

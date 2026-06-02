@@ -129,9 +129,21 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// Load-more requests (offset > 0) only need violations and pagination
-	// data -- skip the summary queries that the header/flyout need.
-	if offset > 0 {
+	// A next-channel Prev/Next page-nav targets #action-queue-entries (innerHTML
+	// swap) and must return the page-replace fragment for ANY offset, INCLUDING 0
+	// (the Prev->page-1 case). Detect it by HX-Target rather than offset>0: the
+	// old offset>0 gate let a Prev-to-page-1 fall through to the FULL
+	// DashboardActionQueue fragment, which carries its own #action-queue-entries
+	// wrapper + inline footer; swapped into #action-queue-entries that nested a
+	// second pagination footer (the duplicate-footer bug, #1790). The stable
+	// channel's "Load more" only ever appends with offset>0 and is unaffected.
+	isNextChannel := middleware.UXChannelFromContext(req.Context()) == middleware.UXNext
+	isNextPageNav := isNextChannel && req.Header.Get("HX-Target") == "action-queue-entries"
+
+	// Load-more (stable, offset>0) and next-channel page-nav (any offset) need
+	// only violations + pagination data -- skip the summary queries the
+	// header/flyout need.
+	if offset > 0 || isNextPageNav {
 		data := templates.ActionQueueData{
 			Violations: violations,
 			Total:      total,
@@ -151,6 +163,16 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 			LibraryFilter:  filters.LibraryID,
 			RuleFilter:     filters.RuleID,
 			FixableFilter:  filters.Fixable,
+		}
+		// The next channel pages in place (M55 #1790): a Prev/Next request swaps a
+		// fresh page of rows into #action-queue-entries (innerHTML) and re-renders
+		// the paging footer out-of-band, rather than the stable channel's
+		// beforeend "Load more" append. The page size is the same getUserPageSize
+		// limit the initial load used (carried in data.Limit), so no page-size
+		// constant is introduced here.
+		if isNextChannel {
+			renderTempl(w, req, next.DashboardActionQueuePage(data))
+			return
 		}
 		renderTempl(w, req, templates.DashboardActionMoreRows(data))
 		return

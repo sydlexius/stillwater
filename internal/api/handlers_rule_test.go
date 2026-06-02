@@ -372,6 +372,41 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 	}
 }
 
+// TestHandleRunAllRules_StampsLastEvaluated is the handler-level guard for #1796:
+// a successful manual "Run rules" must advance the scheduler's lastRunAt (the
+// source of the dashboards' "Last evaluated" stat), not just the scheduled tick.
+// TestScheduler_MarkEvaluated proves the primitive works; this proves the handler
+// actually CALLS it. The call runs in the background goroutine after RunAllScoped
+// returns, so the assertion polls until lastRunAt advances; a dropped
+// MarkEvaluated call would leave it nil and fail on timeout.
+func TestHandleRunAllRules_StampsLastEvaluated(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+	// A real but un-started scheduler as the MarkEvaluated target -- not Start()ed,
+	// so no ticker runs; it serves only as the lastRunAt holder the handler stamps.
+	r.ruleScheduler = rule.NewScheduler(stub, r.ruleService, r.artistService, r.logger)
+
+	if r.ruleScheduler.Status().LastEvaluationAt != nil {
+		t.Fatalf("precondition: expected no prior evaluation, got %v", r.ruleScheduler.Status().LastEvaluationAt)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
+	w := httptest.NewRecorder()
+	r.handleRunAllRules(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for r.ruleScheduler.Status().LastEvaluationAt == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("handleRunAllRules did not stamp LastEvaluationAt within 3s (#1796 regression: MarkEvaluated not called on a manual run)")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // TestHandleRunAllRules_409WhenAlreadyRunning exercises the ruleRunMu gate on
 // POST /rules/run-all. A blocking stub keeps the first run in-progress so the
 // second call must observe r.ruleRun.Running == true and return 409.

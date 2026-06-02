@@ -1,0 +1,108 @@
+package next
+
+import "strings"
+
+// NextPagination is the single pagination control shared by every next-channel
+// paginated screen (dashboard action queue, artists list, ...). It renders a
+// grouped "Previous"/"Next" pair (right-aligned, no chevrons, NO X-of-Y
+// counter) and is keyboard-wired: the controls carry fixed ids sw-page-prev /
+// sw-page-next so a screen's roving list can declare
+// data-sw-roving-boundary-prev="#sw-page-prev" /
+// data-sw-roving-boundary-next="#sw-page-next" and the shared keyboard helper
+// (#1789/#1790) drives them for h/l whole-page nav + j/k edge auto-advance.
+//
+// It is paradigm-agnostic: the caller computes PrevURL/NextURL (offset-based for
+// the dashboard queue, page-based for the artists list) and the enabled flags;
+// this component only renders. The whole control is omitted when there is
+// neither a previous nor a next page (single page = no chrome).
+
+// NextPaginationData is the render input. PrevURL/NextURL are the hx-get targets
+// the caller builds; Target is the hx-target container that swaps innerHTML per
+// page; OOB marks an out-of-band refresh emitted inside a page-nav fragment so
+// the footer's own enabled/disabled state updates after the rows swap.
+type NextPaginationData struct {
+	HasPrev bool
+	HasNext bool
+	PrevURL string
+	NextURL string
+	Target  string
+	OOB     bool
+}
+
+// NewNextPagination is the single construction chokepoint that enforces
+// NextPaginationData's coherence invariants, so every next/ screen's builder
+// (the dashboard's buildDashPagination, the artists handler, ...) produces a
+// valid value instead of each hand-assembling the struct:
+//   - a DISABLED side carries NO URL. An enabled control always renders a real
+//     hx-get; an empty hx-get would silently re-request the current URL (a
+//     no-op/wrong-page nav on a button that still looks clickable).
+//   - Target is normalized to a "#"-prefixed selector, so a caller that passes a
+//     bare id ("artists-list") still yields a working hx-target.
+//
+// Route all builders through this rather than assembling the literal by hand.
+func NewNextPagination(hasPrev, hasNext bool, prevURL, nextURL, target string, oob bool) NextPaginationData {
+	if !hasPrev {
+		prevURL = ""
+	}
+	if !hasNext {
+		nextURL = ""
+	}
+	if target != "" && !strings.HasPrefix(target, "#") {
+		target = "#" + target
+	}
+	return NextPaginationData{
+		HasPrev: hasPrev,
+		HasNext: hasNext,
+		PrevURL: prevURL,
+		NextURL: nextURL,
+		Target:  target,
+		OOB:     oob,
+	}
+}
+
+templ NextPagination(data NextPaginationData) {
+	if data.HasPrev || data.HasNext {
+		<nav
+			id="sw-pagination"
+			class="mt-2 flex items-center justify-end gap-2 border-t border-[var(--swd-line)] px-1 pt-2"
+			aria-label={ t(ctx, "pagination.aria") }
+			if data.OOB {
+				hx-swap-oob="true"
+			}
+		>
+			@nextPageButton("sw-page-prev", t(ctx, "common.previous"), t(ctx, "pagination.prev_aria"), data.PrevURL, data.Target, data.HasPrev)
+			@nextPageButton("sw-page-next", t(ctx, "common.next"), t(ctx, "pagination.next_aria"), data.NextURL, data.Target, data.HasNext)
+		</nav>
+	}
+}
+
+// nextPageButton renders one pagination control. Enabled controls are real HTMX
+// links (the keyboard helper clicks them); disabled controls keep the same id so
+// boundaryControl() in keyboard.js can resolve them and correctly skip an
+// edge/page-jump at the first/last page (it returns null on a disabled control).
+templ nextPageButton(id, label, aria, hxURL, target string, enabled bool) {
+	if enabled {
+		<button
+			id={ id }
+			type="button"
+			class="inline-flex items-center rounded-md px-3.5 py-2 text-sm font-medium text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+			aria-label={ aria }
+			hx-get={ hxURL }
+			hx-target={ target }
+			hx-swap="innerHTML"
+		>
+			{ label }
+		</button>
+	} else {
+		<button
+			id={ id }
+			type="button"
+			disabled
+			aria-disabled="true"
+			class="inline-flex items-center rounded-md px-3.5 py-2 text-sm font-medium text-gray-400 dark:text-gray-600 ring-1 ring-inset ring-gray-200 dark:ring-gray-700 bg-white dark:bg-gray-800 cursor-not-allowed"
+			aria-label={ aria }
+		>
+			{ label }
+		</button>
+	}
+}

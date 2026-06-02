@@ -687,9 +687,15 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRunMu.Unlock()
 
-		// Reset scheduler timer so the next tick starts a full interval from now,
-		// preventing a redundant scheduled evaluation shortly after a manual run.
+		// Record the evaluation time and reset the scheduler timer. MarkEvaluated
+		// advances last_evaluation_at (read by the dashboards' "Last evaluated"
+		// stat via /api/v1/rules/status) so a manual run updates the timestamp;
+		// without it the stat stayed frozen at the last scheduled tick (or
+		// "Never" when none had fired) even right after a manual evaluation
+		// (#1796). Reset then starts a full interval from now, preventing a
+		// redundant scheduled evaluation shortly after this manual run.
 		if r.ruleScheduler != nil {
+			r.ruleScheduler.MarkEvaluated()
 			r.ruleScheduler.Reset()
 		}
 	}()

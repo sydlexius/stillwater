@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -36,6 +38,21 @@ func testDashboardRouter(t *testing.T, includeHistory bool) *Router {
 // dashboard handlers pass the auth check.
 func withTestUser(req *http.Request) *http.Request {
 	ctx := middleware.WithTestUserID(req.Context(), "test-user")
+	return req.WithContext(ctx)
+}
+
+// withTestI18n injects an English translator (loaded from the embedded locale
+// bundle) into the request context so templates render REAL translated /
+// formatted strings (e.g. the "Previous"/"Next" pagination labels) instead of
+// the bare i18n keys the no-translator fallback returns. Used by tests that
+// assert on translated copy rather than just markup structure.
+func withTestI18n(t *testing.T, req *http.Request) *http.Request {
+	t.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading embedded i18n bundle: %v", err)
+	}
+	ctx := i18n.WithTranslator(req.Context(), bundle.Translator("en"))
 	return req.WithContext(ctx)
 }
 
@@ -405,6 +422,25 @@ func TestHandleDashboardActionQueue_NextChannel(t *testing.T) {
 		t.Errorf("expected next/ fragment marker (next-dash-count) in body, got: %s", body)
 	}
 
+	// (a2) Roving-focus contract (#1790): the next fragment marks
+	// #action-queue-entries as the roving list with the u contextual key, and
+	// wraps each card in a roving item keyed by the violation ID so the shared
+	// keyboard helper (#1789) can focus rows and restore focus across swaps. The
+	// stable DashboardActionQueue fragment carries none of these attributes.
+	for _, marker := range []string{
+		`data-sw-roving-list`,
+		`data-sw-scope="dashboard"`,
+		`data-sw-roving-context-key="u"`,
+		`data-sw-roving-item`,
+		`data-sw-roving-key="` + v.ID + `"`,
+		`data-sw-roving-activate`,
+		`id="queue-item-` + v.ID + `"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("expected roving marker %q in next fragment, got: %s", marker, body)
+		}
+	}
+
 	// (b) The push URL must track the next/ screen root and round-trip the
 	// exclude filter under the canonical tri-state contract.
 	push := w.Header().Get("HX-Push-Url")
@@ -420,6 +456,238 @@ func TestHandleDashboardActionQueue_NextChannel(t *testing.T) {
 	}
 	if got := pushURL.Query()["severity"]; !sameStringSet(got, []string{"-error"}) {
 		t.Errorf("HX-Push-Url severity = %v, want [-error]; full=%q", got, push)
+	}
+}
+
+// seedDashboardViolations creates n active fixable violations on distinct
+// artists (UpsertViolation dedups on rule_id+artist_id, so distinct artists
+// guarantee distinct rows) so a paginated /dashboard/actions request has a known
+// total. The label prefix keeps artist names/paths unique across callers.
+func seedDashboardViolations(t *testing.T, r *Router, prefix string, n int) {
+	t.Helper()
+	ctx := context.Background()
+	for i := range n {
+		name := fmt.Sprintf("%s Artist %03d", prefix, i)
+		a := &artist.Artist{
+			Name:     name,
+			SortName: name,
+			Type:     "group",
+			Path:     fmt.Sprintf("/music/%s%03d", prefix, i),
+			Genres:   []string{"Rock"},
+		}
+		if err := r.artistService.Create(ctx, a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
+		v := &rule.RuleViolation{
+			RuleID: rule.RuleThumbExists, ArtistID: a.ID, ArtistName: a.Name,
+			Severity: "warning", Message: fmt.Sprintf("missing thumb %03d", i),
+			Fixable: true, Status: rule.ViolationStatusOpen,
+		}
+		if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("seeding violation %d: %v", i, err)
+		}
+	}
+}
+
+// TestHandleDashboardActionQueue_NextChannelPaging verifies the next-channel
+// PAGE-WISE Prev/Next footer (M55 #1790, shared NextPagination component) that
+// replaced the "Load more" append: a page-nav (offset>0) request returns the
+// page-replace fragment whose Prev/Next disabled states are pure RELATIONSHIPS
+// of the requested limit/offset/total (no hardcoded page size, no X-of-Y
+// counter), the offset links preserve filter/search params, and the roving list
+// declares the boundary controls (#sw-page-prev / #sw-page-next) so the keyboard
+// helper can auto-advance + h/l page across pages.
+//
+// limit is driven via the request (=10, PageSizeMin) exactly as the existing
+// handler tests do, so nothing here asserts a literal app page size.
+func TestHandleDashboardActionQueue_NextChannelPaging(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, false)
+	// Seed a known total of 25 so the three pages (with limit=10) are 1-10,
+	// 11-20, 21-25 -- giving a first page (Prev disabled), a middle page (both
+	// enabled), and a last page (Next disabled).
+	seedDashboardViolations(t, r, "Page", 25)
+
+	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActionQueue))
+
+	// (1) Middle page: offset=10&limit=10 -> "11-20 of 25", both Prev+Next
+	// enabled (have hx-get nav), and the page fragment OOB-swaps the footer.
+	reqMid := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=10&offset=10&severity=-error", nil)
+	reqMid.Header.Set("HX-Request", "true")
+	reqMid = withTestI18n(t, withTestUser(reqMid))
+	wMid := httptest.NewRecorder()
+	h.ServeHTTP(wMid, reqMid)
+	if wMid.Code != http.StatusOK {
+		t.Fatalf("middle page: status = %d, want %d; body: %s", wMid.Code, http.StatusOK, wMid.Body.String())
+	}
+	mid := wMid.Body.String()
+	// Prev and Next are both ENABLED: each carries an hx-get page-nav link.
+	if !strings.Contains(mid, `id="sw-page-prev"`) || !strings.Contains(mid, `id="sw-page-next"`) {
+		t.Errorf("middle page: expected both prev and next controls, got: %s", mid)
+	}
+	// Enabled controls have hx-get; a disabled control does not. Both present
+	// here means both are navigable (two hx-get occurrences for the footer).
+	// NOTE: assert the disabled ATTRIBUTE via aria-disabled="true" -- a bare
+	// "disabled" substring would false-match the cards' Tailwind
+	// "disabled:opacity-60" utility classes.
+	if c := strings.Count(mid, `hx-get="/dashboard/actions?`); c < 2 {
+		t.Errorf("middle page: expected >=2 hx-get nav links (prev+next), got %d; body: %s", c, mid)
+	}
+	if strings.Contains(mid, `aria-disabled="true"`) {
+		t.Errorf("middle page: neither prev nor next should be disabled, got: %s", mid)
+	}
+	// The footer re-renders out-of-band (page fragment targets the entries div).
+	if !strings.Contains(mid, `hx-swap-oob="true"`) {
+		t.Errorf("middle page: expected OOB footer swap, got: %s", mid)
+	}
+	// Offset links preserve the active filter param (severity=-error) and carry
+	// the correct neighbor offsets (prev=0, next=20).
+	if !strings.Contains(mid, "offset=0") {
+		t.Errorf("middle page: expected prev offset=0 link, got: %s", mid)
+	}
+	if !strings.Contains(mid, "offset=20") {
+		t.Errorf("middle page: expected next offset=20 link, got: %s", mid)
+	}
+	if !strings.Contains(mid, "severity=-error") {
+		t.Errorf("middle page: expected filter param preserved in nav links, got: %s", mid)
+	}
+	// Queue-head meta renders the current page's 1-based inclusive range
+	// (dashQueueRangeStart/End): offset=10, 10 rows -> "11-20 of 25".
+	if !strings.Contains(mid, "11-20 of 25") {
+		t.Errorf("middle page: expected range counter %q, got: %s", "11-20 of 25", mid)
+	}
+
+	// (2) First page (offset=0): full fragment, Prev DISABLED, Next enabled,
+	// counter "1-10 of 25", and the roving list declares the boundary controls.
+	reqFirst := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=10&offset=0", nil)
+	reqFirst.Header.Set("HX-Request", "true")
+	reqFirst = withTestI18n(t, withTestUser(reqFirst))
+	wFirst := httptest.NewRecorder()
+	h.ServeHTTP(wFirst, reqFirst)
+	if wFirst.Code != http.StatusOK {
+		t.Fatalf("first page: status = %d, want %d", wFirst.Code, http.StatusOK)
+	}
+	first := wFirst.Body.String()
+	// Prev is disabled on page 1: the disabled control carries aria-disabled and
+	// no hx-get. Asserting the disabled Prev id+aria pair avoids matching the
+	// cards' "disabled:" Tailwind utility classes.
+	if !strings.Contains(first, `id="sw-page-prev"`) || !strings.Contains(first, `aria-disabled="true"`) {
+		t.Errorf("first page: expected Prev control disabled (aria-disabled), got: %s", first)
+	}
+	// Next IS navigable on page 1 (more pages exist): it carries an hx-get link.
+	if !strings.Contains(first, `id="sw-page-next"`) || !strings.Contains(first, "offset=10") {
+		t.Errorf("first page: expected Next navigable to offset=10, got: %s", first)
+	}
+	// Range counter on the first page: offset=0, 10 rows -> "1-10 of 25".
+	if !strings.Contains(first, "1-10 of 25") {
+		t.Errorf("first page: expected range counter %q, got: %s", "1-10 of 25", first)
+	}
+	// The roving list points the boundary hooks at the Prev/Next control ids.
+	for _, marker := range []string{
+		`data-sw-roving-boundary-next="#sw-page-next"`,
+		`data-sw-roving-boundary-prev="#sw-page-prev"`,
+	} {
+		if !strings.Contains(first, marker) {
+			t.Errorf("first page: expected boundary marker %q, got: %s", marker, first)
+		}
+	}
+	// The retired "Load more" append motif must be gone from the next fragment.
+	if strings.Contains(first, `hx-swap-oob="beforeend"`) {
+		t.Errorf("first page: next fragment should not use the beforeend load-more append, got: %s", first)
+	}
+
+	// (3) Last page (offset=20): counter "21-25 of 25", Next DISABLED, Prev
+	// enabled.
+	reqLast := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=10&offset=20", nil)
+	reqLast.Header.Set("HX-Request", "true")
+	reqLast = withTestI18n(t, withTestUser(reqLast))
+	wLast := httptest.NewRecorder()
+	h.ServeHTTP(wLast, reqLast)
+	if wLast.Code != http.StatusOK {
+		t.Fatalf("last page: status = %d, want %d", wLast.Code, http.StatusOK)
+	}
+	last := wLast.Body.String()
+	// Range counter on the last (partial) page exercises the end>total clamp:
+	// offset=20, 5 rows -> "21-25 of 25" (NOT "21-30 of 25").
+	if !strings.Contains(last, "21-25 of 25") {
+		t.Errorf("last page: expected clamped range counter %q, got: %s", "21-25 of 25", last)
+	}
+	// Next is disabled on the last page (aria-disabled, no hx-get).
+	if !strings.Contains(last, `id="sw-page-next"`) || !strings.Contains(last, `aria-disabled="true"`) {
+		t.Errorf("last page: expected Next control disabled (aria-disabled), got: %s", last)
+	}
+	// Exactly one nav link remains (Prev enabled to offset=10, Next disabled has
+	// no hx-get).
+	if c := strings.Count(last, `hx-get="/dashboard/actions?`); c != 1 {
+		t.Errorf("last page: expected exactly 1 nav link (prev only), got %d; body: %s", c, last)
+	}
+	if !strings.Contains(last, "offset=10") {
+		t.Errorf("last page: expected Prev navigable to offset=10, got: %s", last)
+	}
+
+	// (4) Empty page (offset past the end): no rows -> the range counter must read
+	// "0-0 of 25", exercising the len==0 guards in dashQueueRangeStart/End. Without
+	// the dashQueueRangeEnd empty guard this would render the nonsense "0-25 of 25".
+	reqEmpty := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=10&offset=30", nil)
+	reqEmpty.Header.Set("HX-Request", "true")
+	reqEmpty = withTestI18n(t, withTestUser(reqEmpty))
+	wEmpty := httptest.NewRecorder()
+	h.ServeHTTP(wEmpty, reqEmpty)
+	if wEmpty.Code != http.StatusOK {
+		t.Fatalf("empty page: status = %d, want %d", wEmpty.Code, http.StatusOK)
+	}
+	empty := wEmpty.Body.String()
+	if !strings.Contains(empty, "0-0 of 25") {
+		t.Errorf("empty page: expected range counter %q, got: %s", "0-0 of 25", empty)
+	}
+}
+
+// TestHandleDashboardActionQueue_NextPrevToFirstPage is the regression guard for
+// the duplicate-footer bug (#1790): a next-channel Prev navigation back to page
+// 1 (offset=0) targets #action-queue-entries with innerHTML, so it MUST return
+// the page-replace fragment (rows + OOB #sw-pagination footer), NOT the full
+// DashboardActionQueue fragment (which carries its own #action-queue-entries
+// wrapper). If the full fragment were returned, swapping it into
+// #action-queue-entries would nest a second pagination footer. The page-nav is
+// distinguished from an initial/filter load by the HX-Target header, not by
+// offset>0 (the old gate that let offset=0 fall through to the full fragment).
+func TestHandleDashboardActionQueue_NextPrevToFirstPage(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, false)
+	seedDashboardViolations(t, r, "Page", 25)
+	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActionQueue))
+
+	// (1) Prev-to-page-1 page-nav: offset=0 WITH HX-Target=action-queue-entries.
+	// Must return the page fragment: it carries the OOB #sw-pagination footer and
+	// does NOT re-render the #action-queue-entries wrapper (no nesting).
+	reqNav := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=10&offset=0", nil)
+	reqNav.Header.Set("HX-Request", "true")
+	reqNav.Header.Set("HX-Target", "action-queue-entries")
+	reqNav = withTestI18n(t, withTestUser(reqNav))
+	wNav := httptest.NewRecorder()
+	h.ServeHTTP(wNav, reqNav)
+	if wNav.Code != http.StatusOK {
+		t.Fatalf("page-nav: status = %d, want %d", wNav.Code, http.StatusOK)
+	}
+	nav := wNav.Body.String()
+	if strings.Contains(nav, `id="action-queue-entries"`) {
+		t.Errorf("page-nav to offset=0 returned the FULL fragment (nested #action-queue-entries -> duplicate footer); want the page fragment, got: %s", nav)
+	}
+	if !strings.Contains(nav, `id="sw-pagination"`) || !strings.Contains(nav, `hx-swap-oob="true"`) {
+		t.Errorf("page-nav to offset=0: expected the OOB #sw-pagination footer, got: %s", nav)
+	}
+
+	// (2) Initial / filter load: offset=0 WITHOUT the page-nav target. Must return
+	// the FULL fragment (it owns the #action-queue-entries wrapper the page-nav
+	// swaps into).
+	reqFull := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=10&offset=0", nil)
+	reqFull.Header.Set("HX-Request", "true")
+	reqFull = withTestI18n(t, withTestUser(reqFull))
+	wFull := httptest.NewRecorder()
+	h.ServeHTTP(wFull, reqFull)
+	full := wFull.Body.String()
+	if !strings.Contains(full, `id="action-queue-entries"`) {
+		t.Errorf("initial load (no HX-Target): expected the FULL fragment with the #action-queue-entries wrapper, got: %s", full)
 	}
 }
 
