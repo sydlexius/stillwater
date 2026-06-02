@@ -11,7 +11,9 @@
 //
 // Network contract (base-path aware via meta[name="htmx-base-path"]):
 //   PUT {base}/api/v1/settings -- {"<key>": "true"|"false"}
-// The csrf_token cookie is sent as X-CSRF-Token.
+// The csrf_token cookie is sent as X-CSRF-Token, read via the canonical
+// window.swCsrfToken() helper from preferences.js (loaded in layout.templ
+// before this module) rather than an inline cookie-parse regex.
 //
 // Export surface: window.swNotifBadges doubles as the load-once guard. The
 // inline-handler global updateSetting is also assigned to window because the
@@ -27,9 +29,7 @@
 
   function updateSetting(key, checked) {
     var bp = (document.querySelector('meta[name="htmx-base-path"]') || { content: '' }).content;
-    var csrfToken = document.cookie.replace(
-      /(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
-    );
+    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
     var body = {};
     body[key] = checked ? "true" : "false";
     fetch(bp + '/api/v1/settings', {

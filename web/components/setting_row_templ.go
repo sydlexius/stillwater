@@ -16,7 +16,7 @@ import templruntime "github.com/a-h/templ/runtime"
 // line below the control" stack that several settings inputs use:
 //
 //	<div>
-//	  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ label }</label>
+//	  <div class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ label }</div>
 //	  { children... }
 //	  if desc != "" {
 //	    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ desc }</p>
@@ -29,11 +29,18 @@ import templruntime "github.com/a-h/templ/runtime"
 // badges) lay their controls out with bespoke flex/grid wrappers and inline
 // ContextHelp icons next to the label, which the simple stack above cannot
 // reproduce byte-for-byte without forking those controls. So SettingRow is
-// provided to prove the API shape and is exercised by a unit test, but it is
-// intentionally NOT retrofitted onto those two sections where it would change
-// the rendered bytes. SettingSection (the card shell) is the wrapper actually
-// adopted in stable here; SettingRow lands as the row primitive the broader
-// migration (D-settings-migration-plan) will build on.
+// provided to prove the API shape but is intentionally NOT retrofitted onto
+// those two sections where it would change the rendered bytes. SettingSection
+// (the card shell) is the wrapper actually adopted in stable here; SettingRow
+// lands as the row primitive the broader migration (D-settings-migration-plan)
+// will build on.
+//
+// Accessibility: the label text is rendered as a styled <div>, not a <label>,
+// so the wrapper makes no false (and unassociated) label-for-control promise --
+// children remain responsible for their own labelling (aria-label /
+// aria-labelledby / a wrapping <label>). The follow-up that adopts SettingRow
+// (#1807) will give it an optional inputID parameter so it can emit a real
+// <label for={inputID}> when the caller supplies the control's id.
 //
 // Parameters:
 //   - label: pre-resolved field label rendered above the control
@@ -60,20 +67,20 @@ func SettingRow(label, desc string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div><div class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 36, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 43, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -89,7 +96,7 @@ func SettingRow(label, desc string) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(desc)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 39, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 46, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {

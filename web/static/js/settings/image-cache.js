@@ -16,7 +16,9 @@
 //   GET    {base}/api/v1/settings/cache/stats   -- {size_bytes,file_count,artist_count}
 //   PUT    {base}/api/v1/settings               -- {"cache.image.max_size_mb": value}
 //   DELETE {base}/api/v1/settings/cache         -- {bytes_freed,files_deleted}
-// State-changing requests send the csrf_token cookie as X-CSRF-Token.
+// State-changing requests send the csrf_token cookie as X-CSRF-Token, read via
+// the canonical window.swCsrfToken() helper from preferences.js (loaded in
+// layout.templ before this module) rather than an inline cookie-parse regex.
 //
 // Export surface: window.swImageCache doubles as the load-once guard. The two
 // inline-handler globals (saveCacheMaxSize, clearCache) are also assigned to
@@ -58,9 +60,7 @@
   }
 
   function saveCacheMaxSize(value) {
-    var csrfToken = document.cookie.replace(
-      /(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
-    );
+    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
     fetch(cacheBasePath + '/api/v1/settings', {
       method: 'PUT',
       headers: {
@@ -84,9 +84,7 @@
 
   function clearCache() {
     if (!confirm('Clear all cached images? Pathless artists will lose their local image copies.')) return;
-    var csrfToken = document.cookie.replace(
-      /(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
-    );
+    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
     fetch(cacheBasePath + '/api/v1/settings/cache', {
       method: 'DELETE',
       headers: { 'X-CSRF-Token': csrfToken }
