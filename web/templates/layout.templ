@@ -19,6 +19,11 @@ type AssetPaths struct {
 	SidebarJS      string
 	FilterFlyoutJS string
 	KeyboardJS     string
+	// Settings-screen first-party modules (M55 #1806). Extracted from the
+	// inline cacheScript()/badgeSettingScript() so the settings layer can move
+	// to shared wrappers without the behavior living in the template.
+	SettingsImageCacheJS  string
+	SettingsNotifBadgesJS string
 	DriverJS       string
 	DriverCSS      string
 	TourJS         string

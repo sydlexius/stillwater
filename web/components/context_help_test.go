@@ -132,6 +132,14 @@ var nonLiteralAnchorAllowlist = map[string]map[string]struct{}{
 		// validates upstream.
 		"connectionFeatureToggleTT": {},
 	},
+	"web/components/setting_section.templ": {
+		// SettingSection(id, title, help, helpAnchor, desc) forwards helpAnchor
+		// to ContextHelp (M55 #1806). Its caller sites in settings.templ pass
+		// literal anchors (settings-general-image-cache,
+		// settings-automation-notif-badges), both of which already live in the
+		// embedded settings-anchors set.
+		"SettingSection": {},
+	},
 }
 
 // TestContextHelpAnchors asserts that every components.ContextHelp(...)

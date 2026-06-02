@@ -1,0 +1,42 @@
+package components
+
+// SettingRow is the minimal label+description+control row primitive for the
+// shared settings layer (M55 #1806 spike). It WRAPS existing field controls
+// (passed as children); it does not fork or re-implement any field component.
+//
+// It renders the common "field with a label above it and an optional helper
+// line below the control" stack that several settings inputs use:
+//
+//	<div>
+//	  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ label }</label>
+//	  { children... }
+//	  if desc != "" {
+//	    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ desc }</p>
+//	  }
+//	</div>
+//
+// Strings are passed PRE-RESOLVED so the wrapper stays i18n-agnostic.
+//
+// Scope note for the spike: the two target sections (image cache, notification
+// badges) lay their controls out with bespoke flex/grid wrappers and inline
+// ContextHelp icons next to the label, which the simple stack above cannot
+// reproduce byte-for-byte without forking those controls. So SettingRow is
+// provided to prove the API shape and is exercised by a unit test, but it is
+// intentionally NOT retrofitted onto those two sections where it would change
+// the rendered bytes. SettingSection (the card shell) is the wrapper actually
+// adopted in stable here; SettingRow lands as the row primitive the broader
+// migration (D-settings-migration-plan) will build on.
+//
+// Parameters:
+//   - label: pre-resolved field label rendered above the control
+//   - desc:  optional pre-resolved helper text rendered below the control; the
+//     <p> is omitted entirely when desc is the empty string
+templ SettingRow(label, desc string) {
+	<div>
+		<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ label }</label>
+		{ children... }
+		if desc != "" {
+			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ desc }</p>
+		}
+	</div>
+}

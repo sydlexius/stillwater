@@ -813,7 +813,6 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsConnectionScript()
 		@connectionFeatureToggleScript()
 		@ruleToggleScript()
-		@badgeSettingScript()
 		@apiTokenScript()
 		@ruleScheduleScript()
 		@maintenanceScript()
@@ -829,6 +828,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
 		@settingsSearchScript()
 		<script src={ assets.SortableJS }></script>
+		<script src={ assets.SettingsNotifBadgesJS }></script>
 		<div class="sw-settings space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
 				<h1 class="text-2xl font-bold">{ t(ctx, "settings.title") }</h1>
@@ -1171,57 +1171,46 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 				<!-- Image Cache Configuration -->
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.image_cache.title") }</h2>
-							@components.ContextHelp("help-image-cache", t(ctx, "settings.image_cache.title"), t(ctx, "settings.image_cache.help"), "settings-general-image-cache")
+				@components.SettingSection("help-image-cache", t(ctx, "settings.image_cache.title"), t(ctx, "settings.image_cache.help"), "settings-general-image-cache", t(ctx, "settings.image_cache.description")) {
+					<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.loading") }</div>
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+						<div>
+							<div class="flex items-center gap-1 mb-1">
+								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.image_cache.max_size") }</label>
+								@components.ContextHelp("help-cache-max-size", t(ctx, "settings.image_cache.max_size"), t(ctx, "settings.image_cache.max_size.help"), "settings-general-image-cache-max-size")
+							</div>
+							<select
+								id="cache-max-size"
+								aria-label={ t(ctx, "settings.image_cache.max_size") }
+								class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								onchange="saveCacheMaxSize(this.value)"
+							>
+								if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
+									<option value={ data.CacheMaxSizeMB } selected>{ data.CacheMaxSizeMB + " MB (custom)" }</option>
+								}
+								<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>{ t(ctx, "settings.image_cache.unlimited") }</option>
+								<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
+								<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
+								<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>1 GB</option>
+								<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>2 GB</option>
+							</select>
 						</div>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "settings.image_cache.description") }
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-4">
-						<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.loading") }</div>
-						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-							<div>
-								<div class="flex items-center gap-1 mb-1">
-									<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.image_cache.max_size") }</label>
-									@components.ContextHelp("help-cache-max-size", t(ctx, "settings.image_cache.max_size"), t(ctx, "settings.image_cache.max_size.help"), "settings-general-image-cache-max-size")
-								</div>
-								<select
-									id="cache-max-size"
-									aria-label={ t(ctx, "settings.image_cache.max_size") }
-									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									onchange="saveCacheMaxSize(this.value)"
+						<div class="flex items-end gap-3">
+							<div class="flex items-center gap-1">
+								<button
+									type="button"
+									class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+									onclick="clearCache()"
 								>
-									if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
-										<option value={ data.CacheMaxSizeMB } selected>{ data.CacheMaxSizeMB + " MB (custom)" }</option>
-									}
-									<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>{ t(ctx, "settings.image_cache.unlimited") }</option>
-									<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
-									<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
-									<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>1 GB</option>
-									<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>2 GB</option>
-								</select>
+									{ t(ctx, "settings.image_cache.clear") }
+								</button>
+								@components.ContextHelp("help-cache-clear", t(ctx, "settings.image_cache.clear"), t(ctx, "settings.image_cache.clear.help"), "settings-general-image-cache-clear")
 							</div>
-							<div class="flex items-end gap-3">
-								<div class="flex items-center gap-1">
-									<button
-										type="button"
-										class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-										onclick="clearCache()"
-									>
-										{ t(ctx, "settings.image_cache.clear") }
-									</button>
-									@components.ContextHelp("help-cache-clear", t(ctx, "settings.image_cache.clear"), t(ctx, "settings.image_cache.clear.help"), "settings-general-image-cache-clear")
-								</div>
-								<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
-							</div>
+							<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
 						</div>
 					</div>
-				</div>
-				@cacheScript()
+				}
+				<script src={ assets.SettingsImageCacheJS }></script>
 				<!-- Onboarding section: re-run wizard (#1142) -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" id="settings-onboarding">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -1851,18 +1840,8 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 				<!-- Notification Badge Settings -->
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.notif_badges.title") }</h2>
-							@components.ContextHelp("help-notif-badges", t(ctx, "settings.notif_badges.title"), t(ctx, "settings.notif_badges.help"), "settings-automation-notif-badges")
-						</div>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "settings.notif_badges.description") }
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-4">
-						<div class="flex items-center gap-3">
+				@components.SettingSection("help-notif-badges", t(ctx, "settings.notif_badges.title"), t(ctx, "settings.notif_badges.help"), "settings-automation-notif-badges", t(ctx, "settings.notif_badges.description")) {
+					<div class="flex items-center gap-3">
 							<label class="relative inline-flex items-center cursor-pointer">
 								<input
 									type="checkbox"
@@ -1910,8 +1889,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</label>
 							</div>
 						</div>
-					</div>
-				</div>
+				}
 				<!-- API Tokens -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -3038,95 +3016,6 @@ templ loggingScript() {
 				if (status) status.textContent = 'Failed to clean up logs';
 			});
 		}
-	</script>
-}
-
-templ cacheScript() {
-	<script>
-		// Resolve base path for sub-path deployments (e.g. reverse proxy prefix).
-		var cacheBasePath = '';
-		var cacheBaseMeta = document.querySelector('meta[name="htmx-base-path"]');
-		if (cacheBaseMeta && cacheBaseMeta.content) {
-			cacheBasePath = cacheBaseMeta.content;
-		}
-
-		function loadCacheStats() {
-			fetch(cacheBasePath + '/api/v1/settings/cache/stats')
-				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
-				.then(function(data) {
-					var mb = (data.size_bytes / (1024 * 1024)).toFixed(1);
-					var el = document.getElementById('cache-stats');
-					if (el) {
-						el.textContent = mb + ' MB used (' + data.file_count + ' files, ' + data.artist_count + ' artists)';
-						el.className = 'text-sm text-gray-600 dark:text-gray-400';
-					}
-				})
-				.catch(function() {
-					var el = document.getElementById('cache-stats');
-					if (el) {
-						el.textContent = 'Failed to load cache stats';
-						el.className = 'text-sm text-red-500';
-					}
-				});
-		}
-
-		function saveCacheMaxSize(value) {
-			var csrfToken = document.cookie.replace(
-				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
-			);
-			fetch(cacheBasePath + '/api/v1/settings', {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-					'X-CSRF-Token': csrfToken
-				},
-				body: JSON.stringify({ 'cache.image.max_size_mb': value })
-			}).then(function(r) {
-				if (!r.ok) throw new Error('failed');
-				var el = document.getElementById('cache-status');
-				el.textContent = 'Saved';
-				el.className = 'text-sm text-green-600 dark:text-green-400';
-				setTimeout(function() { el.textContent = ''; }, 2000);
-				loadCacheStats();
-			}).catch(function() {
-				var el = document.getElementById('cache-status');
-				el.textContent = 'Failed to save';
-				el.className = 'text-sm text-red-500';
-			});
-		}
-
-		function clearCache() {
-			if (!confirm('Clear all cached images? Pathless artists will lose their local image copies.')) return;
-			var csrfToken = document.cookie.replace(
-				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
-			);
-			fetch(cacheBasePath + '/api/v1/settings/cache', {
-				method: 'DELETE',
-				headers: { 'X-CSRF-Token': csrfToken }
-			})
-				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
-				.then(function(data) {
-					var mb = (data.bytes_freed / (1024 * 1024)).toFixed(1);
-					var el = document.getElementById('cache-status');
-					el.textContent = 'Cleared ' + data.files_deleted + ' files (' + mb + ' MB)';
-					el.className = 'text-sm text-green-600 dark:text-green-400';
-					setTimeout(function() { el.textContent = ''; }, 3000);
-					loadCacheStats();
-				})
-				.catch(function() {
-					var el = document.getElementById('cache-status');
-					el.textContent = 'Failed to clear cache';
-					el.className = 'text-sm text-red-500';
-				});
-		}
-
-		// Load cache stats when the General tab is visible on page load.
-		(function() {
-			var panel = document.querySelector('[data-tab-panel="general"]');
-			if (panel && !panel.classList.contains('hidden')) {
-				loadCacheStats();
-			}
-		})();
 	</script>
 }
 
@@ -6574,28 +6463,6 @@ script toggleRuleConfig(ruleID string) {
 			btn.setAttribute("aria-expanded", String(!el.classList.contains("hidden")));
 		}
 	}
-}
-
-templ badgeSettingScript() {
-	<script>
-		function updateSetting(key, checked) {
-			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
-			var csrfToken = document.cookie.replace(
-				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
-			);
-			var body = {};
-			body[key] = checked ? "true" : "false";
-			fetch(bp + '/api/v1/settings', {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-					'X-CSRF-Token': csrfToken
-				},
-				body: JSON.stringify(body)
-			});
-		}
-
-	</script>
 }
 
 templ ruleScheduleScript() {
