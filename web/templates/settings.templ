@@ -2259,17 +2259,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 				<!-- Database Maintenance -->
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.db_maintenance.title") }</h2>
-							@components.ContextHelp("help-db-maintenance", t(ctx, "settings.db_maintenance.title"), t(ctx, "settings.db_maintenance.help"), "settings-maintenance-db-maintenance")
-						</div>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "settings.db_maintenance.description") }
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-4">
+				@components.SettingSection("help-db-maintenance", t(ctx, "settings.db_maintenance.title"), t(ctx, "settings.db_maintenance.help"), "settings-maintenance-db-maintenance", t(ctx, "settings.db_maintenance.description")) {
 						<div id="maintenance-status" hx-get="/api/v1/settings/maintenance/status" hx-trigger="load" hx-swap="innerHTML">
 							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "common.loading_status") }</p>
 						</div>
@@ -2324,19 +2314,8 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								{ t(ctx, "settings.db_maintenance.schedule_note") }
 							</p>
 						</div>
-					</div>
-				</div>
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.backup.title") }</h2>
-							@components.ContextHelp("help-backup", t(ctx, "settings.backup.title"), t(ctx, "settings.backup.help"), "settings-maintenance-backup")
-						</div>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "settings.backup.description") }
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-4">
+				}
+				@components.SettingSection("help-backup", t(ctx, "settings.backup.title"), t(ctx, "settings.backup.help"), "settings-maintenance-backup", t(ctx, "settings.backup.description")) {
 						<div class="flex items-center gap-3">
 							<button
 								type="button"
@@ -2399,8 +2378,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
 							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.backup.loading_history") }</p>
 						</div>
-					</div>
-				</div>
+				}
 				<!-- Settings Export / Import -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">

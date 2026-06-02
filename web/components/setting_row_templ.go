@@ -8,45 +8,35 @@ package components
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// SettingRow is the minimal label+description+control row primitive for the
-// shared settings layer (M55 #1806 spike). It WRAPS existing field controls
+// SettingRow is the shared label+description+control row primitive for the
+// settings content layer (M55 #1807). It WRAPS existing field controls
 // (passed as children); it does not fork or re-implement any field component.
 //
 // It renders the common "field with a label above it and an optional helper
-// line below the control" stack that several settings inputs use:
+// line below the control" stack:
 //
 //	<div>
-//	  <div class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ label }</div>
+//	  <label for="{inputID}" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ label }</label>
 //	  { children... }
 //	  if desc != "" {
 //	    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ desc }</p>
 //	  }
 //	</div>
 //
+// When inputID is empty the label element is rendered as a <div> instead of a
+// <label>, so no false label-for-control association is made for controls that
+// carry their own aria-label or aria-labelledby. Pass inputID when the child
+// control has a matching id attribute so the browser associates them properly.
+//
 // Strings are passed PRE-RESOLVED so the wrapper stays i18n-agnostic.
 //
-// Scope note for the spike: the two target sections (image cache, notification
-// badges) lay their controls out with bespoke flex/grid wrappers and inline
-// ContextHelp icons next to the label, which the simple stack above cannot
-// reproduce byte-for-byte without forking those controls. So SettingRow is
-// provided to prove the API shape but is intentionally NOT retrofitted onto
-// those two sections where it would change the rendered bytes. SettingSection
-// (the card shell) is the wrapper actually adopted in stable here; SettingRow
-// lands as the row primitive the broader migration (D-settings-migration-plan)
-// will build on.
-//
-// Accessibility: the label text is rendered as a styled <div>, not a <label>,
-// so the wrapper makes no false (and unassociated) label-for-control promise --
-// children remain responsible for their own labelling (aria-label /
-// aria-labelledby / a wrapping <label>). The follow-up that adopts SettingRow
-// (#1807) will give it an optional inputID parameter so it can emit a real
-// <label for={inputID}> when the caller supplies the control's id.
-//
 // Parameters:
-//   - label: pre-resolved field label rendered above the control
-//   - desc:  optional pre-resolved helper text rendered below the control; the
-//     <p> is omitted entirely when desc is the empty string
-func SettingRow(label, desc string) templ.Component {
+//   - label:   pre-resolved field label rendered above the control
+//   - desc:    optional pre-resolved helper text rendered below the control;
+//     the <p> is omitted entirely when desc is the empty string
+//   - inputID: optional id of the child control; when non-empty a <label for>
+//     is emitted instead of a plain <div> for proper a11y association
+func SettingRow(label, desc, inputID string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -67,47 +57,84 @@ func SettingRow(label, desc string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div><div class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var2 string
-		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(label)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 43, Col: 81}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
+		if inputID != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<label for=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var2 string
+			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(inputID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 34, Col: 23}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var3 string
+			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 34, Col: 100}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</label>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var4 string
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 36, Col: 82}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		templ_7745c5c3_Err = templ_7745c5c3_Var1.Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if desc != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var3 string
-			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(desc)
+			var templ_7745c5c3_Var5 string
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(desc)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 46, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/setting_row.templ`, Line: 40, Col: 66}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
