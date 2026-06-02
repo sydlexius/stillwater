@@ -73,6 +73,11 @@ jobs:
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
         with:
           version: v2.12.2
+          # Invalidate the action's result cache daily (default is 7 days) so a
+          # stale cache cannot resurrect a phantom finding across tool/action
+          # bumps. PR #1821 hit exactly this: a cached analysis surfaced an
+          # SA5011 that a fresh run (and local lint) did not reproduce.
+          cache-invalidation-interval: 1
 
       - name: Validate OpenAPI spec
         run: npx --yes @stoplight/spectral-cli@6.15.0 lint internal/api/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
