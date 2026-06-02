@@ -93,6 +93,28 @@ func TestSettingRow_WithDesc(t *testing.T) {
 	}
 }
 
+// TestSettingRow_NoInputID_WithDesc verifies that when inputID is empty but desc
+// is non-empty, the label is rendered as a plain <div> and the desc paragraph
+// still appears below the child control.
+func TestSettingRow_NoInputID_WithDesc(t *testing.T) {
+	var buf bytes.Buffer
+	child := textChild(`<select id="my-select"></select>`)
+	ctx := templ.WithChildren(context.Background(), child)
+	if err := SettingRow("My Label", "Helper text for this control.", "").Render(ctx, &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+
+	// Label rendered as div when inputID is empty.
+	if !strings.Contains(out, `<div class="block text-sm font-medium text-gray-700 dark:text-gray-300">My Label</div>`) {
+		t.Errorf("expected plain div label; got:\n%s", out)
+	}
+	// Desc paragraph should still appear.
+	if !strings.Contains(out, `<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Helper text for this control.</p>`) {
+		t.Errorf("expected desc paragraph; got:\n%s", out)
+	}
+}
+
 // TestSettingSection_Structure verifies the card+header shell emitted by
 // SettingSection matches the pattern every settings card hand-rolled before
 // the M55 shared layer was introduced: .sw-card > border-b header (h2 +
