@@ -523,7 +523,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					</details>
 					@components.ContextHelp("help-artists-sort", t(ctx, "artists.help.sort.label"), t(ctx, "artists.help.sort"), "")
 					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
-						@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
+						@components.ColumnToggle("artists", "artists-table", t(ctx, "common.columns"), false, []components.ColumnDef{
 							{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
 							{Key: "type", Label: t(ctx, "artists.sort.type")},
 							{Key: "origin", Label: t(ctx, "artists.sort.origin")},

@@ -15,13 +15,20 @@ type ColumnDef struct {
 	Required bool   // if true, checkbox is disabled and always checked
 }
 
-// ColumnToggle renders a "Columns" dropdown with checkboxes that toggle
-// column visibility on a table. State is persisted to localStorage under
-// the key "columns.<storageKey>".
+// ColumnToggle renders a columns dropdown with checkboxes that toggle column
+// visibility on a table. State is persisted to localStorage under the key
+// "columns.<storageKey>".
+//
+// label is the localized control label (e.g. "Columns"); the caller passes it
+// because this component carries no translator. When iconOnly is true the
+// visible label text is dropped and the label is surfaced via title +
+// aria-label only (icon-only toolbar treatment, e.g. the next/ artists toolbar),
+// matching the other icon-only buttons in that toolbar. iconOnly=false keeps the
+// original text-bearing button for the stable channel, unchanged.
 //
 // The target table must have data-col attributes on every <th> and <td>.
 // An htmx:afterSettle listener re-applies saved visibility after HTMX swaps.
-func ColumnToggle(storageKey string, tableID string, columns []ColumnDef) templ.Component {
+func ColumnToggle(storageKey string, tableID string, label string, iconOnly bool, columns []ColumnDef) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -49,7 +56,7 @@ func ColumnToggle(storageKey string, tableID string, columns []ColumnDef) templ.
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(storageKey)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 17, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 24, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -62,73 +69,124 @@ func ColumnToggle(storageKey string, tableID string, columns []ColumnDef) templ.
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(tableID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 17, Col: 78}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 24, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><button type=\"button\" onclick=\"this.parentElement.querySelector('[data-col-menu]').classList.toggle('hidden')\" class=\"inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z\"></path></svg> Columns</button><div data-col-menu class=\"hidden absolute right-0 z-20 mt-1 w-48 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><button type=\"button\" onclick=\"this.parentElement.querySelector('[data-col-menu]').classList.toggle('hidden')\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		for _, col := range columns {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<label class=\"flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer\">")
+		if iconOnly {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if col.Required {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<input type=\"checkbox\" checked disabled data-col-key=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(col.Key)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 39, Col: 29}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 opacity-50\"> ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<input type=\"checkbox\" checked data-col-key=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var5 string
-				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(col.Key)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 46, Col: 29}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" onchange=\"handleColumnToggle(this)\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\"> ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(col.Label)
+			var templ_7745c5c3_Var4 string
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 51, Col: 16}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 29, Col: 17}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var5 string
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 30, Col: 22}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " class=\"inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z\"></path></svg> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if !iconOnly {
+			var templ_7745c5c3_Var6 string
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 38, Col: 11}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</label>")
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</button><div data-col-menu class=\"hidden absolute right-0 z-20 mt-1 w-48 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, col := range columns {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<label class=\"flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if col.Required {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<input type=\"checkbox\" checked disabled data-col-key=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var7 string
+				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(col.Key)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 52, Col: 29}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 opacity-50\"> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<input type=\"checkbox\" checked data-col-key=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var8 string
+				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(col.Key)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 59, Col: 29}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" onchange=\"handleColumnToggle(this)\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\"> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(col.Label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/column_toggle.templ`, Line: 64, Col: 16}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</label>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -157,12 +215,12 @@ func columnToggleScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var7 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var7 == nil {
-			templ_7745c5c3_Var7 = templ.NopComponent
+		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var10 == nil {
+			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<script>\n\t\t(function() {\n\t\t\t// Guard against double-init when multiple toggles exist on the page\n\t\t\tif (window.__colToggleInit) return;\n\t\t\twindow.__colToggleInit = true;\n\n\t\t\t// Close dropdown when clicking outside\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tdocument.querySelectorAll('[data-col-toggle]').forEach(function(wrapper) {\n\t\t\t\t\tif (!wrapper.contains(e.target)) {\n\t\t\t\t\t\tvar menu = wrapper.querySelector('[data-col-menu]');\n\t\t\t\t\t\tif (menu) menu.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t});\n\n\t\t\twindow.handleColumnToggle = function(checkbox) {\n\t\t\t\tvar wrapper = checkbox.closest('[data-col-toggle]');\n\t\t\t\tif (!wrapper) return;\n\t\t\t\tvar storageKey = wrapper.getAttribute('data-col-toggle');\n\t\t\t\tvar tableID = wrapper.getAttribute('data-col-table');\n\t\t\t\tvar key = checkbox.getAttribute('data-col-key');\n\t\t\t\tvar table = document.getElementById(tableID);\n\t\t\t\tif (!table) return;\n\n\t\t\t\ttry {\n\t\t\t\t\tvar cells = table.querySelectorAll('[data-col=\"' + key + '\"]');\n\t\t\t\t\tcells.forEach(function(cell) {\n\t\t\t\t\t\tcell.style.display = checkbox.checked ? '' : 'none';\n\t\t\t\t\t});\n\t\t\t\t} catch(e) { /* skip invalid selector from corrupted key */ }\n\n\t\t\t\tsaveColumnState(storageKey, wrapper);\n\t\t\t};\n\n\t\t\tfunction saveColumnState(storageKey, wrapper) {\n\t\t\t\tvar hidden = [];\n\t\t\t\twrapper.querySelectorAll('input[data-col-key]').forEach(function(cb) {\n\t\t\t\t\tif (!cb.checked && !cb.disabled) {\n\t\t\t\t\t\thidden.push(cb.getAttribute('data-col-key'));\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tlocalStorage.setItem('columns.' + storageKey, JSON.stringify(hidden));\n\t\t\t}\n\n\t\t\tfunction applyColumnVisibility(storageKey, tableID, wrapper) {\n\t\t\t\tvar raw = localStorage.getItem('columns.' + storageKey);\n\t\t\t\tif (!raw) return;\n\n\t\t\t\tvar hidden;\n\t\t\t\ttry { hidden = JSON.parse(raw); } catch(e) { return; }\n\t\t\t\tif (!Array.isArray(hidden)) return;\n\n\t\t\t\tvar table = document.getElementById(tableID);\n\t\t\t\tif (!table) return;\n\n\t\t\t\thidden.forEach(function(key) {\n\t\t\t\t\ttry {\n\t\t\t\t\t\ttable.querySelectorAll('[data-col=\"' + key + '\"]').forEach(function(cell) {\n\t\t\t\t\t\t\tcell.style.display = 'none';\n\t\t\t\t\t\t});\n\t\t\t\t\t} catch(e) { /* skip invalid selector from corrupted key */ }\n\t\t\t\t});\n\n\t\t\t\t// Sync checkboxes in the dropdown\n\t\t\t\tif (wrapper) {\n\t\t\t\t\twrapper.querySelectorAll('input[data-col-key]').forEach(function(cb) {\n\t\t\t\t\t\tvar k = cb.getAttribute('data-col-key');\n\t\t\t\t\t\tcb.checked = hidden.indexOf(k) === -1;\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}\n\n\t\t\twindow.initAllColumnToggles = function() {\n\t\t\t\tdocument.querySelectorAll('[data-col-toggle]').forEach(function(wrapper) {\n\t\t\t\t\tvar sk = wrapper.getAttribute('data-col-toggle');\n\t\t\t\t\tvar tid = wrapper.getAttribute('data-col-table');\n\t\t\t\t\tapplyColumnVisibility(sk, tid, wrapper);\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// Apply on initial load\n\t\t\tinitAllColumnToggles();\n\n\t\t\t// Re-apply after HTMX swaps\n\t\t\tdocument.body.addEventListener('htmx:afterSettle', function() {\n\t\t\t\tinitAllColumnToggles();\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<script>\n\t\t(function() {\n\t\t\t// Guard against double-init when multiple toggles exist on the page\n\t\t\tif (window.__colToggleInit) return;\n\t\t\twindow.__colToggleInit = true;\n\n\t\t\t// Close dropdown when clicking outside\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tdocument.querySelectorAll('[data-col-toggle]').forEach(function(wrapper) {\n\t\t\t\t\tif (!wrapper.contains(e.target)) {\n\t\t\t\t\t\tvar menu = wrapper.querySelector('[data-col-menu]');\n\t\t\t\t\t\tif (menu) menu.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t});\n\n\t\t\twindow.handleColumnToggle = function(checkbox) {\n\t\t\t\tvar wrapper = checkbox.closest('[data-col-toggle]');\n\t\t\t\tif (!wrapper) return;\n\t\t\t\tvar storageKey = wrapper.getAttribute('data-col-toggle');\n\t\t\t\tvar tableID = wrapper.getAttribute('data-col-table');\n\t\t\t\tvar key = checkbox.getAttribute('data-col-key');\n\t\t\t\tvar table = document.getElementById(tableID);\n\t\t\t\tif (!table) return;\n\n\t\t\t\ttry {\n\t\t\t\t\tvar cells = table.querySelectorAll('[data-col=\"' + key + '\"]');\n\t\t\t\t\tcells.forEach(function(cell) {\n\t\t\t\t\t\tcell.style.display = checkbox.checked ? '' : 'none';\n\t\t\t\t\t});\n\t\t\t\t} catch(e) { /* skip invalid selector from corrupted key */ }\n\n\t\t\t\tsaveColumnState(storageKey, wrapper);\n\t\t\t};\n\n\t\t\tfunction saveColumnState(storageKey, wrapper) {\n\t\t\t\tvar hidden = [];\n\t\t\t\twrapper.querySelectorAll('input[data-col-key]').forEach(function(cb) {\n\t\t\t\t\tif (!cb.checked && !cb.disabled) {\n\t\t\t\t\t\thidden.push(cb.getAttribute('data-col-key'));\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tlocalStorage.setItem('columns.' + storageKey, JSON.stringify(hidden));\n\t\t\t}\n\n\t\t\tfunction applyColumnVisibility(storageKey, tableID, wrapper) {\n\t\t\t\tvar raw = localStorage.getItem('columns.' + storageKey);\n\t\t\t\tif (!raw) return;\n\n\t\t\t\tvar hidden;\n\t\t\t\ttry { hidden = JSON.parse(raw); } catch(e) { return; }\n\t\t\t\tif (!Array.isArray(hidden)) return;\n\n\t\t\t\tvar table = document.getElementById(tableID);\n\t\t\t\tif (!table) return;\n\n\t\t\t\thidden.forEach(function(key) {\n\t\t\t\t\ttry {\n\t\t\t\t\t\ttable.querySelectorAll('[data-col=\"' + key + '\"]').forEach(function(cell) {\n\t\t\t\t\t\t\tcell.style.display = 'none';\n\t\t\t\t\t\t});\n\t\t\t\t\t} catch(e) { /* skip invalid selector from corrupted key */ }\n\t\t\t\t});\n\n\t\t\t\t// Sync checkboxes in the dropdown\n\t\t\t\tif (wrapper) {\n\t\t\t\t\twrapper.querySelectorAll('input[data-col-key]').forEach(function(cb) {\n\t\t\t\t\t\tvar k = cb.getAttribute('data-col-key');\n\t\t\t\t\t\tcb.checked = hidden.indexOf(k) === -1;\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}\n\n\t\t\twindow.initAllColumnToggles = function() {\n\t\t\t\tdocument.querySelectorAll('[data-col-toggle]').forEach(function(wrapper) {\n\t\t\t\t\tvar sk = wrapper.getAttribute('data-col-toggle');\n\t\t\t\t\tvar tid = wrapper.getAttribute('data-col-table');\n\t\t\t\t\tapplyColumnVisibility(sk, tid, wrapper);\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// Apply on initial load\n\t\t\tinitAllColumnToggles();\n\n\t\t\t// Re-apply after HTMX swaps\n\t\t\tdocument.body.addEventListener('htmx:afterSettle', function() {\n\t\t\t\tinitAllColumnToggles();\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

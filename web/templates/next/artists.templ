@@ -45,8 +45,12 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 			<input type="hidden" name="order" id="artist-order-input" value={ data.Order }/>
 			<!-- Single-row sticky toolbar (search · library · filters · sort · columns · view). -->
 			<div class="sw-next-toolbar sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-lg bg-gray-50/80 px-1 py-2 backdrop-blur dark:bg-gray-900/80">
+				<!-- The "/" focus-search shortcut is advertised once in the tip-line
+				     legend below and surfaced via the data-sw-shortcut attribute the
+				     #1789 keyboard registry reads; no inline sw-kbd keycap is pinned in
+				     the search box here (matches the next/ dashboard and avoids
+				     duplicating the hint; charter rule 2, hints owned by the registry). -->
 				<div class="relative min-w-[12rem] flex-1">
-					<kbd class="sw-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex" aria-hidden="true">/</kbd>
 					<input
 						id="artist-search"
 						type="search"
@@ -90,9 +94,11 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 						<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
 					</svg>
 					<!-- Label is tooltip-only (M55 #1335, maintainer 2026-05-30): the funnel
-					     icon + [f] kbd carry the meaning; "Filters" moves to the title
-					     tooltip to save toolbar width. -->
-					<kbd class="sw-kbd ml-1 hidden sm:inline-flex" aria-hidden="true">f</kbd>
+					     icon carries the meaning and "Filters" moves to the title tooltip
+					     to save toolbar width. The "f" shortcut is advertised once in the
+					     tip-line legend below and via the data-sw-shortcut attribute the
+					     #1789 registry reads; no inline sw-kbd keycap here (matches the
+					     next/ dashboard and avoids duplicating the hint; charter rule 2). -->
 					if activeFilterCount(data.Filters) > 0 {
 						<span class={ filterTriggerBadge }>
 							{ fmt.Sprintf("%d", activeFilterCount(data.Filters)) }
@@ -127,7 +133,7 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 					</div>
 				</details>
 				<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
-					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
+					@components.ColumnToggle("artists", "artists-table", t(ctx, "common.columns"), true, []components.ColumnDef{
 						{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
 						{Key: "library", Label: t(ctx, "artists.col.library")},
 						{Key: "type", Label: t(ctx, "artists.sort.type")},
@@ -211,6 +217,10 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_next") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.page_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.page_next") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_open") }</span></span>
 				<span aria-hidden="true">·</span>

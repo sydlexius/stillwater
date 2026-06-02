@@ -22,6 +22,35 @@ func sortVis(data templates.ArtistListData, col, order string) string {
 	return "display:none"
 }
 
+// buildArtistsPagination maps the artists list's page-based PaginationData into
+// the shared NextPagination component (M55 #1791), the next-channel analogue of
+// the dashboard's buildDashPagination. It routes through NewNextPagination so it
+// inherits the same coherence invariants (a disabled side carries no URL; the
+// target is normalized to a "#"-prefixed selector). HasPrev/HasNext come from
+// the 1-based CurrentPage vs TotalPages; the URLs reuse PaginationData.PageURL
+// so the full sort/filter/search/view/library/status/health/ids query contract
+// is preserved without duplicating it.
+//
+// Unlike the dashboard (which swaps only its roving rows via innerHTML and
+// refreshes the footer out-of-band), the artists list replaces its ENTIRE
+// #artist-content fragment: every artists swap (sort, filter, search, view, and
+// now paging) targets #artist-content with outerHTML and the handler returns the
+// whole table/grid fragment, so the freshly rendered footer rides along with the
+// rows. Hence Swap = "outerHTML" and OOB stays false -- an out-of-band footer
+// would be redundant here and would in fact double-render the nav.
+func buildArtistsPagination(p components.PaginationData) NextPaginationData {
+	np := NewNextPagination(
+		p.CurrentPage > 1,
+		p.CurrentPage < p.TotalPages,
+		p.PageURL(p.CurrentPage-1),
+		p.PageURL(p.CurrentPage+1),
+		p.Target(),
+		false,
+	)
+	np.Swap = "outerHTML"
+	return np
+}
+
 // ArtistsTable is the next/ channel table fragment (M55 #1335). It REUSES the
 // shared wrapper -- the #artist-content swap target, the BulkActionBar safety
 // rail, the active-filter chips, and Pagination -- and forks only the ROW
@@ -37,6 +66,10 @@ templ ArtistsTable(data templates.ArtistListData) {
 		data-sw-roving-label-j={ t(ctx, "artists.shortcuts.tip_next") }
 		data-sw-roving-label-k={ t(ctx, "artists.shortcuts.tip_prev") }
 		data-sw-roving-label-Enter={ t(ctx, "artists.shortcuts.tip_open") }
+		data-sw-roving-label-h={ t(ctx, "artists.shortcuts.page_prev") }
+		data-sw-roving-label-l={ t(ctx, "artists.shortcuts.page_next") }
+		data-sw-roving-boundary-next="#sw-page-next"
+		data-sw-roving-boundary-prev="#sw-page-prev"
 		data-filter-active?={ nextIsFilterActive(data) }>
 		@nextBulkStrip(data, true)
 		<!-- Active-filter chips row removed (M55 #1335, maintainer 2026-05-30): it
@@ -76,7 +109,7 @@ templ ArtistsTable(data templates.ArtistListData) {
 				</tbody>
 			</table>
 		</div>
-		@components.Pagination(data.Pagination)
+		@NextPagination(buildArtistsPagination(data.Pagination))
 	</div>
 }
 
@@ -179,6 +212,10 @@ templ ArtistsGrid(data templates.ArtistListData) {
 		data-sw-roving-label-j={ t(ctx, "artists.shortcuts.tip_next") }
 		data-sw-roving-label-k={ t(ctx, "artists.shortcuts.tip_prev") }
 		data-sw-roving-label-Enter={ t(ctx, "artists.shortcuts.tip_open") }
+		data-sw-roving-label-h={ t(ctx, "artists.shortcuts.page_prev") }
+		data-sw-roving-label-l={ t(ctx, "artists.shortcuts.page_next") }
+		data-sw-roving-boundary-next="#sw-page-next"
+		data-sw-roving-boundary-prev="#sw-page-prev"
 		data-filter-active?={ nextIsFilterActive(data) }>
 		@nextBulkStrip(data, false)
 		<!-- Active-filter chips row removed (M55 #1335, maintainer 2026-05-30): it
@@ -194,7 +231,7 @@ templ ArtistsGrid(data templates.ArtistListData) {
 				}
 			</div>
 		}
-		@components.Pagination(data.Pagination)
+		@NextPagination(buildArtistsPagination(data.Pagination))
 	</div>
 }
 

@@ -1255,7 +1255,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
+			templ_7745c5c3_Err = components.ColumnToggle("artists", "artists-table", t(ctx, "common.columns"), false, []components.ColumnDef{
 				{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
 				{Key: "type", Label: t(ctx, "artists.sort.type")},
 				{Key: "origin", Label: t(ctx, "artists.sort.origin")},
