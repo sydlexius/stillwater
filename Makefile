@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi hadolint scan bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint scan bruno-ci
 
 # Binary name
 BINARY=stillwater
@@ -115,6 +115,13 @@ docker-stop:
 ## check-openapi: Verify OpenAPI spec matches handler implementations
 check-openapi:
 	go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
+
+## sync-tool-versions: Mirror CI-side tool versions into the pins Dependabot cannot edit
+##   Use after a Dependabot tool bump (e.g. crate-ci/typos) drifts the Tool Version
+##   Drift gate: this rewrites the .pre-commit-config.yaml rev: (and Dockerfile
+##   TAILWIND_VERSION) to match the CI/source side. Review and commit the result.
+sync-tool-versions:
+	@./scripts/check-tool-versions.sh --fix
 
 ## hooks: Install git hooks (pre-commit lint, pre-push gate)
 hooks:
