@@ -78,7 +78,7 @@ templ SectionActiveProfile(data SettingsData) {
 					<div class="mt-4 flex items-center justify-between">
 						<div>
 							<div class="flex items-center gap-1">
-								<span class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</span>
+								<span id="symlink-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</span>
 								@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-general-symlinks")
 							</div>
 							<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -101,7 +101,7 @@ templ SectionActiveProfile(data SettingsData) {
 							}
 							role="switch"
 							aria-checked={ boolAttr(data.ActiveProfile.UseSymlinks) }
-							aria-label={ t(ctx, "settings.symlinks.title") }
+							aria-labelledby="symlink-toggle-label"
 							if data.SymlinkSupported {
 								onclick="toggleSymlinks(this)"
 							}
@@ -335,7 +335,7 @@ templ SectionBehavior(data SettingsData) {
 			<div class="flex items-center justify-between">
 				<div>
 					<div class="flex items-center gap-1">
-						<span class="font-medium text-sm">{ t(ctx, "settings.platform_debug.title") }</span>
+						<span id="platform-debug-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.platform_debug.title") }</span>
 						@components.ContextHelp("help-platform-debug", t(ctx, "settings.platform_debug.title"), t(ctx, "settings.platform_debug.help"), "settings-general-platform-debug")
 					</div>
 					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -352,7 +352,7 @@ templ SectionBehavior(data SettingsData) {
 					}
 					role="switch"
 					aria-checked={ boolAttr(data.ShowPlatformDebug) }
-					aria-label={ t(ctx, "settings.platform_debug.title") }
+					aria-labelledby="platform-debug-toggle-label"
 					onclick="togglePlatformDebug(this)"
 				>
 					<span
@@ -388,13 +388,13 @@ templ SectionImageCache(data SettingsData, assets AssetPaths) {
 					onchange="saveCacheMaxSize(this.value)"
 				>
 					if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
-						<option value={ data.CacheMaxSizeMB } selected>{ data.CacheMaxSizeMB + " MB (custom)" }</option>
+						<option value={ data.CacheMaxSizeMB } selected>{ tf(ctx, "settings.image_cache.size_custom", data.CacheMaxSizeMB) }</option>
 					}
 					<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>{ t(ctx, "settings.image_cache.unlimited") }</option>
-					<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
-					<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
-					<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>1 GB</option>
-					<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>2 GB</option>
+					<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>{ t(ctx, "settings.image_cache.size_256mb") }</option>
+					<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>{ t(ctx, "settings.image_cache.size_512mb") }</option>
+					<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>{ t(ctx, "settings.image_cache.size_1gb") }</option>
+					<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>{ t(ctx, "settings.image_cache.size_2gb") }</option>
 				</select>
 			</div>
 			<div class="flex items-end gap-3">

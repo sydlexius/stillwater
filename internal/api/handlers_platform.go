@@ -405,6 +405,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		RuleScheduleMinutes:     r.ruleScheduleMinutes(req.Context()),
 		BackupRetention:         r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),
 		BackupMaxAgeDays:        r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
+		MaintIntervalHours:      r.getIntSetting(req.Context(), "db_maintenance.interval_hours", 24),
 		CacheMaxSizeMB:          r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),
 		NameSimilarityThreshold: r.getNameSimilarityThreshold(req.Context()),
 		MetadataLanguages:       metadataLangs,

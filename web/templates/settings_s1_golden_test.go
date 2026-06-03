@@ -15,6 +15,13 @@ package templates
 // Golden files are generated from the first post-extraction run via -update flag
 // (or by running go generate on the test).  Once committed they lock future
 // regressions.
+//
+// NOTE: the extraction itself was byte-identical, but this PR additionally
+// applied a11y and i18n hardening to some touched cards (switch label
+// association via aria-labelledby on SectionActiveProfile/SectionBehavior, and
+// localized Image Cache size labels on SectionImageCache). The committed
+// per-section goldens therefore intentionally differ from main's original
+// inline render for those controls; they capture the hardened output.
 
 import (
 	"bytes"
@@ -40,6 +47,12 @@ const s1TempDir = "/tmp/m55-1809-s1"
 
 // s1GoldenDir is the committed directory for per-section golden HTML.
 const s1GoldenDir = "testdata"
+
+// imageCacheTestAssets supplies a non-empty SettingsImageCacheJS path so the
+// SectionImageCache golden fixtures render a valid <script src="..."> element.
+// Production always populates this path (see internal/api/handlers.go); an
+// empty AssetPaths would emit <script src=""></script>, which is invalid HTML.
+var imageCacheTestAssets = AssetPaths{SettingsImageCacheJS: "/static/js/settings/image-cache.js"}
 
 // editableCustomProfile is a user-created custom profile (editable).
 var editableCustomProfile = platform.Profile{
@@ -531,7 +544,7 @@ func TestSectionImageCache_Custom_Golden(t *testing.T) {
 	ctx := testCtx(t)
 	data := SettingsData{CacheMaxSizeMB: "777"}
 	var buf bytes.Buffer
-	if err := SectionImageCache(data, AssetPaths{}).Render(ctx, &buf); err != nil {
+	if err := SectionImageCache(data, imageCacheTestAssets).Render(ctx, &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	checkOrUpdateGolden(t, "image_cache_custom", buf.String())
@@ -541,7 +554,7 @@ func TestSectionImageCache_Zero_Golden(t *testing.T) {
 	ctx := testCtx(t)
 	data := SettingsData{CacheMaxSizeMB: "0"}
 	var buf bytes.Buffer
-	if err := SectionImageCache(data, AssetPaths{}).Render(ctx, &buf); err != nil {
+	if err := SectionImageCache(data, imageCacheTestAssets).Render(ctx, &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	checkOrUpdateGolden(t, "image_cache_zero", buf.String())
@@ -551,7 +564,7 @@ func TestSectionImageCache_1024_Golden(t *testing.T) {
 	ctx := testCtx(t)
 	data := SettingsData{CacheMaxSizeMB: "1024"}
 	var buf bytes.Buffer
-	if err := SectionImageCache(data, AssetPaths{}).Render(ctx, &buf); err != nil {
+	if err := SectionImageCache(data, imageCacheTestAssets).Render(ctx, &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	checkOrUpdateGolden(t, "image_cache_1024", buf.String())

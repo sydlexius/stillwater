@@ -76,6 +76,26 @@ func TestIsNoiseKey(t *testing.T) {
 		{"settings.image_cache.unlimited.description", false},    // ditto
 		{"settings.libraries.lock_nfo_label.description", false}, // ditto
 		{"settings.api_tokens.scope_admin.description", false},   // ditto
+		// Option-label and action-button families surfaced when the General and
+		// Maintenance cards were extracted and localized (#1809). These are
+		// runtime chrome (select options, buttons, in-flight spinners) and must
+		// be filtered so the docs reference page stays unchanged.
+		{"settings.image_cache.size_256mb", true},    // `size_` IS noise
+		{"settings.image_cache.size_512mb", true},    // `size_` IS noise
+		{"settings.image_cache.size_1gb", true},      // `size_` IS noise
+		{"settings.image_cache.size_2gb", true},      // `size_` IS noise
+		{"settings.image_cache.size_custom", true},   // `size_` IS noise (tf %s format string)
+		{"settings.db_maintenance.optimize", true},   // `optimize` IS noise
+		{"settings.db_maintenance.optimizing", true}, // `optimizing` IS noise
+		{"settings.db_maintenance.vacuum", true},     // `vacuum` IS noise
+		{"settings.db_maintenance.vacuuming", true},  // `vacuum` substring IS noise
+		{"settings.backup.create", true},             // exact leaf `create` IS noise
+		{"settings.backup.creating", true},           // `creating` IS noise
+		// The `create` exact-leaf filter must NOT clobber create_invite, a
+		// documented control whose leaf merely contains "create".
+		{"settings.users.create_invite", false}, // documented control, survives
+		// The image-cache `max_size` control's leaf has no `size_` substring.
+		{"settings.image_cache.max_size", false}, // real control, survives
 	}
 	for _, tc := range cases {
 		got := isNoiseKey(tc.key)

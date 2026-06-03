@@ -82,6 +82,7 @@ type SettingsData struct {
 	APITokens                []auth.APIToken
 	BackupRetention          int
 	BackupMaxAgeDays         int
+	MaintIntervalHours       int // Current db_maintenance.interval_hours setting (6/12/24/168); selects the maintenance schedule option.
 	SymlinkSupported         bool
 	CacheMaxSizeMB           string
 	NameSimilarityThreshold  int
@@ -1404,16 +1405,19 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Notification Badge Settings -->
 				@components.SettingSection("help-notif-badges", t(ctx, "settings.notif_badges.title"), t(ctx, "settings.notif_badges.help"), "settings-automation-notif-badges", t(ctx, "settings.notif_badges.description")) {
 					<div class="flex items-center gap-3">
-						<label class="relative inline-flex items-center cursor-pointer">
+						<label for="notif-badge-enabled" class="relative inline-flex items-center gap-3 cursor-pointer">
 							<input
 								type="checkbox"
+								id="notif-badge-enabled"
 								class="sr-only peer"
 								checked?={ data.BadgeEnabled }
+								role="switch"
+								aria-checked={ boolAttr(data.BadgeEnabled) }
 								onclick="updateSetting('notif_badge_enabled', this.checked)"
 							/>
 							<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
+							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.enable_badge") }</span>
 						</label>
-						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.enable_badge") }</span>
 						@components.ContextHelp("help-notif-enable-badge", t(ctx, "settings.notif_badges.enable_badge"), t(ctx, "settings.notif_badges.enable_badge.help"), "settings-automation-notif-badges-enable-badge")
 					</div>
 					<div class="space-y-2">
@@ -1834,10 +1838,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							hx-swap="innerHTML"
 							hx-indicator="#optimize-spinner"
 						>
-							Optimize Now
+							{ t(ctx, "settings.db_maintenance.optimize") }
 						</button>
 						<span id="optimize-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
-							Optimizing...
+							{ t(ctx, "settings.db_maintenance.optimizing") }
 						</span>
 						<button
 							type="button"
@@ -1848,10 +1852,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							hx-indicator="#vacuum-spinner"
 							hx-confirm={ t(ctx, "settings.db_maintenance.confirm_vacuum") }
 						>
-							Vacuum
+							{ t(ctx, "settings.db_maintenance.vacuum") }
 						</button>
 						<span id="vacuum-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
-							Running vacuum...
+							{ t(ctx, "settings.db_maintenance.vacuuming") }
 						</span>
 					</div>
 					<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -1865,10 +1869,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								onchange="updateMaintSchedule(this)"
 								class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 							>
-								<option value="6">{ t(ctx, "settings.schedule.every_6h") }</option>
-								<option value="12">{ t(ctx, "settings.schedule.every_12h") }</option>
-								<option value="24" selected>{ t(ctx, "settings.schedule.daily") }</option>
-								<option value="168">{ t(ctx, "settings.schedule.weekly") }</option>
+								<option value="6" selected?={ data.MaintIntervalHours == 6 }>{ t(ctx, "settings.schedule.every_6h") }</option>
+								<option value="12" selected?={ data.MaintIntervalHours == 12 }>{ t(ctx, "settings.schedule.every_12h") }</option>
+								<option value="24" selected?={ data.MaintIntervalHours == 24 }>{ t(ctx, "settings.schedule.daily") }</option>
+								<option value="168" selected?={ data.MaintIntervalHours == 168 }>{ t(ctx, "settings.schedule.weekly") }</option>
 							</select>
 							<span id="maint-schedule-status"></span>
 						</div>
@@ -1887,10 +1891,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							hx-swap="innerHTML"
 							hx-indicator="#backup-spinner"
 						>
-							Create Backup
+							{ t(ctx, "settings.backup.create") }
 						</button>
 						<span id="backup-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
-							Creating backup...
+							{ t(ctx, "settings.backup.creating") }
 						</span>
 					</div>
 					<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -1929,7 +1933,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								class="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
 								onclick="saveBackupSettings()"
 							>
-								Save
+								{ t(ctx, "common.save") }
 							</button>
 							<span id="backup-retention-status" class="text-xs text-green-600 dark:text-green-400 hidden">{ t(ctx, "common.saved") }</span>
 						</div>

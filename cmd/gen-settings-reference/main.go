@@ -1143,6 +1143,33 @@ var noiseTokens = []string{
 	// ("Revoke invite %s"). Not covered by the existing _revoked suffix token
 	// since the key stem is the verb, not the past-tense form.
 	"revoke_invite",
+	// Option-label and action-button families surfaced when the General and
+	// Maintenance cards were extracted (M55 #1809) and their previously
+	// hardcoded English labels were localized. These are operate-the-app
+	// affordances (select options, action buttons, in-flight spinners), not
+	// configurable settings, so they must not appear on the docs reference
+	// page. Leaf-segment matching keeps the real controls safe: the image
+	// cache "max_size" control's leaf has no "size_" substring, and the
+	// "confirm_vacuum" dialog is already covered by the confirm_ token.
+	"size_",      // image_cache.size_256mb/512mb/1gb/2gb/size_custom select options
+	"optimize",   // db_maintenance.optimize ("Optimize Now" button)
+	"optimizing", // db_maintenance.optimizing ("Optimizing..." spinner)
+	"vacuum",     // db_maintenance.vacuum + .vacuuming (button + spinner)
+	"creating",   // backup.creating ("Creating backup..." spinner)
+	// NOTE: backup.create ("Create Backup") is filtered via noiseLeavesExact,
+	// not a "create" substring token -- a bare "create" token also matches
+	// settings.users.users.create_invite ("Create Invite"), a documented control.
+}
+
+// noiseLeavesExact lists leaf segments that mark a key as runtime UI text only
+// when they match the leaf EXACTLY. This is for noise words that are also a
+// substring of a real, documented control's leaf, where the substring-based
+// noiseTokens would over-match. "create" is the motivating case:
+// settings.backup.create ("Create Backup" button) is runtime chrome, but
+// settings.users.users.create_invite ("Create Invite") is a documented control
+// whose leaf contains "create".
+var noiseLeavesExact = map[string]struct{}{
+	"create": {}, // backup.create ("Create Backup" button); must not match create_invite
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens
@@ -1156,6 +1183,9 @@ var noiseTokens = []string{
 // .title and .description that the docs page needs to render.
 func isNoiseKey(k string) bool {
 	last := lastSegmentOf(k)
+	if _, ok := noiseLeavesExact[last]; ok {
+		return true
+	}
 	for _, tok := range noiseTokens {
 		if strings.Contains(last, tok) {
 			return true
