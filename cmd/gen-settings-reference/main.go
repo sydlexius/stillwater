@@ -72,41 +72,57 @@ const templSubTemplateGlob = "web/templates/settings_*.templ"
 // across worktrees and test fixtures.
 var subTemplateExclude = map[string]struct{}{}
 
-// subTemplatePanelOverride maps a sub-template basename to the panel ID it
-// should be assigned to, overriding the default name-derived ID. Used when a
-// file's basename does not map 1:1 to a single Settings tab (e.g. shared
-// helper files whose section funcs are called from multiple tabs but whose
-// ContextHelp doc-anchor strings already embed the correct tab prefix).
-var subTemplatePanelOverride = map[string]string{
-	// settings_sections.templ holds shared Section* funcs extracted from
-	// settings.templ (M55 #1809). The funcs contribute to both "general" and
-	// "libraries" panels, but the stem-derived ID "sections" has no tab panel.
-	// Assign to "general" (the primary panel) so its ContextHelp keys are
-	// included in the anchors file; the libraries keys are also discovered here
-	// (slightly out of tab order in the generated docs) but anchor coverage is
-	// the critical property.
-	"settings_sections.templ": "general",
+// subTemplateHelperOnly names settings_*.templ files (by basename) that are
+// NOT backed by a single Settings tab panel. Their templ functions are shared
+// renderers @-called from MULTIPLE panels in the trunk (e.g. the M55 #1809
+// Section* funcs that contribute to both "general" and "libraries"), so the
+// filename-stem-derived panel ID is meaningless for them.
+//
+// These files are folded into the GLOBAL helper index (so the trunk's
+// recursive panel walk can step into their bodies and attribute each i18n key
+// to the panel it is actually rendered FROM), but they are deliberately
+// EXCLUDED from the filename-stem second-pass attribution that real
+// single-panel sub-templates (settings_users.templ -> "users") use. Keying on
+// basename keeps the set portable across worktrees and test fixtures.
+var subTemplateHelperOnly = map[string]struct{}{
+	"settings_sections.templ": {},
 }
 
 // discoverTemplSources auto-discovers the trunk + sub-template files the
 // panel scanner walks, replacing what used to be a hand-maintained allowlist.
-// Returns the trunk path first, followed by sub-templates in sorted order
-// for deterministic output. The sub-template-to-panel map derives the panel
-// ID from the filename (`settings_users.templ` -> `users`); if a future
-// sub-template uses a panel ID that doesn't match its filename, add it to
-// subTemplateExclude (skip discovery) and pass it explicitly.
+// Returns:
+//
+//   - sources: the trunk path first, then single-panel sub-templates in sorted
+//     order, then helper-only sources in sorted order (deterministic output).
+//   - owner: the single-panel sub-template-to-panel map, deriving the panel ID
+//     from the filename (`settings_users.templ` -> `users`). Helper-only files
+//     are NOT in this map (they have no single panel).
+//   - helperOnly: the set (by full path) of sources that are helper-only, so
+//     scanPanels folds their helpers into the global index but skips them in
+//     the filename-stem attribution pass.
+//
+// If a future single-panel sub-template uses a panel ID that doesn't match its
+// filename, add it to subTemplateExclude (skip discovery) and pass it
+// explicitly; if it is a multi-panel shared-helper file, add it to
+// subTemplateHelperOnly instead.
 //
 // glob is the filesystem-style pattern for sub-template discovery; it is
 // resolved with filepath.Glob, so callers can override during tests.
-func discoverTemplSources(trunk, glob string) ([]string, map[string]string, error) {
+func discoverTemplSources(trunk, glob string) (sources []string, owner map[string]string, helperOnly map[string]struct{}, err error) {
 	subPaths, err := filepath.Glob(glob)
 	if err != nil {
-		return nil, nil, fmt.Errorf("glob %q: %w", glob, err)
+		return nil, nil, nil, fmt.Errorf("glob %q: %w", glob, err)
 	}
 	sort.Strings(subPaths)
 
-	sources := []string{trunk}
-	owner := make(map[string]string)
+	sources = []string{trunk}
+	owner = make(map[string]string)
+	helperOnly = make(map[string]struct{})
+	// Collect helper-only sources separately so they sort after the
+	// single-panel sub-templates in the returned slice, keeping the
+	// filename-attributed pass (sources[1:] minus helperOnly) contiguous and
+	// the overall order deterministic.
+	var helperOnlyPaths []string
 	for _, p := range subPaths {
 		// Glob includes the trunk file when it matches `settings_*.templ`
 		// (it doesn't, since the trunk is `settings.templ`), but we filter
@@ -118,15 +134,18 @@ func discoverTemplSources(trunk, glob string) ([]string, map[string]string, erro
 		if _, skip := subTemplateExclude[base]; skip {
 			continue
 		}
+		if _, isHelperOnly := subTemplateHelperOnly[base]; isHelperOnly {
+			helperOnly[p] = struct{}{}
+			helperOnlyPaths = append(helperOnlyPaths, p)
+			continue
+		}
 		stem := strings.TrimSuffix(base, ".templ")       // settings_users
 		panelID := strings.TrimPrefix(stem, "settings_") // users
-		if override, ok := subTemplatePanelOverride[base]; ok {
-			panelID = override
-		}
 		owner[p] = panelID
 		sources = append(sources, p)
 	}
-	return sources, owner, nil
+	sources = append(sources, helperOnlyPaths...)
+	return sources, owner, helperOnly, nil
 }
 
 func main() {
@@ -154,11 +173,11 @@ func run(outPath, anchorsPath, i18nPath string, checkOnly bool) error {
 		return fmt.Errorf("load i18n: %w", err)
 	}
 
-	sources, owner, err := discoverTemplSources(templTrunkPath, templSubTemplateGlob)
+	sources, owner, helperOnly, err := discoverTemplSources(templTrunkPath, templSubTemplateGlob)
 	if err != nil {
 		return fmt.Errorf("discover templ sources: %w", err)
 	}
-	tabs, err := scanPanels(sources, owner)
+	tabs, err := scanPanels(sources, owner, helperOnly)
 	if err != nil {
 		return fmt.Errorf("scan panels: %w", err)
 	}
@@ -333,10 +352,80 @@ var panelHelperCallRE = regexp.MustCompile(`@([A-Za-z][A-Za-z0-9]*)\s*\(`)
 // reference too. Whitespace is permissive because templ wraps calls across lines.
 var i18nCallRE = regexp.MustCompile(`\btf?\s*\(\s*ctx\s*,\s*"(settings\.[A-Za-z0-9_.]+)"`)
 
+// helperRef points at one templ-helper body, carrying the source bytes the
+// body lives in along with its [start, end) byte range. It lets the trunk's
+// recursive panel walk step into a helper whose declaration sits in a
+// DIFFERENT file (the M55 #1809 Section* funcs in settings_sections.templ),
+// not just helpers declared in the trunk itself.
+//
+// extractionLayer marks a helper that lives in a helper-only source
+// (settings_sections.templ): such helpers are a TRANSPARENT extraction layer
+// the panel walk recurses through freely, so a @Section* call resolves to the
+// same effective key set the inline markup produced before the extraction.
+// Trunk helpers (extractionLayer=false) keep the historical one-level
+// expansion contract: the panel walk emits their direct keys but does NOT
+// follow their own @-calls deeper, matching the pre-extraction generator
+// output exactly (the docs byte-for-byte gate). Recursing into trunk helpers
+// would newly surface keys the established docs never listed (e.g. ruleRow's
+// @ruleConfigForm form-control keys), which is out of scope for this fix.
+type helperRef struct {
+	src             []byte
+	start, end      int
+	extractionLayer bool
+}
+
+// buildGlobalHelperIndex assembles a single name -> helperRef map spanning the
+// trunk PLUS every helper-only source file. The trunk's recursive panel walk
+// resolves @-calls against this map so it can follow a call into a helper body
+// that lives in another file.
+//
+// On a name collision the trunk definition wins: the trunk is the
+// authoritative page renderer, and a same-named helper in a partial would be a
+// genuine ambiguity we prefer to resolve deterministically rather than letting
+// filesystem-glob order decide. In practice there is no collision today (the
+// Section* funcs are uniquely named), so this is purely defensive.
+//
+// helperSources maps each helper-only file's path to its raw bytes; the caller
+// reads those files once and passes them in so this function stays
+// I/O-free and testable.
+func buildGlobalHelperIndex(trunkData []byte, trunkPath string, helperSources map[string][]byte) map[string]helperRef {
+	index := make(map[string]helperRef)
+	for name, rng := range indexTemplHelpers(trunkData, trunkPath) {
+		index[name] = helperRef{src: trunkData, start: rng[0], end: rng[1], extractionLayer: false}
+	}
+	// Iterate helper-only files in sorted path order for deterministic
+	// collision resolution if two partials ever shared a helper name.
+	paths := make([]string, 0, len(helperSources))
+	for p := range helperSources {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		data := helperSources[p]
+		for name, rng := range indexTemplHelpers(data, p) {
+			if _, exists := index[name]; exists {
+				// Trunk (or an earlier-sorted partial) already owns this name;
+				// keep the existing definition.
+				continue
+			}
+			index[name] = helperRef{src: data, start: rng[0], end: rng[1], extractionLayer: true}
+		}
+	}
+	return index
+}
+
 // scanPanels walks the trunk and sub-template files and returns one panel per
-// data-tab-panel="X" region in trunk-source order. Sub-template files are
-// attributed wholly to the panel named in subTemplateOwner.
-func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
+// data-tab-panel="X" region in trunk-source order.
+//
+// The trunk panel pass expands @-calls RECURSIVELY across a global helper
+// index spanning the trunk plus helper-only sources (helperOnly set), so each
+// i18n key is attributed to the panel it is rendered FROM -- even when the
+// helper body lives in another file (the M55 #1809 Section* funcs) and itself
+// @-calls back into trunk renderers (@settingsLibraryRow, @profileCard, ...).
+//
+// Single-panel sub-template files (those in sources[1:] but NOT in helperOnly)
+// are attributed wholly to the panel named in subOwner via the second pass.
+func scanPanels(sources []string, subOwner map[string]string, helperOnly map[string]struct{}) ([]panel, error) {
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no templ sources provided")
 	}
@@ -368,11 +457,27 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 		pageFuncEnd = lastOpener + loc[0]
 	}
 
-	// trunkHelpers indexes every `templ FUNC(...) {` declaration in the trunk
-	// to its body byte range, so panel regions can fold in the keys of
-	// in-trunk helpers they invoke via `@FUNC(...)` (e.g. settingsUpdatesTab,
-	// which renders the entire Updates tab content from outside the panel div).
-	trunkHelpers := indexTemplHelpers(trunkData, trunk)
+	// Read every helper-only source so its helpers join the global index. These
+	// files contribute helper bodies that the trunk panel walk steps INTO, but
+	// they never open panels of their own.
+	helperSources := make(map[string][]byte, len(helperOnly))
+	for _, src := range sources[1:] {
+		if _, ok := helperOnly[src]; !ok {
+			continue
+		}
+		data, err := os.ReadFile(src) //nolint:gosec // G304: developer CLI, path is intentionally configurable
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", src, err)
+		}
+		helperSources[src] = data
+	}
+
+	// globalHelpers indexes every `templ FUNC(...) {` declaration in the trunk
+	// AND in the helper-only sources to its body, so panel regions can fold in
+	// the keys of helpers they invoke via `@FUNC(...)` -- including cross-file
+	// helpers like the M55 #1809 Section* funcs and the trunk renderers those
+	// funcs in turn @-call back into.
+	globalHelpers := buildGlobalHelperIndex(trunkData, trunk, helperSources)
 
 	panels := make([]panel, 0, len(openMatches))
 	for i, m := range openMatches {
@@ -385,26 +490,18 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 		if i+1 < len(openMatches) {
 			end = openMatches[i+1][0]
 		}
-		region := trunkData[start:end]
-		keys := extractKeys(region)
-		// Follow @helperName(...) calls inside the panel region. Any keys in
-		// the helper's body belong to this panel, since the @call delegates
-		// rendering to the helper.
-		for _, hm := range panelHelperCallRE.FindAllSubmatch(region, -1) {
-			helperRange, ok := trunkHelpers[string(hm[1])]
-			if !ok {
-				continue
-			}
-			helperKeys := extractKeys(trunkData[helperRange[0]:helperRange[1]])
-			keys = appendUnique(keys, helperKeys)
-		}
-		panels = append(panels, panel{ID: id, Keys: keys})
+		panels = append(panels, panel{ID: id, Keys: panelRegionKeys(trunkData, start, end, globalHelpers)})
 	}
 
-	// Second pass: each sub-template file contributes its keys to the panel
-	// named in subOwner. The keys are appended in sub-file order after the
+	// Second pass: each single-panel sub-template file contributes its keys to
+	// the panel named in subOwner. Helper-only sources are skipped here -- they
+	// have no single panel and were already folded into the global index for
+	// the trunk pass above. The keys are appended in sub-file order after the
 	// trunk-region keys for that panel.
 	for _, src := range sources[1:] {
+		if _, ok := helperOnly[src]; ok {
+			continue
+		}
 		owner, ok := subOwner[src]
 		if !ok {
 			return nil, fmt.Errorf("sub-template %s has no entry in subTemplateOwner", src)
@@ -688,6 +785,156 @@ func walkOrdered(
 	}
 }
 
+// panelRegionKeys returns the i18n keys for one panel region src[start:end] in
+// the order the pre-extraction generator produced them (the docs byte-for-byte
+// gate). It runs the two-phase walk:
+//
+//   - Phase A (positional): walkPanelRegion emits direct t() keys and recurses
+//     THROUGH the transparent extraction-layer helpers (@Section*) in source
+//     order, while recording trunk-helper @-calls (@ProviderKeyCard,
+//     @settingsLibraryRow, ...) in encounter order without expanding them.
+//   - Phase B (deferred): flat-expand the recorded trunk helpers in encounter
+//     order, appended after Phase A. This matches the legacy "extractKeys(
+//     region) first, then append the @-helper bodies' keys" contract.
+//
+// The panel region contains no helper DECLARATIONS, only calls, so the walk
+// needs no skipRanges. seen dedups across both phases; visiting cycle-guards
+// the extraction-layer recursion.
+func panelRegionKeys(src []byte, start, end int, helpers map[string]helperRef) []string {
+	var keys []string
+	seen := make(map[string]struct{})
+	visiting := make(map[string]bool)
+	var deferred []deferredHelper
+	walkPanelRegion(src, start, end, helpers, visiting, seen, &keys, &deferred)
+	for _, d := range deferred {
+		if visiting[d.name] {
+			continue
+		}
+		emitHelperKeysFlat(d.ref.src, d.ref.start, d.ref.end, seen, &keys)
+	}
+	return keys
+}
+
+// deferredHelper records a trunk-helper @-call encountered during the
+// positional panel walk so its keys can be appended AFTER the walk, in
+// encounter order. See walkPanelRegion / panelRegionKeys for why trunk helpers
+// are deferred while extraction-layer helpers are expanded inline.
+type deferredHelper struct {
+	name string
+	ref  helperRef
+}
+
+// walkPanelRegion is the positional, cross-file panel-region walk (Phase A in
+// scanPanels). It emits the i18n keys found in src[start:end] in source order
+// and resolves @helperName(...) call sites against the GLOBAL helper index
+// (name -> helperRef), whose entries may live in another source file.
+//
+// Two helper kinds are handled differently to reproduce the pre-extraction
+// generator's exact key ordering (the docs byte-for-byte gate):
+//
+//   - Extraction-layer helpers (the M55 #1809 @Section* funcs in
+//     settings_sections.templ) are a TRANSPARENT layer: the walk recurses INTO
+//     their body at the call position, so their direct keys and inline content
+//     land exactly where the markup used to sit before extraction.
+//   - Trunk helpers (@ProviderKeyCard, @settingsLibraryRow, @profileCard, ...)
+//     are NOT expanded inline. Their refs are appended to *deferred in
+//     encounter order; scanPanels flat-expands them after the positional pass.
+//     This matches the legacy "extractKeys(region) first, then append the
+//     @-helper bodies' keys" contract -- the panel walk never followed a trunk
+//     helper's own @-calls, and its keys always trailed the region's direct
+//     keys.
+//
+// seen is the shared per-panel dedup set (a key reachable via multiple paths
+// appears once, at first encounter); visiting cycle-guards the extraction-layer
+// recursion so a cyclic @-graph terminates; isNoiseKey filters runtime UI text.
+func walkPanelRegion(
+	src []byte,
+	start, end int,
+	helpers map[string]helperRef,
+	visiting map[string]bool,
+	seen map[string]struct{},
+	out *[]string,
+	deferred *[]deferredHelper,
+) {
+	type event struct {
+		pos    int
+		isCall bool
+		key    string
+		helper string
+	}
+	region := src[start:end]
+	var events []event
+	for _, m := range i18nCallRE.FindAllSubmatchIndex(region, -1) {
+		events = append(events, event{pos: start + m[0], key: string(region[m[2]:m[3]])})
+	}
+	for _, m := range panelHelperCallRE.FindAllSubmatchIndex(region, -1) {
+		events = append(events, event{pos: start + m[0], isCall: true, helper: string(region[m[2]:m[3]])})
+	}
+	sort.Slice(events, func(i, j int) bool { return events[i].pos < events[j].pos })
+
+	for _, ev := range events {
+		if ev.isCall {
+			if visiting[ev.helper] {
+				continue
+			}
+			ref, ok := helpers[ev.helper]
+			if !ok {
+				// A bare @-call with no matching helper anywhere in the global
+				// index. The dotted-namespace form (@components.ContextHelp) is
+				// filtered upstream by panelHelperCallRE, so this fires only for
+				// bare identifiers we expected to resolve. In the trunk panel
+				// pass these are overwhelmingly inline layout/control helpers
+				// that carry no i18n keys of their own; suppress the per-call
+				// noise the sub-template self-walk surfaces for typos, since the
+				// panel region legitimately calls many key-free helpers.
+				continue
+			}
+			if ref.extractionLayer {
+				// Transparent extraction layer: recurse INTO the body at the
+				// call position so its keys and nested @-calls are placed in
+				// source order.
+				visiting[ev.helper] = true
+				walkPanelRegion(ref.src, ref.start, ref.end, helpers, visiting, seen, out, deferred)
+				delete(visiting, ev.helper)
+			} else {
+				// Trunk helper: defer flat expansion to after the positional
+				// pass (legacy append-last ordering).
+				*deferred = append(*deferred, deferredHelper{name: ev.helper, ref: ref})
+			}
+			continue
+		}
+		if isNoiseKey(ev.key) {
+			continue
+		}
+		if _, ok := seen[ev.key]; ok {
+			continue
+		}
+		seen[ev.key] = struct{}{}
+		*out = append(*out, ev.key)
+	}
+}
+
+// emitHelperKeysFlat appends every i18n key found textually in src[start:end]
+// to out in source order, filtering noise and deduping against the shared seen
+// set. It does NOT follow @-calls inside the body -- it is the one-level
+// expansion the trunk panel pass historically applied to a panel-region
+// @-call, preserved here so the Section* extraction does not change which keys
+// a panel lists. (The fully-recursive walkOrderedGlobal is used only for the
+// transparent helper-only extraction layer.)
+func emitHelperKeysFlat(src []byte, start, end int, seen map[string]struct{}, out *[]string) {
+	for _, m := range i18nCallRE.FindAllSubmatchIndex(src[start:end], -1) {
+		key := string(src[start+m[2] : start+m[3]])
+		if isNoiseKey(key) {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		*out = append(*out, key)
+	}
+}
+
 // inSkipRange reports whether pos falls within any [start,end) range in
 // ranges. ranges is expected to be sorted by start; a linear scan is fine at
 // the scale of one sub-template file's helper count.
@@ -701,25 +948,6 @@ func inSkipRange(pos int, ranges [][2]int) bool {
 		}
 	}
 	return false
-}
-
-// appendUnique appends every element of extras to base that is not already
-// present. Used to fold helper-function keys into a panel's key list while
-// preserving first-encounter order and preventing duplicates when a panel and
-// its helper both reference the same key.
-func appendUnique(base, extras []string) []string {
-	seen := make(map[string]struct{}, len(base)+len(extras))
-	for _, k := range base {
-		seen[k] = struct{}{}
-	}
-	for _, k := range extras {
-		if _, ok := seen[k]; ok {
-			continue
-		}
-		seen[k] = struct{}{}
-		base = append(base, k)
-	}
-	return base
 }
 
 // extractKeys returns every i18n key inside src in encounter order, filtering
