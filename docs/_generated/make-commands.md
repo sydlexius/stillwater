@@ -11,6 +11,7 @@
 | `make test-cover` | Run tests with coverage |
 | `make lint` | Run golangci-lint |
 | `make hadolint` | Lint Dockerfile for best practices |
+| `make vulncheck` | Scan for known vulnerabilities (govulncheck, pinned to the CI version) |
 | `make fmt` | Format all Go and Templ files |
 | `make templ` | Generate Go code from Templ templates |
 | `make tailwind` | Build Tailwind CSS |

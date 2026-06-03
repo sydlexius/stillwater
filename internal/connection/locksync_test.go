@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -336,26 +337,72 @@ func TestLockSync_UnlockErrorIsLoggedAndSkipped(t *testing.T) {
 	}
 }
 
-// TestLockSync_StartSchedulerStopsOnCancel verifies the scheduler
-// loop exits cleanly when the context is canceled, including a
-// canceled initial-delay path.
+// TestLockSync_StartSchedulerStopsOnCancel verifies the scheduler loop exits
+// cleanly when the context is canceled after the main ticker loop has started.
+//
+// The test runs inside a testing/synctest bubble so the fake clock provides
+// deterministic synchronization without time.Sleep or test-support hooks in
+// production code. Inside the bubble, time.After and time.NewTicker use the
+// fake clock, which only advances when every goroutine in the bubble is
+// durably blocked:
+//
+//  1. time.Sleep(2ms) blocks the test goroutine on a fake 2ms timer.
+//  2. The scheduler goroutine is blocked on time.After(1ms) - the startup delay.
+//  3. All goroutines are durably blocked, so the fake clock advances to 1ms.
+//  4. Scheduler wakes, runs its initial Run() (fast in-memory SQLite), then
+//     blocks on time.NewTicker(1h) in the main loop.
+//  5. All goroutines are again durably blocked, so the clock advances to 2ms.
+//  6. Test goroutine wakes. The scheduler is GUARANTEED to be in its ticker
+//     select at this point (the fake clock could not have reached 2ms otherwise).
+//  7. cancel() fires ctx.Done(), scheduler logs "stopped" and returns.
 func TestLockSync_StartSchedulerStopsOnCancel(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		lockSync, _, _, _, _ := setupLockSyncDB(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan struct{})
+		go func() {
+			lockSync.StartScheduler(ctx, time.Hour, time.Millisecond)
+			close(done)
+		}()
+
+		// The return from time.Sleep guarantees the scheduler is in its main
+		// ticker loop (see function comment for the full reasoning).
+		time.Sleep(2 * time.Millisecond)
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("scheduler did not exit within 5s of cancel")
+		}
+	})
+}
+
+// TestLockSync_StartSchedulerExitsOnPreCanceledCtx covers the early-exit
+// branch of StartScheduler's startup-delay select: when the context is already
+// canceled before the startup delay fires, the scheduler must return without
+// running the initial sweep. This pins the case <-ctx.Done(): return branch
+// that the sibling test above never reaches (the sibling always lets the
+// startup delay fire first).
+func TestLockSync_StartSchedulerExitsOnPreCanceledCtx(t *testing.T) {
+	t.Parallel()
 	lockSync, _, _, _, _ := setupLockSyncDB(t)
+
 	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel: startup-delay select must fire ctx.Done immediately
+
 	done := make(chan struct{})
 	go func() {
-		// Long enough that the test cancel beats the first tick.
-		lockSync.StartScheduler(ctx, time.Hour, time.Millisecond)
+		// Long startup delay ensures only ctx.Done() can win the select.
+		lockSync.StartScheduler(ctx, time.Hour, time.Hour)
 		close(done)
 	}()
-	// Give the scheduler a moment to enter its loop, then cancel.
-	time.Sleep(50 * time.Millisecond)
-	cancel()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("scheduler did not exit within 2s of cancel")
+		t.Fatal("scheduler did not exit with a pre-canceled context within 2s")
 	}
 }
 

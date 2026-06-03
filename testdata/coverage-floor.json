@@ -6,7 +6,7 @@
   "internal/backup": 62,
   "internal/config": 94,
   "internal/conflict": 79,
-  "internal/connection": 83,
+  "internal/connection": 84,
   "internal/connection/emby": 79,
   "internal/connection/httpclient": 68,
   "internal/connection/jellyfin": 79,

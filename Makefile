@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint scan bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
 
 # Binary name
 BINARY=stillwater
@@ -54,6 +54,10 @@ lint:
 ## hadolint: Lint Dockerfile for best practices
 hadolint:
 	hadolint build/docker/Dockerfile
+
+## vulncheck: Scan for known vulnerabilities (govulncheck, pinned to the CI version)
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
 ## fmt: Format all Go and Templ files
 fmt:
