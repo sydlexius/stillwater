@@ -695,6 +695,19 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(ctx, imageType)
 
+	// Non-destructive: keep a one-deep peer-inert backup of the current
+	// canonical single-slot image before we overwrite it, so the edit is
+	// revertible (#1837). Fanart is multi-slot (a new slot is appended
+	// elsewhere) and is never backed up here. BackupSingleSlot probes strictly
+	// (#1161): a transient stat error or a backup-write failure returns an error
+	// and we ABORT the destructive save so the source-of-truth original is never
+	// overwritten without a recoverable backup.
+	if imageType != "fanart" {
+		if bErr := img.BackupSingleSlot(dir, imageType, naming); bErr != nil {
+			return nil, fmt.Errorf("backing up original before overwrite (aborting destructive save): %w", bErr)
+		}
+	}
+
 	// Register expected write paths so the filesystem watcher can
 	// distinguish Stillwater's own writes from external ones.
 	if r.expectedWrites != nil {
@@ -1200,13 +1213,20 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// backup_exists lets the UI conditionally surface a "Revert" affordance for
+	// single-slot kinds (thumb/logo/banner): true when a one-deep .sw-backup
+	// original is present. Fanart is multi-slot and has no single-slot backup,
+	// so it is always false here (#1336 cross-plan delta, #1837).
+	backupExists := imageType != "fanart" && img.HasBackup(dir, imageType)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"type":     imageType,
-		"filename": filepath.Base(filePath),
-		"width":    width,
-		"height":   height,
-		"size":     stat.Size(),
-		"modified": stat.ModTime().UTC().Format(time.RFC3339),
+		"type":          imageType,
+		"filename":      filepath.Base(filePath),
+		"width":         width,
+		"height":        height,
+		"size":          stat.Size(),
+		"modified":      stat.ModTime().UTC().Format(time.RFC3339),
+		"backup_exists": backupExists,
 	})
 }
 
@@ -1521,6 +1541,9 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	if !ok {
 		return
 	}
+	if !r.gateImageWrite(w, req) {
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
@@ -1569,6 +1592,17 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	trimMeta.Mode = "user"
 	trimMeta.DHash = "" // Force recomputation from the trimmed image data.
 
+	// Non-destructive: preserve the pre-trim original (#1837). On a backup
+	// failure (transient stat error or write error) ABORT the trim with 500 and
+	// do NOT call Save, so the original logo is never destroyed without a
+	// recoverable backup.
+	if bErr := img.BackupSingleSlot(r.imageDir(a), "logo", patterns); bErr != nil {
+		r.logger.Error("backing up logo before trim; aborting",
+			slog.String("artist_id", artistID), slog.String("error", bErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to preserve pre-trim original; trim aborted"})
+		return
+	}
+
 	_, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), "logo")
 	if _, err := img.Save(r.imageDir(a), "logo", trimmed, patterns, useSymlinks, trimMeta, r.logger); err != nil {
 		r.logger.Error("saving trimmed logo", "artist_id", artistID, "error", err)
@@ -1601,6 +1635,109 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		"status":        "ok",
 		"sync_warnings": warnings,
 	})
+}
+
+// handleImageRevert restores the most recent pre-edit original for a single-slot
+// kind (thumb/logo/banner) from the peer-inert backup in the .sw-backup subdir,
+// or drops the newest derived fanart slot for the multi-slot fanart kind. It is a
+// write, so it goes through the conflict gate. #1837.
+// POST /api/v1/artists/{id}/images/{type}/revert
+func (r *Router) handleImageRevert(w http.ResponseWriter, req *http.Request) {
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	// Destructive (drops the newest fanart slot or rebuilds over the canonical):
+	// fail CLOSED if the gate cannot be evaluated.
+	if !r.gateImageWriteStrict(w, req) {
+		return
+	}
+
+	imageType := req.PathValue("type")
+	if !validImageTypes[imageType] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type"})
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+	if !r.requireImageDir(w, req, a) {
+		return
+	}
+	dir := r.imageDir(a)
+
+	if imageType == "fanart" {
+		// Multi-slot: revert == drop the newest derived slot (highest index),
+		// leaving the original slot 0 intact. 404 when only the original exists.
+		primary := r.getActiveFanartPrimary(req.Context())
+		paths, discErr := img.DiscoverFanart(dir, primary)
+		if discErr != nil {
+			r.logger.Error("discovering fanart for revert", slog.String("artist_id", artistID), slog.String("error", discErr.Error()))
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
+			return
+		}
+		if len(paths) < 2 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no derived fanart slot to revert"})
+			return
+		}
+		newest := paths[len(paths)-1]
+		if rmErr := r.fileRemover.Remove(newest); rmErr != nil {
+			r.logger.Error("dropping derived fanart slot", slog.String("artist_id", artistID), slog.String("path", newest), slog.String("error", rmErr.Error()))
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to revert fanart"})
+			return
+		}
+		r.updateArtistFanartCount(req.Context(), a)
+		warnings := r.revertSideEffects(req.Context(), a, imageType)
+		writeJSON(w, http.StatusOK, map[string]any{"status": "reverted", "type": imageType, "count": a.FanartCount, "sync_warnings": warnings})
+		return
+	}
+
+	// Single-slot: restore the original from its one-deep backup. RestoreSingleSlot
+	// routes the backup bytes through img.Save so ALL configured names + symlinks
+	// are rebuilt and the post-edit format (e.g. a jpg written over a png crop)
+	// is cleaned up. The backup is keyed by image TYPE, so a format-changing edit
+	// is still revertible (#1837).
+	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), imageType)
+	if restoreErr := img.RestoreSingleSlot(dir, imageType, naming, useSymlinks, nil, r.logger); restoreErr != nil {
+		if os.IsNotExist(restoreErr) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no backup to revert"})
+			return
+		}
+		r.logger.Error("reverting single-slot image", slog.String("artist_id", artistID), slog.String("type", imageType), slog.String("error", restoreErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to revert image"})
+		return
+	}
+	// DB bookkeeping (exists flag, low-res, placeholder) is intentionally
+	// best-effort on the revert path: setArtistImageFlag logs any Update failure
+	// at Warn and the on-disk file is already the source of truth, so a stale
+	// flag self-heals on the next scan. This matches every other image write
+	// path; we do not fail the revert on a DB hiccup (#1837, F7).
+	r.updateArtistImageFlag(req.Context(), a, imageType)
+	warnings := r.revertSideEffects(req.Context(), a, imageType)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "reverted", "type": imageType, "sync_warnings": warnings})
+}
+
+// revertSideEffects performs the post-write bookkeeping shared by both revert
+// branches: cache eviction, event publish, health invalidation, rule re-eval,
+// and platform sync of the now-canonical image. It RETURNS the platform-sync
+// warnings so both revert responses can surface them under "sync_warnings",
+// matching every other write path (#1837).
+func (r *Router) revertSideEffects(ctx context.Context, a *artist.Artist, imageType string) []string {
+	r.enforceCacheLimitIfNeeded(ctx, a)
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{Type: event.ArtistUpdated, Data: map[string]any{"artist_id": a.ID}})
+	}
+	r.InvalidateHealthCache()
+	r.runRulesAfterRefresh(ctx, a)
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if imageType == "fanart" {
+		return r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
+	}
+	return r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
 }
 
 // imageTypeLabel returns a human-readable label for an image type.
@@ -1841,6 +1978,10 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
+		return
+	}
+	// Destructive (deletes bytes): fail CLOSED if the gate cannot be evaluated.
+	if !r.gateImageWriteStrict(w, req) {
 		return
 	}
 

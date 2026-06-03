@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/httpsafe"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -78,6 +80,25 @@ func writeJPEG(t *testing.T, path string, w, h int) {
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, m, nil); err != nil {
 		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+}
+
+// writePNG creates a PNG file at path with the given dimensions. Used where the
+// image type requires PNG (logos) so tests do not seed mismatched bytes.
+func writePNG(t *testing.T, path string, w, h int) {
+	t.Helper()
+	m := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			m.Set(x, y, color.RGBA{R: 200, G: 100, B: 50, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil {
+		t.Fatalf("encoding PNG: %v", err)
 	}
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		t.Fatalf("writing %s: %v", path, err)
@@ -2546,5 +2567,249 @@ func TestFetchImageFromURL_CancelledContext(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("fetchImageFromURL did not return within 1s after ctx cancellation; ctx is not being honored")
+	}
+}
+
+func TestHandleImageCrop_PreservesBackup(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Backup Artist", SortName: "Backup Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Seed an existing canonical thumb (Kodi default profile uses folder.jpg).
+	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 600, 600)
+	originalBytes, err := os.ReadFile(filepath.Join(dir, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("reading seed: %v", err)
+	}
+
+	// Build a fresh 500x500 JPEG to crop in.
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 500, 500)), nil); err != nil {
+		t.Fatalf("encoding crop input: %v", err)
+	}
+	reqBody, _ := json.Marshal(map[string]any{
+		"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+		"type":       "thumb",
+		"x":          0, "y": 0, "width": 500, "height": 500,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageCrop(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// Backup of the pre-crop original must exist (keyed by image TYPE) and match
+	// the seed bytes (#1837: per-type, format-independent backup identity).
+	backup := filepath.Join(dir, img.BackupDirName, "thumb", "folder.jpg")
+	gotBackup, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatalf("expected backup at %s: %v", backup, err)
+	}
+	if !bytes.Equal(gotBackup, originalBytes) {
+		t.Error("backup bytes do not match the pre-crop original")
+	}
+}
+
+func TestHandleLogoTrim_GatedAndBacksUp(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Logo Artist", SortName: "Logo Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Seed a PNG logo with a transparent border so TrimAlpha changes it.
+	logoPath := filepath.Join(dir, "logo.png")
+	m := image.NewRGBA(image.Rect(0, 0, 200, 100))
+	for y := 20; y < 80; y++ {
+		for x := 20; x < 180; x++ {
+			m.Set(x, y, color.RGBA{R: 10, G: 20, B: 30, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil {
+		t.Fatalf("encoding logo: %v", err)
+	}
+	if err := os.WriteFile(logoPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("seeding logo: %v", err)
+	}
+	originalBytes, _ := os.ReadFile(logoPath)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/logo/trim", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleLogoTrim(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	backup := filepath.Join(dir, img.BackupDirName, "logo", "logo.png")
+	gotBackup, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatalf("expected logo backup at %s: %v", backup, err)
+	}
+	if !bytes.Equal(gotBackup, originalBytes) {
+		t.Error("logo backup bytes do not match the pre-trim original")
+	}
+}
+
+func TestHandleLogoTrim_Blocked409(t *testing.T) {
+	t.Parallel()
+	d := conflict.NewBlockingForTest(testDiscardLogger())
+	r, artistSvc := testRouterWithPlatform(t)
+	r.conflictDetector = d
+	r.conflictGate = conflict.NewGate(d)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Blocked Logo", SortName: "Blocked Logo", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// T8: seed a real PNG (logos are PNG) so the blocked test cannot pass for
+	// the wrong reason.
+	logoPath := filepath.Join(dir, "logo.png")
+	writePNG(t, logoPath, 200, 100)
+	before, _ := os.ReadFile(logoPath)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/logo/trim", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleLogoTrim(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+	// CR #1839: the gated 409 must carry the shared ConflictWriteBlock payload
+	// (error/axis/reason/ledger), not a bare error. Asserting the shape here
+	// catches a regression to a generic 409 that would silently break the
+	// UI/OpenAPI contract.
+	assertConflictWriteBlock(t, w.Body.Bytes())
+	// T1: a blocked trim must not touch disk - no backup, canonical unchanged.
+	if img.HasBackup(dir, "logo") {
+		t.Error("blocked logo-trim must not create a backup")
+	}
+	after, _ := os.ReadFile(logoPath)
+	if !bytes.Equal(before, after) {
+		t.Error("blocked logo-trim must not modify the canonical logo")
+	}
+}
+
+// TestHandleImageInfo_BackupExistsContract pins the JSON contract for the
+// backup_exists field that drives the UI's revert affordance (CR #1839): it is
+// true for a single-slot kind (thumb/logo/banner) that has a one-deep
+// .sw-backup original, and always false for fanart (multi-slot, no single-slot
+// backup) even when an unrelated backup dir is present. This guards against
+// OpenAPI/UI drift that the on-disk-only backup tests would not catch.
+func TestHandleImageInfo_BackupExistsContract(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "InfoBackupExists", SortName: "InfoBackupExists", Path: dir}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Canonical thumb + fanart + logo on disk so the info handler can stat each.
+	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 600, 600)
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	writePNG(t, filepath.Join(dir, "logo.png"), 400, 200) // single-slot, NO backup seeded
+	// A one-deep backup under .sw-backup/thumb -> img.HasBackup(dir,"thumb") true.
+	thumbBackupDir := filepath.Join(dir, img.BackupDirName, "thumb")
+	if err := os.MkdirAll(thumbBackupDir, 0o750); err != nil {
+		t.Fatalf("creating thumb backup dir: %v", err)
+	}
+	writeJPEG(t, filepath.Join(thumbBackupDir, "folder.jpg"), 600, 600)
+
+	backupExists := func(t *testing.T, imageType string) bool {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/"+imageType+"/info", nil)
+		req.SetPathValue("id", a.ID)
+		req.SetPathValue("type", imageType)
+		w := serveValidated(t, http.HandlerFunc(r.handleImageInfo), req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("type=%s status = %d, want 200; body: %s", imageType, w.Code, w.Body.String())
+		}
+		var resp struct {
+			BackupExists bool `json:"backup_exists"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("type=%s decoding: %v", imageType, err)
+		}
+		return resp.BackupExists
+	}
+
+	if !backupExists(t, "thumb") {
+		t.Error("backup_exists must be true for a single-slot type with a one-deep backup")
+	}
+	if backupExists(t, "fanart") {
+		t.Error("backup_exists must always be false for fanart (multi-slot, no single-slot backup)")
+	}
+	// Single-slot kind present on disk but with NO one-deep backup -> false. Pins
+	// the "false unless a backup exists" contract (guards a regression that would
+	// return true for every single-slot type).
+	if backupExists(t, "logo") {
+		t.Error("backup_exists must be false for a single-slot type with no backup present")
+	}
+}
+
+// TestProcessAndSaveImage_BackupFailureAborts proves F2/T2: when the backup
+// cannot be written (here, .sw-backup pre-exists as a FILE so MkdirAll fails),
+// the destructive crop save is aborted and the canonical original is preserved.
+func TestProcessAndSaveImage_BackupFailureAborts(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	origPath := filepath.Join(dir, "folder.jpg")
+	writeJPEG(t, origPath, 80, 80)
+	orig, _ := os.ReadFile(origPath)
+
+	// Block backup-dir creation: .sw-backup is a regular file, so MkdirAll fails.
+	if err := os.WriteFile(filepath.Join(dir, img.BackupDirName), []byte("x"), 0o644); err != nil {
+		t.Fatalf("seeding .sw-backup as a file: %v", err)
+	}
+
+	crop := encodeImageFmt(t, "jpeg", 120, 120)
+	if _, err := r.processAndSaveImage(context.Background(), dir, "thumb", crop, nil); err == nil {
+		t.Fatal("processAndSaveImage must abort when the backup cannot be written")
+	}
+	// The original must be intact (the destructive Save never ran).
+	after, _ := os.ReadFile(origPath)
+	if !bytes.Equal(orig, after) {
+		t.Error("canonical original must be preserved when backup fails")
+	}
+}
+
+// TestHandleLogoTrim_BackupFailureAborts proves F3/T2: a backup-write failure
+// aborts the trim with 500 and leaves the original logo intact.
+func TestHandleLogoTrim_BackupFailureAborts(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Trim Abort", SortName: "Trim Abort", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	logoPath := filepath.Join(dir, "logo.png")
+	writePNG(t, logoPath, 200, 100)
+	orig, _ := os.ReadFile(logoPath)
+
+	// Block backup-dir creation.
+	if err := os.WriteFile(filepath.Join(dir, img.BackupDirName), []byte("x"), 0o644); err != nil {
+		t.Fatalf("seeding .sw-backup as a file: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/logo/trim", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleLogoTrim(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+	}
+	after, _ := os.ReadFile(logoPath)
+	if !bytes.Equal(orig, after) {
+		t.Error("original logo must be preserved when pre-trim backup fails")
 	}
 }

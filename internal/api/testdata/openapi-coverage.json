@@ -1351,6 +1351,13 @@
     "covered": true
   },
   {
+    "operationId": "revertImage",
+    "method": "POST",
+    "path": "/artists/{id}/images/{type}/revert",
+    "handler": "handleImageRevert",
+    "covered": true
+  },
+  {
     "operationId": "revokeAPIToken",
     "method": "DELETE",
     "path": "/auth/tokens/{id}",
