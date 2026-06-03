@@ -1,0 +1,26 @@
+meta {
+  name: Revert Image
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{apiBase}}/artists/00000000-0000-0000-0000-000000000000/images/thumb/revert
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 404 for sentinel artistId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports artist not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
+  });
+}

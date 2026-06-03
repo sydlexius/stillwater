@@ -959,3 +959,146 @@ func TestIsValidPermutation(t *testing.T) {
 		}
 	}
 }
+
+// seedBlockedFanartArtist creates an artist rooted at a temp dir with two seeded
+// fanart slots and returns the artist plus the slot paths, so a blocked
+// destructive op can assert the bytes were left untouched.
+func seedBlockedFanartArtist(t *testing.T, artistSvc *artist.Service, name string) (*artist.Artist, string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	a := &artist.Artist{Name: name, SortName: name, Type: "group", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist %s: %v", name, err)
+	}
+	p0 := filepath.Join(dir, "fanart.jpg")
+	p1 := filepath.Join(dir, "fanart1.jpg")
+	writeJPEG(t, p0, 1920, 1080)
+	writeJPEG(t, p1, 1920, 1080)
+	return a, p0, p1
+}
+
+// assertSlotsUnchanged asserts both seeded slot files still exist after a
+// blocked destructive op.
+func assertSlotsUnchanged(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("blocked op must leave %s on disk: %v", filepath.Base(p), err)
+		}
+	}
+}
+
+// assertConflictWriteBlock asserts a gated 409 body carries the shared
+// ConflictWriteBlock payload (error/axis/reason/ledger) rather than a bare
+// error, so a regression dropping the conflict fields fails the test (CR #1839).
+func assertConflictWriteBlock(t *testing.T, body []byte) {
+	t.Helper()
+	var blocked map[string]any
+	if err := json.Unmarshal(body, &blocked); err != nil {
+		t.Fatalf("decoding 409 body: %v; body = %s", err, string(body))
+	}
+	if blocked["axis"] != "image" {
+		t.Errorf("409 axis = %v, want image", blocked["axis"])
+	}
+	if s, _ := blocked["error"].(string); s == "" {
+		t.Errorf("409 error code must be non-empty, got %v", blocked["error"])
+	}
+	if s, _ := blocked["reason"].(string); s == "" {
+		t.Errorf("409 reason must be non-empty, got %v", blocked["reason"])
+	}
+	if _, ok := blocked["ledger"].(map[string]any); !ok {
+		t.Errorf("409 ledger should be a JSON object, got %T (%v)", blocked["ledger"], blocked["ledger"])
+	}
+}
+
+func TestHandleFanartSlotDelete_Blocked409(t *testing.T) {
+	t.Parallel()
+	d := conflict.NewBlockingForTest(testDiscardLogger())
+	r, artistSvc := testRouterForBackdrops(t)
+	r.conflictDetector = d
+	r.conflictGate = conflict.NewGate(d)
+	a, p0, p1 := seedBlockedFanartArtist(t, artistSvc, "Blocked Slot")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart/0", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("slot", "0")
+	w := httptest.NewRecorder()
+	r.handleFanartSlotDelete(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+	assertConflictWriteBlock(t, w.Body.Bytes()) // 409 must carry the conflict payload
+	assertSlotsUnchanged(t, p0, p1)             // T1: blocked delete must not remove bytes
+}
+
+// TestHandleFanartSlotDelete_RemoveFailureKeepsSlots proves T5: when the file
+// remover fails, slot-delete returns 500 and BOTH seeded slots remain on disk.
+func TestHandleFanartSlotDelete_RemoveFailureKeepsSlots(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterForBackdrops(t)
+	r.fileRemover = failingRemover{err: fmt.Errorf("permission denied")}
+	a, p0, p1 := seedBlockedFanartArtist(t, artistSvc, "Remove Fail Slot")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart/0", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("slot", "0")
+	w := httptest.NewRecorder()
+	r.handleFanartSlotDelete(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+	}
+	assertSlotsUnchanged(t, p0, p1) // remove failed -> nothing deleted
+}
+
+func TestHandleFanartReorder_Blocked409(t *testing.T) {
+	t.Parallel()
+	d := conflict.NewBlockingForTest(testDiscardLogger())
+	r, artistSvc := testRouterForBackdrops(t)
+	r.conflictDetector = d
+	r.conflictGate = conflict.NewGate(d)
+	a, p0, p1 := seedBlockedFanartArtist(t, artistSvc, "Blocked Reorder")
+	// Distinct per-slot contents so a blocked reorder that nevertheless swapped
+	// bytes before returning 409 would be caught (matching filenames alone is not
+	// enough - both slots keep the same names through a reorder). The gate blocks
+	// before any file read, so non-image marker bytes are fine here.
+	if err := os.WriteFile(p0, []byte("SLOT0-CONTENT"), 0o644); err != nil {
+		t.Fatalf("seeding slot 0 content: %v", err)
+	}
+	if err := os.WriteFile(p1, []byte("SLOT1-CONTENT"), 0o644); err != nil {
+		t.Fatalf("seeding slot 1 content: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fanart/reorder",
+		bytes.NewReader([]byte(`{"order":[1,0]}`)))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleFanartReorder(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+	assertConflictWriteBlock(t, w.Body.Bytes()) // 409 must carry the conflict payload
+	assertSlotsUnchanged(t, p0, p1)             // T1: blocked reorder must not rename files
+	// Bytes must stay put per slot: a blocked reorder must not swap contents.
+	if got, _ := os.ReadFile(p0); string(got) != "SLOT0-CONTENT" {
+		t.Errorf("slot 0 content changed after blocked reorder: %q", got)
+	}
+	if got, _ := os.ReadFile(p1); string(got) != "SLOT1-CONTENT" {
+		t.Errorf("slot 1 content changed after blocked reorder: %q", got)
+	}
+}
+
+func TestHandleFanartBatchDelete_Blocked409(t *testing.T) {
+	t.Parallel()
+	d := conflict.NewBlockingForTest(testDiscardLogger())
+	r, artistSvc := testRouterForBackdrops(t)
+	r.conflictDetector = d
+	r.conflictGate = conflict.NewGate(d)
+	a, p0, p1 := seedBlockedFanartArtist(t, artistSvc, "Blocked Batch")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart/batch",
+		bytes.NewReader([]byte(`{"indices":[0]}`)))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleFanartBatchDelete(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+	assertConflictWriteBlock(t, w.Body.Bytes()) // 409 must carry the conflict payload
+	assertSlotsUnchanged(t, p0, p1)             // T1: blocked batch-delete must not remove bytes
+}

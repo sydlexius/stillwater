@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -481,6 +482,34 @@ func (r *Router) gateImageWrite(w http.ResponseWriter, req *http.Request) bool {
 		// Non-blocked error means the ledger failed to compute; fail open
 		// rather than blocking every write on a transient detector problem.
 		r.logger.Warn("image write gate check failed; falling through", "error", err)
+	}
+	return true
+}
+
+// gateImageWriteStrict is the fail-CLOSED variant of gateImageWrite for
+// genuinely DESTRUCTIVE image ops that delete bytes (fanart slot-delete, fanart
+// batch-delete, revert). Unlike gateImageWrite, which fails OPEN on a non-blocked
+// ledger-compute error (acceptable for backup-creating overwrite paths), this
+// variant writes HTTP 500 and returns false on such an error: if we cannot
+// determine whether a conflict gate would block, we must not delete
+// source-of-truth bytes. BlockedError still maps to 409 identically.
+func (r *Router) gateImageWriteStrict(w http.ResponseWriter, req *http.Request) bool {
+	if r.conflictGate == nil {
+		return true
+	}
+	if err := r.conflictGate.AllowImageWrite(req.Context()); err != nil {
+		if be, ok := conflict.AsBlocked(err); ok {
+			writeConflictError(w, be)
+			return false
+		}
+		// Non-blocked error means the ledger failed to compute. For a
+		// destructive op we fail CLOSED rather than risk deleting an original.
+		r.logger.Error("image write gate check failed on destructive op; failing closed",
+			slog.String("method", req.Method),
+			slog.String("path", req.URL.Path),
+			slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "conflict gate check failed; destructive operation aborted"})
+		return false
 	}
 	return true
 }

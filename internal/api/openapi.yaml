@@ -11593,6 +11593,79 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/{id}/images/{type}/revert:
+    post:
+      tags: [Images]
+      summary: Revert the most recent image edit
+      description: >-
+        For single-slot kinds (thumb, logo, banner) restores the pre-edit
+        original from the peer-inert backup. For fanart, drops the newest
+        derived slot, leaving the original slot intact. Gated by the conflict
+        gate. One-deep: a second revert with no backup returns 404.
+      operationId: revertImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          description: Image kind (thumb, fanart, logo, banner).
+          schema:
+            type: string
+            enum: [thumb, fanart, logo, banner]
+      responses:
+        "200":
+          description: Image reverted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Always "reverted" on success.
+                  type:
+                    type: string
+                    description: The image kind that was reverted.
+                  count:
+                    type: integer
+                    description: Remaining fanart count (fanart kind only).
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Non-fatal warnings from syncing the reverted image to connected platforms.
+                required: [status, type, sync_warnings]
+        "400":
+          description: Invalid image type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found, or no backup / no derived slot to revert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Write blocked by the conflict gate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
+        "500":
+          description: >-
+            Server error, including a fail-closed abort when the conflict gate
+            could not be evaluated for this destructive operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/{id}/images/fanart/list:
     get:
       tags: [Images]
@@ -11719,7 +11792,15 @@ paths:
                       type: string
                     description: Warnings from batch deletion, including file removal failures, renumbering issues, and platform sync errors. Empty only when there are no warnings.
         "409":
-          description: No filesystem path
+          description: Write blocked by the conflict gate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
+        "500":
+          description: >-
+            Server error, including a fail-closed abort when the conflict gate
+            could not be evaluated for this destructive delete.
           content:
             application/json:
               schema:
@@ -11831,6 +11912,20 @@ paths:
                       type: string
         "400":
           description: Invalid permutation or length mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Write blocked by the conflict gate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
+        "500":
+          description: >-
+            Server error, including a fail-closed abort when the conflict gate
+            could not be evaluated for this destructive reorder.
           content:
             application/json:
               schema:
@@ -11948,6 +12043,20 @@ paths:
                       type: string
         "400":
           description: Slot out of range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Write blocked by the conflict gate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
+        "500":
+          description: >-
+            Server error, including a fail-closed abort when the conflict gate
+            could not be evaluated for this destructive delete.
           content:
             application/json:
               schema:
@@ -12158,6 +12267,13 @@ paths:
                     type: string
                     format: date-time
                     description: When the file was last modified (UTC, RFC 3339).
+                  backup_exists:
+                    type: boolean
+                    description: >-
+                      Whether a one-deep peer-inert backup of the pre-edit
+                      original exists for this single-slot kind, so the UI can
+                      conditionally offer Revert. Always false for fanart.
+                required: [backup_exists]
             text/html:
               schema:
                 type: string

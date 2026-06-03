@@ -404,6 +404,10 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 	if !ok {
 		return
 	}
+	// Destructive (deletes bytes): fail CLOSED if the gate cannot be evaluated.
+	if !r.gateImageWriteStrict(w, req) {
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
@@ -510,6 +514,13 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
+		return
+	}
+	// Reorder renames on-disk fanart files (destructive, no backup), so it must
+	// fail CLOSED if the conflict gate cannot be evaluated - matching slot-delete
+	// and batch-delete. A fail-open gate-eval error could otherwise fall through
+	// into the staged rename and mutate ordering anyway (CR #1839).
+	if !r.gateImageWriteStrict(w, req) {
 		return
 	}
 

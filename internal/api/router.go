@@ -711,6 +711,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/websearch", wrapAuth(r.handleWebImageSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/crop", wrapAuth(r.handleImageCrop, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/logo/trim", wrapAuth(r.handleLogoTrim, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/{type}/revert", wrapAuth(r.handleImageRevert, authMw))
 	// Multi-fanart routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/fanart/list", wrapAuth(r.handleFanartList, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/fanart/{index}/file", wrapAuth(r.handleServeFanartByIndex, authMw))
