@@ -32,8 +32,22 @@
         method: "DELETE",
         headers: {"X-CSRF-Token": csrfToken}
       }).then(function(res) {
-        if (res.ok) { window.location.reload(); }
-        else { res.json().then(function(data) { alert(data.error || "Failed to delete connection"); }); }
+        if (res.ok) { window.location.reload(); return; }
+        // The error body may be JSON, plain text, or empty; res.json() rejects
+        // on non-JSON, so read text first and parse opportunistically rather
+        // than leaving the user with no feedback.
+        res.text().then(function(text) {
+          var msg = "Failed to delete connection";
+          if (text) {
+            try {
+              var data = JSON.parse(text);
+              if (data && data.error) msg = data.error;
+            } catch (e) { /* non-JSON body: keep the generic message */ }
+          }
+          alert(msg);
+        }, function() {
+          alert("Failed to delete connection");
+        });
       }).catch(function() {
         alert("Failed to delete connection");
       });
@@ -49,8 +63,12 @@
       return res.json();
     }).then(function(data) {
       if (!data) return;
-      var libCount = data.library_count || 0;
-      var artistCount = data.artist_count || 0;
+      // Coerce the counts to integers before they are interpolated into the
+      // showConfirmDialog HTML string (rendered with {html: true}); this
+      // neutralizes any HTML/script that a non-numeric response field could
+      // otherwise inject into the DOM. NaN falls back to 0.
+      var libCount = parseInt(data.library_count, 10) || 0;
+      var artistCount = parseInt(data.artist_count, 10) || 0;
 
       if (libCount === 0 && artistCount === 0) {
         showConfirmDialog("Delete this connection?", null, function() { doDelete(""); });

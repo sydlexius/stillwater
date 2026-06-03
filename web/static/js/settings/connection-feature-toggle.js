@@ -14,7 +14,9 @@
 // Save error-handling hardened per the #1808 acceptance criteria: on a
 //   non-2xx/network failure the optimistic switch state is rolled back to its
 //   prior value (in addition to the showToast() feedback) so the toggle never
-//   shows a value the server did not persist.
+//   shows a value the server did not persist. A data-inflight guard ignores
+//   re-entrant clicks while the PATCH is pending so overlapping requests cannot
+//   resolve out of order.
 //
 // Export surface: window.swConnectionFeatureToggle doubles as the load-once
 // guard. toggleConnectionFeature is assigned to window because the switch
@@ -25,6 +27,10 @@
   if (window.swConnectionFeatureToggle) return;
 
   function toggleConnectionFeature(btn) {
+    // Serialize: ignore clicks while a PATCH is in flight so overlapping
+    // requests cannot resolve out of order and revert the switch to a stale
+    // state.
+    if (btn.dataset.inflight === '1') return;
     var connID = btn.dataset.connId;
     var feature = btn.dataset.feature;
     var isOn = btn.getAttribute('aria-checked') === 'true';
@@ -47,6 +53,7 @@
     }
 
     // Optimistic UI update, rolled back to the prior state if the save fails.
+    btn.dataset.inflight = '1';
     applyState(newVal);
 
     var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
@@ -72,6 +79,8 @@
       if (typeof showToast === 'function') {
         showToast('Network error updating feature toggle.');
       }
+    }).then(function() {
+      delete btn.dataset.inflight;
     });
   }
 

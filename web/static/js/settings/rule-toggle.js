@@ -6,9 +6,11 @@
 // helper (preferences.js) instead of inline cookie-parse regexes.
 //
 // Save error-handling hardened per the #1808 acceptance criteria (consistent
-// failure feedback): patchRule now rejects on a non-2xx/network failure so the
-// enabled toggle rolls back to its prior state and the config panel stays open,
-// rather than leaving the UI showing a value the server never persisted.
+// failure feedback): the internal patchRuleStrict rejects on a non-2xx/network
+// failure so the enabled toggle rolls back to its prior state and the config
+// panel stays open, rather than leaving the UI showing a value the server never
+// persisted. The toggle also ignores re-entrant clicks while a save is in
+// flight (data-inflight guard) so overlapping PUTs cannot resolve out of order.
 //
 // DOM contract (rule cards in settings.templ):
 //   onclick="toggleRuleEnabled(this)"  -- role=switch, data-rule-id; toggles
@@ -16,17 +18,20 @@
 //     select[data-rule-id] and [data-run-btn].
 //   onclick="runRule(this)"            -- run button, data-rule-id.
 //   onsubmit="handleRuleConfigSubmit(event)" -- per-rule config form.
+//   onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
+//     -- automation-mode select (uses the window.patchRule wrapper).
 //   onchange="applyResPreset(this)" / onchange="applyAspectPreset(this)"
 //     -- resolution / aspect-ratio preset selects.
 //   Toasts render into #error-toast-container (falls back to global showToast).
 // Network (all base-path aware, csrf_token sent as X-CSRF-Token):
-//   PUT  {base}/api/v1/rules/{id}            (patchRule: enabled/config)
+//   PUT  {base}/api/v1/rules/{id}            (patchRuleStrict: enabled/config/automation_mode)
 //   POST {base}/api/v1/rules/{id}/run        (runRule)
 //   GET  {base}/api/v1/rules/run-all/status  (pollRuleStatus, via pollAsyncStatus)
 //
 // Export surface: window.swRuleToggle doubles as the load-once guard. The five
-// HTML-referenced handlers are assigned to window; patchRule/pollRuleStatus/
-// finishRunBtn/showRuleToast stay internal (called only within this IIFE).
+// HTML-referenced handlers plus window.patchRule (a toast-wrapping shim over the
+// internal rejecting patchRuleStrict) are assigned to window; patchRuleStrict/
+// pollRuleStatus/finishRunBtn/showRuleToast stay internal.
 (function () {
   'use strict';
 
@@ -34,11 +39,13 @@
 
   var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 
-  // patchRule returns the fetch promise and rejects on a non-2xx response so
-  // callers can roll back their optimistic UI; network errors reject naturally.
-  // The caller owns failure feedback (it knows which control to revert), so no
-  // toast is shown here.
-  function patchRule(ruleID, changes) {
+  // patchRuleStrict returns the fetch promise and rejects on a non-2xx response
+  // so internal callers can roll back their optimistic UI; network errors reject
+  // naturally. The caller owns failure feedback (it knows which control to
+  // revert), so no toast is shown here. The inline `onchange="patchRule(...)"`
+  // call site (automation-mode select) uses the window.patchRule wrapper below
+  // instead, which swallows the rejection with a toast.
+  function patchRuleStrict(ruleID, changes) {
     var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
     return fetch(bp + '/api/v1/rules/' + ruleID, {
       method: 'PUT',
@@ -53,6 +60,9 @@
   }
 
   function toggleRuleEnabled(btn) {
+    // Serialize: ignore clicks while a save is in flight so overlapping PUTs
+    // cannot resolve out of order and revert the switch to a stale state.
+    if (btn.dataset.inflight === '1') return;
     var ruleID = btn.dataset.ruleId;
     var isOn = btn.getAttribute('aria-checked') === 'true';
     var newVal = !isOn;
@@ -81,12 +91,15 @@
     }
 
     // Optimistic update, rolled back to the prior state if the save fails.
+    btn.dataset.inflight = '1';
     applyEnabledState(newVal);
-    patchRule(ruleID, {enabled: newVal}).catch(function() {
+    patchRuleStrict(ruleID, {enabled: newVal}).catch(function() {
       applyEnabledState(isOn);
       if (typeof showToast === 'function') {
         showToast('Failed to update rule.');
       }
+    }).then(function() {
+      delete btn.dataset.inflight;
     });
   }
 
@@ -207,7 +220,7 @@
     var panel = document.getElementById('rule-cfg-' + ruleID);
     // Only collapse the config panel once the save succeeds; on failure keep it
     // open and surface a toast so the unsaved edits stay visible.
-    patchRule(ruleID, {config: cfg}).then(function() {
+    patchRuleStrict(ruleID, {config: cfg}).then(function() {
       if (panel) panel.classList.add('hidden');
     }).catch(function() {
       if (typeof showToast === 'function') {
@@ -241,6 +254,19 @@
   window.handleRuleConfigSubmit = handleRuleConfigSubmit;
   window.applyResPreset = applyResPreset;
   window.applyAspectPreset = applyAspectPreset;
+
+  // The automation-mode <select> calls patchRule(id, {automation_mode}) inline
+  // by bare name with no .catch. Expose a window.patchRule that swallows the
+  // rejection with a toast (the pre-extraction behavior) so it neither throws a
+  // ReferenceError nor leaks an unhandled promise rejection. Internal callers
+  // use patchRuleStrict directly so their optimistic-UI rollback still works.
+  window.patchRule = function(ruleID, changes) {
+    return patchRuleStrict(ruleID, changes).catch(function() {
+      if (typeof showToast === 'function') {
+        showToast('Failed to update rule.');
+      }
+    });
+  };
 
   window.swRuleToggle = {
     toggleEnabled: toggleRuleEnabled,

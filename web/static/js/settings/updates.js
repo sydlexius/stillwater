@@ -546,7 +546,9 @@
 
 	document.addEventListener('DOMContentLoaded', function() {
 		var tabLinks = document.querySelectorAll('[data-tab="updates"]');
-		tabLinks.forEach(function(link) {
+		// Array.prototype.forEach.call rather than NodeList.forEach: the repo
+		// targets ES5, where NodeList.forEach is not guaranteed.
+		Array.prototype.forEach.call(tabLinks, function(link) {
 			link.addEventListener('click', function() {
 				fetchAndPopulateUpdateStatus();
 			});
