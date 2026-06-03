@@ -72,6 +72,22 @@ const templSubTemplateGlob = "web/templates/settings_*.templ"
 // across worktrees and test fixtures.
 var subTemplateExclude = map[string]struct{}{}
 
+// subTemplatePanelOverride maps a sub-template basename to the panel ID it
+// should be assigned to, overriding the default name-derived ID. Used when a
+// file's basename does not map 1:1 to a single Settings tab (e.g. shared
+// helper files whose section funcs are called from multiple tabs but whose
+// ContextHelp doc-anchor strings already embed the correct tab prefix).
+var subTemplatePanelOverride = map[string]string{
+	// settings_sections.templ holds shared Section* funcs extracted from
+	// settings.templ (M55 #1809). The funcs contribute to both "general" and
+	// "libraries" panels, but the stem-derived ID "sections" has no tab panel.
+	// Assign to "general" (the primary panel) so its ContextHelp keys are
+	// included in the anchors file; the libraries keys are also discovered here
+	// (slightly out of tab order in the generated docs) but anchor coverage is
+	// the critical property.
+	"settings_sections.templ": "general",
+}
+
 // discoverTemplSources auto-discovers the trunk + sub-template files the
 // panel scanner walks, replacing what used to be a hand-maintained allowlist.
 // Returns the trunk path first, followed by sub-templates in sorted order
@@ -104,6 +120,9 @@ func discoverTemplSources(trunk, glob string) ([]string, map[string]string, erro
 		}
 		stem := strings.TrimSuffix(base, ".templ")       // settings_users
 		panelID := strings.TrimPrefix(stem, "settings_") // users
+		if override, ok := subTemplatePanelOverride[base]; ok {
+			panelID = override
+		}
 		owner[p] = panelID
 		sources = append(sources, p)
 	}

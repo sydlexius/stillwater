@@ -77,6 +77,27 @@ When an artist comes from a connected media server but Stillwater cannot resolve
 - **Clear Cache** -- Remove every image currently held in the local cache. Cached images are re-fetched from providers the next time an artist screen is opened.
 {: #settings-general-image-cache-clear }
 
+### Music Libraries  {#settings-general-libraries}
+
+A library is a top-level directory containing one folder per artist; that is the layout Emby, Jellyfin, and Kodi all expect. Add a library entry for each such directory you want Stillwater to scan and write into. Filesystem watch mode is configured per entry below.
+
+- **Connection**
+{: #settings-general-libraries-connection-badge }
+- **Lock NFOs** -- When on, Stillwater stamps a lockdata flag into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists so Stillwater's curated values are not overwritten by the platform's own scrapers. Off by default. Artists whose NFO already contains a lockdata flag (set by Stillwater or another tool) are automatically marked as locked at the artist level.
+{: #settings-general-libraries-lock-nfo-label }
+- **Filesystem monitoring mode** -- How Stillwater detects new or changed files in this library. Watching subscribes to native filesystem events; polling re-scans on a fixed interval.
+{: #settings-general-libraries-fs-mode-title }
+- **Re-sync Artists**
+{: #settings-general-libraries-resync }
+- **Scan Library**
+{: #settings-general-libraries-scan }
+- **Add Library**
+{: #settings-general-libraries-add }
+- **Library Name**
+{: #settings-general-libraries-name }
+- **Library Path**
+{: #settings-general-libraries-path }
+
 ## Providers  {#tab-providers}
 
 ### Provider API Keys  {#settings-providers-provider-keys}
@@ -191,37 +212,6 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-api-key }
 
 ## Libraries  {#tab-libraries}
-
-### Music Libraries  {#settings-libraries-libraries}
-
-A library is a top-level directory containing one folder per artist; that is the layout Emby, Jellyfin, and Kodi all expect. Add a library entry for each such directory you want Stillwater to scan and write into. Filesystem watch mode is configured per entry below.
-
-- **Connection**
-{: #settings-libraries-libraries-connection-badge }
-- **Lock NFOs** -- When on, Stillwater stamps a lockdata flag into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists so Stillwater's curated values are not overwritten by the platform's own scrapers. Off by default. Artists whose NFO already contains a lockdata flag (set by Stillwater or another tool) are automatically marked as locked at the artist level.
-{: #settings-libraries-libraries-lock-nfo-label }
-- **Filesystem monitoring mode** -- How Stillwater detects new or changed files in this library. Watching subscribes to native filesystem events; polling re-scans on a fixed interval.
-{: #settings-libraries-libraries-fs-mode-title }
-- **Re-sync Artists**
-{: #settings-libraries-libraries-resync }
-- **Scan Library**
-{: #settings-libraries-libraries-scan }
-- **Add Library**
-{: #settings-libraries-libraries-add }
-- **Library Name**
-{: #settings-libraries-libraries-name }
-- **Library Path**
-{: #settings-libraries-libraries-path }
-- **Off** -- Stillwater does not monitor this library's filesystem. New files are picked up only by manual scans.
-{: #settings-libraries-libraries-fs-off }
-- **Watch** -- Subscribe to native filesystem events so changes are picked up immediately. Recommended for local disks.
-{: #settings-libraries-libraries-fs-watch }
-- **Poll** -- Periodically re-scan the library for changes. Works on every filesystem but adds some delay between a change and Stillwater noticing it.
-{: #settings-libraries-libraries-fs-poll }
-- **Watch + Poll** -- Combine native filesystem events with periodic polling. Useful when watching alone misses some changes (for example, on certain network shares).
-{: #settings-libraries-libraries-fs-both }
-- **Poll interval**
-{: #settings-libraries-libraries-poll-interval-title }
 
 ## Automation  {#tab-automation}
 

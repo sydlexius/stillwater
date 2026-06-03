@@ -135,16 +135,13 @@ templ SectionActiveProfile(data SettingsData) {
 }
 
 // SectionTLSStatus renders the read-only "TLS Status" card on the Settings
-// General tab, including its leading HTML comment.  The card surfaces what
-// listeners are actually bound so an operator can confirm a TLS deploy took
-// effect without parsing logs.
+// General tab.  The card surfaces what listeners are actually bound so an
+// operator can confirm a TLS deploy took effect without parsing logs.
+// The leading HTML comment is emitted by the caller (settings.templ) so that
+// its indentation matches the surrounding template context and the rendered
+// byte output is identical between stable and next/ chrome shells.
 // Exported for future use by the next/ chrome package.
 templ SectionTLSStatus(data SettingsData) {
-	<!-- TLS Status. Read-only summary of the running listener
-	     configuration so an operator can confirm a TLS deploy
-	     took effect without parsing logs. Values come from the
-	     same Config that the listener layer reads, so what the
-	     card shows is what is actually bound. -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" id="tls-status-card">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
@@ -200,17 +197,13 @@ templ SectionTLSStatus(data SettingsData) {
 }
 
 // SectionBasePath renders the "Base Path" card on the Settings General tab,
-// including its leading HTML comment and the hidden #base-path-i18n div.
-// The card is editable when SW_BASE_PATH env var is unset; read-only
-// otherwise.
+// including the hidden #base-path-i18n div.  The card is editable when
+// SW_BASE_PATH env var is unset; read-only otherwise.
+// The leading HTML comment is emitted by the caller (settings.templ) so that
+// its indentation matches the surrounding template context and the rendered
+// byte output is identical between stable and next/ chrome shells.
 // Exported for future use by the next/ chrome package.
 templ SectionBasePath(data SettingsData) {
-	<!-- Base Path. Editable when SW_BASE_PATH env var is unset (the
-	     env value wins to keep operator-managed deployments stable);
-	     read-only with an amber caption otherwise. Saves go through
-	     PUT /api/v1/settings under the "server.base_path" key and
-	     surface a shared restart-required banner because the HTTP
-	     mux is wired at startup and cannot rebind on the fly. -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
@@ -222,10 +215,10 @@ templ SectionBasePath(data SettingsData) {
 			</p>
 		</div>
 		<!-- Hidden element carrying translated client-side validation
-		     and save-error strings for base-path.js. The JS
-		     reads these via dataset.* rather than embedding raw
-		     English, mirroring the #updates-i18n pattern used by the
-		     Updates tab. -->
+					     and save-error strings for base-path.js. The JS
+					     reads these via dataset.* rather than embedding raw
+					     English, mirroring the #updates-i18n pattern used by the
+					     Updates tab. -->
 		<div
 			id="base-path-i18n"
 			class="hidden"
@@ -286,12 +279,12 @@ templ SectionBasePath(data SettingsData) {
 					</button>
 				</div>
 				<!-- Shared restart-required banner. Hidden by default;
-				     the save handler removes "hidden" on a successful
-				     PUT. The data-restart-required-banner attribute is
-				     load-bearing: future settings that also require a
-				     restart can target the same banner CSS class
-				     (".sw-restart-required-banner") to share one
-				     visual element across the General tab. -->
+							     the save handler removes "hidden" on a successful
+							     PUT. The data-restart-required-banner attribute is
+							     load-bearing: future settings that also require a
+							     restart can target the same banner CSS class
+							     (".sw-restart-required-banner") to share one
+							     visual element across the General tab. -->
 				<div
 					id="base-path-restart-banner"
 					class="sw-restart-required-banner hidden mt-2 rounded-md border px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"
@@ -380,7 +373,6 @@ templ SectionBehavior(data SettingsData) {
 // <script> tag.
 // Exported for future use by the next/ chrome package.
 templ SectionImageCache(data SettingsData, assets AssetPaths) {
-	<!-- Image Cache Configuration -->
 	@components.SettingSection("help-image-cache", t(ctx, "settings.image_cache.title"), t(ctx, "settings.image_cache.help"), "settings-general-image-cache", t(ctx, "settings.image_cache.description")) {
 		<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.loading") }</div>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
