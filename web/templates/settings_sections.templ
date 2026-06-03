@@ -1,0 +1,513 @@
+package templates
+
+// settings_sections.templ -- Shared Section* templ funcs for stable Settings
+// cards extracted from settings.templ as part of M55 issue #1809 (S1
+// Essentials).  These are EXPORTED so the future next/ chrome package can call
+// them without duplicating the markup.
+//
+// Extraction discipline: the markup inside each func is moved VERBATIM from
+// settings.templ.  No style, copy, or logic changes.  The acceptance gate is
+// the byte-identical diff in settings_s1_golden_test.go.
+
+import (
+	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// SectionPlatformProfile renders the "Platform Profile" card on the Settings
+// General tab.  The card lists all available profiles as selection cards.
+// Exported for future use by the next/ chrome package.
+templ SectionPlatformProfile(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.platform_profile.title") }</h2>
+				@components.ContextHelp("help-platform-profile", t(ctx, "settings.platform_profile.title"), t(ctx, "settings.platform_profile.help"), "settings-general-platform-profile")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.platform_profile.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				for _, p := range data.Profiles {
+					@profileCard(p)
+				}
+			</div>
+		</div>
+	</div>
+}
+
+// SectionActiveProfile renders the "Active Profile" card on the Settings
+// General tab.  The card is guarded internally by an if data.ActiveProfile !=
+// nil check, so callers do not need to repeat the guard.  When ActiveProfile
+// is nil the func renders nothing.
+// Exported for future use by the next/ chrome package.
+templ SectionActiveProfile(data SettingsData) {
+	if data.ActiveProfile != nil {
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+				<div class="flex items-center gap-2">
+					<h2 class="text-lg font-semibold">{ t(ctx, "settings.active_profile.title") }</h2>
+					@components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-general-active-profile")
+				</div>
+				if profileEditable(data.ActiveProfile) {
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						{ t(ctx, "settings.active_profile.description") }
+					</p>
+				}
+			</div>
+			<div class="px-6 py-4 space-y-4">
+				<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+					<div>
+						<span class="font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "settings.active_profile.nfo_output") }</span>
+						<p class="mt-1">
+							if data.ActiveProfile.NFOEnabled {
+								{ tf(ctx, "settings.active_profile.nfo_enabled_format", data.ActiveProfile.NFOFormat) }
+							} else {
+								{ t(ctx, "common.disabled") }
+							}
+						</p>
+					</div>
+					@profileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
+					@profileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
+					@profileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
+					@profileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
+				</div>
+				if profileEditable(data.ActiveProfile) {
+					<div class="mt-4 flex items-center justify-between">
+						<div>
+							<div class="flex items-center gap-1">
+								<span id="symlink-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</span>
+								@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-general-symlinks")
+							</div>
+							<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+								if data.SymlinkSupported {
+									{ tf(ctx, "settings.symlinks.supported_description", img.ImageTermFor("fanart", data.ActiveProfile.Name)) }
+								} else {
+									{ t(ctx, "settings.symlinks.unsupported_description") }
+								}
+							</div>
+						</div>
+						<button
+							type="button"
+							id="symlink-toggle"
+							class={
+								"relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+								templ.KV("cursor-pointer", data.SymlinkSupported),
+								templ.KV("cursor-not-allowed opacity-50", !data.SymlinkSupported),
+								templ.KV("bg-blue-600", data.ActiveProfile.UseSymlinks),
+								templ.KV("bg-gray-200 dark:bg-gray-600", !data.ActiveProfile.UseSymlinks),
+							}
+							role="switch"
+							aria-checked={ boolAttr(data.ActiveProfile.UseSymlinks) }
+							aria-labelledby="symlink-toggle-label"
+							if data.SymlinkSupported {
+								onclick="toggleSymlinks(this)"
+							}
+							disabled?={ !data.SymlinkSupported }
+							data-profile-id={ data.ActiveProfile.ID }
+						>
+							<span
+								class={
+									"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+									templ.KV("translate-x-5", data.ActiveProfile.UseSymlinks),
+									templ.KV("translate-x-0", !data.ActiveProfile.UseSymlinks),
+								}
+							></span>
+						</button>
+					</div>
+					<div class="pt-2">
+						<button
+							type="button"
+							onclick="saveProfileNaming(this)"
+							data-profile-id={ data.ActiveProfile.ID }
+							class="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+						>
+							{ t(ctx, "settings.active_profile.save_filenames") }
+						</button>
+						<span id="naming-save-status" class="ml-3 text-sm text-gray-500 dark:text-gray-400"></span>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+// SectionTLSStatus renders the read-only "TLS Status" card on the Settings
+// General tab.  The card surfaces what listeners are actually bound so an
+// operator can confirm a TLS deploy took effect without parsing logs.
+// The leading HTML comment is emitted by the caller (settings.templ) so that
+// its indentation matches the surrounding template context and the rendered
+// byte output is identical between stable and next/ chrome shells.
+// Exported for future use by the next/ chrome package.
+templ SectionTLSStatus(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" id="tls-status-card">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.tls_status.title") }</h2>
+				@components.ContextHelp("help-tls-status", t(ctx, "settings.tls_status.title"), t(ctx, "settings.tls_status.help"), "settings-general-tls-status")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.tls_status.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-2 text-sm">
+			<div>
+				<span class="font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "settings.tls_status.status_label") }</span>
+				switch data.TLS.Mode {
+					case "byo":
+						<span class="ml-2 text-green-600 dark:text-green-400" data-tls-mode="byo">{ t(ctx, "settings.tls_status.active_byo") }</span>
+					case "acme":
+						<span class="ml-2 text-green-600 dark:text-green-400" data-tls-mode="acme">
+							if data.TLS.AcmeDomain != "" {
+								{ tf(ctx, "settings.tls_status.active_acme_with_domain", data.TLS.AcmeDomain) }
+							} else {
+								{ t(ctx, "settings.tls_status.active_acme") }
+							}
+						</span>
+						<span class="ml-2 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium" data-tls-experimental="true">{ t(ctx, "settings.tls_status.acme_experimental_badge") }</span>
+					default:
+						<span class="ml-2 text-gray-500 dark:text-gray-400" data-tls-mode="off">{ t(ctx, "settings.tls_status.inactive") }</span>
+				}
+			</div>
+			if data.TLS.Mode == "acme" {
+				<p class="text-xs text-amber-700 dark:text-amber-300 mt-1" data-tls-experimental-note>
+					{ t(ctx, "settings.tls_status.acme_experimental_note") }
+				</p>
+			}
+			<div>
+				<span class="font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "settings.tls_status.listening_label") }</span>
+				<ul class="ml-2 inline-flex flex-wrap gap-x-4">
+					if data.TLS.Mode == "off" {
+						<li data-tls-listener="http">{ tf(ctx, "settings.tls_status.listener_http", data.TLS.HTTPPort) }</li>
+					} else {
+						<li data-tls-listener="https">{ tf(ctx, "settings.tls_status.listener_https", data.TLS.HTTPSPort) }</li>
+					}
+					if data.TLS.HTTPRedirectPort != 0 {
+						<li data-tls-listener="redirect">{ tf(ctx, "settings.tls_status.listener_redirect", data.TLS.HTTPRedirectPort) }</li>
+					}
+					if data.TLS.HTTP3Port != 0 {
+						<li data-tls-listener="http3">{ tf(ctx, "settings.tls_status.listener_http3", data.TLS.HTTP3Port) }</li>
+					}
+				</ul>
+			</div>
+		</div>
+	</div>
+}
+
+// SectionBasePath renders the "Base Path" card on the Settings General tab,
+// including the hidden #base-path-i18n div.  The card is editable when
+// SW_BASE_PATH env var is unset; read-only otherwise.
+// The leading HTML comment is emitted by the caller (settings.templ) so that
+// its indentation matches the surrounding template context and the rendered
+// byte output is identical between stable and next/ chrome shells.
+// Exported for future use by the next/ chrome package.
+templ SectionBasePath(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.base_path.title") }</h2>
+				@components.ContextHelp("help-base-path", t(ctx, "settings.base_path.title"), t(ctx, "settings.base_path.help"), "settings-general-base-path")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.base_path.description") }
+			</p>
+		</div>
+		<!-- Hidden element carrying translated client-side validation
+					     and save-error strings for base-path.js. The JS
+					     reads these via dataset.* rather than embedding raw
+					     English, mirroring the #updates-i18n pattern used by the
+					     Updates tab. -->
+		<div
+			id="base-path-i18n"
+			class="hidden"
+			data-error-must-start-slash={ t(ctx, "settings.base_path.error_must_start_slash") }
+			data-error-must-not-end-slash={ t(ctx, "settings.base_path.error_must_not_end_slash") }
+			data-error-protocol-relative={ t(ctx, "settings.base_path.error_protocol_relative") }
+			data-error-charset={ t(ctx, "settings.base_path.error_charset") }
+			data-error-save-failed={ t(ctx, "settings.base_path.error_save_failed") }
+			data-error-network={ t(ctx, "settings.base_path.error_network") }
+		></div>
+		<div class="px-6 py-4 space-y-3">
+			<label id="base-path-field-label" for="base-path-field" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+				SW_BASE_PATH
+			</label>
+			if data.BasePathEnvOverride {
+				<input
+					type="text"
+					id="base-path-field"
+					aria-labelledby="base-path-field-label"
+					aria-describedby="base-path-env-override-desc"
+					class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 cursor-not-allowed"
+					if data.BasePath != "" {
+						value={ data.BasePath }
+					} else {
+						value="/"
+					}
+					readonly
+				/>
+				<p id="base-path-env-override-desc" class="text-xs text-amber-600 dark:text-amber-400">
+					{ t(ctx, "settings.base_path.env_override") }
+				</p>
+			} else {
+				<input
+					type="text"
+					id="base-path-field"
+					aria-labelledby="base-path-field-label"
+					aria-describedby="base-path-config-desc base-path-error base-path-restart-banner"
+					placeholder="/"
+					pattern="^/(?:[a-zA-Z0-9_\-]+(?:/[a-zA-Z0-9_\-]+)*)?$"
+					class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					if data.BasePath != "" {
+						value={ data.BasePath }
+					} else {
+						value="/"
+					}
+				/>
+				<p id="base-path-config-desc" class="text-xs text-gray-500 dark:text-gray-400">
+					{ t(ctx, "settings.base_path.config_hint") }
+				</p>
+				<div class="flex items-center justify-end gap-2 pt-1">
+					<button
+						type="button"
+						id="base-path-save-btn"
+						onclick="saveBasePath()"
+						class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+					>
+						{ t(ctx, "actions.save") }
+					</button>
+				</div>
+				<!-- Shared restart-required banner. Hidden by default;
+							     the save handler removes "hidden" on a successful
+							     PUT. The data-restart-required-banner attribute is
+							     load-bearing: future settings that also require a
+							     restart can target the same banner CSS class
+							     (".sw-restart-required-banner") to share one
+							     visual element across the General tab. -->
+				<div
+					id="base-path-restart-banner"
+					class="sw-restart-required-banner hidden mt-2 rounded-md border px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
+					data-restart-required-banner="server.base_path"
+				>
+					<div class="flex items-start gap-3">
+						<svg class="mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+						<div class="flex-1 text-sm">
+							<div class="font-semibold text-amber-800 dark:text-amber-200">
+								{ t(ctx, "settings.base_path.restart_required_title") }
+							</div>
+							<div class="mt-1 text-amber-700 dark:text-amber-300">
+								{ t(ctx, "settings.base_path.restart_required_body") }
+							</div>
+						</div>
+					</div>
+				</div>
+				<div
+					id="base-path-error"
+					class="hidden mt-2 text-sm text-red-600 dark:text-red-400"
+					role="alert"
+				></div>
+			}
+		</div>
+	</div>
+}
+
+// SectionBehavior renders the "Behavior" / Platform debug card on the
+// Settings General tab.
+// Exported for future use by the next/ chrome package.
+templ SectionBehavior(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.behavior.title") }</h2>
+				@components.ContextHelp("help-behavior", t(ctx, "settings.behavior.title"), t(ctx, "settings.behavior.help"), "settings-general-behavior")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.behavior.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<div class="flex items-center justify-between">
+				<div>
+					<div class="flex items-center gap-1">
+						<span id="platform-debug-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.platform_debug.title") }</span>
+						@components.ContextHelp("help-platform-debug", t(ctx, "settings.platform_debug.title"), t(ctx, "settings.platform_debug.help"), "settings-general-platform-debug")
+					</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+						{ t(ctx, "settings.platform_debug.description") }
+					</div>
+				</div>
+				<button
+					type="button"
+					id="platform-debug-toggle"
+					class={
+						"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+						templ.KV("bg-blue-600", data.ShowPlatformDebug),
+						templ.KV("bg-gray-200 dark:bg-gray-600", !data.ShowPlatformDebug),
+					}
+					role="switch"
+					aria-checked={ boolAttr(data.ShowPlatformDebug) }
+					aria-labelledby="platform-debug-toggle-label"
+					onclick="togglePlatformDebug(this)"
+				>
+					<span
+						class={
+							"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+							templ.KV("translate-x-5", data.ShowPlatformDebug),
+							templ.KV("translate-x-0", !data.ShowPlatformDebug),
+						}
+					></span>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+// SectionImageCache renders the "Image Cache Configuration" card on the
+// Settings General tab, including the leading HTML comment and the trailing
+// <script> tag.
+// Exported for future use by the next/ chrome package.
+templ SectionImageCache(data SettingsData, assets AssetPaths) {
+	@components.SettingSection("help-image-cache", t(ctx, "settings.image_cache.title"), t(ctx, "settings.image_cache.help"), "settings-general-image-cache", t(ctx, "settings.image_cache.description")) {
+		<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.loading") }</div>
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+			<div>
+				<div class="flex items-center gap-1 mb-1">
+					<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.image_cache.max_size") }</label>
+					@components.ContextHelp("help-cache-max-size", t(ctx, "settings.image_cache.max_size"), t(ctx, "settings.image_cache.max_size.help"), "settings-general-image-cache-max-size")
+				</div>
+				<select
+					id="cache-max-size"
+					aria-label={ t(ctx, "settings.image_cache.max_size") }
+					class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="saveCacheMaxSize(this.value)"
+				>
+					if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
+						<option value={ data.CacheMaxSizeMB } selected>{ tf(ctx, "settings.image_cache.size_custom", data.CacheMaxSizeMB) }</option>
+					}
+					<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>{ t(ctx, "settings.image_cache.unlimited") }</option>
+					<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>{ t(ctx, "settings.image_cache.size_256mb") }</option>
+					<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>{ t(ctx, "settings.image_cache.size_512mb") }</option>
+					<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>{ t(ctx, "settings.image_cache.size_1gb") }</option>
+					<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>{ t(ctx, "settings.image_cache.size_2gb") }</option>
+				</select>
+			</div>
+			<div class="flex items-end gap-3">
+				<div class="flex items-center gap-1">
+					<button
+						type="button"
+						class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+						onclick="clearCache()"
+					>
+						{ t(ctx, "settings.image_cache.clear") }
+					</button>
+					@components.ContextHelp("help-cache-clear", t(ctx, "settings.image_cache.clear"), t(ctx, "settings.image_cache.clear.help"), "settings-general-image-cache-clear")
+				</div>
+				<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
+			</div>
+		</div>
+	}
+	<script src={ assets.SettingsImageCacheJS }></script>
+}
+
+// SectionLibraries renders the "Music Libraries" card on the Settings
+// Libraries tab, including the library list and the add-library form.
+// Exported for future use by the next/ chrome package.
+templ SectionLibraries(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.libraries.title") }</h2>
+				@components.ContextHelp("help-libraries", t(ctx, "settings.libraries.title"), t(ctx, "settings.libraries.help"), "settings-libraries-libraries")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.libraries.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<div
+				id="settings-library-list"
+				class="space-y-3 mb-4"
+				data-connection-label={ t(ctx, "settings.libraries.connection_badge") }
+				data-empty={ t(ctx, "settings.libraries.empty") }
+				data-lock-nfo-label={ t(ctx, "settings.libraries.lock_nfo_label") }
+				data-lock-nfo-title={ t(ctx, "settings.libraries.lock_nfo_label.description") }
+				data-lock-nfo-enabled={ t(ctx, "settings.libraries.lock_nfo_enabled_toast") }
+				data-lock-nfo-disabled={ t(ctx, "settings.libraries.lock_nfo_disabled_toast") }
+				data-lock-nfo-failed={ t(ctx, "settings.libraries.lock_nfo_failed_toast") }
+				data-lock-nfo-doc-anchor="settings-libraries-libraries-lock-nfo-label"
+				data-help-read-more={ t(ctx, "help.read_more") }
+				data-net-error={ t(ctx, "common.network_error") }
+				data-fs-mode-title={ t(ctx, "settings.libraries.fs_mode_title") }
+				data-poll-interval-title={ t(ctx, "settings.libraries.poll_interval_title") }
+				data-resync={ t(ctx, "settings.libraries.resync") }
+				data-scan={ t(ctx, "settings.libraries.scan") }
+			>
+				for _, lib := range data.Libraries {
+					@settingsLibraryRow(lib)
+				}
+				if len(data.Libraries) == 0 {
+					<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">{ t(ctx, "settings.libraries.empty") }</p>
+				}
+			</div>
+			<div id="settings-library-form-wrapper">
+				<button
+					type="button"
+					id="settings-add-library-btn"
+					class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+					onclick="document.getElementById('settings-library-form').classList.remove('hidden'); this.classList.add('hidden');"
+				>
+					{ t(ctx, "settings.libraries.add") }
+				</button>
+				<form
+					id="settings-library-form"
+					class="hidden mt-3 space-y-3"
+					hx-post="/api/v1/libraries"
+					hx-swap="none"
+					hx-on::after-request="if(event.detail.successful) { onSettingsLibrarySaved(); }"
+				>
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+						<div class="flex flex-col gap-1">
+							<div class="flex items-center gap-1">
+								<label for="settings-library-name" class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.libraries.name") }</label>
+								@components.ContextHelp("help-lib-add-name", t(ctx, "settings.libraries.name"), t(ctx, "settings.libraries.name.help"), "settings-libraries-libraries-name")
+							</div>
+							<input
+								id="settings-library-name"
+								name="name"
+								placeholder={ t(ctx, "settings.libraries.name_placeholder") }
+								required
+								class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							/>
+						</div>
+						<div class="flex flex-col gap-1">
+							<div class="flex items-center gap-1">
+								<label for="settings-library-path" class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.libraries.path") }</label>
+								@components.ContextHelp("help-lib-add-path", t(ctx, "settings.libraries.path"), t(ctx, "settings.libraries.path.help"), "settings-libraries-libraries-path")
+							</div>
+							<input
+								id="settings-library-path"
+								name="path"
+								placeholder={ t(ctx, "settings.libraries.path_placeholder") }
+								required
+								class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							/>
+						</div>
+						// All libraries use the Regular type. The hidden field
+						// ensures the form always submits a valid type value.
+						<input type="hidden" name="type" value="regular"/>
+					</div>
+					<div class="flex gap-2">
+						<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
+						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('settings-library-form').classList.add('hidden'); document.getElementById('settings-add-library-btn').classList.remove('hidden');">{ t(ctx, "actions.cancel") }</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+}

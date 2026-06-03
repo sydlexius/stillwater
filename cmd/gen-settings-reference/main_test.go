@@ -76,6 +76,26 @@ func TestIsNoiseKey(t *testing.T) {
 		{"settings.image_cache.unlimited.description", false},    // ditto
 		{"settings.libraries.lock_nfo_label.description", false}, // ditto
 		{"settings.api_tokens.scope_admin.description", false},   // ditto
+		// Option-label and action-button families surfaced when the General and
+		// Maintenance cards were extracted and localized (#1809). These are
+		// runtime chrome (select options, buttons, in-flight spinners) and must
+		// be filtered so the docs reference page stays unchanged.
+		{"settings.image_cache.size_256mb", true},    // `size_` IS noise
+		{"settings.image_cache.size_512mb", true},    // `size_` IS noise
+		{"settings.image_cache.size_1gb", true},      // `size_` IS noise
+		{"settings.image_cache.size_2gb", true},      // `size_` IS noise
+		{"settings.image_cache.size_custom", true},   // `size_` IS noise (tf %s format string)
+		{"settings.db_maintenance.optimize", true},   // `optimize` IS noise
+		{"settings.db_maintenance.optimizing", true}, // `optimizing` IS noise
+		{"settings.db_maintenance.vacuum", true},     // `vacuum` IS noise
+		{"settings.db_maintenance.vacuuming", true},  // `vacuum` substring IS noise
+		{"settings.backup.create", true},             // exact leaf `create` IS noise
+		{"settings.backup.creating", true},           // `creating` IS noise
+		// The `create` exact-leaf filter must NOT clobber create_invite, a
+		// documented control whose leaf merely contains "create".
+		{"settings.users.create_invite", false}, // documented control, survives
+		// The image-cache `max_size` control's leaf has no `size_` substring.
+		{"settings.image_cache.max_size", false}, // real control, survives
 	}
 	for _, tc := range cases {
 		got := isNoiseKey(tc.key)
@@ -137,7 +157,7 @@ func TestScanPanels_Dedupe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	panels, err := scanPanels([]string{trunk}, map[string]string{})
+	panels, err := scanPanels([]string{trunk}, map[string]string{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +201,7 @@ func TestScanPanels_TypedTabConstants(t *testing.T) {
 	if err := os.WriteFile(trunk, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	panels, err := scanPanels([]string{trunk}, map[string]string{})
+	panels, err := scanPanels([]string{trunk}, map[string]string{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +232,7 @@ func TestScanPanels_TypedUnknownConst(t *testing.T) {
 	if err := os.WriteFile(trunk, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := scanPanels([]string{trunk}, map[string]string{}); err == nil {
+	if _, err := scanPanels([]string{trunk}, map[string]string{}, nil); err == nil {
 		t.Fatal("scanPanels() succeeded with an unknown Tab const; want error")
 	}
 }
@@ -240,7 +260,7 @@ func TestScanPanels_SubTemplateAttribution(t *testing.T) {
 
 	panels, err := scanPanels([]string{trunk, users}, map[string]string{
 		users: "users",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +554,7 @@ func TestRunCheckMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tabs, err := scanPanels([]string{trunk}, map[string]string{})
+	tabs, err := scanPanels([]string{trunk}, map[string]string{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -915,7 +935,7 @@ templ helperScript() {
 	if err := os.WriteFile(trunk, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	panels, err := scanPanels([]string{trunk}, map[string]string{})
+	panels, err := scanPanels([]string{trunk}, map[string]string{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -952,8 +972,12 @@ func TestDiscoverTemplSources(t *testing.T) {
 	// it to confirm the glob ignores it without needing an exclude entry.
 	must("preferences.templ")
 	future := must("settings_billing.templ")
+	// settings_sections.templ is in subTemplateHelperOnly: it matches the glob
+	// but is a multi-panel shared-helper file, so it must be returned in the
+	// helperOnly set and kept OUT of the owner map (no filename-stem panel).
+	sections := must("settings_sections.templ")
 
-	sources, owner, err := discoverTemplSources(trunk, filepath.Join(dir, "settings_*.templ"))
+	sources, owner, helperOnly, err := discoverTemplSources(trunk, filepath.Join(dir, "settings_*.templ"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -966,8 +990,10 @@ func TestDiscoverTemplSources(t *testing.T) {
 	// output is only stable if discoverTemplSources sorts sub-templates
 	// deterministically. A regression that returned sources in
 	// filesystem-iteration order would still satisfy the membership
-	// check below, so assert the exact slice here.
-	wantSources := []string{trunk, auth, future, users}
+	// check below, so assert the exact slice here. Single-panel sub-templates
+	// (sorted: auth, billing, users) come first, helper-only sources
+	// (sorted: sections) last.
+	wantSources := []string{trunk, auth, future, users, sections}
 	if len(sources) != len(wantSources) {
 		t.Fatalf("expected %d sources, got %d: %v", len(wantSources), len(sources), sources)
 	}
@@ -992,6 +1018,14 @@ func TestDiscoverTemplSources(t *testing.T) {
 			t.Errorf("owner[%s] = %q, want %q", path, got, wantPanel)
 		}
 	}
+	// The helper-only file must be flagged in helperOnly and absent from owner
+	// (it has no single panel; its helpers join the global index instead).
+	if _, ok := helperOnly[sections]; !ok {
+		t.Errorf("settings_sections.templ should be in helperOnly set; got %v", helperOnly)
+	}
+	if got, ok := owner[sections]; ok {
+		t.Errorf("settings_sections.templ should not be in owner map; got owner[%s]=%q", sections, got)
+	}
 	// preferences.templ must not be picked up by the settings_*.templ glob.
 	for _, src := range sources {
 		if filepath.Base(src) == "preferences.templ" {
@@ -1002,7 +1036,7 @@ func TestDiscoverTemplSources(t *testing.T) {
 
 // TestScanPanels_NoSources verifies the empty-input guard.
 func TestScanPanels_NoSources(t *testing.T) {
-	if _, err := scanPanels(nil, nil); err == nil {
+	if _, err := scanPanels(nil, nil, nil); err == nil {
 		t.Error("scanPanels(nil) returned nil error")
 	}
 }
@@ -1014,7 +1048,7 @@ func TestScanPanels_NoPanels(t *testing.T) {
 	if err := os.WriteFile(trunk, []byte(`<div>no panels here</div>`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := scanPanels([]string{trunk}, nil); err == nil {
+	if _, err := scanPanels([]string{trunk}, nil, nil); err == nil {
 		t.Error("scanPanels(no panels) returned nil error")
 	}
 }
@@ -1031,7 +1065,7 @@ func TestScanPanels_UnmappedSubTemplate(t *testing.T) {
 	if err := os.WriteFile(sub, []byte(`{ t(ctx, "settings.x.y") }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := scanPanels([]string{trunk, sub}, map[string]string{}); err == nil {
+	if _, err := scanPanels([]string{trunk, sub}, map[string]string{}, nil); err == nil {
 		t.Error("scanPanels(unmapped sub) returned nil error")
 	}
 }
@@ -1227,7 +1261,7 @@ func TestSubTemplateAtHelperOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1281,7 +1315,7 @@ func TestSubTemplateGoFunctionKeysPreserved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1329,7 +1363,7 @@ func TestSubTemplateAtCallCycleSafe(t *testing.T) {
 	var panels []panel
 	var err error
 	go func() {
-		panels, err = scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+		panels, err = scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"}, nil)
 		close(done)
 	}()
 	select {
@@ -1388,7 +1422,7 @@ func TestSubTemplateSharedHelperDedupedAcrossEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1458,7 +1492,7 @@ func TestSubTemplateAtCallMissingHelperWarns(t *testing.T) {
 		os.Stderr = origStderr
 	}()
 
-	panels, scanErr := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	panels, scanErr := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"}, nil)
 
 	closeWriter()
 	capturedBytes, readErr := io.ReadAll(r)
@@ -1546,7 +1580,7 @@ func TestSubTemplateGoFunctionBetweenHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"})
+	panels, err := scanPanels([]string{trunk, sub}, map[string]string{sub: "widgets"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1562,6 +1596,109 @@ func TestSubTemplateGoFunctionBetweenHelpers(t *testing.T) {
 	for i, k := range want {
 		if panels[0].Keys[i] != k {
 			t.Errorf("keys[%d] = %q, want %q (full=%v)", i, panels[0].Keys[i], k, panels[0].Keys)
+		}
+	}
+}
+
+// TestScanPanels_HelperOnlyCrossFile pins the M55 #1809 fix: a helper-only
+// source file (settings_sections.templ) whose Section* funcs are @-called from
+// the trunk panels, and which themselves @-call back into trunk renderers,
+// must attribute each key to the panel it is rendered FROM -- across the file
+// boundary -- with the legacy ordering (positional for inline + extraction
+// layer, trunk-helper keys appended last).
+//
+// Layout mirrors production:
+//   - trunk SettingsPage has a "general" panel that @-calls @SectionAlpha and
+//     then an inline "onboarding" key (textually last), and a "libraries"
+//     panel that @-calls @SectionLibs.
+//   - the helper-only file defines SectionAlpha (one direct key, then a
+//     @trunkRow trunk-helper call) and SectionLibs (one direct key, then a
+//     @trunkRow call).
+//   - @trunkRow is a TRUNK renderer (declared in the trunk), so its keys are
+//     appended after each panel's positional keys.
+func TestScanPanels_HelperOnlyCrossFile(t *testing.T) {
+	dir := t.TempDir()
+	trunk := filepath.Join(dir, "settings.templ")
+	sections := filepath.Join(dir, "settings_sections.templ")
+
+	if err := os.WriteFile(trunk, []byte("\n"+
+		"templ SettingsPage() {\n"+
+		"\t<div data-tab-panel=\"general\">\n"+
+		"\t\t@SectionAlpha(data)\n"+
+		"\t\t<h2>{ t(ctx, \"settings.onboarding.title\") }</h2>\n"+
+		"\t</div>\n"+
+		"\t<div data-tab-panel=\"libraries\">\n"+
+		"\t\t@SectionLibs(data)\n"+
+		"\t</div>\n"+
+		"}\n"+
+		"\n"+
+		"templ trunkRow(x string) {\n"+
+		"\t<span>{ t(ctx, \"settings.libraries.fs_mode_title\") }</span>\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sections, []byte("\n"+
+		"templ SectionAlpha(data SettingsData) {\n"+
+		"\t<h2>{ t(ctx, \"settings.platform_profile.title\") }</h2>\n"+
+		"\t@trunkRow(\"a\")\n"+
+		"}\n"+
+		"\n"+
+		"templ SectionLibs(data SettingsData) {\n"+
+		"\t<h2>{ t(ctx, \"settings.libraries.title\") }</h2>\n"+
+		"\t@trunkRow(\"b\")\n"+
+		"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// settings_sections.templ is helper-only: indexed globally, excluded from
+	// filename-stem attribution. No subOwner entry (helperOnly handles it).
+	panels, err := scanPanels(
+		[]string{trunk, sections},
+		map[string]string{},
+		map[string]struct{}{sections: {}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(panels) != 2 {
+		t.Fatalf("expected 2 panels, got %d: %+v", len(panels), panels)
+	}
+
+	// General panel: SectionAlpha's direct key (positional), then the inline
+	// onboarding key (positional, textually after the @Section call), then the
+	// trunk-helper @trunkRow keys appended last.
+	wantGeneral := []string{
+		"settings.platform_profile.title",
+		"settings.onboarding.title",
+		"settings.libraries.fs_mode_title",
+	}
+	if panels[0].ID != "general" {
+		t.Fatalf("panels[0].ID = %q, want general", panels[0].ID)
+	}
+	if len(panels[0].Keys) != len(wantGeneral) {
+		t.Fatalf("general keys = %v, want %v", panels[0].Keys, wantGeneral)
+	}
+	for i, k := range wantGeneral {
+		if panels[0].Keys[i] != k {
+			t.Errorf("general keys[%d] = %q, want %q (full=%v)", i, panels[0].Keys[i], k, panels[0].Keys)
+		}
+	}
+
+	// Libraries panel: SectionLibs key is attributed HERE (not to general,
+	// the old band-aid bug), with the trunk-row key appended last.
+	wantLibs := []string{
+		"settings.libraries.title",
+		"settings.libraries.fs_mode_title",
+	}
+	if panels[1].ID != "libraries" {
+		t.Fatalf("panels[1].ID = %q, want libraries", panels[1].ID)
+	}
+	if len(panels[1].Keys) != len(wantLibs) {
+		t.Fatalf("libraries keys = %v, want %v", panels[1].Keys, wantLibs)
+	}
+	for i, k := range wantLibs {
+		if panels[1].Keys[i] != k {
+			t.Errorf("libraries keys[%d] = %q, want %q (full=%v)", i, panels[1].Keys[i], k, panels[1].Keys)
 		}
 	}
 }
