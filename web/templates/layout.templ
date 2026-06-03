@@ -22,26 +22,33 @@ type AssetPaths struct {
 	// Settings-screen first-party modules (M55 #1806, extended #1808). Extracted
 	// from the inline XxxScript() blocks so the settings layer can move to shared
 	// wrappers without the behavior living in the template.
-	SettingsImageCacheJS        string
-	SettingsNotifBadgesJS       string
-	SettingsResetConfirmPrefsJS string
-	SettingsTabsJS              string
-	SettingsSearchJS            string
-	SettingsSortableInitJS      string
-	SettingsLoggingJS           string
-	SettingsLogViewerJS         string
-	SettingsMaintenanceJS       string
-	SettingsExportJS            string
-	SettingsPlatformDebugJS     string
-	SettingsSymlinkJS           string
-	SettingsBasePathJS          string
-	SettingsProfileNamingJS     string
-	SettingsLibraryJS           string
-	DriverJS                    string
-	DriverCSS                   string
-	TourJS                      string
-	SSEJS                       string
-	LoginBG                     string
+	SettingsImageCacheJS              string
+	SettingsNotifBadgesJS             string
+	SettingsResetConfirmPrefsJS       string
+	SettingsTabsJS                    string
+	SettingsSearchJS                  string
+	SettingsSortableInitJS            string
+	SettingsLoggingJS                 string
+	SettingsLogViewerJS               string
+	SettingsMaintenanceJS             string
+	SettingsExportJS                  string
+	SettingsPlatformDebugJS           string
+	SettingsSymlinkJS                 string
+	SettingsBasePathJS                string
+	SettingsProfileNamingJS           string
+	SettingsLibraryJS                 string
+	SettingsConnectionJS              string
+	SettingsConnectionFeatureToggleJS string
+	SettingsRomanizationFallbackJS    string
+	SettingsRuleScheduleJS            string
+	SettingsRuleToggleJS              string
+	SettingsApiTokenJS                string
+	SettingsUpdatesJS                 string
+	DriverJS                          string
+	DriverCSS                         string
+	TourJS                            string
+	SSEJS                             string
+	LoginBG                           string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
 	// when the app is deployed at the root. Never has a trailing slash.
 	BasePath string
