@@ -3,9 +3,25 @@ package templates
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// readSettingsModule returns the source of a settings JS module extracted out of
+// settings.templ (M55 #1808). Tests run with the working directory set to the
+// package dir (web/templates), so the vendored module sits one level up under
+// web/static/js/settings.
+func readSettingsModule(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join("..", "static", "js", "settings", name)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(b)
+}
 
 // TestSettingsSearchEntryJSON verifies that SettingsSearchEntry marshals to the
 // expected JSON shape and that all required fields are present.
@@ -143,16 +159,12 @@ func TestSettingsSearchIndexScript_EmitsWindowGlobal(t *testing.T) {
 	}
 }
 
-// TestSettingsSearchScript_EntryPointAndShortcut renders the search-filter
-// IIFE templ and verifies the deferred-init entry point and the `/`
+// TestSettingsSearchScript_EntryPointAndShortcut reads the extracted search.js
+// module (M55 #1808) and verifies the deferred-init entry point and the `/`
 // shortcut handler are both present. A future refactor that drops either
 // would silently break the search box wiring or the keyboard shortcut.
 func TestSettingsSearchScript_EntryPointAndShortcut(t *testing.T) {
-	var buf bytes.Buffer
-	if err := settingsSearchScript().Render(testCtx(t), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	out := buf.String()
+	out := readSettingsModule(t, "search.js")
 	if !strings.Contains(out, "swInitSettingsSearch") {
 		t.Errorf("output missing swInitSettingsSearch entry point: %s", out)
 	}
@@ -214,15 +226,11 @@ func TestJsonSearchIndex(t *testing.T) {
 }
 
 // TestSettingsSearchScript_HighlightsMatchedControls verifies that the
-// settingsSearchScript body includes the per-control highlight logic. A
+// search.js module (M55 #1808) includes the per-control highlight logic. A
 // regression that dropped data-search-match would silently break the CSS
 // outline on matched controls without any visible JS error.
 func TestSettingsSearchScript_HighlightsMatchedControls(t *testing.T) {
-	var buf bytes.Buffer
-	if err := settingsSearchScript().Render(testCtx(t), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	out := buf.String()
+	out := readSettingsModule(t, "search.js")
 	if !strings.Contains(out, "data-search-match") {
 		t.Error("script missing data-search-match attribute handling")
 	}
@@ -233,15 +241,12 @@ func TestSettingsSearchScript_HighlightsMatchedControls(t *testing.T) {
 }
 
 // TestSettingsSearchScript_ClearFilterResets verifies that the clearFilter
-// function removes both data-search-match and data-search-flash attributes
-// and resets the per-tab chrome. If clearFilter omits either cleanup, stale
-// highlights remain visible after the query is erased.
+// function in search.js (M55 #1808) removes both data-search-match and
+// data-search-flash attributes and resets the per-tab chrome. If clearFilter
+// omits either cleanup, stale highlights remain visible after the query is
+// erased.
 func TestSettingsSearchScript_ClearFilterResets(t *testing.T) {
-	var buf bytes.Buffer
-	if err := settingsSearchScript().Render(testCtx(t), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	out := buf.String()
+	out := readSettingsModule(t, "search.js")
 	if !strings.Contains(out, "data-search-match") {
 		t.Error("clearFilter: script missing data-search-match cleanup")
 	}
