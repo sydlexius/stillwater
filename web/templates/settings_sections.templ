@@ -10,6 +10,8 @@ package templates
 // the byte-identical diff in settings_s1_golden_test.go.
 
 import (
+	"strconv"
+
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -508,6 +510,511 @@ templ SectionLibraries(data SettingsData) {
 					</div>
 				</form>
 			</div>
+		</div>
+	</div>
+}
+
+// SectionProviderKeys renders the "Provider Keys" card on the Settings Providers
+// tab.  The card is guarded internally by an if len(data.ProviderKeys) > 0
+// check, so callers do not need to repeat the guard.  When there are no provider
+// keys the func renders nothing.
+// Exported for future use by the next/ chrome package.
+templ SectionProviderKeys(data SettingsData) {
+	if len(data.ProviderKeys) > 0 {
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+				<div class="flex items-center gap-2">
+					<h2 class="text-lg font-semibold">{ t(ctx, "settings.provider_keys.title") }</h2>
+					@components.ContextHelp("help-provider-keys", t(ctx, "settings.provider_keys.title"), t(ctx, "settings.provider_keys.help"), "settings-providers-provider-keys")
+				</div>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					{ t(ctx, "settings.provider_keys.description") }
+				</p>
+			</div>
+			<div class="px-6 py-4 space-y-4">
+				for _, pk := range data.ProviderKeys {
+					<div id={ "provider-card-" + string(pk.Name) }>
+						@ProviderKeyCard(pk)
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+// SectionWebSearch renders the "Web Image Search" card on the Settings Providers
+// tab.  The card is guarded internally by an if len(data.WebSearchProviders) > 0
+// check, so callers do not need to repeat the guard.  When there are no
+// web-search providers the func renders nothing.
+// Exported for future use by the next/ chrome package.
+templ SectionWebSearch(data SettingsData) {
+	if len(data.WebSearchProviders) > 0 {
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+				<div class="flex items-center gap-2">
+					<h2 class="text-lg font-semibold">{ t(ctx, "settings.web_search.title") }</h2>
+					@components.ContextHelp("help-web-search", t(ctx, "settings.web_search.title"), t(ctx, "settings.web_search.help"), "settings-providers-web-search")
+				</div>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					{ t(ctx, "settings.web_search.description") }
+				</p>
+			</div>
+			<div class="px-6 py-4 space-y-4">
+				for _, ws := range data.WebSearchProviders {
+					@WebSearchToggle(ws)
+				}
+			</div>
+		</div>
+	}
+}
+
+// SectionProviderPriorities renders the "Provider Priorities" card on the
+// Settings Providers tab.  The card is guarded internally by an
+// if len(data.Priorities) > 0 check, so callers do not need to repeat the guard.
+// When there are no priorities the func renders nothing.
+// Exported for future use by the next/ chrome package.
+templ SectionProviderPriorities(data SettingsData) {
+	if len(data.Priorities) > 0 {
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+				<div class="flex items-center justify-between gap-2">
+					<div class="flex items-center gap-2">
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.priorities.title") }</h2>
+						@components.ContextHelp("help-provider-priorities", t(ctx, "settings.priorities.title"), t(ctx, "settings.priorities.help"), "settings-providers-priorities")
+					</div>
+					<button
+						type="button"
+						class="text-sm px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+						hx-post="/api/v1/providers/priorities/reset"
+						hx-target="#priority-rows"
+						hx-swap="outerHTML"
+						hx-confirm={ t(ctx, "settings.priorities.confirm_restore") }
+					>
+						{ t(ctx, "settings.priorities.restore_defaults") }
+					</button>
+				</div>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					{ t(ctx, "settings.priorities.description") }
+				</p>
+			</div>
+			<div class="px-6 py-4">
+				@PriorityChipRows(data.Priorities, data.ProviderKeys)
+			</div>
+		</div>
+	}
+}
+
+// SectionMetadataLanguages renders the "Metadata Language Preferences" card on
+// the Settings Providers tab (the next/ Languages rail section).  It includes
+// the ordered language picker and the romanization-fallback toggle.
+// Exported for future use by the next/ chrome package.
+templ SectionMetadataLanguages(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.metadata_languages.title") }</h2>
+				@components.ContextHelp("help-metadata-languages", t(ctx, "settings.metadata_languages.title"), t(ctx, "settings.metadata_languages.help"), "settings-providers-metadata-languages")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.metadata_languages.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<div class="space-y-3">
+				@components.LanguagePicker(components.LanguagePickerOpts{
+					InstanceID:       "settings",
+					InitialLanguages: data.MetadataLanguages,
+					Labels: components.LanguagePickerLabels{
+						InputLabel:       t(ctx, "settings.metadata_languages.input_label"),
+						InputPlaceholder: t(ctx, "settings.metadata_languages.input_placeholder"),
+						Remove:           t(ctx, "settings.metadata_languages.remove"),
+						AriaListLabel:    t(ctx, "settings.metadata_languages.aria_list_label"),
+						AriaPillHint:     t(ctx, "settings.metadata_languages.aria_pill_hint"),
+						AriaPillLabel:    t(ctx, "settings.metadata_languages.aria_pill_label"),
+						DefaultHint:      t(ctx, "settings.metadata_languages.default_hint"),
+						ToastSaved:       t(ctx, "settings.metadata_languages.toast_saved"),
+						ToastFailed:      t(ctx, "settings.metadata_languages.toast_failed"),
+						ToastMax:         t(ctx, "settings.metadata_languages.toast_max"),
+					},
+				})
+				<!-- Romanization fallback toggle -->
+				<div class="flex items-start justify-between gap-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+					<div>
+						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.metadata_languages.romanization_fallback.label") }</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ t(ctx, "settings.metadata_languages.romanization_fallback.description") }</div>
+					</div>
+					{{
+						romanizationChecked := data.NameRomanizationFallback
+						romanizationAriaVal := "true"
+						if !romanizationChecked {
+							romanizationAriaVal = "false"
+						}
+					}}
+					<button
+						type="button"
+						id="pref-romanization-fallback-toggle"
+						class={
+							"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+							templ.KV("bg-blue-600", romanizationChecked),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !romanizationChecked),
+						}
+						role="switch"
+						aria-checked={ romanizationAriaVal }
+						aria-label={ t(ctx, "settings.metadata_languages.romanization_fallback.label") }
+						data-toast-saved={ t(ctx, "settings.metadata_languages.romanization_fallback.toast_saved") }
+						data-toast-failed={ t(ctx, "settings.metadata_languages.romanization_fallback.toast_failed") }
+						onclick="swToggleRomanizationFallback(this)"
+					>
+						<span
+							class={
+								"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", romanizationChecked),
+								templ.KV("translate-x-0", !romanizationChecked),
+							}
+						></span>
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// SectionAdvanced renders the "Advanced" card on the Settings Providers tab,
+// which currently holds the name-similarity threshold control.
+// Exported for future use by the next/ chrome package.
+templ SectionAdvanced(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.advanced.title") }</h2>
+				@components.ContextHelp("help-advanced", t(ctx, "settings.advanced.title"), t(ctx, "settings.advanced.help"), "settings-providers-advanced")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.advanced.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-4">
+			<div>
+				<div class="flex items-center gap-1 mb-1">
+					<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+						{ t(ctx, "settings.name_similarity.label") }
+					</label>
+					@components.ContextHelp("help-name-similarity", t(ctx, "settings.name_similarity.label"), t(ctx, "settings.name_similarity.help"), "settings-providers-name-similarity")
+				</div>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+					{ t(ctx, "settings.name_similarity.description") }
+				</p>
+				<div class="flex items-center gap-3">
+					<input
+						type="number"
+						id="name_similarity_threshold"
+						name="name_similarity_threshold"
+						min="0"
+						max="100"
+						step="1"
+						value={ strconv.Itoa(data.NameSimilarityThreshold) }
+						aria-label={ t(ctx, "settings.name_similarity.label") }
+						class="w-24 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+					/>
+					<span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+					<button
+						type="button"
+						class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						onclick={ saveNameSimilarityThreshold() }
+					>
+						{ t(ctx, "actions.save") }
+					</button>
+					<span id="name-similarity-status" class="text-sm text-green-600 dark:text-green-400 hidden">{ t(ctx, "common.saved") }</span>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// SectionTagSources renders the "Tag Sources" card on the Settings Providers
+// tab: the exclude-pattern textarea plus the per-field count caps.
+// Exported for future use by the next/ chrome package.
+templ SectionTagSources(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.tag_sources.title") }</h2>
+				@components.ContextHelp("help-tag-sources", t(ctx, "settings.tag_sources.title"), t(ctx, "settings.tag_sources.help"), "settings-providers-tag-sources")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.tag_sources.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<form
+				id="tag-sources-form"
+				hx-put="/api/v1/settings/vocab"
+				hx-encoding="application/x-www-form-urlencoded"
+				hx-target="#tag-sources-status"
+				hx-swap="innerHTML"
+			>
+				<div class="space-y-5">
+					<!-- Exclude patterns textarea -->
+					<div>
+						<div class="flex items-center gap-1 mb-1">
+							<label for="tag-sources-exclude" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+								{ t(ctx, "settings.tag_sources.exclude.label") }
+							</label>
+							@components.ContextHelp("help-tag-sources-exclude", t(ctx, "settings.tag_sources.exclude.label"), t(ctx, "settings.tag_sources.exclude.help"), "settings-providers-tag-sources-exclude")
+						</div>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+							{ t(ctx, "settings.tag_sources.exclude.description") }
+						</p>
+						<textarea
+							id="tag-sources-exclude"
+							name="exclude"
+							rows="5"
+							aria-label={ t(ctx, "settings.tag_sources.exclude.label") }
+							placeholder={ t(ctx, "settings.tag_sources.exclude.placeholder") }
+							class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+						>{ data.vocabExcludePatternsText() }</textarea>
+					</div>
+					<!-- Per-field count caps -->
+					<div>
+						<p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+							{ t(ctx, "settings.tag_sources.caps.label") }
+						</p>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+							{ t(ctx, "settings.tag_sources.caps.description") }
+						</p>
+						<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+							<!-- Max genres -->
+							<div>
+								<label for="tag-sources-max-genres" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+									{ t(ctx, "settings.tag_sources.caps.max_genres") }
+								</label>
+								<input
+									type="number"
+									id="tag-sources-max-genres"
+									name="max_genres"
+									min="0"
+									step="1"
+									value={ data.vocabMaxGenres() }
+									aria-label={ t(ctx, "settings.tag_sources.caps.max_genres") }
+									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+							<!-- Max styles -->
+							<div>
+								<label for="tag-sources-max-styles" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+									{ t(ctx, "settings.tag_sources.caps.max_styles") }
+								</label>
+								<input
+									type="number"
+									id="tag-sources-max-styles"
+									name="max_styles"
+									min="0"
+									step="1"
+									value={ data.vocabMaxStyles() }
+									aria-label={ t(ctx, "settings.tag_sources.caps.max_styles") }
+									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+							<!-- Max moods -->
+							<div>
+								<label for="tag-sources-max-moods" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+									{ t(ctx, "settings.tag_sources.caps.max_moods") }
+								</label>
+								<input
+									type="number"
+									id="tag-sources-max-moods"
+									name="max_moods"
+									min="0"
+									step="1"
+									value={ data.vocabMaxMoods() }
+									aria-label={ t(ctx, "settings.tag_sources.caps.max_moods") }
+									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+						</div>
+					</div>
+					<!-- Save control and status -->
+					<div class="flex items-center gap-3 pt-1">
+						<button
+							type="submit"
+							class="text-sm px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						>
+							{ t(ctx, "actions.save") }
+						</button>
+						<span
+							id="tag-sources-status"
+							role="status"
+							aria-live="polite"
+							aria-atomic="true"
+							class="text-sm"
+						></span>
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+}
+
+// SectionRules renders the rule-category cards (NFO / Image / Metadata) plus the
+// empty-state card on the Settings Rules tab.  The page-level first-occurrence
+// flags for the severity-badge legend and requires-local chip are owned here so
+// each help icon still emits exactly once across all category cards.
+// Exported for future use by the next/ chrome package.
+templ SectionRules(data SettingsData) {
+	// Page-level first-occurrence flags for two ContextHelp icons inside
+	// ruleRow: severity-badge legend (universal across categories, so
+	// shown on the first rendered row regardless of category) and
+	// requires-local-chip (shown on the first FS-unavailable row, when
+	// any). Other ContextHelp instances on this tab (per-category and
+	// conflict-gated) render unconditionally and are not gated here.
+	{{ fsHelpShown := false }}
+	{{ severityHelpShown := false }}
+	for _, cat := range []string{"nfo", "image", "metadata"} {
+		{{ catRules := rulesForCategory(data.Rules, cat) }}
+		if len(catRules) > 0 {
+			<div
+				class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg"
+				if cat == "image" {
+					data-sw-requires-image-write
+				}
+				if cat == "nfo" {
+					data-sw-requires-nfo-write
+				}
+			>
+				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					{{ categoryHeading := tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }}
+					<div class="flex items-center gap-2">
+						<h2 class="text-lg font-semibold">{ categoryHeading }</h2>
+						// The conflict-gated chip + its help icon share the same
+						// visibility hook (.sw-conflict-gated-chip is toggled by
+						// JS when the active conflict state changes). Keeping the
+						// help icon inside the chip wrapper ensures the "?"
+						// describing the chip never shows when the chip itself is
+						// hidden, which would otherwise refer to UI the user
+						// cannot see.
+						if cat == "image" {
+							<span class="sw-conflict-gated-chip hidden" title={ t(ctx, "settings.rules.conflict_gated_image_tooltip") }>
+								<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">{ t(ctx, "settings.rules.conflict_gated_chip") }</span>
+								@components.ContextHelp("help-rules-conflict-gated-image", categoryHeading, t(ctx, "settings.rules.help_conflict_gated_image"), "core-concepts/conflict-gate#how-writes-are-gated")
+							</span>
+						}
+						if cat == "nfo" {
+							<span class="sw-conflict-gated-chip hidden" title={ t(ctx, "settings.rules.conflict_gated_nfo_tooltip") }>
+								<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">{ t(ctx, "settings.rules.conflict_gated_chip") }</span>
+								@components.ContextHelp("help-rules-conflict-gated-nfo", categoryHeading, t(ctx, "settings.rules.help_conflict_gated_nfo"), "core-concepts/conflict-gate#how-writes-are-gated")
+							</span>
+						}
+						if cat == "nfo" {
+							@components.ContextHelp("help-rules-nfo", categoryHeading, t(ctx, "settings.rules.help_nfo"), "settings-rules-rules")
+						}
+						if cat == "image" {
+							@components.ContextHelp("help-rules-image", categoryHeading, t(ctx, "settings.rules.help_image"), "settings-rules-rules")
+						}
+						if cat == "metadata" {
+							@components.ContextHelp("help-rules-metadata", categoryHeading, t(ctx, "settings.rules.help_metadata"), "settings-rules-rules")
+						}
+					</div>
+				</div>
+				<div class="px-6 divide-y divide-gray-100 dark:divide-gray-700">
+					// Each row inspects the page-level flags (declared above)
+					// before flipping them so the help icon emits exactly once.
+					// The fsHelpShown and severityHelpShown flags are shared across
+					// all sub-groups within this card so they still fire exactly once.
+					if cat == "image" {
+						for _, pfx := range imageSubtypePrefixes {
+							{{ sub := rulesForImageSubtype(catRules, pfx) }}
+							if len(sub) > 0 {
+								<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(ctx, sub[0].ID) }</h3>
+								for _, rl := range sub {
+									{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+									{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+									{{ showSeverityHelp := !severityHelpShown }}
+									if showFsHelp {
+										{{ fsHelpShown = true }}
+									}
+									if showSeverityHelp {
+										{{ severityHelpShown = true }}
+									}
+									@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+								}
+							}
+						}
+						{{ generalRules := rulesForImageSubtypeFallback(catRules) }}
+						if len(generalRules) > 0 {
+							<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(ctx, generalRules[0].ID) }</h3>
+							for _, rl := range generalRules {
+								{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+								{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+								{{ showSeverityHelp := !severityHelpShown }}
+								if showFsHelp {
+									{{ fsHelpShown = true }}
+								}
+								if showSeverityHelp {
+									{{ severityHelpShown = true }}
+								}
+								@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+							}
+						}
+					} else {
+						for _, rl := range catRules {
+							{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+							{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+							{{ showSeverityHelp := !severityHelpShown }}
+							if showFsHelp {
+								{{ fsHelpShown = true }}
+							}
+							if showSeverityHelp {
+								{{ severityHelpShown = true }}
+							}
+							@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+						}
+					}
+				</div>
+			</div>
+		}
+	}
+	if len(data.Rules) == 0 {
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg px-6 py-8 text-center">
+			<p class="text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.rules.empty") }</p>
+		</div>
+	}
+}
+
+// SectionRuleSchedule renders the "Rule Evaluation Schedule" card on the
+// Settings Rules tab.  The interval <select> reflects persisted state via
+// data.RuleScheduleMinutes.
+// Exported for future use by the next/ chrome package.
+templ SectionRuleSchedule(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.rule_schedule.title") }</h2>
+				@components.ContextHelp("help-rule-schedule", t(ctx, "settings.rule_schedule.title"), t(ctx, "settings.rule_schedule.help"), "settings-rules-rule-schedule")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.rule_schedule.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<div class="flex items-center gap-4">
+				<label class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.rule_schedule.interval_label") }</label>
+				<select
+					onchange="updateRuleSchedule(this)"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					<option value="0" selected?={ data.RuleScheduleMinutes == 0 }>{ t(ctx, "common.disabled") }</option>
+					<option value="5" selected?={ data.RuleScheduleMinutes == 5 }>{ t(ctx, "settings.schedule.every_5m") }</option>
+					<option value="15" selected?={ data.RuleScheduleMinutes == 15 }>{ t(ctx, "settings.schedule.every_15m") }</option>
+					<option value="30" selected?={ data.RuleScheduleMinutes == 30 }>{ t(ctx, "settings.schedule.every_30m") }</option>
+					<option value="60" selected?={ data.RuleScheduleMinutes == 60 }>{ t(ctx, "settings.schedule.every_hour") }</option>
+					<option value="360" selected?={ data.RuleScheduleMinutes == 360 }>{ t(ctx, "settings.schedule.every_6h") }</option>
+					<option value="720" selected?={ data.RuleScheduleMinutes == 720 }>{ t(ctx, "settings.schedule.every_12h") }</option>
+					<option value="1440" selected?={ data.RuleScheduleMinutes == 1440 }>{ t(ctx, "settings.schedule.daily") }</option>
+				</select>
+			</div>
+			<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.rule_schedule.note") }
+			</p>
 		</div>
 	</div>
 }
