@@ -78,6 +78,7 @@ func (r *Router) assets() templates.AssetPaths {
 		SettingsRuleScheduleJS:            r.basePath + r.staticAssets.Path("/js/settings/rule-schedule.js"),
 		SettingsRuleToggleJS:              r.basePath + r.staticAssets.Path("/js/settings/rule-toggle.js"),
 		SettingsApiTokenJS:                r.basePath + r.staticAssets.Path("/js/settings/api-token.js"),
+		SettingsUpdatesJS:                 r.basePath + r.staticAssets.Path("/js/settings/updates.js"),
 		// DriverJS, DriverCSS, and TourJS are intentionally omitted here.
 		// They are conditionally set in assetsFor() based on the request path
 		// so pages that do not use the guided tour avoid the extra JS/CSS.
