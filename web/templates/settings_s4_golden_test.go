@@ -78,58 +78,32 @@ func TestS4_PageComposesSections(t *testing.T) {
 	check("SectionLogViewer", SectionLogViewer(data).Render)
 }
 
-// --- Per-section golden tests ------------------------------------------------
-
-func TestSectionConfirmDialogs_S4_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	var buf bytes.Buffer
-	if err := SectionConfirmDialogs(s4MaintenanceData).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
+// TestSettingsSections_S4_Golden renders each extracted System Section* func in
+// isolation and compares it against its committed golden file.  The cases are
+// table-driven (one t.Run subtest per section) so each section gets isolated
+// failure output and adding a future section is a one-line change.  Regenerate
+// the goldens with -update after an intentional markup change.
+func TestSettingsSections_S4_Golden(t *testing.T) {
+	tests := []struct {
+		name   string
+		render func(context.Context, io.Writer) error
+	}{
+		{name: "confirm_dialogs", render: SectionConfirmDialogs(s4MaintenanceData).Render},
+		{name: "db_maintenance", render: SectionDatabaseMaintenance(s4MaintenanceData).Render},
+		{name: "backup", render: SectionBackup(s4MaintenanceData).Render},
+		{name: "export_import", render: SectionExportImport(s4MaintenanceData).Render},
+		{name: "log_settings", render: SectionLogSettings(s4MaintenanceData).Render},
+		{name: "log_viewer", render: SectionLogViewer(s4MaintenanceData).Render},
 	}
-	checkOrUpdateGolden(t, "confirm_dialogs", buf.String())
-}
 
-func TestSectionDatabaseMaintenance_S4_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	var buf bytes.Buffer
-	if err := SectionDatabaseMaintenance(s4MaintenanceData).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := testCtx(t)
+			var buf bytes.Buffer
+			if err := tt.render(ctx, &buf); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			checkOrUpdateGolden(t, tt.name, buf.String())
+		})
 	}
-	checkOrUpdateGolden(t, "db_maintenance", buf.String())
-}
-
-func TestSectionBackup_S4_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	var buf bytes.Buffer
-	if err := SectionBackup(s4MaintenanceData).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	checkOrUpdateGolden(t, "backup", buf.String())
-}
-
-func TestSectionExportImport_S4_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	var buf bytes.Buffer
-	if err := SectionExportImport(s4MaintenanceData).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	checkOrUpdateGolden(t, "export_import", buf.String())
-}
-
-func TestSectionLogSettings_S4_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	var buf bytes.Buffer
-	if err := SectionLogSettings(s4MaintenanceData).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	checkOrUpdateGolden(t, "log_settings", buf.String())
-}
-
-func TestSectionLogViewer_S4_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	var buf bytes.Buffer
-	if err := SectionLogViewer(s4MaintenanceData).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	checkOrUpdateGolden(t, "log_viewer", buf.String())
 }
