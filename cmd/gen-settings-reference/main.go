@@ -1172,6 +1172,28 @@ var noiseLeavesExact = map[string]struct{}{
 	"create": {}, // backup.create ("Create Backup" button); must not match create_invite
 }
 
+// noiseKeysExact lists FULL dotted keys (not just leaves) that are runtime UI
+// text and must not surface as docs controls, used when leaf-based matching
+// would over-reach into a real control elsewhere. The motivating case is the
+// API-token action buttons localized in the S3 review pass (M55 #1841):
+// settings.api_tokens.revoke / .delete are operate-the-app buttons, but their
+// leaves "revoke" / "delete" are ALSO the leaves of documented Users-tab
+// controls (settings.users.users.revoke = "Revoke" invite,
+// settings.users.users.delete = "Delete" user), so a leaf-exact filter would
+// wrongly drop those. A full-key match scopes the filter to exactly the
+// API-token affordances. The .generate / .show_archive / .hide_archive /
+// .name_label keys are listed here too (rather than as leaves) to keep the whole
+// localized-button family in one place. The .revoke_aria / .delete_aria keys
+// are already filtered by the "aria" noiseTokens entry.
+var noiseKeysExact = map[string]struct{}{
+	"settings.api_tokens.revoke":       {}, // "Revoke" button (per active token)
+	"settings.api_tokens.delete":       {}, // "Delete" button (per revoked token)
+	"settings.api_tokens.generate":     {}, // "Generate Token" button
+	"settings.api_tokens.show_archive": {}, // "Show Archive" toggle
+	"settings.api_tokens.hide_archive": {}, // "Hide Archive" toggle
+	"settings.api_tokens.name_label":   {}, // sr-only "Token name" input label
+}
+
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens
 // entry, indicating runtime UI text rather than a user-facing setting.
 //
@@ -1182,6 +1204,9 @@ var noiseLeavesExact = map[string]struct{}{
 // and silently drop every key beneath it, including the section's own
 // .title and .description that the docs page needs to render.
 func isNoiseKey(k string) bool {
+	if _, ok := noiseKeysExact[k]; ok {
+		return true
+	}
 	last := lastSegmentOf(k)
 	if _, ok := noiseLeavesExact[last]; ok {
 		return true

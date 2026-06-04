@@ -33,7 +33,7 @@ type Connection struct {
 	FeatureMetadataPush   bool       `json:"feature_metadata_push"`
 	FeatureTriggerRefresh bool       `json:"feature_trigger_refresh"`
 	// FeatureManageServerFiles is the per-connection opt-in toggle
-	// "Let Stillwater manage artwork and NFO files on this server". When
+	// "Let Stillwater manage images and NFO files on this server". When
 	// true, Stillwater has patched the peer's library options to disable
 	// its NFO saver + image saver (SaveLocalMetadata=false) and snapshotted
 	// the prior config into PreStillwaterConfigJSON for restore on opt-out

@@ -181,10 +181,12 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-feature-nfo-write }
 - **Image download/write** -- When on, Stillwater downloads images from providers and writes them to artist folders that this server's libraries cover. Writes can still be paused by the conflict banner shown at the top of the page when a round-trip with the platform's own image saver would otherwise overwrite Stillwater's edits.
 {: #settings-connections-connections-feature-image-write }
-- **Let Stillwater manage artwork and NFO files on this server**
+- **Let Stillwater manage images and NFO files on this server**
 {: #settings-connections-connections-manage-title }
 - **Not configured**
 {: #settings-connections-connections-not-configured }
+- **Server name**
+{: #settings-connections-connections-server-name }
 - **Server URL**
 {: #settings-connections-connections-base-url }
 - **API Key**

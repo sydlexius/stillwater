@@ -315,7 +315,7 @@ func (s *Service) UpdatePlatformUserID(ctx context.Context, id, platformUserID s
 	return nil
 }
 
-// SetManageServerFiles flips the "Let Stillwater manage artwork and NFO files
+// SetManageServerFiles flips the "Let Stillwater manage images and NFO files
 // on this server" toggle for the given connection. Callers should pair this
 // with SetPreStillwaterConfig (on flip ON) or clear the snapshot (on flip OFF).
 func (s *Service) SetManageServerFiles(ctx context.Context, id string, on bool) error {

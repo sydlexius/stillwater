@@ -105,6 +105,41 @@ func TestIsNoiseKey(t *testing.T) {
 	}
 }
 
+// TestIsNoiseKey_NoiseKeysExact exercises the full-key denylist branch added for
+// the M55 #1841 API-token affordances. These keys must be filtered by EXACT
+// full-key match: their bare leaves "revoke" / "delete" are ALSO the leaves of
+// documented Users-tab controls (settings.users.users.revoke / .delete), so a
+// leaf-exact filter would wrongly drop those. The full-key scoping must filter
+// the API-token buttons while leaving the Users-tab controls (and a non-listed
+// api_tokens control) untouched.
+func TestIsNoiseKey_NoiseKeysExact(t *testing.T) {
+	// Every key on the full-key denylist must be treated as noise.
+	for _, k := range []string{
+		"settings.api_tokens.revoke",
+		"settings.api_tokens.delete",
+		"settings.api_tokens.generate",
+		"settings.api_tokens.show_archive",
+		"settings.api_tokens.hide_archive",
+		"settings.api_tokens.name_label",
+	} {
+		if !isNoiseKey(k) {
+			t.Errorf("isNoiseKey(%q) = false, want true (full-key denylist)", k)
+		}
+	}
+	// Keys NOT on the denylist must survive -- including the Users-tab controls
+	// whose leaves collide with the API-token button leaves, and a real
+	// api_tokens control. This proves the filter is full-key, not leaf-based.
+	for _, k := range []string{
+		"settings.users.users.revoke",
+		"settings.users.users.delete",
+		"settings.api_tokens.title",
+	} {
+		if isNoiseKey(k) {
+			t.Errorf("isNoiseKey(%q) = true, want false (must not be filtered)", k)
+		}
+	}
+}
+
 // TestExtractKeys verifies the regex finds t(ctx, ...) call sites and skips
 // noise. The fixture mixes real templ syntax with multi-line whitespace and
 // a noise key to exercise both filters.

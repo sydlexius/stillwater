@@ -45,7 +45,7 @@ type ConnectionState struct {
 	// connection the user has configured.
 	Enabled bool `json:"enabled"`
 	// ManageServerFiles mirrors the per-connection "Let Stillwater manage
-	// artwork and NFO files on this server" toggle. When true the peer's
+	// images and NFO files on this server" toggle. When true the peer's
 	// savers have been patched off and its write-back signals are
 	// suppressed from the gate.
 	ManageServerFiles bool `json:"manage_server_files"`
