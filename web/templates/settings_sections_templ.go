@@ -3530,14 +3530,14 @@ func SectionWebhooks(data SettingsData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 291, "</div><div class=\"px-6 py-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"document.getElementById('add-webhook-form').classList.toggle('hidden')\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 291, "</div><div class=\"px-6 py-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" aria-controls=\"add-webhook-form\" aria-expanded=\"false\" onclick=\"var f = document.getElementById('add-webhook-form'); f.classList.toggle('hidden'); this.setAttribute('aria-expanded', f.classList.contains('hidden') ? 'false' : 'true')\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var183 string
 		templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.add"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1083, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1085, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var183))
 		if templ_7745c5c3_Err != nil {
@@ -3550,7 +3550,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var184 string
 		templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.name.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1095, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1097, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 		if templ_7745c5c3_Err != nil {
@@ -3563,7 +3563,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var185 string
 		templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.webhooks.name_placeholder"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1096, Col: 139}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1098, Col: 139}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var185)
 		if templ_7745c5c3_Err != nil {
@@ -3584,7 +3584,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var186 string
 		templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.type.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1100, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1102, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
 		if templ_7745c5c3_Err != nil {
@@ -3597,7 +3597,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var187 string
 		templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.select_type"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1102, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1104, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 		if templ_7745c5c3_Err != nil {
@@ -3610,7 +3610,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var188 string
 		templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.type_generic"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1103, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1105, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
 		if templ_7745c5c3_Err != nil {
@@ -3631,7 +3631,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var189 string
 		templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.url.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1111, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1113, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
 		if templ_7745c5c3_Err != nil {
@@ -3644,7 +3644,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var190 string
 		templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.webhooks.url_placeholder"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1112, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1114, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var190)
 		if templ_7745c5c3_Err != nil {
@@ -3665,20 +3665,20 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var191 string
 		templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.save"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1117, Col: 147}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1119, Col: 147}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"this.closest('#add-webhook-form').classList.add('hidden')\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"this.closest('#add-webhook-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-webhook-form]'); if(b){b.setAttribute('aria-expanded','false');}\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var192 string
 		templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.cancel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1118, Col: 259}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1120, Col: 374}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 		if templ_7745c5c3_Err != nil {
@@ -3746,7 +3746,7 @@ func SectionNotificationBadges(data SettingsData) templ.Component {
 			var templ_7745c5c3_Var195 string
 			templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(data.BadgeEnabled))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1140, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1142, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var195)
 			if templ_7745c5c3_Err != nil {
@@ -3759,7 +3759,7 @@ func SectionNotificationBadges(data SettingsData) templ.Component {
 			var templ_7745c5c3_Var196 string
 			templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.notif_badges.enable_badge"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1145, Col: 148}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1147, Col: 148}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
 			if templ_7745c5c3_Err != nil {
@@ -3780,7 +3780,7 @@ func SectionNotificationBadges(data SettingsData) templ.Component {
 			var templ_7745c5c3_Var197 string
 			templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.notif_badges.count_by_severity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1151, Col: 119}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1153, Col: 119}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var197))
 			if templ_7745c5c3_Err != nil {
@@ -3811,7 +3811,7 @@ func SectionNotificationBadges(data SettingsData) templ.Component {
 			var templ_7745c5c3_Var198 string
 			templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.errors"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1162, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1164, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
 			if templ_7745c5c3_Err != nil {
@@ -3834,7 +3834,7 @@ func SectionNotificationBadges(data SettingsData) templ.Component {
 			var templ_7745c5c3_Var199 string
 			templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.warnings"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1171, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1173, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
 			if templ_7745c5c3_Err != nil {
@@ -3857,7 +3857,7 @@ func SectionNotificationBadges(data SettingsData) templ.Component {
 			var templ_7745c5c3_Var200 string
 			templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.info"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1180, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1182, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var200))
 			if templ_7745c5c3_Err != nil {
@@ -3909,7 +3909,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var202 string
 		templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1195, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1197, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var202))
 		if templ_7745c5c3_Err != nil {
@@ -3930,7 +3930,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var203 string
 		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1199, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1201, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 		if templ_7745c5c3_Err != nil {
@@ -3948,7 +3948,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 			var templ_7745c5c3_Var204 string
 			templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.empty"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1204, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1206, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 			if templ_7745c5c3_Err != nil {
@@ -3968,7 +3968,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 				var templ_7745c5c3_Var205 string
 				templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.ResolveAttributeValue("token-row-" + tok.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1208, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1210, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var205)
 				if templ_7745c5c3_Err != nil {
@@ -3981,7 +3981,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 				var templ_7745c5c3_Var206 string
 				templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs(tok.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1210, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1212, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
 				if templ_7745c5c3_Err != nil {
@@ -4018,7 +4018,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 						var templ_7745c5c3_Var209 string
 						templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.JoinStringErrs(strings.TrimSpace(scope))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1214, Col: 146}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1216, Col: 146}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var209))
 						if templ_7745c5c3_Err != nil {
@@ -4037,7 +4037,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 				var templ_7745c5c3_Var210 string
 				templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.api_tokens.created_at", tok.CreatedAt))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1219, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1221, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
 				if templ_7745c5c3_Err != nil {
@@ -4051,7 +4051,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 					var templ_7745c5c3_Var211 string
 					templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.api_tokens.last_used", *tok.LastUsedAt))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1221, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1223, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
 					if templ_7745c5c3_Err != nil {
@@ -4065,7 +4065,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 				var templ_7745c5c3_Var212 string
 				templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/auth/tokens/" + tok.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1228, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1230, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var212)
 				if templ_7745c5c3_Err != nil {
@@ -4078,7 +4078,7 @@ func SectionAPITokens(data SettingsData) templ.Component {
 				var templ_7745c5c3_Var213 string
 				templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.confirm_revoke"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1230, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1232, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var213)
 				if templ_7745c5c3_Err != nil {
@@ -4091,380 +4091,390 @@ func SectionAPITokens(data SettingsData) templ.Component {
 				var templ_7745c5c3_Var214 string
 				templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.ResolveAttributeValue(tokenAfterRequest("token-row-"+tok.ID, "revoke"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1231, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1233, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var214)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 339, "\" aria-label=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 339, "\" data-toast-success=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var215 string
-				templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.api_tokens.revoke_aria", tok.Name))
+				templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.revoke_success"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1232, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1234, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var215)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 340, "\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 340, "\" data-toast-fail=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var216 string
-				templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.revoke"))
+				templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.action_failed"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1234, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1235, Col: 68}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var216)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 341, "</button></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 341, "\" aria-label=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var217 string
+				templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.api_tokens.revoke_aria", tok.Name))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1236, Col: 72}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var217)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 342, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var218 string
+				templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.revoke"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1238, Col: 45}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 343, "</button></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 		}
 		if hasRevokedTokens(data.APITokens) {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 342, "<div class=\"border-t border-gray-200 dark:border-gray-700 pt-3 mt-3\"><button type=\"button\" class=\"text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors\" data-show-archive=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var217 string
-			templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.show_archive"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1244, Col: 68}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var217)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 343, "\" data-hide-archive=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var218 string
-			templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.hide_archive"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1245, Col: 68}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var218)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 344, "\" onclick=\"var el = document.getElementById('archived-tokens'); el.classList.toggle('hidden'); var hidden = el.classList.contains('hidden'); this.setAttribute('aria-expanded', hidden ? 'false' : 'true'); this.querySelector('span').textContent = hidden ? this.dataset.showArchive : this.dataset.hideArchive\" aria-expanded=\"false\" aria-controls=\"archived-tokens\"><span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 344, "<div class=\"border-t border-gray-200 dark:border-gray-700 pt-3 mt-3\"><button type=\"button\" class=\"text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors\" data-show-archive=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var219 string
-			templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.show_archive"))
+			templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.show_archive"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1250, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1248, Col: 68}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var219)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 345, "</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 345, "\" data-hide-archive=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var220 string
-			templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(" (%d)", countRevokedTokens(data.APITokens)))
+			templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.hide_archive"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1251, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1249, Col: 68}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var220)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 346, "</button><div id=\"archived-tokens\" class=\"hidden mt-3 space-y-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 346, "\" onclick=\"var el = document.getElementById('archived-tokens'); el.classList.toggle('hidden'); var hidden = el.classList.contains('hidden'); this.setAttribute('aria-expanded', hidden ? 'false' : 'true'); this.querySelector('span').textContent = hidden ? this.dataset.showArchive : this.dataset.hideArchive\" aria-expanded=\"false\" aria-controls=\"archived-tokens\"><span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var221 string
+			templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.show_archive"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1254, Col: 56}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var221))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 347, "</span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var222 string
+			templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(" (%d)", countRevokedTokens(data.APITokens)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1255, Col: 64}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var222))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 348, "</button><div id=\"archived-tokens\" class=\"hidden mt-3 space-y-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, tok := range data.APITokens {
 				if tok.Status == auth.TokenStatusRevoked {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 347, "<div id=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var221 string
-					templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.ResolveAttributeValue("token-row-" + tok.ID)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1256, Col: 39}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var221)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 348, "\" class=\"flex items-center justify-between py-2 opacity-50\"><div><span class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var222 string
-					templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.JoinStringErrs(tok.Name)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1258, Col: 87}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var222))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 349, "</span> <span class=\"ml-2 text-xs font-medium text-red-600 dark:text-red-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 349, "<div id=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var223 string
-					templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.revoked"))
+					templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.ResolveAttributeValue("token-row-" + tok.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1259, Col: 119}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1260, Col: 39}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var223)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 350, "</span><div class=\"flex gap-1 mt-1\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 350, "\" class=\"flex items-center justify-between py-2 opacity-50\"><div><span class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var224 string
+					templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinStringErrs(tok.Name)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1262, Col: 87}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 351, "</span> <span class=\"ml-2 text-xs font-medium text-red-600 dark:text-red-400\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var225 string
+					templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.revoked"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1263, Col: 119}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 352, "</span><div class=\"flex gap-1 mt-1\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					for _, scope := range strings.Split(tok.Scopes, ",") {
 						if strings.TrimSpace(scope) != "" {
-							var templ_7745c5c3_Var224 = []any{"inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope)}
-							templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var224...)
+							var templ_7745c5c3_Var226 = []any{"inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope)}
+							templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var226...)
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 351, "<span class=\"")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 353, "<span class=\"")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							var templ_7745c5c3_Var225 string
-							templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var224).String())
+							var templ_7745c5c3_Var227 string
+							templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var226).String())
 							if templ_7745c5c3_Err != nil {
 								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1, Col: 0}
 							}
-							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var225)
+							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var227)
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 352, "\">")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 354, "\">")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							var templ_7745c5c3_Var226 string
-							templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinStringErrs(strings.TrimSpace(scope))
+							var templ_7745c5c3_Var228 string
+							templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs(strings.TrimSpace(scope))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1263, Col: 149}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1267, Col: 149}
 							}
-							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
+							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 353, "</span>")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 355, "</span>")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 354, "</div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var227 string
-					templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.api_tokens.created_at", tok.CreatedAt))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1268, Col: 69}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var227))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 355, " ")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					if tok.LastUsedAt != nil {
-						var templ_7745c5c3_Var228 string
-						templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.api_tokens.last_used", *tok.LastUsedAt))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1270, Col: 71}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 356, "</p></div><button type=\"button\" class=\"text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" hx-delete=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 356, "</div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var229 string
-					templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/auth/tokens/" + tok.ID + "/permanent")
+					templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.api_tokens.created_at", tok.CreatedAt))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1277, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1272, Col: 69}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var229)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 357, "\" hx-swap=\"none\" hx-confirm=\"")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var229))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var230 string
-					templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.confirm_delete"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1279, Col: 67}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var230)
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 357, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 358, "\" hx-on--after-request=\"")
+					if tok.LastUsedAt != nil {
+						var templ_7745c5c3_Var230 string
+						templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.api_tokens.last_used", *tok.LastUsedAt))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1274, Col: 71}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var230))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 358, "</p></div><button type=\"button\" class=\"text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" hx-delete=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var231 string
-					templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.ResolveAttributeValue(tokenAfterRequest("token-row-"+tok.ID, "delete"))
+					templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/auth/tokens/" + tok.ID + "/permanent")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1280, Col: 81}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1281, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var231)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 359, "\" aria-label=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 359, "\" hx-swap=\"none\" hx-confirm=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var232 string
-					templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.api_tokens.delete_aria", tok.Name))
+					templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.confirm_delete"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1281, Col: 75}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1283, Col: 67}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var232)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 360, "\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 360, "\" hx-on--after-request=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var233 string
-					templ_7745c5c3_Var233, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.delete"))
+					templ_7745c5c3_Var233, templ_7745c5c3_Err = templ.ResolveAttributeValue(tokenAfterRequest("token-row-"+tok.ID, "delete"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1283, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1284, Col: 81}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var233))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var233)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 361, "</button></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 361, "\" data-toast-success=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var234 string
+					templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.delete_success"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1285, Col: 75}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var234)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 362, "\" data-toast-fail=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var235 string
+					templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.action_failed"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1286, Col: 71}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var235)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 363, "\" aria-label=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var236 string
+					templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.api_tokens.delete_aria", tok.Name))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1287, Col: 75}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var236)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 364, "\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var237 string
+					templ_7745c5c3_Var237, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.delete"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1289, Col: 48}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var237))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 365, "</button></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 362, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 366, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 363, "</div><div class=\"px-6 py-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"document.getElementById('add-token-form').classList.toggle('hidden')\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var234 string
-		templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.generate"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1298, Col: 44}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var234))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 364, "</button><div id=\"add-token-form\" class=\"hidden mt-4\"><form id=\"create-token-form\" class=\"space-y-3\" onsubmit=\"createAPIToken(event)\"><label id=\"create-token-name-label\" for=\"create-token-name\" class=\"sr-only\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var235 string
-		templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.name_label"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1302, Col: 123}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var235))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 365, "</label> <input id=\"create-token-name\" name=\"name\" aria-labelledby=\"create-token-name-label\" placeholder=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var236 string
-		templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.name_placeholder"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1303, Col: 149}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var236)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 366, "\" required class=\"rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500\"><div class=\"flex flex-wrap gap-3\"><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_read\" checked class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var237 string
-		templ_7745c5c3_Var237, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_read"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1308, Col: 72}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var237))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 367, "</span></label>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-read", t(ctx, "settings.api_tokens.scope_read"), t(ctx, "settings.api_tokens.scope_read.help"), "settings-automation-api-tokens-scope-read").Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 368, "</div><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_write\" class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 367, "</div><div class=\"px-6 py-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" aria-controls=\"add-token-form\" aria-expanded=\"false\" onclick=\"var f = document.getElementById('add-token-form'); f.classList.toggle('hidden'); this.setAttribute('aria-expanded', f.classList.contains('hidden') ? 'false' : 'true')\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var238 string
-		templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_write"))
+		templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.generate"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1315, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1306, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var238))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 369, "</span></label>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-write", t(ctx, "settings.api_tokens.scope_write"), t(ctx, "settings.api_tokens.scope_write.help"), "settings-automation-api-tokens-scope-write").Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 370, "</div><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_webhook\" class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 368, "</button><div id=\"add-token-form\" class=\"hidden mt-4\"><form id=\"create-token-form\" class=\"space-y-3\" onsubmit=\"createAPIToken(event)\"><label id=\"create-token-name-label\" for=\"create-token-name\" class=\"sr-only\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var239 string
-		templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_webhook"))
+		templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.name_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1322, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1310, Col: 123}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var239))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 369, "</label> <input id=\"create-token-name\" name=\"name\" aria-labelledby=\"create-token-name-label\" placeholder=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var240 string
+		templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.api_tokens.name_placeholder"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1311, Col: 149}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var240)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 370, "\" required class=\"rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500\"><div class=\"flex flex-wrap gap-3\"><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_read\" checked class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var241 string
+		templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_read"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1316, Col: 72}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var241))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4472,20 +4482,20 @@ func SectionAPITokens(data SettingsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-webhook", t(ctx, "settings.api_tokens.scope_webhook"), t(ctx, "settings.api_tokens.scope_webhook.help"), "settings-automation-api-tokens-scope-webhook").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-read", t(ctx, "settings.api_tokens.scope_read"), t(ctx, "settings.api_tokens.scope_read.help"), "settings-automation-api-tokens-scope-read").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 372, "</div><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_admin\" class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 372, "</div><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_write\" class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var240 string
-		templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_admin"))
+		var templ_7745c5c3_Var242 string
+		templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_write"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1329, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1323, Col: 73}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var240))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var242))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4493,63 +4503,105 @@ func SectionAPITokens(data SettingsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-admin", t(ctx, "settings.api_tokens.scope_admin"), t(ctx, "settings.api_tokens.scope_admin.help"), "settings-automation-api-tokens-scope-admin").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-write", t(ctx, "settings.api_tokens.scope_write"), t(ctx, "settings.api_tokens.scope_write.help"), "settings-automation-api-tokens-scope-write").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 374, "</div></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var241 string
-		templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.create"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1335, Col: 149}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var241))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 375, "</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"this.closest('#add-token-form').classList.add('hidden')\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var242 string
-		templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.cancel"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1336, Col: 257}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var242))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 376, "</button></div></form><div id=\"token-created-result\" class=\"hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded\"><p class=\"text-sm font-medium text-green-800 dark:text-green-200 mb-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 374, "</div><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_webhook\" class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var243 string
-		templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.created_message"))
+		templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_webhook"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1340, Col: 123}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1330, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var243))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 377, "</p><div class=\"flex items-center gap-2\"><code id=\"token-plaintext\" class=\"flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all\"></code> <button type=\"button\" class=\"text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 375, "</span></label>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-webhook", t(ctx, "settings.api_tokens.scope_webhook"), t(ctx, "settings.api_tokens.scope_webhook.help"), "settings-automation-api-tokens-scope-webhook").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 376, "</div><div class=\"inline-flex items-center gap-1.5\"><label class=\"inline-flex items-center gap-1.5\"><input type=\"checkbox\" name=\"scope_admin\" class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var244 string
-		templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.copy"))
+		templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.scope_admin"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1343, Col: 285}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1337, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var244))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 378, "</button></div></div></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 377, "</span></label>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-token-scope-admin", t(ctx, "settings.api_tokens.scope_admin"), t(ctx, "settings.api_tokens.scope_admin.help"), "settings-automation-api-tokens-scope-admin").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 378, "</div></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var245 string
+		templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.create"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1343, Col: 149}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var245))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 379, "</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"this.closest('#add-token-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-token-form]'); if(b){b.setAttribute('aria-expanded','false');}\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var246 string
+		templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.cancel"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1344, Col: 370}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var246))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 380, "</button></div></form><div id=\"token-created-result\" class=\"hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded\"><p class=\"text-sm font-medium text-green-800 dark:text-green-200 mb-1\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var247 string
+		templ_7745c5c3_Var247, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.api_tokens.created_message"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1348, Col: 123}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var247))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 381, "</p><div class=\"flex items-center gap-2\"><code id=\"token-plaintext\" class=\"flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all\"></code> <button type=\"button\" class=\"text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var248 string
+		templ_7745c5c3_Var248, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.copy"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1351, Col: 285}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var248))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 382, "</button></div></div></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

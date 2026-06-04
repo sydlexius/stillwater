@@ -1078,7 +1078,9 @@ templ SectionWebhooks(data SettingsData) {
 			<button
 				type="button"
 				class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-				onclick="document.getElementById('add-webhook-form').classList.toggle('hidden')"
+				aria-controls="add-webhook-form"
+				aria-expanded="false"
+				onclick="var f = document.getElementById('add-webhook-form'); f.classList.toggle('hidden'); this.setAttribute('aria-expanded', f.classList.contains('hidden') ? 'false' : 'true')"
 			>
 				{ t(ctx, "settings.webhooks.add") }
 			</button>
@@ -1115,7 +1117,7 @@ templ SectionWebhooks(data SettingsData) {
 					</div>
 					<div class="flex gap-2">
 						<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
-						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">{ t(ctx, "actions.cancel") }</button>
+						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-webhook-form]'); if(b){b.setAttribute('aria-expanded','false');}">{ t(ctx, "actions.cancel") }</button>
 					</div>
 				</form>
 			</div>
@@ -1229,6 +1231,8 @@ templ SectionAPITokens(data SettingsData) {
 							hx-swap="none"
 							hx-confirm={ t(ctx, "settings.api_tokens.confirm_revoke") }
 							hx-on--after-request={ tokenAfterRequest("token-row-"+tok.ID, "revoke") }
+							data-toast-success={ t(ctx, "settings.api_tokens.revoke_success") }
+							data-toast-fail={ t(ctx, "settings.api_tokens.action_failed") }
 							aria-label={ tf(ctx, "settings.api_tokens.revoke_aria", tok.Name) }
 						>
 							{ t(ctx, "settings.api_tokens.revoke") }
@@ -1278,6 +1282,8 @@ templ SectionAPITokens(data SettingsData) {
 										hx-swap="none"
 										hx-confirm={ t(ctx, "settings.api_tokens.confirm_delete") }
 										hx-on--after-request={ tokenAfterRequest("token-row-"+tok.ID, "delete") }
+										data-toast-success={ t(ctx, "settings.api_tokens.delete_success") }
+										data-toast-fail={ t(ctx, "settings.api_tokens.action_failed") }
 										aria-label={ tf(ctx, "settings.api_tokens.delete_aria", tok.Name) }
 									>
 										{ t(ctx, "settings.api_tokens.delete") }
@@ -1293,7 +1299,9 @@ templ SectionAPITokens(data SettingsData) {
 			<button
 				type="button"
 				class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-				onclick="document.getElementById('add-token-form').classList.toggle('hidden')"
+				aria-controls="add-token-form"
+				aria-expanded="false"
+				onclick="var f = document.getElementById('add-token-form'); f.classList.toggle('hidden'); this.setAttribute('aria-expanded', f.classList.contains('hidden') ? 'false' : 'true')"
 			>
 				{ t(ctx, "settings.api_tokens.generate") }
 			</button>
@@ -1333,7 +1341,7 @@ templ SectionAPITokens(data SettingsData) {
 					</div>
 					<div class="flex gap-2">
 						<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.create") }</button>
-						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden')">{ t(ctx, "actions.cancel") }</button>
+						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-token-form]'); if(b){b.setAttribute('aria-expanded','false');}">{ t(ctx, "actions.cancel") }</button>
 					</div>
 				</form>
 				<div id="token-created-result" class="hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded">

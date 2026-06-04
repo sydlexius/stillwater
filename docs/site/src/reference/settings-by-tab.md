@@ -185,6 +185,8 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-manage-title }
 - **Not configured**
 {: #settings-connections-connections-not-configured }
+- **Server name**
+{: #settings-connections-connections-server-name }
 - **Server URL**
 {: #settings-connections-connections-base-url }
 - **API Key**

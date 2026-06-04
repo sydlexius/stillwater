@@ -464,21 +464,28 @@ func scopePillClasses(scope string) string {
 // tokenAfterRequest returns an inline JS handler for token lifecycle buttons.
 // Revoke reloads the page so the token moves to the archive section correctly.
 // Delete fades out the row. Errors show a toast.
+// tokenAfterRequest builds the hx-on--after-request handler for the API-token
+// revoke/delete buttons. The user-visible success/failure toast copy is NOT
+// hardcoded here: it is read at runtime from the triggering button's
+// data-toast-success / data-toast-fail attributes (populated from en.json via
+// t(ctx, ...) at the call site), so the strings stay localized. `var btn=this`
+// captures the button up front because `this` would not refer to it inside the
+// setTimeout callback.
 func tokenAfterRequest(rowID, action string) string {
+	fail := "{ try { var r=JSON.parse(event.detail.xhr.responseText); " +
+		"showToast(r.error||btn.dataset.toastFail); } catch(e) { showToast(btn.dataset.toastFail); } }"
 	if action == "revoke" {
-		return "if(event.detail.successful) { " +
-			"showSuccessToast('revoke successful'); " +
+		return "var btn=this; if(event.detail.successful) { " +
+			"showSuccessToast(btn.dataset.toastSuccess); " +
 			"setTimeout(function(){ window.location.reload(); }, 500); " +
-			"} else { try { var r=JSON.parse(event.detail.xhr.responseText); " +
-			"showToast(r.error||'Operation failed'); } catch(e) { showToast('Operation failed'); } }"
+			"} else " + fail
 	}
-	return "if(event.detail.successful) { " +
+	return "var btn=this; if(event.detail.successful) { " +
 		"var row = document.getElementById('" + rowID + "'); " +
 		"if(row) { row.style.transition='opacity 0.3s'; row.style.opacity='0'; " +
 		"setTimeout(function(){ row.remove(); }, 300); } " +
-		"showSuccessToast('" + action + " successful'); " +
-		"} else { try { var r=JSON.parse(event.detail.xhr.responseText); " +
-		"showToast(r.error||'Operation failed'); } catch(e) { showToast('Operation failed'); } }"
+		"showSuccessToast(btn.dataset.toastSuccess); " +
+		"} else " + fail
 }
 
 func hasActiveTokens(tokens []auth.APIToken) bool {
@@ -2646,7 +2653,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 									data-sw-knob-on={ ruleToggleKnobClasses(true) }
 									data-sw-knob-off={ ruleToggleKnobClasses(false) }
 									data-sw-error={ t(ctx, "settings.connections.manage_error") }
-									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
+									hx-on:htmx:after-request="swStillwaterManagedAfterRequest(this, event)"
 								>
 									<span class={ ruleToggleKnobClasses(c.FeatureManageServerFiles) }></span>
 								</button>
@@ -2670,6 +2677,8 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 		<button
 			type="button"
 			class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+			aria-controls={ "conn-form-" + connType }
+			aria-expanded="false"
 			onclick={ toggleConnectionForm(connType) }
 		>
 			if len(conns) > 0 {
@@ -2686,7 +2695,9 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 				hx-swap="innerHTML"
 			>
 				<input type="hidden" name="type" value={ connType }/>
+				<label for={ "conn-name-" + connType } class="sr-only">{ t(ctx, "settings.connections.server_name") }</label>
 				<input
+					id={ "conn-name-" + connType }
 					name="name"
 					placeholder={ displayName + " server" }
 					required
@@ -2776,64 +2787,25 @@ script toggleConnectionForm(connType string) {
 	var form = document.getElementById("conn-form-" + connType);
 	if (form) {
 		form.classList.toggle("hidden");
-	}
-}
-
-// stillwaterManagedAfterRequest runs after the "Let Stillwater manage"
-// toggle POSTs. Because the button uses hx-swap="none", its
-// aria-checked, Tailwind class list, and hx-vals payload are otherwise
-// frozen at render-time. Without syncing them from the server response,
-// a second click would re-send the same enabled value and cause
-// applyStillwaterManaged to overwrite the peer-config snapshot with
-// the already-disabled state, losing restore-ability.
-//
-// On success it syncs the button from the handler's JSON response
-// (the feature_manage_server_files field is authoritative), then
-// re-fetches the per-connection conflict-detail fragment and fires
-// sse:conflict.changed for the top-of-page banner. On failure it
-// writes an inline error into the detail target so the user notices
-// without a page reload.
-//
-// Button class strings are read from data-sw-{btn,knob}-{on,off}
-// attributes populated at render time by the ruleToggle*Classes
-// helpers, so this script never hardcodes Tailwind utility names and
-// stays in sync if those helpers change.
-
-script stillwaterManagedAfterRequest(connID string) {
-	var btn = document.getElementById("stillwater-managed-" + connID);
-	if (event.detail.successful) {
-		try {
-			var resp = JSON.parse(event.detail.xhr.responseText || "{}");
-			if (btn && typeof resp.feature_manage_server_files === "boolean") {
-				var enabled = resp.feature_manage_server_files;
-				var knob = btn.querySelector("span");
-				btn.setAttribute("aria-checked", String(enabled));
-				btn.setAttribute("class", enabled ? btn.dataset.swBtnOn : btn.dataset.swBtnOff);
-				btn.setAttribute("hx-vals", JSON.stringify({ enabled: !enabled }));
-				if (knob) {
-					knob.setAttribute("class", enabled ? btn.dataset.swKnobOn : btn.dataset.swKnobOff);
-				}
-			}
-		} catch (_) {
-			// Non-JSON response; leave button state and rely on a subsequent
-			// page load to re-sync. The fetch below will still refresh the
-			// detail fragment so the user sees the new server-side state.
-		}
-		htmx.ajax("GET", "/api/v1/connections/" + connID + "/conflict-detail",
-			{ target: "#detected-" + connID, swap: "innerHTML" });
-		document.body.dispatchEvent(new CustomEvent("sse:conflict.changed"));
-	} else {
-		var el = document.getElementById("detected-" + connID);
-		if (el) {
-			// Prefer the render-time translated copy pinned on the button's
-			// data-sw-error attribute. The English literal is retained as a
-			// last-resort fallback for the pathological case where the
-			// button has been removed from the DOM before the request
-			// settles (e.g. the features panel was torn down mid-flight).
-			el.textContent = (btn && btn.dataset.swError) || "Could not update this server-managed setting. Try again or reload the page.";
+		// Keep the disclosure trigger's aria-expanded in sync with the form's
+		// visibility so assistive tech reflects the open/closed state. Only the
+		// Configure / Add-another button carries aria-controls for this form;
+		// the Cancel button inside the form does not, so it is not updated here.
+		var btn = document.querySelector('[aria-controls="conn-form-' + connType + '"]');
+		if (btn) {
+			btn.setAttribute('aria-expanded', String(!form.classList.contains('hidden')));
 		}
 	}
 }
+
+// stillwaterManagedAfterRequest now lives as a window-global in
+// web/static/js/conflict-gate.js (loaded in the layout on every page), because
+// the "Let Stillwater manage" toggle is triggered from BOTH this settings card
+// AND the global ConflictBanner CTAs -- the handler must exist wherever either
+// renders. It is bound via
+// hx-on:htmx:after-request="swStillwaterManagedAfterRequest(this, event)" so the
+// HTMX event is threaded explicitly rather than read from the deprecated global
+// window.event.
 
 script toggleConnectionFeatures(connID string) {
 	var panel = document.getElementById("features-" + connID);
