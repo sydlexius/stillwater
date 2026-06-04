@@ -214,6 +214,7 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 									hx-disabled-elt="this"
 									hx-indicator="this"
 									data-conn-id={ c.ID }
+									data-sw-error={ t(ctx, "settings.connections.manage_error") }
 									hx-on:htmx:after-request="swStillwaterManagedAfterRequest(this, event)"
 									title={ t(ctx, "banner.warn.manage_button_title") }
 								>
@@ -224,6 +225,7 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 									class="text-xs text-amber-200 hover:text-amber-100 underline-offset-2 hover:underline"
 								>{ t(ctx, "banner.warn.open_settings") }</a>
 							</div>
+							<div id={ "banner-manage-error-" + c.ID } class="hidden basis-full text-xs text-amber-100 mt-1" role="alert" aria-live="polite"></div>
 						</li>
 					}
 				</ul>
@@ -282,6 +284,7 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 										hx-vals={ manageServerFilesPayload(true) }
 										hx-swap="none"
 										data-conn-id={ c.ID }
+										data-sw-error={ t(ctx, "settings.connections.manage_error") }
 										hx-on:htmx:after-request="swStillwaterManagedAfterRequest(this, event)"
 										title={ t(ctx, "banner.warn.manage_button_title") }
 									>
@@ -289,6 +292,7 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 									</button>
 									<a href={ conflictConnectionHref(c.ID) } class="text-xs text-rose-200 hover:text-rose-100 underline-offset-2 hover:underline">{ t(ctx, "banner.warn.open_settings") }</a>
 								</div>
+								<div id={ "banner-manage-error-" + c.ID } class="hidden basis-full text-xs text-rose-100 mt-1" role="alert" aria-live="polite"></div>
 							</li>
 						}
 						for _, rt := range v.RoundTrips {

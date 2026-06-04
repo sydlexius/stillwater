@@ -154,19 +154,36 @@
         // load to re-sync. The fetch below still refreshes the detail fragment
         // so the user sees the new server-side state.
       }
-      if (typeof htmx !== "undefined") {
+      // The per-connection "Detected on this server" detail fragment exists
+      // only on the settings page. When the toggle is driven from a global
+      // banner CTA on another page that node is absent, so only re-fetch it
+      // when it is actually in the DOM; the banner refresh below covers the
+      // off-settings case.
+      if (typeof htmx !== "undefined" && document.getElementById("detected-" + connID)) {
         htmx.ajax("GET", "/api/v1/connections/" + connID + "/conflict-detail",
           { target: "#detected-" + connID, swap: "innerHTML" });
       }
       document.body.dispatchEvent(new CustomEvent("sse:conflict.changed"));
     } else {
-      var el = document.getElementById("detected-" + connID);
+      // Resolve the localized failure message context-agnostically: prefer
+      // the trigger's own data-sw-error (banner CTAs carry it), then the
+      // settings toggle's (#stillwater-managed-<connID>), then an English
+      // literal last-resort if neither node carried the attribute.
+      var msg =
+        (triggerEl && triggerEl.dataset && triggerEl.dataset.swError) ||
+        (btn && btn.dataset && btn.dataset.swError) ||
+        "Could not update this server-managed setting. Try again or reload the page.";
+      // Resolve the target: the settings page's per-connection detail panel
+      // when present (current behavior), otherwise the banner's inline alert
+      // span so a failure off the settings page is not silent.
+      var el =
+        document.getElementById("detected-" + connID) ||
+        document.getElementById("banner-manage-error-" + connID);
       if (el) {
-        // Prefer the render-time translated copy pinned on the toggle's
-        // data-sw-error attribute. The English literal is a last-resort
-        // fallback for the pathological case where the toggle was removed
-        // from the DOM before the request settled.
-        el.textContent = (btn && btn.dataset.swError) || "Could not update this server-managed setting. Try again or reload the page.";
+        el.textContent = msg;
+        // The banner alert span ships hidden; reveal it on failure. The
+        // settings detail panel has no hidden class, so this is a no-op there.
+        el.classList.remove("hidden");
       }
     }
   };
