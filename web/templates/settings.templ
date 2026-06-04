@@ -1004,28 +1004,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != TabConnections),
 				}
 			>
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.connections.title") }</h2>
-							@components.ContextHelp("help-connections", t(ctx, "settings.connections.title"), t(ctx, "settings.connections.help"), "settings-connections-connections")
-						</div>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "settings.connections.description") }
-						</p>
-					</div>
-					<div class="px-6 py-4">
-						<!-- The clobber-warnings block was removed in favour of
-							the global ConflictBanner in the layout. That banner
-							covers every screen, carries per-connection CTAs, and
-							shares its source of truth with the write-gate. -->
-						<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-							@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
-							@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))
-							@serviceConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", connectionsForType(data.Connections, "lidarr"))
-						</div>
-					</div>
-				</div>
+				@SectionServers(data)
 			</div>
 			<!-- Libraries tab -->
 			<div
@@ -1045,280 +1024,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != TabAutomation),
 				}
 			>
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.webhooks.title") }</h2>
-							@components.ContextHelp("help-webhooks", t(ctx, "settings.webhooks.title"), t(ctx, "settings.webhooks.help"), "settings-automation-webhooks")
-						</div>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "settings.webhooks.description") }
-						</p>
-					</div>
-					<div id="webhooks-list" class="px-6 py-4 space-y-3">
-						if len(data.Webhooks) == 0 {
-							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.webhooks.empty") }</p>
-						}
-						for _, wh := range data.Webhooks {
-							@webhookCard(wh)
-						}
-					</div>
-					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-						<button
-							type="button"
-							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-							onclick="document.getElementById('add-webhook-form').classList.toggle('hidden')"
-						>
-							{ t(ctx, "settings.webhooks.add") }
-						</button>
-						<div id="add-webhook-form" class="hidden mt-4">
-							<form
-								hx-post="/api/v1/webhooks"
-								hx-target="#webhooks-list"
-								hx-swap="innerHTML"
-								hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); window.location.reload(); }"
-								class="space-y-3"
-							>
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div class="flex items-center gap-1">
-										<label id="webhook-name-label" for="webhook-name" class="sr-only">{ t(ctx, "settings.webhooks.name.label") }</label>
-										<input id="webhook-name" name="name" aria-labelledby="webhook-name-label" placeholder={ t(ctx, "settings.webhooks.name_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-										@components.ContextHelp("help-webhook-name", t(ctx, "settings.webhooks.name.label"), t(ctx, "settings.webhooks.name.help"), "settings-automation-webhooks-add")
-									</div>
-									<div class="flex items-center gap-1">
-										<label id="webhook-type-label" for="webhook-type" class="sr-only">{ t(ctx, "settings.webhooks.type.label") }</label>
-										<select id="webhook-type" name="type" aria-labelledby="webhook-type-label" required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-											<option value="">{ t(ctx, "settings.webhooks.select_type") }</option>
-											<option value="generic">{ t(ctx, "settings.webhooks.type_generic") }</option>
-											<option value="discord">Discord</option>
-											<option value="slack">Slack</option>
-											<option value="gotify">Gotify</option>
-										</select>
-										@components.ContextHelp("help-webhook-type", t(ctx, "settings.webhooks.type.label"), t(ctx, "settings.webhooks.type.help"), "settings-automation-webhooks-select-type")
-									</div>
-									<div class="col-span-full flex items-center gap-1">
-										<label id="webhook-url-label" for="webhook-url" class="sr-only">{ t(ctx, "settings.webhooks.url.label") }</label>
-										<input id="webhook-url" name="url" type="url" aria-labelledby="webhook-url-label" placeholder={ t(ctx, "settings.webhooks.url_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-										@components.ContextHelp("help-webhook-url", t(ctx, "settings.webhooks.url.label"), t(ctx, "settings.webhooks.url.help"), "settings-automation-webhooks-url")
-									</div>
-								</div>
-								<div class="flex gap-2">
-									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">{ t(ctx, "actions.cancel") }</button>
-								</div>
-							</form>
-						</div>
-					</div>
-				</div>
+				@SectionWebhooks(data)
 				<!-- Notification Badge Settings -->
-				@components.SettingSection("help-notif-badges", t(ctx, "settings.notif_badges.title"), t(ctx, "settings.notif_badges.help"), "settings-automation-notif-badges", t(ctx, "settings.notif_badges.description")) {
-					<div class="flex items-center gap-3">
-						<label for="notif-badge-enabled" class="relative inline-flex items-center gap-3 cursor-pointer">
-							<input
-								type="checkbox"
-								id="notif-badge-enabled"
-								class="sr-only peer"
-								checked?={ data.BadgeEnabled }
-								role="switch"
-								aria-checked={ boolAttr(data.BadgeEnabled) }
-								onclick="updateSetting('notif_badge_enabled', this.checked)"
-							/>
-							<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
-							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.enable_badge") }</span>
-						</label>
-						@components.ContextHelp("help-notif-enable-badge", t(ctx, "settings.notif_badges.enable_badge"), t(ctx, "settings.notif_badges.enable_badge.help"), "settings-automation-notif-badges-enable-badge")
-					</div>
-					<div class="space-y-2">
-						<div class="flex items-center gap-1">
-							<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.count_by_severity") }</p>
-							@components.ContextHelp("help-notif-count-severity", t(ctx, "settings.notif_badges.count_by_severity"), t(ctx, "settings.notif_badges.count_by_severity.help"), "settings-automation-notif-badges-count-by-severity")
-						</div>
-						<div class="flex flex-col gap-2">
-							<label class="inline-flex items-center gap-2">
-								<input
-									type="checkbox"
-									class="rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500"
-									checked?={ data.BadgeSeverityError }
-									onclick="updateSetting('notif_badge_severity_error', this.checked)"
-								/>
-								<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.errors") }</span>
-							</label>
-							<label class="inline-flex items-center gap-2">
-								<input
-									type="checkbox"
-									class="rounded border-gray-300 dark:border-gray-600 text-amber-600 focus:ring-amber-500"
-									checked?={ data.BadgeSeverityWarning }
-									onclick="updateSetting('notif_badge_severity_warning', this.checked)"
-								/>
-								<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.warnings") }</span>
-							</label>
-							<label class="inline-flex items-center gap-2">
-								<input
-									type="checkbox"
-									class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-									checked?={ data.BadgeSeverityInfo }
-									onclick="updateSetting('notif_badge_severity_info', this.checked)"
-								/>
-								<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.info") }</span>
-							</label>
-						</div>
-					</div>
-				}
+				@SectionNotificationBadges(data)
 				<!-- API Tokens -->
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.api_tokens.title") }</h2>
-							@components.ContextHelp("help-api-tokens", t(ctx, "settings.api_tokens.title"), t(ctx, "settings.api_tokens.help"), "settings-automation-api-tokens")
-						</div>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							{ t(ctx, "settings.api_tokens.description") }
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-3">
-						if len(data.APITokens) == 0 {
-							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.api_tokens.empty") }</p>
-						}
-						for _, tok := range data.APITokens {
-							if tok.Status == auth.TokenStatusActive {
-								<div id={ "token-row-" + tok.ID } class="flex items-center justify-between py-2">
-									<div>
-										<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
-										<div class="flex gap-1 mt-1">
-											for _, scope := range strings.Split(tok.Scopes, ",") {
-												if strings.TrimSpace(scope) != "" {
-													<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
-												}
-											}
-										</div>
-										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-											{ tf(ctx, "settings.api_tokens.created_at", tok.CreatedAt) }
-											if tok.LastUsedAt != nil {
-												{ tf(ctx, "settings.api_tokens.last_used", *tok.LastUsedAt) }
-											}
-										</p>
-									</div>
-									<button
-										type="button"
-										class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-										hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
-										hx-swap="none"
-										hx-confirm={ t(ctx, "settings.api_tokens.confirm_revoke") }
-										hx-on--after-request={ tokenAfterRequest("token-row-"+tok.ID, "revoke") }
-										aria-label={ "Revoke token " + tok.Name }
-									>
-										Revoke
-									</button>
-								</div>
-							}
-						}
-						if hasRevokedTokens(data.APITokens) {
-							<div class="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
-								<button
-									type="button"
-									class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-									onclick="var el = document.getElementById('archived-tokens'); el.classList.toggle('hidden'); this.setAttribute('aria-expanded', el.classList.contains('hidden') ? 'false' : 'true'); this.querySelector('span').textContent = el.classList.contains('hidden') ? 'Show Archive' : 'Hide Archive'"
-									aria-expanded="false"
-									aria-controls="archived-tokens"
-								>
-									<span>Show Archive</span>
-									{ fmt.Sprintf(" (%d)", countRevokedTokens(data.APITokens)) }
-								</button>
-								<div id="archived-tokens" class="hidden mt-3 space-y-3">
-									for _, tok := range data.APITokens {
-										if tok.Status == auth.TokenStatusRevoked {
-											<div id={ "token-row-" + tok.ID } class="flex items-center justify-between py-2 opacity-50">
-												<div>
-													<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
-													<span class="ml-2 text-xs font-medium text-red-600 dark:text-red-400">{ t(ctx, "settings.api_tokens.revoked") }</span>
-													<div class="flex gap-1 mt-1">
-														for _, scope := range strings.Split(tok.Scopes, ",") {
-															if strings.TrimSpace(scope) != "" {
-																<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
-															}
-														}
-													</div>
-													<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-														{ tf(ctx, "settings.api_tokens.created_at", tok.CreatedAt) }
-														if tok.LastUsedAt != nil {
-															{ tf(ctx, "settings.api_tokens.last_used", *tok.LastUsedAt) }
-														}
-													</p>
-												</div>
-												<button
-													type="button"
-													class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-													hx-delete={ "/api/v1/auth/tokens/" + tok.ID + "/permanent" }
-													hx-swap="none"
-													hx-confirm={ t(ctx, "settings.api_tokens.confirm_delete") }
-													hx-on--after-request={ tokenAfterRequest("token-row-"+tok.ID, "delete") }
-													aria-label={ "Delete token " + tok.Name }
-												>
-													Delete
-												</button>
-											</div>
-										}
-									}
-								</div>
-							</div>
-						}
-					</div>
-					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-						<button
-							type="button"
-							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-							onclick="document.getElementById('add-token-form').classList.toggle('hidden')"
-						>
-							Generate Token
-						</button>
-						<div id="add-token-form" class="hidden mt-4">
-							<form id="create-token-form" class="space-y-3" onsubmit="createAPIToken(event)">
-								<input name="name" placeholder={ t(ctx, "settings.api_tokens.name_placeholder") } required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<div class="flex flex-wrap gap-3">
-									<div class="inline-flex items-center gap-1.5">
-										<label class="inline-flex items-center gap-1.5">
-											<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
-											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_read") }</span>
-										</label>
-										@components.ContextHelp("help-token-scope-read", t(ctx, "settings.api_tokens.scope_read"), t(ctx, "settings.api_tokens.scope_read.help"), "settings-automation-api-tokens-scope-read")
-									</div>
-									<div class="inline-flex items-center gap-1.5">
-										<label class="inline-flex items-center gap-1.5">
-											<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
-											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_write") }</span>
-										</label>
-										@components.ContextHelp("help-token-scope-write", t(ctx, "settings.api_tokens.scope_write"), t(ctx, "settings.api_tokens.scope_write.help"), "settings-automation-api-tokens-scope-write")
-									</div>
-									<div class="inline-flex items-center gap-1.5">
-										<label class="inline-flex items-center gap-1.5">
-											<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
-											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_webhook") }</span>
-										</label>
-										@components.ContextHelp("help-token-scope-webhook", t(ctx, "settings.api_tokens.scope_webhook"), t(ctx, "settings.api_tokens.scope_webhook.help"), "settings-automation-api-tokens-scope-webhook")
-									</div>
-									<div class="inline-flex items-center gap-1.5">
-										<label class="inline-flex items-center gap-1.5">
-											<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
-											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_admin") }</span>
-										</label>
-										@components.ContextHelp("help-token-scope-admin", t(ctx, "settings.api_tokens.scope_admin"), t(ctx, "settings.api_tokens.scope_admin.help"), "settings-automation-api-tokens-scope-admin")
-									</div>
-								</div>
-								<div class="flex gap-2">
-									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.create") }</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden')">{ t(ctx, "actions.cancel") }</button>
-								</div>
-							</form>
-							<div id="token-created-result" class="hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded">
-								<p class="text-sm font-medium text-green-800 dark:text-green-200 mb-1">{ t(ctx, "settings.api_tokens.created_message") }</p>
-								<div class="flex items-center gap-2">
-									<code id="token-plaintext" class="flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all"></code>
-									<button type="button" class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)">{ t(ctx, "actions.copy") }</button>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
+				@SectionAPITokens(data)
 			</div>
 			<!-- Rules tab -->
 			<div
@@ -2913,7 +2623,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							<div class="flex items-center justify-between">
 								<div class="min-w-0 pr-3">
 									<div class="flex items-center gap-1">
-										<span class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.manage_title") }</span>
+										<span id={ "stillwater-managed-label-" + c.ID } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.manage_title") }</span>
 										@components.ContextHelp("help-managed-"+c.ID, t(ctx, "settings.connections.manage_title"), t(ctx, "settings.connections.manage_title.help"), "settings-connections-connections-manage-title")
 									</div>
 									<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -2926,7 +2636,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 									class={ ruleToggleBtnClasses(c.FeatureManageServerFiles) }
 									role="switch"
 									aria-checked={ boolAttr(c.FeatureManageServerFiles) }
-									aria-label={ t(ctx, "settings.connections.manage_aria_label") }
+									aria-labelledby={ "stillwater-managed-label-" + c.ID }
 									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
 									hx-vals={ manageServerFilesPayload(!c.FeatureManageServerFiles) }
 									hx-swap="none"

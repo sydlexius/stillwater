@@ -62,7 +62,7 @@ Install-time issues by platform.
 For auth failures, conflict-gated writes, and most connection-side issues, see the dedicated [Platform authentication](platform-auth.md) page. The follow-ups below cover items not on that page.
 
 - __Connection saves but library import comes back empty.__ The administrator user Stillwater resolved doesn't have access to the music library. In Emby or Jellyfin, open Library access for the admin user and confirm the music library is included.
-- __Stillwater wrote my NFO and the platform overwrote it on next refresh.__ Enable the __Let Stillwater manage artwork and NFO files on this server__ toggle on the connection. Without it, Stillwater and the platform's writer compete; with it, Stillwater is sole writer.
+- __Stillwater wrote my NFO and the platform overwrote it on next refresh.__ Enable the __Let Stillwater manage images and NFO files on this server__ toggle on the connection. Without it, Stillwater and the platform's writer compete; with it, Stillwater is sole writer.
 - __A rule is enabled in Settings but not running.__ Two common causes: (1) the conflict gate is closed (see the Connections-page banner). Image and NFO auto-fixes are skipped while the gate is closed. (2) The rule is filesystem-dependent and there's no local library configured; Stillwater auto-disables the "NFO exists" rule in that case. Re-add a local library or clear the conflict to resume.
 - __Connection shows "Connected" but `Last checked` is stale.__ The timestamp updates when you click __Test__ on a connection (or during initial setup); Stillwater does not run a background re-check loop. To refresh it, open __Settings__ > __Connections__ and trigger __Test__ on the row.
 

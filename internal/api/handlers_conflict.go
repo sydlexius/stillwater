@@ -157,7 +157,7 @@ func (r *Router) handleGetConnectionConflictDetail(w http.ResponseWriter, req *h
 	}
 }
 
-// handleSetStillwaterManaged flips the "Let Stillwater manage artwork and NFO
+// handleSetStillwaterManaged flips the "Let Stillwater manage images and NFO
 // files on this server" toggle. ON snapshots the peer's saver config then
 // PATCHes the peer to disable its savers; OFF restores the snapshot and
 // clears it. After either path the detector is invalidated so the banner

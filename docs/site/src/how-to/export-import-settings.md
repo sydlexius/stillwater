@@ -147,7 +147,7 @@ Connections carry the full set of per-connection write toggles through the expor
 - Image write on/off
 - Metadata push on/off
 - Trigger refresh on/off
-- Manage server-side artwork and NFO files on/off
+- Manage server-side images and NFO files on/off
 - Verify file paths after a peer update
 
 A successful import restores every toggle on the destination exactly as it was set on the source. If a connection toggle changes silently after an import, that is a bug; file an issue with the source and destination versions.
