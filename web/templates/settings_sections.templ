@@ -1380,7 +1380,7 @@ templ SectionConfirmDialogs(data SettingsData) {
 				class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 				onclick="resetConfirmPrefs()"
 			>
-				Reset all confirmation preferences
+				{ t(ctx, "settings.confirm_dialogs.reset_button") }
 			</button>
 			<span id="confirm-reset-status" role="status" aria-live="polite" aria-atomic="true" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">{ t(ctx, "settings.confirm_dialogs.reset_success") }</span>
 		</div>
@@ -1563,10 +1563,10 @@ templ SectionExportImport(data SettingsData) {
 						id="export-btn"
 						class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 					>
-						Export Settings
+						{ t(ctx, "settings.export_import.export_button") }
 					</button>
 					<span id="export-spinner" class="hidden text-sm text-gray-500 dark:text-gray-400">
-						Exporting...
+						{ t(ctx, "settings.export_import.exporting") }
 					</span>
 				</div>
 			</form>
@@ -1613,10 +1613,10 @@ templ SectionExportImport(data SettingsData) {
 							type="submit"
 							class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
 						>
-							Import
+							{ t(ctx, "actions.import") }
 						</button>
 						<span id="import-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
-							Importing...
+							{ t(ctx, "settings.export_import.importing") }
 						</span>
 					</div>
 				</form>
@@ -1672,7 +1672,7 @@ templ SectionLogSettings(data SettingsData) {
 							<option value="trace">{ t(ctx, "settings.log_settings.level_trace") }</option>
 							<option value="debug">{ t(ctx, "settings.log_settings.level_debug") }</option>
 							<option value="info" selected>{ t(ctx, "common.info") }</option>
-							<option value="warn">Warn</option>
+							<option value="warn">{ t(ctx, "common.warn") }</option>
 							<option value="error">{ t(ctx, "common.error") }</option>
 						</select>
 					</div>
@@ -1774,14 +1774,14 @@ templ SectionLogSettings(data SettingsData) {
 							onclick="cleanupLogFiles()"
 							class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 						>
-							Clean up old logs
+							{ t(ctx, "settings.log_settings.cleanup") }
 						</button>
 						<span id="log-cleanup-status" class="text-sm text-gray-500 dark:text-gray-400" role="status" aria-live="polite"></span>
 					</div>
 				</div>
 				<div class="flex items-center gap-3">
 					<button type="submit" class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-						Apply
+						{ t(ctx, "actions.apply") }
 					</button>
 					<span id="logging-status" role="status" aria-live="polite"></span>
 				</div>
@@ -1815,7 +1815,7 @@ templ SectionLogViewer(data SettingsData) {
 						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-purple-900/50 text-purple-300 opacity-50 hover:opacity-100 transition-opacity"
 						aria-pressed="false"
 					>
-						Trace
+						{ t(ctx, "common.trace") }
 					</button>
 					<button
 						type="button"
@@ -1824,7 +1824,7 @@ templ SectionLogViewer(data SettingsData) {
 						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-gray-700 text-gray-300 opacity-50 hover:opacity-100 transition-opacity"
 						aria-pressed="false"
 					>
-						Debug
+						{ t(ctx, "common.debug") }
 					</button>
 					<button
 						type="button"
@@ -1833,7 +1833,7 @@ templ SectionLogViewer(data SettingsData) {
 						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-blue-900/50 text-blue-300 ring-1 ring-blue-500/50 transition-opacity"
 						aria-pressed="true"
 					>
-						Info
+						{ t(ctx, "common.info") }
 					</button>
 					<button
 						type="button"
@@ -1842,7 +1842,7 @@ templ SectionLogViewer(data SettingsData) {
 						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-amber-900/50 text-amber-300 ring-1 ring-amber-500/50 transition-opacity"
 						aria-pressed="false"
 					>
-						Warn
+						{ t(ctx, "common.warn") }
 					</button>
 					<button
 						type="button"
@@ -1851,7 +1851,7 @@ templ SectionLogViewer(data SettingsData) {
 						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-red-900/50 text-red-300 ring-1 ring-red-500/50 transition-opacity"
 						aria-pressed="false"
 					>
-						Error
+						{ t(ctx, "common.error") }
 					</button>
 				</div>
 				<input
@@ -1871,7 +1871,7 @@ templ SectionLogViewer(data SettingsData) {
 						aria-label={ t(ctx, "actions.pause") }
 						aria-pressed="false"
 					>
-						Pause
+						{ t(ctx, "actions.pause") }
 					</button>
 					<button
 						type="button"
@@ -1879,7 +1879,7 @@ templ SectionLogViewer(data SettingsData) {
 						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 						aria-label={ t(ctx, "actions.clear") }
 					>
-						Clear
+						{ t(ctx, "actions.clear") }
 					</button>
 					<button
 						type="button"
@@ -1887,7 +1887,7 @@ templ SectionLogViewer(data SettingsData) {
 						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 						aria-label={ t(ctx, "actions.download") }
 					>
-						Download
+						{ t(ctx, "actions.download") }
 					</button>
 				</div>
 			</div>
@@ -1912,7 +1912,7 @@ templ SectionLogViewer(data SettingsData) {
 				hx-swap="innerHTML"
 			>
 				<div class="flex items-center justify-center h-full text-gray-500 text-sm">
-					Loading logs...
+					{ t(ctx, "settings.log_viewer.loading") }
 				</div>
 			</div>
 			<p class="text-xs text-gray-500 dark:text-gray-400">
