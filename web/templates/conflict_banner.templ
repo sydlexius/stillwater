@@ -213,7 +213,9 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 									hx-swap="none"
 									hx-disabled-elt="this"
 									hx-indicator="this"
-									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
+									data-conn-id={ c.ID }
+									data-sw-error={ t(ctx, "settings.connections.manage_error") }
+									hx-on:htmx:after-request="swStillwaterManagedAfterRequest(this, event)"
 									title={ t(ctx, "banner.warn.manage_button_title") }
 								>
 									{ t(ctx, "banner.warn.manage_button") }
@@ -223,6 +225,7 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 									class="text-xs text-amber-200 hover:text-amber-100 underline-offset-2 hover:underline"
 								>{ t(ctx, "banner.warn.open_settings") }</a>
 							</div>
+							<div id={ "banner-manage-error-" + c.ID } class="hidden basis-full text-xs text-amber-100 mt-1" role="alert" aria-live="polite"></div>
 						</li>
 					}
 				</ul>
@@ -280,13 +283,16 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 										hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
 										hx-vals={ manageServerFilesPayload(true) }
 										hx-swap="none"
-										hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
+										data-conn-id={ c.ID }
+										data-sw-error={ t(ctx, "settings.connections.manage_error") }
+										hx-on:htmx:after-request="swStillwaterManagedAfterRequest(this, event)"
 										title={ t(ctx, "banner.warn.manage_button_title") }
 									>
 										{ t(ctx, "banner.warn.manage_button") }
 									</button>
 									<a href={ conflictConnectionHref(c.ID) } class="text-xs text-rose-200 hover:text-rose-100 underline-offset-2 hover:underline">{ t(ctx, "banner.warn.open_settings") }</a>
 								</div>
+								<div id={ "banner-manage-error-" + c.ID } class="hidden basis-full text-xs text-rose-100 mt-1" role="alert" aria-live="polite"></div>
 							</li>
 						}
 						for _, rt := range v.RoundTrips {
@@ -541,7 +547,7 @@ templ onboardingConflictProbeError(msg string) {
 }
 
 // onboardingManagedAfterRequest is the OOBE-step counterpart to
-// stillwaterManagedAfterRequest in settings.templ. On success it
+// swStillwaterManagedAfterRequest (web/static/js/conflict-gate.js). On success it
 // refreshes the pre-flight body in place so the new ledger state (and
 // the Continue gate) is visible without a page reload. On failure it
 // surfaces a localized error in the per-connection #ob-manage-error-{id}

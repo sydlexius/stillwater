@@ -64,7 +64,7 @@ Emby has its own metadata writer that can produce NFO files and download artwork
 
 When the detector finds that situation, Stillwater **closes its own write gate** and surfaces a banner ("Image file writes paused" / "NFO file writes paused"). While the gate is closed, image and NFO auto-fixes don't run; rules still evaluate and surface violations so you can see what's pending, but the fix that would write to disk is held back until the gate clears. The banner is the only nag you'll see; in the absence of a real conflict, Stillwater stays out of your way.
 
-To clear the gate when it does close, flip **Let Stillwater manage artwork and NFO files on this server** ON for the connection cited in the banner. You do not need to log into Emby and change settings yourself. Stillwater handles the change for you:
+To clear the gate when it does close, flip **Let Stillwater manage images and NFO files on this server** ON for the connection cited in the banner. You do not need to log into Emby and change settings yourself. Stillwater handles the change for you:
 
 1. Snapshots Emby's current library options into the connection record so they can be restored later.
 2. Updates Emby's library options to disable its NFO saver and image saver (`SaveLocalMetadata=false`).

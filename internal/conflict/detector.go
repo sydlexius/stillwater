@@ -33,7 +33,7 @@ type peerClient interface {
 	// managed connection reports a peer-side writeback flag going from
 	// off to on (e.g. an admin re-enabled SaveLocalMetadata in Emby's
 	// UI), the detector calls this to turn it back off, honoring the
-	// "Stillwater watches this server and turns off its artwork and NFO
+	// "Stillwater watches this server and turns off its images and NFO
 	// savers whenever they get re-enabled" promise in the settings copy.
 	DisableFileWriteBack(ctx context.Context) error
 }
@@ -411,7 +411,7 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 	// Auto re-disable: when a connection is in managed mode but the peer
 	// is still reporting a saver as on, push DisableFileWriteBack again.
 	// This realizes the promise in the settings copy ("Stillwater watches
-	// this server and turns off its artwork and NFO savers whenever they
+	// this server and turns off its images and NFO savers whenever they
 	// get re-enabled") -- someone enabling SaveLocalMetadata in Emby's
 	// admin UI while the toggle is on gets quietly rolled back on the
 	// next conflict refresh. We then re-query the peer so the ledger and

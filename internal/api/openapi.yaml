@@ -7907,7 +7907,7 @@ paths:
   /connections/{id}/stillwater-managed:
     post:
       tags: [Connections]
-      summary: Toggle "Let Stillwater manage artwork and NFO files on this server"
+      summary: Toggle "Let Stillwater manage images and NFO files on this server"
       operationId: setStillwaterManaged
       description: >
         When enabled=true, Stillwater PATCHes the peer's music library options
