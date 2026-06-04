@@ -54,10 +54,10 @@ func TestIsNoiseKey(t *testing.T) {
 		// real sections survive the filter.
 		{"settings.confirm_dialogs.title", false},
 		{"settings.confirm_dialogs.description", false},
-		{"settings.confirm_dialogs.reset_button", false},
-		{"settings.auth.oidc_display_name_hint", true}, // suffix `_hint` IS noise
-		{"settings.api_tokens.confirm_delete", true},   // suffix `confirm_` IS noise
-		{"settings.api_tokens.confirm_revoke", true},   // suffix `confirm_` IS noise
+		{"settings.confirm_dialogs.reset_button", true}, // full-key denylist (M55 #1809 S4 action button)
+		{"settings.auth.oidc_display_name_hint", true},  // suffix `_hint` IS noise
+		{"settings.api_tokens.confirm_delete", true},    // suffix `confirm_` IS noise
+		{"settings.api_tokens.confirm_revoke", true},    // suffix `confirm_` IS noise
 		// New tokens added in #1132 for runtime UI text that surfaces as
 		// long-prose-as-label bullets if not filtered. Each is paired with
 		// a non-matching real settings key to confirm anchoring.
@@ -121,6 +121,12 @@ func TestIsNoiseKey_NoiseKeysExact(t *testing.T) {
 		"settings.api_tokens.show_archive",
 		"settings.api_tokens.hide_archive",
 		"settings.api_tokens.name_label",
+		// M55 #1809 S4 System-card action-button + spinner labels.
+		"settings.confirm_dialogs.reset_button",
+		"settings.export_import.export_button",
+		"settings.export_import.exporting",
+		"settings.export_import.importing",
+		"settings.log_settings.cleanup",
 	} {
 		if !isNoiseKey(k) {
 			t.Errorf("isNoiseKey(%q) = false, want true (full-key denylist)", k)

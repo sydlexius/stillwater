@@ -1355,3 +1355,569 @@ templ SectionAPITokens(data SettingsData) {
 		</div>
 	</div>
 }
+
+// SectionConfirmDialogs renders the "Confirmation Dialogs" card on the Settings
+// Maintenance tab: the reset-all-confirmation-preferences control.
+// Exported for future use by the next/ chrome package.
+templ SectionConfirmDialogs(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.confirm_dialogs.title") }</h2>
+				@components.ContextHelp("help-confirm-dialogs", t(ctx, "settings.confirm_dialogs.title"), t(ctx, "settings.confirm_dialogs.help"), "settings-maintenance-confirm-dialogs")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.confirm_dialogs.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+				{ t(ctx, "settings.confirm_dialogs.reset_info") }
+			</p>
+			<button
+				type="button"
+				id="reset-confirm-prefs"
+				class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				onclick="resetConfirmPrefs()"
+			>
+				{ t(ctx, "settings.confirm_dialogs.reset_button") }
+			</button>
+			<span id="confirm-reset-status" role="status" aria-live="polite" aria-atomic="true" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">{ t(ctx, "settings.confirm_dialogs.reset_success") }</span>
+		</div>
+	</div>
+}
+
+// SectionDatabaseMaintenance renders the "Database Maintenance" card on the
+// Settings Maintenance tab: optimize/vacuum controls plus the auto-schedule
+// selector.  It routes through the shared SettingSection wrapper.
+// Exported for future use by the next/ chrome package.
+templ SectionDatabaseMaintenance(data SettingsData) {
+	@components.SettingSection("help-db-maintenance", t(ctx, "settings.db_maintenance.title"), t(ctx, "settings.db_maintenance.help"), "settings-maintenance-db-maintenance", t(ctx, "settings.db_maintenance.description")) {
+		<div id="maintenance-status" hx-get="/api/v1/settings/maintenance/status" hx-trigger="load" hx-swap="innerHTML">
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "common.loading_status") }</p>
+		</div>
+		<div class="flex items-center gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+			<button
+				type="button"
+				class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				hx-post="/api/v1/settings/maintenance/optimize"
+				hx-target="#maintenance-status"
+				hx-swap="innerHTML"
+				hx-indicator="#optimize-spinner"
+			>
+				{ t(ctx, "settings.db_maintenance.optimize") }
+			</button>
+			<span id="optimize-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.db_maintenance.optimizing") }
+			</span>
+			<button
+				type="button"
+				class="text-sm px-3 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+				hx-post="/api/v1/settings/maintenance/vacuum"
+				hx-target="#maintenance-status"
+				hx-swap="innerHTML"
+				hx-indicator="#vacuum-spinner"
+				hx-confirm={ t(ctx, "settings.db_maintenance.confirm_vacuum") }
+			>
+				{ t(ctx, "settings.db_maintenance.vacuum") }
+			</button>
+			<span id="vacuum-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.db_maintenance.vacuuming") }
+			</span>
+		</div>
+		<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-4">
+				<div class="flex items-center gap-1">
+					<label for="maint-interval" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.db_maintenance.auto_schedule") }</label>
+					@components.ContextHelp("help-db-auto-schedule", t(ctx, "settings.db_maintenance.auto_schedule"), t(ctx, "settings.db_maintenance.auto_schedule.help"), "settings-maintenance-db-maintenance-auto-schedule")
+				</div>
+				<select
+					id="maint-interval"
+					onchange="updateMaintSchedule(this)"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					<option value="6" selected?={ data.MaintIntervalHours == 6 }>{ t(ctx, "settings.schedule.every_6h") }</option>
+					<option value="12" selected?={ data.MaintIntervalHours == 12 }>{ t(ctx, "settings.schedule.every_12h") }</option>
+					<option value="24" selected?={ data.MaintIntervalHours == 24 }>{ t(ctx, "settings.schedule.daily") }</option>
+					<option value="168" selected?={ data.MaintIntervalHours == 168 }>{ t(ctx, "settings.schedule.weekly") }</option>
+				</select>
+				<span id="maint-schedule-status" role="status" aria-live="polite" aria-atomic="true"></span>
+			</div>
+			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.db_maintenance.schedule_note") }
+			</p>
+		</div>
+	}
+}
+
+// SectionBackup renders the "Backup" card on the Settings Maintenance tab: the
+// create-backup control, retention settings, and backup history list.  It
+// routes through the shared SettingSection wrapper.
+// Exported for future use by the next/ chrome package.
+templ SectionBackup(data SettingsData) {
+	@components.SettingSection("help-backup", t(ctx, "settings.backup.title"), t(ctx, "settings.backup.help"), "settings-maintenance-backup", t(ctx, "settings.backup.description")) {
+		<div class="flex items-center gap-3">
+			<button
+				type="button"
+				class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				hx-post="/api/v1/settings/backup"
+				hx-target="#backup-list"
+				hx-swap="innerHTML"
+				hx-indicator="#backup-spinner"
+			>
+				{ t(ctx, "settings.backup.create") }
+			</button>
+			<span id="backup-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.backup.creating") }
+			</span>
+		</div>
+		<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+			<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{ t(ctx, "settings.backup.retention") }</h3>
+			<div class="flex flex-wrap items-center gap-4">
+				<div class="flex items-center gap-2">
+					<label for="backup-retention" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.keep") }</label>
+					@components.ContextHelp("help-backup-keep", t(ctx, "settings.backup.keep"), t(ctx, "settings.backup.keep.help"), "settings-maintenance-backup-keep")
+					<input
+						type="number"
+						id="backup-retention"
+						min="1"
+						max="100"
+						value={ fmt.Sprint(data.BackupRetention) }
+						class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+					<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.backups_unit") }</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<label for="backup-max-age" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.max_age") }</label>
+					@components.ContextHelp("help-backup-max-age", t(ctx, "settings.backup.max_age"), t(ctx, "settings.backup.max_age.help"), "settings-maintenance-backup-max-age")
+					<select
+						id="backup-max-age"
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					>
+						<option value="0" selected?={ data.BackupMaxAgeDays == 0 }>{ t(ctx, "common.never") }</option>
+						<option value="7" selected?={ data.BackupMaxAgeDays == 7 }>{ t(ctx, "settings.backup.days_7") }</option>
+						<option value="14" selected?={ data.BackupMaxAgeDays == 14 }>{ t(ctx, "settings.backup.days_14") }</option>
+						<option value="30" selected?={ data.BackupMaxAgeDays == 30 }>{ t(ctx, "settings.backup.days_30") }</option>
+						<option value="60" selected?={ data.BackupMaxAgeDays == 60 }>{ t(ctx, "settings.backup.days_60") }</option>
+						<option value="90" selected?={ data.BackupMaxAgeDays == 90 }>{ t(ctx, "settings.backup.days_90") }</option>
+					</select>
+				</div>
+				<button
+					type="button"
+					class="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+					onclick="saveBackupSettings()"
+				>
+					{ t(ctx, "common.save") }
+				</button>
+				<span id="backup-retention-status" role="status" aria-live="polite" aria-atomic="true" class="text-xs text-green-600 dark:text-green-400 hidden">{ t(ctx, "common.saved") }</span>
+			</div>
+			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.backup.retention_note") }
+			</p>
+		</div>
+		<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.backup.loading_history") }</p>
+		</div>
+	}
+}
+
+// SectionExportImport renders the "Settings Export / Import" card on the
+// Settings Maintenance tab: the passphrase-protected export form and the
+// encrypted-import upload form.
+// Exported for future use by the next/ chrome package.
+templ SectionExportImport(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.export_import.title") }</h2>
+				@components.ContextHelp("help-export-import", t(ctx, "settings.export_import.title"), t(ctx, "settings.export_import.help"), "settings-maintenance-export-import")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.export_import.description_line1") }
+				{ t(ctx, "settings.export_import.description_line2") }
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-4">
+			<form
+				onsubmit="event.preventDefault(); exportSettings(this);"
+				class="space-y-3"
+			>
+				<div>
+					<div class="flex items-center gap-1 mb-1">
+						<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.export_passphrase") }</label>
+						@components.ContextHelp("help-export-passphrase", t(ctx, "settings.export_import.export_passphrase"), t(ctx, "settings.export_import.export_passphrase.help"), "settings-maintenance-export-import-export-passphrase")
+					</div>
+					<input
+						id="export-passphrase"
+						name="export_passphrase"
+						type="password"
+						required
+						minlength="8"
+						placeholder={ t(ctx, "settings.export_import.passphrase_placeholder") }
+						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+				<div class="flex items-center gap-3">
+					<button
+						type="submit"
+						id="export-btn"
+						class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+					>
+						{ t(ctx, "settings.export_import.export_button") }
+					</button>
+					<span id="export-spinner" class="hidden text-sm text-gray-500 dark:text-gray-400">
+						{ t(ctx, "settings.export_import.exporting") }
+					</span>
+				</div>
+			</form>
+			<div id="export-result" class="mt-2"></div>
+			<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+				<form
+					hx-post="/api/v1/settings/import"
+					hx-target="#import-result"
+					hx-swap="innerHTML"
+					hx-encoding="multipart/form-data"
+					hx-indicator="#import-spinner"
+					class="space-y-3"
+				>
+					<div>
+						<div class="flex items-center gap-1 mb-1">
+							<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_file_label") }</label>
+							@components.ContextHelp("help-import-file", t(ctx, "settings.export_import.import_file_label"), t(ctx, "settings.export_import.import_file_label.help"), "settings-maintenance-export-import-import-file-label")
+						</div>
+						<input
+							id="import-file"
+							name="file"
+							type="file"
+							accept=".json"
+							required
+							class="block w-full text-sm text-gray-900 dark:text-gray-100 file:mr-4 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:bg-gray-100 dark:file:bg-gray-700 file:text-gray-700 dark:file:text-gray-300 hover:file:bg-gray-200 dark:hover:file:bg-gray-600"
+						/>
+					</div>
+					<div>
+						<div class="flex items-center gap-1 mb-1">
+							<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_passphrase") }</label>
+							@components.ContextHelp("help-import-passphrase", t(ctx, "settings.export_import.import_passphrase"), t(ctx, "settings.export_import.import_passphrase.help"), "settings-maintenance-export-import-import-passphrase")
+						</div>
+						<input
+							id="import-passphrase"
+							name="passphrase"
+							type="password"
+							required
+							placeholder={ t(ctx, "settings.export_import.import_passphrase_placeholder") }
+							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						/>
+					</div>
+					<div class="flex items-center gap-3">
+						<button
+							type="submit"
+							class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+						>
+							{ t(ctx, "actions.import") }
+						</button>
+						<span id="import-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+							{ t(ctx, "settings.export_import.importing") }
+						</span>
+					</div>
+				</form>
+				<div id="import-result" class="mt-2"></div>
+			</div>
+			<p class="text-xs text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.export_import.encryption_note_line1") }
+				{ t(ctx, "settings.export_import.encryption_note_line2") }
+			</p>
+		</div>
+	</div>
+}
+
+// SectionLogSettings renders the "Log Settings" card on the Settings Logs tab:
+// the level/format selectors, the log-to-file toggle, and the file-logging
+// rotation settings.
+// Exported for future use by the next/ chrome package.
+templ SectionLogSettings(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_settings.title") }</h2>
+				@components.ContextHelp("help-log-settings", t(ctx, "settings.log_settings.title"), t(ctx, "settings.log_settings.help"), "settings-logs-log-settings")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.log_settings.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<form
+				id="logging-config-form"
+				hx-put="/api/v1/settings/logging"
+				hx-target="#logging-status"
+				hx-swap="innerHTML"
+				class="space-y-4"
+			>
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					<div>
+						<div class="flex items-center gap-1 mb-1">
+							<label for="log-level" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.level") }</label>
+							@components.ContextHelp("help-log-level", t(ctx, "settings.log_settings.level"), t(ctx, "settings.log_settings.level.help"), "settings-logs-log-settings-level")
+						</div>
+						<select
+							id="log-level"
+							name="level"
+							onchange="if(typeof updateEphemeralRow==='function')updateEphemeralRow()"
+							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							hx-get="/api/v1/settings/logging"
+							hx-trigger="load"
+							hx-swap="none"
+							hx-on::after-request="if(event.detail.successful){try{loadLoggingConfig(JSON.parse(event.detail.xhr.responseText));}catch(e){}}"
+						>
+							<option value="trace">{ t(ctx, "settings.log_settings.level_trace") }</option>
+							<option value="debug">{ t(ctx, "settings.log_settings.level_debug") }</option>
+							<option value="info" selected>{ t(ctx, "common.info") }</option>
+							<option value="warn">{ t(ctx, "common.warn") }</option>
+							<option value="error">{ t(ctx, "common.error") }</option>
+						</select>
+					</div>
+					<div>
+						<div class="flex items-center gap-1 mb-1">
+							<label for="log-format" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.format") }</label>
+							@components.ContextHelp("help-log-format", t(ctx, "settings.log_settings.format"), t(ctx, "settings.log_settings.format.help"), "settings-logs-log-settings-format")
+						</div>
+						<select
+							id="log-format"
+							name="format"
+							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						>
+							<option value="json">{ t(ctx, "settings.log_settings.format_json") }</option>
+							<option value="text">{ t(ctx, "settings.log_settings.format_text") }</option>
+						</select>
+					</div>
+				</div>
+				<!-- Ephemeral level: when checked, level change is not persisted to DB -->
+				<div id="ephemeral-level-row" class="hidden flex items-center gap-2">
+					<input
+						type="checkbox"
+						id="ephemeral-level"
+						name="ephemeral"
+						value="true"
+						class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-700"
+						aria-label={ t(ctx, "settings.log_settings.revert_on_restart") }
+					/>
+					<label for="ephemeral-level" class="text-sm text-gray-600 dark:text-gray-400">
+						{ t(ctx, "settings.log_settings.revert_to") } <span id="ephemeral-revert-level" class="font-medium">info</span> { t(ctx, "settings.log_settings.on_restart") }
+					</label>
+				</div>
+				<!-- Hidden input always submitted; JS keeps it in sync with the path display field -->
+				<input type="hidden" name="file_path" id="log-file-path" value=""/>
+				<!-- Log to file toggle -->
+				<div class="flex items-center justify-between py-1">
+					<div>
+						<div class="flex items-center gap-1">
+							<p id="log-to-file-label" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.log_to_file.label") }</p>
+							@components.ContextHelp("help-log-to-file", t(ctx, "settings.log_settings.log_to_file.label"), t(ctx, "settings.log_settings.log_to_file.help"), "settings-logs-log-settings-log-to-file")
+						</div>
+						<p class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.log_to_file.description") }</p>
+					</div>
+					<button
+						type="button"
+						id="log-to-file-btn"
+						role="switch"
+						aria-checked="false"
+						aria-labelledby="log-to-file-label"
+						onclick="toggleFileLogging()"
+						class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 dark:bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+					>
+						<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
+					</button>
+				</div>
+				<!-- File logging settings (shown when toggle is on) -->
+				<div id="file-logging-settings" class="hidden space-y-4">
+					<div>
+						<div class="flex items-center gap-1 mb-1">
+							<label for="log-file-path-display" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.file_path") }</label>
+							@components.ContextHelp("help-log-file-path", t(ctx, "settings.log_settings.file_path"), t(ctx, "settings.log_settings.file_path.help"), "settings-logs-log-settings-file-path")
+						</div>
+						<input
+							id="log-file-path-display"
+							type="text"
+							placeholder="/config/logs/stillwater.log"
+							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							oninput="syncLogFilePath(this.value)"
+						/>
+						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.file_path_note") }</p>
+					</div>
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+						<div>
+							<div class="flex items-center gap-1 mb-1">
+								<label for="log-file-max-size" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.max_size") }</label>
+								@components.ContextHelp("help-log-max-size", t(ctx, "settings.log_settings.max_size"), t(ctx, "settings.log_settings.max_size.help"), "settings-logs-log-settings-max-size")
+							</div>
+							<input id="log-file-max-size" name="file_max_size_mb" type="number" value="10" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_size") }/>
+						</div>
+						<div>
+							<div class="flex items-center gap-1 mb-1">
+								<label for="log-file-max-files" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.files_to_keep") }</label>
+								@components.ContextHelp("help-log-files-to-keep", t(ctx, "settings.log_settings.files_to_keep"), t(ctx, "settings.log_settings.files_to_keep.help"), "settings-logs-log-settings-files-to-keep")
+							</div>
+							<input id="log-file-max-files" name="file_max_files" type="number" value="5" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.files_to_keep") }/>
+						</div>
+						<div>
+							<div class="flex items-center gap-1 mb-1">
+								<label for="log-file-max-age" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.max_age") }</label>
+								@components.ContextHelp("help-log-max-age", t(ctx, "settings.log_settings.max_age"), t(ctx, "settings.log_settings.max_age.help"), "settings-logs-log-settings-max-age")
+							</div>
+							<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_age") }/>
+						</div>
+					</div>
+					<!-- Cleanup row (visible only when rotated files exist) -->
+					<div id="log-cleanup-row" class="hidden flex items-center gap-3 pt-1 border-t border-gray-200 dark:border-gray-700">
+						<button
+							type="button"
+							onclick="cleanupLogFiles()"
+							class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						>
+							{ t(ctx, "settings.log_settings.cleanup") }
+						</button>
+						<span id="log-cleanup-status" class="text-sm text-gray-500 dark:text-gray-400" role="status" aria-live="polite"></span>
+					</div>
+				</div>
+				<div class="flex items-center gap-3">
+					<button type="submit" class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+						{ t(ctx, "actions.apply") }
+					</button>
+					<span id="logging-status" role="status" aria-live="polite"></span>
+				</div>
+			</form>
+		</div>
+	</div>
+}
+
+// SectionLogViewer renders the "Log Viewer" card on the Settings Logs tab: the
+// level filter, search box, viewer controls, and the live log-stream container.
+// Exported for future use by the next/ chrome package.
+templ SectionLogViewer(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_viewer.title") }</h2>
+				@components.ContextHelp("help-log-viewer", t(ctx, "settings.log_viewer.title"), t(ctx, "settings.log_viewer.help"), "settings-logs-log-viewer")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.log_viewer.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-3">
+			<!-- Filter bar -->
+			<div class="flex flex-wrap items-center gap-2">
+				<div class="flex items-center gap-1" role="group" aria-label={ t(ctx, "settings.log_viewer.level_filter") }>
+					<button
+						type="button"
+						data-log-level="trace"
+						onclick="toggleLogLevel(this)"
+						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-purple-900/50 text-purple-300 opacity-50 hover:opacity-100 transition-opacity"
+						aria-pressed="false"
+					>
+						{ t(ctx, "common.trace") }
+					</button>
+					<button
+						type="button"
+						data-log-level="debug"
+						onclick="toggleLogLevel(this)"
+						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-gray-700 text-gray-300 opacity-50 hover:opacity-100 transition-opacity"
+						aria-pressed="false"
+					>
+						{ t(ctx, "common.debug") }
+					</button>
+					<button
+						type="button"
+						data-log-level="info"
+						onclick="toggleLogLevel(this)"
+						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-blue-900/50 text-blue-300 ring-1 ring-blue-500/50 transition-opacity"
+						aria-pressed="true"
+					>
+						{ t(ctx, "common.info") }
+					</button>
+					<button
+						type="button"
+						data-log-level="warn"
+						onclick="toggleLogLevel(this)"
+						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-amber-900/50 text-amber-300 ring-1 ring-amber-500/50 transition-opacity"
+						aria-pressed="false"
+					>
+						{ t(ctx, "common.warn") }
+					</button>
+					<button
+						type="button"
+						data-log-level="error"
+						onclick="toggleLogLevel(this)"
+						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-red-900/50 text-red-300 ring-1 ring-red-500/50 transition-opacity"
+						aria-pressed="false"
+					>
+						{ t(ctx, "common.error") }
+					</button>
+				</div>
+				<input
+					type="text"
+					id="log-search"
+					placeholder={ t(ctx, "settings.log_viewer.search_placeholder") }
+					oninput="updateLogFilters()"
+					class="flex-1 min-w-[150px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					aria-label={ t(ctx, "settings.log_viewer.search_placeholder") }
+				/>
+				<div class="flex items-center gap-1">
+					<button
+						type="button"
+						id="log-pause-btn"
+						onclick="toggleLogPause()"
+						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						aria-label={ t(ctx, "actions.pause") }
+						aria-pressed="false"
+					>
+						{ t(ctx, "actions.pause") }
+					</button>
+					<button
+						type="button"
+						onclick="clearLogs()"
+						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						aria-label={ t(ctx, "actions.clear") }
+					>
+						{ t(ctx, "actions.clear") }
+					</button>
+					<button
+						type="button"
+						onclick="downloadLogs()"
+						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						aria-label={ t(ctx, "actions.download") }
+					>
+						{ t(ctx, "actions.download") }
+					</button>
+				</div>
+			</div>
+			<!-- Log file picker (visible only when file logging is configured) -->
+			<div id="log-file-picker-row" class="hidden flex items-center gap-2">
+				<label for="log-file-select" class="text-xs text-gray-400 dark:text-gray-500 shrink-0">{ t(ctx, "settings.log_viewer.file_label") }:</label>
+				<select
+					id="log-file-select"
+					onchange="selectLogFile(this.value)"
+					class="rounded border border-gray-600 bg-gray-800 text-gray-200 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					aria-label={ t(ctx, "settings.log_viewer.select_file") }
+				>
+					<option value="">{ t(ctx, "settings.log_viewer.live_current") }</option>
+				</select>
+			</div>
+			<!-- Log viewer container -->
+			<div
+				id="log-viewer"
+				class="h-[28rem] overflow-y-auto font-mono text-xs bg-gray-950 rounded-lg border border-gray-800 p-2"
+				hx-get="/api/v1/logs?limit=200&level=info"
+				hx-trigger="load, every 2s, logRefresh from:body"
+				hx-swap="innerHTML"
+			>
+				<div class="flex items-center justify-center h-full text-gray-500 text-sm">
+					{ t(ctx, "settings.log_viewer.loading") }
+				</div>
+			</div>
+			<p class="text-xs text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.log_viewer.footer_note") }
+			</p>
+		</div>
+	</div>
+}

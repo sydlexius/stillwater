@@ -1192,6 +1192,17 @@ var noiseKeysExact = map[string]struct{}{
 	"settings.api_tokens.show_archive": {}, // "Show Archive" toggle
 	"settings.api_tokens.hide_archive": {}, // "Hide Archive" toggle
 	"settings.api_tokens.name_label":   {}, // sr-only "Token name" input label
+	// Maintenance/Logs action-button + spinner labels localized when the System
+	// cards were extracted (M55 #1809 S4). These are operate-the-app affordances,
+	// not configurable settings, so they must not surface on the docs reference
+	// page. Listed as full keys because their leaves ("reset_button",
+	// "export_button", "exporting", "importing", "cleanup") are too generic to
+	// token-match without risking a real control elsewhere.
+	"settings.confirm_dialogs.reset_button": {}, // "Reset all confirmation preferences" button
+	"settings.export_import.export_button":  {}, // "Export Settings" submit button
+	"settings.export_import.exporting":      {}, // "Exporting..." in-flight spinner
+	"settings.export_import.importing":      {}, // "Importing..." in-flight spinner
+	"settings.log_settings.cleanup":         {}, // "Clean up old logs" button
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens
