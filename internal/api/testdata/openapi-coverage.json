@@ -518,6 +518,13 @@
     "covered": true
   },
   {
+    "operationId": "getComplianceCountBadge",
+    "method": "GET",
+    "path": "/reports/compliance/count",
+    "handler": "handleComplianceCount",
+    "covered": true
+  },
+  {
     "operationId": "getComplianceReport",
     "method": "GET",
     "path": "/reports/compliance",
@@ -607,6 +614,13 @@
     "path": "/artists/{id}/fields/{field}/providers",
     "handler": "handleFieldProviders",
     "covered": false
+  },
+  {
+    "operationId": "getForeignFilesCountBadge",
+    "method": "GET",
+    "path": "/foreign-files/count",
+    "handler": "handleForeignFilesCount",
+    "covered": true
   },
   {
     "operationId": "getHealth",

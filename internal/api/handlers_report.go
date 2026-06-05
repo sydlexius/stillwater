@@ -1,16 +1,20 @@
 package api
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -784,4 +788,129 @@ func (r *Router) handleReportRulePassRates(w http.ResponseWriter, req *http.Requ
 		rates = []rule.RulePassRate{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rates": rates})
+}
+
+// complianceCountTTL bounds the load that sidebar polling places on the DB.
+// With a 60s sidebar poll per active tab, this TTL means at most one Count
+// query every 5 minutes regardless of tab count.
+const complianceCountTTL = 5 * time.Minute
+
+// complianceCountState memoizes the most recent non-compliant-artist count so
+// the sidebar badge endpoint does not re-query on every poll. Module-level
+// (rather than Router-scoped) so the cache survives across hypothetical
+// multi-router test setups; in production there is one Router.
+type complianceCountState struct {
+	mu        sync.Mutex
+	count     int
+	expiresAt time.Time
+}
+
+// get returns the cached count when fresh; otherwise refreshes via fn and
+// caches the result for complianceCountTTL. Concurrent callers serialize on
+// mu so the refresh fires at most once per TTL window even under burst load.
+func (c *complianceCountState) get(ctx context.Context, fn func(context.Context) (int, error)) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Now().Before(c.expiresAt) {
+		return c.count, nil
+	}
+	n, err := fn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	c.count = n
+	c.expiresAt = time.Now().Add(complianceCountTTL)
+	return n, nil
+}
+
+// invalidate drops the cached value, forcing the next get call to refresh.
+// Exposed for tests; production code relies on TTL expiry.
+func (c *complianceCountState) invalidate() {
+	c.mu.Lock()
+	c.count = 0
+	c.expiresAt = time.Time{}
+	c.mu.Unlock()
+}
+
+var complianceCount complianceCountState
+
+// handleComplianceCount returns an HTML fragment for the sidebar's Compliance
+// child link. Admin-only (mirrors handleArtistDuplicatesCount).
+//
+// GET /api/v1/reports/compliance/count
+//
+// Count semantic: number of non-compliant artists (health_score < 100).
+// This matches the compliance page's "non_compliant" filter and is the
+// natural "how many artists need attention" signal for the nav pill.
+//
+// Returns:
+//   - empty body when the count is zero (HTMX innerHTML swap leaves the
+//     parent <li> empty, hiding the item when the library is fully compliant);
+//   - an <a> link populated with the count when count > 0.
+//
+// ?ch=next: caller is the next/ sidebar; the href uses the /next/ path and
+// the fragment includes the chart-bar glyph so the hydrated item matches the
+// icon-led subnav style. Stable callers omit the glyph.
+//
+// The 403 response uses a JSON envelope even though the success path emits
+// text/html. This mirrors handleArtistDuplicatesCount and handleForeignFilesCount:
+// the sidebar template only renders this placeholder for administrators, so a
+// 403 should never reach a user. HTMX does not swap content on non-2xx
+// responses by default, so the JSON body is never shown. The JSON envelope
+// keeps the error contract consistent with the rest of /api/v1/.
+func (r *Router) handleComplianceCount(w http.ResponseWriter, req *http.Request) {
+	if middleware.RoleFromContext(req.Context()) != "administrator" {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":   "forbidden",
+			"message": "administrator role required",
+		})
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	svc := r.artistService
+	count, err := complianceCount.get(req.Context(), func(ctx context.Context) (int, error) {
+		if svc == nil {
+			return 0, nil
+		}
+		return svc.Count(ctx, artist.CountParams{Filter: "non_compliant"})
+	})
+	if err != nil {
+		// Fail-safe: log and emit an empty body so the sidebar simply does not
+		// show the Compliance child. Surfacing the error inline would clutter
+		// every sidebar; the compliance page itself surfaces query failures.
+		r.logger.Warn("compliance count refresh failed", "error", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if count <= 0 {
+		return
+	}
+
+	label := html.EscapeString(i18n.TFromCtx(req.Context()).T("nav.reports.compliance"))
+	// ?ch=next: caller is the next/ sidebar; use the /next/ href and include
+	// the chart-bar glyph so the hydrated item matches the icon-led subnav style.
+	if req.URL.Query().Get("ch") == "next" {
+		href := html.EscapeString(r.basePath + "/next/reports/compliance")
+		fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
+			`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/reports/compliance" aria-label="%s">`+
+				`<svg class="sw-sidebar-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">`+
+				`<path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"></path></svg>`+
+				`<span class="sw-sidebar-label">%s</span>`+
+				`<span class="sw-sidebar-count-pill">%d</span>`+
+				`</a>`,
+			href, label, label, count)
+		return
+	}
+	href := html.EscapeString(r.basePath + "/reports/compliance")
+	fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
+		`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/reports/compliance" aria-label="%s">`+
+			`<span class="sw-sidebar-label">%s</span>`+
+			`<span class="sw-sidebar-badge-pill">%d</span>`+
+			`</a>`,
+		href, label, label, count)
 }

@@ -490,6 +490,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Foreign-file routes (#1185). Read access is admin-only because the
 	// list page exposes filesystem paths; writes are admin-only because they
 	// mutate disk state (Delete) or change scanner behavior (allowlist).
+	// Sidebar count badge for the Foreign Files child link (#1778). Returns an
+	// HTML fragment so the sidebar's hx-swap="innerHTML" placeholder can drop
+	// the child entirely when no foreign files remain. Admin-only via the
+	// in-handler role check. ?ch=next emits the /next/ href + glyph.
+	mux.HandleFunc("GET "+bp+"/api/v1/foreign-files/count", wrapAuth(r.handleForeignFilesCount, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/foreign-files", wrapAuth(middleware.RequireAdmin(r.handleForeignFilesList), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/foreign-files/dismiss", wrapAuth(middleware.RequireAdmin(r.handleForeignFilesDismiss), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/foreign-files/{id}/allowlist", wrapAuth(middleware.RequireAdmin(r.handleForeignFileAllowlist), authMw))
@@ -669,6 +674,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/health/history", wrapAuth(r.handleReportHealthHistory, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/health/by-library", wrapAuth(r.handleReportHealthByLibrary, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance", wrapAuth(r.handleReportCompliance, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/count", wrapAuth(r.handleComplianceCount, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/export", wrapAuth(r.handleReportComplianceExport, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/metadata-completeness", wrapAuth(r.handleReportMetadataCompleteness, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/rule-pass-rates", wrapAuth(r.handleReportRulePassRates, authMw))

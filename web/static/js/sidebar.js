@@ -93,6 +93,11 @@
     if (bp && (pathname === bp || pathname.indexOf(bp + '/') === 0)) {
       pathname = pathname.substring(bp.length);
     }
+    // next/ channel: strip the /next prefix so /next/<screen> matches the
+    // stable data-path values (#1778; prototyped at PLANNING-SESSION.md:790).
+    if (pathname === '/next' || pathname.indexOf('/next/') === 0) {
+      pathname = pathname.substring('/next'.length);
+    }
     // Normalize: ensure leading slash, handle root.
     if (!pathname || pathname === '') {
       pathname = '/';
@@ -276,17 +281,19 @@
   // after a successful prior response.
   function refreshUpdateBadge() {
     var badge = document.getElementById('sidebar-update-badge');
-    if (!badge) return;
     var requestSeq = ++updateBadgeRequestSeq;
+    // Root is the primary element; badge is optional (absent on the next/
+    // sidebar which drives the update dot via data-update-available alone).
     var root = document.getElementById('sw-sidebar');
+    if (!root) return;
 
     // clearBadge drops the href + data-update-available attributes that
     // gate both indicators. Guarded by requestSeq so a late failure
     // cannot wipe state applied by a newer successful response.
     function clearBadge() {
       if (requestSeq !== updateBadgeRequestSeq) return;
-      badge.setAttribute('href', '#');
-      if (root) root.removeAttribute('data-update-available');
+      if (badge) badge.setAttribute('href', '#');
+      root.removeAttribute('data-update-available');
     }
 
     try {
@@ -309,8 +316,8 @@
           // #sw-sidebar. CSS gates visibility on sidebar state, so we do
           // not touch display classes on the badge itself.
           if (available) {
-            badge.setAttribute('href', data.release_url);
-            if (root) root.setAttribute('data-update-available', 'true');
+            if (badge) badge.setAttribute('href', data.release_url);
+            root.setAttribute('data-update-available', 'true');
           } else {
             clearBadge();
           }

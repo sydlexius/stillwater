@@ -148,6 +148,12 @@
   z-index: 30;
   display: flex;
   flex-direction: column;
+  /* #1778 bg_opacity binding: sidebar background tracks the shared --sw-glass-bg
+     token, which preferences.js updates inline on :root when the user changes the
+     Background Opacity preference. Mirrors .sw-next-artist-detail's approach.
+     In design-tokens.css, --sw-sidebar-glass-bg is redefined here to equal
+     --sw-glass-bg so the existing CSS uses it transparently. */
+  --sw-sidebar-glass-bg: var(--sw-glass-bg);
   background: var(--sw-sidebar-glass-bg);
   backdrop-filter: var(--sw-glass-blur);
   -webkit-backdrop-filter: var(--sw-glass-blur);
@@ -156,14 +162,34 @@
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
-  transition: width 0.2s ease;
+  transition: width 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  /* #1778 typography pref: bind sidebar text to the pickable font-family seam
+     (--sw-font-sans) and the root font-size (driven by the Font Size pref via
+     [data-font-size]). Version line already uses --sw-font-mono. */
+  font-family: var(--sw-font-sans);
+  /* #1778 Font Size pref: pref-aware sidebar type scale (rem, mirroring
+     --sw-ad-font-* on .sw-next-artist-detail). rem resolves against the root
+     font-size that [data-font-size] sets (small 13px / medium 14px / large
+     16px), so EVERY sidebar text role rescales when the user changes Font Size.
+     Values are anchored to render at their prior px size at the medium (14px)
+     default. All .sw-sidebar-* rules below consume these instead of hardcoded
+     px, which would ignore the pref. */
+  --sw-sidebar-font-brand: 1.143rem;  /* was 16px: brand wordmark */
+  --sw-sidebar-font-md: 0.929rem;     /* was 13px: nav links, subnav, user name */
+  --sw-sidebar-font-sm: 0.857rem;     /* was 12px: avatar initial */
+  --sw-sidebar-font-xs: 0.786rem;     /* was 11px: section label, badge, kbd, role */
 }
 
-/* Respect reduced motion preferences */
+/* Snap (no resize animation) when motion should be reduced: system reduced-motion,
+   the explicit reduced_motion pref (data-motion=on), OR Lite Mode (data-lite=on,
+   which lite_mode=auto also resolves to on). Default = the sexy eased resize. */
 @media (prefers-reduced-motion: reduce) {
   .sw-sidebar { transition: none; }
 }
-[data-motion="on"] .sw-sidebar { transition: none; }
+[data-motion="on"] .sw-sidebar,
+[data-lite="on"] .sw-sidebar {
+  transition: none;
+}
 
 /* State: full (220px) */
 #sw-sidebar[data-sidebar-state="full"] {
@@ -236,7 +262,7 @@
   text-decoration: none;
   color: #e2e8f0;
   font-weight: 700;
-  font-size: 16px;
+  font-size: var(--sw-sidebar-font-brand);
   white-space: nowrap;
 }
 
@@ -275,7 +301,7 @@
 .sw-sidebar-section-label {
   display: block;
   padding: 4px 16px 8px;
-  font-size: 11px;
+  font-size: var(--sw-sidebar-font-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -295,8 +321,18 @@
    still resolves to /reports/compliance. */
 .sw-sidebar-subnav {
   list-style: none;
-  margin: 0;
+  /* #1778: indent the children as a group and draw a faint vertical tree
+     line tying them to the Reports parent. The line sits just right of the
+     parent icon; children render icon+label inside it. */
+  margin: 2px 0 2px 26px;
   padding: 0;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+/* #1778: the tree line needs more contrast on light theme (the slate at 0.18
+   alpha is too subtle on a light surface). Verify-in-both-themes charter rule. */
+:root:not(.dark) .sw-sidebar-subnav {
+  border-left-color: rgba(71, 85, 105, 0.4);
 }
 
 #sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-subnav,
@@ -304,13 +340,98 @@
   display: none;
 }
 
-/* Child link: no icon (would duplicate the parent's chart-bar). Padding
-   aligns the label under the parent label (parent has 16px left + 20px
-   icon + 10px gap = 46px to label start; rounded down to 42 to read as a
-   visible sub-item rather than perfectly column-aligned text). */
+/* #1778: child links now carry their own glyph (Compliance shield, Duplicates
+   copy) and sit inside the .sw-sidebar-subnav tree line, which supplies the
+   group indent. A small left padding offsets the icon from the tree line;
+   font size matches top-level links so children read as peers-of-the-parent. */
 .sw-sidebar-subnav-link {
-  padding-left: 42px;
-  font-size: 12px;
+  padding-left: 12px;
+  font-size: var(--sw-sidebar-font-md);
+}
+
+/* #1778 bottom bar: a glyph-only quick-actions row (theme / help / log out)
+   sits above the user identity.
+   - Full state: horizontal, space-evenly at full width.
+   - icon-only / hidden: stacks vertically so the narrow rail works too. */
+.sw-sidebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  padding: 2px 0 4px;
+  width: 100%;
+}
+#sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-actions,
+#sw-sidebar[data-sidebar-state="hidden"] .sw-sidebar-actions {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 0 4px;
+}
+/* version line: muted mono text in a consistent role (hardened from spike's
+   inline style to a CSS class so the font-family token is reachable).
+   Consolidates the earlier spike definition with the pre-existing rule at
+   lines 634-638 to avoid a CSS cascade conflict. */
+.sw-sidebar-version {
+  font-family: var(--sw-font-mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: rgba(148, 163, 184, 0.4);
+  letter-spacing: 0;
+  padding: 4px 16px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* brand text wrapper: flex column, left-align, clip overflow for long versions */
+.sw-sidebar-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+  overflow: hidden;
+}
+/* count pill: canonical sidebar pill style for Duplicates, Foreign Files, and
+   any future conditional nav count. Matches sw-sidebar-badge-pill token. */
+.sw-sidebar-count-pill {
+  /* Right-align the count to the row's trailing edge, matching the
+     Dashboard/Artists .sw-sidebar-badge treatment (margin-left:auto + the
+     link's 16px right padding) so all sidebar counts share one right offset. */
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  padding: 0 0.3rem;
+  height: 1.125rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  /* a11y (#1715): opaque red fill (not a translucent tint) so the count digits
+     keep WCAG AA contrast independent of the Background-Opacity pref and whatever
+     bleeds through the glass. Soft red-100 fill + red-900 text reads as a red
+     count and measures ~6.9:1. A same-hue translucent tint over the glass only
+     reached ~3:1 at the 85% default. */
+  background: #fecaca;
+  color: #7f1d1d;
+  border: 1px solid #fca5a5;
+}
+.dark .sw-sidebar-count-pill {
+  /* Dark inverts: deep red-900 fill + pale red-200 text, ~6.9:1. */
+  background: #7f1d1d;
+  color: #fecaca;
+  border-color: #991b1b;
+}
+/* icon-only / hidden: hide the count pills (no room; user expands to see). */
+#sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-count-pill,
+#sw-sidebar[data-sidebar-state="hidden"] .sw-sidebar-count-pill {
+  display: none;
+}
+/* Narrow rail: center the avatar (name/role hiding is already in the global
+   icon-only/hidden rule block above). */
+#sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-user,
+#sw-sidebar[data-sidebar-state="hidden"] .sw-sidebar-user {
+  justify-content: center;
 }
 
 /* Navigation links */
@@ -321,7 +442,7 @@
   padding: 8px 16px;
   color: var(--sw-sidebar-text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--sw-sidebar-font-md);
   font-weight: 500;
   white-space: nowrap;
   border: none;
@@ -375,7 +496,8 @@
   pointer-events: none;
 }
 
-#sw-sidebar[data-sidebar-state="icon-only"][data-update-available="true"] .sw-sidebar-update-dot {
+#sw-sidebar[data-sidebar-state="icon-only"][data-update-available="true"] .sw-sidebar-update-dot,
+#sw-sidebar[data-sidebar-state="full"][data-update-available="true"] .sw-sidebar-update-dot {
   display: block;
 }
 
@@ -418,13 +540,13 @@
 /* Badge (artist count, inline text) */
 .sw-sidebar-badge {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--sw-sidebar-font-xs);
 }
 
 /* Violation count pill in sidebar bottom section */
 .sw-sidebar-badge-pill {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--sw-sidebar-font-xs);
   font-weight: 600;
   padding: 1px 7px;
   border-radius: 9999px;
@@ -437,7 +559,7 @@
 .sw-sidebar-kbd {
   margin-left: auto;
   padding: 1px 5px;
-  font-size: 11px;
+  font-size: var(--sw-sidebar-font-xs);
   font-family: monospace;
   color: rgba(148, 163, 184, 0.5);
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -473,7 +595,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--sw-sidebar-font-sm);
   font-weight: 600;
   flex-shrink: 0;
   text-transform: uppercase;
@@ -495,7 +617,7 @@
 }
 
 .sw-sidebar-user-name {
-  font-size: 13px;
+  font-size: var(--sw-sidebar-font-md);
   font-weight: 500;
   color: var(--sw-sidebar-text-hover);
   overflow: hidden;
@@ -504,7 +626,7 @@
 }
 
 .sw-sidebar-user-role {
-  font-size: 11px;
+  font-size: var(--sw-sidebar-font-xs);
   color: var(--sw-sidebar-text);
   text-transform: capitalize;
 }
@@ -529,12 +651,7 @@
   color: var(--sw-severity-error);
 }
 
-/* Version label */
-.sw-sidebar-version {
-  padding: 4px 16px 0;
-  font-size: 11px;
-  color: rgba(148, 163, 184, 0.4);
-}
+/* .sw-sidebar-version consolidated into the definition block above. */
 
 /* Restore button (visible when sidebar is hidden) */
 .sw-sidebar-restore-btn {
