@@ -533,3 +533,21 @@ func TestArtistTypeLabelAndRowValue(t *testing.T) {
 		})
 	}
 }
+
+// TestArtistDetailHref verifies the channel-aware artist-detail href helper
+// (#1852): the stable channel (no ctx base) links to /artists/<id>, the next/
+// channel (WithArtistDetailBase) links to /next/artists/<id>, and an empty
+// injected base falls back to /artists.
+func TestArtistDetailHref(t *testing.T) {
+	if got := string(artistDetailHref(context.Background(), "/app", "abc")); got != "/app/artists/abc" {
+		t.Errorf("default href = %q, want %q", got, "/app/artists/abc")
+	}
+	ctx := WithArtistDetailBase(context.Background(), "/next/artists")
+	if got := string(artistDetailHref(ctx, "/app", "abc")); got != "/app/next/artists/abc" {
+		t.Errorf("next-channel href = %q, want %q", got, "/app/next/artists/abc")
+	}
+	ctxEmpty := WithArtistDetailBase(context.Background(), "")
+	if got := string(artistDetailHref(ctxEmpty, "", "id1")); got != "/artists/id1" {
+		t.Errorf("empty-base href = %q, want %q", got, "/artists/id1")
+	}
+}

@@ -599,6 +599,7 @@
   "dashboard.bubble_auto_fixable": "Auto-fixable",
   "dashboard.bubble_health": "Library health",
   "dashboard.bubble_needs_you": "Needs you",
+  "dashboard.bulk_select_violation": "Select %s for bulk action",
   "dashboard.category.image": "Images",
   "dashboard.category.metadata": "Metadata",
   "dashboard.category.nfo": "NFO / MBID",

@@ -70,3 +70,44 @@ func TestDashboardActionCard_DoubleSubmitGuard(t *testing.T) {
 		t.Errorf("Dismiss button missing hx-disabled-elt=\"this\"; tag was:\n%s", dismissTag)
 	}
 }
+
+// TestDashboardActionCard_ChannelAwareArtistLink pins #1852 end-to-end through
+// the SHARED card render: the stable channel (no ctx base) links to
+// /artists/<id>, and the next channel (WithArtistDetailBase, as the next
+// action-queue handler injects) links to /next/artists/<id> with no bare
+// /artists/<id> leak. A regression dropping the ctx injection, or rendering the
+// card with the wrong context, would slip past the helper-level test.
+func TestDashboardActionCard_ChannelAwareArtistLink(t *testing.T) {
+	v := rule.RuleViolation{
+		ID:         "v-1852",
+		RuleID:     rule.RuleNFOExists,
+		ArtistID:   "a-42",
+		ArtistName: "Channel Artist",
+		Severity:   "error",
+		Message:    "missing nfo",
+		Fixable:    true,
+		Status:     rule.ViolationStatusOpen,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	var stable bytes.Buffer
+	if err := DashboardActionCard(v, "").Render(testCtx(t), &stable); err != nil {
+		t.Fatalf("render stable: %v", err)
+	}
+	if sb := stable.String(); !strings.Contains(sb, `href="/artists/a-42"`) || strings.Contains(sb, "/next/artists/") {
+		t.Errorf("stable card: want href=\"/artists/a-42\" and no /next/artists/; got:\n%s", sb)
+	}
+
+	var next bytes.Buffer
+	nextCtx := WithArtistDetailBase(testCtx(t), "/next/artists")
+	if err := DashboardActionCard(v, "").Render(nextCtx, &next); err != nil {
+		t.Fatalf("render next: %v", err)
+	}
+	nb := next.String()
+	if !strings.Contains(nb, `href="/next/artists/a-42"`) {
+		t.Errorf("next card missing href=\"/next/artists/a-42\"; got:\n%s", nb)
+	}
+	if strings.Contains(nb, `href="/artists/a-42"`) {
+		t.Errorf("next card leaked a bare href=\"/artists/a-42\"; got:\n%s", nb)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
 
@@ -151,6 +152,13 @@ type Pipeline struct {
 	historyServiceMu sync.RWMutex
 	historyService   *artist.HistoryService
 
+	// eventBusMu guards eventBus for the same reason as historyServiceMu:
+	// SetEventBus can be called after construction, and the read happens on the
+	// auto-fix hot path (recordRuleFixHistory) which runs concurrently across
+	// artist workers.
+	eventBusMu sync.RWMutex
+	eventBus   *event.Bus
+
 	ruleCacheMu sync.RWMutex
 	ruleCache   map[string]*Rule
 
@@ -256,6 +264,27 @@ func (p *Pipeline) getHistoryService() *artist.HistoryService {
 	return p.historyService
 }
 
+// SetEventBus installs (or replaces) the event bus the pipeline publishes to on
+// every successful auto-fix, so the next/ dashboard's live activity rail reflects
+// rule fixes (single Fix and Run-rules) without a manual reload (#1804). Passing
+// nil disables emission -- callers that never configure one behave exactly as
+// before. Mirrors BulkExecutor.SetEventBus (the established event-bus injection
+// in this package) and the Pipeline's own SetHistoryService setter form, which
+// keeps the NewPipeline signature stable for existing test call sites.
+func (p *Pipeline) SetEventBus(bus *event.Bus) {
+	p.eventBusMu.Lock()
+	p.eventBus = bus
+	p.eventBusMu.Unlock()
+}
+
+// getEventBus returns the installed event bus under the read lock so
+// recordRuleFixHistory can read it without racing a concurrent setter.
+func (p *Pipeline) getEventBus() *event.Bus {
+	p.eventBusMu.RLock()
+	defer p.eventBusMu.RUnlock()
+	return p.eventBus
+}
+
 // SetArtistWorkers configures how many artists RunAll/RunRule passes evaluate
 // concurrently (issue #1730). main.go wires this from
 // config.RuleEngine.ArtistWorkers after construction (default 2). A value
@@ -305,13 +334,25 @@ func (p *Pipeline) recordRuleFixHistory(ctx context.Context, artistID string, fr
 	if fr == nil || !fr.Fixed {
 		return
 	}
-	h := p.getHistoryService()
-	if h == nil {
-		return
+	// History entry (best-effort audit trail). Guarded INDEPENDENTLY of the live
+	// push below so a missing history service does not also suppress the rail row.
+	if h := p.getHistoryService(); h != nil {
+		if err := h.Record(ctx, artistID, "rule_fix", "", fr.Message, "rule:"+fr.RuleID); err != nil {
+			p.logger.Warn("recording rule auto-fix history",
+				"rule_id", fr.RuleID, "artist_id", artistID, "error", err)
+		}
 	}
-	if err := h.Record(ctx, artistID, "rule_fix", "", fr.Message, "rule:"+fr.RuleID); err != nil {
-		p.logger.Warn("recording rule auto-fix history",
-			"rule_id", fr.RuleID, "artist_id", artistID, "error", err)
+	// Push a live activity row so the next/ dashboard rail reflects the fix
+	// without a manual reload (#1804). Best-effort and independent of the history
+	// write above: a nil bus (the default) or a dropped event never affects the
+	// fix. kind "set" matches how the server-rendered initial-load row classifies
+	// this same rule_fix change (empty old -> non-empty new => "set", see
+	// activityChangeKind), so a live row and its post-reload counterpart show the
+	// same icon/label. event.NewActivityRecent builds the same activity.recent
+	// envelope the manual field-edit handlers emit, so the rail-row contract has
+	// one source.
+	if bus := p.getEventBus(); bus != nil {
+		bus.Publish(event.NewActivityRecent("set", fr.Message, artistID))
 	}
 }
 

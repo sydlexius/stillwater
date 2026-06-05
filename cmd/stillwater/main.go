@@ -765,6 +765,11 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	}
 	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)
 	a.pipeline.SetHistoryService(a.historyService)
+	// Push a live activity row on every successful auto-fix (single Fix and
+	// Run-rules) so the next/ dashboard rail updates without a manual reload
+	// (#1804). Mirrors BulkExecutor.SetEventBus -- the established event-bus
+	// injection in internal/rule.
+	a.pipeline.SetEventBus(a.eventBus)
 	// Wire the provider Orchestrator so the pipeline can build a per-artist
 	// EvaluationContext that coalesces upstream fetches across the rule
 	// fixer chain (M54 #1133). Without this setter the pipeline still

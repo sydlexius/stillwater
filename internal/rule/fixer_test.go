@@ -14,8 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
@@ -2447,6 +2449,78 @@ func setupAutoFixHistoryHarness(t *testing.T, fr *FixResult) (*Pipeline, *artist
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, logger)
 	pipeline.SetHistoryService(historySvc)
 	return pipeline, historySvc, a
+}
+
+// TestPipeline_RuleFix_EmitsActivity verifies a successful auto-fix publishes a
+// single activity.recent event on the installed event bus (#1804), carrying the
+// fixed artist id and the fix message, and that a failed fix publishes nothing.
+// This is the live-rail half of the same hook that records history; the bus is
+// injected via SetEventBus (mirroring BulkExecutor).
+func TestPipeline_RuleFix_EmitsActivity(t *testing.T) {
+	subscribeActivity := func(t *testing.T, pipeline *Pipeline) <-chan event.Event {
+		t.Helper()
+		bus := event.NewBus(testLogger(), 32)
+		go bus.Start()
+		t.Cleanup(bus.Stop)
+		events := make(chan event.Event, 8)
+		bus.Subscribe(event.ActivityRecent, func(e event.Event) { events <- e })
+		pipeline.SetEventBus(bus)
+		return events
+	}
+
+	t.Run("fixed publishes one activity.recent event", func(t *testing.T) {
+		pipeline, _, a := setupAutoFixHistoryHarness(t, &FixResult{
+			RuleID:  RuleNFOExists,
+			Fixed:   true,
+			Message: "Generated artist.nfo",
+		})
+		events := subscribeActivity(t, pipeline)
+
+		if _, err := pipeline.RunForArtist(context.Background(), a); err != nil {
+			t.Fatalf("RunForArtist: %v", err)
+		}
+
+		select {
+		case e := <-events:
+			if got := e.Data["artistId"]; got != a.ID {
+				t.Errorf("activity artistId = %v, want %q", got, a.ID)
+			}
+			if got := e.Data["text"]; got != "Generated artist.nfo" {
+				t.Errorf("activity text = %v, want %q", got, "Generated artist.nfo")
+			}
+			if got := e.Data["kind"]; got != "set" {
+				t.Errorf("activity kind = %v, want \"set\"", got)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("no activity.recent event published for a successful fix")
+		}
+
+		// No second event for the single fix.
+		select {
+		case e := <-events:
+			t.Fatalf("unexpected second activity.recent event: %#v", e)
+		case <-time.After(200 * time.Millisecond):
+		}
+	})
+
+	t.Run("failed fix publishes nothing", func(t *testing.T) {
+		pipeline, _, a := setupAutoFixHistoryHarness(t, &FixResult{
+			RuleID:  RuleNFOExists,
+			Fixed:   false,
+			Message: "could not fix",
+		})
+		events := subscribeActivity(t, pipeline)
+
+		if _, err := pipeline.RunForArtist(context.Background(), a); err != nil {
+			t.Fatalf("RunForArtist: %v", err)
+		}
+
+		select {
+		case e := <-events:
+			t.Fatalf("expected no activity.recent event for a failed fix, got %#v", e)
+		case <-time.After(500 * time.Millisecond):
+		}
+	})
 }
 
 // TestPipeline_RunForArtist_RecordsAutoFixHistory verifies that a successful

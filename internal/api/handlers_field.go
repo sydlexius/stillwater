@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
@@ -172,15 +171,7 @@ func (r *Router) publishActivityRecent(kind, text, artistID string) {
 	if r.eventBus == nil {
 		return
 	}
-	r.eventBus.Publish(event.Event{
-		Type: event.ActivityRecent,
-		Data: map[string]any{
-			"ts":       time.Now().UTC().Format(time.RFC3339),
-			"kind":     kind,
-			"text":     text,
-			"artistId": artistID,
-		},
-	})
+	r.eventBus.Publish(event.NewActivityRecent(kind, text, artistID))
 }
 
 // handleFieldClear clears a single field.

@@ -269,3 +269,30 @@ func TestStopDrainsBuffer(t *testing.T) {
 		t.Errorf("got %d events, want %d (all drained)", count, N)
 	}
 }
+
+// TestNewActivityRecent verifies the activity.recent envelope constructor emits
+// the exact Data shape the SSE hub serializes and the next/ dashboard rail JS
+// reads ({ts, kind, text, artistId}), so all emitters (manual field edits and
+// rule auto-fixes) share one source of truth (#1804).
+func TestNewActivityRecent(t *testing.T) {
+	e := NewActivityRecent("changed", "Generated artist.nfo", "artist-123")
+	if e.Type != ActivityRecent {
+		t.Errorf("Type = %q, want %q", e.Type, ActivityRecent)
+	}
+	if got := e.Data["kind"]; got != "changed" {
+		t.Errorf("Data[kind] = %v, want \"changed\"", got)
+	}
+	if got := e.Data["text"]; got != "Generated artist.nfo" {
+		t.Errorf("Data[text] = %v, want \"Generated artist.nfo\"", got)
+	}
+	if got := e.Data["artistId"]; got != "artist-123" {
+		t.Errorf("Data[artistId] = %v, want \"artist-123\"", got)
+	}
+	ts, ok := e.Data["ts"].(string)
+	if !ok || ts == "" {
+		t.Fatalf("Data[ts] = %v, want non-empty RFC3339 string", e.Data["ts"])
+	}
+	if _, err := time.Parse(time.RFC3339, ts); err != nil {
+		t.Errorf("Data[ts] %q is not RFC3339: %v", ts, err)
+	}
+}

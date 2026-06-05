@@ -60,6 +60,32 @@ func basePath() string {
 // the stable templates without duplicating the SetBasePath global.
 func BasePath() string { return basePath() }
 
+// artistDetailBaseKeyType is the unexported context key under which a handler
+// stashes the channel-aware artist-detail URL base (e.g. "/next/artists").
+type artistDetailBaseKeyType struct{}
+
+// WithArtistDetailBase returns a context carrying the channel-aware artist-detail
+// URL base. The next/ channel sets it to "/next/artists" before rendering shared
+// fragments (the dashboard action queue) so the shared DashboardActionCard links
+// stay inside the next/ channel instead of leaking to the stable /artists/<id>
+// screen (M55 #1852). The stable channel never sets it, so artistDetailHref
+// falls back to "/artists". Mirrors the WithFieldFindings ctx-injection pattern.
+func WithArtistDetailBase(ctx context.Context, base string) context.Context {
+	return context.WithValue(ctx, artistDetailBaseKeyType{}, base)
+}
+
+// artistDetailHref builds the channel-aware artist-detail href:
+// basePath + the ctx-injected base (default "/artists") + "/" + artistID.
+// Shared templates rendered in both channels (e.g. DashboardActionCard) call
+// this so the next/ channel keeps artist links on /next/artists/<id>.
+func artistDetailHref(ctx context.Context, basePath, artistID string) templ.SafeURL {
+	base := "/artists"
+	if v, ok := ctx.Value(artistDetailBaseKeyType{}).(string); ok && v != "" {
+		base = v
+	}
+	return templ.SafeURL(basePath + base + "/" + artistID)
+}
+
 // logoSrc returns the static path to a logo file for the given key.
 // Most logos are SVG; audiodb and emby use PNG (128px variant).
 func logoSrc(key string) string {

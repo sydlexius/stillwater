@@ -715,14 +715,14 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" onclick=\"swDashboardPanels && swDashboardPanels.toggleFilters()\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z\"></path></svg><!-- The \"f\" shortcut is advertised once in the tip-line legend\n\t\t\t\t\t     below (and the ? cheat sheet); \"Filters\" lives in the title\n\t\t\t\t\t     tooltip. No inline sw-kbd keycap here (avoids duplication). --></button> <span class=\"ml-auto\"></span><!-- Bulk controls (the Select-all checkbox + the Fix/Dismiss split\n\t\t\t\t     button) now live in the Action-queue card HEAD, not this top\n\t\t\t\t     toolbar. The maintainer reversed the earlier \"the select all in the\n\t\t\t\t     filter bar is fine\" decision on 2026-05-31, moving both controls\n\t\t\t\t     into the queue-card head to match the prototype layout\n\t\t\t\t     (dashboard.jsx:142-146). See the queue-card section below for the\n\t\t\t\t     relocated markup; the ids/classes/attributes are unchanged so the\n\t\t\t\t     bulk JS binds exactly as before. --><!-- Run rules is the page's single primary action (UAT #8). Mirrors\n\t\t\t\t     the artists toolbar primary button (artists.templ scan-btn):\n\t\t\t\t     bg-blue-600 -> hover:bg-blue-500 with a focus ring + offset, so the\n\t\t\t\t     two next/ screens share one primary-button treatment. --><button id=\"dashboard-run-rules-btn\" type=\"button\" class=\"inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed\" data-sw-shortcut=\"r\" data-sw-shortcut-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" onclick=\"swDashboardPanels && swDashboardPanels.toggleFilters()\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z\"></path></svg><!-- The \"f\" shortcut is advertised once in the tip-line legend\n\t\t\t\t\t     below (and the ? cheat sheet); \"Filters\" lives in the title\n\t\t\t\t\t     tooltip. No inline sw-kbd keycap here (avoids duplication). --></button> <span class=\"ml-auto\"></span><!-- Bulk controls (the Select-all checkbox + the Fix/Dismiss split\n\t\t\t\t     button) now live in the Action-queue card HEAD, not this top\n\t\t\t\t     toolbar. The maintainer reversed the earlier \"the select all in the\n\t\t\t\t     filter bar is fine\" decision on 2026-05-31, moving both controls\n\t\t\t\t     into the queue-card head to match the prototype layout\n\t\t\t\t     (dashboard.jsx:142-146). See the queue-card section below for the\n\t\t\t\t     relocated markup; the ids/classes/attributes are unchanged so the\n\t\t\t\t     bulk JS binds exactly as before. --><!-- Run rules: the page's primary action, but per the maintainer's\n\t\t\t\t     no-solid-blue principle (#32) it uses the next/ thin-outline +\n\t\t\t\t     backdrop treatment (swd-line border, ink-2 text, subtle hover)\n\t\t\t\t     shared with the artist-detail header buttons (refresh/edit/\n\t\t\t\t     Actions). Solid blue is reserved for the active-toggle halo only. --><button id=\"dashboard-run-rules-btn\" type=\"button\" class=\"inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed\" style=\"border:1px solid var(--swd-line);color:var(--swd-ink-2)\" data-sw-shortcut=\"r\" data-sw-shortcut-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 329, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 331, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 			if templ_7745c5c3_Err != nil {
@@ -735,7 +735,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 331, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 333, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 			if templ_7745c5c3_Err != nil {
@@ -748,7 +748,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_body"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 332, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 334, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 			if templ_7745c5c3_Err != nil {
@@ -761,7 +761,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_accept"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 333, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 335, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 			if templ_7745c5c3_Err != nil {
@@ -774,7 +774,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.rule_evaluation_started"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 334, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 336, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 			if templ_7745c5c3_Err != nil {
@@ -787,7 +787,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.already_running"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 335, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 337, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 			if templ_7745c5c3_Err != nil {
@@ -800,7 +800,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var46 string
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.run_rules_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 336, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 338, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 			if templ_7745c5c3_Err != nil {
@@ -813,7 +813,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.network_error"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 337, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 339, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 			if templ_7745c5c3_Err != nil {
@@ -826,7 +826,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 342, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 344, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -839,7 +839,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.action_queue"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 356, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 358, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -852,7 +852,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.select_all"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 391, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 393, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 			if templ_7745c5c3_Err != nil {
@@ -865,7 +865,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.select_all"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 401, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 403, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -878,7 +878,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 413, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 415, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 			if templ_7745c5c3_Err != nil {
@@ -891,7 +891,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_n_selected.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 414, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 416, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 			if templ_7745c5c3_Err != nil {
@@ -904,7 +904,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_n_selected.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 415, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 417, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 			if templ_7745c5c3_Err != nil {
@@ -917,7 +917,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixing_progress"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 416, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 418, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 			if templ_7745c5c3_Err != nil {
@@ -930,7 +930,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixes_failed.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 417, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 419, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 			if templ_7745c5c3_Err != nil {
@@ -943,7 +943,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var57 string
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixes_failed.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 418, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 420, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
 			if templ_7745c5c3_Err != nil {
@@ -956,7 +956,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var58 string
 			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 419, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 421, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var58)
 			if templ_7745c5c3_Err != nil {
@@ -969,7 +969,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.network_error"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 420, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 422, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 			if templ_7745c5c3_Err != nil {
@@ -982,7 +982,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fix_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 422, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 424, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -995,7 +995,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.more_bulk_actions"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 432, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 434, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
 			if templ_7745c5c3_Err != nil {
@@ -1008,7 +1008,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 452, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 454, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
 			if templ_7745c5c3_Err != nil {
@@ -1021,7 +1021,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_n_selected.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 453, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 455, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
 			if templ_7745c5c3_Err != nil {
@@ -1034,7 +1034,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_n_selected.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 454, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 456, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
 			if templ_7745c5c3_Err != nil {
@@ -1047,7 +1047,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.dismiss_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 456, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 458, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1060,7 +1060,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue("/dashboard/actions" + initialQuery)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 464, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 466, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 			if templ_7745c5c3_Err != nil {
@@ -1073,7 +1073,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var67 string
 			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(initialQuery)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 467, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 469, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var67)
 			if templ_7745c5c3_Err != nil {
@@ -1086,7 +1086,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.load_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 468, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 470, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
 			if templ_7745c5c3_Err != nil {
@@ -1099,7 +1099,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var69 string
 			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.retry"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 469, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 471, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
 			if templ_7745c5c3_Err != nil {
@@ -1144,7 +1144,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.recent_activity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 506, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 508, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 			if templ_7745c5c3_Err != nil {
@@ -1157,7 +1157,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_status_live"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 516, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 518, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 			if templ_7745c5c3_Err != nil {
@@ -1170,7 +1170,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_status_reconnecting"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 517, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 519, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
 			if templ_7745c5c3_Err != nil {
@@ -1183,7 +1183,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var73 string
 			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.just_now"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 526, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 528, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
 			if templ_7745c5c3_Err != nil {
@@ -1196,7 +1196,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.minutes_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 527, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 529, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
 			if templ_7745c5c3_Err != nil {
@@ -1209,7 +1209,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.hours_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 528, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 530, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
 			if templ_7745c5c3_Err != nil {
@@ -1222,7 +1222,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.days_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 529, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 531, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
 			if templ_7745c5c3_Err != nil {
@@ -1235,7 +1235,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var77 string
 			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.view_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 530, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 532, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
 			if templ_7745c5c3_Err != nil {
@@ -1248,7 +1248,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var78 string
 			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_load_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 531, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 533, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
 			if templ_7745c5c3_Err != nil {
@@ -1261,7 +1261,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var79 string
 			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.retry"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 532, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 534, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
 			if templ_7745c5c3_Err != nil {
@@ -1274,20 +1274,20 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var80 string
 			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 533, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 535, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\" hx-get=\"/dashboard/activity\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-on::response-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\" hx-on::send-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\"></div><script>\n\t\t\t\t\t\t(function() {\n\t\t\t\t\t\t\tvar feed = document.getElementById('next-dash-activity-feed');\n\t\t\t\t\t\t\tvar status = document.getElementById('next-dash-activity-status');\n\t\t\t\t\t\t\tvar dot = document.getElementById('next-dash-activity-status-dot');\n\t\t\t\t\t\t\tvar label = document.getElementById('next-dash-activity-status-label');\n\t\t\t\t\t\t\tif (!feed || !status || !dot || !label) return;\n\n\t\t\t\t\t\t\t// SVG path \"d\" attributes for each activity kind icon.\n\t\t\t\t\t\t\t// These MUST stay byte-identical to activityKindIconPath\n\t\t\t\t\t\t\t// in web/templates/next/dashboard.templ so a live row's\n\t\t\t\t\t\t\t// icon matches a server-rendered initial row's icon.\n\t\t\t\t\t\t\tvar SVG_PATHS = {\n\t\t\t\t\t\t\t\tset: 'M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\tcleared: 'M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\treverted: 'M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3',\n\t\t\t\t\t\t\t\tchanged: 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125'\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t// Icon tone classes per kind. Mirrors activityKindToneClass.\n\t\t\t\t\t\t\tvar KIND_TONE = {\n\t\t\t\t\t\t\t\tset: 'text-green-500 dark:text-green-400',\n\t\t\t\t\t\t\t\tcleared: 'text-red-500 dark:text-red-400',\n\t\t\t\t\t\t\t\treverted: 'text-amber-500 dark:text-amber-400',\n\t\t\t\t\t\t\t\tchanged: 'text-blue-500 dark:text-blue-400'\n\t\t\t\t\t\t\t};\n\n\t\t\t\t\t\t\tvar bp = feed.dataset.basePath || (function() {\n\t\t\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t\t\t})();\n\n\t\t\t\t\t\t\t// setStatus drives the connection indicator (UAT #9). When the\n\t\t\t\t\t\t\t// stream is live the dot PULSES green to read as an active\n\t\t\t\t\t\t\t// broadcast alongside the \"Live feed\" label; while\n\t\t\t\t\t\t\t// disconnected it is a steady amber dot with \"Reconnecting\",\n\t\t\t\t\t\t\t// so live vs reconnecting are distinct by motion + hue + word.\n\t\t\t\t\t\t\t// Labels come from data-* (no hardcoded copy, no \"SSE\").\n\t\t\t\t\t\t\tfunction setStatus(connected) {\n\t\t\t\t\t\t\t\tif (connected) {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelLive || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse';\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelReconnecting || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-amber-500';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tfunction esc(s) {\n\t\t\t\t\t\t\t\treturn String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// relTime formats a Date as a relative string using the\n\t\t\t\t\t\t\t// shared time.* i18n templates carried on the feed's\n\t\t\t\t\t\t\t// data-* attributes, matching activityRelTime so live and\n\t\t\t\t\t\t\t// initial rows agree.\n\t\t\t\t\t\t\tfunction relTime(d) {\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - d.getTime()) / 60000);\n\t\t\t\t\t\t\t\tvar ds = feed.dataset;\n\t\t\t\t\t\t\t\tif (diffMin < 1) return ds.labelJustNow || '';\n\t\t\t\t\t\t\t\tif (diffMin < 60) return (ds.tplMinutes || '').replace('{count}', diffMin);\n\t\t\t\t\t\t\t\tif (diffMin < 1440) return (ds.tplHours || '').replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\treturn (ds.tplDays || '').replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// buildRow constructs a rail row from the SSE payload in\n\t\t\t\t\t\t\t// the SAME shape as DashboardActivityRowNext (icon + text\n\t\t\t\t\t\t\t// + optional artist link + relative time).\n\t\t\t\t\t\t\tfunction buildRow(d) {\n\t\t\t\t\t\t\t\tvar kind = d.kind || 'changed';\n\t\t\t\t\t\t\t\tvar iconPath = SVG_PATHS[kind] || SVG_PATHS.changed;\n\t\t\t\t\t\t\t\tvar tone = KIND_TONE[kind] || KIND_TONE.changed;\n\t\t\t\t\t\t\t\tvar ts = d.ts ? new Date(d.ts) : new Date();\n\t\t\t\t\t\t\t\tif (isNaN(ts.getTime())) ts = new Date();\n\n\t\t\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\t\t\trow.className = 'sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm';\n\n\t\t\t\t\t\t\t\t// The live payload carries no artist name, so the\n\t\t\t\t\t\t\t\t// artist link (when artistId is present) shows the id\n\t\t\t\t\t\t\t\t// as a fallback label; the next HTMX refresh replaces\n\t\t\t\t\t\t\t\t// it with the named server row.\n\t\t\t\t\t\t\t\tvar artistLink = '';\n\t\t\t\t\t\t\t\tif (d.artistId) {\n\t\t\t\t\t\t\t\t\tartistLink = '<a href=\"' + esc(bp + '/artists/' + d.artistId) +\n\t\t\t\t\t\t\t\t\t\t'\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"' +\n\t\t\t\t\t\t\t\t\t\tesc(feed.dataset.labelViewArtist || '') + '\">' + esc(d.artistId) + '</a>';\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\trow.innerHTML =\n\t\t\t\t\t\t\t\t\t'<svg class=\"h-4 w-4 mt-0.5 shrink-0 ' + tone + '\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\">' +\n\t\t\t\t\t\t\t\t\t'<path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"' + iconPath + '\"></path></svg>' +\n\t\t\t\t\t\t\t\t\t'<div class=\"min-w-0 flex-1\">' +\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-start justify-between gap-2\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"truncate text-gray-800 dark:text-gray-200\">' + esc(d.text || '') + '</span>' +\n\t\t\t\t\t\t\t\t\t'<time datetime=\"' + esc(ts.toISOString()) + '\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">' + esc(relTime(ts)) + '</time>' +\n\t\t\t\t\t\t\t\t\t'</div>' + artistLink + '</div>';\n\t\t\t\t\t\t\t\treturn row;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// showError renders the rail's error state when the initial\n\t\t\t\t\t\t\t// hx-get load of /dashboard/activity fails (500 / network).\n\t\t\t\t\t\t\t// Without it a failed load left the rail blank but \"live\",\n\t\t\t\t\t\t\t// hiding the failure. Mirrors the queue's showQueueError: a\n\t\t\t\t\t\t\t// localized message + a Retry button that re-fires the load.\n\t\t\t\t\t\t\t// Strings come from the feed's data-* (server-localized).\n\t\t\t\t\t\t\tfunction showError() {\n\t\t\t\t\t\t\t\tvar failed = feed.dataset.labelLoadFailed || '';\n\t\t\t\t\t\t\t\tvar retry = feed.dataset.labelRetry || '';\n\t\t\t\t\t\t\t\tfeed.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-center justify-between gap-3 px-4 py-3\" role=\"alert\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + esc(failed) + '</span>' +\n\t\t\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-activity-retry inline-flex items-center rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + esc(retry) + '</button>' +\n\t\t\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\t\t\tvar btn = feed.querySelector('.sw-activity-retry');\n\t\t\t\t\t\t\t\tif (btn) btn.addEventListener('click', function() {\n\t\t\t\t\t\t\t\t\tif (window.htmx) window.htmx.ajax('GET', '/dashboard/activity', {target: '#next-dash-activity-feed', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\twindow.swDashboardActivity = { showError: showError };\n\n\t\t\t\t\t\t\tvar src;\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tsrc = new EventSource(bp + '/api/v1/events/stream');\n\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\t// EventSource construction failed (unsupported / blocked):\n\t\t\t\t\t\t\t\t// surface \"reconnecting\" so the indicator does not falsely\n\t\t\t\t\t\t\t\t// read live, and log so the failure is diagnosable.\n\t\t\t\t\t\t\t\tconsole.warn('SSE init failed', e);\n\t\t\t\t\t\t\t\tsetStatus(false);\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tsrc.onopen = function() { setStatus(true); };\n\t\t\t\t\t\t\tsrc.onerror = function() { setStatus(false); };\n\t\t\t\t\t\t\tsrc.addEventListener('activity.recent', function(e) {\n\t\t\t\t\t\t\t\tvar env = {};\n\t\t\t\t\t\t\t\ttry { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }\n\t\t\t\t\t\t\t\t// The SSE wire payload is an envelope; the structured\n\t\t\t\t\t\t\t\t// rail fields (ts, kind, text, artistId) are nested\n\t\t\t\t\t\t\t\t// under .data, NOT at the top level. Reading the top\n\t\t\t\t\t\t\t\t// level (the spike bug) yields blank rows.\n\t\t\t\t\t\t\t\tvar d = env.data || {};\n\t\t\t\t\t\t\t\t// When the rail boots empty it shows the idle hint\n\t\t\t\t\t\t\t\t// instead of rows; clear it before the first live row.\n\t\t\t\t\t\t\t\tif (feed.querySelector('.sw-activity-row') === null) {\n\t\t\t\t\t\t\t\t\tfeed.innerHTML = '';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tfeed.insertBefore(buildRow(d), feed.firstChild);\n\t\t\t\t\t\t\t\t// Cap at 50 rows in the DOM; drop the oldest (last).\n\t\t\t\t\t\t\t\twhile (feed.children.length > 50) {\n\t\t\t\t\t\t\t\t\tfeed.removeChild(feed.lastChild);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tsetStatus(true);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t})();\n\t\t\t\t\t</script><!-- Footer \"View all activity\" link (restored, mirrors the stable\n\t\t\t\t\t     dashboard's activity feed footer in web/templates/dashboard.templ):\n\t\t\t\t\t     a subtle blue-ink link with a right-chevron, targeting the same\n\t\t\t\t\t     /activity route. A hairline top border separates it from the rows;\n\t\t\t\t\t     it sits inside the content-sized card (does not re-stretch it). --><div class=\"border-t border-[var(--swd-line)] px-4 py-2.5\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\" hx-get=\"/dashboard/activity\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-on::response-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\" hx-on::send-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\"></div><script>\n\t\t\t\t\t\t(function() {\n\t\t\t\t\t\t\tvar feed = document.getElementById('next-dash-activity-feed');\n\t\t\t\t\t\t\tvar status = document.getElementById('next-dash-activity-status');\n\t\t\t\t\t\t\tvar dot = document.getElementById('next-dash-activity-status-dot');\n\t\t\t\t\t\t\tvar label = document.getElementById('next-dash-activity-status-label');\n\t\t\t\t\t\t\tif (!feed || !status || !dot || !label) return;\n\n\t\t\t\t\t\t\t// SVG path \"d\" attributes for each activity kind icon.\n\t\t\t\t\t\t\t// These MUST stay byte-identical to activityKindIconPath\n\t\t\t\t\t\t\t// in web/templates/next/dashboard.templ so a live row's\n\t\t\t\t\t\t\t// icon matches a server-rendered initial row's icon.\n\t\t\t\t\t\t\tvar SVG_PATHS = {\n\t\t\t\t\t\t\t\tset: 'M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\tcleared: 'M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\treverted: 'M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3',\n\t\t\t\t\t\t\t\tchanged: 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125'\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t// Icon tone classes per kind. Mirrors activityKindToneClass.\n\t\t\t\t\t\t\tvar KIND_TONE = {\n\t\t\t\t\t\t\t\tset: 'text-green-500 dark:text-green-400',\n\t\t\t\t\t\t\t\tcleared: 'text-red-500 dark:text-red-400',\n\t\t\t\t\t\t\t\treverted: 'text-amber-500 dark:text-amber-400',\n\t\t\t\t\t\t\t\tchanged: 'text-blue-500 dark:text-blue-400'\n\t\t\t\t\t\t\t};\n\n\t\t\t\t\t\t\tvar bp = feed.dataset.basePath || (function() {\n\t\t\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t\t\t})();\n\n\t\t\t\t\t\t\t// setStatus drives the connection indicator (UAT #9). When the\n\t\t\t\t\t\t\t// stream is live the dot PULSES green to read as an active\n\t\t\t\t\t\t\t// broadcast alongside the \"Live feed\" label; while\n\t\t\t\t\t\t\t// disconnected it is a steady amber dot with \"Reconnecting\",\n\t\t\t\t\t\t\t// so live vs reconnecting are distinct by motion + hue + word.\n\t\t\t\t\t\t\t// Labels come from data-* (no hardcoded copy, no \"SSE\").\n\t\t\t\t\t\t\tfunction setStatus(connected) {\n\t\t\t\t\t\t\t\tif (connected) {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelLive || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse';\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelReconnecting || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-amber-500';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tfunction esc(s) {\n\t\t\t\t\t\t\t\treturn String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// relTime formats a Date as a relative string using the\n\t\t\t\t\t\t\t// shared time.* i18n templates carried on the feed's\n\t\t\t\t\t\t\t// data-* attributes, matching activityRelTime so live and\n\t\t\t\t\t\t\t// initial rows agree.\n\t\t\t\t\t\t\tfunction relTime(d) {\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - d.getTime()) / 60000);\n\t\t\t\t\t\t\t\tvar ds = feed.dataset;\n\t\t\t\t\t\t\t\tif (diffMin < 1) return ds.labelJustNow || '';\n\t\t\t\t\t\t\t\tif (diffMin < 60) return (ds.tplMinutes || '').replace('{count}', diffMin);\n\t\t\t\t\t\t\t\tif (diffMin < 1440) return (ds.tplHours || '').replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\treturn (ds.tplDays || '').replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// buildRow constructs a rail row from the SSE payload in\n\t\t\t\t\t\t\t// the SAME shape as DashboardActivityRowNext (icon + text\n\t\t\t\t\t\t\t// + optional artist link + relative time).\n\t\t\t\t\t\t\tfunction buildRow(d) {\n\t\t\t\t\t\t\t\tvar kind = d.kind || 'changed';\n\t\t\t\t\t\t\t\tvar iconPath = SVG_PATHS[kind] || SVG_PATHS.changed;\n\t\t\t\t\t\t\t\tvar tone = KIND_TONE[kind] || KIND_TONE.changed;\n\t\t\t\t\t\t\t\tvar ts = d.ts ? new Date(d.ts) : new Date();\n\t\t\t\t\t\t\t\tif (isNaN(ts.getTime())) ts = new Date();\n\n\t\t\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\t\t\trow.className = 'sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm';\n\n\t\t\t\t\t\t\t\t// The live payload carries no artist name, so the\n\t\t\t\t\t\t\t\t// artist link (when artistId is present) shows the id\n\t\t\t\t\t\t\t\t// as a fallback label; the next HTMX refresh replaces\n\t\t\t\t\t\t\t\t// it with the named server row.\n\t\t\t\t\t\t\t\tvar artistLink = '';\n\t\t\t\t\t\t\t\tif (d.artistId) {\n\t\t\t\t\t\t\t\t\tartistLink = '<a href=\"' + esc(bp + '/next/artists/' + d.artistId) +\n\t\t\t\t\t\t\t\t\t\t'\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"' +\n\t\t\t\t\t\t\t\t\t\tesc(feed.dataset.labelViewArtist || '') + '\">' + esc(d.artistId) + '</a>';\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\trow.innerHTML =\n\t\t\t\t\t\t\t\t\t'<svg class=\"h-4 w-4 mt-0.5 shrink-0 ' + tone + '\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\">' +\n\t\t\t\t\t\t\t\t\t'<path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"' + iconPath + '\"></path></svg>' +\n\t\t\t\t\t\t\t\t\t'<div class=\"min-w-0 flex-1\">' +\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-start justify-between gap-2\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"truncate text-gray-800 dark:text-gray-200\">' + esc(d.text || '') + '</span>' +\n\t\t\t\t\t\t\t\t\t'<time datetime=\"' + esc(ts.toISOString()) + '\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">' + esc(relTime(ts)) + '</time>' +\n\t\t\t\t\t\t\t\t\t'</div>' + artistLink + '</div>';\n\t\t\t\t\t\t\t\treturn row;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// showError renders the rail's error state when the initial\n\t\t\t\t\t\t\t// hx-get load of /dashboard/activity fails (500 / network).\n\t\t\t\t\t\t\t// Without it a failed load left the rail blank but \"live\",\n\t\t\t\t\t\t\t// hiding the failure. Mirrors the queue's showQueueError: a\n\t\t\t\t\t\t\t// localized message + a Retry button that re-fires the load.\n\t\t\t\t\t\t\t// Strings come from the feed's data-* (server-localized).\n\t\t\t\t\t\t\tfunction showError() {\n\t\t\t\t\t\t\t\tvar failed = feed.dataset.labelLoadFailed || '';\n\t\t\t\t\t\t\t\tvar retry = feed.dataset.labelRetry || '';\n\t\t\t\t\t\t\t\tfeed.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-center justify-between gap-3 px-4 py-3\" role=\"alert\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + esc(failed) + '</span>' +\n\t\t\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-activity-retry inline-flex items-center rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + esc(retry) + '</button>' +\n\t\t\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\t\t\tvar btn = feed.querySelector('.sw-activity-retry');\n\t\t\t\t\t\t\t\tif (btn) btn.addEventListener('click', function() {\n\t\t\t\t\t\t\t\t\tif (window.htmx) window.htmx.ajax('GET', '/dashboard/activity', {target: '#next-dash-activity-feed', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\twindow.swDashboardActivity = { showError: showError };\n\n\t\t\t\t\t\t\tvar src;\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tsrc = new EventSource(bp + '/api/v1/events/stream');\n\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\t// EventSource construction failed (unsupported / blocked):\n\t\t\t\t\t\t\t\t// surface \"reconnecting\" so the indicator does not falsely\n\t\t\t\t\t\t\t\t// read live, and log so the failure is diagnosable.\n\t\t\t\t\t\t\t\tconsole.warn('SSE init failed', e);\n\t\t\t\t\t\t\t\tsetStatus(false);\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tsrc.onopen = function() { setStatus(true); };\n\t\t\t\t\t\t\tsrc.onerror = function() { setStatus(false); };\n\t\t\t\t\t\t\tsrc.addEventListener('activity.recent', function(e) {\n\t\t\t\t\t\t\t\tvar env = {};\n\t\t\t\t\t\t\t\ttry { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }\n\t\t\t\t\t\t\t\t// The SSE wire payload is an envelope; the structured\n\t\t\t\t\t\t\t\t// rail fields (ts, kind, text, artistId) are nested\n\t\t\t\t\t\t\t\t// under .data, NOT at the top level. Reading the top\n\t\t\t\t\t\t\t\t// level (the spike bug) yields blank rows.\n\t\t\t\t\t\t\t\tvar d = env.data || {};\n\t\t\t\t\t\t\t\t// When the rail boots empty it shows the idle hint\n\t\t\t\t\t\t\t\t// instead of rows; clear it before the first live row.\n\t\t\t\t\t\t\t\tif (feed.querySelector('.sw-activity-row') === null) {\n\t\t\t\t\t\t\t\t\tfeed.innerHTML = '';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tfeed.insertBefore(buildRow(d), feed.firstChild);\n\t\t\t\t\t\t\t\t// Cap at 50 rows in the DOM; drop the oldest (last).\n\t\t\t\t\t\t\t\twhile (feed.children.length > 50) {\n\t\t\t\t\t\t\t\t\tfeed.removeChild(feed.lastChild);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tsetStatus(true);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t})();\n\t\t\t\t\t</script><!-- Footer \"View all activity\" link (restored, mirrors the stable\n\t\t\t\t\t     dashboard's activity feed footer in web/templates/dashboard.templ):\n\t\t\t\t\t     a subtle blue-ink link with a right-chevron, targeting the same\n\t\t\t\t\t     /activity route. A hairline top border separates it from the rows;\n\t\t\t\t\t     it sits inside the content-sized card (does not re-stretch it). --><div class=\"border-t border-[var(--swd-line)] px-4 py-2.5\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var81 templ.SafeURL
 			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/activity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 702, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 704, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 			if templ_7745c5c3_Err != nil {
@@ -1300,7 +1300,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var82 string
 			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.view_all_activity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 705, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 707, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 			if templ_7745c5c3_Err != nil {
@@ -1313,7 +1313,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var83 string
 			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 721, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 723, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 			if templ_7745c5c3_Err != nil {
@@ -1326,7 +1326,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.search"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 722, Col: 139}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 724, Col: 139}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1339,7 +1339,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 724, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 726, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 			if templ_7745c5c3_Err != nil {
@@ -1352,7 +1352,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 726, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 728, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 			if templ_7745c5c3_Err != nil {
@@ -1365,7 +1365,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var87 string
 			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 728, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 730, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 			if templ_7745c5c3_Err != nil {
@@ -1378,7 +1378,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var88 string
 			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 730, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 732, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 			if templ_7745c5c3_Err != nil {
@@ -1391,7 +1391,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 732, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 734, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 			if templ_7745c5c3_Err != nil {
@@ -1404,7 +1404,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var90 string
 			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 734, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 736, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 			if templ_7745c5c3_Err != nil {
@@ -1417,7 +1417,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_open"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 736, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 738, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 			if templ_7745c5c3_Err != nil {
@@ -1430,7 +1430,7 @@ func DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsResu
 			var templ_7745c5c3_Var92 string
 			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_undo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 738, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 740, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 			if templ_7745c5c3_Err != nil {
@@ -1576,7 +1576,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var99 string
 			templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1341, Col: 158}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1343, Col: 158}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 			if templ_7745c5c3_Err != nil {
@@ -1598,7 +1598,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var100 string
 			templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1352, Col: 158}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1354, Col: 158}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 			if templ_7745c5c3_Err != nil {
@@ -1611,7 +1611,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var101 string
 			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1376, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1378, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var101)
 			if templ_7745c5c3_Err != nil {
@@ -1624,7 +1624,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var102 string
 			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1377, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1379, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var102)
 			if templ_7745c5c3_Err != nil {
@@ -1637,7 +1637,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var103 string
 			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_open"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1378, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1380, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var103)
 			if templ_7745c5c3_Err != nil {
@@ -1650,7 +1650,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var104 string
 			templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1379, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1381, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var104)
 			if templ_7745c5c3_Err != nil {
@@ -1663,7 +1663,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var105 string
 			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1380, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1382, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var105)
 			if templ_7745c5c3_Err != nil {
@@ -1676,7 +1676,7 @@ func DashboardActionQueue(data templates.ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var106 string
 			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_undo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1382, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1384, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var106)
 			if templ_7745c5c3_Err != nil {
@@ -1785,7 +1785,7 @@ func DashboardActionQueuePage(data templates.ActionQueueData) templ.Component {
 		var templ_7745c5c3_Var108 string
 		templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1447, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1449, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 		if templ_7745c5c3_Err != nil {
@@ -1877,7 +1877,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		var templ_7745c5c3_Var110 string
 		templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.ResolveAttributeValue("queue-item-" + v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1495, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1497, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var110)
 		if templ_7745c5c3_Err != nil {
@@ -1890,7 +1890,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		var templ_7745c5c3_Var111 string
 		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1495, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1497, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var111)
 		if templ_7745c5c3_Err != nil {
@@ -1901,9 +1901,9 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var112 templ.SafeURL
-		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + v.ArtistID))
+		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/next/artists/" + v.ArtistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1497, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1499, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
 		if templ_7745c5c3_Err != nil {
@@ -1916,7 +1916,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		var templ_7745c5c3_Var113 string
 		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs(v.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1502, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1504, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
 		if templ_7745c5c3_Err != nil {
@@ -1976,7 +1976,7 @@ func DashboardActivityFeedNext(data templates.ActivityFeedData) templ.Component 
 			var templ_7745c5c3_Var115 string
 			templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1522, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1524, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
 			if templ_7745c5c3_Err != nil {
@@ -1989,7 +1989,7 @@ func DashboardActivityFeedNext(data templates.ActivityFeedData) templ.Component 
 			var templ_7745c5c3_Var116 string
 			templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle_action"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1528, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1530, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
 			if templ_7745c5c3_Err != nil {
@@ -2066,7 +2066,7 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 		var templ_7745c5c3_Var120 string
 		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.ResolveAttributeValue(activityKindIconPath(activityChangeKind(c)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1546, Col: 103}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1548, Col: 103}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var120)
 		if templ_7745c5c3_Err != nil {
@@ -2079,7 +2079,7 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 		var templ_7745c5c3_Var121 string
 		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.JoinStringErrs(activityChangeText(ctx, c))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1550, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1552, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
 		if templ_7745c5c3_Err != nil {
@@ -2092,7 +2092,7 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 		var templ_7745c5c3_Var122 string
 		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1552, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1554, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var122)
 		if templ_7745c5c3_Err != nil {
@@ -2105,7 +2105,7 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 		var templ_7745c5c3_Var123 string
 		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1553, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1555, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 		if templ_7745c5c3_Err != nil {
@@ -2118,7 +2118,7 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 		var templ_7745c5c3_Var124 string
 		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(activityRelTime(ctx, c.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1556, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1558, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 		if templ_7745c5c3_Err != nil {
@@ -2134,9 +2134,9 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var125 templ.SafeURL
-			templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + c.ArtistID))
+			templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/next/artists/" + c.ArtistID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1561, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1563, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var125))
 			if templ_7745c5c3_Err != nil {
@@ -2149,7 +2149,7 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 			var templ_7745c5c3_Var126 string
 			templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.view_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1563, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1565, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 			if templ_7745c5c3_Err != nil {
@@ -2162,7 +2162,7 @@ func DashboardActivityRowNext(c artist.MetadataChangeWithArtist, basePath string
 			var templ_7745c5c3_Var127 string
 			templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(c.ArtistName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1565, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/dashboard.templ`, Line: 1567, Col: 19}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
 			if templ_7745c5c3_Err != nil {

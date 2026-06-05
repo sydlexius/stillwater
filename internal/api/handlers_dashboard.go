@@ -99,6 +99,14 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 
 	ctx := req.Context()
 
+	// Next channel: inject the channel-aware artist-detail base so the SHARED
+	// DashboardActionCard links resolve to /next/artists/<id> rather than leaking
+	// to the stable /artists/<id> screen (M55 #1852). renderTempl renders with
+	// req.Context(), so wrap req here; the local ctx (service calls) is unaffected.
+	if middleware.UXChannelFromContext(ctx) == middleware.UXNext {
+		req = req.WithContext(templates.WithArtistDetailBase(ctx, "/next/artists"))
+	}
+
 	filters := parseDashboardFilters(req)
 	limit := r.getUserPageSize(ctx, userID, intQuery(req, "limit", 0))
 	offset := intQuery(req, "offset", 0)
