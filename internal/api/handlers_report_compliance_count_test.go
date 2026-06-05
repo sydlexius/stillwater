@@ -190,21 +190,35 @@ func TestHandleComplianceCount_CachedResult(t *testing.T) {
 	r, db := complianceCountTestRouter(t)
 	seedNonCompliantArtist(t, db)
 
-	// First call: populates the cache.
+	// First call: populates the cache with count=1.
 	rec1 := httptest.NewRecorder()
 	r.handleComplianceCount(rec1, withI18nCtx(t, adminComplianceCountReq()))
 	if rec1.Code != http.StatusOK {
 		t.Fatalf("first call: status = %d", rec1.Code)
 	}
+	if rec1.Body.String() == "" {
+		t.Fatal("first call: expected non-empty body (count pill) after seeding non-compliant artist")
+	}
 
-	// Second call: hits the TTL-fresh cache path without re-querying.
+	// Mutate the DB so all artists become compliant. If the second handler call
+	// re-queries the DB it will see count=0 and return an empty body; if it
+	// uses the in-memory cache it returns the previously stored count (same
+	// non-empty body as the first call).
+	if _, err := db.ExecContext(context.Background(),
+		`UPDATE artists SET health_score = 100`,
+	); err != nil {
+		t.Fatalf("DB mutation: %v", err)
+	}
+
+	// Second call: must hit the TTL-fresh cache path, not re-query the DB.
 	rec2 := httptest.NewRecorder()
 	r.handleComplianceCount(rec2, withI18nCtx(t, adminComplianceCountReq()))
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("second call: status = %d", rec2.Code)
 	}
-	// Both responses should carry the same count pill.
+	// The cached (pre-mutation) body must be served unchanged.
 	if rec1.Body.String() != rec2.Body.String() {
-		t.Errorf("cached response differs: first=%q second=%q", rec1.Body.String(), rec2.Body.String())
+		t.Errorf("cache not served: first=%q second=%q (second call re-queried the DB instead of using the cache)",
+			rec1.Body.String(), rec2.Body.String())
 	}
 }

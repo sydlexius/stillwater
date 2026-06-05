@@ -247,30 +247,30 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> <span id=\"sidebar-artist-count\" class=\"sw-sidebar-badge\" hx-get=\"/api/v1/artists/badge\" hx-trigger=\"load, every 120s\" hx-swap=\"innerHTML\"></span></a></li></ul></div><!-- Reports: section header (not a link) with Compliance + conditional children.\n\t\t     The REPORTS label is a presentational grouping cue only (aria-hidden);\n\t\t     the nav landmark + individual link labels carry the accessible meaning. --><div class=\"sw-sidebar-section\"><span class=\"sw-sidebar-section-label\" aria-hidden=\"true\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.reports"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 95, Col: 84}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</span><ul role=\"list\" class=\"sw-sidebar-nav-list\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> <span id=\"sidebar-artist-count\" class=\"sw-sidebar-badge\" hx-get=\"/api/v1/artists/badge\" hx-trigger=\"load, every 120s\" hx-swap=\"innerHTML\"></span></a></li></ul></div><!-- Reports: admin-only section. The section label and all children are\n\t\t     hidden from non-admin roles; wrapping the whole block prevents the\n\t\t     \"REPORTS\" heading from rendering with an empty list underneath. -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if assets.IsAdmin {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<!-- Compliance: HTMX-hydrated; count = non-compliant artists\n\t\t\t\t\t     (health_score < 100). Empty body hides the item when the library\n\t\t\t\t\t     is fully compliant. ?ch=next tells the handler to use the /next/\n\t\t\t\t\t     href and include the chart-bar glyph. --> <li id=\"sidebar-compliance-nav\" hx-get=\"/api/v1/reports/compliance/count?ch=next\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></li><!-- Duplicates: same pattern as Compliance above. --> <li id=\"sidebar-duplicates-nav\" hx-get=\"/api/v1/reports/duplicates/count?ch=next\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></li><!-- Foreign Files: same pattern as Compliance above. --> <li id=\"sidebar-foreign-next\" hx-get=\"/api/v1/foreign-files/count?ch=next\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></li>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"sw-sidebar-section\"><span class=\"sw-sidebar-section-label\" aria-hidden=\"true\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var15 string
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.reports"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 96, Col: 85}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</span><ul role=\"list\" class=\"sw-sidebar-nav-list\"><!-- Compliance: HTMX-hydrated; count = non-compliant artists\n\t\t\t\t\t     (health_score < 100). Empty body hides the item when the library\n\t\t\t\t\t     is fully compliant. ?ch=next tells the handler to use the /next/\n\t\t\t\t\t     href and include the chart-bar glyph. --><li id=\"sidebar-compliance-nav\" hx-get=\"/api/v1/reports/compliance/count?ch=next\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></li><!-- Duplicates: same pattern as Compliance above. --><li id=\"sidebar-duplicates-nav\" hx-get=\"/api/v1/reports/duplicates/count?ch=next\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></li><!-- Foreign Files: same pattern as Compliance above. --><li id=\"sidebar-foreign-next\" hx-get=\"/api/v1/foreign-files/count?ch=next\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></li></ul></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</ul></div><!-- Activity: live pulse of library events --><div class=\"sw-sidebar-section\"><ul role=\"list\" class=\"sw-sidebar-nav-list\"><li><a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<!-- Activity: live pulse of library events --><div class=\"sw-sidebar-section\"><ul role=\"list\" class=\"sw-sidebar-nav-list\"><li><a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

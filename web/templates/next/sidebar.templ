@@ -88,13 +88,13 @@ templ Sidebar(assets templates.AssetPaths) {
 				</li>
 			</ul>
 		</div>
-		<!-- Reports: section header (not a link) with Compliance + conditional children.
-		     The REPORTS label is a presentational grouping cue only (aria-hidden);
-		     the nav landmark + individual link labels carry the accessible meaning. -->
-		<div class="sw-sidebar-section">
-			<span class="sw-sidebar-section-label" aria-hidden="true">{ t(ctx, "nav.reports") }</span>
-			<ul role="list" class="sw-sidebar-nav-list">
-				if assets.IsAdmin {
+		<!-- Reports: admin-only section. The section label and all children are
+		     hidden from non-admin roles; wrapping the whole block prevents the
+		     "REPORTS" heading from rendering with an empty list underneath. -->
+		if assets.IsAdmin {
+			<div class="sw-sidebar-section">
+				<span class="sw-sidebar-section-label" aria-hidden="true">{ t(ctx, "nav.reports") }</span>
+				<ul role="list" class="sw-sidebar-nav-list">
 					<!-- Compliance: HTMX-hydrated; count = non-compliant artists
 					     (health_score < 100). Empty body hides the item when the library
 					     is fully compliant. ?ch=next tells the handler to use the /next/
@@ -119,9 +119,9 @@ templ Sidebar(assets templates.AssetPaths) {
 						hx-trigger="load, every 60s"
 						hx-swap="innerHTML"
 					></li>
-				}
-			</ul>
-		</div>
+				</ul>
+			</div>
+		}
 		<!-- Activity: live pulse of library events -->
 		<div class="sw-sidebar-section">
 			<ul role="list" class="sw-sidebar-nav-list">
