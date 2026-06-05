@@ -6373,6 +6373,53 @@ paths:
                       type: object
                     description: List of historical health snapshots.
 
+  /reports/compliance/count:
+    get:
+      tags: [Reports]
+      summary: Sidebar count badge for the compliance report
+      description: >-
+        HTML fragment endpoint used by the sidebar's Compliance child link
+        (#1715). Returns an empty body when no non-compliant artists exist
+        (health_score < 100) OR when the query fails (fail-safe: handler logs
+        at warn and returns 200 + empty body so the sidebar simply does not
+        render the child). Clients MUST NOT interpret an empty body as a
+        definitive "zero non-compliant artists" signal -- it is "no actionable
+        nav child to render right now." When at least one non-compliant artist
+        exists, returns a populated <a> link element with the count and the
+        chart-bar glyph (three ascending bars). Admin-only; the
+        sidebar omits the placeholder for non-admin viewers so a healthy session
+        never makes the call. The handler memoizes the count for five minutes so
+        per-tab sidebar polling collapses to at most one query per window.
+        Non-administrators receive a 403 JSON response.
+      operationId: getComplianceCountBadge
+      parameters:
+        - name: ch
+          in: query
+          description: >-
+            Channel hint. Pass `next` when calling from the next/ sidebar to
+            receive /next/ hrefs and the chart-bar SVG glyph inline. Omit (or
+            pass any other value) for the stable sidebar fragment (no glyph,
+            stable hrefs).
+          schema:
+            type: string
+            enum: [next]
+      responses:
+        "200":
+          description: >-
+            HTML fragment for HTMX innerHTML swap. Empty body when count is
+            zero OR when the query is unavailable/fails (fail-safe); populated
+            <a> element with chart-bar glyph and badge pill when count > 0.
+          content:
+            text/html:
+              schema:
+                type: string
+        "403":
+          description: Non-administrators receive a 403 JSON response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /reports/compliance:
     get:
       tags: [Reports]
@@ -12565,6 +12612,50 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /foreign-files/count:
+    get:
+      tags: [Reports]
+      summary: Sidebar count badge for foreign files
+      description: >-
+        HTML fragment endpoint used by the sidebar's Foreign Files child link
+        (#1778). Non-administrators receive a 403 JSON response. Returns an
+        empty body when no foreign files are in the ledger or when the count
+        lookup fails (fail-safe; the sidebar template only renders this
+        placeholder for administrators, so a healthy session never triggers the
+        403 path). When at least one file exists, returns a populated <a> link
+        element with the file count. The ?ch=next query parameter switches the
+        href from the stable /settings/foreign-files path to /next/foreign and
+        includes the plain document glyph (IconDocument) for the next/ sidebar style. Unlike
+        the duplicates-count endpoint, this endpoint is not cached; the foreign-
+        file count already has its own DB-level summarization via
+        foreignSummaryForBanner.
+      operationId: getForeignFilesCountBadge
+      parameters:
+        - in: query
+          name: ch
+          schema:
+            type: string
+            enum: [next]
+          required: false
+          description: >-
+            Channel hint. Set to "next" when the caller is the next/ sidebar;
+            the response then uses the /next/foreign href and includes the
+            plain document glyph (IconDocument). Omit for the stable sidebar.
+      responses:
+        "200":
+          description: >-
+            HTML fragment. Empty body when count is zero; populated <a> link
+            when count > 0. Non-administrators receive 403 (see below).
+          content:
+            text/html:
+              schema:
+                type: string
+        "403":
+          description: Administrator role required.
           content:
             application/json:
               schema:

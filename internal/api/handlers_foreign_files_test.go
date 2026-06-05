@@ -950,6 +950,142 @@ func TestHandleForeignFilesDismiss_SharedContentHash(t *testing.T) {
 	}
 }
 
+// -- handleForeignFilesCount tests --
+
+// TestHandleForeignFilesCount_EmptyWhenZero asserts the empty-body branch so
+// the sidebar's hx-swap=innerHTML clears the placeholder when no files are
+// detected. A 200 with empty body is the contract; HTMX treats it as "remove
+// the child".
+func TestHandleForeignFilesCount_EmptyWhenZero(t *testing.T) {
+	t.Parallel()
+	r, _ := newTestRouterWithForeign(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count", nil)
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "" {
+		t.Errorf("body = %q, want empty for zero count", got)
+	}
+}
+
+// TestHandleForeignFilesCount_NonAdmin asserts the role gate: an authenticated
+// operator receives a 403 and the handler never reaches the count lookup.
+func TestHandleForeignFilesCount_NonAdmin(t *testing.T) {
+	t.Parallel()
+	r, _ := newTestRouterWithForeign(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count", nil)
+	ctx := middleware.WithTestUserID(req.Context(), "user-1")
+	ctx = middleware.WithTestRole(ctx, "operator")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandleForeignFilesCount_StableChannel asserts the stable-sidebar branch:
+// when count > 0 and ?ch=next is absent, the link uses /settings/foreign-files
+// and the sw-sidebar-badge-pill class (no icon).
+func TestHandleForeignFilesCount_StableChannel(t *testing.T) {
+	t.Parallel()
+	r, db := newTestRouterWithForeign(t)
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a1", FilePath: "/m/Aretha/backdrop.jpg", FileName: "backdrop.jpg",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	req := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count", nil))
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`href="/settings/foreign-files"`,
+		`data-path="/settings/foreign-files"`,
+		`sw-sidebar-badge-pill`,
+		`>1<`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q\nfull body: %s", want, body)
+		}
+	}
+}
+
+// TestHandleForeignFilesCount_NextChannel asserts the next/-sidebar branch:
+// when count > 0 and ?ch=next is set, the link uses /next/foreign,
+// sw-sidebar-count-pill, and includes the doc-question glyph SVG.
+func TestHandleForeignFilesCount_NextChannel(t *testing.T) {
+	t.Parallel()
+	r, db := newTestRouterWithForeign(t)
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a1", FilePath: "/m/Aretha/backdrop.jpg", FileName: "backdrop.jpg",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	req := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`href="/next/foreign"`,
+		`data-path="/foreign"`,
+		`sw-sidebar-count-pill`,
+		`>1<`,
+		`<svg`, // glyph present in next/ branch
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q\nfull body: %s", want, body)
+		}
+	}
+}
+
+// TestHandleForeignFilesCount_CountError pins the fail-safe branch: when the
+// underlying Count call fails (here forced by closing the DB before the handler
+// call), foreignSummaryForBanner returns 0 and the handler emits an empty 200
+// body so the sidebar simply does not render the Foreign Files child. Surfacing
+// the error inline would clutter every sidebar refresh. This mirrors the
+// analogous TestHandleArtistDuplicatesCount_DetectorError test.
+func TestHandleForeignFilesCount_CountError(t *testing.T) {
+	t.Parallel()
+	r, db := newTestRouterWithForeign(t)
+	// Close DB so every repo call returns an error; foreignSummaryForBanner
+	// will log a Warn and return 0, triggering the empty-body path.
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count", nil)
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (fail-safe empty body); body=%q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "" {
+		t.Errorf("body = %q, want empty (count error must not surface inline)", got)
+	}
+}
+
 // TestResolveForeignHash_BackfillsFromDisk covers the on-demand rehash
 // path for pre-008 ledger rows whose content_hash column is empty. The
 // handler must recompute the digest from disk so the allowlist write

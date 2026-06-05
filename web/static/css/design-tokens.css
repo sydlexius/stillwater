@@ -65,7 +65,9 @@
   --sw-sidebar-text: #94a3b8;
   --sw-sidebar-text-hover: #cbd5e1;
   --sw-sidebar-active-bg: rgba(59, 130, 246, 0.15);
-  --sw-sidebar-active-text: #60a5fa;
+  /* a11y: blue-300 (was blue-400) lifts the active nav label to WCAG AA over the
+     translucent active-bg at the 85% default Background-Opacity. */
+  --sw-sidebar-active-text: #93c5fd;
   --sw-sidebar-glass-bg: rgba(15, 23, 42, 0.96);
   --sw-sidebar-border: rgba(255, 255, 255, 0.06);
   --sw-sidebar-width-full: 220px;
@@ -129,7 +131,8 @@
   --sw-sidebar-text: #94a3b8;
   --sw-sidebar-text-hover: #cbd5e1;
   --sw-sidebar-active-bg: rgba(59, 130, 246, 0.15);
-  --sw-sidebar-active-text: #60a5fa;
+  /* a11y: blue-300 (was blue-400) for WCAG AA on the active nav label. */
+  --sw-sidebar-active-text: #93c5fd;
   --sw-sidebar-glass-bg: rgba(15, 23, 42, 0.96);
   --sw-sidebar-border: rgba(255, 255, 255, 0.06);
   --sw-sidebar-restore-hover-bg: rgba(15, 23, 42, 0.9);
@@ -142,7 +145,8 @@
   --sw-sidebar-text: #475569;
   --sw-sidebar-text-hover: #1e293b;
   --sw-sidebar-active-bg: rgba(59, 130, 246, 0.1);
-  --sw-sidebar-active-text: #2563eb;
+  /* a11y: blue-800 (was blue-600) for WCAG AA on the active nav label in light. */
+  --sw-sidebar-active-text: #1e40af;
   --sw-sidebar-glass-bg: rgba(255, 255, 255, 0.78);
   --sw-sidebar-border: rgba(0, 0, 0, 0.08);
   --sw-sidebar-restore-hover-bg: rgba(241, 245, 249, 0.98);

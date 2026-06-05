@@ -191,3 +191,36 @@ func TestHandleArtistDuplicatesCount_CacheTTL(t *testing.T) {
 		t.Errorf("refresh fn calls = %d after invalidate, want 2", calls)
 	}
 }
+
+// TestHandleArtistDuplicatesCount_NextChannel asserts the ?ch=next branch:
+// when count > 0 and the next/ channel param is set, the link uses
+// /next/reports/duplicates and the sw-sidebar-count-pill class (with icon).
+// The stable branch is covered by TestHandleArtistDuplicatesCount_WithDuplicates.
+func TestHandleArtistDuplicatesCount_NextChannel(t *testing.T) {
+	r, db := countTestRouter(t)
+	seedTwoDuplicates(t, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/duplicates/count?ch=next", nil)
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	r.handleArtistDuplicatesCount(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`href="/next/reports/duplicates"`,
+		`data-path="/reports/duplicates"`,
+		`sw-sidebar-count-pill`,
+		`>1<`,  // one duplicate group
+		`<svg`, // glyph present in next/ branch
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q\nfull body: %s", want, body)
+		}
+	}
+}
