@@ -78,6 +78,23 @@ type Event struct {
 	Data      map[string]any `json:"data,omitempty"`
 }
 
+// NewActivityRecent builds an ActivityRecent event for the next/ dashboard's
+// live activity rail. The Data shape -- {ts, kind, text, artistId} -- is the
+// contract the SSE hub serializes and the rail JS reads, so all emitters
+// (manual field edits, clears, reverts, and rule auto-fixes) build it here to
+// avoid drift. kind is one of set/cleared/reverted/changed; artistID may be "".
+func NewActivityRecent(kind, text, artistID string) Event {
+	return Event{
+		Type: ActivityRecent,
+		Data: map[string]any{
+			"ts":       time.Now().UTC().Format(time.RFC3339),
+			"kind":     kind,
+			"text":     text,
+			"artistId": artistID,
+		},
+	}
+}
+
 // Handler is a function that processes an event.
 type Handler func(Event)
 

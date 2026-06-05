@@ -1325,7 +1325,14 @@ input:-webkit-autofill:focus {
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
-  transition: transform 0.25s ease;
+  /* Invisible (not just off-screen) when inactive: the panel slides out, then
+   * visibility flips to hidden AFTER the 0.25s slide so it is fully removed from
+   * paint, find-in-page, and the tab order when closed (maintainer: "the filter
+   * flyout must be invisible when not selected"). aria-hidden + inert (set in
+   * the markup) already hide it from assistive tech; visibility:hidden closes
+   * the visual + find-in-page gap a translated-but-visible panel leaves. */
+  visibility: hidden;
+  transition: transform 0.25s ease, visibility 0s linear 0.25s;
   border-left: 1px solid var(--sw-glass-border);
   border-radius: var(--sw-radius-lg) 0 0 var(--sw-radius-lg);
   overflow: hidden;
@@ -1335,16 +1342,27 @@ input:-webkit-autofill:focus {
 
 .sw-filter-flyout.sw-filter-flyout--open {
   transform: translateX(0);
+  /* Show immediately on open (no visibility delay) so the slide-in is visible. */
+  visibility: visible;
+  transition: transform 0.25s ease, visibility 0s linear 0s;
 }
 
-/* Respect reduced-motion preference: disable slide animation */
+/* Respect the motion + lite preferences: snap the slide (and the visibility
+ * flip) instantly so no animation plays. Applies under OS prefers-reduced-motion,
+ * the reduced_motion pref ([data-motion="on"]), and lite mode ([data-lite="on"]).
+ * With transition:none the visibility change is immediate, so closing hides the
+ * panel at once rather than after the (now absent) slide. */
 @media (prefers-reduced-motion: reduce) {
-  .sw-filter-flyout {
-    transition: none;
-  }
+  .sw-filter-flyout,
   .sw-filter-scrim {
     transition: none;
   }
+}
+[data-motion="on"] .sw-filter-flyout,
+[data-motion="on"] .sw-filter-scrim,
+[data-lite="on"] .sw-filter-flyout,
+[data-lite="on"] .sw-filter-scrim {
+  transition: none;
 }
 
 /* Header */
@@ -1881,23 +1899,49 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * treatment applies on the dashboard toolbar and tip line without forking. */
 .sw-next-artists .sw-kbd,
 .sw-next-dashboard .sw-kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  position: relative;
+  isolation: isolate;
+  /* Route the keycap glyph through the mono Font Family pref seam (matches the
+   * activity-rail timestamps), so a user-picked mono applies here too. Defaults
+   * to JetBrains Mono -> the same system-mono stack this used before. */
+  font-family: var(--sw-font-mono);
   font-size: 11px;
   line-height: 1;
-  padding: 2px 5px;
-  border: 1px solid #cbd5e1;
-  border-bottom-width: 2px;
-  border-radius: 4px;
+  padding: 2px 6px;
   color: #64748b;
-  background: #f8fafc;
+  /* Fill moves to the squircle backdrop (::before) so it can frost with the
+   * Background Opacity pref instead of a flat keycap tint. */
+  background: transparent;
+  border: 0;
   align-items: center;
   gap: 2px;
 }
+/* Squircle keycap backdrop (maintainer request): a superellipse panel behind
+ * the shortcut glyph whose fill tracks --sw-glass-bg, so the keycaps frost with
+ * the SAME glass/opacity preference as the cards (dial opacity down and the
+ * photo backdrop bleeds through the keycap too). The shape is painted with a
+ * superellipse `mask`; `border-radius` is the rounded-rect fallback for the rare
+ * browser without mask support. Sits at z-index -1 under the glyph (the parent
+ * `isolation: isolate` keeps that local). The light/dark fill comes straight
+ * from --sw-glass-bg; only the fallback tint differs per theme. */
+.sw-next-artists .sw-kbd::before,
+.sw-next-dashboard .sw-kbd::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--sw-glass-bg, #f8fafc);
+  border-radius: 6px;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%20preserveAspectRatio='none'%3E%3Cpath%20d='M50%200C8%200%200%208%200%2050C0%2092%208%20100%2050%20100C92%20100%20100%2092%20100%2050C100%208%2092%200%2050%200Z'%20fill='black'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%20preserveAspectRatio='none'%3E%3Cpath%20d='M50%200C8%200%200%208%200%2050C0%2092%208%20100%2050%20100C92%20100%20100%2092%20100%2050C100%208%2092%200%2050%200Z'%20fill='black'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
 .dark .sw-next-artists .sw-kbd,
 .dark .sw-next-dashboard .sw-kbd {
-  border-color: #475569;
   color: #94a3b8;
-  background: #0f172a;
+}
+.dark .sw-next-artists .sw-kbd::before,
+.dark .sw-next-dashboard .sw-kbd::before {
+  background: var(--sw-glass-bg, #0f172a);
 }
 .sw-next-artists .sw-list-tips,
 .sw-next-dashboard .sw-list-tips {
@@ -1916,6 +1960,22 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 .dark .sw-next-artists .sw-list-tips,
 .dark .sw-next-dashboard .sw-list-tips {
   color: #94a3b8;
+}
+/* a11y / #1784 contrast floor: the keyboard-shortcut tips row sits over the
+ * dynamic photo backdrop, where the bare tip text + keycaps were illegible.
+ * Give the row a frosted surface whose opacity tracks the Background Opacity
+ * pref -- --swd-surface == var(--sw-glass-bg) on .sw-next-dashboard (the #1851
+ * token block), mirroring .sw-dash-card -- so the row stays legible at high AND
+ * low opacity in both themes with no bespoke pref hook. Scoped to
+ * .sw-next-dashboard so the artists screen keeps its own (the artist-detail
+ * teammate scopes the equivalent on its surface, avoiding a shared-rule clash).
+ * The existing tip-text colors were authored AA-on-surface, so they need no
+ * change now that a surface exists. */
+.sw-next-dashboard .sw-list-tips {
+  padding: 6px 10px;
+  background: var(--swd-surface);
+  border: 1px solid var(--swd-line);
+  border-radius: var(--swd-r-2);
 }
 
 /* next/ bulk selection strip (M55 #1335): the dissolved bulk bar's contextual
@@ -2019,18 +2079,25 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  *   Light  .what #64748b on #ffffff ~=  4.8:1  (PASS, body)
  *   Light  .sev.err #b91c1c on #fee2e2 tint    ~=  6.5:1  (PASS)
  * ===================================================================== */
-.sw-next-dashboard,
 /* next/ ambient backdrop: render the rotating artwork SHARP (maintainer UAT --
  * "ditch the blur, rely on the glass alone"). The shared backdrop img carries an
  * inline `filter: blur(60px) ...`, so an !important override is required to drop
  * the blur; the brightness/saturate tone (which aids text contrast over the now-
  * sharp image, cf. #1784) and the slight zoom are kept. Scoped to .sw-next-shell
  * so the stable channel's backdrop is unchanged. The frosted-glass CARDS are
- * untouched -- their backdrop-filter / --sw-glass-bg still frost what's behind. */
+ * untouched -- their backdrop-filter / --sw-glass-bg still frost what's behind.
+ *
+ * IMPORTANT: this selector MUST stay disjoint from the .sw-next-dashboard token
+ * block below. A prior refactor (6520e522) left a trailing-comma on
+ * `.sw-next-dashboard,` here, which (a) stripped the dashboard's --swd-* tokens
+ * (transparent surfaces, #1851) and (b) put `filter` on .sw-next-dashboard
+ * itself, making it a containing block that broke the position:fixed filter
+ * flyout + scrim. Keep the filter on #ambient-backdrop-img ONLY. */
 .sw-next-shell #ambient-backdrop-img {
   filter: brightness(0.7) saturate(1.4) !important;
 }
 
+.sw-next-dashboard,
 .sw-next-artist-detail {
   /* Light-theme token ramp (default). Shared by the dashboard and the next/
    * artist-detail screen (M55 #1336) so both consume the same prototype card
@@ -2093,6 +2160,29 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --swd-cat-meta: #fbbf24;
 }
 
+/* Pref-aware type-scale tokens (M55 #1853, dashboard half): one rem-based ramp
+ * the dashboard consumes in place of its hard-coded px font-sizes (stat bubbles,
+ * card head, action-queue rows, activity rail). Sizes are rem so the Font Size
+ * preference (which sets the root font-size to 13/14/16px) scales the whole
+ * ramp; the family roles bind to --sw-font-sans (the Font Family preference) and
+ * --sw-font-mono -- the same pickable-fonts seam the artist-detail screen uses.
+ * The uppercase label role carries a fixed role tracking; body/value/meta set no
+ * letter-spacing of their own so they inherit the root letter-spacing the Spacing
+ * preference sets. Values mirror the artist-detail --sw-ad-font-* ramp so both
+ * next/ screens sit on one shared scale (section/value 0.875rem, label/meta
+ * 0.75rem). Scoped to .sw-next-dashboard so artists/settings keep their own
+ * rollout (#1853 is component-by-component). */
+.sw-next-dashboard {
+  --sw-type-stat: 1.75rem;     /* big stat number (health %, counts) */
+  --sw-type-section: 0.875rem; /* card .head h2 (section heading) */
+  --sw-type-value: 0.875rem;   /* primary row text (artist name, activity text) */
+  --sw-type-label: 0.75rem;    /* uppercase eyebrow / quiet label */
+  --sw-type-meta: 0.75rem;     /* secondary / quiet meta (card meta, message) */
+  --sw-type-badge: 0.75rem;    /* badge / avatar initials */
+  --sw-type-mono: 0.75rem;     /* IDs / timestamps (activity rail), mono family */
+  --sw-type-track-label: 0.05em;
+}
+
 /* NOTE (M55 #1336, 4A UAT round 3): the artist-detail screen intentionally does
  * NOT override --swd-surface. It routes through the SAME glass chain as the
  * dashboard (--swd-surface = var(--sw-glass-bg)) so the maintainer's
@@ -2133,6 +2223,17 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   font-size: 12px;
   color: var(--swd-ink-3);
   font-variant-numeric: tabular-nums;
+}
+/* Dashboard card head h2 + meta consume the rem type tokens so they rescale with
+ * the Font Size pref (#1853). Scoped to .sw-next-dashboard and ordered after the
+ * shared rules above; artist-detail keeps its own --sw-ad-font-* overrides, so
+ * these dashboard-only rules never touch the artist-detail head. */
+.sw-next-dashboard .sw-dash-card > .head h2 {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-type-section);
+}
+.sw-next-dashboard .sw-dash-card > .head .meta {
+  font-size: var(--sw-type-meta);
 }
 .sw-next-dashboard .sw-dash-card > .body,
 .sw-next-artist-detail .sw-dash-card > .body {
@@ -2788,13 +2889,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   background: var(--swd-surface-elev);
 }
 .sw-next-dashboard .sw-stat-label {
-  font-size: 11.5px;
+  font-size: var(--sw-type-label);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--sw-type-track-label);
   color: var(--swd-ink-3);
 }
 .sw-next-dashboard .sw-stat-val {
-  font-size: 28px;
+  font-size: var(--sw-type-stat);
   font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.02em;
@@ -2805,13 +2906,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * --sm variant (placeholders and the last-evaluated relative time) matches the
  * numeric bubbles rather than reading smaller. */
 .sw-next-dashboard .sw-stat-val--sm {
-  font-size: 28px;
+  font-size: var(--sw-type-stat);
 }
 /* Health score value: 28px tabular but NO token color, so the green/red
  * status hue from dashHealthScoreTextClass survives (the score is the one
  * stat whose color is a meaningful signal, not neutral ink). */
 .sw-next-dashboard .sw-stat-health-val {
-  font-size: 28px;
+  font-size: var(--sw-type-stat);
   font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.02em;
@@ -2831,7 +2932,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * glyph renders the state, hover darkens the label, and the glyphs swap on the
  * native checkbox's :checked / :indeterminate state via the sibling box. */
 .sw-next-dashboard .sw-select-all {
-  font-size: 12px;
+  font-size: var(--sw-type-meta);
   color: var(--swd-ink-2);
   padding: 5px 4px;
   transition: color 120ms ease;
@@ -2944,6 +3045,41 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   background: var(--swd-surface-elev);
   box-shadow: none;
 }
+/* No-solid-blue principle (#32): the SHARED DashboardActionCard's primary fix
+ * button ("Fetch image" / "Generate NFO" / ...) ships solid blue (bg-blue-600)
+ * for the stable channel; in next/ it adopts the thin-outline + backdrop
+ * treatment matching the Run-rules + artist-detail header buttons. Scoped to
+ * .sw-next-dashboard so the stable channel's button is untouched; targets the
+ * fix button by its hx-post (the dismiss button is already neutral). Blue stays
+ * reserved for the active-toggle halo. The hover backdrop tracks the surface
+ * tokens so it reads in both themes (white/5 would be invisible in light). */
+.sw-next-dashboard .action-card button[hx-post$="/fix"] {
+  background: transparent;
+  border: 1px solid var(--swd-line);
+  color: var(--swd-ink-2);
+  box-shadow: none;
+}
+.sw-next-dashboard .action-card button[hx-post$="/fix"]:hover:not(:disabled) {
+  background: var(--swd-surface-elev);
+  color: var(--swd-ink);
+}
+/* No-solid-blue principle (#37): the SHARED DashboardActionCard's nfo_has_mbid
+ * "Re-identify" link ships solid indigo (bg-indigo-600) for the stable channel;
+ * in next/ it adopts the same thin-outline treatment as the fix button above.
+ * Scoped to .sw-next-dashboard so the stable channel's link is untouched, and
+ * hooked on the indigo utility (the only indigo anchor in the card; the gray
+ * artist-name link is unaffected). The Run-rules confirm button stays blue by
+ * design (expensive/stand-out action). */
+.sw-next-dashboard .action-card a.bg-indigo-600 {
+  background: transparent;
+  border: 1px solid var(--swd-line);
+  color: var(--swd-ink-2);
+  box-shadow: none;
+}
+.sw-next-dashboard .action-card a.bg-indigo-600:hover {
+  background: var(--swd-surface-elev);
+  color: var(--swd-ink);
+}
 /* Category left-accent color from the token, keyed by the card's own
  * border-l-* utility (categoryBorderClass emits red/indigo/amber/gray). The
  * shared utility sets the color; these scoped rules retint it to the
@@ -2964,17 +3100,21 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 /* Artist name (.who): 13px / 500. The name link is the card's content
  * <a> (the only link with text-sm font-medium inside the content column). */
 .sw-next-dashboard .action-card a.font-medium {
-  font-size: 13px;
+  font-size: var(--sw-type-value);
   font-weight: 500;
   color: var(--swd-ink);
 }
 .sw-next-dashboard .action-card a.font-medium:hover {
   color: var(--swd-blue-ink);
 }
-/* Violation message (.what): 12px ink-3. The message is the card's only <p>. */
+/* Violation message (.what): 12px. The message is the card's only <p>. Uses
+ * ink-2 (not ink-3): ink-3 over the glass surface lands at ~4.25:1 in dark mode
+ * (just under WCAG AA 4.5:1 for this 12px body text), so the message -- the
+ * card's primary descriptive content -- adopts the secondary ink, which clears
+ * AA in both themes while keeping it below the ink-strength of the artist name. */
 .sw-next-dashboard .action-card p {
-  font-size: 12px;
-  color: var(--swd-ink-3);
+  font-size: var(--sw-type-meta);
+  color: var(--swd-ink-2);
   margin-top: 1px;
 }
 /* Avatar (.av): the card ships a 32px (h-8 w-8) `relative` wrapper holding an
@@ -2984,7 +3124,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 .sw-next-dashboard .action-card .relative.h-8.w-8 > div {
   background: linear-gradient(135deg, #475569, #1e293b);
   color: #e2e8f0;
-  font-size: 11.5px;
+  font-size: var(--sw-type-badge);
   font-weight: 600;
 }
 
@@ -3003,10 +3143,10 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   height: 18px;
   padding: 0 6px 0 4px;
   border-radius: 4px;
-  font-size: 10.5px;
+  font-size: var(--sw-type-label);
   font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--sw-type-track-label);
 }
 .sw-next-dashboard .action-card span.uppercase::before {
   content: "";
@@ -3018,18 +3158,24 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 /* Severity-keyed colors: severityBadgeClass emits a text-*-700 (light) class
  * per severity, which we use as the hook to set the token-driven ink + tint.
- * error -> text-red-700, warning -> text-amber-700, info -> text-blue-700. */
+ * error -> text-red-700, warning -> text-amber-700, info -> text-blue-700.
+ * The chip background is an OPAQUE mix over the raised surface rather than the
+ * translucent *-soft tint: the soft tint composited over the glass card, so at
+ * lower Background Opacity prefs the effective background lightened and the
+ * bright dark-mode error ink dropped to ~4.39:1 (just under WCAG AA). Mixing
+ * the accent into the solid --swd-bg-raised makes the chip's contrast
+ * deterministic and independent of the glass-opacity pref in both themes. */
 .sw-next-dashboard .action-card span.text-red-700 {
   color: var(--swd-err);
-  background: var(--swd-err-soft);
+  background: color-mix(in srgb, var(--swd-err) 16%, var(--swd-bg-raised));
 }
 .sw-next-dashboard .action-card span.text-amber-700 {
   color: var(--swd-warn);
-  background: var(--swd-warn-soft);
+  background: color-mix(in srgb, var(--swd-warn) 16%, var(--swd-bg-raised));
 }
 .sw-next-dashboard .action-card span.text-blue-700 {
   color: var(--swd-info);
-  background: var(--swd-info-soft);
+  background: color-mix(in srgb, var(--swd-info) 16%, var(--swd-bg-raised));
 }
 
 /* Tighten the inter-row gap to the prototype's 6px rhythm. The queue wraps the
@@ -3077,7 +3223,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 .sw-next-dashboard .sw-activity-row > svg.text-blue-500 { color: var(--swd-blue-ink); }
 /* Primary text + timestamp ramp. */
 .sw-next-dashboard .sw-activity-row span.truncate {
-  font-size: 13px;
+  font-size: var(--sw-type-value);
   color: var(--swd-ink-2);
 }
 /* Timestamp: the prototype's `.ts` is mono / 11px / ink-3. The app does NOT
@@ -3085,8 +3231,8 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * mono stack (no new web font; see the report's font-family flag). tabular-nums
  * keeps the relative-time digits column-aligned. */
 .sw-next-dashboard .sw-activity-row time {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-family: var(--sw-font-mono);
+  font-size: var(--sw-type-mono);
   font-variant-numeric: tabular-nums;
   color: var(--swd-ink-3);
 }

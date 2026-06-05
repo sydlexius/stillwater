@@ -635,6 +635,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 				type="checkbox"
 				name="violation_ids"
 				value={ v.ID }
+				aria-label={ tf(ctx, "dashboard.bulk_select_violation", v.ArtistName) }
 				class="bulk-check h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
 			/>
 			// Artist avatar with initials fallback
@@ -653,7 +654,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center gap-1.5">
 					<a
-						href={ templ.SafeURL(basePath + "/artists/" + v.ArtistID) }
+						href={ artistDetailHref(ctx, basePath, v.ArtistID) }
 						class="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 truncate"
 					>
 						{ v.ArtistName }
@@ -686,7 +687,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 					// MBID violations are fixable but may not be marked as such;
 					// link to the artist page where the user can re-identify.
 					<a
-						href={ templ.SafeURL(basePath + "/artists/" + v.ArtistID) }
+						href={ artistDetailHref(ctx, basePath, v.ArtistID) }
 						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 shadow-sm transition-colors"
 					>
 						{ t(ctx, "dashboard.re_identify") }
