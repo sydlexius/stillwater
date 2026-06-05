@@ -835,6 +835,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// mux prefers them over /next/{path...}.
 	mux.HandleFunc("GET "+bp+"/next/{$}", wrapOptionalAuth(r.handleNextDashboardPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next", wrapOptionalAuth(r.handleNextDashboardPage, optAuthMw))
+	// M55 #1336: the next/ artist-detail page. More specific than the
+	// /next/{path...} fallback so Go's mux prefers it; renders the next template
+	// only when the resolved channel is "next" (otherwise it delegates to the
+	// stable tabbed detail page).
+	mux.HandleFunc("GET "+bp+"/next/artists/{id}", wrapOptionalAuth(r.handleNextArtistDetailPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

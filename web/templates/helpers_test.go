@@ -461,3 +461,75 @@ func TestLibraryDropdownLabel(t *testing.T) {
 		})
 	}
 }
+
+// TestNormalizeGenderDisplay locks the gender title-casing used on the metadata
+// Type/Gender row. The empty -> empty case is load-bearing: it lets the row fall
+// back to the "Not set" placeholder rather than rendering a stray value.
+func TestNormalizeGenderDisplay(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"female lower", "female", "Female"},
+		{"male upper", "MALE", "Male"},
+		{"hyphenated", "non-binary", "Non-Binary"},
+		{"empty stays empty", "", ""},
+		{"leading and trailing space trimmed", "  female  ", "Female"},
+		{"multibyte first rune", "ñina", "Ñina"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeGenderDisplay(tt.in); got != tt.want {
+				t.Errorf("normalizeGenderDisplay(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestArtistTypeLabelAndRowValue locks the type-label bucketing (incl. the alias
+// inputs and whitespace handling) and the row-value contract that an unset type
+// yields "" so the row shows "Not set" instead of the "Other" bucket label.
+func TestArtistTypeLabelAndRowValue(t *testing.T) {
+	ctx := testCtx(t)
+	labelTests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"person", "person", "Person"},
+		{"solo alias", "solo", "Person"},
+		{"solo act alias", "solo act", "Person"},
+		{"group", "group", "Group"},
+		{"orchestra", "orchestra", "Orchestra/Choir"},
+		{"choir alias", "choir", "Orchestra/Choir"},
+		{"uppercase + space trimmed", "  GROUP ", "Group"},
+		{"unknown -> other", "duo", "Other"},
+		{"empty -> other bucket", "", "Other"},
+	}
+	for _, tt := range labelTests {
+		t.Run("label/"+tt.name, func(t *testing.T) {
+			if got := ArtistTypeLabel(ctx, tt.in); got != tt.want {
+				t.Errorf("ArtistTypeLabel(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	rowTests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"set type -> label", "group", "Group"},
+		{"unset -> empty (Not set)", "", ""},
+		{"whitespace-only -> empty (Not set)", "   ", ""},
+		{"unknown -> other label", "duo", "Other"},
+	}
+	for _, tt := range rowTests {
+		t.Run("row/"+tt.name, func(t *testing.T) {
+			if got := artistTypeRowValue(ctx, tt.in); got != tt.want {
+				t.Errorf("artistTypeRowValue(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

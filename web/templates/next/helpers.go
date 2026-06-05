@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/i18n"
@@ -138,16 +137,9 @@ func nextLibraryName(a artist.Artist, libs []library.Library) string {
 // type_other = the negation facet that catches everything else (including
 // untyped artists).
 func nextTypeLabel(ctx context.Context, rawType string) string {
-	switch strings.ToLower(strings.TrimSpace(rawType)) {
-	case "person", "solo":
-		return t(ctx, "artists.filter.person")
-	case "group":
-		return t(ctx, "artists.filter.group")
-	case "orchestra", "choir":
-		return t(ctx, "artists.filter.orchestra")
-	default:
-		return t(ctx, "artists.filter.other")
-	}
+	// Delegate to the shared templates helper so the artists list, the
+	// artist-detail hero tag, and the metadata Type row can never diverge.
+	return templates.ArtistTypeLabel(ctx, rawType)
 }
 
 // nextShowAllPath mirrors the stable showAllPath: it rebuilds the list URL

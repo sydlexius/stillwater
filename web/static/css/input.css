@@ -2019,8 +2019,23 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  *   Light  .what #64748b on #ffffff ~=  4.8:1  (PASS, body)
  *   Light  .sev.err #b91c1c on #fee2e2 tint    ~=  6.5:1  (PASS)
  * ===================================================================== */
-.sw-next-dashboard {
-  /* Light-theme token ramp (default). */
+.sw-next-dashboard,
+/* next/ ambient backdrop: render the rotating artwork SHARP (maintainer UAT --
+ * "ditch the blur, rely on the glass alone"). The shared backdrop img carries an
+ * inline `filter: blur(60px) ...`, so an !important override is required to drop
+ * the blur; the brightness/saturate tone (which aids text contrast over the now-
+ * sharp image, cf. #1784) and the slight zoom are kept. Scoped to .sw-next-shell
+ * so the stable channel's backdrop is unchanged. The frosted-glass CARDS are
+ * untouched -- their backdrop-filter / --sw-glass-bg still frost what's behind. */
+.sw-next-shell #ambient-backdrop-img {
+  filter: brightness(0.7) saturate(1.4) !important;
+}
+
+.sw-next-artist-detail {
+  /* Light-theme token ramp (default). Shared by the dashboard and the next/
+   * artist-detail screen (M55 #1336) so both consume the same prototype card
+   * token system. Without this scope the --swd-* vars are undefined and the
+   * cards render transparent/un-themed (the 4A UAT fidelity miss). */
   --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
   --swd-bg-raised: #ffffff;     /* card */
   --swd-bg-elev: #f8fafc;       /* row hover / popover */
@@ -2055,7 +2070,8 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --swd-cat-nfo: #6366f1;
   --swd-cat-meta: #d97706;
 }
-.dark .sw-next-dashboard {
+.dark .sw-next-dashboard,
+.dark .sw-next-artist-detail {
   /* Prototype dark token ramp (design/tokens.css verbatim). */
   --swd-bg-base: #0b1220;
   --swd-bg-raised: #111a2e;
@@ -2077,48 +2093,683 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --swd-cat-meta: #fbbf24;
 }
 
+/* NOTE (M55 #1336, 4A UAT round 3): the artist-detail screen intentionally does
+ * NOT override --swd-surface. It routes through the SAME glass chain as the
+ * dashboard (--swd-surface = var(--sw-glass-bg)) so the maintainer's
+ * Background-Opacity preference governs card translucency (e.g. 64% lets the
+ * ambient backdrop bleed through), identical to next/dashboard. A prior round-2
+ * fixed-dark override that pinned the cards to ~90% opaque was removed here. */
+
 /* -- Layered card (.sw-dash-card): the prototype's `.sw-card` look (raised
  * surface, hairline border, 14px radius, soft shadow). A bespoke class (not
  * the app-global `.sw-card`) so the dashboard does NOT inherit the global
  * glass/blur treatment; this reads as a solid raised card on the base, giving
  * the prototype's card-on-base depth. head/body/foot mirror styles.css. */
-.sw-next-dashboard .sw-dash-card {
+.sw-next-dashboard .sw-dash-card,
+.sw-next-artist-detail .sw-dash-card {
   background: var(--swd-surface);
   border: 1px solid var(--swd-line);
   border-radius: var(--swd-r-3);
   box-shadow: var(--swd-shadow-1);
 }
-.sw-next-dashboard .sw-dash-card > .head {
+.sw-next-dashboard .sw-dash-card > .head,
+.sw-next-artist-detail .sw-dash-card > .head {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--swd-line);
 }
-.sw-next-dashboard .sw-dash-card > .head h2 {
+.sw-next-dashboard .sw-dash-card > .head h2,
+.sw-next-artist-detail .sw-dash-card > .head h2 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--swd-ink);
 }
-.sw-next-dashboard .sw-dash-card > .head .meta {
+.sw-next-dashboard .sw-dash-card > .head .meta,
+.sw-next-artist-detail .sw-dash-card > .head .meta {
   margin-left: auto;
   font-size: 12px;
   color: var(--swd-ink-3);
   font-variant-numeric: tabular-nums;
 }
-.sw-next-dashboard .sw-dash-card > .body {
+.sw-next-dashboard .sw-dash-card > .body,
+.sw-next-artist-detail .sw-dash-card > .body {
   padding: 16px 18px;
 }
-.sw-next-dashboard .sw-dash-card > .body.tight {
+.sw-next-dashboard .sw-dash-card > .body.tight,
+.sw-next-artist-detail .sw-dash-card > .body.tight {
   padding: 8px;
 }
-.sw-next-dashboard .sw-dash-card > .foot {
+.sw-next-dashboard .sw-dash-card > .foot,
+.sw-next-artist-detail .sw-dash-card > .foot {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 10px 18px;
   border-top: 1px solid var(--swd-line);
+}
+
+/* ==========================================================================
+ * next/ artist-detail prototype-fidelity reskin (M55 #1336, 4A).
+ *
+ * The page reuses v1 components (FieldDisplay, MembersSection, the field
+ * provider modal) for their wiring, then re-chromes them to the prototype's
+ * dark card system. Two moves make that work:
+ *   1. Neutralize the app-global `.sw-card` chrome WITHIN this page so reused
+ *      blocks (biography, members, tag fields) flatten into the enclosing
+ *      .sw-dash-card instead of rendering as raised white v1 cards.
+ *   2. Re-lay the FieldDisplay scalar rows (dt/dd) as a label | value
+ *      key-value grid (.sw-next-fields [id^="field-"]; the label column is
+ *      132px, narrowed to 112px inside the meta-body and identifiers).
+ * The --swd-* token ramp is shared with the dashboard (scoped above), so the
+ * cards already get the prototype surface/ink/line/shadow.
+ * ========================================================================== */
+
+/* (1) Flatten reused v1 .sw-card chrome inside the page so nested components
+ * read as flat sections of the dark card, not raised white cards. Two-class
+ * specificity (0,2,0) + later source order beats the Tailwind utilities the v1
+ * markup carries (bg-white/dark:bg-gray-800/shadow/rounded/p-6). */
+.sw-next-artist-detail .sw-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* Denser than the prototype (UAT round 3: the prototype wastes vertical space).
+ * Tighten the card header/body padding and the inter-card gap on this screen
+ * only, so the page reads compact without changing the shared dashboard. */
+.sw-next-artist-detail.space-y-4 > * + * {
+  margin-top: 0.625rem; /* 10px between cards (was 16px) */
+}
+.sw-next-artist-detail .sw-dash-card > .head {
+  padding: 10px 16px;
+}
+.sw-next-artist-detail .sw-dash-card > .body {
+  padding: 12px 16px;
+}
+
+/* (2) Hero: restrained dark card, NOT a fanart-dominated band. Three columns:
+ * portrait (thumb/logo) | meta (pills, name, summary bar) | actions column. */
+.sw-next-artist-detail .sw-next-hero .body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+}
+/* Hero thumbnail resize (M55 #1857): the Thumbnail Size preference sizes ONLY
+ * the artist-detail hero thumbnail (next/Artists has no thumbs; next/Dashboard's
+ * circular thumbs are out of scope and untouched). preferences.js already sets
+ * data-thumbnail-size on <html> from the pref, so this is pure CSS -- no new JS.
+ *   small  = current 96px (1.0x)
+ *   medium = 1.33x (~128px)
+ *   large  = 2.0x (192px) -- approximately fills the hero body top-to-bottom
+ *            minus its padding, because at this size the square thumbnail is the
+ *            tallest hero element and therefore drives the body's height.
+ * Growth: the thumbnail lives in the FIRST grid track (auto | 1fr | auto) with
+ * align-items:start, so its top and left edges stay anchored at the hero body's
+ * top-left padding; scaling it up grows it downward (taller) and widens the auto
+ * track, which shrinks the 1fr meta track so the name/type/details reflow to the
+ * right. Grid tracks never overlap, so the image can never cover the text. */
+.sw-next-artist-detail {
+  --sw-hero-thumb: 96px;
+}
+:root[data-thumbnail-size="small"] .sw-next-artist-detail {
+  --sw-hero-thumb: 96px;
+}
+:root[data-thumbnail-size="medium"] .sw-next-artist-detail {
+  --sw-hero-thumb: 128px;
+}
+:root[data-thumbnail-size="large"] .sw-next-artist-detail {
+  --sw-hero-thumb: 192px;
+}
+.sw-next-artist-detail .sw-next-hero-portrait {
+  width: var(--sw-hero-thumb, 96px);
+  height: var(--sw-hero-thumb, 96px);
+  border-radius: var(--swd-r-3);
+  object-fit: cover;
+  object-position: center;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid var(--swd-line);
+  flex-shrink: 0;
+  /* Smooth the resize when the pref changes live (respects reduced-motion via
+   * the global [data-motion]/prefers-reduced-motion rules). */
+  transition: width 160ms ease, height 160ms ease;
+}
+.sw-next-artist-detail .sw-next-hero-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sw-next-artist-detail .sw-next-hero-name {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-hero);
+  line-height: var(--sw-ad-lh-hero);
+  letter-spacing: var(--sw-ad-track-hero);
+  font-weight: 700;
+  color: var(--swd-ink);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* Artist logo in the hero name slot (item 12): cap its height so it reads as a
+ * name-sized brand mark, preserve aspect ratio, and left-align. The wrapping h1
+ * keeps its line-height so swapping logo<->text causes no layout shift. */
+.sw-next-artist-detail .sw-next-hero-logo {
+  display: block;
+  max-height: 48px;
+  max-width: min(420px, 100%);
+  width: auto;
+  object-fit: contain;
+  object-position: left center;
+}
+.sw-next-artist-detail .sw-next-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  min-width: 168px;
+}
+@media (max-width: 768px) {
+  .sw-next-artist-detail .sw-next-hero .body {
+    grid-template-columns: 1fr;
+  }
+  .sw-next-artist-detail .sw-next-hero-actions {
+    min-width: 0;
+  }
+}
+
+/* Compliance summary bar (.sw-next-summary): score + finding counts +
+ * ID coverage in a faint inset strip. */
+.sw-next-artist-detail .sw-next-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: var(--swd-r-2);
+  background: rgba(148, 163, 184, 0.05);
+  border: 1px solid var(--swd-line);
+  font-size: 13px;
+  color: var(--swd-ink-2);
+}
+.sw-next-artist-detail .sw-next-summary-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--swd-line);
+}
+.sw-next-artist-detail .sw-next-score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* (3) Field rows: re-lay the reused FieldDisplay dt/dd scalar rows as the
+ * prototype's label | value grid. The scalar fields render
+ * `<div id="field-x"><dt>label</dt><dd>value</dd></div>` inside .sw-next-fields. */
+/* The gender field is wrapped in a gender-wrap OOB-swap container; display:
+ * contents lets its inner field row participate directly in the grid flow so it
+ * lines up with its siblings while the wrapper stays the OOB target. */
+.sw-next-artist-detail .sw-next-fields > [id^="gender-wrap-"] {
+  display: contents;
+}
+.sw-next-artist-detail .sw-next-fields [id^="field-"] {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  padding: 3px 0;
+  margin: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  font-size: 13px;
+  line-height: 1.3;
+}
+.sw-next-artist-detail .sw-next-fields [id^="field-"] > dt {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-meta);
+  text-transform: uppercase;
+  letter-spacing: var(--sw-ad-track-label);
+  font-weight: 500;
+  color: var(--swd-ink-3);
+  /* Keep each field label on one line (UAT 4A item 5: labels were wrapping). */
+  white-space: nowrap;
+}
+/* Field values mirror the Biography treatment: body size, muted ink, 1.6
+ * line-height. The Identifiers card overrides this back to mono + prominent
+ * (IDs must stay legible and front-and-center), see the .sw-next-identifiers
+ * rule below. */
+.sw-next-artist-detail .sw-next-fields [id^="field-"] > dd {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-body);
+  font-weight: 400;
+  line-height: var(--sw-ad-lh-body);
+  color: var(--sw-ad-ink-muted);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .sw-next-artist-detail .sw-next-fields [id^="field-"] {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+/* (9) Reflowable Details pane (UAT 4A): on wide cards the Details/Identity
+ * scalars + Members + Aliases + Tags occupy the LEFT column and the Biography
+ * fills the RIGHT column -- short scalar values no longer waste the card's width
+ * down one tall column while the wide bio sits empty. It collapses to a
+ * single-column Details (with Tags) -> Bio stack at the narrow breakpoint so
+ * mobile / tablet / portrait read top-to-bottom. */
+.sw-next-artist-detail .sw-next-meta-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "details bio";
+  gap: 18px 30px;
+  align-items: start;
+}
+.sw-next-artist-detail .sw-next-meta-col--details {
+  grid-area: details;
+}
+.sw-next-artist-detail .sw-next-meta-col--bio {
+  grid-area: bio;
+}
+@media (max-width: 900px) {
+  .sw-next-artist-detail .sw-next-meta-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "details"
+      "bio";
+    gap: 16px;
+  }
+}
+
+/* The Aliases and Members blocks carry editing affordances (add-alias form,
+ * per-alias remove, the members fetch/clear kebab). Keep the read view clean
+ * (values only) and reveal those controls only in Edit mode, consistent with the
+ * per-field action gating. */
+.sw-next-artist-detail:not(.is-editing) .sw-next-alias-add,
+.sw-next-artist-detail:not(.is-editing) [id^="aliases-"] button,
+.sw-next-artist-detail:not(.is-editing) [data-context-menu^="members-"] {
+  display: none;
+}
+
+/* (5) Density: the Identity scalar values are short (one or two words each), so
+ * flow the rows into as many columns as the LEFT column can fit (auto-fit:
+ * usually two on a wide card, one when the left column is narrow or stacked).
+ * The Identifiers dl reflows the same way on its full-width card (see the
+ * .sw-next-identifiers block below) with a wider column min so UUIDs still fit. */
+.sw-next-artist-detail .sw-next-meta-body .sw-next-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));
+  column-gap: 28px;
+  row-gap: 0;
+}
+.sw-next-artist-detail .sw-next-meta-body .sw-next-fields [id^="field-"] {
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+/* Edit mode needs room. The read-view 2-column packing squeezes each edit input
+ * plus its lock/fetch/clear icons and save/cancel into a half-width cell, which
+ * mangled the rows (UAT 4A). While editing, drop the Identity scalars to a
+ * single column so every edit control gets the full row width and nothing
+ * collides; read view keeps the dense multi-column layout. */
+.sw-next-artist-detail.is-editing .sw-next-meta-body .sw-next-fields {
+  grid-template-columns: 1fr;
+}
+
+/* Provider IDs reflow into multiple columns like the Identity scalars
+ * (maintainer request) so the five short id rows do not waste the full-width
+ * card down one tall column. A wider column min (340px vs Identity's 225px)
+ * keeps a provider-id value roomy since the section spans the whole card; the
+ * nowrap + overflow-x rule below still guards the rare UUID that overruns its
+ * cell. Collapses to one column on a narrow card and in Edit mode (where each
+ * row's edit input + lock/fetch/clear controls need the full width). */
+.sw-next-artist-detail .sw-next-identifiers .sw-next-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  column-gap: 28px;
+  row-gap: 0;
+}
+.sw-next-artist-detail .sw-next-identifiers .sw-next-fields [id^="field-"] {
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+.sw-next-artist-detail.is-editing .sw-next-identifiers .sw-next-fields {
+  grid-template-columns: 1fr;
+}
+
+/* (4) Provider-ID rows wrapped needlessly (UAT 4A): a MusicBrainz UUID broke
+ * across lines because the value column allowed arbitrary mid-string wrapping.
+ * Keep each identifier value on ONE line, scrolling horizontally if it truly
+ * cannot fit, rather than wrapping. */
+.sw-next-artist-detail .sw-next-identifiers .sw-next-fields [id^="field-"] > dd {
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-wrap: normal;
+  /* IDs read mono + prominent (NOT muted): the value-field muted/sans treatment
+   * is reversed here so provider UUIDs stay legible and front-and-center. */
+  font-family: var(--sw-font-mono);
+  color: var(--swd-ink);
+}
+
+/* Biography mirrors the field-value treatment (body size, muted ink, 1.6
+ * line-height). The reused biographyDisplay <p> carries Tailwind
+ * text-gray-700/dark:text-gray-300 utilities; the two-class + descendant scope
+ * here (higher specificity) re-tints it to the muted ramp without touching the
+ * stable channel's biography. The italic "no biography" placeholder picks up the
+ * same role, which is fine (it is already a quiet line). */
+.sw-next-artist-detail .sw-next-meta-col--bio p {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-body);
+  font-weight: 400;
+  line-height: var(--sw-ad-lh-body);
+  color: var(--sw-ad-ink-muted);
+}
+
+/* Mono role (IDs / timestamps / code): anything flagged .font-mono on this
+ * screen (the hero on-disk path, inline code) renders in the mono ramp at the
+ * meta size and stays prominent, never muted. */
+.sw-next-artist-detail .font-mono {
+  font-family: var(--sw-font-mono);
+  font-size: var(--sw-ad-font-meta);
+  font-weight: 400;
+}
+
+/* Edit-mode carry-over (M55 #1853): a field must read identically whether it is
+ * being viewed or edited, so the inline edit inputs and the biography textarea
+ * adopt the SAME sans type tokens instead of reverting to browser-default input
+ * styling. The reused FieldDisplay inputs carry Tailwind text-sm; these next/-
+ * scoped rules win on specificity and only touch this screen (the stable channel
+ * keeps its default input styling). ID-field inputs keep the mono ramp so an
+ * identifier looks the same in the input as it does as a value. */
+.sw-next-artist-detail input[type="text"],
+.sw-next-artist-detail textarea {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-body);
+  font-weight: 400;
+  line-height: var(--sw-ad-lh-body);
+}
+.sw-next-artist-detail .sw-next-identifiers input[type="text"] {
+  font-family: var(--sw-font-mono);
+}
+
+/* Details card section structure (UAT round-3 item 6): compact rows WITHIN each
+ * group, but a clear visual break BETWEEN groups (identity / tags / biography /
+ * members / aliases) so the card reads as distinct labeled blocks, not one
+ * continuous feed. A hairline divider + spacing separates consecutive groups. */
+.sw-next-artist-detail .sw-next-meta-group + .sw-next-meta-group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--swd-line);
+}
+
+/* Pref-aware type-scale tokens (M55 #1853): one rem-based ramp the whole
+ * artist-detail screen consumes, in BOTH the read and edit views, replacing the
+ * earlier hard-coded px roles. Sizes are rem so the Font Size preference (which
+ * sets the root font-size to 13/14/16px) scales the entire ramp; the family
+ * roles bind to --sw-font-sans (the Font Family preference) and --sw-font-mono,
+ * the pickable-fonts seam. The uppercase eyebrow / label roles carry an
+ * intentional fixed role tracking; body and value text set no letter-spacing of
+ * their own, so they inherit the root letter-spacing the Spacing preference
+ * sets. The LOCKED values (prototyped live with the maintainer):
+ *   hero name   1.875rem / 700 / sans, tracking -0.01em, line-height 1.15
+ *   section h2  0.875rem / 600 / sans
+ *   eyebrow     0.75rem  / 600 / sans, uppercase, tracking 0.07em
+ *   field label 0.75rem  / 500 / sans, uppercase, tracking 0.06em
+ *   value + bio 0.875rem / 400 / sans, line-height 1.6, muted (mirror)
+ *   mono        0.75rem  / 400 / mono, prominent (IDs / timestamps / code)
+ * Muted ink mirrors the biography treatment: gray-500 (light) / gray-400 (dark). */
+.sw-next-artist-detail {
+  --sw-ad-font-hero: 1.875rem;
+  --sw-ad-font-section: 0.875rem;
+  --sw-ad-font-body: 0.875rem;
+  --sw-ad-font-meta: 0.75rem;
+  --sw-ad-lh-hero: 1.15;
+  --sw-ad-lh-body: 1.6;
+  --sw-ad-track-hero: -0.01em;
+  --sw-ad-track-eyebrow: 0.07em;
+  --sw-ad-track-label: 0.06em;
+  --sw-ad-ink-muted: #6b7280;
+}
+.dark .sw-next-artist-detail {
+  --sw-ad-ink-muted: #9ca3af;
+}
+
+/* Section title (the shared next/ chrome .head h2 lands 14px/600 for the
+ * dashboard; here it steps to the LOCKED 0.875rem section role and binds to the
+ * sans family). Scoped to next/ so the dashboard's title stays at its own size. */
+.sw-next-artist-detail .sw-dash-card > .head h2 {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-section);
+}
+
+/* Eyebrow / group heading (Identity, Tags, Aliases): the LOCKED eyebrow role. */
+.sw-next-artist-detail .sw-next-subhead {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-meta);
+  text-transform: uppercase;
+  letter-spacing: var(--sw-ad-track-eyebrow);
+  font-weight: 600;
+  color: var(--swd-ink-2);
+  margin: 0 0 8px;
+}
+
+/* Biography and Members reuse the shared text-lg (18px) <h2>; inside the Details
+ * card pull those group headings onto the same step as .sw-next-subhead so
+ * "Biography" / "Members" match "Identity" / "Tags" / "Aliases" instead of
+ * towering over the 14px section title (item 8). The section title lives in
+ * .head (outside .sw-next-meta-body), so it is unaffected. */
+.sw-next-artist-detail .sw-next-meta-body h2 {
+  font-family: var(--sw-font-sans);
+  font-size: var(--sw-ad-font-meta);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--sw-ad-track-eyebrow);
+  color: var(--swd-ink-2);
+}
+
+/* De-emphasized Identifiers card (design: last + quiet by default). */
+.sw-next-artist-detail .sw-next-identifiers .head h2 {
+  color: var(--swd-ink-3);
+}
+
+/* Read view is clean: label | value | finding-chip ONLY. Every per-field action
+ * (edit / lock / fetch / clear) is gated behind Edit mode (UAT 4A). In the read
+ * view the reused v1 FieldDisplay markup still renders its lock toggle + actions
+ * span + the hidden /edit trigger, so we suppress all of them here (display:none
+ * keeps them out of the a11y tree too). The "Edit" button still drives the
+ * /edit triggers programmatically to open every field at once. The stable
+ * channel (no .sw-next-artist-detail wrapper) is unaffected and keeps its
+ * always-visible, tool-forward affordances. */
+.sw-next-artist-detail [id^="field-"] button[hx-get$="/edit"],
+.sw-next-artist-detail .field-lock-toggle,
+.sw-next-artist-detail .sw-field-actions {
+  display: none;
+}
+
+/* Edit-mode per-field action cluster (lock / fetch / clear icons, each with a
+ * tooltip). It rides inside the inline edit FORM, so it only exists while a
+ * field is in edit mode -- never in the read view. It is display:none by default
+ * (stable channel edit forms stay just input + save/cancel) and revealed only
+ * inside the next/ edit surface. The lock toggle inside the cluster is re-shown
+ * because the blanket .field-lock-toggle hide above would otherwise catch it. */
+.sw-edit-actions {
+  display: none;
+}
+.sw-next-artist-detail .sw-edit-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+.sw-next-artist-detail .sw-edit-actions .field-lock-toggle {
+  display: inline-flex;
+}
+/* Even out the per-field action icons (lock / fetch / clear): equal square
+ * hit-targets + one consistent gap so they read as a tidy, evenly spaced row
+ * rather than the inconsistent kerning the shared icon buttons produced (UAT). */
+.sw-next-artist-detail .sw-edit-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.sw-next-artist-detail .sw-edit-actions > button > svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* "Done" is the only commit: hide the per-field save (submit checkmark) and
+ * cancel controls inside the field edit forms in this channel (the stable
+ * channel keeps them). Scoped to form[hx-patch] so the alias ADD form's submit
+ * button (a form[hx-post]) is unaffected. */
+.sw-next-artist-detail form[hx-patch] button[type="submit"],
+.sw-next-artist-detail form[hx-patch] button[hx-get$="/display"] {
+  display: none;
+}
+
+/* Empty Aliases/Members groups are omitted from the READ view entirely (no
+ * "No aliases" / "No members" placeholder); Edit mode still reveals them so the
+ * Add / fetch controls stay reachable. Groups that have content are never
+ * marked sw-next-empty, so they always show. */
+.sw-next-artist-detail:not(.is-editing) .sw-next-meta-group.sw-next-empty {
+  display: none;
+}
+
+/* Per-field finding chips (M55 #1336, field-tag-on-rule): an inline severity
+ * pill on the row of each metadata field a live rule violation touches. Sits
+ * after the value (read view only); links to the Open Findings section. */
+.sw-next-artist-detail .sw-field-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.sw-next-artist-detail .sw-field-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.sw-next-artist-detail .sw-field-chip:hover {
+  text-decoration: underline;
+}
+.sw-next-artist-detail .sw-field-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.sw-next-artist-detail .sw-field-chip[data-severity="error"] {
+  color: var(--swd-err);
+  background: var(--swd-err-soft);
+}
+.sw-next-artist-detail .sw-field-chip[data-severity="warning"] {
+  color: var(--swd-warn);
+  background: var(--swd-warn-soft);
+}
+.sw-next-artist-detail .sw-field-chip[data-severity="info"] {
+  color: var(--swd-info);
+  background: var(--swd-info-soft);
+}
+
+/* Typography parity (item 8 extension): the Open Findings and History sections
+ * reuse shared fragments built with Tailwind text-sm/text-xs, which read larger
+ * than the Details scale. Align their body + small text to the Details
+ * vocabulary (13px body, 11px small) so the three sections speak one type
+ * language. next/-only; the shared fragments are unchanged for the stable
+ * channel. The section titles already share the 14px .head h2 token. */
+.sw-next-artist-detail [data-sw-section="findings"] .body,
+.sw-next-artist-detail [data-sw-section="history"] .body {
+  font-size: 13px;
+}
+.sw-next-artist-detail [data-sw-section="findings"] .body .text-sm,
+.sw-next-artist-detail [data-sw-section="history"] .body .text-sm {
+  font-size: 13px;
+}
+.sw-next-artist-detail [data-sw-section="findings"] .body .text-xs,
+.sw-next-artist-detail [data-sw-section="history"] .body .text-xs {
+  font-size: 11px;
+}
+
+/* History entries were rounded on the right only (rounded-r-lg) against a left
+ * accent border, leaving the left corners square. Round all four corners to the
+ * app's standard entry radius for symmetry (UAT). next/-only. */
+.sw-next-artist-detail [id^="history-change-"] {
+  border-radius: 0.5rem;
+}
+
+/* Refresh button in-flight feedback: while the (multi-second) refresh runs, swap
+ * the static refresh icon for a spinner so the long request reads as "working"
+ * rather than "nothing happened" (UAT). htmx adds .htmx-request to the button
+ * for the duration; hx-disabled-elt also dims+disables it. */
+.sw-next-artist-detail .sw-next-refresh-btn .htmx-indicator {
+  display: none;
+}
+.sw-next-artist-detail .sw-next-refresh-btn.htmx-request .htmx-indicator {
+  display: inline-flex;
+}
+.sw-next-artist-detail .sw-next-refresh-btn.htmx-request .sw-next-refresh-icon {
+  display: none;
+}
+
+/* Sticky mini-header (design section 6): slides in once the hero scrolls out of
+ * the top. It is the first child of the page root; position:sticky pins it at
+ * top:0 when scrolled. It collapses to zero height (no reserved gap) until JS
+ * adds .is-stuck, then expands and fades in. The IntersectionObserver in the
+ * page script owns the toggle. */
+.sw-next-artist-detail .sw-next-stickhdr {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--swd-bg-base);
+  border-bottom: 1px solid var(--swd-line);
+  transition: max-height 180ms ease, opacity 180ms ease;
+}
+.sw-next-artist-detail .sw-next-stickhdr.is-stuck {
+  max-height: 56px;
+  opacity: 1;
+  pointer-events: auto;
+  /* Once stuck (at rest), let children escape the bar so the Actions dropdown
+   * panel (absolutely positioned below the bar) is not clipped by the
+   * overflow:hidden/max-height used for the collapse-and-slide reveal. The clip
+   * still applies while NOT stuck (collapsed) and during the collapse-back. */
+  overflow: visible;
+}
+.sw-next-artist-detail .sw-next-stickhdr-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  min-width: 0;
+}
+.sw-next-artist-detail .sw-next-stickhdr-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--swd-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* -- Stat bubbles (.sw-stat): 28px tabular value, 11.5px tracked-uppercase
@@ -2441,4 +3092,118 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 .sw-next-dashboard .sw-activity-row a {
   color: var(--swd-blue-ink);
+}
+
+/* -- Open Findings list (.sw-next-findings): the per-artist violations rendered
+ * in the next/ design-token chrome so the Open Findings section matches the
+ * next/ dashboard's activity-row aesthetic (maintainer request). Each row is a
+ * flat card-surface row -- a per-severity DOT + severity word, the rule id, a
+ * mono tabular age, the message, and fix/dismiss actions -- with only a subtle
+ * hover tint and a hairline divider. Deliberately NO per-severity row backdrop
+ * (the maintainer's "row backdrop colors" gripe); severity reads from the dot +
+ * word color, not a filled row. */
+.sw-next-artist-detail .sw-next-findings {
+  display: flex;
+  flex-direction: column;
+}
+.sw-next-artist-detail .sw-next-findings-empty {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--swd-ink-3);
+  text-align: center;
+  padding: 16px 0;
+}
+.sw-next-artist-detail .sw-next-finding {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  color: var(--swd-ink);
+}
+.sw-next-artist-detail .sw-next-finding + .sw-next-finding {
+  border-top: 1px solid var(--swd-line);
+}
+.sw-next-artist-detail .sw-next-finding:hover {
+  background: var(--swd-bg-elev);
+}
+/* Severity cluster: dot + uppercase word, fixed min-width so the rule text
+ * aligns into a tidy column across rows. */
+.sw-next-artist-detail .sw-next-finding-sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-width: 5.5rem;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sw-next-artist-detail .sw-next-finding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex: none;
+  background: var(--swd-ink-3);
+}
+.sw-next-artist-detail .sw-next-finding-sev-label {
+  color: var(--swd-ink-3);
+}
+.sw-next-artist-detail .sw-next-finding[data-severity="error"] .sw-next-finding-dot { background: var(--swd-err); }
+.sw-next-artist-detail .sw-next-finding[data-severity="error"] .sw-next-finding-sev-label { color: var(--swd-err); }
+.sw-next-artist-detail .sw-next-finding[data-severity="warning"] .sw-next-finding-dot { background: var(--swd-warn); }
+.sw-next-artist-detail .sw-next-finding[data-severity="warning"] .sw-next-finding-sev-label { color: var(--swd-warn); }
+.sw-next-artist-detail .sw-next-finding[data-severity="info"] .sw-next-finding-dot { background: var(--swd-info); }
+.sw-next-artist-detail .sw-next-finding[data-severity="info"] .sw-next-finding-sev-label { color: var(--swd-info); }
+.sw-next-artist-detail .sw-next-finding-main {
+  min-width: 0;
+  flex: 1;
+}
+.sw-next-artist-detail .sw-next-finding-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.sw-next-artist-detail .sw-next-finding-rule {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--swd-ink-2);
+}
+.sw-next-artist-detail .sw-next-finding-age {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--swd-ink-3);
+}
+.sw-next-artist-detail .sw-next-finding-msg {
+  font-size: 13px;
+  color: var(--swd-ink-3);
+  margin-top: 2px;
+}
+.sw-next-artist-detail .sw-next-finding-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.sw-next-artist-detail .sw-next-finding-fix,
+.sw-next-artist-detail .sw-next-finding-dismiss {
+  font-size: 13px;
+  font-weight: 600;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sw-next-artist-detail .sw-next-finding-fix { color: var(--swd-ok); }
+.sw-next-artist-detail .sw-next-finding-fix:hover { text-decoration: underline; }
+.sw-next-artist-detail .sw-next-finding-dismiss { color: var(--swd-ink-3); font-weight: 500; }
+.sw-next-artist-detail .sw-next-finding-dismiss:hover { color: var(--swd-err); }
+.sw-next-artist-detail .sw-next-finding-fix:disabled,
+.sw-next-artist-detail .sw-next-finding-dismiss:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

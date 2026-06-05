@@ -81,6 +81,82 @@ templ ArtistViolationsTab(data ArtistViolationsTabData) {
 	@violationsTabBadgeOOB(len(data.Violations))
 }
 
+// ArtistFindingsList is the next/ channel's readable findings list (M55 #1336):
+// severity badge + rule + message + age + fix/dismiss, replacing the stable
+// ArtistViolationsTab table. It shares the SAME #violations-content-{id} wrapper
+// and the OOB tab-badge swap, so violations-sync.js refreshes it identically,
+// and reuses the row's fix/dismiss wiring (artistViolationFix/Dismiss + the
+// data-* localized strings). The handler picks this vs the table by UX channel.
+templ ArtistFindingsList(data ArtistViolationsTabData) {
+	<div id={ "violations-content-" + data.ArtistID }>
+		if len(data.Violations) == 0 {
+			<p class="sw-next-findings-empty">{ t(ctx, "artist.violations_empty") }</p>
+		} else {
+			<ul class="sw-next-findings">
+				for _, v := range data.Violations {
+					@artistFindingListItem(v, data.ArtistID)
+				}
+			</ul>
+		}
+	</div>
+	@violationsTabBadgeOOB(len(data.Violations))
+}
+
+// artistFindingListItem renders one finding as a list row in the next/ channel's
+// token chrome (sw-next-findings CSS in input.css), matching the next/ dashboard's
+// activity-row aesthetic: a per-severity dot + severity word, the rule id, a mono
+// tabular age, the message, and the fix/dismiss actions -- on the flat card
+// surface (a row-hover tint only, no per-severity row backdrop). The id +
+// data-* attributes match artistViolationRow so the shared fix/dismiss scripts
+// (which look up #artist-violation-{id}) work unchanged.
+templ artistFindingListItem(v rule.RuleViolation, artistID string) {
+	<li
+		id={ "artist-violation-" + v.ID }
+		class="sw-next-finding"
+		data-severity={ v.Severity }
+		data-fix-failed={ t(ctx, "notifications.fix_failed") }
+		data-fix-network={ t(ctx, "notifications.fix_network") }
+		data-dismiss-failed={ t(ctx, "notifications.dismiss_failed") }
+		data-dismiss-network={ t(ctx, "notifications.dismiss_network") }
+	>
+		<span class="sw-next-finding-sev">
+			<span class="sw-next-finding-dot" aria-hidden="true"></span>
+			<span class="sw-next-finding-sev-label">{ v.Severity }</span>
+		</span>
+		<div class="sw-next-finding-main">
+			<div class="sw-next-finding-head">
+				<span class="sw-next-finding-rule">{ v.RuleID }</span>
+				<span class="sw-next-finding-age">{ formatAge(v.CreatedAt) }</span>
+			</div>
+			<p class="sw-next-finding-msg">{ v.Message }</p>
+		</div>
+		<div class="sw-next-finding-actions">
+			if v.Fixable && v.Status == rule.ViolationStatusOpen {
+				<button
+					type="button"
+					data-violation-id={ v.ID }
+					data-artist-id={ artistID }
+					onclick={ artistViolationFix(v.ID, artistID) }
+					aria-label={ fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(ctx, v.RuleID)) }
+					class="sw-next-finding-fix"
+				>
+					{ fixButtonLabel(ctx, v.RuleID) }
+				</button>
+			}
+			<button
+				type="button"
+				data-violation-id={ v.ID }
+				data-artist-id={ artistID }
+				data-confirm={ t(ctx, "notifications.dismiss_confirm") }
+				onclick={ artistViolationDismiss(v.ID, artistID) }
+				class="sw-next-finding-dismiss"
+			>
+				{ t(ctx, "common.dismiss") }
+			</button>
+		</div>
+	</li>
+}
+
 // violationsTabBadgeOOB renders the violation count badge as an HTMX
 // out-of-band swap targeting the existing badge element in the tab bar.
 templ violationsTabBadgeOOB(count int) {

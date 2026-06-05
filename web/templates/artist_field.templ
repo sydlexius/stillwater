@@ -21,7 +21,17 @@ templ FieldDisplay(a *artist.Artist, field string, providers []string) {
 			@tagFieldDisplay(a, "styles", t(ctx, "artist.styles"), a.Styles, "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200", providers)
 		case "moods":
 			@tagFieldDisplay(a, "moods", t(ctx, "artist.moods"), a.Moods, "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200", providers)
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender", "origin",
+		case "type":
+			// Display the normalized + localized Type label ("group" -> "Group",
+			// "solo act" -> "Person") so the detail row matches the artists list.
+			// The edit form (selectFieldEdit) still uses the raw values.
+			@detailFieldDisplay(a, "type", fieldLabel(ctx, "type"), artistTypeRowValue(ctx, artist.FieldValueFromArtist(a, "type")), providers)
+		case "gender":
+			// Normalize the stored gender to the canonical Title case (providers
+			// often return lowercase "female"/"male") so the row reads consistently
+			// with the other field values (UAT 4A item 7).
+			@detailFieldDisplay(a, "gender", fieldLabel(ctx, "gender"), normalizeGenderDisplay(artist.FieldValueFromArtist(a, "gender")), providers)
+		case "formed", "born", "disbanded", "died", "years_active", "origin",
 			"name", "sort_name", "disambiguation":
 			@detailFieldDisplay(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers)
 		case "musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
@@ -30,24 +40,102 @@ templ FieldDisplay(a *artist.Artist, field string, providers []string) {
 }
 
 // FieldEdit renders a metadata field in edit mode with a form for inline editing.
-templ FieldEdit(a *artist.Artist, field string) {
+// providers carries the provider names that can supply this field; it drives the
+// next/ channel's edit-mode "Fetch from providers" icon (rendered by
+// fieldEditActions). It is empty/ignored for the stable channel.
+templ FieldEdit(a *artist.Artist, field string, providers []string) {
 	switch field {
 		case "biography":
-			@biographyEdit(a)
+			@biographyEdit(a, providers)
 		case "genres":
-			@tagFieldEdit(a, "genres", t(ctx, "artist.genres"), a.Genres)
+			@tagFieldEdit(a, "genres", t(ctx, "artist.genres"), a.Genres, providers)
 		case "styles":
-			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles)
+			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles, providers)
 		case "moods":
-			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods)
+			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods, providers)
 		case "type":
-			@selectFieldEdit(a, "type", fieldLabel(ctx, "type"), artist.FieldValueFromArtist(a, "type"), typeOptions())
+			@selectFieldEdit(a, "type", fieldLabel(ctx, "type"), artist.FieldValueFromArtist(a, "type"), typeOptions(), providers)
 		case "gender":
-			@selectFieldEdit(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), genderOptions())
+			@selectFieldEdit(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), genderOptions(), providers)
 		case "formed", "born", "disbanded", "died", "years_active", "origin",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
-			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field))
+			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers)
+	}
+}
+
+// fieldEditActions renders the per-field action icons that the next/ channel's
+// edit mode surfaces alongside the input (per-field lock / fetch / clear), each
+// an individual icon button with its own tooltip. It is display:none by default
+// and revealed only inside the .sw-next-artist-detail edit surface (input.css),
+// so the stable channel's edit forms keep just save/cancel and are unchanged.
+// The read view never renders an edit form, so these actions only ever appear
+// when Edit mode is active -- satisfying the "nothing actionable until Edit on"
+// rule for the next/ artist-detail screen.
+templ fieldEditActions(a *artist.Artist, field string, providers []string, canClear bool) {
+	<span class="sw-edit-actions inline-flex items-center gap-0.5">
+		@FieldLockToggle(a, field)
+		if len(providers) > 0 {
+			<button
+				type="button"
+				class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+				title={ t(ctx, "artist.fetch_from_providers") }
+				aria-label={ t(ctx, "artist.fetch_from_providers") }
+				hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/providers" }
+				hx-target="#field-provider-modal-body"
+				hx-swap="innerHTML"
+			>
+				@components.IconArrowPath("h-3.5 w-3.5")
+			</button>
+		}
+		// Clear renders only when the field has a value to clear AND is not
+		// "name". Two reasons it is gated rather than always shown:
+		//   - "name": the server rejects a name clear with 400 (handleFieldClear),
+		//     so a Clear there would always fail.
+		//   - empty field: clearing an already-empty field is NOT a harmless no-op
+		//     -- handleFieldClear republishes metadata, emits activity.recent
+		//     ("cleared"), and invalidates the health cache, so an empty-field
+		//     clear creates a spurious "field cleared" entry and a no-op write.
+		// (A true server-side no-op on already-empty clear is tracked in #1846.)
+		if field != "name" && canClear {
+			<button
+				type="button"
+				class="inline-flex items-center justify-center rounded p-0.5 text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors"
+				title={ tf(ctx, "artist.clear_field", fieldLabel(ctx, field)) }
+				aria-label={ tf(ctx, "artist.clear_field", fieldLabel(ctx, field)) }
+				hx-delete={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+				hx-target={ "#field-" + field + "-" + a.ID }
+				hx-swap="outerHTML"
+				hx-confirm={ tf(ctx, "artist.clear_field_confirm", fieldLabel(ctx, field)) }
+				data-confirm-key="field-delete"
+			>
+				@components.IconTrash("h-3.5 w-3.5")
+			</button>
+		}
+	</span>
+}
+
+// fieldFindingChips renders the inline finding chip(s) for a metadata field
+// (M55 #1336, field-tag-on-rule): one severity-colored pill per active rule
+// violation tagged to this field, each linking to the Open Findings section and
+// carrying the violation message as its tooltip. It renders nothing when the
+// field has no findings -- which is always the case in the stable channel,
+// because only the next/ artist-detail handler injects the findings map into the
+// context (see WithFieldFindings). The chips live in the read view alongside the
+// value; the edit form replaces the row, so they do not show while editing.
+templ fieldFindingChips(findings []FieldFinding) {
+	if len(findings) > 0 {
+		<span class="sw-field-chips">
+			for _, f := range findings {
+				// aria-label carries severity + message so each chip has a
+				// distinguishable accessible name; without it screen readers
+				// announce every chip as just the bare severity word.
+				<a href="#next-findings" class="sw-field-chip" data-severity={ f.Severity } title={ f.Message } aria-label={ f.Severity + ": " + f.Message }>
+					<span class="sw-field-chip-dot" aria-hidden="true"></span>
+					{ f.Severity }
+				</a>
+			}
+		</span>
 	}
 }
 
@@ -113,7 +201,7 @@ templ fieldActionsFor(a *artist.Artist, field string, hasValue bool, providers [
 }
 
 templ fieldActionsLocked(artistID, field string, hasValue bool, providers []string, locked bool) {
-	<span class="inline-flex items-center gap-0.5">
+	<span class="sw-field-actions inline-flex items-center gap-0.5">
 		if !locked {
 			<button
 				type="button"
@@ -180,6 +268,7 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 			<h2 class="text-lg font-semibold inline-flex items-center gap-2">
 				{ t(ctx, "artist.biography") }
 				@FieldLockToggle(a, "biography")
+				@fieldFindingChips(fieldFindingsFor(ctx, "biography"))
 			</h2>
 			@fieldActionsFor(a, "biography", a.Biography != "", providers)
 		</div>
@@ -191,10 +280,13 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 	</div>
 }
 
-templ biographyEdit(a *artist.Artist) {
+templ biographyEdit(a *artist.Artist, providers []string) {
 	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-lg font-semibold">{ t(ctx, "artist.biography") }</h2>
+			<h2 class="text-lg font-semibold inline-flex items-center gap-2">
+				{ t(ctx, "artist.biography") }
+				@fieldEditActions(a, "biography", providers, a.Biography != "")
+			</h2>
 		</div>
 		<form
 			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/biography" }
@@ -233,10 +325,11 @@ templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colo
 	</div>
 }
 
-templ tagFieldEdit(a *artist.Artist, field, label string, tags []string) {
+templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
-		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">
+		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
+			@fieldEditActions(a, field, providers, len(tags) > 0)
 		</h3>
 		<form
 			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
@@ -264,9 +357,15 @@ templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers
 			@fieldActionsFor(a, field, value != "", providers)
 		</dt>
 		if value != "" {
-			<dd class="font-medium">{ value }</dd>
+			<dd class="font-medium">
+				{ value }
+				@fieldFindingChips(fieldFindingsFor(ctx, field))
+			</dd>
 		} else {
-			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
+			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">
+				{ t(ctx, "common.not_set") }
+				@fieldFindingChips(fieldFindingsFor(ctx, field))
+			</dd>
 		}
 	</div>
 }
@@ -328,7 +427,7 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 	}
 }
 
-templ detailFieldEdit(a *artist.Artist, field, label, value string) {
+templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID }>
 		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
 		<dd>
@@ -345,6 +444,7 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 					aria-label={ label }
 					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
+				@fieldEditActions(a, field, providers, value != "")
 				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title={ t(ctx, "common.save") } aria-label={ tf(ctx, "artist.save_field", label) }>
 					@components.IconCheck("h-4 w-4")
 				</button>
@@ -384,12 +484,19 @@ templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, provi
 						rel="noopener noreferrer"
 						class="text-blue-600 dark:text-blue-400 hover:underline"
 					>{ value }</a>
+					@fieldFindingChips(fieldFindingsFor(ctx, field))
 				</dd>
 			} else {
-				<dd class="font-medium font-mono text-xs break-all">{ value }</dd>
+				<dd class="font-medium font-mono text-xs break-all">
+					{ value }
+					@fieldFindingChips(fieldFindingsFor(ctx, field))
+				</dd>
 			}
 		} else {
-			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
+			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">
+				{ t(ctx, "common.not_set") }
+				@fieldFindingChips(fieldFindingsFor(ctx, field))
+			</dd>
 		}
 	</div>
 }
@@ -456,19 +563,20 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 									// modal body itself, so we cannot rely on the global
 									// htmx pipeline. Re-uses the W4.B (#1232) safety
 									// pattern: hx-disabled-elt cannot apply to a non-htmx
-									// click, so the saveMembers script disables the button
-									// on click and re-enables it in finally(). The
-									// disabled:opacity-60 class gives the user visual
-									// feedback that the click was accepted while the POST
-									// is in flight, matching the violation-action surfaces.
+									// click, so the members-apply module (data-apply-members)
+									// disables the button on click and re-enables it in
+									// finally(). The disabled:opacity-60 class gives the user
+									// visual feedback that the click was accepted while the
+									// POST is in flight, matching the violation-action surfaces.
 									<button
 										type="button"
 										data-apply-members
 										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 										data-members={ membersJSON(r.Members) }
+										data-post-url={ "/api/v1/artists/" + a.ID + "/members/from-provider" }
+										data-target={ "#members-section-" + a.ID }
 										data-save-error={ t(ctx, "artist.members_save_failed") }
 										data-network-error={ t(ctx, "artist.members_network_error") }
-										onclick={ saveMembers("/api/v1/artists/"+a.ID+"/members/from-provider", "#members-section-"+a.ID) }
 									>
 										{ t(ctx, "artist.use_this") }
 									</button>
@@ -535,110 +643,6 @@ templ FieldProviderNoChanges(field string) {
 	</div>
 }
 
-// saveMembers posts member data from a provider result to the save endpoint,
-// swaps the members section, and closes the modal. Failure paths re-use the
-// W4.B (#1232) safety pattern: the Apply button is disabled for the duration
-// of the fetch so a rapid second click cannot queue a duplicate POST, and
-// every settled outcome (success, HTTP error, network error) re-enables the
-// button via the finally() block so a transient failure never leaves the
-// modal inert. Errors surface through window.showToast (falling back to
-// alert() when the toast helper is unavailable, e.g. when the layout script
-// failed to load) so the user sees the same visual treatment as every other
-// action error in the app.
-
-script saveMembers(url string, targetSelector string) {
-	var btn = this;
-	// Disable the Apply button immediately so a rapid second click cannot
-	// queue a duplicate POST against the same provider payload. The
-	// finally() block re-enables it on every settled outcome.
-	btn.disabled = true;
-	var members = btn.getAttribute('data-members');
-	// Localized failure strings injected via data-attrs by the templ
-	// caller (artist.members_save_failed / artist.members_network_error).
-	// English fallbacks only fire if the button was detached or the i18n
-	// key was missing -- never as the primary user-visible text.
-	var saveErrorPrefix = btn.getAttribute('data-save-error') || 'Failed to save members';
-	var networkError = btn.getAttribute('data-network-error') || 'Network error saving members';
-	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
-	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
-	// notify routes a user-facing failure message through the global toast
-	// helper, falling back to a native alert() so the user is never left
-	// wondering why Apply did nothing. Mirrors the pattern in
-	// artist_violations_tab.templ (#1232).
-	var notify = function(msg) {
-		if (typeof window.showToast === 'function') { window.showToast(msg); } else { alert(msg); }
-	};
-	fetch(bp + url, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			// HX-Request opts the success branch into rendering the
-			// re-rendered MembersSection HTML fragment that we swap into
-			// the target by id. On the error path writeError also routes
-			// by HX-Request and returns the ErrorToast HTML component, so
-			// the script's error parser must accept either an HTML fragment
-			// or a JSON {error: ...} envelope. Mirrors the body-shape
-			// tolerance of the layout.templ htmx:responseError handler.
-			'HX-Request': 'true',
-			'X-CSRF-Token': csrf
-		},
-		body: members,
-		credentials: 'same-origin'
-	}).then(function(r) {
-		if (r.ok) {
-			return r.text().then(function(html) {
-				var target = document.querySelector(targetSelector);
-				if (target) {
-					target.outerHTML = html;
-					var newTarget = document.querySelector(targetSelector);
-					if (newTarget) {
-						htmx.process(newTarget);
-					}
-				}
-				hideFieldProviderModal();
-			});
-		}
-		// Prefer the server's reason when present. writeError returns one
-		// of two body shapes depending on HX-Request: an ErrorToast HTML
-		// fragment (we sent HX-Request: true for the success branch) or a
-		// JSON {error: ...} envelope. Accept either so a future contract
-		// flip does not silently regress this surface to a status-only
-		// message. Mirrors the htmx:responseError parser in layout.templ.
-		return r.text().then(function(body) {
-			var msg = saveErrorPrefix + ' (' + r.status + ')';
-			var trimmed = (body || '').trim();
-			var stripped = '';
-			var isJSON = false;
-			if (trimmed.length > 0 && trimmed.charAt(0) === '{') {
-				try {
-					var parsed = JSON.parse(trimmed);
-					if (parsed && typeof parsed.error === 'string') {
-						stripped = parsed.error.trim();
-						isJSON = true;
-					}
-				} catch (e) { /* not JSON; fall through to HTML strip */ }
-			}
-			if (!isJSON && trimmed.length > 0) {
-				// HTML fragment path: strip tags and collapse whitespace so
-				// the ErrorToast wrapper does not leak markup into the
-				// user-visible message.
-				stripped = trimmed.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-			}
-			if (stripped.length > 0 && stripped.length < 500) {
-				msg = saveErrorPrefix + ': ' + stripped;
-			}
-			notify(msg);
-		});
-	}).catch(function() {
-		notify(networkError);
-	}).finally(function() {
-		// Re-enable on every settled outcome -- without this a single
-		// failure would leave the Apply button permanently inert and the
-		// user would have to refresh the page to retry.
-		btn.disabled = false;
-	});
-}
-
 // SelectOption represents a single option in a dropdown select field.
 type SelectOption struct {
 	Value string
@@ -674,7 +678,7 @@ func typeOptions() []SelectOption {
 
 // selectFieldEdit renders a detail sidebar field in edit mode with a <select>
 // dropdown instead of a free-text input. Used for type and gender fields.
-templ selectFieldEdit(a *artist.Artist, field, label, value string, options []SelectOption) {
+templ selectFieldEdit(a *artist.Artist, field, label, value string, options []SelectOption, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID }>
 		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
 		<dd>
@@ -703,6 +707,7 @@ templ selectFieldEdit(a *artist.Artist, field, label, value string, options []Se
 						<option value={ value } selected>{ value }</option>
 					}
 				</select>
+				@fieldEditActions(a, field, providers, value != "")
 				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title={ t(ctx, "common.save") } aria-label={ tf(ctx, "artist.save_field", label) }>
 					@components.IconCheck("h-4 w-4")
 				</button>
@@ -729,7 +734,10 @@ templ selectFieldEdit(a *artist.Artist, field, label, value string, options []Se
 templ GenderFieldOOB(a *artist.Artist, providers []string) {
 	<div id={ "gender-wrap-" + a.ID } hx-swap-oob="innerHTML">
 		if !isGroupType(a.Type) {
-			@detailFieldDisplay(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), providers)
+			// Normalize casing here too (matching detailFieldDisplay's read path);
+			// without it a type-triggered OOB swap re-renders the raw stored value
+			// and the gender reads inconsistently until a full reload.
+			@detailFieldDisplay(a, "gender", fieldLabel(ctx, "gender"), normalizeGenderDisplay(artist.FieldValueFromArtist(a, "gender")), providers)
 		}
 	</div>
 }

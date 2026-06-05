@@ -55,6 +55,11 @@ func (r *Router) assets() templates.AssetPaths {
 		FilterFlyoutJS: r.basePath + r.staticAssets.Path("/js/filter-flyout.js"),
 		KeyboardJS:     r.basePath + r.staticAssets.Path("/js/keyboard.js"),
 		ConflictGateJS: r.basePath + r.staticAssets.Path("/js/conflict-gate.js"),
+		// Artist-detail first-party modules (M55 #1336, 4A). Extracted from the
+		// inline scripts in artist_detail.templ / artist_field.templ.
+		ArtistFanartSlideshowJS: r.basePath + r.staticAssets.Path("/js/artist-detail/fanart-slideshow.js"),
+		ArtistViolationsSyncJS:  r.basePath + r.staticAssets.Path("/js/artist-detail/violations-sync.js"),
+		ArtistMembersApplyJS:    r.basePath + r.staticAssets.Path("/js/artist-detail/members-apply.js"),
 		// Settings-screen first-party modules (M55 #1806, extended #1808).
 		// Extracted from the inline XxxScript() blocks.
 		SettingsImageCacheJS:              r.basePath + r.staticAssets.Path("/js/settings/image-cache.js"),

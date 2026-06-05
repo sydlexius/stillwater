@@ -783,3 +783,106 @@ func roundTripOverlapHTML(ctx context.Context, aName, bName, path, nameColorClas
 	}
 	return fmt.Sprintf(tpl, spanA, spanB, codePath)
 }
+
+// ArtistTypeLabel normalizes + localizes a raw artist Type (the DB/MusicBrainz
+// value, e.g. "group", "solo act") into the display label used across the app
+// ("Group", "Person", ...). Shared so the artist-detail Type row, the hero type
+// tag, and the artists list all render the same label (M55 #1336; the broader
+// case/normalization sweep is #1843). Unknown/empty falls back to "Other",
+// matching the artists list.
+func ArtistTypeLabel(ctx context.Context, rawType string) string {
+	switch strings.ToLower(strings.TrimSpace(rawType)) {
+	case "person", "solo", "solo act":
+		return t(ctx, "artists.filter.person")
+	case "group":
+		return t(ctx, "artists.filter.group")
+	case "orchestra", "choir":
+		return t(ctx, "artists.filter.orchestra")
+	default:
+		return t(ctx, "artists.filter.other")
+	}
+}
+
+// artistTypeRowValue is the display value for the metadata Type row: the
+// normalized label for a set type, but "" for an unset type so the row renders
+// the standard "Not set" placeholder rather than the "Other" bucket label.
+func artistTypeRowValue(ctx context.Context, rawType string) string {
+	if strings.TrimSpace(rawType) == "" {
+		return ""
+	}
+	return ArtistTypeLabel(ctx, rawType)
+}
+
+// --- Field finding chips (M55 #1336, field-tag-on-rule) ---
+
+// FieldFinding is one active rule violation surfaced as an inline chip on the
+// metadata field it touches. It is a presentation-only projection of a
+// rule.Violation (kept here so the templates package does not import the rule
+// engine): Severity drives the chip color AND its label (the severity word,
+// matching the Open Findings list's severity badge), and Message is the hover
+// tooltip carrying the specific problem.
+type FieldFinding struct {
+	Severity string
+	Message  string
+}
+
+// fieldFindingsKeyType is the unexported context key under which the
+// artist-detail handler stashes the field -> findings map.
+type fieldFindingsKeyType struct{}
+
+// WithFieldFindings returns a context carrying the field -> findings map the
+// next/ artist-detail page renders as inline chips. The stable channel never
+// sets it, so its FieldDisplay rows render no chips (fieldFindingsFor returns
+// nil). The map is keyed by the same field names FieldDisplay switches on.
+func WithFieldFindings(ctx context.Context, m map[string][]FieldFinding) context.Context {
+	return context.WithValue(ctx, fieldFindingsKeyType{}, m)
+}
+
+// fieldFindingsFor returns the active findings tagged to the given field, or nil
+// when none are present or no map was injected into the context.
+func fieldFindingsFor(ctx context.Context, field string) []FieldFinding {
+	m, ok := ctx.Value(fieldFindingsKeyType{}).(map[string][]FieldFinding)
+	if !ok {
+		return nil
+	}
+	return m[field]
+}
+
+// normalizeGenderDisplay returns the gender value in canonical Title case for
+// display (UAT 4A item 7). Providers often store "female"/"male" lowercase,
+// which read inconsistently next to the other Title/Sentence-cased field
+// values. It upper-cases the first rune of each hyphen- or space-separated word
+// ("non-binary" -> "Non-Binary" stays readable; "female" -> "Female") and
+// leaves an empty value untouched so the "Not set" path still fires.
+func normalizeGenderDisplay(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	capWord := func(w string) string {
+		if w == "" {
+			return ""
+		}
+		r := []rune(w)
+		return strings.ToUpper(string(r[0])) + strings.ToLower(string(r[1:]))
+	}
+	// Capitalize across both spaces and hyphens (e.g. "non-binary").
+	out := make([]byte, 0, len(v))
+	word := strings.Builder{}
+	flush := func() {
+		if word.Len() > 0 {
+			out = append(out, capWord(word.String())...)
+			word.Reset()
+		}
+	}
+	for _, r := range v {
+		if r == '-' || r == ' ' {
+			flush()
+			out = append(out, byte(r))
+			continue
+		}
+		word.WriteRune(r)
+	}
+	flush()
+	return string(out)
+}

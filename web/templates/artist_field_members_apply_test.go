@@ -2,6 +2,7 @@ package templates
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -9,10 +10,15 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+// membersApplyModulePath is the static JS module that now owns the Apply-members
+// behavior, extracted from the former inline saveMembers script (M55 #1336, 4A).
+// The path is relative to this package's directory (web/templates) at test time.
+const membersApplyModulePath = "../static/js/artist-detail/members-apply.js"
+
 // TestFieldProviderModalContent_MembersApply_Present pins the apply path on
 // the Members manual-fetch modal. After a successful provider fetch returns
 // at least one member, the modal must render an Apply button (data-apply-members)
-// that carries the serialized members payload so the saveMembers script can
+// that carries the serialized members payload so the members-apply module can
 // POST it to the upsert endpoint. Without this guard a future refactor that
 // reorders the if/else chain in FieldProviderModalContent could silently drop
 // the only control that lets the user persist fetched members -- the
@@ -37,7 +43,7 @@ func TestFieldProviderModalContent_MembersApply_Present(t *testing.T) {
 	body := buf.String()
 
 	// The apply button is keyed by the data-apply-members attribute so the
-	// saveMembers script can find it deterministically and so this test can
+	// members-apply module can find it deterministically and so this test can
 	// distinguish it from the slice-field "Use this" buttons that share the
 	// same modal.
 	if !strings.Contains(body, "data-apply-members") {
@@ -45,7 +51,7 @@ func TestFieldProviderModalContent_MembersApply_Present(t *testing.T) {
 	}
 
 	// The button must carry the serialized members payload as a data
-	// attribute so the saveMembers script can POST it without re-querying
+	// attribute so the members-apply module can POST it without re-querying
 	// the server. Without this, the click would have nothing to send.
 	if !strings.Contains(body, `data-members="`) {
 		t.Errorf("members apply button missing data-members payload; got:\n%s", body)
@@ -61,11 +67,15 @@ func TestFieldProviderModalContent_MembersApply_Present(t *testing.T) {
 		t.Errorf("members apply button missing disabled:opacity-60 styling; got:\n%s", body)
 	}
 
-	// The onclick handler must invoke saveMembers against the
-	// /members/from-provider endpoint -- without this URL the apply
-	// path would POST to the wrong handler or be a silent no-op.
-	if !strings.Contains(body, "/api/v1/artists/a-1034/members/from-provider") {
-		t.Errorf("apply button missing from-provider endpoint URL; got:\n%s", body)
+	// The button must carry the from-provider endpoint as data-post-url and
+	// the members-section target as data-target so the extracted members-apply
+	// module can POST and swap without an inline onclick handler. Without the
+	// URL the apply path would POST to the wrong handler or be a silent no-op.
+	if !strings.Contains(body, `data-post-url="/api/v1/artists/a-1034/members/from-provider"`) {
+		t.Errorf("apply button missing data-post-url from-provider endpoint; got:\n%s", body)
+	}
+	if !strings.Contains(body, `data-target="#members-section-a-1034"`) {
+		t.Errorf("apply button missing data-target members section selector; got:\n%s", body)
 	}
 }
 
@@ -95,9 +105,11 @@ func TestFieldProviderModalContent_MembersApply_AbsentBeforeFetch(t *testing.T) 
 	}
 }
 
-// TestFieldProviderModalContent_MembersApply_W4BFailurePattern pins the
-// W4.B (#1232) failure-handling pattern in the saveMembers script body.
-// The script must:
+// TestMembersApplyModule_W4BFailurePattern pins the W4.B (#1232) failure-
+// handling pattern in the extracted members-apply.js module (M55 #1336, 4A).
+// The behavior moved out of the inline saveMembers templ script into a static
+// first-party module, so this test asserts the safety hooks against the module
+// file rather than the rendered HTML. The module must:
 //   - disable the button on click (in-flight guard against double-submit),
 //   - re-enable in finally() so a transient failure cannot leave the
 //     button permanently inert,
@@ -108,46 +120,35 @@ func TestFieldProviderModalContent_MembersApply_AbsentBeforeFetch(t *testing.T) 
 // surface; without this pin a future refactor could quietly drop one of
 // the safety hooks and reintroduce the silent-failure regression that
 // issue #1034 reported.
-func TestFieldProviderModalContent_MembersApply_W4BFailurePattern(t *testing.T) {
-	a := &artist.Artist{ID: "a-1034", Name: "Test Band"}
-	results := []provider.FieldProviderResult{
-		{
-			Provider: provider.NameMusicBrainz,
-			HasData:  true,
-			Members: []provider.MemberInfo{
-				{Name: "Solo Member"},
-			},
-		},
+func TestMembersApplyModule_W4BFailurePattern(t *testing.T) {
+	raw, err := os.ReadFile(membersApplyModulePath)
+	if err != nil {
+		t.Fatalf("reading members-apply module %q: %v", membersApplyModulePath, err)
 	}
+	body := string(raw)
 
-	var buf bytes.Buffer
-	if err := FieldProviderModalContent(a, "members", results, "").Render(testCtx(t), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	body := buf.String()
-
-	// Disable on click -- the very first thing the script does after
-	// capturing `this` is to disable the button so a rapid second click
+	// Disable on click -- the very first thing the handler does after
+	// matching the Apply button is to disable it so a rapid second click
 	// cannot queue a duplicate POST.
 	if !strings.Contains(body, "btn.disabled = true") {
-		t.Errorf("saveMembers script missing in-flight disable assignment; got:\n%s", body)
+		t.Errorf("members-apply module missing in-flight disable assignment; got:\n%s", body)
 	}
 	// Re-enable in finally -- without this a single failure leaves the
 	// Apply button permanently disabled.
 	if !strings.Contains(body, "btn.disabled = false") {
-		t.Errorf("saveMembers script missing finally() re-enable assignment; got:\n%s", body)
+		t.Errorf("members-apply module missing finally() re-enable assignment; got:\n%s", body)
 	}
-	if !strings.Contains(body, ".finally(function()") {
-		t.Errorf("saveMembers script missing finally() block; got:\n%s", body)
+	if !strings.Contains(body, ".finally(function") {
+		t.Errorf("members-apply module missing finally() block; got:\n%s", body)
 	}
 
 	// Toast routing with alert() fallback so the user is never left
 	// wondering why Apply did nothing -- mirrors the violation-action
 	// pattern from #1232.
 	if !strings.Contains(body, "window.showToast") {
-		t.Errorf("saveMembers script missing window.showToast routing; got:\n%s", body)
+		t.Errorf("members-apply module missing window.showToast routing; got:\n%s", body)
 	}
 	if !strings.Contains(body, "alert(msg)") {
-		t.Errorf("saveMembers script missing alert() fallback; got:\n%s", body)
+		t.Errorf("members-apply module missing alert() fallback; got:\n%s", body)
 	}
 }

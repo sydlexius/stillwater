@@ -1,5 +1,7 @@
 package rule
 
+import "slices"
+
 // RuleCatalogueEntry holds documentation metadata for a built-in rule.
 // Kept separate from Rule to avoid adding doc-only fields to the API/DB model.
 type RuleCatalogueEntry struct {
@@ -29,6 +31,17 @@ type RuleCatalogueEntry struct {
 	// Empty for detection-only rules and for fixable rules whose fix has no
 	// meaningful "before" worth showing (e.g. fetching a missing image).
 	FixExample string
+
+	// Fields names the metadata field(s) this rule inspects, using the same
+	// field keys the artist-detail page renders (name, sort_name, biography,
+	// origin, musicbrainz_id, ...). It is OPTIONAL and intentionally left empty
+	// for image rules (thumb/fanart/logo/banner -> 4B Artwork) and for
+	// whole-record / cross-field / filesystem rules (nfo_exists, directory and
+	// discography rules, duplicate/extraneous-image rules). The artist-detail
+	// screen reads this via RuleFields to render an inline "finding chip" on the
+	// row of each field a live violation touches; rules with no Fields simply
+	// appear in the Open Findings list with no inline chip.
+	Fields []string
 }
 
 // rulesCatalogue maps rule IDs to their documentation metadata.
@@ -44,6 +57,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 	},
 	RuleNFOHasMBID: {
+		Fields:      []string{"musicbrainz_id"},
 		FixBehavior: "Searches configured providers for a result that includes an MBID and writes the highest-confidence match to the NFO.",
 		Guards:      "The MusicBrainz Artist ID (MBID) is the stable cross-provider key that lets Stillwater retrieve biography, images, and aliases from MusicBrainz, Last.fm, Fanart.tv, and TheAudioDB. Without an MBID, those lookups cannot run and the artist is limited to whatever the initial scan produced. The rule reads the MBID field inside the existing artist.nfo file.",
 		Examples: []string{
@@ -54,6 +68,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		FixExample: "Before: artist.nfo has no <musicbrainzartistid> element\nAfter:  artist.nfo contains <musicbrainzartistid>f59c5520-5f46-4d2c-b2c4-822eabf53419</musicbrainzartistid>",
 	},
 	RuleBioExists: {
+		Fields:      []string{"biography"},
 		FixBehavior: "Fetches a biography from providers (Last.fm, Wikipedia, TheAudioDB, etc., per your priority order) and saves it to the artist record.",
 		Guards:      "An artist without a biography shows a blank text area on artist detail pages in Emby, Jellyfin, and Kodi. The rule reads the biography stored in Stillwater's database and fires when the field is empty or shorter than the configured minimum length (default 10 characters). A biography of fewer than 10 characters is almost always a failed import artifact rather than real content.",
 		Examples: []string{
@@ -63,6 +78,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 	},
 	RuleMetadataQuality: {
+		Fields:      []string{"biography"},
 		FixBehavior: "Clears the junk value and re-fetches from providers.",
 		Guards:      "Some metadata providers return placeholder strings like '?', 'N/A', or 'No description available.' instead of real content. These pass a simple non-empty check but display as garbage on artist pages. The rule tests the stored biography against a list of known placeholder patterns and against a 50-character minimum length that distinguishes real prose from stub content. It complements bio_exists, which only checks whether any biography is present.",
 		Examples: []string{
@@ -98,6 +114,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 	},
 	RuleNameLanguagePref: {
+		Fields:      []string{"name", "sort_name"},
 		FixBehavior: "Updates the artist's stored name to the preferred-language form when one is available from MusicBrainz.",
 		Conditional: true,
 		Caveats: []string{
@@ -260,6 +277,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		},
 	},
 	RuleOriginMissing: {
+		Fields:      []string{"origin"},
 		FixBehavior: "Fetches the artist's origin from the configured provider priority list (Wikipedia, TheAudioDB, Wikidata, MusicBrainz) and saves the first non-empty value.",
 		Guards:      "The origin field records where an artist or group is from, displayed on artist detail pages and used for grouping and discovery. The rule fires when the origin field is empty. Different providers report origin at different granularity: MusicBrainz and Wikidata return a country, while Wikipedia and TheAudioDB often return a city or region. In auto mode the first non-empty value from the priority order is applied; in manual mode the violation is surfaced so you can compare provider values or enter your own.",
 		Examples: []string{
@@ -293,4 +311,14 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 // (e.g. deprecated rules).
 func CatalogueEntry(id string) RuleCatalogueEntry {
 	return rulesCatalogue[id]
+}
+
+// RuleFields returns the metadata field key(s) the given rule inspects, or nil
+// for image / whole-record / cross-field rules that carry no field tag. The
+// artist-detail page uses this to render an inline finding chip on the row of
+// each field a live violation touches (field-tag-on-rule; M55 #1336). It returns
+// a clone so a caller cannot mutate the catalogue's backing slice (immutability
+// is enforced, not merely documented).
+func RuleFields(id string) []string {
+	return slices.Clone(rulesCatalogue[id].Fields)
 }

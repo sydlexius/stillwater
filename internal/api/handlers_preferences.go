@@ -954,6 +954,49 @@ func (r *Router) getUserBoolPreference(ctx context.Context, key string, fallback
 	}
 }
 
+// getUserStringPreference reads a string user preference from the
+// user_preferences table. Returns fallback when no row exists for the current
+// user or when the user is unauthenticated. Mirrors getUserBoolPreference.
+func (r *Router) getUserStringPreference(ctx context.Context, key, fallback string) string {
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == "" {
+		return fallback
+	}
+	var v string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, key).Scan(&v)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Error("querying string user preference",
+				"user_id", userID, "key", key, "error", err)
+		}
+		return fallback
+	}
+	return v
+}
+
+// parseSectionList parses a stored JSON-array-of-strings preference (e.g.
+// artist_detail_section_order). Returns nil on empty/invalid input so callers
+// fall back to the default order. Unknown ids are kept as-is; the renderer
+// ignores any id it does not recognize.
+func parseSectionList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil
+	}
+	// Normalize any empty array (e.g. "[ ]", "[\n]") to nil, not just the exact
+	// "[]" fast-path above, so the nil-on-empty contract holds for all whitespace
+	// variants and callers reliably fall back to the default order.
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // getUserPageSize reads the page_size preference for the given user from the
 // database. If no preference is stored or the stored value is out of range,
 // PageSizeDefault is returned. The query param value (queryParam) takes

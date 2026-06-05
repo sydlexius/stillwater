@@ -77,3 +77,63 @@ func TestArtistViolationsTab_DoubleSubmitGuard(t *testing.T) {
 		t.Errorf("artist-tab action buttons missing disabled:opacity-60 styling; got:\n%s", body)
 	}
 }
+
+// TestArtistFindingsList_RendersList pins the next/ findings-list: it renders a
+// readable <ul> (NOT the stable <table>), inside the shared #violations-content
+// wrapper, with the severity, rule, message, Fix/Dismiss actions, and the OOB
+// tab-badge swap so violations-sync.js refreshes it identically.
+func TestArtistFindingsList_RendersList(t *testing.T) {
+	data := ArtistViolationsTabData{
+		ArtistID: "a-2222",
+		Violations: []rule.RuleViolation{
+			{
+				ID:        "v-2222",
+				RuleID:    rule.RuleNFOExists,
+				ArtistID:  "a-2222",
+				Severity:  "warning",
+				Message:   "missing nfo file",
+				Fixable:   true,
+				Status:    rule.ViolationStatusOpen,
+				CreatedAt: time.Now().UTC(),
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := ArtistFindingsList(data).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+	for _, want := range []string{
+		`id="violations-content-a-2222"`,  // shared wrapper for live-sync
+		"<ul",                             // a list, not a table
+		`id="artist-violation-v-2222"`,    // row id the fix/dismiss scripts look up
+		`class="sw-next-finding-sev"`,     // severity chrome
+		"warning",                         // the severity word itself
+		`class="sw-next-finding-fix"`,     // fix action (Fixable + open)
+		`class="sw-next-finding-dismiss"`, // dismiss action
+		"missing nfo file",                // message
+		`id="violations-tab-badge"`,       // OOB badge swap
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("findings list missing %q", want)
+		}
+	}
+	if strings.Contains(body, "<table") {
+		t.Errorf("next/ findings should be a list, not a table")
+	}
+}
+
+// TestArtistFindingsList_Empty renders the empty state without a list/table.
+func TestArtistFindingsList_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := ArtistFindingsList(ArtistViolationsTabData{ArtistID: "a-0"}).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+	if strings.Contains(body, "<ul") || strings.Contains(body, "<table") {
+		t.Errorf("empty findings should render neither a list nor a table")
+	}
+	if !strings.Contains(body, `id="violations-content-a-0"`) {
+		t.Errorf("empty findings missing the shared wrapper")
+	}
+}

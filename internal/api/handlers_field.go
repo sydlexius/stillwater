@@ -61,7 +61,18 @@ func (r *Router) handleFieldEdit(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.FieldEdit(a, field))
+		// providers drives the next/ channel's edit-mode "Fetch from providers"
+		// icon (fieldEditActions). It is computed the same way as the full detail
+		// page's FieldProviders map so the per-field fetch affordance matches.
+		priorities, err := r.providerSettings.GetPriorities(req.Context())
+		if err != nil {
+			// Degrade gracefully (the edit view still renders without the
+			// "Fetch from providers" affordance) but never silently -- a missing
+			// log line here made a misconfigured provider store undiagnosable.
+			r.logger.Warn("loading provider priorities for field edit", "field", field, "error", err)
+		}
+		providers := buildFieldProvidersMap(priorities)[field]
+		renderTempl(w, req, templates.FieldEdit(a, field, providers))
 		return
 	}
 
