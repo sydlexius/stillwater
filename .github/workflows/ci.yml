@@ -224,9 +224,12 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    # Same rationale as `build`: run concurrent with the matrix, gated on lint
-    # (not test) so a lint failure still short-circuits. Only runs on push to main.
-    needs: [changes, lint]
+    # Docker only runs on push to main and PUBLISHES to GHCR, so it stays gated
+    # on `test`: never publish an image for a commit whose tests failed. (Unlike
+    # `build`, which produces no published artifact and runs on PRs -- decoupling
+    # THAT from `test` is the actual wall-time win. Docker never runs on PRs, so
+    # gating it on test costs no PR-time latency.) Per CodeRabbit review on #1873.
+    needs: [changes, lint, test]
     if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
