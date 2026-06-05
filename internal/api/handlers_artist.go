@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -465,20 +467,24 @@ func (r *Router) handleArtistMatchingIDs(w http.ResponseWriter, req *http.Reques
 	})
 }
 
-// handleArtistDetailPage renders the artist detail HTML page.
-// GET /artists/{id}
-func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request) {
+// buildArtistDetailData assembles the shared ArtistDetailData for both the
+// stable handleArtistDetailPage and the next/ handleNextArtistDetailPage so the
+// two channels never diverge on connections, violation counts, the field
+// providers map, or library metadata. It returns the assembled data, the loaded
+// artist (callers need *a for neighbor lookups), and ok=false after it has
+// already written an error/login response to w.
+func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request) (templates.ArtistDetailData, *artist.Artist, bool) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
 		r.renderLoginPage(w, req)
-		return
+		return templates.ArtistDetailData{}, nil, false
 	}
 
 	id := req.PathValue("id")
 	a, err := r.artistService.GetByID(req.Context(), id)
 	if err != nil {
 		http.Error(w, "artist not found", http.StatusNotFound)
-		return
+		return templates.ArtistDetailData{}, nil, false
 	}
 
 	members, err := r.artistService.ListMembersByArtistID(req.Context(), id)
@@ -549,30 +555,63 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		activeTab = "overview"
 	}
 
-	// Fetch active violation count for the tab badge.
-	var violationCount int
-	if r.ruleService != nil {
-		vc, vcErr := r.ruleService.CountActiveViolationsForArtist(req.Context(), id)
-		if vcErr != nil {
-			r.logger.Warn("counting violations for artist detail page", "artist_id", id, "error", vcErr)
-		} else {
-			violationCount = vc
+	// Active violation count (tab badge) + per-severity breakdown (next/ hero).
+	violationCount, violationsBySeverity := r.artistViolationCounts(req.Context(), id)
+
+	return templates.ArtistDetailData{
+		Artist:               *a,
+		Members:              members,
+		Aliases:              aliases,
+		FieldProviders:       fieldProviders,
+		LibraryName:          libraryName,
+		LibrarySource:        librarySource,
+		ProfileName:          r.getActiveProfileName(req.Context()),
+		ActiveTab:            activeTab,
+		Connections:          connections,
+		ShowPlatformDebug:    showPlatformDebug,
+		HasDebugConnection:   hasDebugConnection,
+		ViolationCount:       violationCount,
+		ViolationsBySeverity: violationsBySeverity,
+	}, a, true
+}
+
+// artistViolationCounts returns the active violation total and the per-severity
+// breakdown ("error"/"warning"/"info") for an artist, logging and degrading to
+// zero/nil on error so the detail page still renders. Split out of
+// buildArtistDetailData to keep that assembler's cognitive complexity in check.
+func (r *Router) artistViolationCounts(ctx context.Context, id string) (total int, bySeverity map[string]int) {
+	if r.ruleService == nil {
+		return 0, nil
+	}
+	totalLoaded := false
+	if vc, err := r.ruleService.CountActiveViolationsForArtist(ctx, id); err != nil {
+		r.logger.Warn("counting violations for artist detail page", "artist_id", id, "error", err)
+	} else {
+		total = vc
+		totalLoaded = true
+	}
+	if bySev, err := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{ArtistID: id}); err != nil {
+		r.logger.Warn("counting violations by severity for artist detail page", "artist_id", id, "error", err)
+	} else {
+		bySeverity = bySev
+		// If the total count failed to load but the per-severity buckets did,
+		// derive total from the buckets so the page never shows a contradictory
+		// ViolationCount=0 alongside non-zero severity counts.
+		if !totalLoaded {
+			for _, n := range bySev {
+				total += n
+			}
 		}
 	}
+	return total, bySeverity
+}
 
-	data := templates.ArtistDetailData{
-		Artist:             *a,
-		Members:            members,
-		Aliases:            aliases,
-		FieldProviders:     fieldProviders,
-		LibraryName:        libraryName,
-		LibrarySource:      librarySource,
-		ProfileName:        r.getActiveProfileName(req.Context()),
-		ActiveTab:          activeTab,
-		Connections:        connections,
-		ShowPlatformDebug:  showPlatformDebug,
-		HasDebugConnection: hasDebugConnection,
-		ViolationCount:     violationCount,
+// handleArtistDetailPage renders the artist detail HTML page.
+// GET /artists/{id}
+func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request) {
+	data, _, ok := r.buildArtistDetailData(w, req)
+	if !ok {
+		return
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
 }

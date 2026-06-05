@@ -19,6 +19,11 @@ type AssetPaths struct {
 	SidebarJS      string
 	FilterFlyoutJS string
 	KeyboardJS     string
+	// Artist-detail first-party modules (M55 #1336, 4A). Extracted from the
+	// inline scripts in artist_detail.templ / artist_field.templ.
+	ArtistFanartSlideshowJS string
+	ArtistViolationsSyncJS  string
+	ArtistMembersApplyJS    string
 	// Settings-screen first-party modules (M55 #1806, extended #1808). Extracted
 	// from the inline XxxScript() blocks so the settings layer can move to shared
 	// wrappers without the behavior living in the template.
@@ -185,6 +190,9 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	<script src={ assets.SessionJS }></script>
 	<script src={ assets.PreferencesJS }></script>
 	<script src={ assets.KeyboardJS }></script>
+	<script src={ assets.ArtistFanartSlideshowJS }></script>
+	<script src={ assets.ArtistViolationsSyncJS }></script>
+	<script src={ assets.ArtistMembersApplyJS }></script>
 	<script src={ assets.SidebarJS }></script>
 	<script src={ assets.FilterFlyoutJS }></script>
 	if assets.ConflictGateJS != "" {

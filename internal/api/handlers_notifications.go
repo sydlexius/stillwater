@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -485,9 +486,7 @@ func (r *Router) handleArtistViolationsTab(w http.ResponseWriter, req *http.Requ
 
 	if r.ruleService == nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = templates.ArtistViolationsTab(templates.ArtistViolationsTabData{
-			ArtistID: artistID,
-		}).Render(req.Context(), w)
+		r.renderArtistViolations(w, req, templates.ArtistViolationsTabData{ArtistID: artistID})
 		return
 	}
 
@@ -513,5 +512,17 @@ func (r *Router) handleArtistViolationsTab(w http.ResponseWriter, req *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	r.renderArtistViolations(w, req, data)
+}
+
+// renderArtistViolations renders the per-artist findings as the next/ readable
+// list when the resolved UX channel is "next", else the stable tabbed table.
+// Both share the #violations-content-{id} wrapper + OOB badge so violations-sync
+// refreshes either identically.
+func (r *Router) renderArtistViolations(w http.ResponseWriter, req *http.Request, data templates.ArtistViolationsTabData) {
+	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+		_ = templates.ArtistFindingsList(data).Render(req.Context(), w)
+		return
+	}
 	_ = templates.ArtistViolationsTab(data).Render(req.Context(), w)
 }

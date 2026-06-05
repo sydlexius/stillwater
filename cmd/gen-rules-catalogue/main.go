@@ -291,6 +291,24 @@ func renderCatalogue(rules []rule.Rule) string {
 			}
 			b.WriteString("\n\n")
 
+			// Inspected field(s): the metadata field(s) this rule reads, sourced
+			// from the rule's Fields tag. Omitted for image / whole-record /
+			// cross-field rules, which carry no field tag. Field keys are shown in
+			// code style because they are the stable, canonical names the API and
+			// artist-detail page use.
+			if len(entry.Fields) > 0 {
+				b.WriteString("**Inspects:** ")
+				for fi, f := range entry.Fields {
+					if fi > 0 {
+						b.WriteString(", ")
+					}
+					b.WriteString("`")
+					b.WriteString(f)
+					b.WriteString("`")
+				}
+				b.WriteString("\n\n")
+			}
+
 			// Description
 			b.WriteString(r.Description)
 			b.WriteString("\n\n")

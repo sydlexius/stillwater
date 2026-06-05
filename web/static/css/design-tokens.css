@@ -102,6 +102,14 @@
   --sw-font-size-base: 14px;
   --sw-letter-spacing: normal;
 
+  /* next/ type-scale seam (M55 #1853): the pickable-fonts hooks the next/ type
+     scale composes with. --sw-font-sans tracks the Font Family preference
+     (--sw-font-family is rebound per the [data-font-family] rules later in
+     this file), so any sans-bound role re-renders when the font family changes.
+     --sw-font-mono is the monospace ramp for IDs / timestamps / code. */
+  --sw-font-sans: var(--sw-font-family);
+  --sw-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
   /* -- Layout ------------------------------------------------------------- */
   --sw-content-max-width: 1200px;
   --sw-radius-sm: 6px;

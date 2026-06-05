@@ -5,9 +5,23 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
 )
+
+// backupImageTypes is the closed set of artwork kinds that may key a backup
+// path. It mirrors the request-input allowlist enforced at the API boundary
+// (handlers_image.go) so the constraint is re-asserted at this lower layer:
+// imageType is the only segment of a backup path that originates from caller
+// input, and backupTypeDir is the single chokepoint where it is joined into a
+// filesystem path.
+var backupImageTypes = map[string]bool{
+	"thumb":  true,
+	"fanart": true,
+	"logo":   true,
+	"banner": true,
+}
 
 // BackupDirName is the hidden subdirectory inside an artist folder where the
 // pre-edit original of a single-slot image (thumb/logo/banner) is kept so a
@@ -26,8 +40,24 @@ const BackupDirName = ".sw-backup"
 // identity is keyed by image TYPE, not by the file's basename-with-extension.
 // This makes the backup format-INDEPENDENT: a png->jpg crop still finds its
 // backup after Save deletes the old png and writes a jpg (#1837).
-func backupTypeDir(dir, imageType string) string {
-	return filepath.Join(dir, BackupDirName, imageType)
+//
+// PATH-SANITIZATION GUARD: imageType is validated against the closed artwork-kind
+// allowlist AND rejected if it is empty, contains a path separator, or contains
+// "..", BEFORE it is joined into the path. This dominates every os.* sink reached
+// through the returned dir (ReadDir, Remove, MkdirAll, WriteFileAtomic), so a
+// tainted type can never traverse out of the .sw-backup subtree. It is
+// defense-in-depth: the API boundary already allowlists imageType, but
+// re-asserting it here fails closed at the filesystem layer and gives static
+// analysis a recognizable sanitizer for the go/path-injection class.
+func backupTypeDir(dir, imageType string) (string, error) {
+	if !backupImageTypes[imageType] ||
+		imageType == "" ||
+		strings.ContainsRune(imageType, os.PathSeparator) ||
+		strings.ContainsRune(imageType, '/') ||
+		strings.Contains(imageType, "..") {
+		return "", fmt.Errorf("invalid image type %q for backup path", imageType)
+	}
+	return filepath.Join(dir, BackupDirName, imageType), nil
 }
 
 // findBackupFile returns the single backup file path for an image type, or "" if
@@ -35,7 +65,10 @@ func backupTypeDir(dir, imageType string) string {
 // first regular entry found is the backup. The returned path preserves the
 // ORIGINAL basename (and thus the original format).
 func findBackupFile(dir, imageType string) (string, error) {
-	typeDir := backupTypeDir(dir, imageType)
+	typeDir, err := backupTypeDir(dir, imageType)
+	if err != nil {
+		return "", err
+	}
 	entries, err := os.ReadDir(typeDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -57,7 +90,10 @@ func findBackupFile(dir, imageType string) (string, error) {
 // format-independent). Pass keep == "" to remove every backup file (the
 // post-restore consume path). A missing per-type dir is not an error.
 func pruneBackupFiles(dir, imageType, keep string) error {
-	typeDir := backupTypeDir(dir, imageType)
+	typeDir, err := backupTypeDir(dir, imageType)
+	if err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(typeDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -109,7 +145,11 @@ func BackupSingleSlot(dir, imageType string, naming []string) error {
 		return fmt.Errorf("reading original for backup: %w", err)
 	}
 
-	backup := filepath.Join(backupTypeDir(dir, imageType), filepath.Base(existing))
+	typeDir, err := backupTypeDir(dir, imageType)
+	if err != nil {
+		return err
+	}
+	backup := filepath.Join(typeDir, filepath.Base(existing))
 	if mkErr := os.MkdirAll(filepath.Dir(backup), 0o750); mkErr != nil {
 		return fmt.Errorf("creating backup dir: %w", mkErr)
 	}

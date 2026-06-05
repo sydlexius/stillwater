@@ -1,0 +1,158 @@
+package templates
+
+import (
+	"strings"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// IsGroupType is an exported wrapper over the unexported isGroupType so the
+// next package can drive the gender-field conditional (gender is hidden for
+// group-type artists). Kept here to avoid churning the hot artist_detail.templ.
+func IsGroupType(artistType string) bool {
+	return isGroupType(artistType)
+}
+
+// isPersonType reports whether the artist type is a single-person type (a solo
+// act / individual), where band-only fields (Formed, Disbanded, Members) do not
+// apply. Mirrors isGroupType for the opposite pole; unknown/empty types match
+// neither so nothing is hidden on a guess.
+func isPersonType(artistType string) bool {
+	switch strings.ToLower(strings.TrimSpace(artistType)) {
+	// "character" is an individual-type alongside person/solo (matches
+	// next/helpers.go's person predicate); without it, character artists were
+	// treated as unknown and still saw group-only fields (formed/disbanded/members).
+	case "person", "solo", "solo act", "character":
+		return true
+	default:
+		return false
+	}
+}
+
+// FieldAppliesToArtistType reports whether a metadata field is meaningful for an
+// artist of the given type, so the next/ artist-detail page can hide
+// type-inapplicable rows (UAT 4A item 6 / #1843): a solo act should not show a
+// Members section or Formed/Disbanded dates, and a group should not show
+// Born/Died/Gender. Person-only fields (born, died, gender) are hidden for known
+// GROUP types; group-only fields (formed, disbanded, members) are hidden for
+// known PERSON/solo types. When the type is unknown or empty the field is shown
+// (no data is hidden on a guess). All other fields always apply.
+func FieldAppliesToArtistType(field, artistType string) bool {
+	switch field {
+	case "born", "died", "gender":
+		return !isGroupType(artistType)
+	case "formed", "disbanded", "members":
+		return !isPersonType(artistType)
+	default:
+		return true
+	}
+}
+
+// MembersList renders the band-member rows (name, original-member tag,
+// instruments, join/leave dates) shared by the stable MembersSection and the
+// next/ Members sub-card. It renders ONLY the rows or the empty state, not the
+// surrounding card chrome or the fetch/clear context menu, so each channel can
+// wrap it in its own surface.
+templ MembersList(members []artist.BandMember) {
+	if len(members) > 0 {
+		<div class="divide-y divide-gray-200 dark:divide-gray-700">
+			for _, m := range members {
+				<div class="py-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+							{ m.MemberName }
+							if m.IsOriginalMember {
+								<span class="ml-1 text-xs text-gray-400">{ t(ctx, "artist.member_original") }</span>
+							}
+						</p>
+						if len(m.Instruments) > 0 {
+							<p class="text-xs text-gray-500 dark:text-gray-400">
+								for i, inst := range m.Instruments {
+									if i > 0 {
+										{ ", " }
+									}
+									{ tInstrument(ctx, inst) }
+								}
+							</p>
+						}
+					</div>
+					<div class="text-xs text-gray-400">
+						if m.DateJoined != "" {
+							{ m.DateJoined }
+							if m.DateLeft != "" {
+								{ " - " + m.DateLeft }
+							} else {
+								{ " - " + t(ctx, "artist.member_present") }
+							}
+						}
+					</div>
+				</div>
+			}
+		</div>
+	} else {
+		<p class="text-sm text-gray-400 italic">{ t(ctx, "artist.no_members") }</p>
+	}
+}
+
+// AliasesList renders the alias rows + per-row remove control shared by the
+// stable aliases card and the next/ Aliases sub-card. The add form is rendered
+// by each channel's caller (it differs slightly in styling) but the rows and the
+// empty state are shared. artistID drives the DELETE hx targets.
+templ AliasesList(artistID string, aliases []artist.Alias) {
+	<div id={ "aliases-" + artistID }>
+		if len(aliases) > 0 {
+			<div class="divide-y divide-gray-100 dark:divide-gray-700 mb-4">
+				for _, a := range aliases {
+					<div class="flex items-center justify-between py-2 text-sm">
+						<span class="text-gray-800 dark:text-gray-200">{ a.Alias }</span>
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+							hx-delete={ "/api/v1/artists/" + artistID + "/aliases/" + a.ID }
+							hx-swap="none"
+							data-error-prefix={ t(ctx, "artist.alias_remove_failed") }
+							hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
+						>
+							@components.IconTrash("h-3.5 w-3.5")
+							{ t(ctx, "common.remove") }
+						</button>
+					</div>
+				}
+			</div>
+		} else {
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-4">{ t(ctx, "artist.no_aliases") }</p>
+		}
+	</div>
+}
+
+// PlatformStateCardBody renders the inner body of the platform-state card
+// (header badges + action buttons + comparison table) shared by the stable
+// PlatformStateCard and the next/ Providers section (built by 4C). Lifted so 4C
+// reuses the exact reconciliation table without forking.
+templ PlatformStateCardBody(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
+	<div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
+		@platformStateHeaderBadges(conn, state)
+		<div class="flex items-center gap-2">
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+				onclick={ pushMetadata(a.ID, conn.ID) }
+			>
+				{ t(ctx, "artist.push_all") }
+			</button>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				hx-post={ "/api/v1/artists/" + a.ID + "/pull?connection_id=" + conn.ID }
+				hx-swap="none"
+				data-error-prefix={ t(ctx, "artist.platform_action_failed") }
+				hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
+			>
+				{ t(ctx, "artist.pull_from_platform") }
+			</button>
+		</div>
+	</div>
+	@platformStateTable(a, conn, state, profileName, t(ctx, "artist.platform"), false)
+}

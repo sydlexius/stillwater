@@ -68,6 +68,8 @@ Media servers like Emby and Jellyfin read artist information (name, biography, g
 
 **Category:** NFO &middot; **Default:** Enabled, auto &middot; **Severity:** error
 
+**Inspects:** `musicbrainz_id`
+
 The artist.nfo file must contain a MusicBrainz artist ID
 
 The MusicBrainz Artist ID (MBID) is the stable cross-provider key that lets Stillwater retrieve biography, images, and aliases from MusicBrainz, Last.fm, Fanart.tv, and TheAudioDB. Without an MBID, those lookups cannot run and the artist is limited to whatever the initial scan produced. The rule reads the MBID field inside the existing artist.nfo file.
@@ -92,6 +94,8 @@ After:  artist.nfo contains <musicbrainzartistid>f59c5520-5f46-4d2c-b2c4-822eabf
 ## Biography exists
 
 **Category:** Metadata &middot; **Default:** Enabled, auto &middot; **Severity:** warning
+
+**Inspects:** `biography`
 
 Artist must have a biography populated
 
@@ -173,6 +177,8 @@ After:  /music/The National/
 
 **Category:** Metadata &middot; **Default:** Enabled, manual &middot; **Severity:** warning
 
+**Inspects:** `biography`
+
 Detects placeholder or junk metadata values (e.g. biography of just '?' or 'N/A'). Violations are fixed by clearing the junk value and re-fetching from providers.
 
 Some metadata providers return placeholder strings like '?', 'N/A', or 'No description available.' instead of real content. These pass a simple non-empty check but display as garbage on artist pages. The rule tests the stored biography against a list of known placeholder patterns and against a 50-character minimum length that distinguishes real prose from stub content. It complements bio_exists, which only checks whether any biography is present.
@@ -197,6 +203,8 @@ After:  biography = "Radiohead are an English rock band formed in Abingdon, Oxfo
 ## Artist name matches preferred language
 
 **Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** warning
+
+**Inspects:** `name`, `sort_name`
 
 Flags artists whose stored Name or SortName does not match the user's preferred metadata languages. When MusicBrainz provides a preferred-locale alias, the violation is fixable and Fix/auto mode can promote it; otherwise the violation is informational and can be edited manually or dismissed.
 
@@ -226,6 +234,8 @@ After:  Name = "Shiina Ringo", SortName = "Ringo, Shiina"
 ## Origin is populated
 
 **Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** info
+
+**Inspects:** `origin`
 
 Flags artists with an empty origin field. Violations are fixed by fetching the origin (city, region, or country) from the configured provider priority list. Auto mode applies the highest-priority non-empty result; manual mode surfaces the violation so you can pick a provider value or edit it.
 

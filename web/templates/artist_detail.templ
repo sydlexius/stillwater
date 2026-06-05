@@ -26,6 +26,10 @@ type ArtistDetailData struct {
 	ShowPlatformDebug  bool                     // Whether to show the Debug tab (from settings)
 	HasDebugConnection bool                     // Whether at least one Emby/Jellyfin connection exists
 	ViolationCount     int                      // Active violation count for the badge on the Violations tab
+	// ViolationsBySeverity holds the active-violation counts keyed by severity
+	// ("error"/"warning"/"info"), for the next/ hero's finding-severity summary.
+	// Empty/nil for the stable page (which uses the total ViolationCount only).
+	ViolationsBySeverity map[string]int
 }
 
 // ArtistDetailConnection holds connection info for the "View on Platform" links
@@ -39,9 +43,9 @@ type ArtistDetailConnection struct {
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 	@Layout(data.Artist.Name, assets) {
-		<div class="space-y-6">
+		<div class="space-y-6" data-sw-violations-sync data-artist-id={ data.Artist.ID }>
 			if data.Artist.FanartCount > 1 {
-				<div id="fanart-slideshow" class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true" data-fanart-count={ strconv.Itoa(data.Artist.FanartCount) } data-artist-id={ data.Artist.ID }>
+				<div id="fanart-slideshow" class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true" data-fanart-count={ strconv.Itoa(data.Artist.FanartCount) } data-artist-id={ data.Artist.ID } data-fanart-path-template={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/{index}/file", data.Artist.ID) }>
 					<img
 						id="fanart-a"
 						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/0/file", assets.BasePath, data.Artist.ID) }
@@ -56,53 +60,6 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					/>
 					<div class="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/55 dark:from-black/70 dark:via-black/50 dark:to-black/70"></div>
 				</div>
-				<script>
-					(function() {
-						var ss = document.getElementById('fanart-slideshow');
-						if (!ss) return;
-						var count = parseInt(ss.dataset.fanartCount, 10);
-						var artistId = ss.dataset.artistId;
-						if (count < 2) return;
-						var imgA = document.getElementById('fanart-a');
-						var imgB = document.getElementById('fanart-b');
-						var current = 0;
-						var showingA = true;
-						var intervalMs = 8000;
-						var timer = null;
-						var bpEl = document.querySelector('meta[name="htmx-base-path"]');
-						var bp = bpEl ? bpEl.content : '';
-
-						function cycle() {
-							current = (current + 1) % count;
-							var url = bp + '/api/v1/artists/' + artistId + '/images/fanart/' + current + '/file';
-							if (showingA) {
-								imgB.onload = function() {
-									imgA.style.opacity = '0';
-									imgB.style.opacity = '1';
-									showingA = false;
-								};
-								imgB.onerror = function() { /* skip failed image on next cycle */ };
-								imgB.src = url;
-							} else {
-								imgA.onload = function() {
-									imgB.style.opacity = '0';
-									imgA.style.opacity = '1';
-									showingA = true;
-								};
-								imgA.onerror = function() { /* skip failed image on next cycle */ };
-								imgA.src = url;
-							}
-						}
-
-						function start() { if (!timer) timer = setInterval(cycle, intervalMs); }
-						function stop() { if (timer) { clearInterval(timer); timer = null; } }
-
-						document.addEventListener('visibilitychange', function() {
-							if (document.hidden) stop(); else start();
-						});
-						start();
-					})();
-				</script>
 			} else if data.Artist.FanartExists {
 				<div class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true">
 					<img
@@ -554,29 +511,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						</section>
 						<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.aliases") }</h2>
-							<div id={ "aliases-" + data.Artist.ID }>
-								if len(data.Aliases) > 0 {
-									<div class="divide-y divide-gray-100 dark:divide-gray-700 mb-4">
-										for _, a := range data.Aliases {
-											<div class="flex items-center justify-between py-2 text-sm">
-												<span class="text-gray-800 dark:text-gray-200">{ a.Alias }</span>
-												<button
-													type="button"
-													class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-													hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/aliases/" + a.ID }
-													hx-swap="none"
-													hx-on::after-request="if(event.detail.successful) window.location.reload(); else { var msg; try { msg = JSON.parse(event.detail.xhr.responseText).error; } catch(e) {} alert('Remove failed: ' + (msg || event.detail.xhr.responseText)); }"
-												>
-													@components.IconTrash("h-3.5 w-3.5")
-													{ t(ctx, "common.remove") }
-												</button>
-											</div>
-										}
-									</div>
-								} else {
-									<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-4">{ t(ctx, "artist.no_aliases") }</p>
-								}
-							</div>
+							@AliasesList(data.Artist.ID, data.Aliases)
 							<form
 								class="flex items-center gap-2"
 								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
@@ -843,71 +778,6 @@ templ artistDetailTabScript(artistID string) {
 			history.replaceState(null, '', url);
 		}
 	</script>
-	// Violations tab propagation: refresh content and badge when violation
-	// state changes from any source (fix, dismiss, metadata refresh, SSE).
-	@artistDetailViolationSync(artistID)
-}
-
-// artistDetailViolationSync keeps the violations tab and its badge in sync
-// with violation-state changes. It listens for three event sources:
-//   - dashboard:action-resolved -- fired after fix/dismiss on this or other pages
-//   - htmx:afterSettle on #refresh-panel -- fired after metadata refresh completes
-//   - artist.updated SSE -- fired when the artist is updated server-side
-
-script artistDetailViolationSync(artistID string) {
-	// Root-relative URL: the global htmx:configRequest hook in layout.templ
-	// prepends basePath for sub-path deployments, so concatenating bp here
-	// would double-prefix.
-	var tabURL = '/artists/' + artistID + '/violations/tab';
-	var loadedTarget = '#violations-content-' + artistID;
-	var initialTarget = '#artist-violations-tab-' + artistID;
-
-	// refreshViolationsTab reloads the violations tab content. The server
-	// response includes an OOB swap for the tab badge, so both update
-	// together in a single round-trip.
-	//
-	// Targets the loaded wrapper when the tab has been opened at least
-	// once; otherwise falls back to the lazy-load placeholder so the badge
-	// still refreshes on a fresh page load (the response's OOB badge swap
-	// keeps the tab pill in sync regardless of which target is hit).
-	function refreshViolationsTab() {
-		var target = document.querySelector(loadedTarget) || document.querySelector(initialTarget);
-		if (!target) return;
-		htmx.ajax('GET', tabURL, {target: target, swap: 'outerHTML'});
-	}
-
-	// After fix/dismiss dispatches dashboard:action-resolved.
-	document.body.addEventListener('dashboard:action-resolved', function() {
-		refreshViolationsTab();
-	});
-
-	// After metadata refresh lands in #refresh-panel, violations may have
-	// changed because handleArtistRefresh calls runRulesAfterRefresh.
-	var refreshPanel = document.getElementById('refresh-panel');
-	if (refreshPanel) {
-		refreshPanel.addEventListener('htmx:afterSettle', function() {
-			refreshViolationsTab();
-		});
-	}
-
-	// SSE artist.updated events (e.g. from a scan or background job).
-	// sse.js dispatches CustomEvent("sse:<type>", {detail: data}) on document.
-	document.addEventListener('sse:artist.updated', function(evt) {
-		var data = evt.detail || {};
-		if (!data.artist_id || data.artist_id === artistID) {
-			refreshViolationsTab();
-		}
-	});
-
-	// After the Action menu's Run Rules completes, the server emits
-	// artist:show-violations-tab so the user sees the refreshed list
-	// inline instead of the summary fragment in #refresh-panel. Clicking
-	// the tab button routes through switchArtistTab for URL sync and
-	// panel visibility in one place.
-	document.body.addEventListener('artist:show-violations-tab', function() {
-		var btn = document.getElementById('tab-violations');
-		if (btn) btn.click();
-	});
 }
 
 // ArtistHistorySection renders a collapsible history card that loads its
@@ -1227,7 +1097,11 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 // isGroupType reports whether the artist type is a group-like type where
 // the Gender field is not applicable (groups, orchestras, choirs).
 func isGroupType(artistType string) bool {
-	switch strings.ToLower(artistType) {
+	// TrimSpace so a stray-whitespace type from a sloppy NFO (" group") gates the
+	// same as "group" -- matching isPersonType and ArtistTypeLabel, which both
+	// trim. Without it the hero label (trimmed) and field-gating (untrimmed)
+	// disagree.
+	switch strings.ToLower(strings.TrimSpace(artistType)) {
 	case "group", "orchestra", "choir":
 		return true
 	default:
@@ -1318,44 +1192,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 				</span>
 			</span>
 		</div>
-		if len(members) > 0 {
-			<div class="divide-y divide-gray-200 dark:divide-gray-700">
-				for _, m := range members {
-					<div class="py-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-						<div>
-							<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
-								{ m.MemberName }
-								if m.IsOriginalMember {
-									<span class="ml-1 text-xs text-gray-400">{ t(ctx, "artist.member_original") }</span>
-								}
-							</p>
-							if len(m.Instruments) > 0 {
-								<p class="text-xs text-gray-500 dark:text-gray-400">
-									for i, inst := range m.Instruments {
-										if i > 0 {
-											{ ", " }
-										}
-										{ tInstrument(ctx, inst) }
-									}
-								</p>
-							}
-						</div>
-						<div class="text-xs text-gray-400">
-							if m.DateJoined != "" {
-								{ m.DateJoined }
-								if m.DateLeft != "" {
-									{ " - " + m.DateLeft }
-								} else {
-									{ " - " + t(ctx, "artist.member_present") }
-								}
-							}
-						</div>
-					</div>
-				}
-			</div>
-		} else {
-			<p class="text-sm text-gray-400 italic">{ t(ctx, "artist.no_members") }</p>
-		}
+		@MembersList(members)
 	</section>
 }
 
@@ -1382,28 +1219,7 @@ script pushMetadata(artistID string, connectionID string) {
 // profileName is the active platform profile name used for Stillwater-side image labels.
 templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
 	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-		<div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
-			@platformStateHeaderBadges(conn, state)
-			<div class="flex items-center gap-2">
-				<button
-					type="button"
-					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
-					onclick={ pushMetadata(a.ID, conn.ID) }
-				>
-					{ t(ctx, "artist.push_all") }
-				</button>
-				<button
-					type="button"
-					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					hx-post={ "/api/v1/artists/" + a.ID + "/pull?connection_id=" + conn.ID }
-					hx-swap="none"
-					hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
-				>
-					{ t(ctx, "artist.pull_from_platform") }
-				</button>
-			</div>
-		</div>
-		@platformStateTable(a, conn, state, profileName, t(ctx, "artist.platform"), false)
+		@PlatformStateCardBody(a, conn, state, profileName)
 	</div>
 }
 

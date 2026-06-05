@@ -1655,3 +1655,72 @@ func TestMetadataNameRomanizationPref_RejectsInvalidValue(t *testing.T) {
 		})
 	}
 }
+
+// TestGetUserStringPreference verifies the string-preference getter returns the
+// fallback when no row exists and the stored value verbatim once present. The
+// section-order/hidden prefs are stored as raw JSON-array strings, so the getter
+// must not interpret or normalize them.
+func TestGetUserStringPreference(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+	ctx := withUserCtx(httptest.NewRequest(http.MethodGet, "/", nil), userID).Context()
+
+	// Missing -> fallback.
+	if got := r.getUserStringPreference(ctx, PrefArtistDetailSectionOrder, "DEFAULT"); got != "DEFAULT" {
+		t.Fatalf("missing pref = %q, want DEFAULT", got)
+	}
+
+	// Stored -> returned verbatim.
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))`,
+		userID, PrefArtistDetailSectionOrder, `["artwork","bio"]`); err != nil {
+		t.Fatalf("seeding preference: %v", err)
+	}
+	if got := r.getUserStringPreference(ctx, PrefArtistDetailSectionOrder, "DEFAULT"); got != `["artwork","bio"]` {
+		t.Fatalf("stored pref = %q, want the raw JSON array", got)
+	}
+
+	// Unauthenticated context -> fallback (no panic).
+	if got := r.getUserStringPreference(context.Background(), PrefArtistDetailSectionOrder, "DEFAULT"); got != "DEFAULT" {
+		t.Fatalf("unauthenticated pref = %q, want DEFAULT", got)
+	}
+}
+
+// TestParseSectionList verifies the JSON-array parser tolerates empty/invalid
+// input by returning nil (so callers fall back to the default order) and parses
+// a well-formed array in order.
+func TestParseSectionList(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", nil},
+		{"  ", nil},
+		{"[]", nil},
+		{"[ ]", nil},      // formatted empty array must also normalize to nil
+		{"[\n  \n]", nil}, // whitespace/newline empty array too
+		{"garbage", nil},
+		{`{"not":"an array"}`, nil},
+		{`["bio","artwork"]`, []string{"bio", "artwork"}},
+	}
+	for _, c := range cases {
+		got := parseSectionList(c.in)
+		// Assert nil (not merely empty) for the empty/invalid cases so a future
+		// change that returns an empty-but-non-nil slice is caught -- callers rely
+		// on nil to trigger the default-order fallback.
+		if c.want == nil && got != nil {
+			t.Errorf("parseSectionList(%q) = %#v, want nil", c.in, got)
+			continue
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("parseSectionList(%q) len = %d, want %d", c.in, len(got), len(c.want))
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("parseSectionList(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
+			}
+		}
+	}
+}

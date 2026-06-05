@@ -175,31 +175,9 @@ templ nextArtistRow(a artist.Artist, data templates.ArtistListData) {
 	</tr>
 }
 
-// nextCoverageCell renders the consolidated metadata/image coverage bubbles plus
-// the provider-ID count, replacing the stable page's separate badge columns.
-templ nextCoverageCell(a artist.Artist, profileName string) {
-	<div class="flex items-center gap-2">
-		<div class="flex items-center gap-0.5">
-			for _, c := range nextCoverageItems(ctx, a, profileName) {
-				<span class={ nextCoverageBubbleClass(c.State) } title={ c.Tooltip } aria-label={ c.Tooltip }>{ c.Label }</span>
-			}
-		</div>
-		<span class="text-[11px] tabular-nums text-gray-400 dark:text-gray-500" title={ nextIDCountTitle(ctx, a) }>{ nextIDCountText(a) }</span>
-	</div>
-}
-
-// nextScoreCell renders the compliance/health score as a tone-colored dot + the
-// percentage, or a muted placeholder when the artist has not been scored yet.
-templ nextScoreCell(a artist.Artist) {
-	if nextArtistScored(a) {
-		<span class={ "inline-flex items-center justify-end gap-1.5 text-xs font-semibold tabular-nums", nextScoreText(a.HealthScore) }>
-			<span class={ "h-1.5 w-1.5 rounded-full", nextScoreDot(a.HealthScore) }></span>
-			{ nextScorePercent(a.HealthScore) }
-		</span>
-	} else {
-		<span class="text-xs text-gray-300 dark:text-gray-600" title={ t(ctx, "artists.score.unrated") }>{ "-" }</span>
-	}
-}
+// nextCoverageCell + nextScoreCell were extracted to coverage.templ (M55 #1336)
+// so the artist-detail hero can reuse the identical Sources/Coverage/Score
+// box-bar. The call sites below are unchanged (same package).
 
 // ArtistsGrid is the next/ channel grid fragment. No grid prototype exists, so
 // the cards carry the same Sources / Coverage / Score vocabulary as the table,
