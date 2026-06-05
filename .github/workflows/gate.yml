@@ -31,7 +31,7 @@
 #   that demonstrably cannot change the outcome.  The job itself always runs
 #   and always emits a status.
 
-name: Gate
+name: Pre-Push Gate
 
 on:
   push:

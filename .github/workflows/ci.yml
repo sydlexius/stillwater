@@ -96,7 +96,7 @@ jobs:
       # shard hides real failures in the others if fail-fast is on.
       fail-fast: false
       matrix:
-        shard: [api, rule, services, core]
+        shard: [api, rule, services, providers, rest]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -105,29 +105,29 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Resolve the package list for this shard. The api / rule / services
-      # shards have static lists derived from a per-package profile (api 83s,
-      # rule+settingsio 110s, auth+image+artist 105s). The core shard is
-      # dynamic -- whatever is left after excluding the static buckets --
-      # so newly-added packages auto-fall into core without further matrix
-      # edits. Wall time = max(shards) + runner overhead (~60s).
+      # Resolve the package list for this shard. The api / rule / services /
+      # providers shards have static lists (see the SHARDS map below). The
+      # `rest` shard is dynamic -- whatever is left after excluding the static
+      # buckets -- so newly-added packages auto-fall into `rest` without
+      # further matrix edits. Wall time = max(shards) + runner overhead.
       - name: Resolve shard package list
         id: shard
         run: |
           # Single source of truth for named-shard package mappings. Adding
           # or moving packages between shards is a one-line change here; the
-          # named-shard branches and the core exclusion regex both derive
+          # named-shard branches and the `rest` exclusion regex both derive
           # from this map, so they cannot drift. Adding a NEW shard also
           # requires updating the matrix.shard list above.
           declare -A SHARDS=(
             [api]="internal/api"
             [rule]="internal/rule internal/settingsio"
             [services]="internal/auth internal/image internal/artist"
+            [providers]="internal/provider internal/connection"
           )
 
           shard="${{ matrix.shard }}"
           case "${shard}" in
-            core)
+            rest)
               # Dynamic exclusion: derive the regex from SHARDS so this
               # branch cannot drift from the named-shard branches. Module
               # path comes from `go list -m` so a go.mod rename does not
@@ -193,7 +193,12 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [changes, lint, test]
+    # Build runs concurrent with the test matrix: compiling the binary does not
+    # depend on tests passing, and `Build` + `Test` are INDEPENDENTLY required by
+    # branch protection, so a test failure still blocks merge via its own check.
+    # Keep the `lint` dependency so a lint-failing PR short-circuits Build (lint
+    # is far shorter than the matrix, so this costs no wall time).
+    needs: [changes, lint]
     if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -219,7 +224,9 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [changes, lint, test]
+    # Same rationale as `build`: run concurrent with the matrix, gated on lint
+    # (not test) so a lint failure still short-circuits. Only runs on push to main.
+    needs: [changes, lint]
     if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
