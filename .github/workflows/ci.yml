@@ -96,7 +96,7 @@ jobs:
       # shard hides real failures in the others if fail-fast is on.
       fail-fast: false
       matrix:
-        shard: [api, rule, services, providers, rest]
+        shard: [api-1, api-2, rule-1, rule-2, services, providers, scan, rest]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -105,27 +105,31 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Resolve the package list for this shard. The api / rule / services /
-      # providers shards have static lists (see the SHARDS map below). The
-      # `rest` shard is dynamic -- whatever is left after excluding the static
-      # buckets -- so newly-added packages auto-fall into `rest` without
-      # further matrix edits. Wall time = max(shards) + runner overhead.
+      # Resolve the package list (and optional -run bucket regex) for this
+      # shard. Named shards (services / providers / scan) come from the SHARDS
+      # map below. The partitioned bases (api / rule) are each split into two
+      # buckets -- shards api-1/api-2 and rule-1/rule-2 -- by a round-robin over
+      # their test names; both were verified isolation-safe under that split
+      # (each bucket passes run alone, shuffled, with -race). The `rest` shard
+      # is the dynamic remainder, so new packages auto-fall into it. Wall time =
+      # max(shards) + runner overhead.
       - name: Resolve shard package list
         id: shard
         run: |
-          # Single source of truth for named-shard package mappings. Adding
-          # or moving packages between shards is a one-line change here; the
-          # named-shard branches and the `rest` exclusion regex both derive
-          # from this map, so they cannot drift. Adding a NEW shard also
+          # Single source of truth for named-shard package mappings. Adding or
+          # moving packages between shards is a one-line change here; the named
+          # branches, the partition bases, and the `rest` exclusion regex all
+          # derive from this map, so they cannot drift. Adding a NEW shard also
           # requires updating the matrix.shard list above.
           declare -A SHARDS=(
             [api]="internal/api"
-            [rule]="internal/rule internal/settingsio"
-            [services]="internal/auth internal/image internal/artist"
+            [rule]="internal/rule"
+            [services]="internal/auth internal/image internal/artist internal/settingsio"
             [providers]="internal/provider internal/connection"
+            [scan]="internal/scanner internal/library internal/database internal/scraper internal/foreign internal/watcher"
           )
-
           shard="${{ matrix.shard }}"
+          run=""
           case "${shard}" in
             rest)
               # Dynamic exclusion: derive the regex from SHARDS so this
@@ -141,6 +145,39 @@ jobs:
               done
               pkgs=$(go list ./... | grep -v -E "^${module}/(${excludes})(/|$)" | tr '\n' ' ')
               ;;
+            *-[12])
+              # Partitioned shard "<base>-<n>": run only this bucket's tests via
+              # -run. Round-robin over SORTED test names keeps the two buckets
+              # balanced regardless of name clustering (an alphabetic split would
+              # be lopsided -- most names share a prefix). Names come from grep
+              # over *_test.go (no compile); a name that is not a real test is a
+              # harmless no-op in -run.
+              base="${shard%-*}"
+              idx=$(( ${shard##*-} - 1 ))           # api-1 -> 0, api-2 -> 1
+              if [ -z "${SHARDS[${base}]+x}" ]; then
+                echo "Unknown partition base: ${base}" >&2
+                exit 1
+              fi
+              dir="${SHARDS[${base}]}"
+              names=$(grep -rhoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]+' \
+                        --include='*_test.go' "${dir}" \
+                      | sed -E 's/^func //' | grep -vx 'TestMain' | sort -u)
+              sel=""
+              i=0
+              while IFS= read -r t; do
+                [ -z "${t}" ] && continue
+                if [ $(( i % 2 )) -eq "${idx}" ]; then
+                  sel="${sel:+${sel}|}${t}"
+                fi
+                i=$(( i + 1 ))
+              done < <(printf '%s\n' "${names}")
+              if [ -z "${sel}" ]; then
+                echo "Empty partition for ${shard}" >&2
+                exit 1
+              fi
+              run="^(${sel})\$"
+              pkgs="./${dir}/... "
+              ;;
             *)
               if [ -z "${SHARDS[${shard}]+x}" ]; then
                 echo "Unknown shard: ${shard}" >&2
@@ -153,6 +190,12 @@ jobs:
               ;;
           esac
           echo "packages=${pkgs}" >> "$GITHUB_OUTPUT"
+          # -run regex can be large; use the heredoc form of GITHUB_OUTPUT.
+          {
+            echo "run<<__RUN_EOF__"
+            echo "${run}"
+            echo "__RUN_EOF__"
+          } >> "$GITHUB_OUTPUT"
 
       # -coverpkg=./... is intentionally cross-shard: each shard's coverage
       # profile records hits across the WHOLE module, not just its own
@@ -160,7 +203,18 @@ jobs:
       # a line marked covered by any shard wins -- the final report is
       # accurate regardless of which shard executed which test.
       - name: Run tests
-        run: go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out ${{ steps.shard.outputs.packages }}
+        # Partitioned shards (api-*, rule-*) pass a -run bucket regex via $RUN
+        # (env, so the large regex cannot break shell quoting); other shards run
+        # their whole package set (RUN empty). The package list is a simple path
+        # string, injected directly as before.
+        env:
+          RUN: ${{ steps.shard.outputs.run }}
+        run: |
+          if [ -n "$RUN" ]; then
+            go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out -run "$RUN" ${{ steps.shard.outputs.packages }}
+          else
+            go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out ${{ steps.shard.outputs.packages }}
+          fi
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
