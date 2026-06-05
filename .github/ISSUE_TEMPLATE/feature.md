@@ -7,7 +7,7 @@ labels: enhancement
 <!-- Agent hints: set all three before submitting -->
 [mode: plan] <!-- plan | direct -->
 [model: sonnet] <!-- opus | sonnet | haiku -->
-[effort: medium] <!-- high | medium | low -->
+[effort: medium] <!-- low | medium | high | xhigh | max | ultracode  (xhigh and up = Opus only; anything past xhigh requires maintainer go - see CLAUDE.md break-glass rule) -->
 
 ## Summary
 
