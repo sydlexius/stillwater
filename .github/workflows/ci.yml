@@ -96,7 +96,7 @@ jobs:
       # shard hides real failures in the others if fail-fast is on.
       fail-fast: false
       matrix:
-        shard: [api-1, api-2, rule-1, rule-2, services, providers, scan, rest]
+        shard: [api-1, api-2, rule-1, rule-2, services, settingsio, providers, scan, rest]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -106,7 +106,7 @@ jobs:
           cache: true
 
       # Resolve the package list (and optional -run bucket regex) for this
-      # shard. Named shards (services / providers / scan) come from the SHARDS
+      # shard. Named shards (services / settingsio / providers / scan) come from the SHARDS
       # map below. The partitioned bases (api / rule) are each split into two
       # buckets -- shards api-1/api-2 and rule-1/rule-2 -- by a round-robin over
       # their test names; both were verified isolation-safe under that split
@@ -124,7 +124,10 @@ jobs:
           declare -A SHARDS=(
             [api]="internal/api"
             [rule]="internal/rule"
-            [services]="internal/auth internal/image internal/artist internal/settingsio"
+            [services]="internal/auth internal/image internal/artist"
+            # settingsio is its own shard: its persistence/encryption tests run
+            # ~100s, which made services the matrix long pole when bundled in.
+            [settingsio]="internal/settingsio"
             [providers]="internal/provider internal/connection"
             [scan]="internal/scanner internal/library internal/database internal/scraper internal/foreign internal/watcher"
           )
