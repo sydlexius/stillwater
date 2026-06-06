@@ -588,13 +588,6 @@
     "covered": true
   },
   {
-    "operationId": "getFanartSyncState",
-    "method": "GET",
-    "path": "/artists/{id}/fanart-sync-state",
-    "handler": "handleFanartSyncState",
-    "covered": true
-  },
-  {
     "operationId": "getFieldDisplay",
     "method": "GET",
     "path": "/artists/{id}/fields/{field}/display",

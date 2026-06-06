@@ -542,10 +542,11 @@ func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request)
 			}
 			extURL := buildPlatformArtistURL(conn, pid.PlatformArtistID)
 			connections = append(connections, templates.ArtistDetailConnection{
-				ID:   conn.ID,
-				Name: conn.Name,
-				Type: conn.Type,
-				URL:  extURL,
+				ID:      conn.ID,
+				Name:    conn.Name,
+				Type:    conn.Type,
+				URL:     extURL,
+				Managed: conn.FeatureManageServerFiles,
 			})
 		}
 	}

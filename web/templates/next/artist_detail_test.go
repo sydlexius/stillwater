@@ -57,10 +57,15 @@ func TestArtistDetailPage_RendersHeroAndSections(t *testing.T) {
 		}
 	}
 
-	// The unbuilt 4B (artwork) and 4C (providers/discography) sections must not
-	// render an empty card. They stay in defaultSectionOrder (so they slot back
-	// in without reflow) but emit no visible markup until their features land.
-	for _, absent := range []string{"next-artwork-art-1", "next-providers-art-1", "next-discography-art-1"} {
+	// The 4B Artwork section now renders at its mount point (id="next-artwork-{id}").
+	if !strings.Contains(out, "next-artwork-art-1") {
+		t.Errorf("artwork section (4B) should render its card at the artwork mount point")
+	}
+
+	// The unbuilt 4C (providers/discography) sections must not render an empty
+	// card. They stay in defaultSectionOrder (so they slot back in without
+	// reflow) but emit no visible markup until their features land.
+	for _, absent := range []string{"next-providers-art-1", "next-discography-art-1"} {
 		if strings.Contains(out, absent) {
 			t.Errorf("suppressed mount-point section %q should render no card", absent)
 		}

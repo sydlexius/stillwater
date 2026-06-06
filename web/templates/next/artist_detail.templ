@@ -3,6 +3,7 @@ package next
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/sydlexius/stillwater/web/components"
@@ -86,10 +87,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 					case "metadata":
 						@artistMetadataSection(&data.Detail)
 					case "artwork":
-						// 4B mount point (artwork). Suppressed for now: rendering an empty
-						// sw-dash-card here showed a blank section (maintainer UAT). It stays
-						// in defaultSectionOrder so 4B (#9) slots its content back in at this
-						// position without reflowing the page; no visible card renders until then.
+						@ArtworkSection(&data.Detail)
 					case "findings":
 						@artistFindingsSection(&data.Detail)
 					case "history":
@@ -107,6 +105,15 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 			<p class="sw-list-tips" role="note">
 				{ t(ctx, "artist.next.shortcuts_tip") }
 			</p>
+			// The Manage-artwork modal is rendered once (hidden); data-sw-artwork-open
+			// triggers in the Artwork section open it. Suppressed when the artwork
+			// section is hidden so its triggers and the modal stay consistent.
+			if !slices.Contains(data.Hidden, "artwork") {
+				@ArtworkModal(assets, &data.Detail)
+				// Full-size lightbox overlay (shared) for the Artwork tiles + carousel;
+				// window.openLightbox (lightbox.js) needs this DOM present on the page.
+				@templates.LightboxOverlay()
+			}
 			@artistDetailPageScript()
 			// Wire the ContextHelp (?) icons on this page. The History section reuses
 			// the stable history-tab fragment, which renders a ContextHelp "?" for the
@@ -682,7 +689,7 @@ templ artistAliasAddForm(artistID string) {
 		<input type="hidden" name="source" value="manual"/>
 		<button
 			type="submit"
-			class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+			class="sw-next-flat-btn inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
 		>
 			{ t(ctx, "common.add") }
 		</button>

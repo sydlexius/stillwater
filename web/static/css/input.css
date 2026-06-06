@@ -2608,12 +2608,16 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 
 /* The Aliases and Members blocks carry editing affordances (add-alias form,
- * per-alias remove, the members fetch/clear kebab). Keep the read view clean
+ * per-alias remove, the members fetch/clear controls). Keep the read view clean
  * (values only) and reveal those controls only in Edit mode, consistent with the
- * per-field action gating. */
+ * per-field action gating. The members controls are the header fetch (refresh
+ * glyph) + clear (trash) buttons; #29 replaced the old kebab (which carried
+ * data-context-menu) with plain buttons, so gate every button inside the members
+ * section by id prefix (MembersList itself renders no buttons in the read view,
+ * so this only hides those header controls). */
 .sw-next-artist-detail:not(.is-editing) .sw-next-alias-add,
 .sw-next-artist-detail:not(.is-editing) [id^="aliases-"] button,
-.sw-next-artist-detail:not(.is-editing) [data-context-menu^="members-"] {
+.sw-next-artist-detail:not(.is-editing) [id^="members-section-"] button {
   display: none;
 }
 
@@ -2640,16 +2644,19 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   grid-template-columns: 1fr;
 }
 
-/* Provider IDs reflow into multiple columns like the Identity scalars
- * (maintainer request) so the five short id rows do not waste the full-width
- * card down one tall column. A wider column min (340px vs Identity's 225px)
- * keeps a provider-id value roomy since the section spans the whole card; the
- * nowrap + overflow-x rule below still guards the rare UUID that overruns its
- * cell. Collapses to one column on a narrow card and in Edit mode (where each
- * row's edit input + lock/fetch/clear controls need the full width). */
+/* Provider IDs reflow into three columns like the Identity scalars (maintainer
+ * request) so the five short id rows do not waste the full-width card down one
+ * tall column. The MusicBrainz UUID is the first (and widest) id, so the columns
+ * are weighted 50% / 25% / 25% (2fr 1fr 1fr): the MBID lands in the half-width
+ * first column with room to breathe, killing the horizontal scrollbar the equal
+ * columns produced; the shorter audiodb / discogs / wikidata / deezer ids sit in
+ * the quarter columns. The nowrap + overflow-x rule below still guards the rare
+ * value that overruns its cell. Collapses to one column on a narrow card and in
+ * Edit mode (where each row's edit input + lock/fetch/clear controls need the
+ * full width). */
 .sw-next-artist-detail .sw-next-identifiers .sw-next-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: 2fr 1fr 1fr;
   column-gap: 28px;
   row-gap: 0;
 }
@@ -2658,6 +2665,14 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 .sw-next-artist-detail.is-editing .sw-next-identifiers .sw-next-fields {
   grid-template-columns: 1fr;
+}
+/* On a narrow card the three quarter/half columns get too cramped for an id
+ * value, so stack the provider ids into a single column (matches the Identity
+ * scalars' 640px collapse). */
+@media (max-width: 640px) {
+  .sw-next-artist-detail .sw-next-identifiers .sw-next-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* (4) Provider-ID rows wrapped needlessly (UAT 4A): a MusicBrainz UUID broke
@@ -2776,6 +2791,179 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   margin: 0 0 8px;
 }
 
+/* Artwork section (M55 #1336, 4B). The logo identity tile sits on a subtle
+ * checkerboard so a transparent logo reads as transparent (not a missing
+ * image); the pattern is faint and theme-aware. */
+.sw-next-artist-detail .sw-artwork-checker {
+  background-color: #f3f4f6;
+  background-image:
+    linear-gradient(45deg, #d1d5db 25%, transparent 25%),
+    linear-gradient(-45deg, #d1d5db 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d1d5db 75%),
+    linear-gradient(-45deg, transparent 75%, #d1d5db 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+.dark .sw-next-artist-detail .sw-artwork-checker {
+  background-color: #111827;
+  background-image:
+    linear-gradient(45deg, #374151 25%, transparent 25%),
+    linear-gradient(-45deg, #374151 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #374151 75%),
+    linear-gradient(-45deg, transparent 75%, #374151 75%);
+}
+
+/* Artwork images render at NATIVE aspect ratio, height-normalized (maintainer
+ * binding rule: respect the true ratio, no forced crop/squash/box). A uniform
+ * display height; the width follows the real ratio and is capped to the
+ * container -- a very wide image caps to 100% width and the height reduces to
+ * preserve aspect. No object-fit needed (the element matches the image ratio). */
+.sw-next-artist-detail .sw-artwork-native-img {
+  display: block;
+  height: auto;
+  width: auto;
+  max-height: 132px;
+  max-width: 100%;
+}
+
+/* Empty single-slot placeholders keep an idealized-ratio box at a default
+ * height (the aspect utility class sets the ratio; this sets the height). */
+.sw-next-artist-detail .sw-artwork-id-empty {
+  height: 88px;
+}
+
+/* Backdrops: a wrapping row of native-aspect, height-normalized tiles with the
+ * [+] add immediately after the last one, the same height. */
+.sw-next-artist-detail .sw-artwork-bd-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+.sw-next-artist-detail .sw-artwork-bd-add {
+  height: 132px;
+  aspect-ratio: 16 / 9;
+}
+
+/* Title-case variant of the eyebrow subhead (the Backdrops label should match
+ * the Primary/Logo/Banner tile labels, not SHOUT in uppercase). */
+.sw-next-artist-detail .sw-next-subhead-tc {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Manage-artwork modal kind switcher: match the hero Refresh/Edit/Actions
+ * toolbar buttons (border via --swd-line, --swd-ink-2 text). The SELECTED tab is
+ * marked by the shared blue halo (below), NOT a solid fill -- the same active
+ * treatment the Edit/Done toggle uses (maintainer: never a solid blue fill;
+ * blue only as the active-toggle halo). */
+.sw-artwork-kind-tab {
+  border: 1px solid var(--swd-line);
+  color: var(--swd-ink-2);
+}
+.sw-artwork-kind-tab:hover {
+  background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+}
+
+/* Active-toggle blue halo: the selected kind tab and the active Edit/Done toggle
+ * keep their hero outline and gain a PERSISTENT blue ring (a blue ring + soft
+ * glow -- the persistent form of the ring-blue-500 focus ring). Driven by
+ * aria-pressed="true", which the JS holds for the whole active state, so the
+ * halo persists until the control is toggled off (it does not depend on focus).
+ * This is the only place blue appears in next/ -- never as a solid fill. */
+.sw-artwork-kind-tab[aria-pressed="true"],
+.sw-next-artist-detail [data-sw-edit-all][aria-pressed="true"] {
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 0 5px rgba(59, 130, 246, 0.22);
+}
+
+/* No solid-blue FILL buttons in next/ (maintainer standing principle): blue
+ * appears only as the active-toggle halo above (selected kind tab / Edit-Done),
+ * never as a button fill. Every default button matches the hero
+ * Refresh/Edit/Actions outline (border via
+ * --swd-line, --swd-ink-2 ink). This covers the reused image editor's
+ * Save / Compare / Crop / Use-this result buttons and anything tagged
+ * .sw-next-flat-btn (Add alias, Push all, ...). The STABLE channel (no
+ * .sw-next-artist-detail wrapper, --swd-* undefined) keeps its original
+ * Tailwind blue, so the shared templates are untouched off next/. */
+.sw-next-artist-detail .sw-next-flat-btn,
+.sw-next-artist-detail .image-card-save,
+.sw-next-artist-detail .compare-btn,
+.sw-next-artist-detail .crop-btn,
+.sw-next-artist-detail #compare-save-btn {
+  border: 1px solid var(--swd-line);
+  color: var(--swd-ink-2);
+  background: transparent;
+}
+.sw-next-artist-detail .sw-next-flat-btn:hover,
+.sw-next-artist-detail .image-card-save:hover,
+.sw-next-artist-detail .compare-btn:hover,
+.sw-next-artist-detail .crop-btn:hover,
+.sw-next-artist-detail #compare-save-btn:hover {
+  background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+  color: var(--swd-ink);
+}
+
+/* The Manage-artwork modal surface honors the ~88% legibility floor (text never
+ * sits on a bare photo): a near-opaque paper backed by a blur, independent of
+ * the card background-opacity preference. */
+.sw-artwork-modal-surface {
+  background-color: rgb(255 255 255 / 0.96);
+  backdrop-filter: blur(8px);
+}
+.dark .sw-artwork-modal-surface {
+  background-color: rgb(17 24 39 / 0.96);
+}
+
+/* Motion + lite prefs (M55 #1336, 4B). prefers-reduced-motion and
+ * [data-motion="on"] are already handled app-wide by the universal
+ * transition/animation reset in design-tokens.css, so the artwork section and
+ * modal inherit motion-snapping for free. Lite mode ([data-lite="on"]) has NO
+ * global rule, so gate it here: snap the artwork transitions/animations and
+ * drop the modal's blur (GPU/perf). The modal + lightbox open/close are class
+ * toggles (already instant -- no JS animation to gate); cropper.js is
+ * third-party and only animates on direct interaction. */
+[data-lite="on"] #artwork-modal *,
+[data-lite="on"] [data-sw-section="artwork"] * {
+  transition: none;
+  animation: none;
+}
+[data-lite="on"] .sw-artwork-modal-surface {
+  backdrop-filter: none;
+}
+
+/* #1784 contrast floor: the bottom keyboard-shortcuts tips row on the
+ * artist-detail page sits over the ambient fanart backdrop, so (unlike the
+ * artists/dashboard screens, which have no photo behind it) it needs its own
+ * surface. The surface sources --sw-glass-bg, so its opacity tracks the global
+ * Background Opacity preference (the maintainer-endorsed reference impl). The
+ * blur drops under lite mode. */
+.sw-next-artist-detail .sw-list-tips {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  font-size: 12px;
+  color: #475569;
+  background: var(--sw-glass-bg);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  backdrop-filter: blur(6px);
+}
+.dark .sw-next-artist-detail .sw-list-tips {
+  color: #cbd5e1;
+}
+[data-lite="on"] .sw-next-artist-detail .sw-list-tips {
+  backdrop-filter: none;
+}
+
 /* Biography and Members reuse the shared text-lg (18px) <h2>; inside the Details
  * card pull those group headings onto the same step as .sw-next-subhead so
  * "Biography" / "Members" match "Identity" / "Tags" / "Aliases" instead of
@@ -2804,9 +2992,17 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * channel (no .sw-next-artist-detail wrapper) is unaffected and keeps its
  * always-visible, tool-forward affordances. */
 .sw-next-artist-detail [id^="field-"] button[hx-get$="/edit"],
-.sw-next-artist-detail .field-lock-toggle,
 .sw-next-artist-detail .sw-field-actions {
   display: none;
+}
+
+/* The per-field LOCK toggle stays visible in the read view (design section 5:
+ * tool-forward -- lock affordances are visible by default, NOT gated behind
+ * edit mode). 4A hid it with the cluster above, which left next/ users unable
+ * to lock/unlock a field without entering edit mode (maintainer: "field-level
+ * locks don't work"). It still also appears inside the edit cluster below. */
+.sw-next-artist-detail .field-lock-toggle {
+  display: inline-flex;
 }
 
 /* Edit-mode per-field action cluster (lock / fetch / clear icons, each with a

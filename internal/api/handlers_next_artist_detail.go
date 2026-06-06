@@ -50,6 +50,61 @@ func (r *Router) handleNextArtistDetailPage(w http.ResponseWriter, req *http.Req
 	renderTempl(w, req.WithContext(ctx), next.ArtistDetailPage(r.assetsFor(req), pageData))
 }
 
+// artworkKindToType maps a next/ Manage-artwork modal kind (the plain-language
+// switcher label) to the API image-type segment the editor uses.
+func artworkKindToType(kind string) string {
+	switch kind {
+	case "logo":
+		return "logo"
+	case "banner":
+		return "banner"
+	case "backdrops":
+		return "fanart"
+	default:
+		return "thumb" // primary / unknown
+	}
+}
+
+// handleNextArtworkModal renders the reusable image editor (ArtworkManageEditor)
+// as a fragment for the next/ in-page Manage-artwork modal, scoped to the
+// requested kind. It reuses the same ImageSearchData the stable image page
+// builds (handleArtistImagesPage), so the modal carries every capability of the
+// retired Fetch Images page. The modal shell lazy-loads this per active kind.
+func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		r.renderLoginPage(w, req)
+		return
+	}
+
+	id := req.PathValue("id")
+	a, err := r.artistService.GetByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, "artist not found", http.StatusNotFound)
+		return
+	}
+
+	selectedType := artworkKindToType(req.URL.Query().Get("kind"))
+
+	var webSearchEnabled bool
+	if r.providerSettings != nil {
+		webSearchEnabled, _ = r.providerSettings.AnyWebSearchEnabled(req.Context())
+	}
+	autoFetch := r.getUserBoolPreference(req.Context(), PrefAutoFetchImages, r.getBoolSetting(req.Context(), "auto_fetch_images", false))
+
+	data := templates.ImageSearchData{
+		Artist:           *a,
+		WebSearchEnabled: webSearchEnabled,
+		AutoFetchImages:  autoFetch,
+		SelectedType:     selectedType,
+		SelectedIndex:    -1,
+		ProfileName:      r.getActiveProfileName(req.Context()),
+		AutoCrop:         false,
+		BasePath:         r.basePath,
+	}
+	renderTempl(w, req, templates.ArtworkManageEditor(data))
+}
+
 // buildFieldFindings maps the artist's active rule violations to the metadata
 // field(s) each rule inspects (rule.RuleFields), producing the field -> chips
 // map the next/ artist-detail page renders. Image rules and whole-record /

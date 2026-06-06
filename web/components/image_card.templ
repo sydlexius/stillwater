@@ -102,7 +102,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 			</div>
 			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
 				if img.Width > 0 && img.Height > 0 {
-					<span>{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
+					<span class="font-mono">{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
 				} else {
 					<span class="italic">Unknown size</span>
 				}
@@ -118,28 +118,31 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 			}
 			<button
 				type="button"
-				class="w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				class="image-card-save w-full mt-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
 				hx-vals={ hxValsJSON(map[string]string{"url": img.URL, "type": normalizeCardImageType(string(img.Type))}) }
 				hx-swap="none"
 				hx-confirm="Save this image?"
 				data-confirm-key="image-save"
 			>
+				@IconArrowDownTray("h-4 w-4")
 				Save
 			</button>
 			<div class="flex gap-1">
 				<button
 					type="button"
-					class="compare-btn hidden flex-1 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="compare-btn hidden flex-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					onclick="if(typeof populateCompare==='function') populateCompare(this.closest('[data-img-url]'))"
 				>
+					@IconArrowsPointingOut("h-4 w-4")
 					Compare
 				</button>
 				<button
 					type="button"
-					class="crop-btn hidden flex-1 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="crop-btn hidden flex-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					onclick="if(typeof openCropModal==='function') openCropModal(this.closest('[data-img-url]').dataset.imgUrl, this.closest('[data-img-url]').dataset.imgType)"
 				>
+					@IconCrop("h-4 w-4")
 					Crop
 				</button>
 			</div>

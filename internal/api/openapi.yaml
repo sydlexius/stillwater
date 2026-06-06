@@ -1316,37 +1316,6 @@ components:
         thumbnail_url:
           type: string
           description: Proxy URL to fetch the backdrop thumbnail through Stillwater
-    FanartSyncSlotConnection:
-      type: object
-      properties:
-        connection_id:
-          type: string
-          description: ID of the platform connection.
-        name:
-          type: string
-          description: Display name of the connection
-        type:
-          type: string
-          enum: [emby, jellyfin]
-          description: Platform type of the connection.
-        synced:
-          type: boolean
-          description: Whether the platform has a backdrop at this index
-    FanartSyncSlot:
-      type: object
-      properties:
-        index:
-          type: integer
-          description: 0-based fanart slot index
-        state:
-          type: string
-          enum: [synced, partial, unsynced]
-          description: Aggregate sync state across all reachable connections
-        connections:
-          type: array
-          description: Per-connection sync status for this fanart slot.
-          items:
-            $ref: "#/components/schemas/FanartSyncSlotConnection"
     MetadataChange:
       type: object
       description: A single field-level metadata change recorded for an artist.
@@ -12174,48 +12143,6 @@ paths:
                 $ref: "#/components/schemas/Error"
         "502":
           description: Failed to fetch backdrop from platform
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /artists/{id}/fanart-sync-state:
-    get:
-      tags: [Images]
-      summary: Get per-image sync state for fanart slots across connected platforms
-      operationId: getFanartSyncState
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: >
-            Per-slot sync state. When no Emby/Jellyfin connections exist, returns
-            state "no_connections" with an empty slots array. For HTMX requests,
-            returns HTML badge fragments with OOB swap targets.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  slots:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/FanartSyncSlot"
-                    description: Per-slot sync state for each fanart image.
-                  state:
-                    type: string
-                    description: >
-                      Only present when value is "no_connections", indicating no
-                      Emby/Jellyfin connections are configured for this artist
-            text/html:
-              schema:
-                type: string
-        "404":
-          description: Artist not found
           content:
             application/json:
               schema:

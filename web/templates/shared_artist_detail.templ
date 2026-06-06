@@ -137,7 +137,7 @@ templ PlatformStateCardBody(a *artist.Artist, conn *connection.Connection, state
 		<div class="flex items-center gap-2">
 			<button
 				type="button"
-				class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+				class="sw-next-flat-btn inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
 				onclick={ pushMetadata(a.ID, conn.ID) }
 			>
 				{ t(ctx, "artist.push_all") }

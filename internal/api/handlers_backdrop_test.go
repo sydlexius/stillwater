@@ -89,14 +89,16 @@ func createTestJPEGForBackdrop(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-// addTestConnectionWithURLForBackdrop is a test helper for creating a connection
-// with a specific URL (for httptest servers).
-func addTestConnectionWithURLForBackdrop(t *testing.T, r *Router, id, name, connType, url string) {
+// addTestConnectionWithURLForBackdrop is a test helper for creating a single
+// "My Emby" connection pointed at a specific URL (an httptest server). The ID,
+// name, and type are fixed since every caller uses the same single connection.
+func addTestConnectionWithURLForBackdrop(t *testing.T, r *Router, url string) {
 	t.Helper()
+	const id = "conn-emby"
 	c := &connection.Connection{
 		ID:             id,
-		Name:           name,
-		Type:           connType,
+		Name:           "My Emby",
+		Type:           "emby",
 		URL:            url,
 		APIKey:         "test-key",
 		Enabled:        true,
@@ -164,7 +166,7 @@ func TestHandlePlatformBackdrops_WithBackdrops(t *testing.T) {
 	defer embySrv.Close()
 
 	a := addTestArtist(t, artistSvc, "TestArtist")
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", embySrv.URL)
+	addTestConnectionWithURLForBackdrop(t, r, embySrv.URL)
 	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
 		t.Fatalf("setting platform ID: %v", err)
 	}
@@ -220,7 +222,7 @@ func TestHandlePlatformBackdropThumbnail(t *testing.T) {
 	defer embySrv.Close()
 
 	a := addTestArtist(t, artistSvc, "TestArtist")
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", embySrv.URL)
+	addTestConnectionWithURLForBackdrop(t, r, embySrv.URL)
 	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
 		t.Fatalf("setting platform ID: %v", err)
 	}
@@ -270,7 +272,7 @@ func TestHandleFanartSlotAssign(t *testing.T) {
 	if err := artistSvc.Create(context.Background(), a); err != nil {
 		t.Fatalf("creating artist: %v", err)
 	}
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", embySrv.URL)
+	addTestConnectionWithURLForBackdrop(t, r, embySrv.URL)
 	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
 		t.Fatalf("setting platform ID: %v", err)
 	}
@@ -310,7 +312,7 @@ func TestHandleFanartSlotAssign_GapRejected(t *testing.T) {
 	if err := artistSvc.Create(context.Background(), a); err != nil {
 		t.Fatalf("creating artist: %v", err)
 	}
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", "http://unused:8096")
+	addTestConnectionWithURLForBackdrop(t, r, "http://unused:8096")
 	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
 		t.Fatalf("setting platform ID: %v", err)
 	}
@@ -526,340 +528,11 @@ func TestHandleFanartReorder_InvalidPermutation(t *testing.T) {
 	}
 }
 
-func TestHandleFanartSyncState_NoConnections(t *testing.T) {
-	t.Parallel()
-	r, artistSvc := testRouterForBackdrops(t)
-	a := addTestArtist(t, artistSvc, "TestArtist")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/fanart-sync-state", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleFanartSyncState(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	var resp struct {
-		Slots []fanartSyncSlot `json:"slots"`
-		State string           `json:"state"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-	if resp.State != "no_connections" {
-		t.Errorf("state = %q, want %q", resp.State, "no_connections")
-	}
-	if len(resp.Slots) != 0 {
-		t.Errorf("got %d slots, want 0", len(resp.Slots))
-	}
-}
-
-func TestHandleFanartSyncState_AllSynced(t *testing.T) {
-	t.Parallel()
-	r, artistSvc := testRouterForBackdrops(t)
-	artistDir := t.TempDir()
-
-	// Mock Emby server with 3 backdrops.
-	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if strings.HasPrefix(req.URL.Path, "/Users/test-user-1/Items/emby-artist-1") {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{
-				"Name": "TestArtist",
-				"Id": "emby-artist-1",
-				"SortName": "TestArtist",
-				"ImageTags": {"Primary": "abc"},
-				"BackdropImageTags": ["tag0", "tag1", "tag2"],
-				"ProviderIds": {},
-				"Overview": "",
-				"Genres": [],
-				"Tags": [],
-				"PremiereDate": "",
-				"EndDate": "",
-				"LockedFields": [],
-				"LockData": false
-			}`)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer embySrv.Close()
-
-	a := &artist.Artist{
-		Name:     "TestArtist",
-		SortName: "TestArtist",
-		Type:     "group",
-		Path:     artistDir,
-	}
-	if err := artistSvc.Create(context.Background(), a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", embySrv.URL)
-	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
-		t.Fatalf("setting platform ID: %v", err)
-	}
-
-	// Create 3 local fanart files.
-	primary := r.getActiveFanartPrimary(context.Background())
-	kodi := r.isKodiNumbering(context.Background())
-	for i := 0; i < 3; i++ {
-		name := img.FanartFilename(primary, i, kodi)
-		if err := os.WriteFile(filepath.Join(artistDir, name), []byte("fake-image"), 0o644); err != nil {
-			t.Fatalf("writing test fanart %d: %v", i, err)
-		}
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/fanart-sync-state", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleFanartSyncState(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	var resp struct {
-		Slots []fanartSyncSlot `json:"slots"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-	if len(resp.Slots) != 3 {
-		t.Fatalf("got %d slots, want 3", len(resp.Slots))
-	}
-	for i, s := range resp.Slots {
-		if s.State != "synced" {
-			t.Errorf("slot[%d] state = %q, want %q", i, s.State, "synced")
-		}
-		if s.Index != i {
-			t.Errorf("slot[%d] index = %d, want %d", i, s.Index, i)
-		}
-	}
-}
-
-func TestHandleFanartSyncState_Partial(t *testing.T) {
-	t.Parallel()
-	r, artistSvc := testRouterForBackdrops(t)
-	artistDir := t.TempDir()
-
-	// Mock Emby server with only 2 backdrops but we have 3 local.
-	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if strings.HasPrefix(req.URL.Path, "/Users/test-user-1/Items/emby-artist-1") {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{
-				"Name": "TestArtist",
-				"Id": "emby-artist-1",
-				"SortName": "TestArtist",
-				"ImageTags": {"Primary": "abc"},
-				"BackdropImageTags": ["tag0", "tag1"],
-				"ProviderIds": {},
-				"Overview": "",
-				"Genres": [],
-				"Tags": [],
-				"PremiereDate": "",
-				"EndDate": "",
-				"LockedFields": [],
-				"LockData": false
-			}`)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer embySrv.Close()
-
-	a := &artist.Artist{
-		Name:     "TestArtist",
-		SortName: "TestArtist",
-		Type:     "group",
-		Path:     artistDir,
-	}
-	if err := artistSvc.Create(context.Background(), a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", embySrv.URL)
-	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
-		t.Fatalf("setting platform ID: %v", err)
-	}
-
-	// Create 3 local fanart files.
-	primary := r.getActiveFanartPrimary(context.Background())
-	kodi := r.isKodiNumbering(context.Background())
-	for i := 0; i < 3; i++ {
-		name := img.FanartFilename(primary, i, kodi)
-		if err := os.WriteFile(filepath.Join(artistDir, name), []byte("fake-image"), 0o644); err != nil {
-			t.Fatalf("writing test fanart %d: %v", i, err)
-		}
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/fanart-sync-state", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleFanartSyncState(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	var resp struct {
-		Slots []fanartSyncSlot `json:"slots"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-	if len(resp.Slots) != 3 {
-		t.Fatalf("got %d slots, want 3", len(resp.Slots))
-	}
-	// Slots 0 and 1 should be synced (BackdropCount=2 > index).
-	for i := 0; i < 2; i++ {
-		if resp.Slots[i].State != "synced" {
-			t.Errorf("slot[%d] state = %q, want %q", i, resp.Slots[i].State, "synced")
-		}
-	}
-	// Slot 2 should be unsynced.
-	if resp.Slots[2].State != "unsynced" {
-		t.Errorf("slot[2] state = %q, want %q", resp.Slots[2].State, "unsynced")
-	}
-}
-
-func TestHandleFanartSyncState_MultipleConnections(t *testing.T) {
-	t.Parallel()
-	r, artistSvc := testRouterForBackdrops(t)
-	artistDir := t.TempDir()
-
-	// Mock Emby with 3 backdrops, Jellyfin with 1 backdrop.
-	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if strings.HasPrefix(req.URL.Path, "/Users/test-user-1/Items/emby-artist-1") {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{
-				"Name": "TestArtist",
-				"Id": "emby-artist-1",
-				"SortName": "TestArtist",
-				"ImageTags": {"Primary": "abc"},
-				"BackdropImageTags": ["tag0", "tag1", "tag2"],
-				"ProviderIds": {},
-				"Overview": "",
-				"Genres": [],
-				"Tags": [],
-				"PremiereDate": "",
-				"EndDate": "",
-				"LockedFields": [],
-				"LockData": false
-			}`)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer embySrv.Close()
-
-	jellyfinSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if strings.HasPrefix(req.URL.Path, "/Users/test-user-1/Items/jf-artist-1") {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{
-				"Name": "TestArtist",
-				"Id": "jf-artist-1",
-				"SortName": "TestArtist",
-				"ImageTags": {"Primary": "abc"},
-				"BackdropImageTags": ["tag0"],
-				"ProviderIds": {},
-				"Overview": "",
-				"Genres": [],
-				"Tags": [],
-				"PremiereDate": "",
-				"EndDate": "",
-				"LockedFields": [],
-				"LockData": false
-			}`)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer jellyfinSrv.Close()
-
-	a := &artist.Artist{
-		Name:     "TestArtist",
-		SortName: "TestArtist",
-		Type:     "group",
-		Path:     artistDir,
-	}
-	if err := artistSvc.Create(context.Background(), a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", embySrv.URL)
-	addTestConnectionWithURLForBackdrop(t, r, "conn-jf", "My Jellyfin", "jellyfin", jellyfinSrv.URL)
-	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
-		t.Fatalf("setting emby platform ID: %v", err)
-	}
-	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-jf", "jf-artist-1"); err != nil {
-		t.Fatalf("setting jellyfin platform ID: %v", err)
-	}
-
-	// Create 3 local fanart files.
-	primary := r.getActiveFanartPrimary(context.Background())
-	kodi := r.isKodiNumbering(context.Background())
-	for i := 0; i < 3; i++ {
-		name := img.FanartFilename(primary, i, kodi)
-		if err := os.WriteFile(filepath.Join(artistDir, name), []byte("fake-image"), 0o644); err != nil {
-			t.Fatalf("writing test fanart %d: %v", i, err)
-		}
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/fanart-sync-state", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleFanartSyncState(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	var resp struct {
-		Slots []fanartSyncSlot `json:"slots"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-	if len(resp.Slots) != 3 {
-		t.Fatalf("got %d slots, want 3", len(resp.Slots))
-	}
-
-	// Slot 0: both have it -> synced
-	if resp.Slots[0].State != "synced" {
-		t.Errorf("slot[0] state = %q, want %q", resp.Slots[0].State, "synced")
-	}
-	if len(resp.Slots[0].Connections) != 2 {
-		t.Errorf("slot[0] connections = %d, want 2", len(resp.Slots[0].Connections))
-	}
-
-	// Slot 1: Emby has it (3 backdrops > 1), Jellyfin does not (1 backdrop <= 1) -> partial
-	if resp.Slots[1].State != "partial" {
-		t.Errorf("slot[1] state = %q, want %q", resp.Slots[1].State, "partial")
-	}
-
-	// Slot 2: Emby has it (3 > 2), Jellyfin does not (1 <= 2) -> partial
-	if resp.Slots[2].State != "partial" {
-		t.Errorf("slot[2] state = %q, want %q", resp.Slots[2].State, "partial")
-	}
-
-	// Verify per-connection detail on slot 1.
-	for _, c := range resp.Slots[1].Connections {
-		if c.ConnectionType == "emby" && !c.Synced {
-			t.Error("slot[1] emby connection should be synced")
-		}
-		if c.ConnectionType == "jellyfin" && c.Synced {
-			t.Error("slot[1] jellyfin connection should not be synced")
-		}
-	}
-}
-
 func TestHandlePlatformBackdropThumbnail_InvalidIndex(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	a := addTestArtist(t, artistSvc, "TestArtist")
-	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", "http://unused:8096")
+	addTestConnectionWithURLForBackdrop(t, r, "http://unused:8096")
 	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
 		t.Fatalf("setting platform ID: %v", err)
 	}

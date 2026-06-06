@@ -351,19 +351,24 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, provide
 // --- Detail sidebar fields ---
 templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID }>
+		// The lock lives in the VALUE cell (dd), not the fixed-width label cell
+		// (dt): a long label like "Disambiguation" + the lock overflowed the
+		// 112px label column and overlapped the value (#28). The dt keeps the
+		// label + the (next/-hidden) edit/fetch/clear cluster.
 		<dt class="text-gray-700 dark:text-gray-400 flex items-center gap-1">
 			{ label }
-			@FieldLockToggle(a, field)
 			@fieldActionsFor(a, field, value != "", providers)
 		</dt>
 		if value != "" {
-			<dd class="font-medium">
-				{ value }
+			<dd class="font-medium flex items-center gap-1.5">
+				@FieldLockToggle(a, field)
+				<span>{ value }</span>
 				@fieldFindingChips(fieldFindingsFor(ctx, field))
 			</dd>
 		} else {
-			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">
-				{ t(ctx, "common.not_set") }
+			<dd class="text-gray-500 dark:text-gray-400 italic text-xs flex items-center gap-1.5">
+				@FieldLockToggle(a, field)
+				<span>{ t(ctx, "common.not_set") }</span>
 				@fieldFindingChips(fieldFindingsFor(ctx, field))
 			</dd>
 		}

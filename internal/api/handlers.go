@@ -60,6 +60,11 @@ func (r *Router) assets() templates.AssetPaths {
 		ArtistFanartSlideshowJS: r.basePath + r.staticAssets.Path("/js/artist-detail/fanart-slideshow.js"),
 		ArtistViolationsSyncJS:  r.basePath + r.staticAssets.Path("/js/artist-detail/violations-sync.js"),
 		ArtistMembersApplyJS:    r.basePath + r.staticAssets.Path("/js/artist-detail/members-apply.js"),
+		ArtistFieldLockSaveJS:   r.basePath + r.staticAssets.Path("/js/artist-detail/field-lock-save.js"),
+		// Artist-detail artwork modules (M55 #1336, 4B).
+		ArtistLightboxJS:     r.basePath + r.staticAssets.Path("/js/artist-detail/lightbox.js"),
+		ArtistFanartManageJS: r.basePath + r.staticAssets.Path("/js/artist-detail/fanart-manage.js"),
+		ArtistArtworkModalJS: r.basePath + r.staticAssets.Path("/js/artist-detail/artwork-modal.js"),
 		// Settings-screen first-party modules (M55 #1806, extended #1808).
 		// Extracted from the inline XxxScript() blocks.
 		SettingsImageCacheJS:              r.basePath + r.staticAssets.Path("/js/settings/image-cache.js"),
