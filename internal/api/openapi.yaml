@@ -1747,6 +1747,36 @@ components:
           description: >-
             Tag of the binary that was just installed and is waiting for a
             restart to take effect. Present only when restart_required is true.
+        latest_version:
+          type: string
+          description: >-
+            Tag name of the latest matching release — same value as the `latest`
+            field, exposed under the more descriptive `latest_version` key for
+            use by the JS hydration layer.
+        auto_update:
+          type: boolean
+          description: >-
+            True when the scheduler is configured to apply updates automatically.
+            Mirrors the auto_update field in UpdateConfig so the JS hydration
+            layer can refresh the Updates tab without a full page reload.
+        last_auto_applied:
+          type: string
+          format: date-time
+          description: >-
+            RFC 3339 timestamp of the last successful auto-apply. Absent when
+            no auto-apply has occurred in this installation.
+        last_auto_applied_version:
+          type: string
+          description: >-
+            Release tag that was installed by the last auto-apply. Absent when
+            last_auto_applied is unset.
+        skipped_versions:
+          type: array
+          items:
+            type: string
+          description: >-
+            Persisted list of release tags the scheduler must not auto-apply.
+            Always present (empty array when no versions are skipped).
     UpdateConfig:
       type: object
       # Only `channel` and `auto_check` are required so the schema stays

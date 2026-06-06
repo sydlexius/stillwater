@@ -344,6 +344,116 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	}
 }
 
+// TestHandleGetUpdateStatus_ExtendedFields verifies that the /status response
+// always includes the config-derived fields added in #1327: auto_update,
+// skipped_versions (always an array, never null), and that the optional
+// last_auto_applied / last_auto_applied_version fields are absent when no
+// auto-apply has occurred.
+func TestHandleGetUpdateStatus_ExtendedFields(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// auto_update must always be present (defaults false on fresh DB).
+	if _, ok := raw["auto_update"]; !ok {
+		t.Error(`missing field "auto_update" in UpdateStatus`)
+	}
+	if got := raw["auto_update"]; got != false {
+		t.Errorf(`auto_update = %v, want false on fresh DB`, got)
+	}
+
+	// skipped_versions must always be present as an array (never null/absent).
+	sv, ok := raw["skipped_versions"]
+	if !ok {
+		t.Fatal(`missing field "skipped_versions" in UpdateStatus`)
+	}
+	arr, ok := sv.([]any)
+	if !ok {
+		t.Fatalf(`skipped_versions type = %T, want []any`, sv)
+	}
+	if len(arr) != 0 {
+		t.Errorf(`skipped_versions = %v, want empty array on fresh DB`, arr)
+	}
+
+	// last_auto_applied and last_auto_applied_version must be absent when no
+	// auto-apply has occurred (they are omitempty fields).
+	if _, ok := raw["last_auto_applied"]; ok {
+		t.Errorf(`unexpected "last_auto_applied" in fresh-DB status: %v`, raw["last_auto_applied"])
+	}
+	if _, ok := raw["last_auto_applied_version"]; ok {
+		t.Errorf(`unexpected "last_auto_applied_version" in fresh-DB status: %v`, raw["last_auto_applied_version"])
+	}
+}
+
+// TestHandleGetUpdateStatus_AfterAutoApply verifies that the extended /status
+// fields are populated correctly once an auto-apply has been recorded and
+// auto_update has been enabled in the persisted config.
+func TestHandleGetUpdateStatus_AfterAutoApply(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	ctx := context.Background()
+
+	// Enable auto_update in the DB so the field round-trips through GetConfig.
+	cfg, err := r.updaterService.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	cfg.AutoUpdate = true
+	if err := r.updaterService.SetConfig(ctx, cfg); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	// Record a successful auto-apply.
+	if err := r.updaterService.MarkAutoAppliedForTest(ctx, "v2.3.4"); err != nil {
+		t.Fatalf("MarkAutoAppliedForTest: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/updates/status", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got := raw["auto_update"]; got != true {
+		t.Errorf(`auto_update = %v, want true`, got)
+	}
+
+	lap, ok := raw["last_auto_applied"]
+	if !ok {
+		t.Fatal(`missing "last_auto_applied" after MarkAutoApplied`)
+	}
+	lapStr, ok := lap.(string)
+	if !ok {
+		t.Fatalf(`last_auto_applied type = %T, want string`, lap)
+	}
+	if _, err := time.Parse(time.RFC3339, lapStr); err != nil {
+		t.Errorf(`last_auto_applied = %q, not RFC3339: %v`, lapStr, err)
+	}
+
+	if got := raw["last_auto_applied_version"]; got != "v2.3.4" {
+		t.Errorf(`last_auto_applied_version = %v, want "v2.3.4"`, got)
+	}
+}
+
 func TestHandlePostUpdateApply_Docker(t *testing.T) {
 	t.Parallel()
 	r := testRouterWithUpdater(t)
