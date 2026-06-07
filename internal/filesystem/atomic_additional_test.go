@@ -21,7 +21,7 @@ func TestCopyFile(t *testing.T) {
 		t.Fatalf("writing source: %v", err)
 	}
 
-	if err := copyFile(src, dst); err != nil {
+	if err := copyFile(src, dst, 0o644); err != nil {
 		t.Fatalf("copyFile: %v", err)
 	}
 
@@ -48,7 +48,7 @@ func TestCopyFile_LargeFile(t *testing.T) {
 		t.Fatalf("writing source: %v", err)
 	}
 
-	if err := copyFile(src, dst); err != nil {
+	if err := copyFile(src, dst, 0o644); err != nil {
 		t.Fatalf("copyFile: %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestCopyFile_EmptyFile(t *testing.T) {
 		t.Fatalf("writing source: %v", err)
 	}
 
-	if err := copyFile(src, dst); err != nil {
+	if err := copyFile(src, dst, 0o644); err != nil {
 		t.Fatalf("copyFile: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestCopyFile_SourceNotExist(t *testing.T) {
 	src := filepath.Join(dir, "nonexistent.txt")
 	dst := filepath.Join(dir, "dest.txt")
 
-	err := copyFile(src, dst)
+	err := copyFile(src, dst, 0o644)
 	if err == nil {
 		t.Fatal("expected error for nonexistent source")
 	}
@@ -106,7 +106,7 @@ func TestCopyFile_DestDirNotExist(t *testing.T) {
 		t.Fatalf("writing source: %v", err)
 	}
 
-	err := copyFile(src, dst)
+	err := copyFile(src, dst, 0o644)
 	if err == nil {
 		t.Fatal("expected error when dest directory does not exist")
 	}
@@ -127,7 +127,7 @@ func TestRenameSafe_SameFilesystem(t *testing.T) {
 		t.Fatalf("writing old: %v", err)
 	}
 
-	if err := renameSafe(old, new); err != nil {
+	if err := renameSafe(old, new, 0o644); err != nil {
 		t.Fatalf("renameSafe: %v", err)
 	}
 

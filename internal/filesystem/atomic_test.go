@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 )
 
@@ -117,6 +119,62 @@ func TestWriteFileAtomic_LargeFile(t *testing.T) {
 	}
 	if !bytes.Equal(got, data) {
 		t.Error("large file content mismatch")
+	}
+}
+
+// TestWriteFileAtomic_EXDEVFallbackPreservesMode verifies that when the rename
+// step fails with EXDEV (cross-device move), the copy fallback preserves the
+// requested file mode on the destination. This is the regression test for the
+// bug where copyFile used os.Create (mode 0666) instead of os.OpenFile with
+// the caller-specified perm, causing sensitive files (e.g. encryption.key
+// written with 0600) to end up world-readable on cross-device setups.
+//
+// Notes:
+//
+//	(1) This tests the EXDEV copy fallback path by injecting an error via the
+//	    package-level osRename hook.
+//	(2) The mode == perm assertion is POSIX-only: on Windows, Go synthesizes
+//	    FileMode values from FILE_ATTRIBUTE_READONLY and does not enforce Unix
+//	    permission bits, so stat.Mode()&0o777 does not round-trip.
+//	(3) EXDEV (cross-device link) is a Unix/Linux kernel concept; Windows uses
+//	    a different mechanism for cross-volume moves and os.Rename does not
+//	    return syscall.EXDEV.
+func TestWriteFileAtomic_EXDEVFallbackPreservesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("EXDEV and Unix permission semantics are POSIX-only")
+	}
+
+	// This test mutates the package-level osRename hook; must not run in parallel.
+	orig := osRename
+	t.Cleanup(func() { osRename = orig })
+
+	osRename = func(oldPath, newPath string) error {
+		return &os.LinkError{
+			Op:  "rename",
+			Old: oldPath,
+			New: newPath,
+			Err: syscall.EXDEV,
+		}
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "secret.key")
+	data := []byte("sensitive data")
+
+	// Request a restrictive 0600 mode (owner read/write only).
+	const wantPerm os.FileMode = 0o600
+	if err := WriteFileAtomic(target, data, wantPerm); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	// Confirm the file mode survived the cross-device copy fallback.
+	if gotPerm := info.Mode().Perm(); gotPerm != wantPerm {
+		t.Errorf("file mode = %04o, want %04o (perm lost on cross-device copy fallback)", gotPerm, wantPerm)
 	}
 }
 
