@@ -795,6 +795,17 @@ func tourI18nJSON() templ.Component {
 // On the very first visit (no localStorage entry), the script falls back to
 // the OS color-scheme preference via matchMedia.
 //
+// localStorage.getItem is wrapped in try/catch because Safari and Firefox in
+// private-browsing mode throw QuotaExceededError on any localStorage access.
+// When it throws we fall back to matchMedia so the page still renders correctly.
+//
+// data-theme is set to the RAW preference value ('dark', 'light', 'system')
+// when one is known, matching the value preferences.js writes via ATTR_MAP.
+// This keeps the attribute consistent across the initial paint and after
+// hydration, preventing a 'dark' -> 'system' flip on first preferences.js run.
+// When no preference is stored the fallback is the resolved value ('dark' or
+// 'light') derived from matchMedia.
+//
 // Middleware was evaluated but rejected: it only benefits the very first
 // request before any JS has run, and adds server complexity that is not
 // justified for that narrow edge case.
@@ -819,7 +830,7 @@ func themeInitScript() templ.Component {
 			templ_7745c5c3_Var35 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<script>\n\t\t(function() {\n\t\t\tvar pref = localStorage.getItem('theme');\n\t\t\tvar isDark;\n\t\t\tif (pref === 'dark') {\n\t\t\t\tisDark = true;\n\t\t\t} else if (pref === 'light') {\n\t\t\t\tisDark = false;\n\t\t\t} else {\n\t\t\t\t// 'system', null, or any unrecognized value: follow OS preference.\n\t\t\t\tisDark = window.matchMedia('(prefers-color-scheme: dark)').matches;\n\t\t\t}\n\t\t\tvar resolvedTheme = isDark ? 'dark' : 'light';\n\t\t\tdocument.documentElement.classList.toggle('dark', isDark);\n\t\t\tdocument.documentElement.setAttribute('data-theme', resolvedTheme);\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<script>\n\t\t(function() {\n\t\t\tvar pref;\n\t\t\ttry { pref = localStorage.getItem('theme'); } catch (e) {}\n\t\t\tvar isDark;\n\t\t\tif (pref === 'dark') {\n\t\t\t\tisDark = true;\n\t\t\t} else if (pref === 'light') {\n\t\t\t\tisDark = false;\n\t\t\t} else {\n\t\t\t\t// 'system', null, or any unrecognized value: follow OS preference.\n\t\t\t\tisDark = window.matchMedia('(prefers-color-scheme: dark)').matches;\n\t\t\t}\n\t\t\tdocument.documentElement.classList.toggle('dark', isDark);\n\t\t\t// Set data-theme to the raw pref so it stays consistent with the value\n\t\t\t// preferences.js writes after hydration. Fall back to the resolved value\n\t\t\t// when no stored preference exists (first visit or private browsing).\n\t\t\tif (pref === 'dark' || pref === 'light' || pref === 'system') {\n\t\t\t\tdocument.documentElement.setAttribute('data-theme', pref);\n\t\t\t} else {\n\t\t\t\tdocument.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');\n\t\t\t}\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

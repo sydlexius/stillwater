@@ -1022,13 +1022,25 @@ templ tourI18nJSON() {
 // On the very first visit (no localStorage entry), the script falls back to
 // the OS color-scheme preference via matchMedia.
 //
+// localStorage.getItem is wrapped in try/catch because Safari and Firefox in
+// private-browsing mode throw QuotaExceededError on any localStorage access.
+// When it throws we fall back to matchMedia so the page still renders correctly.
+//
+// data-theme is set to the RAW preference value ('dark', 'light', 'system')
+// when one is known, matching the value preferences.js writes via ATTR_MAP.
+// This keeps the attribute consistent across the initial paint and after
+// hydration, preventing a 'dark' -> 'system' flip on first preferences.js run.
+// When no preference is stored the fallback is the resolved value ('dark' or
+// 'light') derived from matchMedia.
+//
 // Middleware was evaluated but rejected: it only benefits the very first
 // request before any JS has run, and adds server complexity that is not
 // justified for that narrow edge case.
 templ themeInitScript() {
 	<script>
 		(function() {
-			var pref = localStorage.getItem('theme');
+			var pref;
+			try { pref = localStorage.getItem('theme'); } catch (e) {}
 			var isDark;
 			if (pref === 'dark') {
 				isDark = true;
@@ -1038,9 +1050,15 @@ templ themeInitScript() {
 				// 'system', null, or any unrecognized value: follow OS preference.
 				isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 			}
-			var resolvedTheme = isDark ? 'dark' : 'light';
 			document.documentElement.classList.toggle('dark', isDark);
-			document.documentElement.setAttribute('data-theme', resolvedTheme);
+			// Set data-theme to the raw pref so it stays consistent with the value
+			// preferences.js writes after hydration. Fall back to the resolved value
+			// when no stored preference exists (first visit or private browsing).
+			if (pref === 'dark' || pref === 'light' || pref === 'system') {
+				document.documentElement.setAttribute('data-theme', pref);
+			} else {
+				document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+			}
 		})();
 	</script>
 }
