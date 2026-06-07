@@ -1219,7 +1219,7 @@ templ platformStateHeaderBadges(conn *connection.Connection, state *connection.A
 // locked, locked fields) are included.
 templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName, platformLabel string, readonly bool) {
 	<div class="overflow-x-auto">
-		<table class="w-full text-sm">
+		<table class="w-full text-sm table-fixed">
 			<thead>
 				<tr class="border-b border-gray-200 dark:border-gray-700">
 					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">{ t(ctx, "common.field") }</th>
@@ -1233,53 +1233,63 @@ templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *c
 					truncate(a.Biography, 80),
 					truncate(state.Biography, 80),
 					fieldMatch(a.Biography, state.Biography),
-					a.Biography == "" && state.Biography == "")
+					a.Biography == "" && state.Biography == "",
+					false)
 				@platformStateRow(t(ctx, "artist.genres"),
 					strings.Join(a.Genres, ", "),
 					strings.Join(state.Genres, ", "),
 					sliceMatch(a.Genres, state.Genres),
-					len(a.Genres) == 0 && len(state.Genres) == 0)
+					len(a.Genres) == 0 && len(state.Genres) == 0,
+					false)
 				@platformStateRow(t(ctx, "artist.formed_premiere_date"),
 					firstNonEmpty(a.Formed, a.Born),
 					state.PremiereDate,
 					fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
-					firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "")
+					firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "",
+					false)
 				@platformStateRow(t(ctx, "artist.disbanded_end_date"),
 					firstNonEmpty(a.Disbanded, a.Died),
 					state.EndDate,
 					fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
-					firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "")
+					firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "",
+					false)
 				@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
 					a.MusicBrainzID,
 					state.MusicBrainzID,
 					fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
-					a.MusicBrainzID == "" && state.MusicBrainzID == "")
+					a.MusicBrainzID == "" && state.MusicBrainzID == "",
+					true)
 				if readonly {
 					@platformStateRow(t(ctx, "artist.platform_state.sort_name"),
 						a.SortName,
 						state.SortName,
 						fieldMatch(a.SortName, state.SortName),
-						a.SortName == "" && state.SortName == "")
+						a.SortName == "" && state.SortName == "",
+						false)
 					@platformStateRow(t(ctx, "artist.platform_state.tags"),
 						"--",
 						strings.Join(state.Tags, ", "),
 						false,
-						true)
+						true,
+						false)
 					@platformStateRow(t(ctx, "artist.platform_state.backdrop_count"),
 						"--",
 						strconv.Itoa(state.BackdropCount),
 						false,
-						true)
+						true,
+						false)
 					@platformStateRow(t(ctx, "artist.platform_state.locked"),
 						"--",
 						t(ctx, boolDisplay(state.IsLocked)),
 						false,
-						true)
+						true,
+						false)
 					@platformStateRow(t(ctx, "artist.platform_state.locked_fields"),
 						"--",
 						strings.Join(state.LockedFields, ", "),
 						false,
-						true)
+						true,
+						false)
 				}
 				<tr>
 					<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
@@ -1304,19 +1314,27 @@ templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *c
 	</div>
 }
 
-templ platformStateRow(field, swValue, platValue string, match, bothEmpty bool) {
+templ platformStateRow(field, swValue, platValue string, match, bothEmpty, mono bool) {
 	<tr>
 		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ field }</td>
 		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
 			if swValue != "" {
-				{ swValue }
+				if mono {
+					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ swValue }</code>
+				} else {
+					{ swValue }
+				}
 			} else {
 				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
 			}
 		</td>
 		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
 			if platValue != "" {
-				{ platValue }
+				if mono {
+					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ platValue }</code>
+				} else {
+					{ platValue }
+				}
 			} else {
 				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
 			}
