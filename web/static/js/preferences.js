@@ -157,6 +157,12 @@
       } else {
         root.classList.remove('dark');
       }
+      // Sync the raw preference value to localStorage so that themeInitScript
+      // can read it on the next page load and apply the correct class before
+      // the first paint, preventing FOUC. The raw value ('dark', 'light', or
+      // 'system') is stored -- not the resolved boolean -- so themeInitScript
+      // can re-resolve 'system' via matchMedia on each load.
+      localStorage.setItem('theme', value);
       // Recompute theme-dependent background color after theme change.
       var cached = readCache() || {};
       var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '85';
@@ -334,7 +340,27 @@
   if (initCached) {
     applyAll(initCached);
   } else {
-    applyAll(DEFAULTS);
+    // No session cache yet (new tab or cleared sessionStorage). themeInitScript
+    // already applied the correct theme class and data-theme attribute from
+    // localStorage / OS preference before first paint. Preserve that by reading
+    // the current theme back from the DOM rather than blindly applying
+    // DEFAULTS.theme = 'dark', which would flash the page to dark even for
+    // users whose preference is light or system-light.
+    //
+    // Prefer the localStorage value (raw preference: 'dark', 'light', 'system')
+    // set by preferences.js on prior loads; fall back to the DOM class that
+    // themeInitScript set for the current paint.
+    var domTheme = localStorage.getItem('theme') ||
+      (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    var initDefaults = {};
+    var initKey;
+    for (initKey in DEFAULTS) {
+      if (DEFAULTS.hasOwnProperty(initKey)) {
+        initDefaults[initKey] = DEFAULTS[initKey];
+      }
+    }
+    initDefaults.theme = domTheme;
+    applyAll(initDefaults);
   }
 
   // Step 2 (async): Fetch fresh preferences from the API once the DOM is ready.
