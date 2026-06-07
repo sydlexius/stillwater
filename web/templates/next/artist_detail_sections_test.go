@@ -143,9 +143,6 @@ func TestSectionDebug_GatingAndContent(t *testing.T) {
 		data.Detail.Connections = []templates.ArtistDetailConnection{
 			{ID: "conn-emby", Name: "My Emby", Type: "emby", URL: "http://emby:8096"},
 		}
-		data.Detail.FieldProviders = map[string][]string{
-			"name": {"musicbrainz"},
-		}
 
 		var buf bytes.Buffer
 		if err := SectionDebug(data).Render(nextTestCtx(t), &buf); err != nil {
@@ -162,8 +159,6 @@ func TestSectionDebug_GatingAndContent(t *testing.T) {
 			`connection_id=conn-emby&amp;readonly=true`,
 			`hx-trigger="revealed"`,
 			`hx-swap="outerHTML"`,
-			// Field provenance heading.
-			`Field Provenance`,
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("SectionDebug (emby) missing %q", want)

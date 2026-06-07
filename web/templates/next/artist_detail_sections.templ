@@ -2,8 +2,6 @@ package next
 
 import (
 	"fmt"
-	"sort"
-	"strings"
 )
 
 // SectionProviders renders the Providers & platform-state section for the next/
@@ -85,11 +83,8 @@ templ SectionDiscography(data ArtistDetailPageData) {
 // data.Detail.HasDebugConnection (the gate lives in ArtistDetailPage's section
 // switch). Emby and Jellyfin connections each get a lazy read-only
 // platform-state mount (readonly=true). Lidarr connections are skipped (no
-// platform-state endpoint). The field-provenance table follows, server-rendered
-// from data.Detail.FieldProviders.
-//
-// fieldProvenanceSection in web/templates/artist_detail.templ is unexported so
-// this next/-scoped re-host (nextFieldProvenanceSection) is used instead.
+// platform-state endpoint). The field-provenance table is intentionally omitted
+// here (deferred to a follow-up rework; stable v1 tab still renders it).
 templ SectionDebug(data ArtistDetailPageData) {
 	{{ d := &data.Detail }}
 	<section
@@ -120,55 +115,6 @@ templ SectionDebug(data ArtistDetailPageData) {
 					</div>
 				}
 			}
-			@nextFieldProvenanceSection(d.FieldProviders)
 		</div>
 	</section>
-}
-
-// nextFieldProvenanceSection renders a table of field-to-provider mappings for
-// the Debug section. It is a next/-scoped re-host of the stable (unexported)
-// fieldProvenanceSection in web/templates/artist_detail.templ. The rendering is
-// identical; the wrapper uses .sw-dash-card surface tokens rather than the
-// stable sw-card opaque fills.
-templ nextFieldProvenanceSection(providers map[string][]string) {
-	if len(providers) > 0 {
-		<div class="mt-2">
-			<div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-				<h3 class="text-sm font-medium">{ t(ctx, "artist.field_provenance") }</h3>
-			</div>
-			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
-					<thead>
-						<tr class="border-b border-gray-200 dark:border-gray-700">
-							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide w-1/4">{ t(ctx, "common.field") }</th>
-							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{ t(ctx, "artist.field_provenance.providers") }</th>
-						</tr>
-					</thead>
-					<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-						for _, key := range nextSortedProviderKeys(providers) {
-							<tr>
-								<td class="px-4 py-2 w-1/4"><code class="font-mono break-all" style="color:var(--swd-ink-3)">{ key }</code></td>
-								if len(providers[key]) > 0 {
-									<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ strings.Join(providers[key], ", ") }</td>
-								} else {
-									<td class="px-4 py-2 text-gray-400 italic">{ t(ctx, "common.none") }</td>
-								}
-							</tr>
-						}
-					</tbody>
-				</table>
-			</div>
-		</div>
-	}
-}
-
-// nextSortedProviderKeys returns the keys of a provider map sorted
-// alphabetically, mirroring the stable sortedKeys helper in templates package.
-func nextSortedProviderKeys(m map[string][]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
