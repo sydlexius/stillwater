@@ -62,12 +62,10 @@ func TestArtistDetailPage_RendersHeroAndSections(t *testing.T) {
 		t.Errorf("artwork section (4B) should render its card at the artwork mount point")
 	}
 
-	// The unbuilt 4C (providers/discography) sections must not render an empty
-	// card. They stay in defaultSectionOrder (so they slot back in without
-	// reflow) but emit no visible markup until their features land.
-	for _, absent := range []string{"next-providers-art-1", "next-discography-art-1"} {
-		if strings.Contains(out, absent) {
-			t.Errorf("suppressed mount-point section %q should render no card", absent)
+	// The 4C sections (providers/discography) now render their cards (4C landed).
+	for _, want := range []string{"next-providers-art-1", "next-discography-art-1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("4C section %q should render its card", want)
 		}
 	}
 
@@ -259,13 +257,14 @@ func TestOrderedSections(t *testing.T) {
 	// Pref reorders known ids; unknown id ("bogus") dropped; ids missing from the
 	// pref are appended in default order. Assert the FULL resulting slice so a
 	// regression in the trailing (appended) order is caught, not just the prefix.
+	// "debug" is in defaultSectionOrder (after "discography", before "identifiers").
 	if got, want := orderedSections([]string{"identifiers", "bogus", "metadata"}, nil),
-		[]string{"identifiers", "metadata", "artwork", "findings", "history", "providers", "discography"}; !slices.Equal(got, want) {
+		[]string{"identifiers", "metadata", "artwork", "findings", "history", "providers", "discography", "debug"}; !slices.Equal(got, want) {
 		t.Errorf("pref order = %v, want %v", got, want)
 	}
 	// Hidden ids removed; the rest keep default order. Assert the full slice.
 	if got, want := orderedSections(nil, []string{"artwork", "discography"}),
-		[]string{"metadata", "findings", "history", "providers", "identifiers"}; !slices.Equal(got, want) {
+		[]string{"metadata", "findings", "history", "providers", "debug", "identifiers"}; !slices.Equal(got, want) {
 		t.Errorf("hidden removal = %v, want %v", got, want)
 	}
 }

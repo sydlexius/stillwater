@@ -27,7 +27,7 @@ type ArtistDetailPageData struct {
 // renders metadata + findings + history + identifiers itself and leaves
 // stable-id mount points for artwork (4B) and providers/discography/debug (4C).
 var defaultSectionOrder = []string{
-	"metadata", "artwork", "findings", "history", "providers", "discography", "identifiers",
+	"metadata", "artwork", "findings", "history", "providers", "discography", "debug", "identifiers",
 }
 
 // orderedSections returns the section ids to render in order, applying the user
@@ -93,11 +93,18 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 					case "history":
 						@artistHistorySection(data.Detail.Artist.ID)
 					case "providers":
-						// 4C mount point (providers). Suppressed until 4C builds it; kept in
-						// defaultSectionOrder so it reappears in place without reflow.
+						@SectionProviders(data)
 					case "discography":
-						// 4C mount point (discography). Suppressed until 4C builds it; kept in
-						// defaultSectionOrder so it reappears in place without reflow.
+						@SectionDiscography(data)
+					case "debug":
+						// Conditional: only render when the debug setting is on AND at least one
+						// Emby/Jellyfin connection exists (mirrors the stable tab gate at
+						// artist_detail.templ:651). Keeping "debug" in defaultSectionOrder lets
+						// it slot back into the user's chosen position without reflow when the
+						// gate opens.
+						if data.Detail.ShowPlatformDebug && data.Detail.HasDebugConnection {
+							@SectionDebug(data)
+						}
 					case "identifiers":
 						@artistIdentifiersSection(&data.Detail)
 				}
