@@ -42,193 +42,215 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					<h1 class="mt-2 text-2xl font-bold">{ t(ctx, "image.management_title") }</h1>
 				}
 			</div>
-			if data.SelectedType != "" {
-				@imageSearchContextualized(data)
-			} else {
-				@imageSearchGeneric(data)
-			}
-			@components.ImageCropModal(data.Artist.ID)
 			<link rel="stylesheet" href={ assets.CropperCSS }/>
 			<script src={ assets.CropperJS }></script>
-			if data.AutoCrop && data.SelectedType != "" && imageExistsForType(data.Artist, data.SelectedType) {
-				// Marker element read by the setup script below to auto-open the crop
-				// modal once Cropper.js is ready. The src/type are passed via data
-				// attributes to avoid inline Go string interpolation inside <script>.
-				//
-				// Indexed fanart is intentionally excluded: the crop save endpoint only
-				// carries the image type (no slot index), so auto-opening crop for
-				// /fanart/{index}/file would save the result to the primary fanart
-				// instead of the selected slot.
-				if data.SelectedType != "fanart" || data.SelectedIndex < 0 {
-					<div
-						id="auto-crop-trigger"
-						class="hidden"
-						data-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", assets.BasePath, data.Artist.ID, data.SelectedType) }
-						data-type={ data.SelectedType }
-					></div>
-				}
-			}
-			<script>
-				// sortImageGrid reorders the children of the nearest .image-sort-grid
-				// based on the selected sort criterion. Each child card must have
-				// data-img-likes and data-img-area attributes. triggerEl scopes
-				// the sort to the grid that is a sibling of the sort bar's container.
-				function sortImageGrid(criterion, triggerEl) {
-					var grid = null;
-					if (triggerEl) {
-						var container = triggerEl.closest('.image-sort-bar');
-						if (container && container.nextElementSibling &&
-							container.nextElementSibling.classList.contains('image-sort-grid')) {
-							grid = container.nextElementSibling;
-						}
-					}
-					if (!grid) {
-						if (triggerEl) {
-							console.warn('sortImageGrid: scoped traversal failed, falling back to first grid');
-						}
-						grid = document.querySelector('.image-sort-grid');
-					}
-					if (!grid) return;
-					var items = Array.prototype.slice.call(grid.children);
-					items.sort(function(a, b) {
-						var aLikes = parseInt(a.dataset.imgLikes || '0', 10);
-						var bLikes = parseInt(b.dataset.imgLikes || '0', 10);
-						var aArea = parseInt(a.dataset.imgArea || '0', 10);
-						var bArea = parseInt(b.dataset.imgArea || '0', 10);
-						if (criterion === 'resolution') {
-							if (aArea !== bArea) return bArea - aArea;
-							return bLikes - aLikes;
-						}
-						// Default: likes
-						if (aLikes !== bLikes) return bLikes - aLikes;
-						return bArea - aArea;
-					});
-					for (var i = 0; i < items.length; i++) {
-						grid.appendChild(items[i]);
-					}
-				}
-
-				var _cropper = null;
-				var _currentRatio = NaN;
-				var _pendingRatio = NaN;
-				function openCropModal(imgSrc, imageType, initialRatio) {
-					var modal = document.getElementById('crop-modal');
-					var cropImage = document.getElementById('crop-image');
-					var cropType = document.getElementById('crop-type');
-					var lockCb = document.getElementById('crop-lock-ratio');
-					cropImage.crossOrigin = 'anonymous';
-					if (imageType) cropType.value = imageType;
-					// Toggle BOTH `hidden` and `flex` so only one display class is
-					// active at a time. The template default is `hidden` only --
-					// co-applying `hidden` + `flex` would be a Tailwind cascade trap
-					// (whichever rule is declared later in styles.css wins).
-					modal.classList.remove('hidden');
-					modal.classList.add('flex');
-					// Reset any error left over from a previous failed save and
-					// re-enable the Save button.
-					var errEl = document.getElementById('crop-error');
-					if (errEl) {
-						errEl.textContent = '';
-						errEl.classList.add('hidden');
-					}
-					var saveBtn = document.getElementById('crop-save-btn');
-					if (saveBtn) saveBtn.disabled = false;
-					// Clear the global cropper ref BEFORE the new cropImage.onload
-					// fires, otherwise saveCroppedImage's `if (!window._cropper)`
-					// readiness guard sees a truthy reference to the previous (now
-					// destroyed) Cropper instance and bypasses the inline error.
-					window._cropper = null;
-					_currentRatio = NaN;
-					_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
-					if (lockCb) lockCb.checked = false;
-					// Attach handlers before setting src: cached images fire onload
-					// synchronously, so the handler must exist before src is assigned.
-					cropImage.onload = function() {
-						if (_cropper) _cropper.destroy();
-						_cropper = new Cropper(cropImage, {
-							viewMode: 1,
-							autoCropArea: 0.8,
-							ready: function() {
-								if (!isNaN(_pendingRatio)) {
-									setCropRatio(_pendingRatio);
-									_pendingRatio = NaN;
-								}
-							}
-						});
-						window._cropper = _cropper;
-					};
-					cropImage.onerror = function() {
-						closeCropModal();
-						var statusEl = document.getElementById('upload-status');
-						if (statusEl) {
-							var s = document.createElement('span');
-							s.className = 'text-sm text-amber-600';
-							s.textContent = 'Cannot crop this image directly (CORS). Save it first, then crop.';
-							statusEl.replaceChildren(s);
-						}
-					};
-					cropImage.src = imgSrc;
-				}
-				function closeCropModal() {
-					var modal = document.getElementById('crop-modal');
-					// Toggle BOTH classes back to the hidden state -- mirror of
-					// openCropModal so only the `hidden` rule is active when the
-					// modal is dismissed. See the cascade-trap comment there.
-					modal.classList.add('hidden');
-					modal.classList.remove('flex');
-					// Drop the cached image's load/error handlers so the closures
-					// they hold over the destroyed Cropper instance are released
-					// and a late-firing onload from a slow source cannot resurrect
-					// _cropper after close.
-					var cropImage = document.getElementById('crop-image');
-					if (cropImage) {
-						cropImage.onload = null;
-						cropImage.onerror = null;
-					}
-					if (_cropper) {
-						_cropper.destroy();
-						_cropper = null;
-					}
-					// Mirror the open path so the readiness guard in
-					// saveCroppedImage sees a clean state next time.
-					window._cropper = null;
-				}
-				function setCropRatio(ratio) {
-					_currentRatio = ratio;
-					var lockCb = document.getElementById('crop-lock-ratio');
-					if (isNaN(ratio)) {
-						if (lockCb) lockCb.checked = false;
-						if (_cropper) _cropper.setAspectRatio(NaN);
-					} else {
-						if (lockCb) lockCb.checked = true;
-						if (_cropper) _cropper.setAspectRatio(ratio);
-					}
-				}
-				function toggleRatioLock(checked) {
-					if (_cropper) {
-						_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);
-					}
-				}
-				// Auto-crop: if the page was navigated with crop=1, open the crop
-				// modal immediately. The trigger element carries the image src and
-				// type via data attributes so no inline Go interpolation is needed.
-				(function() {
-					var trigger = document.getElementById('auto-crop-trigger');
-					if (!trigger) return;
-					var src = trigger.dataset.src;
-					var imgType = trigger.dataset.type;
-					if (src && typeof openCropModal === 'function') {
-						openCropModal(src, imgType);
-					}
-				})();
-			</script>
+			@ArtworkManageEditor(data)
 		</div>
 	}
 }
 
+// ArtworkManageEditor renders the reusable single/multi-type image editor:
+// the current image + actions, drag-drop/upload, search results, compare
+// panel, the crop modal, and the crop/sort/upload/fetch-URL scripts. Extracted
+// from ImageSearchPage (M55 #1336, 4B) so both the stable image page and the
+// next/ in-page Manage-artwork modal share ONE copy. Cropper.js assets are the
+// caller's responsibility (the page loads them once; the modal shell does too).
+templ ArtworkManageEditor(data ImageSearchData) {
+	if data.SelectedType != "" {
+		@imageSearchContextualized(data)
+	} else {
+		@imageSearchGeneric(data)
+	}
+	@components.ImageCropModal(data.Artist.ID)
+	if data.AutoCrop && data.SelectedType != "" && imageExistsForType(data.Artist, data.SelectedType) {
+		// Marker element read by the setup script below to auto-open the crop
+		// modal once Cropper.js is ready. The src/type are passed via data
+		// attributes to avoid inline Go string interpolation inside <script>.
+		//
+		// Indexed fanart is intentionally excluded: the crop save endpoint only
+		// carries the image type (no slot index), so auto-opening crop for
+		// /fanart/{index}/file would save the result to the primary fanart
+		// instead of the selected slot.
+		if data.SelectedType != "fanart" || data.SelectedIndex < 0 {
+			<div
+				id="auto-crop-trigger"
+				class="hidden"
+				data-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
+				data-type={ data.SelectedType }
+			></div>
+		}
+	}
+	<script>
+		// sortImageGrid reorders the children of the nearest .image-sort-grid
+		// based on the selected sort criterion. Each child card must have
+		// data-img-likes and data-img-area attributes. triggerEl scopes
+		// the sort to the grid that is a sibling of the sort bar's container.
+		function sortImageGrid(criterion, triggerEl) {
+			var grid = null;
+			if (triggerEl) {
+				var container = triggerEl.closest('.image-sort-bar');
+				if (container && container.nextElementSibling &&
+					container.nextElementSibling.classList.contains('image-sort-grid')) {
+					grid = container.nextElementSibling;
+				}
+			}
+			if (!grid) {
+				if (triggerEl) {
+					console.warn('sortImageGrid: scoped traversal failed, falling back to first grid');
+				}
+				grid = document.querySelector('.image-sort-grid');
+			}
+			if (!grid) return;
+			var items = Array.prototype.slice.call(grid.children);
+			items.sort(function(a, b) {
+				var aLikes = parseInt(a.dataset.imgLikes || '0', 10);
+				var bLikes = parseInt(b.dataset.imgLikes || '0', 10);
+				var aArea = parseInt(a.dataset.imgArea || '0', 10);
+				var bArea = parseInt(b.dataset.imgArea || '0', 10);
+				if (criterion === 'resolution') {
+					if (aArea !== bArea) return bArea - aArea;
+					return bLikes - aLikes;
+				}
+				// Default: likes
+				if (aLikes !== bLikes) return bLikes - aLikes;
+				return bArea - aArea;
+			});
+			for (var i = 0; i < items.length; i++) {
+				grid.appendChild(items[i]);
+			}
+		}
+
+		var _cropper = null;
+		var _currentRatio = NaN;
+		var _pendingRatio = NaN;
+		function openCropModal(imgSrc, imageType, initialRatio) {
+			var modal = document.getElementById('crop-modal');
+			var cropImage = document.getElementById('crop-image');
+			var cropType = document.getElementById('crop-type');
+			var lockCb = document.getElementById('crop-lock-ratio');
+			cropImage.crossOrigin = 'anonymous';
+			if (imageType) cropType.value = imageType;
+			// Toggle BOTH `hidden` and `flex` so only one display class is
+			// active at a time. The template default is `hidden` only --
+			// co-applying `hidden` + `flex` would be a Tailwind cascade trap
+			// (whichever rule is declared later in styles.css wins).
+			modal.classList.remove('hidden');
+			modal.classList.add('flex');
+			// Reset any error left over from a previous failed save and
+			// re-enable the Save button.
+			var errEl = document.getElementById('crop-error');
+			if (errEl) {
+				errEl.textContent = '';
+				errEl.classList.add('hidden');
+			}
+			var saveBtn = document.getElementById('crop-save-btn');
+			if (saveBtn) saveBtn.disabled = false;
+			// Clear the global cropper ref BEFORE the new cropImage.onload
+			// fires, otherwise saveCroppedImage's `if (!window._cropper)`
+			// readiness guard sees a truthy reference to the previous (now
+			// destroyed) Cropper instance and bypasses the inline error.
+			window._cropper = null;
+			_currentRatio = NaN;
+			_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
+			if (lockCb) lockCb.checked = false;
+			// Attach handlers before setting src: cached images fire onload
+			// synchronously, so the handler must exist before src is assigned.
+			cropImage.onload = function() {
+				if (_cropper) _cropper.destroy();
+				_cropper = new Cropper(cropImage, {
+					viewMode: 1,
+					autoCropArea: 0.8,
+					ready: function() {
+						if (!isNaN(_pendingRatio)) {
+							setCropRatio(_pendingRatio);
+							_pendingRatio = NaN;
+						}
+					}
+				});
+				window._cropper = _cropper;
+			};
+			cropImage.onerror = function() {
+				closeCropModal();
+				var statusEl = document.getElementById('upload-status');
+				if (statusEl) {
+					var s = document.createElement('span');
+					s.className = 'text-sm text-amber-600';
+					var editorEl = document.querySelector('[data-artist-id][data-image-type]');
+					s.textContent = editorEl ? editorEl.dataset.msgCorsCrop : 'Cannot crop this image directly (CORS). Save it first, then crop.';
+					statusEl.replaceChildren(s);
+				}
+			};
+			cropImage.src = imgSrc;
+		}
+		function closeCropModal() {
+			var modal = document.getElementById('crop-modal');
+			// Toggle BOTH classes back to the hidden state -- mirror of
+			// openCropModal so only the `hidden` rule is active when the
+			// modal is dismissed. See the cascade-trap comment there.
+			modal.classList.add('hidden');
+			modal.classList.remove('flex');
+			// Drop the cached image's load/error handlers so the closures
+			// they hold over the destroyed Cropper instance are released
+			// and a late-firing onload from a slow source cannot resurrect
+			// _cropper after close.
+			var cropImage = document.getElementById('crop-image');
+			if (cropImage) {
+				cropImage.onload = null;
+				cropImage.onerror = null;
+			}
+			if (_cropper) {
+				_cropper.destroy();
+				_cropper = null;
+			}
+			// Mirror the open path so the readiness guard in
+			// saveCroppedImage sees a clean state next time.
+			window._cropper = null;
+		}
+		function setCropRatio(ratio) {
+			_currentRatio = ratio;
+			var lockCb = document.getElementById('crop-lock-ratio');
+			if (isNaN(ratio)) {
+				if (lockCb) lockCb.checked = false;
+				if (_cropper) _cropper.setAspectRatio(NaN);
+			} else {
+				if (lockCb) lockCb.checked = true;
+				if (_cropper) _cropper.setAspectRatio(ratio);
+			}
+		}
+		function toggleRatioLock(checked) {
+			if (_cropper) {
+				_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);
+			}
+		}
+		// Auto-crop: if the page was navigated with crop=1, open the crop
+		// modal immediately. The trigger element carries the image src and
+		// type via data attributes so no inline Go interpolation is needed.
+		(function() {
+			var trigger = document.getElementById('auto-crop-trigger');
+			if (!trigger) return;
+			var src = trigger.dataset.src;
+			var imgType = trigger.dataset.type;
+			if (src && typeof openCropModal === 'function') {
+				openCropModal(src, imgType);
+			}
+		})();
+	</script>
+}
+
 // imageSearchContextualized renders the single-type image editing layout.
 templ imageSearchContextualized(data ImageSearchData) {
-	<div class="max-w-4xl mx-auto space-y-6" data-artist-id={ data.Artist.ID } data-image-type={ data.SelectedType }>
+	<div
+		class="max-w-4xl mx-auto space-y-6"
+		data-artist-id={ data.Artist.ID }
+		data-image-type={ data.SelectedType }
+		data-msg-cors-crop={ t(ctx, "image.msg_cors_crop") }
+		data-msg-needs-crop={ t(ctx, "image.msg_needs_crop") }
+		data-msg-uploading={ t(ctx, "image.msg_uploading") }
+		data-msg-upload-failed={ t(ctx, "image.msg_upload_failed") }
+		data-msg-fetching={ t(ctx, "image.msg_fetching") }
+		data-msg-fetch-failed={ t(ctx, "image.msg_fetch_failed") }
+		data-msg-fetch-unable={ t(ctx, "image.msg_fetch_unable") }
+	>
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<div class="flex items-center justify-between mb-4">
 				<h2 class="text-lg font-semibold">{ tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</h2>
@@ -260,6 +282,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 									hx-swap="innerHTML"
 									hx-indicator="#search-spinner"
 								>
+									@components.IconMagnifyingGlass("h-4 w-4")
 									{ t(ctx, "image.fetch") }
 								</button>
 							}
@@ -273,6 +296,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 									hx-swap="innerHTML"
 									hx-indicator="#search-spinner"
 								>
+									@components.IconArrowTopRightOnSquare("h-4 w-4")
 									{ t(ctx, "image.web_search") }
 								</button>
 							}
@@ -285,6 +309,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('image-file-input').click()"
 							>
+								@components.IconArrowUpTray("h-4 w-4")
 								{ t(ctx, "image.browse") }
 							</button>
 							<button
@@ -293,6 +318,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('fetch-url-modal').classList.remove('hidden')"
 							>
+								@components.IconArrowDownTray("h-4 w-4")
 								{ t(ctx, "image.fetch_from_url") }
 							</button>
 							if imageExistsForType(data.Artist, data.SelectedType) {
@@ -303,8 +329,29 @@ templ imageSearchContextualized(data ImageSearchData) {
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 									onclick={ openCropForType(data.BasePath+fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
 								>
+									@components.IconCrop("h-4 w-4")
 									{ t(ctx, "common.crop") }
 								</button>
+								// Auto-trim padding: logo only (removes transparent/near-solid
+								// borders to tighten a logo). Distinct icon (scissors) from the
+								// crop glyph per design section 8/20.5. Gated via #1837.
+								if data.SelectedType == "logo" {
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", data.Artist.ID) }
+										hx-confirm={ t(ctx, "image.confirm_trim_logo") }
+										hx-swap="none"
+										data-sw-requires-image-write
+										data-msg-failed={ t(ctx, "image.trim_failed_short") }
+										hx-on::after-request="if(event.detail.successful) window.location.reload(); else if(event.detail.xhr.status!==409) alert(this.dataset.msgFailed);"
+										title={ t(ctx, "image.disabled_during_conflict") }
+									>
+										@components.IconScissors("h-4 w-4")
+										{ t(ctx, "artist.artwork.auto_trim") }
+									</button>
+								}
 								<button
 									type="button"
 									role="menuitem"
@@ -315,6 +362,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 									hx-swap="none"
 									hx-on::after-request="if(event.detail.successful) window.location.reload()"
 								>
+									@components.IconTrash("h-4 w-4")
 									{ t(ctx, "common.delete") }
 								</button>
 							}
@@ -379,12 +427,6 @@ templ imageSearchContextualized(data ImageSearchData) {
 				>
 					<span class="text-sm text-gray-400">{ t(ctx, "image.loading_gallery") }</span>
 				</div>
-				// Lazy-load sync state badges via OOB swap after gallery renders
-				<div
-					hx-get={ fmt.Sprintf("/api/v1/artists/%s/fanart-sync-state", data.Artist.ID) }
-					hx-trigger="load delay:500ms"
-					hx-swap="none"
-				></div>
 			</section>
 		}
 		// -- Search results (shared area, auto-fires only when auto-fetch is enabled) --
@@ -487,7 +529,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					<button
 						type="button"
 						id="fetch-url-submit"
-						class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						class="sw-next-flat-btn px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 					>
 						{ t(ctx, "image.fetch") }
 					</button>
@@ -497,7 +539,13 @@ templ imageSearchContextualized(data ImageSearchData) {
 		// -- Drag-drop, browse, and fetch-URL JS --
 		<script>
 			(function() {
-				var container = document.querySelector('[data-artist-id]');
+				// Scope to the editor's contextualized container, which carries BOTH
+				// data-artist-id AND data-image-type. The bare [data-artist-id] selector
+				// matched the next/ page wrapper first (data-artist-id but no
+				// data-image-type) when this editor is re-hosted in the Manage-artwork
+				// modal, so the IIFE early-returned and drag-drop / fetch-URL / compare /
+				// the #image-results un-hide were all dead in the modal (M55 #1336, 4B).
+				var container = document.querySelector('[data-artist-id][data-image-type]');
 				if (!container) return;
 				var artistID = container.dataset.artistId;
 				var imageType = container.dataset.imageType;
@@ -529,7 +577,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					// Pass the required ratio so the Cropper ready callback
 					// applies it reliably instead of a timing-dependent setTimeout.
 					openCropModal(data.image_data, data.type, data.required_ratio);
-					setStatus('Image needs cropping to match the required aspect ratio.', 'text-amber-600');
+					setStatus(container.dataset.msgNeedsCrop, 'text-amber-600');
 				}
 
 				function uploadFile(file) {
@@ -537,7 +585,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					var fd = new FormData();
 					fd.append('file', file);
 					fd.append('type', imageType);
-					setStatus('Uploading...', 'text-gray-500');
+					setStatus(container.dataset.msgUploading, 'text-gray-500');
 					fetch(bp + '/api/v1/artists/' + artistID + '/images/upload', {
 						method: 'POST',
 						headers: {'X-CSRF-Token': csrfToken()},
@@ -545,11 +593,11 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {
-							if (!r.ok) { setStatus('Upload failed', 'text-red-500'); return; }
+							if (!r.ok) { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); return; }
 							if (data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});
-					}).catch(function() { setStatus('Upload failed', 'text-red-500'); });
+					}).catch(function() { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); });
 				}
 
 				dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });
@@ -570,7 +618,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					var url = document.getElementById('fetch-url-input').value.trim();
 					if (!url) return;
 					var modal = document.getElementById('fetch-url-modal');
-					setStatus('Fetching...', 'text-gray-500');
+					setStatus(container.dataset.msgFetching, 'text-gray-500');
 					modal.classList.add('hidden');
 					fetch(bp + '/api/v1/artists/' + artistID + '/images/fetch', {
 						method: 'POST',
@@ -579,11 +627,11 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {
-							if (!r.ok) { setStatus('Unable to fetch image', 'text-red-500'); return; }
+							if (!r.ok) { setStatus(container.dataset.msgFetchUnable, 'text-red-500'); return; }
 							if (data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});
-					}).catch(function() { setStatus('Fetch failed', 'text-red-500'); });
+					}).catch(function() { setStatus(container.dataset.msgFetchFailed, 'text-red-500'); });
 				});
 
 				// Show results panel and reveal compare/crop buttons when HTMX swap completes
@@ -595,6 +643,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						for (var i = 0; i < btns.length; i++) {
 							if (btns[i].classList.contains('compare-btn') && !hasCompare) continue;
 							btns[i].classList.remove('hidden');
+							btns[i].classList.add('inline-flex');
 						}
 					}
 				});
@@ -767,7 +816,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_fanart_from_providers") }</p>
 	} else {
-		<div id="fanart-search-results" data-artist-id={ artistID }>
+		<div id="fanart-search-results" data-sw-fanart-search data-artist-id={ artistID }>
 			@imageSortBar(activeSort)
 			<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 				for i, img := range images {
@@ -814,7 +863,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 							</div>
 							<button
 								type="button"
-								class="w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								class="sw-next-flat-btn w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
 								hx-vals={ hxValsJSON(map[string]string{"url": img.URL, "type": "fanart"}) }
 								hx-swap="none"
@@ -829,56 +878,19 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 					</div>
 				}
 			</div>
-			<div id="fanart-bulk-bar" class="hidden sticky bottom-4 mt-4 rounded-lg bg-gray-900/90 backdrop-blur text-white px-4 py-3 flex items-center justify-between shadow-lg">
+			<div
+				id="fanart-bulk-bar"
+				class="hidden sticky bottom-4 mt-4 rounded-lg bg-gray-900/90 backdrop-blur text-white px-4 py-3 flex items-center justify-between shadow-lg"
+				data-session-expired={ t(ctx, "common.session_expired") }
+				data-toast-network-error={ t(ctx, "common.network_error") }
+				data-toast-save-failed={ t(ctx, "image.save_failed") }
+				data-toast-save-partial={ t(ctx, "image.save_partial") }
+			>
 				<span id="fanart-bulk-count">0 selected</span>
-				<button type="button" id="fanart-bulk-save" class="px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 transition-colors font-medium">
+				<button type="button" id="fanart-bulk-save" class="sw-next-flat-btn px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 transition-colors font-medium">
 					{ t(ctx, "image.save_all") }
 				</button>
 			</div>
-			<script>
-				(function() {
-					var container = document.getElementById('fanart-search-results');
-					if (!container) return;
-					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
-					var artistId = container.dataset.artistId;
-					var bar = document.getElementById('fanart-bulk-bar');
-					var countEl = document.getElementById('fanart-bulk-count');
-
-					container.addEventListener('change', function() {
-						var checked = container.querySelectorAll('.fanart-select-cb:checked');
-						if (checked.length > 0) {
-							bar.classList.remove('hidden');
-							countEl.textContent = checked.length + ' selected';
-						} else {
-							bar.classList.add('hidden');
-						}
-					});
-
-					document.getElementById('fanart-bulk-save').addEventListener('click', function() {
-						var checked = container.querySelectorAll('.fanart-select-cb:checked');
-						if (checked.length === 0) return;
-						var urls = [];
-						for (var i = 0; i < checked.length; i++) {
-							urls.push(checked[i].dataset.url);
-						}
-						bar.classList.add('hidden');
-						countEl.textContent = 'Saving...';
-						bar.classList.remove('hidden');
-						fetch(bp + '/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {
-							method: 'POST',
-							headers: {
-								'Content-Type': 'application/json',
-								'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
-							},
-							body: JSON.stringify({urls: urls}),
-							credentials: 'same-origin'
-						}).then(function(r) {
-							if (r.ok) window.location.reload();
-							else alert('Failed to save selected images. Please try again.');
-						});
-					});
-				})();
-			</script>
 		</div>
 	}
 }

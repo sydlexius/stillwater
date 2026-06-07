@@ -11,6 +11,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 	<div
 		id="fanart-management-gallery"
 		class="space-y-4"
+		data-sw-fanart-gallery
 		data-artist-id={ artistID }
 		data-label-delete-n-one={ t(ctx, "image.delete_n_selected.one") }
 		data-label-delete-n-other={ t(ctx, "image.delete_n_selected.other") }
@@ -21,6 +22,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 		data-toast-network-error={ t(ctx, "common.network_error") }
 		data-toast-reorder-failed={ t(ctx, "image.reorder_failed") }
 		data-toast-reorder-http-failed={ t(ctx, "image.reorder_failed_http") }
+		data-session-expired={ t(ctx, "common.session_expired") }
 	>
 		<div class="flex items-center justify-between">
 			<h3 class="text-sm font-semibold">{ tn(ctx, "image.fanart_count", len(items)) }</h3>
@@ -36,8 +38,6 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 				for _, item := range items {
 					<div class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group" data-fanart-index={ strconv.Itoa(item.Index) }>
-						<!-- Sync badge placeholder (populated via OOB swap) -->
-						<div data-sync-badge={ strconv.Itoa(item.Index) }></div>
 						<label class="cursor-pointer">
 							<input
 								type="checkbox"
@@ -57,9 +57,9 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 							<span class="text-xs text-gray-500 dark:text-gray-400">
 								{ item.Filename }
 								if item.Width > 0 && item.Height > 0 {
-									{ " " + strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height) }
+									<span class="font-mono">{ " " + strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height) }</span>
 								}
-								{ " " + formatFileSizeTempl(item.Size) }
+								<span class="font-mono">{ " " + formatFileSizeTempl(item.Size) }</span>
 							</span>
 							<div class="flex items-center gap-1">
 								if item.Index > 0 {
@@ -107,88 +107,6 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 		} else {
 			<p class="text-sm text-gray-400 italic">{ t(ctx, "image.no_fanart_images") }</p>
 		}
-		<script>
-			(function() {
-				var gallery = document.getElementById('fanart-management-gallery');
-				if (!gallery) return;
-				var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
-				var deleteBtn = document.getElementById('fanart-delete-selected');
-				function pluralize(count, one, other) {
-					var tpl = count === 1 ? one : other;
-					return tpl.replaceAll('{count}', String(count));
-				}
-
-				// Batch select/delete
-				gallery.addEventListener('change', function() {
-					var checked = gallery.querySelectorAll('.fanart-cb:checked');
-					if (checked.length > 0) {
-						deleteBtn.classList.remove('hidden');
-						deleteBtn.textContent = pluralize(checked.length, gallery.dataset.labelDeleteNOne || 'Delete 1 selected', gallery.dataset.labelDeleteNOther || 'Delete {count} selected');
-					} else {
-						deleteBtn.classList.add('hidden');
-					}
-				});
-				deleteBtn.addEventListener('click', function() {
-					var checked = gallery.querySelectorAll('.fanart-cb:checked');
-					if (checked.length === 0) return;
-					if (!confirm(pluralize(checked.length, gallery.dataset.confirmDeleteNOne || 'Delete 1 fanart image?', gallery.dataset.confirmDeleteNOther || 'Delete {count} fanart images?'))) return;
-					var indices = [];
-					for (var i = 0; i < checked.length; i++) {
-						indices.push(parseInt(checked[i].value, 10));
-					}
-					var id = gallery.dataset.artistId;
-					fetch(bp + '/api/v1/artists/' + id + '/images/fanart/batch', {
-						method: 'DELETE',
-						headers: {
-							'Content-Type': 'application/json',
-							'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
-						},
-						body: JSON.stringify({indices: indices}),
-						credentials: 'same-origin'
-					}).then(function(r) {
-						if (r.ok) { window.location.reload(); return; }
-						r.json().then(function(b) { alert((gallery.dataset.toastDeleteFailed || 'Delete failed: %s').replace('%s', function() { return b.error || 'unknown error'; })); })
-							.catch(function() { alert((gallery.dataset.toastDeleteHttpFailed || 'Delete failed (HTTP %s)').replace('%s', function() { return r.status; })); });
-					}).catch(function() {
-						alert(gallery.dataset.toastNetworkError || 'Network error. Check your connection and try again.');
-					});
-				});
-
-				// Reorder (move up/down)
-				gallery.addEventListener('click', function(e) {
-					var btn = e.target.closest('.fanart-move-btn');
-					if (!btn) return;
-					var idx = parseInt(btn.dataset.index, 10);
-					var dir = btn.dataset.direction;
-					var id = btn.dataset.artistId;
-					var total = gallery.querySelectorAll('.fanart-cb').length;
-
-					// Build the new order: swap idx with idx-1 (up) or idx+1 (down)
-					var order = [];
-					for (var i = 0; i < total; i++) order.push(i);
-					var swapWith = dir === 'up' ? idx - 1 : idx + 1;
-					if (swapWith < 0 || swapWith >= total) return;
-					order[idx] = swapWith;
-					order[swapWith] = idx;
-
-					fetch(bp + '/api/v1/artists/' + id + '/images/fanart/reorder', {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
-						},
-						body: JSON.stringify({order: order}),
-						credentials: 'same-origin'
-					}).then(function(r) {
-						if (r.ok) { window.location.reload(); return; }
-						r.json().then(function(b) { alert((gallery.dataset.toastReorderFailed || 'Reorder failed: %s').replace('%s', function() { return b.error || 'unknown error'; })); })
-							.catch(function() { alert((gallery.dataset.toastReorderHttpFailed || 'Reorder failed (HTTP %s)').replace('%s', function() { return r.status; })); });
-					}).catch(function() {
-						alert(gallery.dataset.toastNetworkError || 'Network error. Check your connection and try again.');
-					});
-				});
-			})();
-		</script>
 	</div>
 }
 
@@ -256,64 +174,4 @@ type PlatformBackdropItemData struct {
 	Index        int
 	ThumbnailURL string
 	NextSlot     int // The next available local fanart slot index
-}
-
-// FanartSyncBadgeData holds sync state data for a single fanart badge.
-type FanartSyncBadgeData struct {
-	Index   int
-	State   string // synced, partial, unsynced, syncing, error
-	Tooltip string
-}
-
-// iconSyncCircle renders an inline SVG sync-circle icon. CSS class controls
-// color (via currentColor) and size.
-templ iconSyncCircle(class string) {
-	<svg class={ class } xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
-		<path d="M434.67 285.59v-29.8C434.67 157.06 354.43 77 255.47 77a179 179 0 00-140.14 67.36m-38.53 82v29.8C76.8 354.94 157 435 256 435a180.45 180.45 0 00140-66.92"></path>
-		<path d="M32 256l44-44 46 44M480 256l-44 44-46-44"></path>
-	</svg>
-}
-
-// syncBadgeColorClass returns the Tailwind text color class for a sync state.
-func syncBadgeColorClass(state string) string {
-	switch state {
-	case "synced":
-		return "text-green-500"
-	case "partial":
-		return "text-amber-500"
-	case "unsynced":
-		return "text-gray-400"
-	case "syncing":
-		return "text-blue-500 animate-spin"
-	case "error":
-		return "text-red-500"
-	default:
-		return "text-gray-400"
-	}
-}
-
-// FanartSyncBadge renders a sync state badge overlay for a fanart image.
-templ FanartSyncBadge(data FanartSyncBadgeData) {
-	<div
-		data-sync-badge={ strconv.Itoa(data.Index) }
-		class="absolute top-2 right-2 z-10 bg-black/60 rounded-full p-0.5"
-		title={ data.Tooltip }
-	>
-		@iconSyncCircle("w-5 h-5 " + syncBadgeColorClass(data.State))
-	</div>
-}
-
-// FanartSyncBadges renders all sync badges as OOB swap targets.
-// Each badge uses hx-swap-oob to replace its placeholder in the gallery.
-templ FanartSyncBadges(badges []FanartSyncBadgeData) {
-	for _, b := range badges {
-		<div
-			data-sync-badge={ strconv.Itoa(b.Index) }
-			class="absolute top-2 right-2 z-10 bg-black/60 rounded-full p-0.5"
-			title={ b.Tooltip }
-			hx-swap-oob={ "outerHTML:[data-sync-badge='" + strconv.Itoa(b.Index) + "']" }
-		>
-			@iconSyncCircle("w-5 h-5 " + syncBadgeColorClass(b.State))
-		</div>
-	}
 }

@@ -3,6 +3,7 @@ package next
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/sydlexius/stillwater/web/components"
@@ -26,7 +27,7 @@ type ArtistDetailPageData struct {
 // renders metadata + findings + history + identifiers itself and leaves
 // stable-id mount points for artwork (4B) and providers/discography/debug (4C).
 var defaultSectionOrder = []string{
-	"metadata", "artwork", "findings", "history", "providers", "discography", "identifiers",
+	"metadata", "artwork", "findings", "history", "providers", "discography", "debug", "identifiers",
 }
 
 // orderedSections returns the section ids to render in order, applying the user
@@ -71,6 +72,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 			data-artist-id={ data.Detail.Artist.ID }
 			data-sw-msg-save-failed={ t(ctx, "artist.save_failed_some") }
 			data-sw-msg-edit-partial={ t(ctx, "artist.edit_partial") }
+			data-sw-msg-session-expired={ t(ctx, "common.session_expired") }
 			data-sw-section-nav
 			if data.PrevArtistID != "" {
 				data-sw-prev-artist={ assets.BasePath + "/next/artists/" + data.PrevArtistID }
@@ -86,27 +88,58 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 					case "metadata":
 						@artistMetadataSection(&data.Detail)
 					case "artwork":
-						// 4B mount point (artwork). Suppressed for now: rendering an empty
-						// sw-dash-card here showed a blank section (maintainer UAT). It stays
-						// in defaultSectionOrder so 4B (#9) slots its content back in at this
-						// position without reflowing the page; no visible card renders until then.
+						@ArtworkSection(&data.Detail)
 					case "findings":
 						@artistFindingsSection(&data.Detail)
 					case "history":
 						@artistHistorySection(data.Detail.Artist.ID)
 					case "providers":
-						// 4C mount point (providers). Suppressed until 4C builds it; kept in
-						// defaultSectionOrder so it reappears in place without reflow.
+						@SectionProviders(data)
 					case "discography":
-						// 4C mount point (discography). Suppressed until 4C builds it; kept in
-						// defaultSectionOrder so it reappears in place without reflow.
+						@SectionDiscography(data)
+					case "debug":
+						// Conditional: only render when the debug setting is on AND at least one
+						// Emby/Jellyfin connection exists (mirrors the stable-channel gate:
+						// ShowPlatformDebug && HasDebugConnection). Keeping "debug" in
+						// defaultSectionOrder lets it slot back into the user's chosen position
+						// without reflow when the gate opens.
+						if data.Detail.ShowPlatformDebug && data.Detail.HasDebugConnection {
+							@SectionDebug(data)
+						}
 					case "identifiers":
 						@artistIdentifiersSection(&data.Detail)
 				}
 			}
+			// Keyboard legend: keycap-chip convention matching the dashboard (M55 #1336 UAT).
 			<p class="sw-list-tips" role="note">
-				{ t(ctx, "artist.next.shortcuts_tip") }
+				<span class="font-medium">{ t(ctx, "artist.next.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.prev_artist") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.next_artist") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.section_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.section_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">r</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.refresh") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">R</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.run_rules") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Esc</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.close") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">e</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.field_edit") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.field_fetch") }</span></span>
 			</p>
+			// The Manage-artwork modal is rendered once (hidden); data-sw-artwork-open
+			// triggers in the Artwork section open it. Suppressed when the artwork
+			// section is hidden so its triggers and the modal stay consistent.
+			if !slices.Contains(data.Hidden, "artwork") {
+				@ArtworkModal(assets, &data.Detail)
+				// Full-size lightbox overlay (shared) for the Artwork tiles + carousel;
+				// window.openLightbox (lightbox.js) needs this DOM present on the page.
+				@templates.LightboxOverlay()
+			}
 			@artistDetailPageScript()
 			// Wire the ContextHelp (?) icons on this page. The History section reuses
 			// the stable history-tab fragment, which renders a ContextHelp "?" for the
@@ -682,7 +715,7 @@ templ artistAliasAddForm(artistID string) {
 		<input type="hidden" name="source" value="manual"/>
 		<button
 			type="submit"
-			class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+			class="sw-next-flat-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
 		>
 			{ t(ctx, "common.add") }
 		</button>
@@ -767,11 +800,10 @@ templ artistIdentifiersSection(data *templates.ArtistDetailData) {
 }
 
 // artistDetailPageScript wires the page-specific behaviors not covered by the
-// shared modules: "Edit all" (clicks every visible field edit affordance) and
-// the h/l prev-next-artist + j/k section-nav keyboard handlers. It prefers the
-// keyboard registry's onContext hook when available and falls back to a
-// self-contained, typing-aware keydown listener otherwise so the feature is
-// never at risk.
+// shared modules: "Edit all" toggle, h/l prev/next-artist + j/k section-nav,
+// Esc panel/edit-mode dismiss, e edit-mode toggle, and f focused-field fetch.
+// keyboard.js (global) owns r/R (data-sw-shortcut) and f on filter-flyout
+// pages; this listener is complementary and does not conflict.
 templ artistDetailPageScript() {
 	<script>
 		(function () {
@@ -1008,6 +1040,9 @@ templ artistDetailPageScript() {
 				var bp = swBasePath();
 				var csrf = swCsrf();
 				var jobs = [];
+				// Collect dirty fields first so we can check CSRF only when
+				// there is actually something to save (mirrors the guard in
+				// fanart-manage.js / artwork-modal.js).
 				forms.forEach(function (form) {
 					var url = form.getAttribute('hx-patch');
 					var input = form.querySelector('[name="value"]');
@@ -1015,6 +1050,15 @@ templ artistDetailPageScript() {
 						jobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input });
 					}
 				});
+				if (jobs.length === 0) return Promise.resolve({ failedCount: 0 });
+				if (!csrf) {
+					var expiredMsg = (pageRoot && pageRoot.getAttribute('data-sw-msg-session-expired')) ||
+						'Session expired. Please reload the page and try again.';
+					swNotify(expiredMsg);
+					// Return failedCount > 0 to keep edit mode open so the user
+					// can reload and retry without losing their typed values.
+					return Promise.resolve({ failedCount: jobs.length });
+				}
 				var failed = [];
 				return jobs.reduce(function (chain, job) {
 					return chain.then(function () {
@@ -1140,21 +1184,87 @@ templ artistDetailPageScript() {
 				return false;
 			}
 
-			// Prefer the shared keyboard registry's contextual hook when present.
-			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.onContext === 'function') {
-				window.swKeyboardShortcuts.onContext('artist-detail', function (key) { return handle(key); });
-				return;
-			}
-
-			// Fallback: a self-contained, typing-aware keydown listener.
+			// isTyping: mirrors keyboard.js's guard -- INPUT only counts as typing
+			// when text-like; a focused checkbox/radio must NOT swallow shortcuts.
 			function isTyping(el) {
 				if (!el) return false;
-				var tag = (el.tagName || '').toLowerCase();
-				return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+				var tag = el.tagName;
+				if (tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return true;
+				if (tag === 'INPUT') {
+					var nonText = ['checkbox','radio','button','submit','reset','file','image','range','color'];
+					var itype = (el.getAttribute('type') || 'text').toLowerCase();
+					return nonText.indexOf(itype) === -1;
+				}
+				return false;
 			}
+
+			// Track the most-recently-hovered field row so 'f' has a target.
+			// closest() walks up from any pointer target inside the row container
+			// (value text, lock icon, etc.) to reach the wrapping div, e.g.
+			// <div id="field-biography-123">.
+			var focusedFieldEl = null;
+			document.addEventListener('mouseover', function (mv) {
+				var el = mv.target.closest('div[id^="field-"]');
+				if (el) focusedFieldEl = el;
+			});
+
+			// Detail-page keyboard handler. keyboard.js (global) handles r/R via
+			// data-sw-shortcut and owns 'f'/'F' on filter-flyout pages; this listener
+			// is complementary. The onContext hook from keyboard.js targets roving-list
+			// pages and is NOT used here (artist-detail has no data-sw-roving-list).
 			document.addEventListener('keydown', function (ev) {
 				if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
 				if (isTyping(ev.target)) return;
+
+				// When the artwork modal is open, its own keydown handler (registered by
+				// artwork-modal.js while open) owns Escape and Tab. All other keys
+				// (h/l/j/k/e/f) must NOT navigate the page behind the dialog.
+				var artworkModal = document.getElementById('artwork-modal');
+				if (artworkModal && !artworkModal.classList.contains('hidden')) return;
+
+				// Esc: layered dismiss in priority order.
+				// (a) Lightbox + (b) artwork-modal: each registers its keydown handler
+				//     only while open (added on open, removed on close) and calls
+				//     e.preventDefault() -- the defaultPrevented guard above handles
+				//     those before we reach this block.
+				// (c) Dismiss the refresh-panel when it has content.
+				// (d) Exit page edit mode when active (same as clicking Done).
+				if (ev.key === 'Escape') {
+					var panel = document.getElementById('refresh-panel');
+					if (panel && panel.innerHTML.trim() !== '') {
+						ev.preventDefault();
+						panel.innerHTML = '';
+						return;
+					}
+					if (editing) {
+						ev.preventDefault();
+						setEditAll(false);
+						return;
+					}
+					return;
+				}
+
+				// e: toggle page-level Edit mode (same as clicking the Edit / Done hero
+				// button). next/ uses page-wide edit-all, not per-field pencils.
+				if (ev.key === 'e') {
+					ev.preventDefault();
+					setEditAll(!editing);
+					return;
+				}
+
+				// f: open the provider-fetch panel for the focused field. keyboard.js
+				// handles 'f'/'F' on pages that use a filter flyout; it returns without
+				// calling preventDefault when no data-sw-shortcut="f" element exists,
+				// so this handler still fires on the detail page.
+				if (ev.key === 'f') {
+					if (focusedFieldEl) {
+						var fetchBtn = focusedFieldEl.querySelector('button[hx-get$="/providers"]');
+						if (fetchBtn) { ev.preventDefault(); fetchBtn.click(); }
+					}
+					return;
+				}
+
+				// h/l/j/k: prev/next artist and section nav (handled by handle()).
 				if (handle(ev.key)) ev.preventDefault();
 			});
 		})();

@@ -730,7 +730,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Platform backdrop routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-backdrops", wrapAuth(r.handlePlatformBackdrops, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-backdrops/{connectionId}/{index}/thumbnail", wrapAuth(r.handlePlatformBackdropThumbnail, authMw))
-	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fanart-sync-state", wrapAuth(r.handleFanartSyncState, authMw))
 	// Ambient backdrop (random artist fanart for layout background)
 	mux.HandleFunc("GET "+bp+"/api/v1/images/random-backdrop", wrapAuth(r.handleRandomBackdrop, authMw))
 	// Generic image routes
@@ -846,6 +845,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// only when the resolved channel is "next" (otherwise it delegates to the
 	// stable tabbed detail page).
 	mux.HandleFunc("GET "+bp+"/next/artists/{id}", wrapOptionalAuth(r.handleNextArtistDetailPage, optAuthMw))
+	// Manage-artwork modal body fragment (M55 #1336, 4B): more specific than the
+	// /next/{path...} fallback, so Go's mux prefers it. Renders ArtworkManageEditor
+	// scoped to ?kind= for the in-page modal's active kind.
+	mux.HandleFunc("GET "+bp+"/next/artists/{id}/artwork-modal", wrapOptionalAuth(r.handleNextArtworkModal, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

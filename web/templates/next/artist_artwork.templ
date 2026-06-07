@@ -1,0 +1,350 @@
+package next
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// ArtworkSection is the next/ Artwork section (M55 #1336, 4B): a source-of-truth
+// reconciliation editor, NOT an import picker. It renders aspect-true identity
+// tiles (Primary 1:1 / Logo / Banner), a lazy-loaded backdrops carousel, and a
+// per-connection reconciliation status line, plus a single "Manage artwork"
+// trigger that opens the in-page modal (artist_artwork_modal.templ). All
+// manage/add affordances open the in-page modal; nothing links to the retired
+// /artists/{id}/images pages (design section 8 / deviation 4).
+//
+// Mounted by ArtistDetailPage at the "artwork" section slot. Modal-open controls
+// carry data-sw-artwork-open + data-artwork-kind; artwork-modal.js (Part 3)
+// binds them via delegation, so this section renders and tests independently of
+// the modal JS.
+templ ArtworkSection(data *templates.ArtistDetailData) {
+	{{ a := &data.Artist }}
+	<section
+		id={ "next-artwork-" + a.ID }
+		class="sw-dash-card"
+		data-sw-section="artwork"
+		data-sw-section-label={ t(ctx, "artist.section_artwork") }
+		aria-labelledby="next-artwork-heading"
+	>
+		<div class="head">
+			<h2 id="next-artwork-heading">{ t(ctx, "artist.section_artwork") }</h2>
+			<div class="meta">
+				// Single "Manage artwork" trigger (maintainer: one lane, not per-tile).
+				// Styled to match the hero Refresh / Edit / Actions toolbar buttons.
+				<button
+					type="button"
+					class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+					data-sw-artwork-open
+					data-artwork-kind="primary"
+				>
+					@components.IconPhoto("h-4 w-4")
+					{ t(ctx, "artist.artwork.manage") }
+				</button>
+			</div>
+		</div>
+		<div class="body space-y-5">
+			// Identity images: each on its OWN ROW, shown at native aspect ratio
+			// (height-normalized; no forced crop/squash/letterbox) -- maintainer.
+			<div class="space-y-4">
+				@artworkIdentityTile(a.ID, "primary", a.ThumbExists, a.ThumbWidth, a.ThumbHeight, a.ThumbLowRes)
+				@artworkIdentityTile(a.ID, "logo", a.LogoExists, a.LogoWidth, a.LogoHeight, a.LogoLowRes)
+				@artworkIdentityTile(a.ID, "banner", a.BannerExists, a.BannerWidth, a.BannerHeight, a.BannerLowRes)
+			</div>
+			<div>
+				<h3 class="sw-next-subhead mb-2">{ t(ctx, "artist.artwork.kind_backdrops") }</h3>
+				@artworkBackdropsCarousel(a.ID, a.FanartCount)
+			</div>
+			@artworkReconciliationStatus(data.Connections)
+		</div>
+	</section>
+}
+
+// artworkKindType maps a UI kind (the plain-language switcher label) to the API
+// image-type path segment used by /api/v1/artists/{id}/images/{type}/...
+func artworkKindType(kind string) string {
+	switch kind {
+	case "primary":
+		return "thumb"
+	case "backdrops":
+		return "fanart"
+	default:
+		return kind // logo, banner
+	}
+}
+
+// artworkKindLabelKey returns the i18n key for a kind's display label.
+func artworkKindLabelKey(kind string) string {
+	return "artist.artwork.kind_" + kind
+}
+
+// artworkTileAspectClass returns the aspect-ratio utility class for an identity
+// tile, keeping each kind aspect-true (Primary 1:1, Logo wide-contain, Banner ~4:1).
+func artworkTileAspectClass(kind string) string {
+	switch kind {
+	case "primary":
+		return "aspect-square"
+	case "logo":
+		return "aspect-[5/2]"
+	case "banner":
+		return "aspect-[4/1]"
+	default:
+		return "aspect-square"
+	}
+}
+
+// artworkIdentityTile renders one aspect-true identity tile for a single-slot
+// kind (primary/logo/banner). A present image opens the lightbox via the
+// window.openLightbox global (lightbox.js); an empty tile opens the Manage
+// modal pre-selected to this kind (the single "Manage artwork" button in the
+// header is the management entry point for present images). When the image is
+// low-resolution a severity dot overlay + tooltip flag the finding (#16; richer
+// per-image findings are a follow-up -- only the low-res flag is on the model
+// today).
+templ artworkIdentityTile(artistID string, kind string, exists bool, w int, h int, lowRes bool) {
+	{{ typeSeg := artworkKindType(kind) }}
+	{{ fileURL := fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, typeSeg) }}
+	{{ kindLabelID := "artwork-kind-" + artistID + "-" + kind }}
+	{{ addLabelID := "artwork-add-" + artistID + "-" + kind }}
+	// Own row per kind. A present image shows at its NATIVE aspect ratio,
+	// height-normalized (sw-artwork-native-img: a uniform max-height, width
+	// follows the real ratio, capped to the container) -- no crop/squash/box.
+	<div>
+		<div class="flex items-center gap-1.5 mb-1.5">
+			<span id={ kindLabelID } class="text-xs font-medium uppercase tracking-wide text-gray-700 dark:text-gray-300">{ t(ctx, artworkKindLabelKey(kind)) }</span>
+			if exists {
+				<span class="inline-flex items-center text-gray-400 dark:text-gray-500" title={ t(ctx, "artist.artwork.on_disk") }>
+					@components.IconCheck("w-3 h-3")
+				</span>
+				if w > 0 && h > 0 {
+					<span class="font-mono text-xs text-gray-400 dark:text-gray-500">{ fmt.Sprintf("%dx%d", w, h) }</span>
+				}
+			}
+		</div>
+		if exists {
+			<button
+				type="button"
+				class={
+					"relative inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500",
+					templ.KV("sw-artwork-checker", kind == "logo"),
+					templ.KV("bg-gray-100 dark:bg-gray-900", kind != "logo"),
+				}
+				data-lightbox-src={ fileURL }
+				data-lightbox-alt={ t(ctx, artworkKindLabelKey(kind)) }
+				onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
+				title={ t(ctx, "image.view_full_size") }
+				aria-label={ t(ctx, "image.view_full_size") }
+			>
+				if lowRes {
+					@artworkFindingDot("warning", t(ctx, "artist.artwork.finding_low_res"))
+				}
+				<img src={ fileURL } alt={ t(ctx, artworkKindLabelKey(kind)) } class="sw-artwork-native-img" loading="lazy"/>
+			</button>
+		} else {
+			<button
+				type="button"
+				class={
+					"sw-artwork-id-empty flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500",
+					artworkTileAspectClass(kind),
+				}
+				data-sw-artwork-open
+				data-artwork-kind={ kind }
+				aria-labelledby={ addLabelID + " " + kindLabelID }
+			>
+				@components.IconPhoto("w-6 h-6")
+				<span id={ addLabelID } class="text-xs font-medium">{ t(ctx, "artist.artwork.add") }</span>
+			</button>
+		}
+	</div>
+}
+
+// artworkFindingDot renders a severity dot overlay (top-right of a tile) with a
+// tooltip, for an image finding (currently low-res). Reuses the swd-* severity
+// palette via the dot color.
+templ artworkFindingDot(severity string, tooltip string) {
+	<span
+		class={
+			"absolute top-1.5 right-1.5 z-10 inline-flex h-3 w-3 rounded-full ring-2 ring-black/30",
+			artworkSeverityDotClass(severity),
+		}
+		title={ tooltip }
+		aria-label={ tooltip }
+	></span>
+}
+
+// artworkSeverityDotClass maps a severity to its dot background.
+func artworkSeverityDotClass(severity string) string {
+	switch severity {
+	case "error":
+		return "bg-red-500"
+	case "warning":
+		return "bg-amber-500"
+	default:
+		return "bg-blue-500"
+	}
+}
+
+// artworkBackdropsCarousel renders the fanart slots as a wrapping tile grid with
+// a tile-sized [+] add as the LAST cell (immediately after the last backdrop),
+// matching the prototype. Slots are file-indexed (backdrop.jpg=0, backdrop1.jpg=1,
+// ...), so each index 0..fanartCount-1 has a /images/fanart/{i}/file. The grid is
+// the fanart-manage.js contract (data-sw-fanart-gallery + .fanart-cb multi-select
+// batch-delete + [data-set-primary-index] star). When there are no slots, it
+// shows an add-state opening the modal's Backdrops kind. The next/ surface omits
+// the per-slot sync-state badges that the stable channel previously showed; the
+// fanart-sync-state subsystem was removed in M55 #1336 (both channels).
+templ artworkBackdropsCarousel(artistID string, fanartCount int) {
+	if fanartCount > 0 {
+		<div
+			id="next-artwork-bd-gallery"
+			data-sw-fanart-gallery
+			data-artist-id={ artistID }
+			data-label-delete-n-one={ t(ctx, "artist.delete_n_selected.one") }
+			data-label-delete-n-other={ t(ctx, "artist.delete_n_selected.other") }
+			data-confirm-delete-n-one={ t(ctx, "artist.delete_n_fanart_confirm.one") }
+			data-confirm-delete-n-other={ t(ctx, "artist.delete_n_fanart_confirm.other") }
+			data-session-expired={ t(ctx, "common.session_expired") }
+			data-toast-delete-failed={ t(ctx, "artist.delete_selected_failed") }
+			data-toast-delete-network={ t(ctx, "artist.delete_selected_network") }
+		>
+			<div class="flex items-center justify-end mb-2">
+				<button type="button" id="fanart-delete-selected" class="hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors">
+					{ t(ctx, "artist.delete_selected") }
+				</button>
+			</div>
+			<div class="sw-artwork-bd-grid">
+				for i := 0; i < fanartCount; i++ {
+					@artworkBackdropTile(artistID, i, fanartCount)
+				}
+				// [+] add-tile: same size/aspect as a backdrop, immediately after the last.
+				<button
+					type="button"
+					class="sw-artwork-bd-add flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+					data-sw-artwork-open
+					data-artwork-kind="backdrops"
+					title={ t(ctx, "artist.artwork.backdrops_add") }
+					aria-label={ t(ctx, "artist.artwork.backdrops_add") }
+				>
+					@components.IconPlusCircle("w-6 h-6")
+					<span class="text-xs font-medium">{ t(ctx, "artist.artwork.add") }</span>
+				</button>
+			</div>
+		</div>
+	} else {
+		// Zero-backdrops empty state: a single 16:9 tile sized like a real
+		// backdrop slot (sw-artwork-bd-add: 132px tall, 16/9), NOT a full-width
+		// bar -- it must approximate one backdrop's footprint (maintainer #6).
+		<button
+			type="button"
+			class="sw-artwork-bd-add flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+			data-sw-artwork-open
+			data-artwork-kind="backdrops"
+		>
+			@components.IconPlusCircle("w-6 h-6")
+			<span class="text-xs font-medium">{ t(ctx, "artist.artwork.backdrops_empty") }</span>
+		</button>
+	}
+}
+
+// artworkBackdropTile renders one backdrop slot tile (aspect-video): a
+// multi-select checkbox, a primary badge (index 0) or a set-primary star
+// (index > 0, wired to fanart-manage.js), and the image (opens the lightbox).
+templ artworkBackdropTile(artistID string, index int, total int) {
+	{{ fileURL := fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, index) }}
+	<div class="relative inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group bg-gray-100 dark:bg-gray-900">
+		<input
+			type="checkbox"
+			class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+			value={ strconv.Itoa(index) }
+			aria-label={ tf(ctx, "artist.select_backdrop", strconv.Itoa(index)) }
+		/>
+		if index == 0 {
+			<span class="absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/90 text-white shadow-sm">
+				@components.IconStar("w-3 h-3")
+				{ t(ctx, "common.primary") }
+			</span>
+		} else {
+			<button
+				type="button"
+				class="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-black/40 hover:bg-amber-500/80 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+				title={ t(ctx, "artist.set_as_primary") }
+				aria-label={ tf(ctx, "artist.set_as_primary_name", strconv.Itoa(index)) }
+				data-set-primary-index={ strconv.Itoa(index) }
+				data-set-primary-count={ strconv.Itoa(total) }
+				data-set-primary-artist={ artistID }
+				data-confirm={ t(ctx, "artist.set_as_primary_confirm") }
+				data-reorder-error={ t(ctx, "artist.set_primary_reorder_error") }
+				data-session-expired={ t(ctx, "common.session_expired") }
+				data-set-primary-failed={ t(ctx, "artist.set_primary_failed") }
+				data-set-primary-network={ t(ctx, "artist.set_primary_network") }
+			>
+				@components.IconStar("w-4 h-4")
+			</button>
+		}
+		<button
+			type="button"
+			class="block focus:outline-none focus:ring-2 focus:ring-blue-500"
+			data-lightbox-src={ fileURL }
+			data-lightbox-alt={ tf(ctx, "image.backdrop_index", strconv.Itoa(index)) }
+			onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
+			title={ t(ctx, "image.view_full_size") }
+			aria-label={ t(ctx, "image.view_full_size") }
+		>
+			<img src={ fileURL } alt="" class="sw-artwork-native-img" loading="lazy"/>
+		</button>
+	</div>
+}
+
+// artworkReconcileStatus is the per-connection reconciliation state used by the
+// status line. Computed from existing data only (no content compare; the
+// out-of-folder case is a static note per design section 8 / 20.3).
+type artworkReconcileStatus struct {
+	dotClass string
+	labelKey string
+}
+
+// artworkConnStatus classifies one connection for the reconciliation line.
+// Managed => Stillwater owns the folder (gate-exempt). Emby/Jellyfin not
+// managed => mirror that may also keep its own internal copy (out-of-folder
+// note). Anything else not managed => plain mirror of the shared folder.
+func artworkConnStatus(conn templates.ArtistDetailConnection) artworkReconcileStatus {
+	if conn.Managed {
+		return artworkReconcileStatus{dotClass: "bg-green-500", labelKey: "artist.artwork.recon_managed"}
+	}
+	if conn.Type == "emby" || conn.Type == "jellyfin" {
+		return artworkReconcileStatus{dotClass: "bg-amber-500", labelKey: "artist.artwork.recon_mirror_internal"}
+	}
+	return artworkReconcileStatus{dotClass: "bg-gray-400", labelKey: "artist.artwork.recon_mirror"}
+}
+
+// artworkReconciliationStatus renders the per-connection reconciliation status
+// line: managed vs mirror vs out-of-folder note. With no connections it states
+// the local folder is the only source of truth. Writes are paused globally by
+// the conflict gate (surfaced by the shared ConflictBanner + the body
+// data-sw-image-gated mechanism that greys data-sw-requires-image-write
+// controls); this line reports per-connection ownership, not the gate state.
+templ artworkReconciliationStatus(connections []templates.ArtistDetailConnection) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+		<h3 class="sw-next-subhead mb-2">{ t(ctx, "artist.artwork.recon_heading") }</h3>
+		if len(connections) == 0 {
+			<p class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+				<span class="inline-block h-2 w-2 rounded-full bg-green-500" aria-hidden="true"></span>
+				{ t(ctx, "artist.artwork.recon_local_only") }
+			</p>
+		} else {
+			<ul class="space-y-1.5">
+				for _, conn := range connections {
+					{{ st := artworkConnStatus(conn) }}
+					<li class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+						<span class={ "inline-block h-2 w-2 rounded-full", st.dotClass } aria-hidden="true"></span>
+						<span class="font-medium text-gray-800 dark:text-gray-200">{ conn.Name }</span>
+						<span class="text-gray-500 dark:text-gray-400">{ t(ctx, st.labelKey) }</span>
+					</li>
+				}
+			</ul>
+		}
+	</div>
+}

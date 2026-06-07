@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -48,6 +49,84 @@ func (r *Router) handleNextArtistDetailPage(w http.ResponseWriter, req *http.Req
 	// stable channel never sets this, so its FieldDisplay rows stay chip-free.
 	ctx := templates.WithFieldFindings(req.Context(), r.buildFieldFindings(req.Context(), a.ID))
 	renderTempl(w, req.WithContext(ctx), next.ArtistDetailPage(r.assetsFor(req), pageData))
+}
+
+// artworkKindToType maps a next/ Manage-artwork modal kind (the plain-language
+// switcher label) to the API image-type segment the editor uses.
+func artworkKindToType(kind string) string {
+	switch kind {
+	case "logo":
+		return "logo"
+	case "banner":
+		return "banner"
+	case "backdrops":
+		return "fanart"
+	default:
+		return "thumb" // primary / unknown
+	}
+}
+
+// handleNextArtworkModal renders the reusable image editor (ArtworkManageEditor)
+// as a fragment for the next/ in-page Manage-artwork modal, scoped to the
+// requested kind. It reuses the same ImageSearchData the stable image page
+// builds (handleArtistImagesPage). The modal supersedes the stable
+// /artists/{id}/images page for the next/ channel; that route remains
+// registered. Capability deltas vs the stable page: this handler hardcodes
+// AutoCrop:false and SelectedIndex:-1 (the modal does not pre-select a slot).
+// The modal shell lazy-loads this fragment per active kind.
+func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		r.renderLoginPage(w, req)
+		return
+	}
+
+	id := req.PathValue("id")
+	a, err := r.artistService.GetByID(req.Context(), id)
+	if err != nil {
+		if errors.Is(err, artist.ErrNotFound) {
+			http.Error(w, "artist not found", http.StatusNotFound)
+			return
+		}
+		r.logger.Error("handleNextArtworkModal: GetByID", "artist_id", id, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate the kind param: only the four modal kinds are legal. An unknown
+	// kind defaults to "primary" rather than silently mapping to "thumb" through
+	// artworkKindToType's default branch (defensive against future kind-set growth).
+	kind := req.URL.Query().Get("kind")
+	switch kind {
+	case "primary", "logo", "banner", "backdrops":
+		// valid
+	default:
+		kind = "primary"
+	}
+	selectedType := artworkKindToType(kind)
+
+	var webSearchEnabled bool
+	if r.providerSettings != nil {
+		var wsErr error
+		webSearchEnabled, wsErr = r.providerSettings.AnyWebSearchEnabled(req.Context())
+		if wsErr != nil {
+			r.logger.Warn("handleNextArtworkModal: AnyWebSearchEnabled", "error", wsErr)
+			// webSearchEnabled stays false: degraded but non-fatal
+		}
+	}
+	autoFetch := r.getUserBoolPreference(req.Context(), PrefAutoFetchImages, r.getBoolSetting(req.Context(), "auto_fetch_images", false))
+
+	data := templates.ImageSearchData{
+		Artist:           *a,
+		WebSearchEnabled: webSearchEnabled,
+		AutoFetchImages:  autoFetch,
+		SelectedType:     selectedType,
+		SelectedIndex:    -1,
+		ProfileName:      r.getActiveProfileName(req.Context()),
+		AutoCrop:         false,
+		BasePath:         r.basePath,
+	}
+	renderTempl(w, req, templates.ArtworkManageEditor(data))
 }
 
 // buildFieldFindings maps the artist's active rule violations to the metadata

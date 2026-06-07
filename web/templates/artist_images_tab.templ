@@ -130,149 +130,8 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				@emptyState(basePath, artistID, "banner", img.ImageTermFor("banner", profileName))
 			}
 		}
-		// Lightbox overlay for full-size image viewing.
-		// Hidden by default; shown by openImageLightbox().
-		<div
-			id="sw-lightbox"
-			class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85"
-			role="dialog"
-			aria-modal="true"
-			aria-label={ t(ctx, "image.view_full_size") }
-			tabindex="-1"
-			onclick="closeLightbox()"
-		>
-			<button
-				type="button"
-				class="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-				onclick="event.stopPropagation(); closeLightbox()"
-				aria-label={ t(ctx, "common.close") }
-				data-lightbox-close
-			>
-				@components.IconXMark("w-6 h-6")
-			</button>
-			<img
-				id="sw-lightbox-img"
-				src=""
-				alt=""
-				class="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl"
-				onclick="event.stopPropagation()"
-			/>
-		</div>
-		<script>
-			function setFanartPrimary(el) {
-				if (!confirm(el.dataset.confirm || 'Set this image as the primary fanart?')) return;
-				var idx = parseInt(el.dataset.setPrimaryIndex, 10);
-				var count = parseInt(el.dataset.setPrimaryCount, 10);
-				var id = el.dataset.setPrimaryArtist;
-				var basePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
-				if (isNaN(idx) || isNaN(count) || count <= 0) {
-					alert(el.dataset.reorderError || 'Unable to reorder: invalid image data. Please reload the page.');
-					return;
-				}
-				var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
-				if (!token) {
-					alert(el.dataset.sessionExpired || 'Session expired. Please reload the page and try again.');
-					return;
-				}
-				// Build new order: put selected index first, then the rest in original order.
-				var order = [idx];
-				for (var i = 0; i < count; i++) {
-					if (i !== idx) order.push(i);
-				}
-				fetch(basePath + '/api/v1/artists/' + id + '/images/fanart/reorder', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-CSRF-Token': token
-					},
-					body: JSON.stringify({order: order}),
-					credentials: 'same-origin'
-				}).then(function(r) {
-					if (r.ok) {
-						window.location.reload();
-					} else {
-						return r.text().then(function(body) {
-							alert((el.dataset.setPrimaryFailed || 'Failed to set primary (HTTP %d): %s').replace('%d', r.status).replace('%s', function() { return body; }));
-						});
-					}
-				}).catch(function(err) {
-					alert((el.dataset.setPrimaryNetwork || 'Network error setting primary: %s').replace('%s', function() { return err.message; }));
-				});
-			}
-
-			// _lightboxOpener holds the element that had focus when the lightbox
-			// was opened; closeLightbox restores focus to it (same pattern as
-			// layout.templ _modalOpener / hideModal).
-			var _lightboxOpener = null;
-
-			function openLightbox(src, alt) {
-				var lb = document.getElementById('sw-lightbox');
-				var img = document.getElementById('sw-lightbox-img');
-				if (!lb || !img) {
-					console.warn('[stillwater] openLightbox: lightbox DOM elements not found');
-					return;
-				}
-				_lightboxOpener = document.activeElement;
-				img.src = src;
-				img.alt = alt || '';
-				lb.classList.remove('hidden');
-				lb.classList.add('flex');
-				// Remove before adding to prevent duplicate listeners when the
-				// lightbox is reopened without closing first.
-				document.removeEventListener('keydown', _lightboxKeydown);
-				document.addEventListener('keydown', _lightboxKeydown);
-				// Move focus into the dialog so keyboard users land inside it.
-				var closeBtn = lb.querySelector('[data-lightbox-close]');
-				if (closeBtn) {
-					closeBtn.focus();
-				} else {
-					lb.focus();
-				}
-			}
-
-			function closeLightbox() {
-				var lb = document.getElementById('sw-lightbox');
-				if (!lb) return;
-				lb.classList.add('hidden');
-				lb.classList.remove('flex');
-				var img = document.getElementById('sw-lightbox-img');
-				if (img) img.src = '';
-				document.removeEventListener('keydown', _lightboxKeydown);
-				// Restore focus to the element that opened the lightbox.
-				if (_lightboxOpener && typeof _lightboxOpener.focus === 'function') {
-					_lightboxOpener.focus();
-				}
-				_lightboxOpener = null;
-			}
-
-			function _lightboxKeydown(e) {
-				if (e.key === 'Escape') {
-					e.preventDefault();
-					closeLightbox();
-					return;
-				}
-				// Trap Tab/Shift+Tab inside the dialog so focus cannot escape
-				// while the modal is open (WCAG 2.1 SC 2.4.3).
-				if (e.key !== 'Tab') return;
-				var lb = document.getElementById('sw-lightbox');
-				if (!lb || lb.classList.contains('hidden')) return;
-				var focusables = lb.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
-				if (focusables.length === 0) {
-					e.preventDefault();
-					lb.focus();
-					return;
-				}
-				var first = focusables[0];
-				var last = focusables[focusables.length - 1];
-				if (e.shiftKey && document.activeElement === first) {
-					e.preventDefault();
-					last.focus();
-				} else if (!e.shiftKey && document.activeElement === last) {
-					e.preventDefault();
-					first.focus();
-				}
-			}
-		</script>
+		// Lightbox overlay for full-size image viewing (shared component).
+		@LightboxOverlay()
 	</div>
 }
 
@@ -371,8 +230,8 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
 				hx-confirm={ t(ctx, "image.confirm_trim_logo") }
 				hx-swap="none"
-				data-msg-failed={ t(ctx, "image.trim_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
+				data-msg-failed={ t(ctx, "image.trim_failed_short") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.trim_transparent_edges") }
 				aria-label={ t(ctx, "image.trim_transparent_edges") }
@@ -386,8 +245,8 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s/%d", artistID, imageType, index) }
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
-				data-msg-failed={ t(ctx, "image.delete_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
+				data-msg-failed={ t(ctx, "image.delete_failed_short") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }
@@ -399,8 +258,8 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
-				data-msg-failed={ t(ctx, "image.delete_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
+				data-msg-failed={ t(ctx, "image.delete_failed_short") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }
@@ -433,10 +292,10 @@ func boolToCount(exists bool) int {
 	return 0
 }
 
-// openImageLightbox is a templ script that calls the page-level openLightbox
+// openImageLightbox is a templ script that calls the page-level swLightbox.open
 // function with the image URL and accessible label. Using a script function
 // lets Go values be safely embedded in the onclick attribute.
 
 script openImageLightbox(src string, alt string) {
-	openLightbox(src, alt);
+	swLightbox.open(src, alt);
 }

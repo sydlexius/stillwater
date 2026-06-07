@@ -9,18 +9,17 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-// detailTestRouter builds a router for the artist-detail page tests. It wires a
-// provider SettingsService onto the library router (testRouterWithLibrary leaves
-// it nil) because buildArtistDetailData reads the provider priorities to build
-// the per-field providers map.
+// detailTestRouter builds a router for the artist-detail page tests. It uses
+// testRouter (which wires ConnectionService, ProviderSettings, RuleEngine, and
+// the conflict no-op) so 4C integration tests can seed connections and the
+// platform-state endpoint has a real connection service.
 func detailTestRouter(t *testing.T) (*Router, *artist.Service) {
 	t.Helper()
-	r, _, artistSvc := testRouterWithLibrary(t)
-	r.providerSettings = provider.NewSettingsService(r.db, nil)
+	r, artistSvc := testRouter(t)
 	return r, artistSvc
 }
 
@@ -193,5 +192,211 @@ func TestHandleNextArtistDetailPage_NotFound(t *testing.T) {
 	w := nextDetailRequest(t, r, "next", "nope")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+// TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin closes the authz
+// boundary on the editor fragment: a request without a user ID in context must
+// render the login page, not the artwork editor. This covers the 12.5% of
+// handleNextArtworkModal that the unauthenticated arm previously had no test for.
+func TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Auth Gate Artist")
+
+	// Build a request with NO user ID in context (empty context = unauthenticated).
+	req := httptest.NewRequest(http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleNextArtworkModal(w, req)
+
+	body := w.Body.String()
+	// The login page must be rendered, not the artwork editor fragment.
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Errorf("unauthenticated request must render the login page; auth/login form absent")
+	}
+	if strings.Contains(body, "artwork-modal-body") {
+		t.Errorf("unauthenticated request must not render the artwork editor body")
+	}
+}
+
+// seedConn creates a connection of the given type, links the platform artist ID,
+// and returns the connection id. It is shared by 4C integration tests.
+func seedConn(t *testing.T, r *Router, artistSvc *artist.Service, artistID, connID, connType string) {
+	t.Helper()
+	c := &connection.Connection{
+		ID:      connID,
+		Name:    connID,
+		Type:    connType,
+		URL:     "http://localhost:8096",
+		APIKey:  "test-key",
+		Enabled: true,
+		Status:  "ok",
+	}
+	if err := r.connectionService.Create(context.Background(), c); err != nil {
+		t.Fatalf("creating connection %s: %v", connID, err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), artistID, connID, "platform-"+connID); err != nil {
+		t.Fatalf("setting platform ID for %s: %v", connID, err)
+	}
+}
+
+// TestNextArtistDetail_ProvidersSectionLazyMounts verifies the rendered next/
+// artist-detail page contains lazy-load placeholder divs for each connection in
+// the Providers section, with the correct HTMX intersect once trigger.
+func TestNextArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Mount Test Artist")
+
+	// Seed one Emby and one Lidarr connection.
+	seedConn(t, r, artistSvc, id, "conn-emby", connection.TypeEmby)
+	seedConn(t, r, artistSvc, id, "conn-lidarr", connection.TypeLidarr)
+
+	w := nextDetailRequest(t, r, "next", id)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// The Providers section card must be present.
+	if !strings.Contains(body, `id="next-providers-`+id+`"`) {
+		t.Errorf("providers section card absent from page")
+	}
+
+	// Each connection gets an intersect once lazy-load mount.
+	for _, connID := range []string{"conn-emby", "conn-lidarr"} {
+		if !strings.Contains(body, `id="platform-state-`+connID+`"`) {
+			t.Errorf("missing platform-state mount for connection %s", connID)
+		}
+		if !strings.Contains(body, `platform-state?connection_id=`+connID) {
+			t.Errorf("platform-state hx-get for %s not present", connID)
+		}
+	}
+	// Providers use intersect once (safer than revealed: a section visible on
+	// load fires reliably even before scroll). Changed from revealed (L2 fix).
+	if !strings.Contains(body, `hx-trigger="intersect once"`) {
+		t.Errorf("platform-state mounts must use hx-trigger=intersect once")
+	}
+}
+
+// TestNextArtistDetail_DebugSectionGating verifies the debug section rendering
+// follows the ShowPlatformDebug && HasDebugConnection gate through the full
+// handler + template path (not just a template unit test).
+func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+
+	// enableDebug toggles the setting that drives ShowPlatformDebug.
+	enableDebug := func() {
+		if _, err := r.db.ExecContext(context.Background(),
+			`INSERT OR REPLACE INTO settings (key, value) VALUES ('show_platform_debug', 'true')`); err != nil {
+			t.Fatalf("enabling show_platform_debug: %v", err)
+		}
+	}
+
+	// Case (a): setting disabled, no connections -- no debug section.
+	t.Run("setting_disabled", func(t *testing.T) {
+		id := seedDetailArtist(t, artistSvc, "Debug Gate A")
+		w := nextDetailRequest(t, r, "next", id)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), `id="next-debug-`+id) {
+			t.Errorf("debug section should not appear when setting is disabled")
+		}
+	})
+
+	// Case (b): setting enabled, only a Lidarr connection (HasDebugConnection=false).
+	t.Run("lidarr_only", func(t *testing.T) {
+		enableDebug()
+		id := seedDetailArtist(t, artistSvc, "Debug Gate B")
+		seedConn(t, r, artistSvc, id, "dbg-lidarr", connection.TypeLidarr)
+		w := nextDetailRequest(t, r, "next", id)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), `id="next-debug-`+id) {
+			t.Errorf("debug section should not appear with only Lidarr connections")
+		}
+	})
+
+	// Case (c): setting enabled + an Emby connection -- debug section present
+	// with a readonly platform-state mount.
+	t.Run("emby_connection", func(t *testing.T) {
+		enableDebug()
+		id := seedDetailArtist(t, artistSvc, "Debug Gate C")
+		seedConn(t, r, artistSvc, id, "dbg-emby", connection.TypeEmby)
+		w := nextDetailRequest(t, r, "next", id)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `id="next-debug-`+id) {
+			t.Errorf("debug section should appear with Emby connection + debug setting on")
+		}
+		if !strings.Contains(body, `id="debug-platform-state-dbg-emby"`) {
+			t.Errorf("debug section missing readonly platform-state mount for Emby connection")
+		}
+		if !strings.Contains(body, "readonly=true") {
+			t.Errorf("debug platform-state mount must carry readonly=true")
+		}
+	})
+}
+
+// TestNextArtistDetail_PlatformStateEndpointReachable verifies the platform-state
+// endpoint (the URL the providers-section intersect once mounts fire) is registered and
+// returns an HTML partial when called as an HTMX request. Without a real Emby
+// server the getter fails, so the response is a PlatformStateError partial
+// (200 + text/html). This confirms the endpoint is wired and returns HTML that
+// HTMX can swap into the intersect once placeholder.
+func TestNextArtistDetail_PlatformStateEndpointReachable(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Platform State Reach")
+	seedConn(t, r, artistSvc, id, "ps-emby", connection.TypeEmby)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet,
+		"/api/v1/artists/"+id+"/platform-state?connection_id=ps-emby", nil)
+	req.SetPathValue("id", id)
+	// Mark as HTMX so the error path returns a PlatformStateError HTML partial
+	// rather than a JSON error body.
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handleGetPlatformState(w, req)
+
+	// Without a real Emby server the getter returns an error; the handler
+	// renders PlatformStateError (200 + text/html) for HTMX callers.
+	if w.Code != http.StatusOK {
+		t.Fatalf("platform-state endpoint status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "text/html") {
+		t.Errorf("platform-state endpoint Content-Type = %q, want text/html", ct)
+	}
+}
+
+// TestNextArtistDetail_DiscographyTabReachable verifies the discography/tab
+// endpoint (the URL the discography-section mount fires) returns an HTML
+// fragment for the seeded artist.
+func TestNextArtistDetail_DiscographyTabReachable(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Disco Reach")
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet,
+		"/artists/"+id+"/discography/tab", nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("discography/tab endpoint status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "text/html") {
+		t.Errorf("discography/tab Content-Type = %q, want text/html", ct)
 	}
 }

@@ -1,0 +1,41 @@
+package templates
+
+import "github.com/sydlexius/stillwater/web/components"
+
+// LightboxOverlay is the shared full-size image lightbox overlay (M55 #1336,
+// 4B). lightbox.js drives it by the constant ids #sw-lightbox / #sw-lightbox-img
+// (open/close + focus restore + Escape/Tab trap), so any page that calls the
+// window.swLightbox global must render this overlay once. Extracted from the
+// stable Images tab so the next/ artist-detail page (whose Artwork tiles open
+// the lightbox) and the stable tab share one copy instead of the next/ tiles
+// dead-ending on a missing overlay.
+templ LightboxOverlay() {
+	// Hidden by default; shown by window.swLightbox.open().
+	<div
+		id="sw-lightbox"
+		class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="sw-lightbox-title"
+		tabindex="-1"
+		onclick="swLightbox.close()"
+	>
+		<h2 id="sw-lightbox-title" class="sr-only">{ t(ctx, "image.view_full_size") }</h2>
+		<button
+			type="button"
+			class="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+			onclick="event.stopPropagation(); swLightbox.close()"
+			aria-label={ t(ctx, "common.close") }
+			data-lightbox-close
+		>
+			@components.IconXMark("w-6 h-6")
+		</button>
+		<img
+			id="sw-lightbox-img"
+			src=""
+			alt=""
+			class="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl"
+			onclick="event.stopPropagation()"
+		/>
+	</div>
+}

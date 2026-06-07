@@ -29,7 +29,6 @@
   "getNotificationCounts",
   "getOpenAPISpec",
   "getPlatform",
-  "getPlatformState",
   "getPriorities",
   "getRulesStatus",
   "getScannerStatus",
