@@ -84,9 +84,19 @@ templ fieldEditActions(a *artist.Artist, field string, providers []string, canCl
 				hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/providers" }
 				hx-target="#field-provider-modal-body"
 				hx-swap="innerHTML"
+				hx-indicator={ "#field-spinner-" + field + "-" + a.ID }
 			>
 				@components.IconArrowPath("h-3.5 w-3.5")
 			</button>
+			// Spinner for the provider fetch (same ID pattern as fieldActionsLocked
+			// so the indicator works in both read and edit modes; both surfaces are
+			// never in the DOM simultaneously -- the edit form replaces the read row).
+			<span id={ "field-spinner-" + field + "-" + a.ID } class="htmx-indicator">
+				<svg class="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+				</svg>
+			</span>
 		}
 		// Clear renders only when the field has a value to clear AND is not
 		// "name". Two reasons it is gated rather than always shown:
@@ -539,7 +549,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 								if artist.IsSliceField(field) && len(r.Values) > 0 {
 									<button
 										type="button"
-										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+										class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
@@ -576,7 +586,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 									<button
 										type="button"
 										data-apply-members
-										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+										class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 										data-members={ membersJSON(r.Members) }
 										data-post-url={ "/api/v1/artists/" + a.ID + "/members/from-provider" }
 										data-target={ "#members-section-" + a.ID }
@@ -588,7 +598,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 								} else if r.Value != "" {
 									<button
 										type="button"
-										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+										class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"

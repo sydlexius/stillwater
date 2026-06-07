@@ -132,7 +132,7 @@ templ AliasesList(artistID string, aliases []artist.Alias) {
 // PlatformStateCard and the next/ Providers section (built by 4C). Lifted so 4C
 // reuses the exact reconciliation table without forking.
 templ PlatformStateCardBody(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
-	<div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
+	<div class="flex items-center justify-between px-4 py-3">
 		@platformStateHeaderBadges(conn, state)
 		<div class="flex items-center gap-2">
 			<button

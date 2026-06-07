@@ -134,7 +134,7 @@ templ HistoryRevertFragment(revertedID string, newChange artist.MetadataChange, 
 
 // historyChangeRow renders a single metadata change entry in the timeline.
 templ historyChangeRow(c artist.MetadataChange) {
-	<div id={ "history-change-" + c.ID } class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-3 pr-4 rounded-r-lg bg-gray-50 dark:bg-gray-800/80">
+	<div id={ "history-change-" + c.ID } class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-3 pr-4 rounded-r-lg">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
 				<time datetime={ c.CreatedAt.Format(time.RFC3339) } title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>

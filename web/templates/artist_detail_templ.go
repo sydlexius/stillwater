@@ -4157,7 +4157,7 @@ func PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, st
 			templ_7745c5c3_Var245 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><div class=\"flex items-center px-4 py-3 bg-gray-50 dark:bg-gray-700/50\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><div class=\"flex items-center px-4 py-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

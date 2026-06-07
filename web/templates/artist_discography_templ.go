@@ -164,7 +164,7 @@ func ArtistDiscographyTab(data DiscographyTabData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<ol class=\"divide-y divide-gray-100 dark:divide-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<ol class=\"divide-y divide-gray-100 dark:divide-gray-700 rounded-lg\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

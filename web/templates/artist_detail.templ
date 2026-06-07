@@ -1186,7 +1186,7 @@ templ PlatformStateError(conn *connection.Connection, errMsg string) {
 templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
 	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
 		// Header: connection name + type badge + lock badge. No action buttons.
-		<div class="flex items-center px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
+		<div class="flex items-center px-4 py-3">
 			@platformStateHeaderBadges(conn, state)
 		</div>
 		@platformStateTable(a, conn, state, profileName, conn.Name, true)

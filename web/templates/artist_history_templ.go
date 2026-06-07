@@ -440,7 +440,7 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-3 pr-4 rounded-r-lg bg-gray-50 dark:bg-gray-800/80\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300\"><time datetime=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-3 pr-4 rounded-r-lg\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300\"><time datetime=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
