@@ -72,6 +72,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 			data-artist-id={ data.Detail.Artist.ID }
 			data-sw-msg-save-failed={ t(ctx, "artist.save_failed_some") }
 			data-sw-msg-edit-partial={ t(ctx, "artist.edit_partial") }
+			data-sw-msg-session-expired={ t(ctx, "common.session_expired") }
 			data-sw-section-nav
 			if data.PrevArtistID != "" {
 				data-sw-prev-artist={ assets.BasePath + "/next/artists/" + data.PrevArtistID }

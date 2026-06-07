@@ -304,7 +304,11 @@
     var b = document.getElementById("artwork-modal-body");
     if (!b) return;
     var tgt = e.detail.target || e.target;
-    if (tgt !== b && !b.contains(tgt)) return;
+    // Only react when the error target IS the body element itself (the lazy
+    // body-load GET). Errors from descendant targets (image search, logo-trim,
+    // image DELETE, image fetch) must NOT overwrite the whole editor body and
+    // destroy the user's in-progress editing session.
+    if (tgt !== b) return;
     b.innerHTML =
       '<p class="text-sm text-red-500 py-6 text-center" role="alert">' +
       "Failed to load the editor (HTTP " +

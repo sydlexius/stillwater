@@ -420,6 +420,8 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 			hx-delete={ "/api/v1/artists/" + a.ID + "/field-locks/" + field }
 			hx-swap="none"
 			data-error={ t(ctx, "artist.fieldlock.failed") }
+			data-error-conflict={ t(ctx, "artist.fieldlock.conflict") }
+			data-error-server={ t(ctx, "artist.fieldlock.server_error") }
 			hx-on::after-request="if(event.detail.successful){ window.location.reload(); } else { alert(this.getAttribute('data-error') || 'Field lock update failed.'); }"
 		>
 			@components.IconLockClosed("h-3.5 w-3.5")
@@ -435,6 +437,8 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 			hx-post={ "/api/v1/artists/" + a.ID + "/field-locks/" + field }
 			hx-swap="none"
 			data-error={ t(ctx, "artist.fieldlock.failed") }
+			data-error-conflict={ t(ctx, "artist.fieldlock.conflict") }
+			data-error-server={ t(ctx, "artist.fieldlock.server_error") }
 			hx-on::after-request="if(event.detail.successful){ window.location.reload(); } else { alert(this.getAttribute('data-error') || 'Field lock update failed.'); }"
 		>
 			@components.IconLockOpen("h-3.5 w-3.5")

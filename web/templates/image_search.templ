@@ -870,6 +870,8 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 				class="hidden sticky bottom-4 mt-4 rounded-lg bg-gray-900/90 backdrop-blur text-white px-4 py-3 flex items-center justify-between shadow-lg"
 				data-session-expired={ t(ctx, "common.session_expired") }
 				data-toast-network-error={ t(ctx, "common.network_error") }
+				data-toast-save-failed={ t(ctx, "image.save_failed") }
+				data-toast-save-partial={ t(ctx, "image.save_partial") }
 			>
 				<span id="fanart-bulk-count">0 selected</span>
 				<button type="button" id="fanart-bulk-save" class="sw-next-flat-btn px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 transition-colors font-medium">

@@ -243,7 +243,7 @@ func seedConn(t *testing.T, r *Router, artistSvc *artist.Service, artistID, conn
 
 // TestNextArtistDetail_ProvidersSectionLazyMounts verifies the rendered next/
 // artist-detail page contains lazy-load placeholder divs for each connection in
-// the Providers section, with the correct HTMX revealed trigger.
+// the Providers section, with the correct HTMX intersect once trigger.
 func TestNextArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
@@ -264,7 +264,7 @@ func TestNextArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
 		t.Errorf("providers section card absent from page")
 	}
 
-	// Each connection gets a revealed lazy-load mount.
+	// Each connection gets an intersect once lazy-load mount.
 	for _, connID := range []string{"conn-emby", "conn-lidarr"} {
 		if !strings.Contains(body, `id="platform-state-`+connID+`"`) {
 			t.Errorf("missing platform-state mount for connection %s", connID)
@@ -345,11 +345,11 @@ func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
 }
 
 // TestNextArtistDetail_PlatformStateEndpointReachable verifies the platform-state
-// endpoint (the URL the providers-section revealed mounts fire) is registered and
+// endpoint (the URL the providers-section intersect once mounts fire) is registered and
 // returns an HTML partial when called as an HTMX request. Without a real Emby
 // server the getter fails, so the response is a PlatformStateError partial
 // (200 + text/html). This confirms the endpoint is wired and returns HTML that
-// HTMX can swap into the revealed placeholder.
+// HTMX can swap into the intersect once placeholder.
 func TestNextArtistDetail_PlatformStateEndpointReachable(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
