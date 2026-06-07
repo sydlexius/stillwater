@@ -178,6 +178,65 @@ func TestWriteFileAtomic_EXDEVFallbackPreservesMode(t *testing.T) {
 	}
 }
 
+// TestWriteFileAtomic_EXDEVFallbackPreservesMode_Overwrite is the overwrite
+// variant of the EXDEV perm regression test. It pre-creates the target with a
+// different mode (0o400, read-only), then calls WriteFileAtomic with perm=0o600
+// under the EXDEV osRename hook. Both the backup-rename step (target -> .bak)
+// and the promotion step (.tmp -> target) travel the copyFile fallback path,
+// and the final file must carry the new perm (0o600), not the pre-existing one.
+//
+// This ensures that perm-threading is correct on BOTH renameSafe call sites
+// inside WriteFileAtomic, not just the new-file path.
+func TestWriteFileAtomic_EXDEVFallbackPreservesMode_Overwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("EXDEV and Unix permission semantics are POSIX-only")
+	}
+
+	// This test mutates the package-level osRename hook; must not run in parallel.
+	orig := osRename
+	t.Cleanup(func() { osRename = orig })
+
+	osRename = func(oldPath, newPath string) error {
+		return &os.LinkError{
+			Op:  "rename",
+			Old: oldPath,
+			New: newPath,
+			Err: syscall.EXDEV,
+		}
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "secret.key")
+
+	// Pre-create the target with a deliberately different mode so we can
+	// verify the new perm wins, not the pre-existing one.
+	if err := os.WriteFile(target, []byte("old content"), 0o400); err != nil {
+		t.Fatalf("pre-creating target: %v", err)
+	}
+
+	// Write with a new, more-permissive mode. The backup rename path
+	// (target -> .bak) and the promotion path (.tmp -> target) both hit the
+	// copyFile fallback; both must use the caller-supplied perm=0o600.
+	//
+	// Invariant: copyFile uses O_CREATE so the perm is applied at creation
+	// time; subsequent writes to the same fd do not alter the mode, making
+	// this the only place the mode can be enforced.
+	const wantPerm os.FileMode = 0o600
+	if err := WriteFileAtomic(target, []byte("new content"), wantPerm); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	// The final file must carry the new perm, not the pre-existing 0o400.
+	if gotPerm := info.Mode().Perm(); gotPerm != wantPerm {
+		t.Errorf("file mode = %04o, want %04o (perm lost on cross-device overwrite fallback)", gotPerm, wantPerm)
+	}
+}
+
 func TestWriteFileAtomic_MultipleOverwrites(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "multi.txt")

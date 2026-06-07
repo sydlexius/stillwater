@@ -162,7 +162,10 @@
       // the first paint, preventing FOUC. The raw value ('dark', 'light', or
       // 'system') is stored -- not the resolved boolean -- so themeInitScript
       // can re-resolve 'system' via matchMedia on each load.
-      localStorage.setItem('theme', value);
+      // Wrapped in try/catch: Safari/Firefox in private-browsing mode throw
+      // QuotaExceededError on any localStorage write; this is non-fatal since
+      // themeInitScript falls back to matchMedia when the key is absent.
+      try { localStorage.setItem('theme', value); } catch (e) { /* private browsing or quota - non-fatal */ }
       // Recompute theme-dependent background color after theme change.
       var cached = readCache() || {};
       var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '85';
@@ -350,8 +353,12 @@
     // Prefer the localStorage value (raw preference: 'dark', 'light', 'system')
     // set by preferences.js on prior loads; fall back to the DOM class that
     // themeInitScript set for the current paint.
-    var domTheme = localStorage.getItem('theme') ||
-      (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    // Wrapped in try/catch: localStorage.getItem throws in Safari/Firefox
+    // private-browsing mode; fall back to the DOM class already set by
+    // themeInitScript (which has its own guard in the inline script).
+    var domTheme;
+    try { domTheme = localStorage.getItem('theme'); } catch (e) {}
+    domTheme = domTheme || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
     var initDefaults = {};
     var initKey;
     for (initKey in DEFAULTS) {
