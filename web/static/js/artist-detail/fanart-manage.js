@@ -22,8 +22,17 @@
 // Per-button hooks (data-set-primary-*, .fanart-move-btn data-*) are read off
 // the element itself, mirroring the original inline code. No Go values are
 // interpolated; CSRF + base path are read the same way the inline code did.
+//
+// Public API:
+//   window.swFanartManage.refreshDeleteButton(gallery) - update delete-selected button label/visibility
+//   window.swFanartManage.refreshBulkBar(container)    - update bulk-download bar label/visibility
+//   window.swFanartManage.bulkSave(container)          - POST the selected image URLs for batch fetch
 (function () {
   "use strict";
+
+  // Idempotency guard: skip re-initialization if already loaded (e.g. htmx
+  // re-evaluates the script tag on a fragment swap).
+  if (window.swFanartManage && window.swFanartManage.__initialized) return;
 
   // Delegates to the canonical reader (preferences.js) instead of re-inventing
   // the cookie regex, matching the other first-party modules.
@@ -349,6 +358,15 @@
         refreshBulkBar(container);
       });
   }
+
+  // Expose public entry points under a namespaced global so inline handlers and
+  // other modules can trigger gallery/bar refreshes without coupling to internals.
+  window.swFanartManage = {
+    __initialized: true,
+    refreshDeleteButton: refreshDeleteButton,
+    refreshBulkBar: refreshBulkBar,
+    bulkSave: bulkSave,
+  };
 
   // ---- Delegation ------------------------------------------------------------
   document.addEventListener("change", function (e) {

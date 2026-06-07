@@ -171,7 +171,6 @@ func TestHandleNextArtistDetailPage_ArtworkReconciliation(t *testing.T) {
 func TestHandleNextArtworkModal_RendersEditorPerKind(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := artworkTestRouter(t)
-	r.providerSettings = provider.NewSettingsService(r.db, nil)
 	id := seedDetailArtist(t, artistSvc, "Modal Editor")
 
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")

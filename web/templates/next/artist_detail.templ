@@ -1216,6 +1216,12 @@ templ artistDetailPageScript() {
 				if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
 				if (isTyping(ev.target)) return;
 
+				// When the artwork modal is open, its own keydown handler (registered by
+				// artwork-modal.js while open) owns Escape and Tab. All other keys
+				// (h/l/j/k/e/f) must NOT navigate the page behind the dialog.
+				var artworkModal = document.getElementById('artwork-modal');
+				if (artworkModal && !artworkModal.classList.contains('hidden')) return;
+
 				// Esc: layered dismiss in priority order.
 				// (a) Lightbox + (b) artwork-modal: each registers its keydown handler
 				//     only while open (added on open, removed on close) and calls

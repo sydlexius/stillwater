@@ -8,8 +8,17 @@
 // structured 409 responses.
 //
 // All wiring is document-level delegation so it survives htmx fragment swaps.
+//
+// Public API:
+//   window.swArtworkModal.open(kind)       - open the modal pre-selected to kind
+//   window.swArtworkModal.close()          - close the modal
+//   window.swArtworkModal.setActiveKind(k) - switch the active kind tab
 (function () {
   "use strict";
+
+  // Idempotency guard: skip re-initialization if already loaded (e.g. htmx
+  // re-evaluates the script tag on a fragment swap).
+  if (window.swArtworkModal && window.swArtworkModal.__initialized) return;
 
   var KIND_TO_TYPE = {
     primary: "thumb",
@@ -240,6 +249,15 @@
         console.warn("artwork revert network error: " + (err && err.message));
       });
   }
+
+  // Expose public entry points under a namespaced global so inline handlers and
+  // other modules can open/close/switch the modal without coupling to internals.
+  window.swArtworkModal = {
+    __initialized: true,
+    open: openModal,
+    close: closeModal,
+    setActiveKind: setActiveKind,
+  };
 
   // ---- Delegation ------------------------------------------------------------
   document.addEventListener("click", function (e) {

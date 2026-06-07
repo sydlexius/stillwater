@@ -422,7 +422,7 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 			data-error={ t(ctx, "artist.fieldlock.failed") }
 			data-error-conflict={ t(ctx, "artist.fieldlock.conflict") }
 			data-error-server={ t(ctx, "artist.fieldlock.server_error") }
-			hx-on::after-request="if(event.detail.successful){ window.location.reload(); } else { alert(this.getAttribute('data-error') || 'Field lock update failed.'); }"
+			hx-on::after-request="if(event.detail.successful){ window.location.reload(); } else { var s=event.detail.xhr&&event.detail.xhr.status; var msg=s===409?this.getAttribute('data-error-conflict'):s>=500?this.getAttribute('data-error-server'):this.getAttribute('data-error'); alert(msg||'Field lock update failed.'); }"
 		>
 			@components.IconLockClosed("h-3.5 w-3.5")
 		</button>
@@ -439,7 +439,7 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 			data-error={ t(ctx, "artist.fieldlock.failed") }
 			data-error-conflict={ t(ctx, "artist.fieldlock.conflict") }
 			data-error-server={ t(ctx, "artist.fieldlock.server_error") }
-			hx-on::after-request="if(event.detail.successful){ window.location.reload(); } else { alert(this.getAttribute('data-error') || 'Field lock update failed.'); }"
+			hx-on::after-request="if(event.detail.successful){ window.location.reload(); } else { var s=event.detail.xhr&&event.detail.xhr.status; var msg=s===409?this.getAttribute('data-error-conflict'):s>=500?this.getAttribute('data-error-server'):this.getAttribute('data-error'); alert(msg||'Field lock update failed.'); }"
 		>
 			@components.IconLockOpen("h-3.5 w-3.5")
 		</button>

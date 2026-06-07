@@ -230,10 +230,20 @@ func TestArtistDetailLegend_AdvertisesShortcuts(t *testing.T) {
 		t.Errorf("page missing role=note on legend")
 	}
 
-	// The legend uses sw-kbd chips; each key appears as its own inline text node.
-	for _, want := range []string{"h", "j", "k", "r", "R", "Esc", "e", "f"} {
+	// The legend uses sw-kbd chips; assert the exact keycap markup so single
+	// characters cannot match incidentally elsewhere in the rendered output.
+	for _, want := range []string{
+		`<kbd class="sw-kbd inline-flex">h</kbd>`,
+		`<kbd class="sw-kbd inline-flex">j</kbd>`,
+		`<kbd class="sw-kbd inline-flex">k</kbd>`,
+		`<kbd class="sw-kbd inline-flex">r</kbd>`,
+		`<kbd class="sw-kbd inline-flex">R</kbd>`,
+		`<kbd class="sw-kbd inline-flex">Esc</kbd>`,
+		`<kbd class="sw-kbd inline-flex">e</kbd>`,
+		`<kbd class="sw-kbd inline-flex">f</kbd>`,
+	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("legend text missing keyboard key %q reference", want)
+			t.Errorf("legend missing keycap markup %q", want)
 		}
 	}
 }

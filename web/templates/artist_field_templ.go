@@ -1747,7 +1747,7 @@ func FieldLockToggle(a *artist.Artist, field string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "\" hx-on::after-request=\"if(event.detail.successful){ window.location.reload(); } else { alert(this.getAttribute('data-error') || 'Field lock update failed.'); }\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "\" hx-on::after-request=\"if(event.detail.successful){ window.location.reload(); } else { var s=event.detail.xhr&&event.detail.xhr.status; var msg=s===409?this.getAttribute('data-error-conflict'):s>=500?this.getAttribute('data-error-server'):this.getAttribute('data-error'); alert(msg||'Field lock update failed.'); }\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1851,7 +1851,7 @@ func FieldLockToggle(a *artist.Artist, field string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "\" hx-on::after-request=\"if(event.detail.successful){ window.location.reload(); } else { alert(this.getAttribute('data-error') || 'Field lock update failed.'); }\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "\" hx-on::after-request=\"if(event.detail.successful){ window.location.reload(); } else { var s=event.detail.xhr&&event.detail.xhr.status; var msg=s===409?this.getAttribute('data-error-conflict'):s>=500?this.getAttribute('data-error-server'):this.getAttribute('data-error'); alert(msg||'Field lock update failed.'); }\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
