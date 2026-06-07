@@ -303,8 +303,10 @@ jobs:
           files: merged-coverage.out
           # Prevent Codecov from auto-discovering unrelated files.
           disable_search: true
-          # Safe to leave true here: this job is non-required so a Codecov
-          # outage signals a visible failure without blocking the merge gate.
+          # false: a transient Codecov outage turns this job yellow but does
+          # not block the merge gate (job is non-required). Setting true would
+          # also be safe for the same reason, but false reduces noise when
+          # Codecov is flaky.
           fail_ci_if_error: false
 
   build:
