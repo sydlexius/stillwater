@@ -37,7 +37,7 @@ templ ArtistDiscographyTab(data DiscographyTabData) {
 				<button
 					type="button"
 					id="discography-fetch-btn"
-					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 					hx-post={ "/api/v1/artists/" + data.ArtistID + "/discography/fetch" }
 					hx-target="#discography-tab-content"
 					hx-swap="outerHTML"
@@ -59,7 +59,7 @@ templ ArtistDiscographyTab(data DiscographyTabData) {
 					disabled
 					title={ t(ctx, "artist.discography.fetch.needs_mbid") }
 					aria-label={ t(ctx, "artist.discography.fetch.needs_mbid") }
-					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white opacity-40 cursor-not-allowed"
+					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 opacity-40 cursor-not-allowed"
 				>
 					{ t(ctx, "artist.discography.fetch") }
 				</button>
@@ -96,7 +96,7 @@ templ discographyRow(alb artist.DiscographyAlbum) {
 					href={ templ.SafeURL("https://musicbrainz.org/release-group/" + alb.MusicBrainzReleaseGroupID) }
 					target="_blank"
 					rel="noopener noreferrer"
-					class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+					class="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:underline"
 				>
 					{ t(ctx, "discography.view_musicbrainz") }
 				</a>

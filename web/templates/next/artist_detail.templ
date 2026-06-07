@@ -109,8 +109,26 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 						@artistIdentifiersSection(&data.Detail)
 				}
 			}
+			// Keyboard legend: keycap-chip convention matching the dashboard (M55 #1336 UAT).
 			<p class="sw-list-tips" role="note">
-				{ t(ctx, "artist.next.shortcuts_tip") }
+				<span class="font-medium">{ t(ctx, "artist.next.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.prev_artist") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.next_artist") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.section_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.section_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">r</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.refresh") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">R</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.run_rules") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Esc</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.close") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">e</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.field_edit") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.field_fetch") }</span></span>
 			</p>
 			// The Manage-artwork modal is rendered once (hidden); data-sw-artwork-open
 			// triggers in the Artwork section open it. Suppressed when the artwork

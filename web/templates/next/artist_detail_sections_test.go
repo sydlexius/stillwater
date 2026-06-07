@@ -232,9 +232,8 @@ func TestArtistDetailLegend_AdvertisesShortcuts(t *testing.T) {
 		t.Errorf("page missing role=note on legend")
 	}
 
-	// The legend text (from artist.next.shortcuts_tip) mentions the key bindings.
-	// We check substrings of the English i18n value.
-	for _, want := range []string{"j", "k", "r", "R", "Esc"} {
+	// The legend uses sw-kbd chips; each key appears as its own inline text node.
+	for _, want := range []string{"h", "j", "k", "r", "R", "Esc", "e", "f"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("legend text missing keyboard key %q reference", want)
 		}
