@@ -39,7 +39,6 @@
   "listAPITokens",
   "listAliases",
   "listFanart",
-  "listLockedArtists",
   "listLogFiles",
   "listNotifications",
   "listPlatforms",

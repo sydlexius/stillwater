@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -617,5 +619,141 @@ func TestHandleBulkJobStatus_WithJob(t *testing.T) {
 	}
 	if _, ok := resp["items"]; !ok {
 		t.Error("response missing items field")
+	}
+}
+
+// TestHandleRuleResults_RespectsPageSizePref verifies that the rule-results
+// handler respects the per-user page_size preference when no query param is
+// provided.
+func TestHandleRuleResults_RespectsPageSizePref(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+
+	const testUserID = "test-user-rule-pagesize"
+
+	ruleID := firstRuleID(t, r.ruleService)
+
+	// Seed more artists with rule results than the preference value so the cap
+	// is observable.
+	evaluatedAt := time.Now().UTC()
+	for i := 0; i < 15; i++ {
+		a := &artist.Artist{
+			Name: fmt.Sprintf("Rule Artist %02d", i),
+			Path: fmt.Sprintf("/music/rule-%02d", i),
+		}
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
+		if err := r.ruleService.UpsertRuleResultPass(context.Background(), a.ID, ruleID, evaluatedAt); err != nil {
+			t.Fatalf("upserting rule result %d: %v", i, err)
+		}
+	}
+
+	// Store page_size=10 directly in the DB for the test user.
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/rules/"+ruleID+"/results", nil)
+	req.SetPathValue("id", ruleID)
+	w := httptest.NewRecorder()
+	r.handleRuleResults(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 10 {
+		t.Errorf("expected page_size=10 from preference, got %d", int(pageSize))
+	}
+
+	rows, ok := resp["rows"].([]any)
+	if !ok {
+		t.Fatalf("rows not present or not an array in response")
+	}
+	if len(rows) > 10 {
+		t.Errorf("expected at most 10 rows, got %d", len(rows))
+	}
+}
+
+// TestHandleRuleResults_QueryParamOverridesPref verifies that an explicit
+// page_size query parameter takes precedence over the stored user preference.
+func TestHandleRuleResults_QueryParamOverridesPref(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+
+	const testUserID = "test-user-rule-qparam"
+
+	ruleID := firstRuleID(t, r.ruleService)
+
+	evaluatedAt := time.Now().UTC()
+	for i := 0; i < 15; i++ {
+		a := &artist.Artist{
+			Name: fmt.Sprintf("QP Rule Artist %02d", i),
+			Path: fmt.Sprintf("/music/qp-rule-%02d", i),
+		}
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
+		if err := r.ruleService.UpsertRuleResultPass(context.Background(), a.ID, ruleID, evaluatedAt); err != nil {
+			t.Fatalf("upserting rule result %d: %v", i, err)
+		}
+	}
+
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	// Use page_size=12 (valid, in [PageSizeMin, PageSizeMax], different from the
+	// stored preference of 10) to verify the query param takes precedence.
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/rules/"+ruleID+"/results?page_size=12", nil)
+	req.SetPathValue("id", ruleID)
+	w := httptest.NewRecorder()
+	r.handleRuleResults(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 12 {
+		t.Errorf("expected page_size=12 from query param, got %d", int(pageSize))
+	}
+
+	rows, ok := resp["rows"].([]any)
+	if !ok {
+		t.Fatalf("rows not present or not an array in response")
+	}
+	if len(rows) > 12 {
+		t.Errorf("expected at most 12 rows with query param override, got %d", len(rows))
 	}
 }

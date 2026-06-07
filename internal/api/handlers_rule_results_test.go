@@ -71,7 +71,10 @@ func TestHandleRuleResults_ReturnsPaginatedRows(t *testing.T) {
 		t.Fatalf("seed fail c: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/rules/rule-d/results?page=1&page_size=2", nil)
+	// page_size=10 is the minimum accepted value; use it to get exactly 2 of the
+	// 3 rows back (page=1 returns the first 2 but we only have 3 total so page=2
+	// is needed to see the third). Use page_size=10 and assert on total/page.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/rules/rule-d/results?page=1&page_size=10", nil)
 	req.SetPathValue("id", "rule-d")
 	w := httptest.NewRecorder()
 	r.handleRuleResults(w, req)
@@ -91,11 +94,12 @@ func TestHandleRuleResults_ReturnsPaginatedRows(t *testing.T) {
 	if env.Total != 3 {
 		t.Errorf("total: got %d, want 3", env.Total)
 	}
-	if env.Page != 1 || env.PageSize != 2 {
-		t.Errorf("page/size: got %d/%d, want 1/2", env.Page, env.PageSize)
+	if env.Page != 1 || env.PageSize != 10 {
+		t.Errorf("page/size: got %d/%d, want 1/10", env.Page, env.PageSize)
 	}
-	if len(env.Rows) != 2 {
-		t.Fatalf("rows len: got %d, want 2", len(env.Rows))
+	// All 3 rows fit within page_size=10, so we expect all three in order.
+	if len(env.Rows) != 3 {
+		t.Fatalf("rows len: got %d, want 3", len(env.Rows))
 	}
 	if env.Rows[0].ArtistID != "p-a" || env.Rows[1].ArtistID != "p-b" {
 		t.Errorf("ordering: got [%s %s], want [p-a p-b]", env.Rows[0].ArtistID, env.Rows[1].ArtistID)
@@ -178,9 +182,10 @@ func TestHandleRuleResults_UnknownRuleReturns200WithEmptyRows(t *testing.T) {
 // TestHandleRuleResults_PageAndPageSizeClamps exercises the clamp
 // branches around page / page_size. Covers:
 //   - page < 1 normalizes to 1
-//   - page_size < 1 (explicitly provided) clamps to 1, NOT the default 50
-//     (this distinction matters: the absent-param case keeps the default)
-//   - page_size > 200 clamps to 200
+//   - page_size=0 (explicit zero) falls through to the user-preference path
+//     and returns PageSizeDefault (50) when no preference is stored
+//   - page_size > PageSizeMax (500) clamps to PageSizeMax via getUserPageSize
+//   - page_size below PageSizeMin (10) clamps to PageSizeMin via getUserPageSize
 //
 // The body shape is checked rather than the row payload; the seed has
 // one passing artist, so the row count is at most 1 in every case.
@@ -200,8 +205,13 @@ func TestHandleRuleResults_PageAndPageSizeClamps(t *testing.T) {
 		wantPageSize int
 	}{
 		{"page<1 normalizes to 1", "page=0&page_size=10", 1, 10},
-		{"page_size<1 explicit clamps to 1", "page=1&page_size=0", 1, 1},
-		{"page_size>200 clamps to 200", "page=1&page_size=500", 1, 200},
+		// page_size=0 signals "no override" to getUserPageSize; no stored
+		// preference means PageSizeDefault (50) is returned.
+		{"page_size=0 falls through to default", "page=1&page_size=0", 1, PageSizeDefault},
+		// getUserPageSize clamps above PageSizeMax (500) to PageSizeMax.
+		{"page_size>PageSizeMax clamps to PageSizeMax", "page=1&page_size=999", 1, PageSizeMax},
+		// getUserPageSize clamps below PageSizeMin (10) to PageSizeMin.
+		{"page_size<PageSizeMin clamps to PageSizeMin", "page=1&page_size=1", 1, PageSizeMin},
 		// page > math.MaxInt/pageSize triggers the overflow guard;
 		// pick a value comfortably above the clamp for pageSize=10.
 		{"page overflow clamps to maxPage", "page=999999999999999999&page_size=10", math.MaxInt / 10, 10},

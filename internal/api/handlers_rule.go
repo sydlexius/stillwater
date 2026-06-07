@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -196,6 +197,7 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 //
 // GET /api/v1/rules/{id}/results
 func (r *Router) handleRuleResults(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
 	ruleID, ok := RequirePathParam(w, req, "id")
 	if !ok {
 		return
@@ -205,13 +207,7 @@ func (r *Router) handleRuleResults(w http.ResponseWriter, req *http.Request) {
 	if page < 1 {
 		page = 1
 	}
-	pageSize := intQuery(req, "page_size", 50)
-	if _, ok := req.URL.Query()["page_size"]; ok && pageSize < 1 {
-		pageSize = 1
-	}
-	if pageSize > 200 {
-		pageSize = 200
-	}
+	pageSize := r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0))
 	// Clamp page so (page-1)*pageSize cannot overflow int. The bound
 	// matters in principle (a hostile or buggy caller could pass an
 	// enormous page value); in practice no real client gets near it.

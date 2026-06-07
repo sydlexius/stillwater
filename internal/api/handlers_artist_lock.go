@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
@@ -223,6 +224,7 @@ func (r *Router) setImageLock(w http.ResponseWriter, req *http.Request, locked b
 // handleListLockedArtists returns a paginated list of locked artists.
 // GET /api/v1/artists/locked
 func (r *Router) handleListLockedArtists(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
 	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
 	if !ok {
 		return
@@ -233,7 +235,7 @@ func (r *Router) handleListLockedArtists(w http.ResponseWriter, req *http.Reques
 	}
 	params := artist.ListParams{
 		Page:     intQuery(req, "page", 1),
-		PageSize: intQuery(req, "page_size", 50),
+		PageSize: r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0)),
 		Sort:     sortKey,
 		Order:    order,
 		Filter:   "locked",

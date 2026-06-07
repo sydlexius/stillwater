@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/conflict"
@@ -1139,6 +1141,8 @@ func TestHandleCompliancePage_HXPushURL(t *testing.T) {
 // TestComplianceURLValues verifies the per-param URL-encoding behavior:
 // empty / default values are dropped, non-defaults are written, and the
 // status `all` synonym is treated as a no-op (matches the rest of the page).
+// page_size is only echoed to the URL when the caller provided it explicitly
+// as a query parameter (rawQuery.Has("page_size")); the user pref case omits it.
 func TestComplianceURLValues(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1146,6 +1150,7 @@ func TestComplianceURLValues(t *testing.T) {
 		params   artist.ListParams
 		status   string
 		filter   string
+		rawQuery url.Values
 		wantKeys map[string]string
 	}{
 		{
@@ -1153,6 +1158,7 @@ func TestComplianceURLValues(t *testing.T) {
 			params:   artist.ListParams{},
 			status:   "",
 			filter:   "",
+			rawQuery: url.Values{},
 			wantKeys: map[string]string{},
 		},
 		{
@@ -1161,13 +1167,15 @@ func TestComplianceURLValues(t *testing.T) {
 			status: "all",
 			filter: "",
 			// `all` means "no filter" so we must not echo it.
+			rawQuery: url.Values{},
 			wantKeys: map[string]string{},
 		},
 		{
-			name:   "full set",
-			params: artist.ListParams{Search: "indie", LibraryID: "lib-1", HealthScoreMin: 40, HealthScoreMax: 80, Sort: "health_score", Order: "desc"},
-			status: "non_compliant",
-			filter: "missing_nfo",
+			name:     "full set",
+			params:   artist.ListParams{Search: "indie", LibraryID: "lib-1", HealthScoreMin: 40, HealthScoreMax: 80, Sort: "health_score", Order: "desc"},
+			status:   "non_compliant",
+			filter:   "missing_nfo",
+			rawQuery: url.Values{},
 			wantKeys: map[string]string{
 				"search":     "indie",
 				"status":     "non_compliant",
@@ -1184,32 +1192,50 @@ func TestComplianceURLValues(t *testing.T) {
 			params:   artist.ListParams{Sort: "name", Order: "asc"},
 			status:   "",
 			filter:   "",
+			rawQuery: url.Values{},
 			wantKeys: map[string]string{},
 		},
 		{
 			// Regression for CR finding on PR #1653: pagination must survive
 			// HTMX swaps so the address bar reflects the current page when a
 			// chip is dismissed mid-listing.
-			name:   "non-default pagination is preserved",
-			params: artist.ListParams{Page: 3, PageSize: 100},
-			status: "",
-			filter: "",
+			name:     "non-default pagination with explicit page_size is preserved",
+			params:   artist.ListParams{Page: 3, PageSize: 100},
+			status:   "",
+			filter:   "",
+			rawQuery: url.Values{"page_size": {"100"}},
 			wantKeys: map[string]string{
 				"page":      "3",
 				"page_size": "100",
 			},
 		},
 		{
-			name:     "page=1 and default page_size are dropped",
-			params:   artist.ListParams{Page: 1, PageSize: compliancePageSizeDefault},
+			// page_size absent from the query means the user's stored pref is in
+			// effect; we must NOT echo it to the URL so shared/bookmarked links
+			// stay clean and pick up pref changes on reload.
+			name:     "page_size absent from query is dropped even when params carries a value",
+			params:   artist.ListParams{Page: 1, PageSize: 50},
 			status:   "",
 			filter:   "",
+			rawQuery: url.Values{},
 			wantKeys: map[string]string{},
+		},
+		{
+			// When an explicit page_size=50 IS present in the raw query, echo it
+			// so back/forward navigation restores the override.
+			name:     "explicit page_size=50 in query is echoed",
+			params:   artist.ListParams{Page: 1, PageSize: 50},
+			status:   "",
+			filter:   "",
+			rawQuery: url.Values{"page_size": {"50"}},
+			wantKeys: map[string]string{
+				"page_size": "50",
+			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := complianceURLValues(tc.params, tc.status, tc.filter)
+			got := complianceURLValues(tc.params, tc.status, tc.filter, tc.rawQuery)
 			if len(got) != len(tc.wantKeys) {
 				t.Errorf("len = %d, want %d (got=%v)", len(got), len(tc.wantKeys), got)
 			}
@@ -1219,5 +1245,126 @@ func TestComplianceURLValues(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestHandleReportCompliance_RespectsPageSizePref verifies that the compliance
+// report API handler uses the per-user Page Size preference when no explicit
+// page_size query parameter is provided.
+func TestHandleReportCompliance_RespectsPageSizePref(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouter(t)
+
+	const testUserID = "test-user-compliance-pagesize-pref"
+
+	// Seed more artists than the preference value so the cap is observable.
+	for i := 0; i < 15; i++ {
+		a := &artist.Artist{
+			Name: fmt.Sprintf("Compliance Artist %02d", i),
+			Path: fmt.Sprintf("/music/compliance-pref-%02d", i),
+		}
+		if err := svc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
+	}
+
+	// Store page_size=10 for the test user.
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/reports/compliance", nil)
+	w := httptest.NewRecorder()
+	r.handleReportCompliance(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 10 {
+		t.Errorf("expected page_size=10 from preference, got %d", int(pageSize))
+	}
+
+	rows, ok := resp["rows"].([]any)
+	if !ok {
+		t.Fatalf("rows not present or not an array in response")
+	}
+	if len(rows) > 10 {
+		t.Errorf("expected at most 10 rows, got %d", len(rows))
+	}
+}
+
+// TestHandleReportCompliance_QueryParamOverridesPref verifies that an explicit
+// page_size query parameter takes precedence over the stored user preference.
+func TestHandleReportCompliance_QueryParamOverridesPref(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouter(t)
+
+	const testUserID = "test-user-compliance-pagesize-qparam"
+
+	for i := 0; i < 15; i++ {
+		a := &artist.Artist{
+			Name: fmt.Sprintf("QP Compliance Artist %02d", i),
+			Path: fmt.Sprintf("/music/compliance-qparam-%02d", i),
+		}
+		if err := svc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
+	}
+
+	// Store page_size=10 for the test user.
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	// Request with ?page_size=12 should override the stored pref of 10.
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/reports/compliance?page_size=12", nil)
+	w := httptest.NewRecorder()
+	r.handleReportCompliance(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 12 {
+		t.Errorf("expected page_size=12 from query param override, got %d", int(pageSize))
+	}
+
+	rows, ok := resp["rows"].([]any)
+	if !ok {
+		t.Fatalf("rows not present or not an array in response")
+	}
+	if len(rows) > 12 {
+		t.Errorf("expected at most 12 rows with query param override, got %d", len(rows))
 	}
 }

@@ -304,7 +304,7 @@ func (r *Router) handleViolationTrend(w http.ResponseWriter, req *http.Request) 
 // GET /api/v1/reports/compliance
 func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	params, ok := complianceListParams(w, req)
+	params, ok := r.complianceListParams(w, req)
 	if !ok {
 		return
 	}
@@ -370,7 +370,7 @@ func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request
 func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	params, ok := complianceListParams(w, req)
+	params, ok := r.complianceListParams(w, req)
 	if !ok {
 		return
 	}
@@ -486,8 +486,9 @@ func sanitizeCSV(s string) string {
 // complianceListParams extracts ListParams from a compliance report request.
 // Validates the sort and order parameters against the artist allowlist; on
 // unknown values it writes a 400 response and returns ok=false so the caller
-// can stop processing.
-func complianceListParams(w http.ResponseWriter, req *http.Request) (artist.ListParams, bool) {
+// can stop processing. PageSize respects the per-user preference stored in the
+// database; an explicit page_size query param overrides it.
+func (r *Router) complianceListParams(w http.ResponseWriter, req *http.Request) (artist.ListParams, bool) {
 	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
 	if !ok {
 		return artist.ListParams{}, false
@@ -503,9 +504,10 @@ func complianceListParams(w http.ResponseWriter, req *http.Request) (artist.List
 		order = "asc"
 	}
 
+	userID := middleware.UserIDFromContext(req.Context())
 	params := artist.ListParams{
 		Page:           intQuery(req, "page", 1),
-		PageSize:       intQuery(req, "page_size", compliancePageSizeDefault),
+		PageSize:       r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0)),
 		Sort:           sortKey,
 		Order:          order,
 		Search:         req.URL.Query().Get("search"),
@@ -537,7 +539,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	ctx := req.Context()
-	params, ok := complianceListParams(w, req)
+	params, ok := r.complianceListParams(w, req)
 	if !ok {
 		return
 	}
@@ -622,7 +624,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if isHTMXRequest(req) {
-		vals := complianceURLValues(params, status, req.URL.Query().Get("filter"))
+		vals := complianceURLValues(params, status, req.URL.Query().Get("filter"), req.URL.Query())
 		pushURL := r.basePath + "/reports/compliance"
 		if len(vals) > 0 {
 			pushURL += "?" + vals.Encode()
@@ -637,17 +639,14 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	renderTempl(w, req, templates.CompliancePage(r.assetsFor(req), data))
 }
 
-// compliancePageSizeDefault matches the default applied by intQuery in
-// complianceListParams; both must stay in sync so HX-Push-Url drops the
-// query param when it equals the implicit default.
-const compliancePageSizeDefault = 50
-
 // complianceURLValues converts the compliance list params + raw status/filter
 // query values into url.Values for HX-Push-Url. Only writes the canonical
 // keys the compliance page reads back on next load. Default values (page 1,
-// the default page size, "all" status, "name" sort, "asc" order) are dropped
-// so the pushed URL stays minimal.
-func complianceURLValues(params artist.ListParams, status, filter string) url.Values {
+// "all" status, "name" sort, "asc" order) are dropped so the pushed URL stays
+// minimal. page_size is only included when the caller explicitly provided it
+// as a query parameter (rawQuery.Has("page_size")); when it is absent the
+// user's stored preference is the effective default and the URL omits it.
+func complianceURLValues(params artist.ListParams, status, filter string, rawQuery url.Values) url.Values {
 	q := url.Values{}
 	if params.Search != "" {
 		q.Set("search", params.Search)
@@ -679,7 +678,10 @@ func complianceURLValues(params artist.ListParams, status, filter string) url.Va
 	if params.Page > 1 {
 		q.Set("page", strconv.Itoa(params.Page))
 	}
-	if params.PageSize > 0 && params.PageSize != compliancePageSizeDefault {
+	// Only echo page_size back to the URL when the caller passed it explicitly.
+	// Without a query param the user's stored preference is the effective default
+	// and echoing it would pollute bookmarked/shared URLs unnecessarily.
+	if rawQuery.Has("page_size") {
 		q.Set("page_size", strconv.Itoa(params.PageSize))
 	}
 	return q

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/nfo"
 )
@@ -352,5 +354,132 @@ func TestHandleUnlockArtistImage_WrongImage(t *testing.T) {
 	r.handleUnlockArtistImage(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+// TestHandleListLockedArtists_RespectsPageSizePref verifies that the
+// locked-artists list handler respects the per-user page_size preference when
+// no query param is provided.
+func TestHandleListLockedArtists_RespectsPageSizePref(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouter(t)
+
+	const testUserID = "test-user-locked-pagesize"
+
+	// Seed more artists than the preference value so the cap is observable.
+	for i := 0; i < 15; i++ {
+		a := &artist.Artist{
+			Name: fmt.Sprintf("Locked Artist %02d", i),
+			Path: fmt.Sprintf("/music/locked-%02d", i),
+		}
+		if err := svc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
+		if err := svc.Lock(context.Background(), a.ID, "user"); err != nil {
+			t.Fatalf("locking artist %d: %v", i, err)
+		}
+	}
+
+	// Store page_size=10 directly in the DB for the test user.
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/artists/locked", nil)
+	w := httptest.NewRecorder()
+	r.handleListLockedArtists(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 10 {
+		t.Errorf("expected page_size=10 from preference, got %d", int(pageSize))
+	}
+
+	artists, ok := resp["artists"].([]any)
+	if !ok {
+		t.Fatalf("artists not present or not an array in response")
+	}
+	if len(artists) > 10 {
+		t.Errorf("expected at most 10 artists, got %d", len(artists))
+	}
+}
+
+// TestHandleListLockedArtists_QueryParamOverridesPref verifies that an explicit
+// page_size query parameter takes precedence over the stored user preference.
+func TestHandleListLockedArtists_QueryParamOverridesPref(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouter(t)
+
+	const testUserID = "test-user-locked-qparam"
+
+	for i := 0; i < 15; i++ {
+		a := &artist.Artist{
+			Name: fmt.Sprintf("QP Artist %02d", i),
+			Path: fmt.Sprintf("/music/qp-%02d", i),
+		}
+		if err := svc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
+		if err := svc.Lock(context.Background(), a.ID, "user"); err != nil {
+			t.Fatalf("locking artist %d: %v", i, err)
+		}
+	}
+
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	// Use page_size=12 (valid, in [PageSizeMin, PageSizeMax], different from the
+	// stored preference of 10) to verify the query param takes precedence.
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/artists/locked?page_size=12", nil)
+	w := httptest.NewRecorder()
+	r.handleListLockedArtists(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 12 {
+		t.Errorf("expected page_size=12 from query param, got %d", int(pageSize))
+	}
+
+	artists, ok := resp["artists"].([]any)
+	if !ok {
+		t.Fatalf("artists not present or not an array in response")
+	}
+	if len(artists) > 12 {
+		t.Errorf("expected at most 12 artists with query param override, got %d", len(artists))
 	}
 }
