@@ -1033,7 +1033,7 @@
     "method": "GET",
     "path": "/artists/locked",
     "handler": "handleListLockedArtists",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "listLogFiles",
