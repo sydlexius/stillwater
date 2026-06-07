@@ -800,7 +800,7 @@ templ artistIdentifiersSection(data *templates.ArtistDetailData) {
 
 // artistDetailPageScript wires the page-specific behaviors not covered by the
 // shared modules: "Edit all" toggle, h/l prev/next-artist + j/k section-nav,
-// Esc refresh-panel dismiss, and e/f focused-field edit/fetch shortcuts.
+// Esc panel/edit-mode dismiss, e edit-mode toggle, and f focused-field fetch.
 // keyboard.js (global) owns r/R (data-sw-shortcut) and f on filter-flyout
 // pages; this listener is complementary and does not conflict.
 templ artistDetailPageScript() {
@@ -1185,7 +1185,7 @@ templ artistDetailPageScript() {
 				return false;
 			}
 
-			// Track the most-recently-hovered field row so 'e'/'f' have a target.
+			// Track the most-recently-hovered field row so 'f' has a target.
 			// closest() walks up from any pointer target inside the row container
 			// (value text, lock icon, etc.) to reach the wrapping div, e.g.
 			// <div id="field-biography-123">.
@@ -1203,26 +1203,33 @@ templ artistDetailPageScript() {
 				if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
 				if (isTyping(ev.target)) return;
 
-				// Esc: dismiss the refresh-panel when it has content. Artwork-modal and
-				// lightbox register their own Esc handlers (calling e.preventDefault())
-				// before this one fires; the defaultPrevented guard lets them win.
+				// Esc: layered dismiss in priority order.
+				// (a) Lightbox + (b) artwork-modal: each registers its keydown handler
+				//     only while open (added on open, removed on close) and calls
+				//     e.preventDefault() -- the defaultPrevented guard above handles
+				//     those before we reach this block.
+				// (c) Dismiss the refresh-panel when it has content.
+				// (d) Exit page edit mode when active (same as clicking Done).
 				if (ev.key === 'Escape') {
 					var panel = document.getElementById('refresh-panel');
 					if (panel && panel.innerHTML.trim() !== '') {
 						ev.preventDefault();
 						panel.innerHTML = '';
+						return;
+					}
+					if (editing) {
+						ev.preventDefault();
+						setEditAll(false);
+						return;
 					}
 					return;
 				}
 
-				// e: open the inline editor for the field row the mouse last entered.
-				// No-op when no field row has been hovered or the field has no edit button
-				// (e.g. locked fields, identifier rows).
+				// e: toggle page-level Edit mode (same as clicking the Edit / Done hero
+				// button). next/ uses page-wide edit-all, not per-field pencils.
 				if (ev.key === 'e') {
-					if (focusedFieldEl) {
-						var editBtn = focusedFieldEl.querySelector('button[hx-get$="/edit"]');
-						if (editBtn) { ev.preventDefault(); editBtn.click(); }
-					}
+					ev.preventDefault();
+					setEditAll(!editing);
 					return;
 				}
 
