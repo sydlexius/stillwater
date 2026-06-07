@@ -55,7 +55,7 @@ templ ArtworkSection(data *templates.ArtistDetailData) {
 				@artworkIdentityTile(a.ID, "banner", a.BannerExists, a.BannerWidth, a.BannerHeight, a.BannerLowRes)
 			</div>
 			<div>
-				<h3 class="sw-next-subhead sw-next-subhead-tc mb-2 uppercase tracking-wide">{ t(ctx, "artist.artwork.kind_backdrops") }</h3>
+				<h3 class="sw-next-subhead mb-2">{ t(ctx, "artist.artwork.kind_backdrops") }</h3>
 				@artworkBackdropsCarousel(a.ID, a.FanartCount)
 			</div>
 			@artworkReconciliationStatus(data.Connections)
