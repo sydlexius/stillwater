@@ -767,7 +767,7 @@
     "method": "GET",
     "path": "/artists/{id}/platform-state",
     "handler": "handleGetPlatformState",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getPlatformSummary",
