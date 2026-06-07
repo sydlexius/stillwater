@@ -5,7 +5,10 @@ tone_instructions: |
   "This is the Way."
 reviews:
   auto_review:
-    enabled: true
+    # Disabled to match the org-level "no auto-reviews" default.
+    # Manual `@coderabbitai review` still triggers a full review on demand.
+    # Intentional override of the repo's prior auto-review setting (#1882).
+    enabled: false
     drafts: true
     auto_incremental_review: true
     auto_pause_after_reviewed_commits: 0
