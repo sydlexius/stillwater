@@ -406,7 +406,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "Save</button><div class=\"flex gap-1\"><button type=\"button\" class=\"compare-btn hidden flex-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"if(typeof populateCompare==='function') populateCompare(this.closest('[data-img-url]'))\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "Save</button><div class=\"flex gap-1\"><button type=\"button\" class=\"compare-btn hidden flex-1 items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"if(typeof populateCompare==='function') populateCompare(this.closest('[data-img-url]'))\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -414,7 +414,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "Compare</button> <button type=\"button\" class=\"crop-btn hidden flex-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"if(typeof openCropModal==='function') openCropModal(this.closest('[data-img-url]').dataset.imgUrl, this.closest('[data-img-url]').dataset.imgType)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "Compare</button> <button type=\"button\" class=\"crop-btn hidden flex-1 items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"if(typeof openCropModal==='function') openCropModal(this.closest('[data-img-url]').dataset.imgUrl, this.closest('[data-img-url]').dataset.imgType)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

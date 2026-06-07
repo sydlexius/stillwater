@@ -132,7 +132,7 @@ templ artworkIdentityTile(artistID string, kind string, exists bool, w int, h in
 				}
 				data-lightbox-src={ fileURL }
 				data-lightbox-alt={ t(ctx, artworkKindLabelKey(kind)) }
-				onclick="openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
+				onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
 				title={ t(ctx, "image.view_full_size") }
 				aria-label={ t(ctx, "image.view_full_size") }
 			>
@@ -286,7 +286,7 @@ templ artworkBackdropTile(artistID string, index int, total int) {
 			class="block focus:outline-none focus:ring-2 focus:ring-blue-500"
 			data-lightbox-src={ fileURL }
 			data-lightbox-alt={ tf(ctx, "image.backdrop_index", strconv.Itoa(index)) }
-			onclick="openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
+			onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
 			title={ t(ctx, "image.view_full_size") }
 			aria-label={ t(ctx, "image.view_full_size") }
 		>

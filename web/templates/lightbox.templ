@@ -5,25 +5,26 @@ import "github.com/sydlexius/stillwater/web/components"
 // LightboxOverlay is the shared full-size image lightbox overlay (M55 #1336,
 // 4B). lightbox.js drives it by the constant ids #sw-lightbox / #sw-lightbox-img
 // (open/close + focus restore + Escape/Tab trap), so any page that calls the
-// window.openLightbox global must render this overlay once. Extracted from the
+// window.swLightbox global must render this overlay once. Extracted from the
 // stable Images tab so the next/ artist-detail page (whose Artwork tiles open
 // the lightbox) and the stable tab share one copy instead of the next/ tiles
 // dead-ending on a missing overlay.
 templ LightboxOverlay() {
-	// Hidden by default; shown by window.openLightbox().
+	// Hidden by default; shown by window.swLightbox.open().
 	<div
 		id="sw-lightbox"
 		class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85"
 		role="dialog"
 		aria-modal="true"
-		aria-label={ t(ctx, "image.view_full_size") }
+		aria-labelledby="sw-lightbox-title"
 		tabindex="-1"
-		onclick="closeLightbox()"
+		onclick="swLightbox.close()"
 	>
+		<h2 id="sw-lightbox-title" class="sr-only">{ t(ctx, "image.view_full_size") }</h2>
 		<button
 			type="button"
 			class="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-			onclick="event.stopPropagation(); closeLightbox()"
+			onclick="event.stopPropagation(); swLightbox.close()"
 			aria-label={ t(ctx, "common.close") }
 			data-lightbox-close
 		>

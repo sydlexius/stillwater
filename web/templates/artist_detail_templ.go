@@ -3459,7 +3459,7 @@ func FanartGallery(artistID string, items []FanartGalleryItem, profileName strin
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 269, "\" onclick=\"openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 269, "\" onclick=\"swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

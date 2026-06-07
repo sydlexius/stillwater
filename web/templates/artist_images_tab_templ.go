@@ -856,15 +856,15 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var42 string
-			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.trim_failed"))
+			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.trim_failed_short"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 233, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 233, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));\" class=\"p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);\" class=\"p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -935,15 +935,15 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var47 string
-			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.delete_failed"))
+			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.delete_failed_short"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 248, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 248, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));\" class=\"p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);\" class=\"p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1013,15 +1013,15 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var52 string
-			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.delete_failed"))
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.delete_failed_short"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 261, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 261, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));\" class=\"p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);\" class=\"p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1141,16 +1141,16 @@ func boolToCount(exists bool) int {
 	return 0
 }
 
-// openImageLightbox is a templ script that calls the page-level openLightbox
+// openImageLightbox is a templ script that calls the page-level swLightbox.open
 // function with the image URL and accessible label. Using a script function
 // lets Go values be safely embedded in the onclick attribute.
 func openImageLightbox(src string, alt string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_openImageLightbox_58d8`,
-		Function: `function __templ_openImageLightbox_58d8(src, alt){openLightbox(src, alt);
+		Name: `__templ_openImageLightbox_0a55`,
+		Function: `function __templ_openImageLightbox_0a55(src, alt){swLightbox.open(src, alt);
 }`,
-		Call:       templ.SafeScript(`__templ_openImageLightbox_58d8`, src, alt),
-		CallInline: templ.SafeScriptInline(`__templ_openImageLightbox_58d8`, src, alt),
+		Call:       templ.SafeScript(`__templ_openImageLightbox_0a55`, src, alt),
+		CallInline: templ.SafeScriptInline(`__templ_openImageLightbox_0a55`, src, alt),
 	}
 }
 

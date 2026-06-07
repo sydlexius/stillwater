@@ -230,8 +230,8 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
 				hx-confirm={ t(ctx, "image.confirm_trim_logo") }
 				hx-swap="none"
-				data-msg-failed={ t(ctx, "image.trim_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
+				data-msg-failed={ t(ctx, "image.trim_failed_short") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.trim_transparent_edges") }
 				aria-label={ t(ctx, "image.trim_transparent_edges") }
@@ -245,8 +245,8 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s/%d", artistID, imageType, index) }
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
-				data-msg-failed={ t(ctx, "image.delete_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
+				data-msg-failed={ t(ctx, "image.delete_failed_short") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }
@@ -258,8 +258,8 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
-				data-msg-failed={ t(ctx, "image.delete_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
+				data-msg-failed={ t(ctx, "image.delete_failed_short") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }
@@ -292,10 +292,10 @@ func boolToCount(exists bool) int {
 	return 0
 }
 
-// openImageLightbox is a templ script that calls the page-level openLightbox
+// openImageLightbox is a templ script that calls the page-level swLightbox.open
 // function with the image URL and accessible label. Using a script function
 // lets Go values be safely embedded in the onclick attribute.
 
 script openImageLightbox(src string, alt string) {
-	openLightbox(src, alt);
+	swLightbox.open(src, alt);
 }

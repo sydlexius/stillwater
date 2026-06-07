@@ -13,7 +13,7 @@ import "github.com/sydlexius/stillwater/web/components"
 // LightboxOverlay is the shared full-size image lightbox overlay (M55 #1336,
 // 4B). lightbox.js drives it by the constant ids #sw-lightbox / #sw-lightbox-img
 // (open/close + focus restore + Escape/Tab trap), so any page that calls the
-// window.openLightbox global must render this overlay once. Extracted from the
+// window.swLightbox global must render this overlay once. Extracted from the
 // stable Images tab so the next/ artist-detail page (whose Artwork tiles open
 // the lightbox) and the stable tab share one copy instead of the next/ tiles
 // dead-ending on a missing overlay.
@@ -38,27 +38,27 @@ func LightboxOverlay() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"sw-lightbox\" class=\"fixed inset-0 z-50 hidden items-center justify-center bg-black/85\" role=\"dialog\" aria-modal=\"true\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"sw-lightbox\" class=\"fixed inset-0 z-50 hidden items-center justify-center bg-black/85\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sw-lightbox-title\" tabindex=\"-1\" onclick=\"swLightbox.close()\"><h2 id=\"sw-lightbox-title\" class=\"sr-only\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
-		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.view_full_size"))
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.view_full_size"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/lightbox.templ`, Line: 19, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/lightbox.templ`, Line: 23, Col: 77}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" tabindex=\"-1\" onclick=\"closeLightbox()\"><button type=\"button\" class=\"absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors\" onclick=\"event.stopPropagation(); closeLightbox()\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><button type=\"button\" class=\"absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors\" onclick=\"event.stopPropagation(); swLightbox.close()\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.close"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/lightbox.templ`, Line: 27, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/lightbox.templ`, Line: 28, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {

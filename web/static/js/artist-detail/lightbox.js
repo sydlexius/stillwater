@@ -7,10 +7,10 @@
 // in templ; this module only drives open/close, focus restore, and the
 // Escape + Tab focus-trap.
 //
-// Markup and the openImageLightbox templ script call openLightbox/closeLightbox
-// by bare name from inline onclick handlers, so this IIFE exposes them on
-// window (the F4a lesson: bare-name onclick callers need the global). No Go
-// values are interpolated here; the element ids are constants.
+// Inline onclick handlers and the openImageLightbox templ script call
+// swLightbox.open / swLightbox.close via the namespaced global this IIFE
+// exposes on window. No Go values are interpolated here; the element ids are
+// constants.
 (function () {
   "use strict";
 
@@ -71,7 +71,7 @@
     var lb = document.getElementById("sw-lightbox");
     if (!lb || lb.classList.contains("hidden")) return;
     var focusables = lb.querySelectorAll(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
     if (focusables.length === 0) {
       e.preventDefault();
@@ -89,8 +89,7 @@
     }
   }
 
-  // Expose the two entry points; bare-name inline onclick handlers and the
-  // openImageLightbox templ script call these globally.
-  window.openLightbox = openLightbox;
-  window.closeLightbox = closeLightbox;
+  // Expose entry points under a namespaced global. Inline onclick handlers and
+  // the openImageLightbox templ script use swLightbox.open / swLightbox.close.
+  window.swLightbox = { open: openLightbox, close: closeLightbox };
 })();

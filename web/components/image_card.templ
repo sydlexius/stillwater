@@ -131,7 +131,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 			<div class="flex gap-1">
 				<button
 					type="button"
-					class="compare-btn hidden flex-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="compare-btn hidden flex-1 items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					onclick="if(typeof populateCompare==='function') populateCompare(this.closest('[data-img-url]'))"
 				>
 					@IconArrowsPointingOut("h-4 w-4")
@@ -139,7 +139,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 				</button>
 				<button
 					type="button"
-					class="crop-btn hidden flex-1 inline-flex items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="crop-btn hidden flex-1 items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					onclick="if(typeof openCropModal==='function') openCropModal(this.closest('[data-img-url]').dataset.imgUrl, this.closest('[data-img-url]').dataset.imgType)"
 				>
 					@IconCrop("h-4 w-4")

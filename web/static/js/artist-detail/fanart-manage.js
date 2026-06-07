@@ -383,7 +383,7 @@
     }
     var bulkBtn = e.target.closest("#fanart-bulk-save");
     if (bulkBtn) {
-      var bc = document.querySelector("[data-sw-fanart-search]");
+      var bc = bulkBtn.closest("[data-sw-fanart-search]");
       if (bc) bulkSave(bc);
       return;
     }

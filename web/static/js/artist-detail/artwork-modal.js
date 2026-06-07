@@ -64,7 +64,6 @@
     var id = artistID();
     if (!id || typeof window.htmx === "undefined") return;
     var url =
-      basePath() +
       "/next/artists/" +
       id +
       "/artwork-modal?kind=" +

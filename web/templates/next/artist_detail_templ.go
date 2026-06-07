@@ -2371,7 +2371,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input type=\"hidden\" name=\"source\" value=\"manual\"> <button type=\"submit\" class=\"sw-next-flat-btn inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input type=\"hidden\" name=\"source\" value=\"manual\"> <button type=\"submit\" class=\"sw-next-flat-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

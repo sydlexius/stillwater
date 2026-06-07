@@ -993,7 +993,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 								aria-label={ tf(ctx, "artist.view_full_size_name", item.Filename) }
 								data-lightbox-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
 								data-lightbox-alt={ item.Filename }
-								onclick="openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
+								onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
 							>
 								@components.IconArrowsPointingOut("w-5 h-5")
 							</button>

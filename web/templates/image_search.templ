@@ -175,7 +175,8 @@ templ ArtworkManageEditor(data ImageSearchData) {
 				if (statusEl) {
 					var s = document.createElement('span');
 					s.className = 'text-sm text-amber-600';
-					s.textContent = 'Cannot crop this image directly (CORS). Save it first, then crop.';
+					var editorEl = document.querySelector('[data-artist-id][data-image-type]');
+					s.textContent = editorEl ? editorEl.dataset.msgCorsCrop : 'Cannot crop this image directly (CORS). Save it first, then crop.';
 					statusEl.replaceChildren(s);
 				}
 			};
@@ -238,7 +239,18 @@ templ ArtworkManageEditor(data ImageSearchData) {
 
 // imageSearchContextualized renders the single-type image editing layout.
 templ imageSearchContextualized(data ImageSearchData) {
-	<div class="max-w-4xl mx-auto space-y-6" data-artist-id={ data.Artist.ID } data-image-type={ data.SelectedType }>
+	<div
+		class="max-w-4xl mx-auto space-y-6"
+		data-artist-id={ data.Artist.ID }
+		data-image-type={ data.SelectedType }
+		data-msg-cors-crop={ t(ctx, "image.msg_cors_crop") }
+		data-msg-needs-crop={ t(ctx, "image.msg_needs_crop") }
+		data-msg-uploading={ t(ctx, "image.msg_uploading") }
+		data-msg-upload-failed={ t(ctx, "image.msg_upload_failed") }
+		data-msg-fetching={ t(ctx, "image.msg_fetching") }
+		data-msg-fetch-failed={ t(ctx, "image.msg_fetch_failed") }
+		data-msg-fetch-unable={ t(ctx, "image.msg_fetch_unable") }
+	>
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<div class="flex items-center justify-between mb-4">
 				<h2 class="text-lg font-semibold">{ tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</h2>
@@ -332,8 +344,8 @@ templ imageSearchContextualized(data ImageSearchData) {
 										hx-confirm={ t(ctx, "image.confirm_trim_logo") }
 										hx-swap="none"
 										data-sw-requires-image-write
-										data-msg-failed={ t(ctx, "image.trim_failed") }
-										hx-on::after-request="if(event.detail.successful) window.location.reload(); else if(event.detail.xhr.status!==409) alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
+										data-msg-failed={ t(ctx, "image.trim_failed_short") }
+										hx-on::after-request="if(event.detail.successful) window.location.reload(); else if(event.detail.xhr.status!==409) alert(this.dataset.msgFailed);"
 										title={ t(ctx, "image.disabled_during_conflict") }
 									>
 										@components.IconScissors("h-4 w-4")
@@ -565,7 +577,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					// Pass the required ratio so the Cropper ready callback
 					// applies it reliably instead of a timing-dependent setTimeout.
 					openCropModal(data.image_data, data.type, data.required_ratio);
-					setStatus('Image needs cropping to match the required aspect ratio.', 'text-amber-600');
+					setStatus(container.dataset.msgNeedsCrop, 'text-amber-600');
 				}
 
 				function uploadFile(file) {
@@ -573,7 +585,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					var fd = new FormData();
 					fd.append('file', file);
 					fd.append('type', imageType);
-					setStatus('Uploading...', 'text-gray-500');
+					setStatus(container.dataset.msgUploading, 'text-gray-500');
 					fetch(bp + '/api/v1/artists/' + artistID + '/images/upload', {
 						method: 'POST',
 						headers: {'X-CSRF-Token': csrfToken()},
@@ -581,11 +593,11 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {
-							if (!r.ok) { setStatus('Upload failed', 'text-red-500'); return; }
+							if (!r.ok) { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); return; }
 							if (data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});
-					}).catch(function() { setStatus('Upload failed', 'text-red-500'); });
+					}).catch(function() { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); });
 				}
 
 				dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });
@@ -606,7 +618,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					var url = document.getElementById('fetch-url-input').value.trim();
 					if (!url) return;
 					var modal = document.getElementById('fetch-url-modal');
-					setStatus('Fetching...', 'text-gray-500');
+					setStatus(container.dataset.msgFetching, 'text-gray-500');
 					modal.classList.add('hidden');
 					fetch(bp + '/api/v1/artists/' + artistID + '/images/fetch', {
 						method: 'POST',
@@ -615,11 +627,11 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {
-							if (!r.ok) { setStatus('Unable to fetch image', 'text-red-500'); return; }
+							if (!r.ok) { setStatus(container.dataset.msgFetchUnable, 'text-red-500'); return; }
 							if (data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});
-					}).catch(function() { setStatus('Fetch failed', 'text-red-500'); });
+					}).catch(function() { setStatus(container.dataset.msgFetchFailed, 'text-red-500'); });
 				});
 
 				// Show results panel and reveal compare/crop buttons when HTMX swap completes
@@ -631,6 +643,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						for (var i = 0; i < btns.length; i++) {
 							if (btns[i].classList.contains('compare-btn') && !hasCompare) continue;
 							btns[i].classList.remove('hidden');
+							btns[i].classList.add('inline-flex');
 						}
 					}
 				});

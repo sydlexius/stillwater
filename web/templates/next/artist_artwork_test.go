@@ -65,7 +65,7 @@ func TestArtworkSection_IdentityTiles(t *testing.T) {
 		// Present images render at native aspect, height-normalized (no fixed box).
 		"native-aspect image":   "sw-artwork-native-img",
 		"logo checker bg":       "sw-artwork-checker",
-		"present-tile lightbox": "openLightbox(this.dataset.lightboxSrc",
+		"present-tile lightbox": "swLightbox.open(this.dataset.lightboxSrc",
 		"primary file url":      "/api/v1/artists/art-1/images/thumb/file",
 		"banner file url":       "/api/v1/artists/art-1/images/banner/file",
 		"primary dimensions":    "600x600",
@@ -129,8 +129,8 @@ func TestArtworkSection_BackdropsCarousel(t *testing.T) {
 		}
 	}
 	// The [+] add-tile must come AFTER the last backdrop tile (inline last cell).
-	if i, j := strings.LastIndex(out, "/images/fanart/2/file"), strings.Index(out, "sw-artwork-bd-add"); i < 0 || j < 0 || j < i {
-		t.Errorf("the [+] add-tile must render immediately after the last backdrop (idx add=%d last=%d)", j, i)
+	if lastBackdropIdx, addTileIdx := strings.LastIndex(out, "/images/fanart/2/file"), strings.Index(out, "sw-artwork-bd-add"); lastBackdropIdx < 0 || addTileIdx < 0 || addTileIdx < lastBackdropIdx {
+		t.Errorf("the [+] add-tile must render immediately after the last backdrop (idx add=%d last=%d)", addTileIdx, lastBackdropIdx)
 	}
 
 	noFanart := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "BD", FanartCount: 0}}
@@ -181,7 +181,7 @@ func TestArtworkSection_ReconciliationLocalOnly(t *testing.T) {
 }
 
 // TestArtistDetailPage_RendersLightboxOverlay is a regression guard: the
-// Artwork tiles + carousel call window.openLightbox, which needs the
+// Artwork tiles + carousel call window.swLightbox.open, which needs the
 // #sw-lightbox overlay DOM present on the page. It lives only in the stable
 // Images tab, so the next/ page must render the shared LightboxOverlay itself
 // (else the full-size view dead-ends).

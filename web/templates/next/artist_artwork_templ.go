@@ -338,7 +338,7 @@ func artworkIdentityTile(artistID string, kind string, exists bool, w int, h int
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" onclick=\"openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" onclick=\"swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1049,7 +1049,7 @@ func artworkBackdropTile(artistID string, index int, total int) templ.Component 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" onclick=\"openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\" title=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" onclick=\"swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
