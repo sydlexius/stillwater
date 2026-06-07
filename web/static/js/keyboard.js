@@ -386,8 +386,12 @@
         return;
       }
       if (e.key === 'r' || e.key === 'R') {
-        var primary = actionTarget('r');
-        if (primary) { e.preventDefault(); primary.click(); } else { warnAdvertisedMissing('r'); }
+        // Case-sensitive lookup first: a page may register a distinct uppercase
+        // 'R' shortcut (e.g. Run Rules alongside lowercase 'r' for Refresh).
+        // Fall back to the lowercase element so pages with only 'r' still fire.
+        var primary = actionTarget(e.key);
+        if (!primary) primary = actionTarget('r');
+        if (primary) { e.preventDefault(); primary.click(); } else { warnAdvertisedMissing(e.key); }
         return;
       }
 

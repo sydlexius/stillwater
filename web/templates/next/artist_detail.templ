@@ -799,11 +799,10 @@ templ artistIdentifiersSection(data *templates.ArtistDetailData) {
 }
 
 // artistDetailPageScript wires the page-specific behaviors not covered by the
-// shared modules: "Edit all" (clicks every visible field edit affordance) and
-// the h/l prev-next-artist + j/k section-nav keyboard handlers. It prefers the
-// keyboard registry's onContext hook when available and falls back to a
-// self-contained, typing-aware keydown listener otherwise so the feature is
-// never at risk.
+// shared modules: "Edit all" toggle, h/l prev/next-artist + j/k section-nav,
+// Esc refresh-panel dismiss, and e/f focused-field edit/fetch shortcuts.
+// keyboard.js (global) owns r/R (data-sw-shortcut) and f on filter-flyout
+// pages; this listener is complementary and does not conflict.
 templ artistDetailPageScript() {
 	<script>
 		(function () {
@@ -1172,21 +1171,74 @@ templ artistDetailPageScript() {
 				return false;
 			}
 
-			// Prefer the shared keyboard registry's contextual hook when present.
-			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.onContext === 'function') {
-				window.swKeyboardShortcuts.onContext('artist-detail', function (key) { return handle(key); });
-				return;
-			}
-
-			// Fallback: a self-contained, typing-aware keydown listener.
+			// isTyping: mirrors keyboard.js's guard -- INPUT only counts as typing
+			// when text-like; a focused checkbox/radio must NOT swallow shortcuts.
 			function isTyping(el) {
 				if (!el) return false;
-				var tag = (el.tagName || '').toLowerCase();
-				return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+				var tag = el.tagName;
+				if (tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return true;
+				if (tag === 'INPUT') {
+					var nonText = ['checkbox','radio','button','submit','reset','file','image','range','color'];
+					var itype = (el.getAttribute('type') || 'text').toLowerCase();
+					return nonText.indexOf(itype) === -1;
+				}
+				return false;
 			}
+
+			// Track the most-recently-hovered field row so 'e'/'f' have a target.
+			// closest() walks up from any pointer target inside the row container
+			// (value text, lock icon, etc.) to reach the wrapping div, e.g.
+			// <div id="field-biography-123">.
+			var focusedFieldEl = null;
+			document.addEventListener('mouseover', function (mv) {
+				var el = mv.target.closest('div[id^="field-"]');
+				if (el) focusedFieldEl = el;
+			});
+
+			// Detail-page keyboard handler. keyboard.js (global) handles r/R via
+			// data-sw-shortcut and owns 'f'/'F' on filter-flyout pages; this listener
+			// is complementary. The onContext hook from keyboard.js targets roving-list
+			// pages and is NOT used here (artist-detail has no data-sw-roving-list).
 			document.addEventListener('keydown', function (ev) {
 				if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
 				if (isTyping(ev.target)) return;
+
+				// Esc: dismiss the refresh-panel when it has content. Artwork-modal and
+				// lightbox register their own Esc handlers (calling e.preventDefault())
+				// before this one fires; the defaultPrevented guard lets them win.
+				if (ev.key === 'Escape') {
+					var panel = document.getElementById('refresh-panel');
+					if (panel && panel.innerHTML.trim() !== '') {
+						ev.preventDefault();
+						panel.innerHTML = '';
+					}
+					return;
+				}
+
+				// e: open the inline editor for the field row the mouse last entered.
+				// No-op when no field row has been hovered or the field has no edit button
+				// (e.g. locked fields, identifier rows).
+				if (ev.key === 'e') {
+					if (focusedFieldEl) {
+						var editBtn = focusedFieldEl.querySelector('button[hx-get$="/edit"]');
+						if (editBtn) { ev.preventDefault(); editBtn.click(); }
+					}
+					return;
+				}
+
+				// f: open the provider-fetch panel for the focused field. keyboard.js
+				// handles 'f'/'F' on pages that use a filter flyout; it returns without
+				// calling preventDefault when no data-sw-shortcut="f" element exists,
+				// so this handler still fires on the detail page.
+				if (ev.key === 'f') {
+					if (focusedFieldEl) {
+						var fetchBtn = focusedFieldEl.querySelector('button[hx-get$="/providers"]');
+						if (fetchBtn) { ev.preventDefault(); fetchBtn.click(); }
+					}
+					return;
+				}
+
+				// h/l/j/k: prev/next artist and section nav (handled by handle()).
 				if (handle(ev.key)) ev.preventDefault();
 			});
 		})();
