@@ -55,8 +55,7 @@ templ ArtworkSection(data *templates.ArtistDetailData) {
 				@artworkIdentityTile(a.ID, "banner", a.BannerExists, a.BannerWidth, a.BannerHeight, a.BannerLowRes)
 			</div>
 			<div>
-				// Title case (not uppercase) to match the Primary/Logo/Banner tile labels.
-				<h3 class="sw-next-subhead sw-next-subhead-tc mb-2">{ t(ctx, "artist.artwork.kind_backdrops") }</h3>
+				<h3 class="sw-next-subhead sw-next-subhead-tc mb-2 uppercase tracking-wide">{ t(ctx, "artist.artwork.kind_backdrops") }</h3>
 				@artworkBackdropsCarousel(a.ID, a.FanartCount)
 			</div>
 			@artworkReconciliationStatus(data.Connections)
@@ -113,7 +112,7 @@ templ artworkIdentityTile(artistID string, kind string, exists bool, w int, h in
 	// follows the real ratio, capped to the container) -- no crop/squash/box.
 	<div>
 		<div class="flex items-center gap-1.5 mb-1.5">
-			<span class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, artworkKindLabelKey(kind)) }</span>
+			<span class="text-xs font-medium uppercase tracking-wide text-gray-700 dark:text-gray-300">{ t(ctx, artworkKindLabelKey(kind)) }</span>
 			if exists {
 				<span class="inline-flex items-center text-gray-400 dark:text-gray-500" title={ t(ctx, "artist.artwork.on_disk") }>
 					@components.IconCheck("w-3 h-3")

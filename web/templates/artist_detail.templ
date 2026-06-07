@@ -1292,7 +1292,7 @@ templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *c
 						false)
 				}
 				<tr>
-					<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
+					<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
 					<td class="px-4 py-2">
 						@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
 						@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
