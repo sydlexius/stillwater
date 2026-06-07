@@ -56,7 +56,15 @@ func RenameFileAtomic(src, dst string) error {
 	// Snapshot dst state so we only clean up our own partial copy on failure.
 	_, statErr := os.Stat(dst)
 
-	if err := copyFile(src, dst); err != nil {
+	// Stat the source to preserve its existing file mode on the copy path.
+	// If the stat fails (narrow race: file removed between rename failure and
+	// here), copyFile will fail at os.Open and we will propagate that error.
+	srcMode := os.FileMode(0o644)
+	if srcInfo, srcStatErr := os.Stat(src); srcStatErr == nil {
+		srcMode = srcInfo.Mode().Perm()
+	}
+
+	if err := copyFile(src, dst, srcMode); err != nil {
 		if os.IsNotExist(statErr) {
 			// dst was created by us; safe to clean up.
 			_ = os.Remove(dst)
@@ -85,7 +93,8 @@ func copyDirRecursive(src, dst string) error {
 		if info.IsDir() {
 			return os.MkdirAll(target, info.Mode())
 		}
-		// Reuse the package-level copyFile from atomic.go.
-		return copyFile(path, target)
+		// Reuse the package-level copyFile from atomic.go, preserving
+		// the source file's mode so directory copies stay permission-faithful.
+		return copyFile(path, target, info.Mode().Perm())
 	})
 }

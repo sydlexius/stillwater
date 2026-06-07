@@ -117,6 +117,7 @@ templ LayoutHead(title string, assets AssetPaths) {
 		<meta charset="UTF-8"/>
 		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 		<title>{ tf(ctx, "layout.page_title", title) }</title>
+		@themeInitScript()
 		<link rel="stylesheet" href={ assets.CSS }/>
 		if assets.DriverCSS != "" {
 			<link rel="stylesheet" href={ assets.DriverCSS }/>
@@ -126,7 +127,6 @@ templ LayoutHead(title string, assets AssetPaths) {
 		<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
 		<link rel="apple-touch-icon" sizes="180x180" href={ assets.BasePath + "/static/img/apple-touch-icon.png" }/>
 		<link rel="manifest" href={ assets.BasePath + "/static/site.webmanifest" }/>
-		@themeInitScript()
 		<script src={ assets.HTMX }></script>
 		// htmx-base-path provides the base path to JavaScript at runtime. The
 		// htmx:configRequest listener uses it to prefix every absolute HTMX
@@ -1012,14 +1012,52 @@ templ tourI18nJSON() {
 	<div id="tour-i18n" hidden data-i18n={ tourStepsJSON(ctx) }></div>
 }
 
-// themeInitScript applies the dark class before first paint to prevent FOUC.
-// Must be placed in <head> before any stylesheets take effect.
+// themeInitScript applies the dark/light class and data-theme attribute before
+// first paint to prevent FOUC (flash of unstyled content). It is positioned
+// before all stylesheets in <head> so Tailwind dark: utilities and CSS custom
+// properties resolve correctly on the very first paint.
+//
+// localStorage is populated by preferences.js on every theme change so
+// subsequent page loads have the user's explicit preference available here.
+// On the very first visit (no localStorage entry), the script falls back to
+// the OS color-scheme preference via matchMedia.
+//
+// localStorage.getItem is wrapped in try/catch because Safari and Firefox in
+// private-browsing mode throw QuotaExceededError on any localStorage access.
+// When it throws we fall back to matchMedia so the page still renders correctly.
+//
+// data-theme is set to the RAW preference value ('dark', 'light', 'system')
+// when one is known, matching the value preferences.js writes via ATTR_MAP.
+// This keeps the attribute consistent across the initial paint and after
+// hydration, preventing a 'dark' -> 'system' flip on first preferences.js run.
+// When no preference is stored the fallback is the resolved value ('dark' or
+// 'light') derived from matchMedia.
+//
+// Middleware was evaluated but rejected: it only benefits the very first
+// request before any JS has run, and adds server complexity that is not
+// justified for that narrow edge case.
 templ themeInitScript() {
 	<script>
 		(function() {
-			var pref = localStorage.getItem('theme');
-			if (pref === 'dark' || (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-				document.documentElement.classList.add('dark');
+			var pref;
+			try { pref = localStorage.getItem('theme'); } catch (e) {}
+			var isDark;
+			if (pref === 'dark') {
+				isDark = true;
+			} else if (pref === 'light') {
+				isDark = false;
+			} else {
+				// 'system', null, or any unrecognized value: follow OS preference.
+				isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+			}
+			document.documentElement.classList.toggle('dark', isDark);
+			// Set data-theme to the raw pref so it stays consistent with the value
+			// preferences.js writes after hydration. Fall back to the resolved value
+			// when no stored preference exists (first visit or private browsing).
+			if (pref === 'dark' || pref === 'light' || pref === 'system') {
+				document.documentElement.setAttribute('data-theme', pref);
+			} else {
+				document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
 			}
 		})();
 	</script>

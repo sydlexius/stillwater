@@ -7,6 +7,11 @@ import (
 	"path/filepath"
 )
 
+// osRename is the rename function used by renameSafe. It defaults to os.Rename
+// and can be overridden in tests to simulate cross-device (EXDEV) errors,
+// following the same injectable-hook pattern used by renameFunc in rename.go.
+var osRename = os.Rename
+
 // WriteFileAtomic writes data to the target path using the tmp/bak/rename pattern.
 // This prevents data corruption if the process is interrupted during the write.
 //
@@ -35,17 +40,17 @@ func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 
 	// Step 2: Backup existing file if it exists
 	if _, err := os.Stat(target); err == nil {
-		if err := renameSafe(target, bakPath); err != nil {
+		if err := renameSafe(target, bakPath, perm); err != nil {
 			_ = os.Remove(tmpPath)
 			return fmt.Errorf("backing up existing file: %w", err)
 		}
 	}
 
 	// Step 3: Move .tmp to target
-	if err := renameSafe(tmpPath, target); err != nil {
+	if err := renameSafe(tmpPath, target, perm); err != nil {
 		// Attempt to restore backup
 		if _, bakErr := os.Stat(bakPath); bakErr == nil {
-			_ = renameSafe(bakPath, target)
+			_ = renameSafe(bakPath, target, perm)
 		}
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp to target: %w", err)
@@ -66,14 +71,16 @@ func WriteReaderAtomic(target string, r io.Reader, perm os.FileMode) error {
 	return WriteFileAtomic(target, data, perm)
 }
 
-// renameSafe attempts os.Rename first, then falls back to copy+delete.
-func renameSafe(oldPath, newPath string) error {
-	err := os.Rename(oldPath, newPath)
+// renameSafe attempts osRename first, then falls back to copy+delete.
+// perm is passed to copyFile so the destination inherits the intended file mode
+// even on the cross-device fallback path (where os.Rename would drop the perm).
+func renameSafe(oldPath, newPath string, perm os.FileMode) error {
+	err := osRename(oldPath, newPath)
 	if err == nil {
 		return nil
 	}
-	// Rename may fail on cross-device moves. Fall back to copy+delete.
-	if copyErr := copyFile(oldPath, newPath); copyErr != nil {
+	// Rename may fail on cross-device moves (EXDEV). Fall back to copy+delete.
+	if copyErr := copyFile(oldPath, newPath, perm); copyErr != nil {
 		return fmt.Errorf("copy fallback: %w (rename error: %w)", copyErr, err)
 	}
 	_ = os.Remove(oldPath)
@@ -119,14 +126,18 @@ func RemoveFileSafe(target string) error {
 }
 
 // copyFile copies a file using io.Copy and flushes with fsync.
-func copyFile(src, dst string) error {
+// perm is applied when creating the destination file so the intended mode
+// is preserved on the cross-device fallback path. Using os.OpenFile with
+// O_WRONLY|O_CREATE|O_TRUNC mirrors what os.Create does, but with the
+// caller-specified mode rather than the default 0666.
+func copyFile(src, dst string, perm os.FileMode) error {
 	in, err := os.Open(src) //nolint:gosec // G304: src is from trusted internal path
 	if err != nil {
 		return err
 	}
 	defer in.Close() //nolint:errcheck // Close error not actionable on read path
 
-	out, err := os.Create(dst) //nolint:gosec // G304: dst is from trusted internal path
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm) //nolint:gosec // G304: dst is from trusted internal path
 	if err != nil {
 		return err
 	}
