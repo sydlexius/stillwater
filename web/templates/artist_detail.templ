@@ -1222,7 +1222,7 @@ templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *c
 		<table class="w-full text-sm table-fixed">
 			<thead>
 				<tr class="border-b border-gray-200 dark:border-gray-700">
-					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">{ t(ctx, "common.field") }</th>
+					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide text-xs w-44">{ t(ctx, "common.field") }</th>
 					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
 					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ platformLabel }</th>
 					<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
@@ -1316,7 +1316,7 @@ templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *c
 
 templ platformStateRow(field, swValue, platValue string, match, bothEmpty, mono bool) {
 	<tr>
-		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ field }</td>
+		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ field }</td>
 		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
 			if swValue != "" {
 				if mono {
