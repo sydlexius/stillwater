@@ -234,6 +234,7 @@ func TestArtistDetailLegend_AdvertisesShortcuts(t *testing.T) {
 	// characters cannot match incidentally elsewhere in the rendered output.
 	for _, want := range []string{
 		`<kbd class="sw-kbd inline-flex">h</kbd>`,
+		`<kbd class="sw-kbd inline-flex">l</kbd>`,
 		`<kbd class="sw-kbd inline-flex">j</kbd>`,
 		`<kbd class="sw-kbd inline-flex">k</kbd>`,
 		`<kbd class="sw-kbd inline-flex">r</kbd>`,
