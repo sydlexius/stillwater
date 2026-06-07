@@ -31,7 +31,7 @@ templ SectionProviders(data ArtistDetailPageData) {
 						<div
 							id={ "platform-state-" + conn.ID }
 							hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s", d.Artist.ID, conn.ID) }
-							hx-trigger="revealed"
+							hx-trigger="intersect once"
 							hx-swap="outerHTML"
 						>
 							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
@@ -103,7 +103,7 @@ templ SectionDebug(data ArtistDetailPageData) {
 					<div
 						id={ "debug-platform-state-" + conn.ID }
 						hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", d.Artist.ID, conn.ID) }
-						hx-trigger="revealed"
+						hx-trigger="intersect once"
 						hx-swap="outerHTML"
 					>
 						<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">

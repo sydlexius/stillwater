@@ -57,6 +57,9 @@
   }
 
   // loadBody lazily fetches the reused editor fragment for the active kind.
+  // A scoped htmx:responseError listener (below) renders an inline error state
+  // on non-2xx so a 404 (deleted artist), 500, or session-expiry redirect does
+  // not leave the modal body silently empty.
   function loadBody() {
     var id = artistID();
     if (!id || typeof window.htmx === "undefined") return;
@@ -72,6 +75,11 @@
   // refreshRevert toggles the Revert affordance based on whether a one-deep
   // backup exists for the active kind. Fanart (multi-slot) never reports a
   // single-slot backup, so Revert stays hidden there.
+  //
+  // A request failure (401/403/500/network) is NOT treated as "no backup": we
+  // log a warning and leave the prior Revert state so the affordance survives
+  // a transient error. Only a clean 200 + backup_exists=false legitimately
+  // hides Revert. This mirrors doRevert's own guard (see its comment below).
   function refreshRevert() {
     var row = document.getElementById("artwork-revert-row");
     if (!row) return;
@@ -87,17 +95,24 @@
       { credentials: "same-origin", headers: { "HX-Request": "false" } },
     )
       .then(function (r) {
-        return r.ok ? r.json() : null;
+        if (!r.ok) {
+          // Request failed: log and leave the prior Revert state for retry.
+          console.warn("artwork revert info failed: HTTP " + r.status);
+          return undefined; // signals the next handler to skip state change
+        }
+        return r.json();
       })
       .then(function (info) {
+        if (info === undefined) return; // request failed: leave prior state
         if (info && info.backup_exists) {
           row.classList.remove("hidden");
         } else {
           row.classList.add("hidden");
         }
       })
-      .catch(function () {
-        row.classList.add("hidden");
+      .catch(function (err) {
+        // Network error: log but leave prior Revert state so the user can retry.
+        console.warn("artwork revert info network error: " + (err && err.message));
       });
   }
 
@@ -275,5 +290,26 @@
       /* non-JSON 409: show the generic paused copy */
     }
     showGateBanner(reason);
+  });
+
+  // Body-load error surfacing (H2): if the lazy GET for the editor fragment
+  // fails (404 = artist deleted in another tab, 500, session-expiry redirect),
+  // htmx skips the swap and the body stays empty/stale with no feedback.
+  // Render an inline error state instead. 409 is excluded: the gate-banner
+  // listener above already handles that case for writes; the body GET never
+  // returns 409.
+  document.addEventListener("htmx:responseError", function (e) {
+    var xhr = e.detail && e.detail.xhr;
+    if (!xhr || xhr.status === 409) return;
+    var b = document.getElementById("artwork-modal-body");
+    if (!b) return;
+    var tgt = e.detail.target || e.target;
+    if (tgt !== b && !b.contains(tgt)) return;
+    b.innerHTML =
+      '<p class="text-sm text-red-500 py-6 text-center" role="alert">' +
+      "Failed to load the editor (HTTP " +
+      xhr.status +
+      "). Reload the page and try again." +
+      "</p>";
   });
 })();

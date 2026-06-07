@@ -306,16 +306,36 @@
       },
     )
       .then(function (r) {
-        if (r.ok) {
-          window.location.reload();
+        if (!r.ok) {
+          alert(
+            (bar && bar.dataset.toastSaveFailed) ||
+              "Failed to save selected images. Please try again.",
+          );
+          // Restore the "N selected" label so the bar is not stuck on "Saving...".
+          refreshBulkBar(container);
           return;
         }
-        alert(
-          (bar && bar.dataset.toastSaveFailed) ||
-            "Failed to save selected images. Please try again.",
-        );
-        // Restore the "N selected" label so the bar is not stuck on "Saving...".
-        refreshBulkBar(container);
+        // The fetch-batch endpoint returns per-item results:
+        //   { saved: [...filenames], errors: [...messages] }
+        // Surface "saved N of M" when some URLs failed so partial success is
+        // not masked by an unconditional reload. Fall back to reload if the
+        // body cannot be parsed (e.g. 204 from an HTMX caller path).
+        r.json()
+          .then(function (result) {
+            var saved = (result && result.saved && result.saved.length) || 0;
+            var errors = (result && result.errors && result.errors.length) || 0;
+            var total = saved + errors;
+            if (errors > 0 && total > 0) {
+              var tpl =
+                (bar && bar.dataset.toastSavePartial) ||
+                "Saved {saved} of {total} images. Some could not be fetched.";
+              alert(tpl.replace("{saved}", saved).replace("{total}", total));
+            }
+            window.location.reload();
+          })
+          .catch(function () {
+            window.location.reload();
+          });
       })
       .catch(function (err) {
         // A rejected fetch (network error) would otherwise leave the bar frozen

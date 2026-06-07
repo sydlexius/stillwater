@@ -195,6 +195,31 @@ func TestHandleNextArtistDetailPage_NotFound(t *testing.T) {
 	}
 }
 
+// TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin closes the authz
+// boundary on the editor fragment: a request without a user ID in context must
+// render the login page, not the artwork editor. This covers the 12.5% of
+// handleNextArtworkModal that the unauthenticated arm previously had no test for.
+func TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Auth Gate Artist")
+
+	// Build a request with NO user ID in context (empty context = unauthenticated).
+	req := httptest.NewRequest(http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleNextArtworkModal(w, req)
+
+	body := w.Body.String()
+	// The login page must be rendered, not the artwork editor fragment.
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Errorf("unauthenticated request must render the login page; auth/login form absent")
+	}
+	if strings.Contains(body, "artwork-modal-body") {
+		t.Errorf("unauthenticated request must not render the artwork editor body")
+	}
+}
+
 // seedConn creates a connection of the given type, links the platform artist ID,
 // and returns the connection id. It is shared by 4C integration tests.
 func seedConn(t *testing.T, r *Router, artistSvc *artist.Service, artistID, connID, connType string) {
@@ -248,8 +273,10 @@ func TestNextArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
 			t.Errorf("platform-state hx-get for %s not present", connID)
 		}
 	}
-	if !strings.Contains(body, `hx-trigger="revealed"`) {
-		t.Errorf("platform-state mounts must use hx-trigger=revealed")
+	// Providers use intersect once (safer than revealed: a section visible on
+	// load fires reliably even before scroll). Changed from revealed (L2 fix).
+	if !strings.Contains(body, `hx-trigger="intersect once"`) {
+		t.Errorf("platform-state mounts must use hx-trigger=intersect once")
 	}
 }
 

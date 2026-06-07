@@ -43,10 +43,12 @@ func TestSectionProviders_RendersLazyPlatformMounts(t *testing.T) {
 	}
 
 	// Emby connection: lazy-load placeholder with correct hx-get.
+	// intersect once is used instead of revealed (L2 fix: safer on single-scroll
+	// pages where the section may be visible on load before scroll).
 	for _, want := range []string{
 		`id="platform-state-conn-emby"`,
 		`hx-get="/api/v1/artists/art-1/platform-state?connection_id=conn-emby"`,
-		`hx-trigger="revealed"`,
+		`hx-trigger="intersect once"`,
 		`hx-swap="outerHTML"`,
 	} {
 		if !strings.Contains(out, want) {
@@ -157,7 +159,8 @@ func TestSectionDebug_GatingAndContent(t *testing.T) {
 			`id="debug-platform-state-conn-emby"`,
 			// HTML attribute encoding: & becomes &amp; in the output.
 			`connection_id=conn-emby&amp;readonly=true`,
-			`hx-trigger="revealed"`,
+			// intersect once is used instead of revealed (L2 fix).
+			`hx-trigger="intersect once"`,
 			`hx-swap="outerHTML"`,
 		} {
 			if !strings.Contains(out, want) {

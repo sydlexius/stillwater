@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -68,8 +69,11 @@ func artworkKindToType(kind string) string {
 // handleNextArtworkModal renders the reusable image editor (ArtworkManageEditor)
 // as a fragment for the next/ in-page Manage-artwork modal, scoped to the
 // requested kind. It reuses the same ImageSearchData the stable image page
-// builds (handleArtistImagesPage), so the modal carries every capability of the
-// retired Fetch Images page. The modal shell lazy-loads this per active kind.
+// builds (handleArtistImagesPage). The modal supersedes the stable
+// /artists/{id}/images page for the next/ channel; that route remains
+// registered. Capability deltas vs the stable page: this handler hardcodes
+// AutoCrop:false and SelectedIndex:-1 (the modal does not pre-select a slot).
+// The modal shell lazy-loads this fragment per active kind.
 func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
@@ -80,15 +84,35 @@ func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request
 	id := req.PathValue("id")
 	a, err := r.artistService.GetByID(req.Context(), id)
 	if err != nil {
-		http.Error(w, "artist not found", http.StatusNotFound)
+		if errors.Is(err, artist.ErrNotFound) {
+			http.Error(w, "artist not found", http.StatusNotFound)
+			return
+		}
+		r.logger.Error("handleNextArtworkModal: GetByID", "artist_id", id, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	selectedType := artworkKindToType(req.URL.Query().Get("kind"))
+	// Validate the kind param: only the four modal kinds are legal. An unknown
+	// kind defaults to "primary" rather than silently mapping to "thumb" through
+	// artworkKindToType's default branch (defensive against future kind-set growth).
+	kind := req.URL.Query().Get("kind")
+	switch kind {
+	case "primary", "logo", "banner", "backdrops":
+		// valid
+	default:
+		kind = "primary"
+	}
+	selectedType := artworkKindToType(kind)
 
 	var webSearchEnabled bool
 	if r.providerSettings != nil {
-		webSearchEnabled, _ = r.providerSettings.AnyWebSearchEnabled(req.Context())
+		var wsErr error
+		webSearchEnabled, wsErr = r.providerSettings.AnyWebSearchEnabled(req.Context())
+		if wsErr != nil {
+			r.logger.Warn("handleNextArtworkModal: AnyWebSearchEnabled", "error", wsErr)
+			// webSearchEnabled stays false: degraded but non-fatal
+		}
 	}
 	autoFetch := r.getUserBoolPreference(req.Context(), PrefAutoFetchImages, r.getBoolSetting(req.Context(), "auto_fetch_images", false))
 

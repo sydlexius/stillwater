@@ -73,12 +73,32 @@
           // Let the original htmx lock flow run now that the value is saved.
           toggle.dataset.swLockProceed = "1";
           toggle.click();
-        } else {
-          alert(
-            toggle.getAttribute("data-error") ||
-              "Saving the field before locking failed; your change was not saved.",
-          );
+          return;
         }
+        // Surface different failure causes: a 409 conflict-gate response (the
+        // value save was blocked) vs a server error vs a validation rejection.
+        // Mirroring doRevert's status branching in artwork-modal.js.
+        if (r.status === 409) {
+          alert(
+            toggle.getAttribute("data-error-conflict") ||
+              toggle.getAttribute("data-error") ||
+              "Another operation is in progress. Wait for it to complete, then try again.",
+          );
+          return;
+        }
+        if (r.status >= 500) {
+          alert(
+            toggle.getAttribute("data-error-server") ||
+              toggle.getAttribute("data-error") ||
+              "A server error prevented saving; your change was not saved. Try again shortly.",
+          );
+          return;
+        }
+        // 400/422 and other client errors: the field value itself was rejected.
+        alert(
+          toggle.getAttribute("data-error") ||
+            "Saving the field before locking failed; your change was not saved.",
+        );
       })
       .catch(function () {
         alert(

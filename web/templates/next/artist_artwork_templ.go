@@ -291,7 +291,7 @@ func artworkIdentityTile(artistID string, kind string, exists bool, w int, h int
 			return templ_7745c5c3_Err
 		}
 		if exists {
-			var templ_7745c5c3_Var11 = []any{"sw-artwork-id-frame relative inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500",
+			var templ_7745c5c3_Var11 = []any{"relative inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500",
 				templ.KV("sw-artwork-checker", kind == "logo"),
 				templ.KV("bg-gray-100 dark:bg-gray-900", kind != "logo"),
 			}
@@ -568,9 +568,9 @@ func artworkSeverityDotClass(severity string) string {
 // ...), so each index 0..fanartCount-1 has a /images/fanart/{i}/file. The grid is
 // the fanart-manage.js contract (data-sw-fanart-gallery + .fanart-cb multi-select
 // batch-delete + [data-set-primary-index] star). When there are no slots, it
-// shows an add-state opening the modal's Backdrops kind. The next/ surface
-// intentionally omits the per-slot sync-state badges that the stable channel
-// shows (maintainer: not part of the next/ UX).
+// shows an add-state opening the modal's Backdrops kind. The next/ surface omits
+// the per-slot sync-state badges that the stable channel previously showed; the
+// fanart-sync-state subsystem was removed in M55 #1336 (both channels).
 func artworkBackdropsCarousel(artistID string, fanartCount int) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -827,7 +827,7 @@ func artworkBackdropTile(artistID string, index int, total int) templ.Component 
 		}
 		ctx = templ.ClearChildren(ctx)
 		fileURL := fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, index)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<div class=\"sw-artwork-bd-tile relative inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group bg-gray-100 dark:bg-gray-900\"><input type=\"checkbox\" class=\"fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<div class=\"relative inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group bg-gray-100 dark:bg-gray-900\"><input type=\"checkbox\" class=\"fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

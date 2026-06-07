@@ -6,13 +6,13 @@ import (
 )
 
 // ArtworkModal is the in-page "Manage artwork" modal (M55 #1336, 4B) that
-// replaces the retired /artists/{id}/images "Fetch Images" pages. It is rendered
-// once on the artist-detail page (hidden by default); data-sw-artwork-open
-// triggers anywhere on the page open it (artwork-modal.js) pre-selected to a
-// kind. A kind switcher (Primary / Logo / Banner / Backdrops) swaps the active
-// kind WITHOUT closing the modal: the body lazy-loads the reused
-// ArtworkManageEditor fragment (every capability of the old page) for that kind
-// from GET /next/artists/{id}/artwork-modal?kind=. The modal also surfaces the
+// supersedes the /artists/{id}/images "Fetch Images" page for the next/ channel
+// (that route remains registered). It is rendered once on the artist-detail page
+// (hidden by default); data-sw-artwork-open triggers anywhere on the page open it
+// (artwork-modal.js) pre-selected to a kind. A kind switcher (Primary / Logo /
+// Banner / Backdrops) swaps the active kind WITHOUT closing the modal: the body
+// lazy-loads the reused ArtworkManageEditor fragment for that kind from
+// GET /next/artists/{id}/artwork-modal?kind=. The modal also surfaces the
 // per-connection reconciliation status, a Revert-to-original affordance
 // (consumes #1837; shown only when a backup exists), and an in-modal conflict
 // gate banner for structured 409 responses.
