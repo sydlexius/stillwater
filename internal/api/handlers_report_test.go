@@ -1359,4 +1359,12 @@ func TestHandleReportCompliance_QueryParamOverridesPref(t *testing.T) {
 	if int(pageSize) != 12 {
 		t.Errorf("expected page_size=12 from query param override, got %d", int(pageSize))
 	}
+
+	rows, ok := resp["rows"].([]any)
+	if !ok {
+		t.Fatalf("rows not present or not an array in response")
+	}
+	if len(rows) > 12 {
+		t.Errorf("expected at most 12 rows with query param override, got %d", len(rows))
+	}
 }
