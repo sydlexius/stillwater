@@ -1990,12 +1990,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   border-radius: 4px;
 }
 
-/* Row/cell typography (M55 #1335): match the prototype's denser type scale
- * (design/styles.css ~13px rows, 500-weight names, muted uppercase headers).
- * The header h1 (22/600/-0.02em) already matches inline; this tunes the table
- * body + cell tiers that were left at v1 defaults. */
+/* Row/cell typography (M55 #1335, updated #1853): table body and header use
+ * the pref-aware --sw-type-* tokens so the Font Size preference rescales them.
+ * The 13px body and 11px eyebrow snap to the nearest Tailwind step (text-sm /
+ * text-xs = 0.875rem / 0.75rem); tracking on the eyebrow uses the shared
+ * --sw-type-track-label (0.05em) that matches the dashboard's label chip. */
 .sw-next-artists tbody td {
-  font-size: 13px;
+  font-size: var(--sw-type-value);
   line-height: 1.35;
 }
 .sw-next-artists td[data-col="name"] {
@@ -2003,10 +2004,10 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   letter-spacing: -0.01em;
 }
 .sw-next-artists thead th {
-  font-size: 11px;
+  font-size: var(--sw-type-label);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--sw-type-track-label);
 }
 
 /* Keyboard-hint badges (M55 #1335): the prototype surfaces shortcut keys as
@@ -2020,9 +2021,11 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   isolation: isolate;
   /* Route the keycap glyph through the mono Font Family pref seam (matches the
    * activity-rail timestamps), so a user-picked mono applies here too. Defaults
-   * to JetBrains Mono -> the same system-mono stack this used before. */
+   * to JetBrains Mono -> the same system-mono stack this used before. The size
+   * token is defined on both .sw-next-artists and .sw-next-dashboard so the
+   * Font Size pref rescales both scopes through the one rem value (#1853). */
   font-family: var(--sw-font-mono);
-  font-size: 11px;
+  font-size: var(--sw-type-mono);
   line-height: 1;
   padding: 2px 6px;
   color: #64748b;
@@ -2067,8 +2070,11 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.75rem;
-  font-size: 12px;
-  /* slate-500: AA-legible for 12px copy on the light theme's white surface.
+  /* --sw-type-meta is defined on both .sw-next-artists and .sw-next-dashboard
+   * (0.75rem each) so the Font Size pref rescales the tip line on both screens
+   * through the root font-size (#1853). */
+  font-size: var(--sw-type-meta);
+  /* slate-500: AA-legible for text-xs copy on the light theme's white surface.
    * The lighter slate-400 used here before was too faint at this size. The
    * dark-theme override below restores slate-400, which reads correctly on the
    * dark surface. Shared with the next/ artists screen (intended). */
@@ -2165,6 +2171,25 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 .dark .sw-next-artists .sw-next-bulk-strip {
   background: var(--swa-surface-elev);
+}
+
+/* Pref-aware type-scale tokens (M55 #1853, artists half): one rem-based ramp
+ * the artists screen consumes in place of its hard-coded px font-sizes (table
+ * body rows, thead eyebrow, kbd chips, tip line). Sizes are rem so the Font
+ * Size preference (which sets the root font-size to 13/14/16px) scales the
+ * whole ramp; the family roles bind to --sw-font-sans / --sw-font-mono -- the
+ * same pickable-fonts seam the dashboard and artist-detail screens use. Values
+ * mirror the dashboard --sw-type-* ramp so all three next/ screens share one
+ * scale (section/value 0.875rem = text-sm, label/meta/mono 0.75rem = text-xs).
+ * --sw-type-track-label matches the dashboard's 0.05em so the uppercase eyebrow
+ * (thead th) and the dashboard's label chip use one tracking value, not two.
+ * Scoped to .sw-next-artists; dashboard keeps its own block above. */
+.sw-next-artists {
+  --sw-type-value: 0.875rem;   /* table body row text (13px -> text-sm) */
+  --sw-type-label: 0.75rem;    /* thead th uppercase eyebrow (11px -> text-xs) */
+  --sw-type-meta: 0.75rem;     /* tip-line prose (.sw-list-tips) */
+  --sw-type-mono: 0.75rem;     /* kbd chip glyph (.sw-kbd, mono family) */
+  --sw-type-track-label: 0.05em;
 }
 
 /* =====================================================================
