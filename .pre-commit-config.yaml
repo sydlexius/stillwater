@@ -2,10 +2,16 @@
 # pre-commit framework (https://pre-commit.com). The canonical hook
 # wired via `core.hooksPath = .githooks` is `.githooks/pre-commit`,
 # which mirrors these checks in plain bash and is what CI expects.
-# Tool version pins below should stay in sync with the canonical hook and CI
-# (the tracked tools: markdownlint-cli2, golangci-lint, typos, and Tailwind).
-# scripts/check-tool-versions.sh asserts these agree across all entrypoints
-# and runs in the pre-push gate, so a drift here fails before push.
+#
+# The lint/spell tools that CI and the canonical hook already run
+# (golangci-lint, crate-ci/typos, markdownlint-cli2) are intentionally NOT
+# duplicated here. Their `rev:` pins used to live in this file as a redundant
+# second copy, but Dependabot's github-actions ecosystem could never sync them
+# (Dependabot has no pre-commit ecosystem), so every tool bump landed as a
+# tool-version-drift gate failure and stalled the auto-merge pipeline. Those
+# tools are enforced by .githooks/pre-commit and CI instead; only generic file
+# hygiene, secret/action linting, conventional commits, and the repo-local
+# generate hooks remain here.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -24,34 +30,15 @@ repos:
         args: ["--maxkb=500"]
       - id: check-merge-conflict
 
-  - repo: https://github.com/crate-ci/typos
-    # Keep in sync with .github/workflows/docs.yml (crate-ci/typos SHA pin).
-    # Dependabot bumps the docs.yml pin; run `make sync-tool-versions` to mirror
-    # the new version here (Dependabot cannot edit pre-commit rev: pins itself).
-    rev: v1.47.0
-    hooks:
-      - id: typos
-
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0
     hooks:
       - id: gitleaks
 
-  - repo: https://github.com/golangci/golangci-lint
-    # rev must match the version pinned in .github/workflows/ci.yml's golangci-lint-action step to prevent cross-version //nolint drift; see #1560
-    rev: v2.12.2
-    hooks:
-      - id: golangci-lint
-
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
       - id: actionlint
-
-  - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.22.1
-    hooks:
-      - id: markdownlint-cli2
 
   - repo: local
     hooks:
