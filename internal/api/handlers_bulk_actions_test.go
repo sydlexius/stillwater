@@ -707,10 +707,11 @@ func TestRunBulkAction_StartEmit(t *testing.T) {
 		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
 	}
 	waitBulkActionCompleted(t, r)
-	// Allow the terminal publish to drain through the bus's worker.
-	time.Sleep(50 * time.Millisecond)
-
-	evts := rec.snapshot()
+	// Poll for the terminal publish to drain through the bus's worker
+	// instead of racing a fixed sleep (flaky under load, #1908).
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		return len(evts) > 0 && evts[len(evts)-1].Data["status"] == "completed"
+	}, "terminal completed event")
 	if len(evts) < 2 {
 		t.Fatalf("emitted events = %d, want at least 2 (start + terminal); got %+v", len(evts), evts)
 	}
@@ -769,8 +770,18 @@ func TestRunBulkAction_ThrottleBoundaries(t *testing.T) {
 				t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
 			}
 			waitBulkActionCompleted(t, r)
-			time.Sleep(100 * time.Millisecond)
-			got := extractProcessedIndices(rec.snapshot())
+			// Poll for a terminal event rather than racing a fixed sleep (#1908).
+			evts := rec.waitUntil(t, func(evts []event.Event) bool {
+				if len(evts) == 0 {
+					return false
+				}
+				switch evts[len(evts)-1].Data["status"] {
+				case "completed", "failed", "canceled":
+					return true
+				}
+				return false
+			}, "terminal event")
+			got := extractProcessedIndices(evts)
 			if !equalInts(got, tc.want) {
 				t.Errorf("running indices = %v, want %v", got, tc.want)
 			}
@@ -806,8 +817,10 @@ func TestRunBulkAction_TerminalCompleted(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.handleBulkAction(w, req)
 	waitBulkActionCompleted(t, r)
-	time.Sleep(50 * time.Millisecond)
-	evts := rec.snapshot()
+	// Poll for the terminal event rather than racing a fixed sleep (#1908).
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		return len(evts) > 0 && evts[len(evts)-1].Data["status"] == "completed"
+	}, "terminal completed event")
 	last := evts[len(evts)-1]
 	if last.Data["status"] != "completed" {
 		t.Errorf("terminal status = %v, want completed; events=%+v", last.Data["status"], evts)
@@ -837,8 +850,10 @@ func TestRunBulkAction_TerminalFailed(t *testing.T) {
 	// The progress reaches Status=completed even when every per-artist
 	// run failed (the goroutine fully processed every ID). Wait on that.
 	waitBulkActionCompleted(t, r)
-	time.Sleep(50 * time.Millisecond)
-	evts := rec.snapshot()
+	// Poll for the terminal event rather than racing a fixed sleep (#1908).
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		return len(evts) > 0 && evts[len(evts)-1].Data["status"] == "failed"
+	}, "terminal failed event")
 	last := evts[len(evts)-1]
 	if last.Data["status"] != "failed" {
 		t.Errorf("terminal status = %v, want failed; events=%+v", last.Data["status"], evts)
@@ -938,11 +953,12 @@ func TestRunBulkAction_TerminalCanceledWithFailures(t *testing.T) {
 		t.Errorf("progress.Failed = %d, want >= 1 (first artist failed before cancel)", failed)
 	}
 
-	time.Sleep(100 * time.Millisecond)
-	evts := rec.snapshot()
-	if len(evts) == 0 {
-		t.Fatal("no events recorded")
-	}
+	// Poll for the terminal canceled event rather than racing a fixed sleep:
+	// the in-memory Status flips to canceled slightly before the terminal SSE
+	// event is published and recorded, so a fixed wait flaked under load (#1908).
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		return len(evts) > 0 && evts[len(evts)-1].Data["status"] == "canceled"
+	}, "terminal canceled event")
 	last := evts[len(evts)-1]
 	if last.Data["status"] != "canceled" {
 		t.Errorf("terminal event status = %v, want canceled (cancel supersedes failed); events=%+v", last.Data["status"], evts)
