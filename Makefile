@@ -120,10 +120,10 @@ docker-stop:
 check-openapi:
 	go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 
-## sync-tool-versions: Mirror CI-side tool versions into the pins Dependabot cannot edit
-##   Use after a Dependabot tool bump (e.g. crate-ci/typos) drifts the Tool Version
-##   Drift gate: this rewrites the .pre-commit-config.yaml rev: (and Dockerfile
-##   TAILWIND_VERSION) to match the CI/source side. Review and commit the result.
+## sync-tool-versions: Mirror the CI-side Tailwind version into the Dockerfile pin
+##   Use when the Tool Version Drift gate reports the setup-tailwind action and
+##   build/docker/Dockerfile TAILWIND_VERSION disagree: this rewrites the
+##   Dockerfile pin to match the action. Review and commit the result.
 sync-tool-versions:
 	@./scripts/check-tool-versions.sh --fix
 
