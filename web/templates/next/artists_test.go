@@ -438,6 +438,58 @@ func TestArtistsTable_SharedNextPaginationAndRovingBoundary(t *testing.T) {
 	}
 }
 
+// TestArtistsTable_ArtistLinkTargetsNextRoute verifies that artist name links in
+// the next/ table row resolve to /next/artists/<id> and not the stable /artists/<id>
+// route (M55 #1888 regression guard).
+func TestArtistsTable_ArtistLinkTargetsNextRoute(t *testing.T) {
+	t.Parallel()
+	data := templates.ArtistListData{
+		Artists: []artist.Artist{{ID: "art-42", Name: "Test Artist"}},
+		Pagination: components.PaginationData{
+			CurrentPage: 1, TotalPages: 1, PageSize: 50, TotalItems: 1,
+			BaseURL: "/next/artists", View: "table",
+		},
+		View: "table",
+	}
+	var buf bytes.Buffer
+	if err := ArtistsTable(data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `href="/next/artists/art-42"`) {
+		t.Errorf("table row link must target /next/artists/<id>, not the stable route")
+	}
+	if strings.Contains(out, `href="/artists/art-42"`) {
+		t.Errorf("table row must not leak to the stable /artists/<id> route")
+	}
+}
+
+// TestArtistsGrid_ArtistLinkTargetsNextRoute verifies that artist card links in
+// the next/ grid resolve to /next/artists/<id> and not the stable /artists/<id>
+// route (M55 #1888 regression guard).
+func TestArtistsGrid_ArtistLinkTargetsNextRoute(t *testing.T) {
+	t.Parallel()
+	data := templates.ArtistListData{
+		Artists: []artist.Artist{{ID: "art-99", Name: "Grid Artist"}},
+		Pagination: components.PaginationData{
+			CurrentPage: 1, TotalPages: 1, PageSize: 50, TotalItems: 1,
+			BaseURL: "/next/artists", View: "grid",
+		},
+		View: "grid",
+	}
+	var buf bytes.Buffer
+	if err := ArtistsGrid(data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `href="/next/artists/art-99"`) {
+		t.Errorf("grid card link must target /next/artists/<id>, not the stable route")
+	}
+	if strings.Contains(out, `href="/artists/art-99"`) {
+		t.Errorf("grid card must not leak to the stable /artists/<id> route")
+	}
+}
+
 // TestArtistsPage_NoControlPinnedKeycaps verifies step 4 of M55 #1791: the
 // inline "/" keycap pinned in the search box and the "f" keycap on the filter
 // button are removed (matching the next/ dashboard; the #1789 registry owns the
