@@ -326,6 +326,11 @@ func (r *Router) handleFieldHistoryFragment(w http.ResponseWriter, req *http.Req
 	artistID := req.PathValue("id")
 	field := req.PathValue("field")
 
+	if !artist.IsEditableField(field) {
+		writeError(w, req, http.StatusBadRequest, "unknown or non-editable field: "+field)
+		return
+	}
+
 	if _, err := r.artistService.GetByID(req.Context(), artistID); err != nil {
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return

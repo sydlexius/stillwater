@@ -307,6 +307,23 @@ func TestHandleFieldHistoryFragment_Returns404ForUnknownArtist(t *testing.T) {
 	}
 }
 
+// TestHandleFieldHistoryFragment_Returns400ForInvalidField verifies that the
+// fragment endpoint returns 400 when the requested field is not a known
+// editable field (IsEditableField gate). This prevents authenticated users
+// from probing metadata_changes for arbitrary internal columns.
+func TestHandleFieldHistoryFragment_Returns400ForInvalidField(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+
+	req := makeFieldHistoryFragmentRequest(t, "any-artist-id", "library_id")
+	w := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for non-editable field, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestHandleFieldHistoryFragment_DegradedWhenHistoryErrors verifies that the
 // fragment endpoint renders an empty list (no items, no 500) when the history
 // service fails, preserving the graceful-degrade contract.
