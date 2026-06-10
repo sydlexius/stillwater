@@ -42,7 +42,6 @@ func TestUXMiddleware_HeaderAndContext(t *testing.T) {
 		want   UXChannel
 	}{
 		{"stable mode stable path", "stable", "", "/dashboard", UXStable},
-		{"stable mode next path still stable (preview off)", "stable", "", "/next/dashboard", UXStable},
 		{"dual no cookie stable path", "dual", "", "/dashboard", UXStable},
 		{"dual next-path forces next", "dual", "", "/next/dashboard", UXNext},
 		{"dual cookie next on stable path", "dual", "next", "/dashboard", UXNext},
@@ -68,6 +67,60 @@ func TestUXMiddleware_HeaderAndContext(t *testing.T) {
 			}
 			if gotCtx != tt.want {
 				t.Errorf("UXChannelFromContext = %q, want %q", gotCtx, tt.want)
+			}
+		})
+	}
+}
+
+// TestUXMiddleware_NextLane404InStableMode verifies that /next/* paths return
+// 404 when the lane is disabled (stable mode), and pass through in next/dual
+// modes. The base-path variant is also covered.
+func TestUXMiddleware_NextLane404InStableMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       string
+		basePath   string
+		path       string
+		wantStatus int
+		wantNext   bool // true when the downstream handler should be reached
+	}{
+		// stable mode: all /next/* variants must 404
+		{"stable /next/ root", "stable", "", "/next/", http.StatusNotFound, false},
+		{"stable /next exact", "stable", "", "/next", http.StatusNotFound, false},
+		{"stable /next/artists", "stable", "", "/next/artists", http.StatusNotFound, false},
+		{"stable /next/dashboard", "stable", "", "/next/dashboard", http.StatusNotFound, false},
+		{"stable /next/preferences-drawer", "stable", "", "/next/preferences-drawer", http.StatusNotFound, false},
+		// stable mode: non-next paths still pass through
+		{"stable /dashboard passes through", "stable", "", "/dashboard", http.StatusOK, true},
+		// next mode: /next/* must pass through (lane enabled)
+		{"next /next/artists passes through", "next", "", "/next/artists", http.StatusOK, true},
+		{"next /next/dashboard passes through", "next", "", "/next/dashboard", http.StatusOK, true},
+		// dual mode: /next/* must pass through (lane enabled)
+		{"dual /next/artists passes through", "dual", "", "/next/artists", http.StatusOK, true},
+		// base-path variant: stable mode with a deployment prefix
+		{"stable basepath /next/artists", "stable", "/stillwater", "/stillwater/next/artists", http.StatusNotFound, false},
+		{"stable basepath /next exact", "stable", "/stillwater", "/stillwater/next", http.StatusNotFound, false},
+		// base-path, non-next paths still pass through
+		{"stable basepath /stillwater/dashboard passes through", "stable", "/stillwater", "/stillwater/dashboard", http.StatusOK, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handlerReached := false
+			downstream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handlerReached = true
+				w.WriteHeader(http.StatusOK)
+			})
+			h := UX(tt.mode, tt.basePath)(downstream)
+
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if handlerReached != tt.wantNext {
+				t.Errorf("downstream reached = %v, want %v", handlerReached, tt.wantNext)
 			}
 		})
 	}

@@ -15,7 +15,7 @@ import (
 // request pattern.
 func prefsPageRequest(t *testing.T, r *Router, userID string) *httptest.ResponseRecorder {
 	t.Helper()
-	ctx := context.Background()
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
 	if userID != "" {
 		ctx = middleware.WithTestUserID(ctx, userID)
 	}
@@ -29,7 +29,7 @@ func prefsPageRequest(t *testing.T, r *Router, userID string) *httptest.Response
 // handler.
 func prefsDrawerRequest(t *testing.T, r *Router, userID string) *httptest.ResponseRecorder {
 	t.Helper()
-	ctx := context.Background()
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
 	if userID != "" {
 		ctx = middleware.WithTestUserID(ctx, userID)
 	}

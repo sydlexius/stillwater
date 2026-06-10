@@ -173,7 +173,8 @@ func TestHandleNextArtworkModal_RendersEditorPerKind(t *testing.T) {
 	r, artistSvc := artworkTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Modal Editor")
 
-	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
 	req.SetPathValue("id", id)
 	w := httptest.NewRecorder()
@@ -203,7 +204,8 @@ func TestHandleNextArtworkModal_RendersEditorPerKind(t *testing.T) {
 func TestHandleNextArtworkModal_UnknownArtist(t *testing.T) {
 	t.Parallel()
 	r, _ := artworkTestRouter(t)
-	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/nope/artwork-modal?kind=primary", nil)
 	req.SetPathValue("id", "nope")
 	w := httptest.NewRecorder()

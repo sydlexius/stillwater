@@ -75,6 +75,10 @@ func artworkKindToType(kind string) string {
 // AutoCrop:false and SelectedIndex:-1 (the modal does not pre-select a slot).
 // The modal shell lazy-loads this fragment per active kind.
 func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request) {
+	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
+		http.NotFound(w, req)
+		return
+	}
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
 		r.renderLoginPage(w, req)
