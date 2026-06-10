@@ -219,6 +219,25 @@ func TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
 	}
 }
 
+// TestHandleNextArtworkModal_StableChannel404 verifies the Phase 2 channel guard:
+// when UXStable is in context the modal returns 404 immediately.
+func TestHandleNextArtworkModal_StableChannel404(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Channel Gate Artist")
+
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleNextArtworkModal(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("stable channel: status = %d, want 404", w.Code)
+	}
+}
+
 // seedConn creates a connection of the given type, links the platform artist ID,
 // and returns the connection id. It is shared by 4C integration tests.
 func seedConn(t *testing.T, r *Router, artistSvc *artist.Service, artistID, connID, connType string) {

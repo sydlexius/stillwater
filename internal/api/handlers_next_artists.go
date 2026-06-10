@@ -11,11 +11,16 @@ import (
 // the resolved UI channel is "next" it renders the next.ArtistsPage shell; for
 // an HTMX request it renders the next/ table/grid fragment. The toolbar's
 // hx-get and the shared sort/selection JS resolve to /next/artists (channel-aware),
-// so swaps render the next-specific table rather than the stable one (#1335). When the
-// channel is "stable" (the lane is off, or a sw_ux=stable cookie opted the user
-// back) it delegates to the stable handleArtistsPage so the /next/artists path
-// never dead-ends (decision 12). The data assembly is shared via
-// buildArtistListData, so both channels render the identical data set.
+// so swaps render the next-specific table rather than the stable one (#1335).
+//
+// In stable mode (SW_UX=stable) the UX middleware 404s any /next/* request
+// before this handler runs (decision 12 in architecture-decisions.md). The
+// in-handler channel guard below is therefore only reachable when the lane IS
+// enabled (next/dual mode) and the resolved channel is not "next" -- which
+// happens when a user sent an explicit X-Stillwater-UX: stable header. In that
+// case it delegates to the stable handleArtistsPage so the path never
+// dead-ends. The data assembly is shared via buildArtistListData, so both
+// channels render the identical data set.
 //
 // Unlike the generic /next/{path...} fallback, this screen has a dedicated
 // stable handler, so the stable branch calls it directly rather than going

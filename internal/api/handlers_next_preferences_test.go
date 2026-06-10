@@ -114,6 +114,41 @@ func TestHandleNextPreferencesPage_RendersStandalonePage(t *testing.T) {
 	}
 }
 
+// TestHandleNextPreferencesPage_StableChannel404 verifies the Phase 2 channel
+// guard: when UXStable is in context (lane disabled or user opted back) the
+// handler returns 404 immediately without touching the DB or rendering content.
+func TestHandleNextPreferencesPage_StableChannel404(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/preferences", nil)
+	w := httptest.NewRecorder()
+	r.handleNextPreferencesPage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("stable channel: status = %d, want 404", w.Code)
+	}
+}
+
+// TestHandleNextPreferencesDrawer_StableChannel404 verifies the Phase 2 channel
+// guard on the drawer fragment endpoint.
+func TestHandleNextPreferencesDrawer_StableChannel404(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/preferences-drawer", nil)
+	w := httptest.NewRecorder()
+	r.handleNextPreferencesDrawer(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("stable channel: status = %d, want 404", w.Code)
+	}
+}
+
 // TestHandleNextPreferencesPage_Unauthenticated verifies the page handler
 // falls back to the login page rather than leaking preference content.
 func TestHandleNextPreferencesPage_Unauthenticated(t *testing.T) {
