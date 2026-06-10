@@ -718,13 +718,23 @@ func cleanYearsActive(s string) string {
 func stripHTMLTags(s string) string {
 	var b strings.Builder
 	inTag := false
-	for _, r := range s {
+	for i, r := range s {
 		if r == '<' {
-			inTag = true
+			next := i + 1
+			if next < len(s) && (s[next] == '/' || s[next] == '!' || s[next] == '?' ||
+				(s[next] >= 'a' && s[next] <= 'z') || (s[next] >= 'A' && s[next] <= 'Z')) {
+				inTag = true
+			} else {
+				b.WriteRune(r)
+			}
 			continue
 		}
 		if r == '>' {
-			inTag = false
+			if inTag {
+				inTag = false
+			} else {
+				b.WriteRune(r)
+			}
 			continue
 		}
 		if !inTag {

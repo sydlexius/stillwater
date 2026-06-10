@@ -209,6 +209,9 @@ func TestCleanMarkup(t *testing.T) {
 		{"numeric entity apostrophe", "rock&#39;n&#39;roll", "rock'n'roll"},
 		{"numeric entity en-dash", "1990&#8211;2000", "1990–2000"},
 		{"entity mixed with wikilink", "[[New York]]&nbsp;City", "New York City"},
+		{"named entity lt literal", "1 &lt; 2", "1 < 2"},
+		{"named entity gt literal", "x &gt; y", "x > y"},
+		{"lt then text", "born 1 &lt; 2 years ago", "born 1 < 2 years ago"},
 	}
 
 	for _, tt := range tests {
