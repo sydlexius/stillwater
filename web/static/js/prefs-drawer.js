@@ -519,6 +519,10 @@
       body: JSON.stringify({ artist_detail_section_order: [], artist_detail_hidden_sections: [] })
     }).then(function (r) {
       if (r.ok && typeof htmx !== 'undefined') {
+        // Close first so the scrim, aria-expanded triggers, and data-prefs-open are
+        // all cleaned up before the outerHTML swap replaces #sw-prefs-drawer.
+        // Without this the scrim stays visible and blocks reopening the drawer.
+        close();
         htmx.ajax('GET', window.location.pathname, { target: '#sw-prefs-drawer', swap: 'outerHTML', select: '#sw-prefs-drawer' });
       }
       if (r.ok && window.showSuccessToast) { showSuccessToast('Layout reset'); }
@@ -565,6 +569,9 @@
     }).then(function (r) {
       if (r.ok) {
         window.swPreferences.applyAll(DEFAULTS);
+        // Close first so the scrim, aria-expanded triggers, and data-prefs-open are
+        // all cleaned up before the outerHTML swap replaces #sw-prefs-drawer.
+        close();
         // Reload the drawer to reflect reset values.
         if (typeof htmx !== 'undefined') {
           htmx.ajax('GET', window.location.pathname, { target: '#sw-prefs-drawer', swap: 'outerHTML', select: '#sw-prefs-drawer' });
@@ -751,9 +758,11 @@
   // open it (the user already clicked the trigger, so we should open immediately).
   document.body.addEventListener('htmx:afterSwap', function (ev) {
     var target = ev.detail && ev.detail.target;
-    // The mount div (#sw-prefs-mount) is replaced via outerHTML swap; the new
-    // element is the scrim (#sw-prefs-scrim). The drawer itself is its next sibling.
-    if (target && target.id === 'sw-prefs-mount') {
+    // Initial lazy-mount: #sw-prefs-mount is replaced by the scrim+drawer pair.
+    // Reset swaps: resetLayout/resetAll swap #sw-prefs-drawer outerHTML; the new
+    // element has no open class and no event listeners, so wire()+open() must run
+    // here just as they do for the initial mount.
+    if (target && (target.id === 'sw-prefs-mount' || target.id === 'sw-prefs-drawer')) {
       wire();
       open();
     }
