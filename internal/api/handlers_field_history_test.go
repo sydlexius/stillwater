@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -184,5 +185,145 @@ func TestHandleFieldEdit_HistoryListGlobalError_GracefulDegrade(t *testing.T) {
 	// No history entries should appear since loading failed.
 	if strings.Contains(body, "data-sw-stage-value") {
 		t.Errorf("expected no staged-value entries in body when history load errored; body excerpt: %.300s", body)
+	}
+}
+
+// TestHandleFieldEdit_ShowOlderAffordanceRenderedWhenMoreThan5Entries verifies
+// that when >5 prior values exist the edit fragment includes the "Show older"
+// affordance and the HTMX fragment URL, and renders exactly 5 item buttons
+// (not the 6th "detection" entry).
+func TestHandleFieldEdit_ShowOlderAffordanceRenderedWhenMoreThan5Entries(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Many History Artist")
+	for i := range 6 {
+		addHistoryChange(t, historySvc, a.ID, "biography", "", "bio value "+strconv.Itoa(i), "manual")
+	}
+
+	req := makeFieldEditRequest(t, a.ID, "biography")
+	w := httptest.NewRecorder()
+	r.handleFieldEdit(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// "Show older" affordance must be present.
+	if !strings.Contains(body, "history/fragment") {
+		t.Errorf("expected 'history/fragment' HTMX URL in edit fragment when >5 history entries; body excerpt: %.400s", body)
+	}
+
+	// Only 5 item buttons should be in the initial render (not 6).
+	count := strings.Count(body, "data-sw-stage-value")
+	// Desktop panel + mobile sheet each render 5 entries = 10 total.
+	if count != 10 {
+		t.Errorf("expected 10 data-sw-stage-value occurrences (5 desktop + 5 mobile), got %d; body excerpt: %.500s", count, body)
+	}
+}
+
+// TestHandleFieldEdit_ShowOlderAffordanceAbsentWhenFiveOrFewerEntries verifies
+// that the "Show older" button is NOT rendered when exactly 5 or fewer entries
+// exist (the cap+1 probe did not overflow).
+func TestHandleFieldEdit_ShowOlderAffordanceAbsentWhenFiveOrFewerEntries(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Exact 5 History Artist")
+	for i := range 5 {
+		addHistoryChange(t, historySvc, a.ID, "origin", "", "city "+strconv.Itoa(i), "manual")
+	}
+
+	req := makeFieldEditRequest(t, a.ID, "origin")
+	w := httptest.NewRecorder()
+	r.handleFieldEdit(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+
+	if strings.Contains(body, "history/fragment") {
+		t.Errorf("expected no 'history/fragment' URL when <=5 history entries; body excerpt: %.400s", body)
+	}
+}
+
+// makeFieldHistoryFragmentRequest builds a GET request for handleFieldHistoryFragment.
+func makeFieldHistoryFragmentRequest(t *testing.T, artistID, field string) *http.Request {
+	t.Helper()
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet,
+		"/api/v1/artists/"+artistID+"/fields/"+field+"/history/fragment", nil)
+	req.SetPathValue("id", artistID)
+	req.SetPathValue("field", field)
+	return req
+}
+
+// TestHandleFieldHistoryFragment_Returns200WithAllItems verifies that the
+// fragment endpoint returns a 200 with the full field history rendered as item
+// buttons when history exists.
+func TestHandleFieldHistoryFragment_Returns200WithAllItems(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Fragment Full Artist")
+	for i := range 7 {
+		addHistoryChange(t, historySvc, a.ID, "origin", "", "city "+strconv.Itoa(i), "manual")
+	}
+
+	req := makeFieldHistoryFragmentRequest(t, a.ID, "origin")
+	w := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// All 7 entries must be rendered (no 5-cap on the fragment endpoint).
+	count := strings.Count(body, "data-sw-stage-value")
+	if count != 7 {
+		t.Errorf("expected 7 data-sw-stage-value entries from fragment endpoint, got %d; body excerpt: %.500s", count, body)
+	}
+	// No "Show older" button in the fragment (it replaces the items area).
+	if strings.Contains(body, "history/fragment") {
+		t.Errorf("fragment response must not contain nested 'history/fragment' URL; body excerpt: %.300s", body)
+	}
+}
+
+// TestHandleFieldHistoryFragment_Returns404ForUnknownArtist verifies that the
+// fragment endpoint returns 404 when the artist does not exist.
+func TestHandleFieldHistoryFragment_Returns404ForUnknownArtist(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+
+	req := makeFieldHistoryFragmentRequest(t, "nonexistent-artist-id", "biography")
+	w := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown artist, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleFieldHistoryFragment_DegradedWhenHistoryErrors verifies that the
+// fragment endpoint renders an empty list (no items, no 500) when the history
+// service fails, preserving the graceful-degrade contract.
+func TestHandleFieldHistoryFragment_DegradedWhenHistoryErrors(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithErrHistoryService(t)
+
+	a := addTestArtist(t, artistSvc, "Fragment Err Artist")
+
+	req := makeFieldHistoryFragmentRequest(t, a.ID, "biography")
+	w := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on history error (graceful degrade), got %d; body: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "data-sw-stage-value") {
+		t.Errorf("expected no items in fragment when history service errors; body: %s", w.Body.String())
 	}
 }

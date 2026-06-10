@@ -73,14 +73,16 @@ func (r *Router) handleFieldEdit(w http.ResponseWriter, req *http.Request) {
 		providers := buildFieldProvidersMap(priorities)[field]
 
 		// Pre-load per-field history for the undo affordance (clock popover).
-		// Capped at 5 entries; no new endpoint needed - data travels with the
-		// edit fragment response. Degrades gracefully when history is unavailable.
+		// Fetch cap+1 (6) so the template can detect whether more history exists
+		// without a separate COUNT query; the template trims to 5 for display and
+		// shows a "Show older" affordance when the 6th entry is present.
+		// Degrades gracefully when history is unavailable.
 		var fieldHistory []artist.MetadataChangeWithArtist
 		if r.historyService != nil {
 			filter := artist.GlobalHistoryFilter{
 				ArtistID: artistID,
 				Fields:   []string{field},
-				Limit:    5,
+				Limit:    6,
 			}
 			changes, _, listErr := r.historyService.ListGlobal(req.Context(), filter)
 			if listErr != nil {
@@ -313,6 +315,40 @@ func (r *Router) handleSaveMembers(w http.ResponseWriter, req *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// handleFieldHistoryFragment returns an HTML fragment of all prior values for a
+// single field, used by the "Show older" HTMX affordance in the clock popover.
+// The fragment replaces the popover's inline item list (innerHTML swap) so older
+// entries become selectable without a full page reload.
+// GET /api/v1/artists/{id}/fields/{field}/history/fragment
+func (r *Router) handleFieldHistoryFragment(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	field := req.PathValue("field")
+
+	if _, err := r.artistService.GetByID(req.Context(), artistID); err != nil {
+		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
+	var history []artist.MetadataChangeWithArtist
+	if r.historyService != nil {
+		filter := artist.GlobalHistoryFilter{
+			ArtistID: artistID,
+			Fields:   []string{field},
+			Limit:    50,
+		}
+		changes, _, listErr := r.historyService.ListGlobal(req.Context(), filter)
+		if listErr != nil {
+			r.logger.Warn("loading field history for show-older fragment", "artist_id", artistID, "field", field, "error", listErr)
+		} else {
+			history = changes
+		}
+	}
+
+	menuID := "fh-" + field + "-" + artistID
+	containerSel := "#field-" + field + "-" + artistID
+	renderTempl(w, req, templates.FieldHistoryFragment(menuID, containerSel, history))
 }
 
 // handleFieldProviders fetches a field from all configured providers and returns
