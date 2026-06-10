@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover test-js lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
 
 # Binary name
 BINARY=stillwater
@@ -46,6 +46,14 @@ test-race:
 test-cover:
 	go test -count=1 -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
+
+## test-js: Install JS dev dependencies and run Node.js unit tests for client-side JS modules.
+# Uses Node's built-in test runner (node:test, Node 18+) and jsdom (the only npm dep).
+# No server required; tests exercise fanart-manage.js, lightbox.js, and artwork-modal.js
+# in an isolated jsdom environment. Run command: make test-js
+test-js:
+	npm ci
+	npm test
 
 ## lint: Run golangci-lint
 lint:
