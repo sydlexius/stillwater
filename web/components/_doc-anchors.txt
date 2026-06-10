@@ -244,6 +244,7 @@ how-to/edit-artist#lock-a-single-field
 how-to/edit-artist#lock-the-artist
 how-to/edit-artist#manually-upload-an-image
 how-to/edit-artist#reorder-fanart
+how-to/edit-artist#revert-a-field-to-a-prior-value
 how-to/edit-artist#see-also
 how-to/edit-artist#what-edits-dont-do
 how-to/enable-and-configure-rules#apply-fixes

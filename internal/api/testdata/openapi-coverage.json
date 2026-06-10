@@ -599,7 +599,7 @@
     "method": "GET",
     "path": "/artists/{id}/fields/{field}/edit",
     "handler": "handleFieldEdit",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getFieldProviders",

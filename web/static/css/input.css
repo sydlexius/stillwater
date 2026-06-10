@@ -4031,22 +4031,19 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   background: var(--swd-info-soft);
 }
 
-/* Typography parity (item 8 extension): the Open Findings and History sections
- * reuse shared fragments built with Tailwind text-sm/text-xs, which read larger
- * than the Details scale. Align their body + small text to the Details
- * vocabulary (13px body, 11px small) so the three sections speak one type
- * language. next/-only; the shared fragments are unchanged for the stable
- * channel. The section titles already share the 14px .head h2 token. */
-.sw-next-artist-detail [data-sw-section="findings"] .body,
-.sw-next-artist-detail [data-sw-section="history"] .body {
+/* Typography parity (item 8 extension): the Open Findings section reuses
+ * shared fragments built with Tailwind text-sm/text-xs, which read larger than
+ * the Details scale. Align body + small text to the Details vocabulary (13px
+ * body, 11px small) so the sections speak one type language. next/-only; the
+ * shared fragments are unchanged for the stable channel. The section title
+ * already shares the 14px .head h2 token. */
+.sw-next-artist-detail [data-sw-section="findings"] .body {
   font-size: 13px;
 }
-.sw-next-artist-detail [data-sw-section="findings"] .body .text-sm,
-.sw-next-artist-detail [data-sw-section="history"] .body .text-sm {
+.sw-next-artist-detail [data-sw-section="findings"] .body .text-sm {
   font-size: 13px;
 }
-.sw-next-artist-detail [data-sw-section="findings"] .body .text-xs,
-.sw-next-artist-detail [data-sw-section="history"] .body .text-xs {
+.sw-next-artist-detail [data-sw-section="findings"] .body .text-xs {
   font-size: 11px;
 }
 

@@ -27,7 +27,7 @@ type ArtistDetailPageData struct {
 // renders metadata + findings + history + identifiers itself and leaves
 // stable-id mount points for artwork (4B) and providers/discography/debug (4C).
 var defaultSectionOrder = []string{
-	"metadata", "artwork", "findings", "history", "providers", "discography", "debug", "identifiers",
+	"metadata", "artwork", "findings", "providers", "discography", "debug", "identifiers",
 }
 
 // orderedSections returns the section ids to render in order, applying the user
@@ -92,8 +92,6 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 						@ArtworkSection(&data.Detail)
 					case "findings":
 						@artistFindingsSection(&data.Detail)
-					case "history":
-						@artistHistorySection(data.Detail.Artist.ID)
 					case "providers":
 						@SectionProviders(data)
 					case "discography":
@@ -142,11 +140,11 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 				@templates.LightboxOverlay()
 			}
 			@artistDetailPageScript()
-			// Wire the ContextHelp (?) icons on this page. The History section reuses
-			// the stable history-tab fragment, which renders a ContextHelp "?" for the
-			// Source-column taxonomy; without this script its onclick=swContextHelpToggle
-			// is undefined and the icon is dead (the next/ LayoutNext does not mount it
-			// globally). Rendered once; the component's script self-guards re-injection.
+			// Wire the ContextHelp (?) icons on this page. The dedicated History section
+			// was removed; history is now surfaced per-field via the "Prior values" undo
+			// affordance (clock icon). ContextHelp icons elsewhere on the page still need
+			// swContextHelpToggle defined -- LayoutNext does not mount it globally.
+			// Rendered once; the component's script self-guards re-injection.
 			@components.ContextHelpScript()
 		</div>
 	}
@@ -750,34 +748,6 @@ templ artistFindingsSection(data *templates.ArtistDetailData) {
 	</section>
 }
 
-// artistHistorySection is the merged History: the artist's revert-able change
-// log via the existing history-tab fragment, lazy-loaded on scroll. The former
-// "Open in Logs" deep link was dropped (UAT): there is no /logs page or
-// per-artist application-log filter, so it dead-ended on the dashboard, and the
-// per-artist change history shown here is already the useful record.
-templ artistHistorySection(artistID string) {
-	<section class="sw-dash-card" data-sw-section="history" data-sw-section-label={ t(ctx, "artist.tab_history") } aria-labelledby="next-history-heading">
-		<div class="head">
-			<h2 id="next-history-heading">{ t(ctx, "artist.tab_history") }</h2>
-		</div>
-		// OOB landing pad: the reused history-tab fragment emits an hx-swap-oob
-		// targeting #history-showing-counter (the stable tab's "Showing X of Y").
-		// Kept hidden by the OUTER wrapper so the OOB-swapped counter does not leak
-		// (the in-body history fragment renders its own counter); also prevents
-		// htmx:oobErrorNoTarget.
-		<div class="hidden" aria-hidden="true"><p id="history-showing-counter"></p></div>
-		<div class="body">
-			<div
-				id={ "artist-history-tab-" + artistID }
-				hx-get={ "/artists/" + artistID + "/history/tab" }
-				hx-trigger="load"
-				hx-swap="innerHTML"
-			>
-				<p class="text-sm text-gray-400 italic py-6 text-center">{ t(ctx, "artist.loading_history") }</p>
-			</div>
-		</div>
-	</section>
-}
 
 // artistIdentifiersSection renders the provider-id fields last and
 // de-emphasized (quiet styling). Each id reuses templates.FieldDisplay (which
@@ -823,6 +793,7 @@ templ artistDetailPageScript() {
 			var editTriggers = document.querySelectorAll('[data-sw-edit-all]');
 			var editing = false;
 			var editBusy = false;
+			var heroObserver = null;
 
 			// Ambient backdrop: on the artist-detail page, rotate through THIS
 			// artist's OWN fanart/backdrops instead of the shared random one the
@@ -1046,11 +1017,15 @@ templ artistDetailPageScript() {
 				var stick = document.querySelector('[data-sw-stickhdr]');
 				var hero = document.querySelector('.sw-next-hero');
 				if (stick && hero && 'IntersectionObserver' in window) {
-					new IntersectionObserver(function (entries) {
+					// Disconnect the previous observer before creating a new one so
+					// rebindHero() calls after a hero DOM swap do not stack observers.
+					if (heroObserver) { heroObserver.disconnect(); }
+					heroObserver = new IntersectionObserver(function (entries) {
 						var stuck = !entries[0].isIntersecting;
 						stick.classList.toggle('is-stuck', stuck);
 						stick.setAttribute('aria-hidden', stuck ? 'false' : 'true');
-					}, { rootMargin: '-48px 0px 0px 0px', threshold: 0 }).observe(hero);
+					}, { rootMargin: '-48px 0px 0px 0px', threshold: 0 });
+					heroObserver.observe(hero);
 				}
 				// Re-query editTriggers to include the fresh hero button and
 				// re-attach the click handler so the hero Edit button works after
@@ -1066,6 +1041,37 @@ templ artistDetailPageScript() {
 				// Sync the visual state of the new hero button with the current edit mode.
 				reflectEditState(editing);
 			}
+			// swStageHistoryValue stages a prior field value from the per-field undo
+			// clock popover into the field's live input/select/textarea. The existing
+			// fieldChanged() dirty detection marks it for save automatically because
+			// input.value will differ from input.defaultValue after staging.
+			window.swStageHistoryValue = function (btn) {
+				var v = btn.getAttribute('data-sw-stage-value') || '';
+				var sel = btn.getAttribute('data-sw-container-sel');
+				var menuID = btn.getAttribute('data-sw-menu-id');
+				if (sel) {
+					var container = document.querySelector(sel);
+					if (container) {
+						var input = container.querySelector('[name="value"]');
+						if (input) {
+							input.value = v;
+							input.dispatchEvent(new Event('input', { bubbles: true }));
+						}
+					}
+				}
+				// Close the dropdown (mirrors CloseContextMenu templ script logic).
+				var panel = document.getElementById('ctx-panel-' + menuID);
+				var sheet = document.getElementById('ctx-sheet-' + menuID);
+				var trigger = document.querySelector('[aria-controls="ctx-panel-' + menuID + '"]');
+				if (panel) { panel.classList.add('hidden'); }
+				if (sheet) {
+					sheet.classList.remove('ctx-sheet-open');
+					sheet.setAttribute('aria-hidden', 'true');
+					sheet.setAttribute('inert', '');
+					document.body.classList.remove('ctx-sheet-body-lock');
+				}
+				if (trigger) { trigger.setAttribute('aria-expanded', 'false'); trigger.focus(); }
+			};
 			// Returns a Promise resolving to { failedCount }. CRITICAL: each PATCH is
 			// checked for r.ok -- a rejected save (400/409 conflict-gate/422/500) is a
 			// FAILURE, not a silent success. Because these are raw fetch() calls (not
