@@ -41,6 +41,15 @@ type PreferencesData struct {
 	PageSize          int    // Validated page size in the range 10-500; defaults to 50.
 	AutoFetchImages   string // "true" | "false" -- auto-search providers on image search.
 	BackgroundOpacity string // "20"-"100" -- background glass opacity percentage.
+
+	// M55 #1774: preferences flyout drawer keys.
+	Density              string // "compact" | "comfortable" | "spacious"
+	MonoFont             string // "system" | "jetbrains" | "cascadia"
+	KbdHints             string // "show" | "hide"
+	NotificationEnabled  string // "true" | "false"
+	// Artist detail layout (written via PATCH; nil = server default).
+	ArtistDetailSectionOrder   []string
+	ArtistDetailHiddenSections []string
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
@@ -227,6 +236,8 @@ templ settingsAppearanceTab(prefs PreferencesData) {
 						{Value: "small", Label: t(ctx, "common.small")},
 						{Value: "medium", Label: t(ctx, "common.medium")},
 						{Value: "large", Label: t(ctx, "common.large")},
+						{Value: "x-large", Label: t(ctx, "prefs.font_size.x_large")},
+						{Value: "xx-large", Label: t(ctx, "prefs.font_size.xx_large")},
 					},
 					prefs.FontSize,
 				)

@@ -154,7 +154,7 @@ templ nextArtistRow(a artist.Artist, data templates.ArtistListData) {
 						role="img"
 					></span>
 				}
-				<a href={ templ.SafeURL(templates.BasePath() + "/artists/" + a.ID) } data-sw-roving-activate class="font-medium text-blue-600 dark:text-blue-400 hover:underline">{ a.Name }</a>
+				<a href={ templ.SafeURL(templates.BasePath() + "/next/artists/" + a.ID) } data-sw-roving-activate class="font-medium text-blue-600 dark:text-blue-400 hover:underline">{ a.Name }</a>
 				if a.IsExcluded {
 					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "artists.excluded") }</span>
 				}
@@ -232,7 +232,7 @@ templ nextArtistCard(a artist.Artist, data templates.ArtistListData) {
 			/>
 		</label>
 		<a
-			href={ templ.SafeURL(templates.BasePath() + "/artists/" + a.ID) }
+			href={ templ.SafeURL(templates.BasePath() + "/next/artists/" + a.ID) }
 			data-sw-roving-activate
 			class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
 		>

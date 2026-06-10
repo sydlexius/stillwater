@@ -1,0 +1,842 @@
+package next
+
+import (
+	"context"
+	"strconv"
+	"strings"
+
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// PrefsDrawer renders the preferences flyout drawer for the next/ UI (M55 #1774).
+//
+// Design: a left slide-over panel that opens over the sidebar. All 17 preference
+// keys are grouped in collapsible accordion sections. Preferences are saved
+// automatically via window.swPreferences.set() (existing API; no new endpoints).
+// The artist-detail layout card writes via PATCH /api/v1/preferences.
+//
+// The panel hard-floors its own surface opacity at 85% via --flyout-bg
+// (see input.css .sw-prefs-drawer) so the bg_opacity recovery control stays
+// legible even when the user has set a lower value. Both light and dark themes
+// define --flyout-bg explicitly.
+//
+// Accessibility: role="dialog", aria-labelledby, focus-trap, Esc close,
+// tile groups are role="radiogroup" with roving tabindex + aria-checked,
+// segmented groups are role="radiogroup" with roving tabindex + aria-checked,
+// toggles are role="switch" with aria-checked.
+// Non-obvious settings carry a (?) popover trigger instead of inline desc text
+// (spec "Help & accessibility" section). The popovers use the existing
+// sw-context-help component pattern (components/context_help.templ).
+//
+// The drawer is mounted once in LayoutNext (below the sidebar, before the scrim)
+// and hidden by default (aria-hidden="true" + inert). Opening is orchestrated
+// by window.swPrefsDrawer (web/static/js/prefs-drawer.js).
+templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) {
+	<!-- Scrim: visual dim only; X button and ESC are the only dismiss triggers -->
+	<div
+		id="sw-prefs-scrim"
+		class="sw-prefs-scrim"
+		aria-hidden="true"
+	></div>
+	<!-- Prefs drawer panel -->
+	<aside
+		id="sw-prefs-drawer"
+		class="sw-prefs-drawer"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="sw-prefs-drawer-title"
+		aria-hidden="true"
+		inert
+	>
+		<!-- Header -->
+		<div class="sw-prefs-drawer-header">
+			<div class="sw-prefs-drawer-header-icon" aria-hidden="true">
+				<!-- Heroicons: adjustments-horizontal -->
+				<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"></path>
+				</svg>
+			</div>
+			<h2 id="sw-prefs-drawer-title" class="sw-prefs-drawer-title">{ t(ctx, "prefs.drawer.title") }</h2>
+			<button
+				type="button"
+				class="sw-prefs-drawer-close"
+				aria-label={ t(ctx, "common.close") }
+				onclick="if(window.swPrefsDrawer)swPrefsDrawer.close()"
+			>
+				@components.IconXMark("h-4 w-4")
+			</button>
+		</div>
+		<!-- Filter/search input -->
+		<div class="sw-prefs-drawer-search">
+			<input
+				type="search"
+				id="sw-prefs-search"
+				class="sw-prefs-drawer-search-input"
+				placeholder={ t(ctx, "prefs.drawer.search_placeholder") }
+				aria-label={ t(ctx, "prefs.drawer.search_label") }
+				autocomplete="off"
+			/>
+		</div>
+		<!-- Scrollable body -->
+		<div class="sw-prefs-drawer-body">
+			<!-- Empty state (shown by prefs-drawer.js when search yields no matches) -->
+			<p id="sw-prefs-search-empty" class="sw-prefs-search-empty" role="status" aria-live="polite" hidden></p>
+			<!-- Accordion groups -->
+			<div id="sw-prefs-groups">
+				<!-- Appearance group (expanded by default) -->
+				@prefsGroup("appearance", t(ctx, "prefs.group.appearance"), true) {
+					@prefsTileRow("pref-d-theme", "theme", t(ctx, "settings.appearance.theme.label"), t(ctx, "settings.appearance.theme.help"),
+						[]prefsOption{
+							{Value: "light", Label: t(ctx, "common.light"), Glyph: prefsGlyphThemeLight()},
+							{Value: "dark", Label: t(ctx, "common.dark"), Glyph: prefsGlyphThemeDark()},
+							{Value: "system", Label: t(ctx, "common.system"), Sub: t(ctx, "common.auto"), Glyph: prefsGlyphThemeSystem()},
+						},
+						prefs.Theme,
+						3,
+					)
+					@prefsBgOpacityRow(prefs.BackgroundOpacity)
+				}
+				<!-- Layout group -->
+				@prefsGroup("layout", t(ctx, "prefs.group.layout"), false) {
+					@prefsTileRow("pref-d-sidebar-state", "sidebar_state", t(ctx, "settings.appearance.sidebar_default_state.label"), t(ctx, "prefs.sidebar_state.help"),
+						[]prefsOption{
+							{Value: "full", Label: t(ctx, "common.full"), Sub: "Icons + labels", Glyph: prefsGlyphSidebarFull()},
+							{Value: "icon-only", Label: t(ctx, "settings.appearance.icon_only"), Sub: "Icons only", Glyph: prefsGlyphSidebarIconOnly()},
+							{Value: "hidden", Label: t(ctx, "common.hidden"), Sub: "No sidebar", Glyph: prefsGlyphSidebarHidden()},
+						},
+						prefs.SidebarState,
+						3,
+					)
+					@prefsTileRow("pref-d-content-width", "content_width", t(ctx, "settings.appearance.content_width.label"), t(ctx, "prefs.content_width.help"),
+						[]prefsOption{
+							{Value: "narrow", Label: t(ctx, "settings.appearance.narrow"), Sub: "Easier reading", Glyph: prefsGlyphWidthNarrow()},
+							{Value: "wide", Label: t(ctx, "common.full"), Sub: "More per row", Glyph: prefsGlyphWidthWide()},
+						},
+						prefs.ContentWidth,
+						2,
+					)
+					@prefsTileRow("pref-d-thumbnail-size", "thumbnail_size", t(ctx, "settings.appearance.thumbnail_size.label"), t(ctx, "prefs.thumbnail_size.help"),
+						[]prefsOption{
+							{Value: "small", Label: t(ctx, "common.small"), Sub: "32 px", Glyph: prefsGlyphThumb(32)},
+							{Value: "medium", Label: t(ctx, "common.medium"), Sub: "44 px", Glyph: prefsGlyphThumb(44)},
+							{Value: "large", Label: t(ctx, "common.large"), Sub: "56 px", Glyph: prefsGlyphThumb(56)},
+						},
+						prefs.ThumbnailSize,
+						3,
+					)
+					@prefsSegRow("pref-d-density", "density", t(ctx, "prefs.density.label"), t(ctx, "prefs.density.help"),
+						[]prefsOption{
+							{Value: "compact", Label: t(ctx, "prefs.density.compact")},
+							{Value: "comfortable", Label: t(ctx, "prefs.density.comfortable")},
+							{Value: "spacious", Label: t(ctx, "prefs.density.spacious")},
+						},
+						prefs.Density,
+					)
+					@prefsPageSizeRow(prefs.PageSize)
+				}
+				<!-- Typography group -->
+				@prefsGroup("typography", t(ctx, "prefs.group.typography"), false) {
+					@prefsTileRow("pref-d-font-family", "font_family", t(ctx, "settings.appearance.font_family.label"), t(ctx, "prefs.font_family.help"),
+						[]prefsOption{
+							{Value: "inter", Label: "Inter", Sub: "Default", Glyph: prefsGlyphFont("Inter, sans-serif")},
+							{Value: "system", Label: "System", Sub: "OS native", Glyph: prefsGlyphFont("system-ui, -apple-system, sans-serif")},
+							{Value: "atkinson", Label: "Atkinson", Sub: "Hyperlegible", Glyph: prefsGlyphFont("'Atkinson Hyperlegible', sans-serif")},
+						},
+						prefs.FontFamily,
+						3,
+					)
+					@prefsTileRow("pref-d-mono-font", "mono_font", t(ctx, "prefs.mono_font.label"), t(ctx, "prefs.mono_font.help"),
+						[]prefsOption{
+							{Value: "system", Label: "System", Sub: "Mono", Glyph: prefsGlyphMono("ui-monospace, SFMono-Regular, Menlo, monospace")},
+							{Value: "jetbrains", Label: "JetBrains", Sub: "Mono", Glyph: prefsGlyphMono("'JetBrains Mono', ui-monospace, monospace")},
+							{Value: "cascadia", Label: "Cascadia", Sub: "Code", Glyph: prefsGlyphMono("'Cascadia Code', ui-monospace, monospace")},
+						},
+						prefs.MonoFont,
+						3,
+					)
+					@prefsFontSizeSliderRow(prefs.FontSize, t(ctx, "settings.appearance.font_size.label"), t(ctx, "prefs.font_size.help"), t(ctx, "prefs.font_size.small"), t(ctx, "prefs.font_size.xx_large"))
+					@prefsTileRow("pref-d-letter-spacing", "letter_spacing", t(ctx, "settings.appearance.letter_spacing.label"), t(ctx, "prefs.letter_spacing.help"),
+						[]prefsOption{
+							{Value: "normal", Label: t(ctx, "common.normal"), Glyph: prefsGlyphLetterSpacing("0")},
+							{Value: "wide", Label: t(ctx, "common.wide"), Glyph: prefsGlyphLetterSpacing(".025em")},
+							{Value: "extra-wide", Label: t(ctx, "settings.appearance.extra_wide"), Glyph: prefsGlyphLetterSpacing(".05em")},
+						},
+						prefs.LetterSpacing,
+						3,
+					)
+				}
+				<!-- Accessibility and Performance group -->
+				@prefsGroup("a11y", t(ctx, "prefs.group.a11y"), false) {
+					@prefsSegRow("pref-d-reduced-motion", "reduced_motion", t(ctx, "settings.appearance.reduced_motion.label"), t(ctx, "settings.appearance.reduced_motion.help"),
+						[]prefsOption{
+							{Value: "system", Label: t(ctx, "common.auto")},
+							{Value: "on", Label: "Full"},
+							{Value: "off", Label: "Reduced"},
+						},
+						prefs.ReducedMotion,
+					)
+					@prefsSegRow("pref-d-lite-mode", "lite_mode", t(ctx, "settings.appearance.lite_mode.label"), t(ctx, "settings.appearance.lite_mode.help"),
+						[]prefsOption{
+							{Value: "off", Label: t(ctx, "common.off")},
+							{Value: "on", Label: t(ctx, "common.on")},
+							{Value: "auto", Label: t(ctx, "common.auto")},
+						},
+						prefs.LiteMode,
+					)
+					@prefsToggleRow("pref-d-kbd-hints", "kbd_hints", t(ctx, "prefs.kbd_hints.label"), t(ctx, "prefs.kbd_hints.description"), t(ctx, "prefs.kbd_hints.help"), prefs.KbdHints == "show")
+				}
+				<!-- Behavior group -->
+				@prefsGroup("behavior", t(ctx, "prefs.group.behavior"), false) {
+					@prefsToggleRow("pref-d-auto-fetch", "auto_fetch_images", t(ctx, "prefs.auto_fetch.label"), t(ctx, "prefs.auto_fetch.description"), t(ctx, "prefs.auto_fetch.help"), prefs.AutoFetchImages == "true")
+					@prefsToggleRow("pref-d-notification", "notification_enabled", t(ctx, "prefs.notification_enabled.label"), t(ctx, "prefs.notification_enabled.description"), t(ctx, "prefs.notification_enabled.help"), prefs.NotificationEnabled == "true")
+					@prefsLanguageRow(prefs.Language)
+				}
+				<!-- Artist detail layout group -->
+				@prefsGroup("artist-layout", t(ctx, "prefs.group.artist_layout"), false) {
+					@prefsArtistLayoutCard(assets, prefs)
+				}
+			</div>
+		</div>
+		<!-- Footer: live-preview indicator + global reset button -->
+		<div class="sw-prefs-drawer-footer">
+			<span class="sw-prefs-footer-hint">
+				<span class="sw-prefs-footer-dot" aria-hidden="true"></span>
+				{ t(ctx, "prefs.drawer.footer_hint") }
+			</span>
+			<button
+				type="button"
+				class="sw-prefs-reset-btn"
+				aria-label={ t(ctx, "prefs.drawer.reset_all") }
+			>
+				<!-- Heroicons: arrow-path (reset/refresh) -->
+				<svg class="sw-prefs-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"></path>
+				</svg>
+				{ t(ctx, "prefs.drawer.reset_all") }
+			</button>
+		</div>
+	</aside>
+	// Wire the (?) ContextHelp popovers. next/ LayoutNext does not mount the
+	// component script globally (the same trap artist_detail.templ documents),
+	// so without this every onclick=swContextHelpToggle in the drawer is dead.
+	// Rendered once; the component script self-guards re-injection. Covers both
+	// the lazy-loaded flyout and the standalone /next/preferences page.
+	@components.ContextHelpScript()
+}
+
+// prefsOption is a label/value pair for tile and segmented controls.
+// Sub is an optional subtitle shown below the label in tile views.
+// Glyph is optional raw HTML for a visual preview glyph inside the tile.
+type prefsOption struct {
+	Value string
+	Label string
+	Sub   string
+	Glyph string
+}
+
+// prefsGroup renders a collapsible accordion group inside the drawer.
+// expanded controls whether the group is open on initial render.
+templ prefsGroup(id, title string, expanded bool) {
+	<div class="sw-prefs-group">
+		<button
+			type="button"
+			class="sw-prefs-group-trigger"
+			data-group-id={ id }
+			aria-expanded={ strconv.FormatBool(expanded) }
+			aria-controls={ "group-body-" + id }
+		>
+			{ title }
+			<svg class="sw-prefs-group-chevron" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round" d="m19 9-7 7-7-7"></path>
+			</svg>
+		</button>
+		<div id={ "group-body-" + id } hidden?={ !expanded }>
+			{ children... }
+		</div>
+	</div>
+}
+
+// prefsTileRow renders a preference row with a tile (radiogroup) control.
+// id is the DOM id prefix for the tiles element; prefKey is the preference key.
+// helpText is shown in a (?) popover rather than inline (spec §Help & accessibility).
+// cols controls the grid column count (2 or 3).
+templ prefsTileRow(id, prefKey, label, helpText string, options []prefsOption, current string, cols int) {
+	<div class="sw-prefs-row sw-prefs-row--tile">
+		<div class="sw-prefs-row-label">
+			<div class="sw-prefs-row-name">
+				{ label }
+				if helpText != "" {
+					@prefsHelpPopover("help-"+prefKey, label, helpText)
+				}
+			</div>
+		</div>
+		<div
+			class="sw-prefs-row-control sw-prefs-tiles"
+			role="radiogroup"
+			aria-label={ label }
+			data-prefs-tiles={ prefKey }
+			style={ "grid-template-columns: repeat(" + strconv.Itoa(cols) + ", 1fr);" }
+		>
+			for _, opt := range options {
+				<button
+					type="button"
+					class="sw-prefs-tile"
+					role="radio"
+					aria-checked={ strconv.FormatBool(opt.Value == current) }
+					if opt.Value == current {
+						tabindex="0"
+					} else {
+						tabindex="-1"
+					}
+					data-value={ opt.Value }
+					aria-label={ opt.Label + func() string {
+						if opt.Sub != "" { return " - " + opt.Sub }
+						return ""
+					}() }
+				>
+					if opt.Glyph != "" {
+						<span class="sw-prefs-tile-glyph" aria-hidden="true">@templ.Raw(opt.Glyph)
+</span>
+					}
+					<span class="sw-prefs-tile-label">{ opt.Label }</span>
+					if opt.Sub != "" {
+						<span class="sw-prefs-tile-sub">{ opt.Sub }</span>
+					}
+				</button>
+			}
+		</div>
+	</div>
+}
+
+// prefsSegRow renders a preference row with a segmented control (radiogroup).
+// Used for density, reduced_motion, and lite_mode per the spec.
+// helpText is shown in a (?) popover rather than inline.
+templ prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, current string) {
+	<div class="sw-prefs-row">
+		<div class="sw-prefs-row-label">
+			<div class="sw-prefs-row-name">
+				{ label }
+				if helpText != "" {
+					@prefsHelpPopover("help-"+prefKey, label, helpText)
+				}
+			</div>
+		</div>
+		<div class="sw-prefs-row-control">
+			<div
+				class="sw-prefs-seg"
+				role="radiogroup"
+				aria-label={ label }
+				data-prefs-seg={ prefKey }
+			>
+				for _, opt := range options {
+					<button
+						type="button"
+						class="sw-prefs-seg-btn"
+						role="radio"
+						aria-checked={ strconv.FormatBool(opt.Value == current) }
+						if opt.Value == current {
+							tabindex="0"
+						} else {
+							tabindex="-1"
+						}
+						data-value={ opt.Value }
+					>{ opt.Label }</button>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+// prefsBgOpacityRow renders the background opacity slider row.
+// The slider range is 85-100 (step 5) per the spec; the track fades clear to solid.
+// The flyout hard-floors at 85%.
+templ prefsBgOpacityRow(bgOpacity string) {
+	<div class="sw-prefs-row" id="pref-field-bg-opacity">
+		<div class="sw-prefs-row-label">
+			<div class="sw-prefs-row-name">
+				{ t(ctx, "settings.appearance.bg_opacity.label") }
+				@prefsHelpPopover("help-bg-opacity", t(ctx, "settings.appearance.bg_opacity.label"), t(ctx, "prefs.bg_opacity.help"))
+			</div>
+		</div>
+		<div class="sw-prefs-row-control sw-prefs-slider-wrap">
+			<input
+				type="range"
+				id="pref-d-bg-opacity"
+				min="85"
+				max="100"
+				step="5"
+				class="sw-prefs-slider"
+				aria-label={ t(ctx, "settings.appearance.bg_opacity.label") }
+				value={ bgOpacity }
+			/>
+			<span id="pref-d-bg-opacity-value" class="sw-prefs-slider-value">{ bgOpacity }%</span>
+		</div>
+	</div>
+}
+
+// prefsPageSizeRow renders the page size number input row.
+// step=5 per spec; value normalizes to nearest multiple of 5 on blur.
+templ prefsPageSizeRow(pageSize int) {
+	<div class="sw-prefs-row">
+		<div class="sw-prefs-row-label">
+			<div class="sw-prefs-row-name">
+				{ t(ctx, "settings.appearance.page_size.label") }
+				@prefsHelpPopover("help-page-size", t(ctx, "settings.appearance.page_size.label"), t(ctx, "prefs.page_size.help"))
+			</div>
+		</div>
+		<div class="sw-prefs-row-control sw-prefs-number-wrap">
+			<input
+				type="number"
+				id="pref-d-page-size"
+				class="sw-prefs-number"
+				min="10"
+				max="500"
+				step="5"
+				aria-label={ t(ctx, "settings.appearance.page_size.label") }
+				value={ strconv.Itoa(pageSize) }
+			/>
+			<span class="sw-prefs-number-unit">rows / page</span>
+		</div>
+	</div>
+}
+
+// prefsToggleRow renders a preference row with a toggle (role=switch) control.
+// checked is the initial on/off state. shortDesc is shown inline (toggle rows
+// show a brief label under the title per the mockup). helpText goes in a (?) popover.
+templ prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool) {
+	<div class="sw-prefs-row sw-prefs-row--toggle">
+		<div class="sw-prefs-row-label">
+			<div class="sw-prefs-row-name">
+				{ label }
+				if helpText != "" {
+					@prefsHelpPopover("help-"+prefKey, label, helpText)
+				}
+			</div>
+			if shortDesc != "" {
+				<div class="sw-prefs-row-desc">{ shortDesc }</div>
+			}
+		</div>
+		<div class="sw-prefs-row-control">
+			<button
+				type="button"
+				id={ id }
+				class="sw-prefs-toggle"
+				role="switch"
+				aria-checked={ strconv.FormatBool(checked) }
+				aria-label={ label }
+				data-pref-key={ prefKey }
+			>
+				<span class="sw-prefs-toggle-knob" aria-hidden="true"></span>
+			</button>
+		</div>
+	</div>
+}
+
+// prefsLanguageRow renders the language select row.
+templ prefsLanguageRow(language string) {
+	<div class="sw-prefs-row">
+		<div class="sw-prefs-row-label">
+			<div class="sw-prefs-row-name">
+				{ t(ctx, "settings.appearance.language.label") }
+				@prefsHelpPopover("help-language", t(ctx, "settings.appearance.language.label"), t(ctx, "prefs.language.help"))
+			</div>
+		</div>
+		<div class="sw-prefs-row-control">
+			<select
+				id="pref-d-language"
+				class="sw-prefs-select"
+				aria-label={ t(ctx, "settings.appearance.language.label") }
+			>
+				<option value="en" selected?={ language == "en" || language == "" }>English</option>
+			</select>
+		</div>
+	</div>
+}
+
+// prefsHelpPopover renders a (?) help button + tooltip popover using the
+// existing sw-context-help pattern. Shown next to the field label.
+// helpText is shown in the popover body; no docAnchor in the flyout context.
+templ prefsHelpPopover(id, label, helpText string) {
+	<span class="sw-context-help sw-prefs-help" id={ id }>
+		<button
+			type="button"
+			class="sw-context-help-btn"
+			aria-label={ "About " + label }
+			aria-expanded="false"
+			aria-controls={ id + "-popover" }
+			onclick="swContextHelpToggle(this)"
+			onkeydown="if(event.key==='Escape')swContextHelpClose(this)"
+		>?</button>
+		<span
+			id={ id + "-popover" }
+			role="tooltip"
+			class="sw-context-help-popover"
+			aria-hidden="true"
+		>{ helpText }</span>
+	</span>
+}
+
+// prefsArtistLayoutCard renders the drag-reorder / eye-toggle list for
+// artist-detail page sections. Sections: metadata (Details), artwork, findings,
+// providers, discography, identifiers. All are reorderable and hideable
+// (issue #1774 supersedes the #1343 identifiers-pinned invariant).
+//
+// SortableJS handles drag; up/down arrow buttons are the keyboard-accessible
+// fallback. State is saved via PATCH /api/v1/preferences by prefs-drawer.js.
+templ prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.PreferencesData) {
+	<div class="sw-prefs-layout-header">
+		<div class="sw-prefs-row-name" style="padding: 6px 16px 2px;">
+			{ t(ctx, "prefs.group.artist_layout") }
+			@prefsHelpPopover("help-artist-layout", t(ctx, "prefs.group.artist_layout"), t(ctx, "prefs.artist_layout.help"))
+		</div>
+	</div>
+	<ul id="sw-prefs-layout-list" class="sw-prefs-layout-list" aria-label={ t(ctx, "prefs.artist_layout.list_label") }>
+		for _, sec := range orderedPrefsLayoutSections(prefs.ArtistDetailSectionOrder) {
+			@prefsLayoutRow(sec, isHiddenSection(sec.ID, prefs.ArtistDetailHiddenSections))
+		}
+	</ul>
+	<!-- Reset layout button -->
+	<div style="padding: 4px 16px 8px; display:flex; justify-content:flex-end;">
+		<button
+			type="button"
+			class="sw-prefs-reset-btn"
+			data-action="reset-layout"
+			aria-label={ t(ctx, "prefs.artist_layout.reset") }
+		>
+			<!-- Heroicons: arrow-path -->
+			<svg class="sw-prefs-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"></path>
+			</svg>
+			{ t(ctx, "prefs.artist_layout.reset") }
+		</button>
+	</div>
+}
+
+// layoutSection describes one reorderable section in the artist-detail layout.
+type layoutSection struct {
+	ID    string
+	Label string // i18n-resolved label
+}
+
+// defaultPrefsLayoutSections is the default order of artist-detail sections
+// exposed in the preferences flyout. The ID values must match the data-sw-section
+// attributes in artist_detail.templ ("metadata" is what the renderer uses for the
+// Details section; "details" is the spec mockup name but the live code uses "metadata").
+// Sections: all reorderable and hideable per #1774 spec.
+var defaultPrefsLayoutSections = []layoutSection{
+	{ID: "metadata", Label: "Details"},
+	{ID: "artwork", Label: "Artwork"},
+	{ID: "findings", Label: "Findings"},
+	{ID: "providers", Label: "Providers"},
+	{ID: "discography", Label: "Discography"},
+	{ID: "identifiers", Label: "Identifiers"},
+}
+
+// orderedPrefsLayoutSections returns sections in the user's preferred order,
+// with any unknown stored ids dropped and any missing default ids appended.
+func orderedPrefsLayoutSections(pref []string) []layoutSection {
+	byID := make(map[string]layoutSection, len(defaultPrefsLayoutSections))
+	for _, s := range defaultPrefsLayoutSections {
+		byID[s.ID] = s
+	}
+	var out []layoutSection
+	seen := make(map[string]bool)
+	for _, id := range pref {
+		if s, ok := byID[id]; ok && !seen[id] {
+			out = append(out, s)
+			seen[id] = true
+		}
+	}
+	for _, s := range defaultPrefsLayoutSections {
+		if !seen[s.ID] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// isHiddenSection reports whether id is in the hidden list.
+func isHiddenSection(id string, hidden []string) bool {
+	for _, h := range hidden {
+		if h == id {
+			return true
+		}
+	}
+	return false
+}
+
+// prefsLayoutRow renders one reorderable/hideable row in the artist layout card.
+templ prefsLayoutRow(sec layoutSection, hidden bool) {
+	<li
+		class="sw-prefs-layout-row"
+		data-section-id={ sec.ID }
+		data-hidden={ strconv.FormatBool(hidden) }
+	>
+		<!-- Drag handle -->
+		<span class="sw-prefs-layout-handle" aria-hidden="true">
+			<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+				<circle cx="9" cy="5" r="1.5"></circle><circle cx="15" cy="5" r="1.5"></circle>
+				<circle cx="9" cy="12" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle>
+				<circle cx="9" cy="19" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
+			</svg>
+		</span>
+		<span class="sw-prefs-layout-name">{ sec.Label }</span>
+		<span class="sw-prefs-layout-actions">
+			<!-- Move up -->
+			<button
+				type="button"
+				class="sw-prefs-layout-btn"
+				data-action="move-up"
+				aria-label={ "Move " + sec.Label + " up" }
+			>
+				<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5"></path>
+				</svg>
+			</button>
+			<!-- Move down -->
+			<button
+				type="button"
+				class="sw-prefs-layout-btn"
+				data-action="move-down"
+				aria-label={ "Move " + sec.Label + " down" }
+			>
+				<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"></path>
+				</svg>
+			</button>
+			<!-- Eye toggle -->
+			<button
+				type="button"
+				class="sw-prefs-layout-btn"
+				data-action="toggle-visibility"
+				if hidden {
+					aria-label={ t(ctx, "prefs.artist_layout.show_section") + " " + sec.Label }
+				} else {
+					aria-label={ t(ctx, "prefs.artist_layout.hide_section") + " " + sec.Label }
+				}
+				aria-pressed={ strconv.FormatBool(hidden) }
+			>
+				if hidden {
+					<!-- Eye-slash: section is hidden -->
+					<svg class="h-3.5 w-3.5 sw-prefs-layout-eye-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"></path>
+					</svg>
+				} else {
+					<!-- Eye: section is visible -->
+					<svg class="h-3.5 w-3.5 sw-prefs-layout-eye-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"></path>
+					</svg>
+				}
+			</button>
+		</span>
+	</li>
+}
+
+// --- Tile glyph generators ---------------------------------------------------
+//
+// Each function returns a raw HTML string (SVG or styled span) for the visual
+// preview glyph inside a tile, matching the mockup's Firefox-style tile icons.
+// These are inlined as templ.Raw() so they render without escaping.
+
+// prefsGlyphThemeLight returns a light-theme window preview SVG.
+func prefsGlyphThemeLight() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="#fff" stroke="currentColor" stroke-opacity=".2" stroke-width="1.5"/>` +
+		`<path d="M9 16h72" stroke="currentColor" stroke-opacity=".15" stroke-width="1.5"/>` +
+		`<rect x="16" y="23" width="40" height="3.5" rx="1.75" fill="currentColor" fill-opacity=".18"/>` +
+		`<rect x="16" y="31" width="28" height="3.5" rx="1.75" fill="currentColor" fill-opacity=".1"/>` +
+		`</svg>`
+}
+
+// prefsGlyphThemeDark returns a dark-theme window preview SVG.
+func prefsGlyphThemeDark() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="#0f172a" stroke="currentColor" stroke-opacity=".2" stroke-width="1.5"/>` +
+		`<path d="M9 16h72" stroke="#334155" stroke-width="1.5"/>` +
+		`<rect x="16" y="23" width="40" height="3.5" rx="1.75" fill="#475569"/>` +
+		`<rect x="16" y="31" width="28" height="3.5" rx="1.75" fill="#334155"/>` +
+		`</svg>`
+}
+
+// prefsGlyphThemeSystem returns a half-light/half-dark window preview SVG.
+func prefsGlyphThemeSystem() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<defs><clipPath id="pc-lft"><rect x="9" y="6" width="36" height="44"/></clipPath></defs>` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="#0f172a" stroke="currentColor" stroke-opacity=".2" stroke-width="1.5"/>` +
+		`<g clip-path="url(#pc-lft)"><rect x="9" y="6" width="72" height="44" rx="6" fill="#fff"/></g>` +
+		`<path d="M9 16h72" stroke="currentColor" stroke-opacity=".15" stroke-width="1.2"/>` +
+		`<rect x="15" y="24" width="24" height="3" rx="1.5" fill="currentColor" fill-opacity=".2"/>` +
+		`<rect x="51" y="24" width="24" height="3" rx="1.5" fill="#475569"/>` +
+		`</svg>`
+}
+
+// prefsGlyphSidebarFull returns a sidebar-with-labels window preview SVG.
+func prefsGlyphSidebarFull() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-opacity=".18" stroke-width="1.5"/>` +
+		`<path d="M9 16h72" stroke="currentColor" stroke-opacity=".15" stroke-width="1.5"/>` +
+		`<rect x="14" y="20" width="18" height="26" rx="3" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-opacity=".3" stroke-width="1.3"/>` +
+		`<rect x="38" y="22" width="36" height="3" rx="1.5" fill="currentColor" fill-opacity=".2"/>` +
+		`<rect x="38" y="30" width="28" height="3" rx="1.5" fill="currentColor" fill-opacity=".12"/>` +
+		`</svg>`
+}
+
+// prefsGlyphSidebarIconOnly returns a collapsed sidebar window preview SVG.
+func prefsGlyphSidebarIconOnly() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-opacity=".18" stroke-width="1.5"/>` +
+		`<path d="M9 16h72" stroke="currentColor" stroke-opacity=".15" stroke-width="1.5"/>` +
+		`<rect x="14" y="20" width="7" height="26" rx="2.5" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-opacity=".3" stroke-width="1.3"/>` +
+		`<rect x="27" y="22" width="47" height="3" rx="1.5" fill="currentColor" fill-opacity=".2"/>` +
+		`<rect x="27" y="30" width="38" height="3" rx="1.5" fill="currentColor" fill-opacity=".12"/>` +
+		`</svg>`
+}
+
+// prefsGlyphSidebarHidden returns a no-sidebar window preview SVG.
+func prefsGlyphSidebarHidden() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-opacity=".18" stroke-width="1.5"/>` +
+		`<path d="M9 16h72" stroke="currentColor" stroke-opacity=".15" stroke-width="1.5"/>` +
+		`<rect x="15" y="22" width="59" height="3" rx="1.5" fill="currentColor" fill-opacity=".2"/>` +
+		`<rect x="15" y="30" width="44" height="3" rx="1.5" fill="currentColor" fill-opacity=".12"/>` +
+		`<rect x="15" y="38" width="52" height="3" rx="1.5" fill="currentColor" fill-opacity=".1"/>` +
+		`</svg>`
+}
+
+// prefsGlyphWidthNarrow returns a narrow content-width window preview SVG.
+func prefsGlyphWidthNarrow() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-opacity=".18" stroke-width="1.5"/>` +
+		`<path d="M9 16h72" stroke="currentColor" stroke-opacity=".15" stroke-width="1.5"/>` +
+		`<rect x="28" y="21" width="34" height="24" rx="3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-opacity=".25" stroke-width="1.3"/>` +
+		`</svg>`
+}
+
+// prefsGlyphWidthWide returns a wide content-width window preview SVG.
+func prefsGlyphWidthWide() string {
+	return `<svg viewBox="0 0 90 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:40px;">` +
+		`<rect x="9" y="6" width="72" height="44" rx="6" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-opacity=".18" stroke-width="1.5"/>` +
+		`<path d="M9 16h72" stroke="currentColor" stroke-opacity=".15" stroke-width="1.5"/>` +
+		`<rect x="15" y="21" width="60" height="24" rx="3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-opacity=".25" stroke-width="1.3"/>` +
+		`</svg>`
+}
+
+// prefsGlyphThumb returns a squircle avatar preview at the given px size.
+// Matches the spec "shown here at the actual pixel sizes" requirement.
+func prefsGlyphThumb(px int) string {
+	s := strconv.Itoa(px)
+	r := strconv.Itoa(px / 4) // squircle radius ~25%
+	return `<span style="display:flex;align-items:center;justify-content:center;width:` + s + `px;height:` + s + `px;border-radius:` + r + `px;background:linear-gradient(135deg,currentColor,currentColor);opacity:.35;flex-shrink:0;"></span>`
+}
+
+// prefsGlyphFont returns an "Aa" specimen span rendered in the given font stack.
+func prefsGlyphFont(stack string) string {
+	return `<span style="font-family:` + stack + `;font-weight:700;font-size:17px;line-height:1;letter-spacing:0;">Stillwater</span>`
+}
+
+// prefsGlyphMono returns a timestamp + id specimen span in the given mono font stack.
+func prefsGlyphMono(stack string) string {
+	return `<span style="font-family:` + stack + `;font-weight:600;font-size:11px;line-height:1.4;text-align:center;letter-spacing:0;">` +
+		`<span style="display:block;">14:02:37</span>` +
+		`<span style="display:block;opacity:.6;font-size:10px;">a74b1b7f</span>` +
+		`</span>`
+}
+
+// prefsFontSizeSliderRow renders the font size preference as a 5-stop discrete slider.
+// Stops: 0=small(13px) 1=medium(14px) 2=large(16px) 3=x-large(18px) 4=xx-large(20px).
+// The track gradient suggests size progression (small "A" left, large "A" right).
+// Save is handled by prefs-drawer.js (the #pref-d-font-size-slider input change event).
+templ prefsFontSizeSliderRow(currentSize, label, helpText, labelSmall, labelXXLarge string) {
+	<div class="sw-prefs-row" id="pref-field-font-size">
+		<div class="sw-prefs-row-label">
+			<div class="sw-prefs-row-name">
+				{ label }
+				@prefsHelpPopover("help-font-size", label, helpText)
+			</div>
+		</div>
+		<div class="sw-prefs-row-control sw-prefs-font-size-slider-wrap">
+			<span class="sw-prefs-font-size-end" aria-hidden="true">A</span>
+			<input
+				type="range"
+				id="pref-d-font-size-slider"
+				min="0"
+				max="4"
+				step="1"
+				class="sw-prefs-slider sw-prefs-font-size-slider"
+				aria-label={ label }
+				aria-valuetext={ fontSizeStopName(ctx, currentSize) }
+				value={ strconv.Itoa(fontSizeToStop(currentSize)) }
+				data-pref-key="font_size"
+				data-stop-names={ fontSizeStopNamesAttr(ctx) }
+			/>
+			<span class="sw-prefs-font-size-end sw-prefs-font-size-end--large" aria-hidden="true">A</span>
+			<span id="pref-d-font-size-value" class="sw-prefs-slider-value">{ fontSizeStopName(ctx, currentSize) }</span>
+		</div>
+	</div>
+}
+
+// fontSizeToStop maps a stored font_size value to its 0-4 slider index.
+// Unknown values fall back to 1 (medium).
+func fontSizeToStop(v string) int {
+	switch v {
+	case "small":
+		return 0
+	case "medium":
+		return 1
+	case "large":
+		return 2
+	case "x-large":
+		return 3
+	case "xx-large":
+		return 4
+	default:
+		return 1
+	}
+}
+
+// fontSizeStopKey maps a font_size value to its i18n label key. Unknown values
+// fall back to medium, mirroring fontSizeToStop.
+func fontSizeStopKey(v string) string {
+	switch v {
+	case "small", "medium", "large":
+		return "prefs.font_size." + v
+	case "x-large":
+		return "prefs.font_size.x_large"
+	case "xx-large":
+		return "prefs.font_size.xx_large"
+	default:
+		return "prefs.font_size.medium"
+	}
+}
+
+// fontSizeStopName returns the localized display label for a font_size value.
+// Used for aria-valuetext and the live value badge.
+func fontSizeStopName(ctx context.Context, v string) string {
+	return t(ctx, fontSizeStopKey(v))
+}
+
+// fontSizeStopNamesAttr returns the five localized stop labels, pipe-joined in
+// stop order, for the slider's data-stop-names attribute. prefs-drawer.js reads
+// it so the client-side live label and aria-valuetext stay localized instead of
+// duplicating English strings in JS.
+func fontSizeStopNamesAttr(ctx context.Context) string {
+	stops := []string{"small", "medium", "large", "x-large", "xx-large"}
+	names := make([]string, len(stops))
+	for i, s := range stops {
+		names[i] = t(ctx, fontSizeStopKey(s))
+	}
+	return strings.Join(names, "|")
+}
+
+// prefsGlyphLetterSpacing returns a "TYPE" specimen previewing the given
+// letter-spacing. The spacing is a STATIC inline literal (immune to the
+// user's current letter_spacing pref, which would otherwise re-track the
+// specimens and defeat the comparison), and the container has a FIXED width
+// shared by all three tiles so each option's specimen shows its specific
+// tracking without the tiles themselves changing size (maintainer call
+// 2026-06-09).
+func prefsGlyphLetterSpacing(em string) string {
+	return `<span style="display:inline-block;width:3.75rem;overflow:hidden;text-align:center;font-weight:700;font-size:13px;letter-spacing:` + em + `;">TYPE</span>`
+}
