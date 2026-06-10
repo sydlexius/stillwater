@@ -58,6 +58,8 @@ func (r *Router) handleNextArtistDetailPage(w http.ResponseWriter, req *http.Req
 
 // artworkKindToType maps a next/ Manage-artwork modal kind (the plain-language
 // switcher label) to the API image-type segment the editor uses.
+// NOTE: tests/unit/artwork-modal.test.js mirrors these constants in GO_KIND_TO_TYPE;
+// keep both in sync when adding or changing cases.
 func artworkKindToType(kind string) string {
 	switch kind {
 	case "logo":

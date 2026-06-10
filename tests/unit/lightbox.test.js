@@ -17,6 +17,12 @@ const LIGHTBOX_HTML = `<!doctype html><html><body>
 </div>
 </body></html>`;
 
+// Selector used by lightbox.js to enumerate focusable elements inside the overlay.
+// Mirrors the production module; defined once here so test changes stay in sync.
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]),' +
+  ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function openedDom() {
   const dom = createDom({ html: LIGHTBOX_HTML, modules: ['lightbox'] });
   dom.window.swLightbox.open('http://example.com/img.jpg', 'test alt');
@@ -105,10 +111,7 @@ describe('lightbox: Tab focus-trap', () => {
     const lb = dom.window.document.getElementById('sw-lightbox');
 
     // Find the same focusables the module finds.
-    const focusables = lb.querySelectorAll(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]),' +
-      ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
+    const focusables = lb.querySelectorAll(FOCUSABLE_SELECTOR);
     const first = focusables[0];
     const last  = focusables[focusables.length - 1];
 
@@ -129,10 +132,7 @@ describe('lightbox: Tab focus-trap', () => {
     const dom = openedDom();
     const lb = dom.window.document.getElementById('sw-lightbox');
 
-    const focusables = lb.querySelectorAll(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]),' +
-      ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
+    const focusables = lb.querySelectorAll(FOCUSABLE_SELECTOR);
     const first = focusables[0];
     const last  = focusables[focusables.length - 1];
 
@@ -153,10 +153,7 @@ describe('lightbox: Tab focus-trap', () => {
     const dom = openedDom();
     const lb = dom.window.document.getElementById('sw-lightbox');
 
-    const focusables = lb.querySelectorAll(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]),' +
-      ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
+    const focusables = lb.querySelectorAll(FOCUSABLE_SELECTOR);
     // Only two buttons; skip this case when there are not enough elements.
     if (focusables.length < 2) return;
 

@@ -51,8 +51,8 @@ export function createDom({ html, modules = [], csrfToken = null } = {}) {
 }
 
 /**
- * makeFetchMock returns { mock, calls }.
- * mock is a fetch-compatible function that records every call.
+ * makeFetchMock returns a fetch-compatible mock function with a `.calls` array
+ * property that records every call made to it.
  * responseSpec can be an object or a function(url, options) => object.
  * Response shape: { ok, status, json, text }.
  */

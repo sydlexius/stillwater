@@ -53,7 +53,7 @@ test-cover:
 # in an isolated jsdom environment. Run command: make test-js
 test-js:
 	npm ci
-	node --test tests/unit/fanart-manage.test.js tests/unit/lightbox.test.js tests/unit/artwork-modal.test.js
+	npm test
 
 ## lint: Run golangci-lint
 lint:
