@@ -108,6 +108,19 @@ jobs:
             echo "$dirty" | awk '{print "  " $0}'
             echo ""
             echo "Fix: run 'make generate && make generate-docs' locally, then commit the results."
+            {
+              echo "## Generated Files -- FAILED"
+              echo ""
+              echo "Stale files (regenerate and commit):"
+              echo '```'
+              echo "$dirty"
+              echo '```'
+              echo ""
+              echo "Fix:"
+              echo '```'
+              echo "make generate && make generate-docs"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           echo "OK: all generated files are current."
@@ -161,7 +174,22 @@ jobs:
 
       - name: Enforce per-package coverage floor
         if: steps.filter.outputs.go == 'true'
-        run: bash scripts/coverage-floor.sh --cover coverage-floor.out
+        run: |
+          output=$(bash scripts/coverage-floor.sh --cover coverage-floor.out 2>&1) || {
+            echo "$output"
+            {
+              echo "## Coverage Floor -- FAILED"
+              echo ""
+              echo "One or more packages fell below their coverage floor. Add tests or update"
+              echo "\`testdata/coverage-floor.json\` if the drop is intentional."
+              echo ""
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
 
       - name: Skip (no Go changes)
         if: steps.filter.outputs.go != 'true'
@@ -219,6 +247,26 @@ jobs:
               echo "Extra in fuzz.yml matrix (no matching live target):"
               echo "$extra" | awk '{print "  " $0}'
             fi
+            {
+              echo "## Fuzz Matrix Drift -- FAILED"
+              echo ""
+              echo "The fuzz.yml matrix is out of sync with Fuzz* functions in \`internal/\`."
+              echo "Update \`.github/workflows/fuzz.yml\` matrix entries to match."
+              if [ -n "$missing" ]; then
+                echo ""
+                echo "Missing from fuzz.yml (add these):"
+                echo '```'
+                echo "$missing"
+                echo '```'
+              fi
+              if [ -n "$extra" ]; then
+                echo ""
+                echo "Extra in fuzz.yml (no matching live target -- remove these):"
+                echo '```'
+                echo "$extra"
+                echo '```'
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           echo "OK: $(wc -l < "$live_file" | tr -d ' ') fuzz targets, matrix set matches."
@@ -295,4 +343,22 @@ jobs:
           persist-credentials: false
 
       - name: Check tool version alignment
-        run: bash scripts/check-tool-versions.sh
+        run: |
+          output=$(bash scripts/check-tool-versions.sh 2>&1) || {
+            echo "$output"
+            {
+              echo "## Tool Version Drift -- FAILED"
+              echo ""
+              echo "Tool version pins are mismatched across config files. Fix locally:"
+              echo '```'
+              echo "make sync-tool-versions"
+              echo '```'
+              echo ""
+              echo "Drift details:"
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
