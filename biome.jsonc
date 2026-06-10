@@ -1,0 +1,25 @@
+// Biome configuration. Stillwater does not run Biome in its own toolchain
+// (golangci-lint + tailwind own the gates); this file exists to configure the
+// Biome instance that CodeRabbit's review pipeline runs against the repo, so
+// it stops failing on files it cannot or should not parse.
+{
+	"css": {
+		"parser": {
+			// input.css is Tailwind v4 source (@import "tailwindcss",
+			// @custom-variant, @theme). Without this flag Biome's CSS parser
+			// rejects the file outright: "Tailwind-specific syntax is disabled"
+			// (surfaced on PR #1918).
+			"tailwindDirectives": true
+		}
+	},
+	"files": {
+		"includes": [
+			"**",
+			// Generated tailwind output; never hand-edited, never worth linting.
+			"!web/static/css/styles.css",
+			// Vendored third-party minified libraries (htmx, cropper, chart,
+			// driver, Sortable, scalar): upstream code, not ours to lint.
+			"!web/static/js/*.min.js"
+		]
+	}
+}

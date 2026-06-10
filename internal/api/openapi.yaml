@@ -6899,7 +6899,7 @@ paths:
       responses:
         "200":
           description: >
-            All 15 preference keys with the user's values merged over defaults.
+            All preference keys with the user's values merged over defaults.
             The response always contains exactly these keys.
           content:
             application/json:
@@ -6925,7 +6925,7 @@ paths:
                     description: Preferred font family for the UI.
                   font_size:
                     type: string
-                    enum: [small, medium, large]
+                    enum: [small, medium, large, x-large, xx-large]
                     description: Base font size preference.
                   letter_spacing:
                     type: string
@@ -6984,6 +6984,27 @@ paths:
                       Background glass opacity percentage (integer 20-100
                       as a string).
                     example: "85"
+                  density:
+                    type: string
+                    enum: [compact, comfortable, spacious]
+                    description: >
+                      Layout density preference (M55 #1774). Controls
+                      spacing/density of list views via data-density on the
+                      page root.
+                  mono_font:
+                    type: string
+                    enum: [system, jetbrains, cascadia]
+                    description: >
+                      Monospace font preference (M55 #1774). Controls the
+                      font used for kbd badges, IDs, and timestamps via
+                      data-mono on the page root.
+                  kbd_hints:
+                    type: string
+                    enum: [show, hide]
+                    description: >
+                      Keyboard shortcut hint visibility (M55 #1774). Controls
+                      whether keyboard hints render via data-kbd on the page
+                      root.
                 required:
                   - theme
                   - sidebar_state
@@ -7001,6 +7022,9 @@ paths:
                   - auto_fetch_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
+                  - density
+                  - mono_font
+                  - kbd_hints
         "401":
           description: Not authenticated
           content:
@@ -7044,7 +7068,7 @@ paths:
                 sidebar_state: { type: string }
                 content_width: { type: string }
                 font_family: { type: string }
-                font_size: { type: string }
+                font_size: { type: string, enum: [small, medium, large, x-large, xx-large] }
                 letter_spacing: { type: string }
                 thumbnail_size: { type: string }
                 reduced_motion: { type: string }
@@ -7061,6 +7085,9 @@ paths:
                 artist_detail_hidden_sections:
                   type: array
                   items: { type: string }
+                density: { type: string, enum: [compact, comfortable, spacious] }
+                mono_font: { type: string, enum: [system, jetbrains, cascadia] }
+                kbd_hints: { type: string, enum: [show, hide] }
               patternProperties:
                 "^suppress_confirm_":
                   type: string
@@ -7133,6 +7160,9 @@ paths:
                   - auto_fetch_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
+                  - density
+                  - mono_font
+                  - kbd_hints
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       responses:
@@ -7204,6 +7234,9 @@ paths:
                   - auto_fetch_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
+                  - density
+                  - mono_font
+                  - kbd_hints
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       requestBody:

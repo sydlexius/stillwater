@@ -18,6 +18,12 @@ import "github.com/sydlexius/stillwater/web/templates"
 // next/ Sidebar and BottomTabs, which currently delegate to the stable
 // components and are restyled by later screen issues. CSRF + base-path injection
 // and the cache-busted AssetPaths carry over unchanged via LayoutHead.
+//
+// M55 #1774: the preferences drawer is mounted lazily. The mount point below
+// listens for the custom "sw:prefs-open" event (dispatched by swPrefsDrawer.open
+// in prefs-drawer.js on first open) and then fetches the drawer body via HTMX.
+// This avoids plumbing PreferencesData through every handler that renders a
+// next/ page; the DB query only runs when the drawer is first opened.
 func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -89,11 +95,28 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<!-- M55 #1774: preferences drawer lazy-load mount point.\n\t\t\t     hx-trigger=\"sw:prefs-open from:body once\" loads the drawer\n\t\t\t     on the first open; thereafter the existing DOM node handles it.\n\t\t\t     hx-swap=\"outerHTML\" replaces this container with the real drawer\n\t\t\t     (the scrim div + aside), leaving no extra wrapper in the tree. --><div id=\"sw-prefs-mount\" hx-get=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var2 string
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/next/preferences-drawer")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 43, Col: 57}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-trigger=\"sw:prefs-open from:body once\" hx-swap=\"outerHTML\"></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = templates.LayoutGlobalChrome(assets).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

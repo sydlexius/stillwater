@@ -35,7 +35,11 @@
     language: 'en',
     notification_enabled: 'true',
     auto_fetch_images: 'false',
-    bg_opacity: '85'
+    bg_opacity: '85',
+    // M55 #1774: preferences flyout drawer defaults.
+    density: 'comfortable',
+    mono_font: 'jetbrains',
+    kbd_hints: 'show'
   };
 
   // Mapping from preference key to the data attribute name set on <html>.
@@ -49,7 +53,11 @@
     letter_spacing: 'data-letter-spacing',
     thumbnail_size: 'data-thumbnail-size',
     reduced_motion: 'data-motion',
-    lite_mode: 'data-lite'
+    lite_mode: 'data-lite',
+    // M55 #1774: preferences flyout drawer keys.
+    density: 'data-density',
+    mono_font: 'data-mono',
+    kbd_hints: 'data-kbd'
   };
 
   // --- sessionStorage helpers ---

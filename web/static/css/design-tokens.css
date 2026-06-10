@@ -25,6 +25,36 @@
   font-display: swap;
 }
 
+/* JetBrains Mono: variable font (SIL Open Font License 1.1).                */
+/* Source: https://github.com/JetBrains/JetBrainsMono (vendored in           */
+/* web/static/fonts/ with JetBrainsMono-OFL.txt; see #1774).                 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/JetBrainsMono.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/JetBrainsMonoItalic.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Cascadia Code: variable font (SIL Open Font License 1.1).                 */
+/* Source: https://github.com/microsoft/cascadia-code v2407.24 (vendored in  */
+/* web/static/fonts/ with CascadiaCode-OFL.txt; see #1774).                  */
+@font-face {
+  font-family: 'Cascadia Code';
+  src: url('../fonts/CascadiaCode.woff2') format('woff2');
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Atkinson Hyperlegible: four static files (regular, bold, italic, bold-italic). */
 /* Source: https://github.com/googlefonts/atkinson-hyperlegible (SIL OFL 1.1) */
 @font-face {
@@ -166,6 +196,8 @@
 [data-font-size="small"] { font-size: 13px; }
 [data-font-size="medium"] { font-size: 14px; }
 [data-font-size="large"] { font-size: 16px; }
+[data-font-size="x-large"] { font-size: 18px; }
+[data-font-size="xx-large"] { font-size: 20px; }
 
 /* -- Letter spacing (set via data-letter-spacing on <html>) --------------- */
 [data-letter-spacing="normal"] { letter-spacing: normal; }
@@ -183,6 +215,42 @@ body { font-family: var(--sw-font-family); }
 [data-thumbnail-size="small"] { --sw-thumb-size: 32px; --sw-thumb-grid-min: 140px; }
 [data-thumbnail-size="medium"] { --sw-thumb-size: 44px; --sw-thumb-grid-min: 180px; }
 [data-thumbnail-size="large"] { --sw-thumb-size: 56px; --sw-thumb-grid-min: 220px; }
+
+/* -- Density (set via data-density on <html>, M55 #1774) ------------------ */
+/* Controls vertical spacing / row height across next/ list views.           */
+:root {
+  --sw-density-row-py: 0.5rem;   /* default comfortable row padding */
+  --sw-density-gap: 1rem;        /* default gap between list items  */
+}
+[data-density="compact"] {
+  --sw-density-row-py: 0.25rem;
+  --sw-density-gap: 0.5rem;
+}
+[data-density="comfortable"] {
+  --sw-density-row-py: 0.5rem;
+  --sw-density-gap: 1rem;
+}
+[data-density="spacious"] {
+  --sw-density-row-py: 0.875rem;
+  --sw-density-gap: 1.5rem;
+}
+
+/* -- Monospace font (set via data-mono on <html>, M55 #1774) -------------- */
+/* Rebinds --sw-font-mono; elements using font-family: var(--sw-font-mono)   */
+/* (kbd badges, IDs, timestamps) pick up the change automatically.           */
+[data-mono="system"] {
+  --sw-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Cascadia Mono', monospace;
+}
+[data-mono="jetbrains"] {
+  --sw-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+[data-mono="cascadia"] {
+  --sw-font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* -- Keyboard hints (set via data-kbd on <html>, M55 #1774) --------------- */
+/* [data-kbd="hide"] hides all keyboard shortcut hint elements.              */
+[data-kbd="hide"] [data-sw-kbd-hint] { display: none !important; }
 
 /* -- Lite mode (disables glass, backdrop-filter, transitions) ------------- */
 [data-lite="on"] {
