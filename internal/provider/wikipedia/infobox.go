@@ -363,6 +363,7 @@ func unwrapListTemplates(s string) string {
 // Handles: [[Link|Display]] -> Display, [[Link]] -> Link,
 // {{nowrap|text}} -> text, {{small|text}} -> text, HTML tags, ref tags.
 func cleanMarkup(s string) string {
+	s = html.UnescapeString(s)
 	s = stripRefs(s)
 	s = stripHTMLTags(s)
 	s = resolveWikilinks(s)

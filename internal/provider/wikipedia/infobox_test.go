@@ -203,6 +203,12 @@ func TestCleanMarkup(t *testing.T) {
 		{"self-closing ref", "text<ref name=foo />more", "textmore"},
 		{"html tags", "<b>bold</b> and <i>italic</i>", "bold and italic"},
 		{"plain text", "just plain text", "just plain text"},
+		{"named entity amp", "&amp;", "&"},
+		{"named entity accent", "na&iuml;ve", "naïve"},
+		{"entity nbsp in text", "New&nbsp;York", "New York"},
+		{"numeric entity apostrophe", "rock&#39;n&#39;roll", "rock'n'roll"},
+		{"numeric entity en-dash", "1990&#8211;2000", "1990–2000"},
+		{"entity mixed with wikilink", "[[New York]]&nbsp;City", "New York City"},
 	}
 
 	for _, tt := range tests {
