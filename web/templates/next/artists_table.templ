@@ -91,11 +91,11 @@ templ ArtistsTable(data templates.ArtistListData) {
 							<span id="bulk-select-all-label" class="sr-only">{ t(ctx, "artists.bulk.select_all") }</span>
 						</th>
 						@nextSortTh("name", "name", t(ctx, "artists.col.name"), t(ctx, "artists.sort_by_name"), false, data)
-						<th scope="col" data-col="library" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.library") }</th>
+						<th scope="col" data-col="library" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.library") }</th>
 						@nextSortTh("type", "type", t(ctx, "artists.sort.type"), t(ctx, "artists.sort_by_type"), false, data)
 						@nextSortTh("origin", "origin", t(ctx, "artists.sort.origin"), t(ctx, "artists.sort_by_origin"), false, data)
-						<th scope="col" data-col="sources" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.sources") }</th>
-						<th scope="col" data-col="coverage" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.coverage") }</th>
+						<th scope="col" data-col="sources" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.sources") }</th>
+						<th scope="col" data-col="coverage" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.coverage") }</th>
 						@nextSortTh("score", "health_score", t(ctx, "artists.col.score"), t(ctx, "artists.sort.health_score"), true, data)
 					</tr>
 				</thead>
@@ -118,7 +118,7 @@ templ ArtistsTable(data templates.ArtistListData) {
 // sortCol is the sort param (e.g. health_score for the Score column); rightAlign
 // right-aligns the numeric Score header.
 templ nextSortTh(dataCol, sortCol, label, title string, rightAlign bool, data templates.ArtistListData) {
-	<th scope="col" data-col={ dataCol } data-sort-col={ sortCol } class={ "px-4 py-3 text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400", templ.KV("text-right", rightAlign), templ.KV("text-left", !rightAlign) }>
+	<th scope="col" data-col={ dataCol } data-sort-col={ sortCol } class={ "px-4 py-3 text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400", templ.KV("text-right", rightAlign), templ.KV("text-left", !rightAlign) }>
 		<button
 			type="button"
 			onclick={ setSortColumnScript(sortCol) }

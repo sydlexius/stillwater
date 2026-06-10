@@ -210,14 +210,14 @@ func ArtistsTable(data templates.ArtistListData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<th scope=\"col\" data-col=\"library\" class=\"px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<th scope=\"col\" data-col=\"library\" class=\"px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.col.library"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 94, Col: 178}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 94, Col: 168}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -235,27 +235,27 @@ func ArtistsTable(data templates.ArtistListData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<th scope=\"col\" data-col=\"sources\" class=\"px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<th scope=\"col\" data-col=\"sources\" class=\"px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.col.sources"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 97, Col: 178}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 97, Col: 168}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</th><th scope=\"col\" data-col=\"coverage\" class=\"px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</th><th scope=\"col\" data-col=\"coverage\" class=\"px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.col.coverage"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 98, Col: 180}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 98, Col: 170}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -339,7 +339,7 @@ func nextSortTh(dataCol, sortCol, label, title string, rightAlign bool, data tem
 			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var14 = []any{"px-4 py-3 text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400", templ.KV("text-right", rightAlign), templ.KV("text-left", !rightAlign)}
+		var templ_7745c5c3_Var14 = []any{"px-4 py-3 text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400", templ.KV("text-right", rightAlign), templ.KV("text-left", !rightAlign)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var14...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err

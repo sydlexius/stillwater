@@ -1993,8 +1993,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 /* Row/cell typography (M55 #1335, updated #1853): table body and header use
  * the pref-aware --sw-type-* tokens so the Font Size preference rescales them.
  * The 13px body and 11px eyebrow snap to the nearest Tailwind step (text-sm /
- * text-xs = 0.875rem / 0.75rem); tracking on the eyebrow uses the shared
- * --sw-type-track-label (0.05em) that matches the dashboard's label chip. */
+ * text-xs = 0.875rem / 0.75rem). */
 .sw-next-artists tbody td {
   font-size: var(--sw-type-value);
   line-height: 1.35;
@@ -2003,11 +2002,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   font-weight: 500;
   letter-spacing: -0.01em;
 }
+/* Column headers render the i18n label verbatim in Title Case (#1843); the
+ * uppercase eyebrow treatment is reserved for field-label dt roles, where it
+ * is a deliberate, documented stylistic token. Tracking goes with uppercase,
+ * so it drops here too. */
 .sw-next-artists thead th {
   font-size: var(--sw-type-label);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--sw-type-track-label);
 }
 
 /* Keyboard-hint badges (M55 #1335): the prototype surfaces shortcut keys as
@@ -2181,15 +2182,14 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * same pickable-fonts seam the dashboard and artist-detail screens use. Values
  * mirror the dashboard --sw-type-* ramp so all three next/ screens share one
  * scale (section/value 0.875rem = text-sm, label/meta/mono 0.75rem = text-xs).
- * --sw-type-track-label matches the dashboard's 0.05em so the uppercase eyebrow
- * (thead th) and the dashboard's label chip use one tracking value, not two.
- * Scoped to .sw-next-artists; dashboard keeps its own block above. */
+ * Scoped to .sw-next-artists; dashboard keeps its own block above. (The
+ * dashboard-matching --sw-type-track-label was dropped from this scope when
+ * #1843 retired the thead-th uppercase eyebrow; headers are Title Case now.) */
 .sw-next-artists {
   --sw-type-value: 0.875rem;   /* table body row text (13px -> text-sm) */
-  --sw-type-label: 0.75rem;    /* thead th uppercase eyebrow (11px -> text-xs) */
+  --sw-type-label: 0.75rem;    /* thead th label (11px -> text-xs) */
   --sw-type-meta: 0.75rem;     /* tip-line prose (.sw-list-tips) */
   --sw-type-mono: 0.75rem;     /* kbd chip glyph (.sw-kbd, mono family) */
-  --sw-type-track-label: 0.05em;
 }
 
 /* =====================================================================
@@ -3165,6 +3165,31 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 .sw-next-artist-detail .sw-next-refresh-btn.htmx-request .sw-next-refresh-icon {
   display: none;
+}
+
+/* Per-field fetch loading state (#1912): rotate the circle-arrow icon that
+ * lives inside the fetch button instead of showing a separate spinner beside
+ * it. htmx adds .htmx-request to the button element that fires the request;
+ * the SVG child inherits the animation. Applies to both the edit-mode icon
+ * button (.sw-edit-actions) and the read-mode context-menu button
+ * (.sw-field-actions). Scoped to the sw-next-artist-detail page so other
+ * pages with the same class names are unaffected. */
+.sw-next-artist-detail .sw-edit-actions button.htmx-request svg,
+.sw-next-artist-detail .sw-field-actions button.htmx-request svg {
+  animation: spin 1s linear infinite;
+}
+/* Motion-disabled users keep a static icon: the in-flight state is still
+ * conveyed by the button's htmx-request styling, not motion alone. Honors
+ * both the OS query and the app's reduced_motion pref (data-motion="on"). */
+@media (prefers-reduced-motion: reduce) {
+  .sw-next-artist-detail .sw-edit-actions button.htmx-request svg,
+  .sw-next-artist-detail .sw-field-actions button.htmx-request svg {
+    animation: none;
+  }
+}
+html[data-motion="on"] .sw-next-artist-detail .sw-edit-actions button.htmx-request svg,
+html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-request svg {
+  animation: none;
 }
 
 /* Sticky mini-header (design section 6): slides in once the hero scrolls out of

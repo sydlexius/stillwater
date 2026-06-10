@@ -70,6 +70,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 			class="sw-next-artist-detail space-y-4"
 			data-sw-violations-sync
 			data-artist-id={ data.Detail.Artist.ID }
+			data-sw-fanart-base={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/fanart/", data.Detail.Artist.ID) }
 			data-sw-msg-save-failed={ t(ctx, "artist.save_failed_some") }
 			data-sw-msg-edit-partial={ t(ctx, "artist.edit_partial") }
 			data-sw-msg-session-expired={ t(ctx, "common.session_expired") }
@@ -160,7 +161,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 // the #refresh-panel mount. h/l prev/next-artist links carry data-sw-shortcut.
 templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 	{{ a := data.Detail.Artist }}
-	<section class="sw-dash-card sw-next-hero" aria-labelledby="next-hero-name">
+	<section id={ "next-hero-" + a.ID } class="sw-dash-card sw-next-hero" aria-labelledby="next-hero-name">
 		<div class="body">
 			// Portrait: the thumb (the artist's primary square image), else the name
 			// initial. The artistlogo is NOT shown here -- it gets its own prominent
@@ -179,7 +180,7 @@ templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 			<div class="sw-next-hero-meta">
 				<div class="flex flex-wrap items-center gap-2 text-xs" style="color:var(--swd-ink-3)">
 					if a.Type != "" {
-						<span class="rounded-full px-2 py-0.5 uppercase tracking-wide" style="border:1px solid var(--swd-line)">{ nextTypeLabel(ctx, a.Type) }</span>
+						<span class="rounded-full px-2 py-0.5 tracking-wide" style="border:1px solid var(--swd-line)">{ nextTypeLabel(ctx, a.Type) }</span>
 					}
 					if data.Detail.LibraryName != "" {
 						<span>{ tf(ctx, "artist.library_label", data.Detail.LibraryName) }</span>
@@ -834,11 +835,11 @@ templ artistDetailPageScript() {
 				var box = document.getElementById('ambient-backdrop');
 				var layerA = document.getElementById('ambient-backdrop-img');
 				if (!box || !layerA || !pageRoot) return;
-				var aid = pageRoot.getAttribute('data-artist-id');
-				if (!aid) return;
-				var bpEl = document.querySelector('meta[name="htmx-base-path"]');
-				var bp = bpEl ? bpEl.content : '';
-				var base = bp + '/api/v1/artists/' + aid + '/images/fanart/';
+				// base is provided as a data attribute on the page root so the path
+				// honors the configured base path without hardcoding /api/v1 in JS
+				// (mirrors the #1858 fanart-slideshow.js fix).
+				var base = pageRoot.getAttribute('data-sw-fanart-base');
+				if (!base) return;
 				var SHARP = 'brightness(0.7) saturate(1.4)';
 				var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 				function styleLayer(el) {
@@ -1025,6 +1026,46 @@ templ artistDetailPageScript() {
 					});
 				}, Promise.resolve());
 			}
+			// Swap the hero section in place so a name/type History-undo reflects
+			// immediately in the H1/portrait/type pill without a full reload (#1850).
+			// Uses the same select-swap pattern as refreshEditableSections.
+			function refreshHero() {
+				var aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';
+				var sel = '#next-hero-' + aid;
+				if (typeof htmx === 'undefined' || !aid || !document.querySelector(sel)) {
+					return Promise.resolve();
+				}
+				return htmx.ajax('GET', window.location.pathname, { target: sel, swap: 'outerHTML', select: sel })
+					.catch(function () { window.location.reload(); });
+			}
+			// Re-establish the IntersectionObserver and edit-all bindings on the
+			// hero after a DOM swap replaces the hero node (#1850). Re-queries
+			// fresh DOM nodes so detached listeners from the old node are never
+			// called and the sticky header continues to work correctly.
+			function rebindHero() {
+				var stick = document.querySelector('[data-sw-stickhdr]');
+				var hero = document.querySelector('.sw-next-hero');
+				if (stick && hero && 'IntersectionObserver' in window) {
+					new IntersectionObserver(function (entries) {
+						var stuck = !entries[0].isIntersecting;
+						stick.classList.toggle('is-stuck', stuck);
+						stick.setAttribute('aria-hidden', stuck ? 'false' : 'true');
+					}, { rootMargin: '-48px 0px 0px 0px', threshold: 0 }).observe(hero);
+				}
+				// Re-query editTriggers to include the fresh hero button and
+				// re-attach the click handler so the hero Edit button works after
+				// a hero DOM swap. The dataset guard keeps the binding idempotent:
+				// the sticky-header trigger survives hero swaps, and without the
+				// guard each rebindHero() call would stack another listener on it.
+				editTriggers = document.querySelectorAll('[data-sw-edit-all]');
+				editTriggers.forEach(function (trigger) {
+					if (trigger.dataset.swEditBound) return;
+					trigger.dataset.swEditBound = '1';
+					trigger.addEventListener('click', function () { setEditAll(!editing); });
+				});
+				// Sync the visual state of the new hero button with the current edit mode.
+				reflectEditState(editing);
+			}
 			// Returns a Promise resolving to { failedCount }. CRITICAL: each PATCH is
 			// checked for r.ok -- a rejected save (400/409 conflict-gate/422/500) is a
 			// FAILURE, not a silent success. Because these are raw fetch() calls (not
@@ -1050,7 +1091,14 @@ templ artistDetailPageScript() {
 						jobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input });
 					}
 				});
-				if (jobs.length === 0) return Promise.resolve({ failedCount: 0 });
+				// Nothing dirty, but every editor is still open: swap the sections
+				// back to their read view so Done always returns the page to its
+				// pre-Edit state. Without this, an Edit -> Done round-trip with no
+				// changes left all field editors mounted (pre-existing since the
+				// #1895 edit-mode rebuild; surfaced in 4D-1 UAT).
+				if (jobs.length === 0) {
+					return refreshEditableSections().then(function () { return { failedCount: 0 }; });
+				}
 				if (!csrf) {
 					var expiredMsg = (pageRoot && pageRoot.getAttribute('data-sw-msg-session-expired')) ||
 						'Session expired. Please reload the page and try again.';
@@ -1123,22 +1171,15 @@ templ artistDetailPageScript() {
 					});
 				}
 			}
-			editTriggers.forEach(function (trigger) {
-				trigger.addEventListener('click', function () { setEditAll(!editing); });
-			});
-
 			// History undo (revert): the revert button (in the lazily-loaded history
 			// fragment) POSTs to /history/{id}/revert and swaps only the history list,
 			// so the reverted value stayed stale in the Details / Provider IDs rows
 			// until a manual reload (maintainer request). Listen for a successful
-			// revert and refresh those editable sections in place so the impacted
-			// field reflects the new value (no full reload, no flicker, scroll kept).
-			// The hero (name/type/portrait) is a denormalized mirror left untouched
-			// here -- re-swapping it would detach its edit-all/observer bindings; for a
-			// name/type revert the Details row updates but the hero mirror lags until
-			// the next load. Accepted as-is; the polished "refresh the impacted element
-			// incl. the hero" treatment is tracked in #1850. Skipped while editing so
-			// an open editor's unsaved input is never clobbered.
+			// revert and refresh those editable sections and the hero in place so the
+			// impacted field reflects the new value (no full reload, no flicker, scroll
+			// kept). rebindHero() re-establishes the observer and click handlers on the
+			// swapped-in hero node. Skipped while editing so an open editor's unsaved
+			// input is never clobbered.
 			document.body.addEventListener('htmx:afterRequest', function (evt) {
 				var d = evt.detail;
 				if (!d || !d.successful) return;
@@ -1148,22 +1189,16 @@ templ artistDetailPageScript() {
 				var path = cfg.path || '';
 				// Match the revert endpoint regardless of base-path prefix or query.
 				if (verb === 'post' && /\/history\/[^/]+\/revert(?:[?]|$)/.test(path) && !editing) {
-					refreshEditableSections();
+					// Refresh the field rows then the hero, so a name/type undo
+					// updates the H1 and type pill in place (#1850).
+					refreshEditableSections().then(refreshHero).then(rebindHero);
 				}
 			});
 
-			// Sticky mini-header: reveal once the hero scrolls out of the top. Uses
-			// an IntersectionObserver on the hero (no scroll-reveal helper exists in
-			// the shared JS) toggling .is-stuck on the bar.
-			var stick = document.querySelector('[data-sw-stickhdr]');
-			var hero = document.querySelector('.sw-next-hero');
-			if (stick && hero && 'IntersectionObserver' in window) {
-				new IntersectionObserver(function (entries) {
-					var stuck = !entries[0].isIntersecting;
-					stick.classList.toggle('is-stuck', stuck);
-					stick.setAttribute('aria-hidden', stuck ? 'false' : 'true');
-				}, { rootMargin: '-48px 0px 0px 0px', threshold: 0 }).observe(hero);
-			}
+			// Sticky mini-header: initial bind (runs once at page load). After a
+			// hero DOM swap the revert handler calls rebindHero() to re-attach
+			// the observer and edit-all listener on the fresh node (#1850).
+			rebindHero();
 
 			var root = document.querySelector('[data-sw-section-nav]');
 			if (!root) return;

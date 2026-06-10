@@ -127,6 +127,24 @@ card). Do not stack two Tailwind display utilities on the same element
 (`hidden inline-flex`); the cascade keeps the later one and the earlier is
 dead weight.
 
+## UI text case conventions
+
+These rules apply to all template, CSS, and i18n work (established in #1843).
+
+- **UI headings and table column headers:** Title Case. Use i18n strings
+  as-is; do NOT apply CSS `uppercase` or `text-transform: uppercase` to
+  header elements. The i18n strings are already Title-Cased.
+- **Body text, descriptions, helper copy, buttons:** Sentence case.
+- **Enum / type-like data values:** Route through a shared display helper
+  rather than rendering the raw database value. The canonical example is
+  `ArtistTypeLabel` in `web/templates/helpers.go`, which normalizes raw
+  MusicBrainz type strings ("solo act", "group", ...) to localized Title Case
+  labels. Add a helper of this pattern for any new enum whose raw values differ
+  from the desired display form.
+- **ALL CAPS:** Avoid. Do not use `uppercase` (Tailwind) or
+  `text-transform: uppercase` (CSS) on rendered content. Exceptions must be
+  documented with a comment explaining why ALL CAPS is intentional.
+
 ## Accessibility floor
 
 The existing components carry a substantial a11y baseline: `role="switch"`
