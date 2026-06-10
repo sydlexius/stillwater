@@ -8,6 +8,17 @@ import (
 	"time"
 )
 
+// testClock is a fixed-time Clock for tests. It always returns the same
+// instant so time-dependent logic in CSRF is independent of wall-clock speed.
+type testClock struct {
+	now time.Time
+}
+
+func (c testClock) Now() time.Time { return c.now }
+
+// fixedTestTime is the reference instant used across CSRF cleanup tests.
+var fixedTestTime = time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
 func TestCSRF_SafeMethodSetsToken(t *testing.T) {
 	t.Parallel()
 	csrf := NewCSRF()
@@ -135,12 +146,13 @@ func TestCSRF_ExistingValidCookieNotReplaced(t *testing.T) {
 // map size in a bounded loop.
 func TestCSRF_CleanupRemovesExpiredTokens(t *testing.T) {
 	t.Parallel()
-	c := newCSRFForTest(time.Hour) // ticker effectively never fires during the test
+	clk := testClock{now: fixedTestTime}
+	c := newCSRFForTest(time.Hour, clk) // ticker effectively never fires during the test
 	t.Cleanup(c.Close)
 
 	// Seed 1000 tokens with creation times well past csrfTokenTTL so the
 	// sweep marks every one of them as expired.
-	expired := time.Now().Add(-2 * csrfTokenTTL)
+	expired := fixedTestTime.Add(-2 * csrfTokenTTL)
 	c.mu.Lock()
 	for i := 0; i < 1000; i++ {
 		c.tokens[generateRandomTokenForTest(t)] = expired
@@ -177,13 +189,16 @@ func TestCSRF_CleanupRemovesExpiredTokens(t *testing.T) {
 // expired tokens; tokens issued within csrfTokenTTL must remain.
 func TestCSRF_CleanupKeepsLiveTokens(t *testing.T) {
 	t.Parallel()
-	c := newCSRFForTest(time.Hour)
+	clk := testClock{now: fixedTestTime}
+	c := newCSRFForTest(time.Hour, clk)
 	t.Cleanup(c.Close)
 
-	live := c.generate() // freshly issued, well inside TTL
+	live := c.generate() // freshly issued relative to fixedTestTime, well inside TTL
 
 	// Add 500 expired tokens alongside the live one.
-	expired := time.Now().Add(-2 * csrfTokenTTL)
+	// fixedTestTime - 2*TTL is definitively before the cleanup cutoff
+	// (fixedTestTime - TTL), so all 500 are swept and live survives.
+	expired := fixedTestTime.Add(-2 * csrfTokenTTL)
 	c.mu.Lock()
 	for i := 0; i < 500; i++ {
 		c.tokens[generateRandomTokenForTest(t)] = expired
@@ -211,7 +226,7 @@ func TestCSRF_CleanupKeepsLiveTokens(t *testing.T) {
 // must not panic on the already-closed stop channel.
 func TestCSRF_CloseStopsGoroutine(t *testing.T) {
 	t.Parallel()
-	c := newCSRFForTest(time.Millisecond) // fast ticker so any leak is obvious under -race
+	c := newCSRFForTest(time.Millisecond, realClock{}) // fast ticker so any leak is obvious under -race
 	c.Close()
 	// Second Close must be a no-op. The done channel is closed before
 	// the first Close returns, so the second Close returns immediately.
@@ -232,7 +247,7 @@ func generateRandomTokenForTest(t *testing.T) string {
 	t.Helper()
 	// A throwaway CSRF with no cleanup goroutine is enough: generate()
 	// only touches the local map under its own mutex.
-	c := &CSRF{tokens: map[string]time.Time{}}
+	c := &CSRF{tokens: map[string]time.Time{}, clock: realClock{}}
 	return c.generate()
 }
 
