@@ -35,7 +35,7 @@ type ArtistDetailPageData struct {
 // renders metadata + findings + history + identifiers itself and leaves
 // stable-id mount points for artwork (4B) and providers/discography/debug (4C).
 var defaultSectionOrder = []string{
-	"metadata", "artwork", "findings", "history", "providers", "discography", "debug", "identifiers",
+	"metadata", "artwork", "findings", "providers", "discography", "debug", "identifiers",
 }
 
 // orderedSections returns the section ids to render in order, applying the user
@@ -241,11 +241,6 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-				case "history":
-					templ_7745c5c3_Err = artistHistorySection(data.Detail.Artist.ID).Render(ctx, templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
 				case "providers":
 					templ_7745c5c3_Err = SectionProviders(data).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
@@ -281,7 +276,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.tip_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 116, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 114, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -294,7 +289,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.prev_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 117, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 115, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -307,7 +302,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.next_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 119, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 117, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -320,7 +315,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.section_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 121, Col: 147}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 119, Col: 147}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -333,7 +328,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.section_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 123, Col: 147}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 121, Col: 147}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -346,7 +341,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.refresh"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 125, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 123, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -359,7 +354,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 127, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 125, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -372,7 +367,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.close"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 129, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 127, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -385,7 +380,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.field_edit"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 131, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 129, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -398,7 +393,7 @@ func ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) te
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.next.shortcuts.field_fetch"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 133, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 131, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -480,7 +475,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue("next-hero-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 164, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 162, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
@@ -498,7 +493,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", a.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 172, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 170, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 			if templ_7745c5c3_Err != nil {
@@ -511,7 +506,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(a.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 173, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 171, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
@@ -529,7 +524,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(heroInitial(a.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 177, Col: 162}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 175, Col: 162}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -552,7 +547,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(nextTypeLabel(ctx, a.Type))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 183, Col: 128}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 181, Col: 128}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
@@ -571,7 +566,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.library_label", data.Detail.LibraryName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 186, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 184, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -590,7 +585,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.last_scan", a.LastScannedAt.Format("2006-01-02")))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 189, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 187, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 			if templ_7745c5c3_Err != nil {
@@ -613,7 +608,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.locked"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 194, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 192, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -631,7 +626,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(a.LockSource)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 196, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 194, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -659,7 +654,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/logo/file", a.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 209, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 207, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 			if templ_7745c5c3_Err != nil {
@@ -672,7 +667,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(a.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 210, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 208, Col: 19}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 			if templ_7745c5c3_Err != nil {
@@ -685,7 +680,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 213, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 211, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -699,7 +694,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 215, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 213, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
@@ -718,7 +713,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(a.Path)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 224, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 222, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -736,7 +731,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.col.score"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 232, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 230, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 		if templ_7745c5c3_Err != nil {
@@ -783,7 +778,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var36 templ.SafeURL
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(conn.URL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 245, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 243, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -796,7 +791,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artist.view_on_platform", conn.Name))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 250, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 248, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 				if templ_7745c5c3_Err != nil {
@@ -809,7 +804,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 252, Col: 19}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 250, Col: 19}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -846,7 +841,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var39 templ.SafeURL
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/next/artists/" + data.PrevArtistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 265, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 263, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -859,7 +854,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.prev_artist"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 269, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 267, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 				if templ_7745c5c3_Err != nil {
@@ -872,7 +867,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var41 string
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.prev_artist"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 270, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 268, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 				if templ_7745c5c3_Err != nil {
@@ -899,7 +894,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var42 templ.SafeURL
 				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/next/artists/" + data.NextArtistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 277, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 275, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 				if templ_7745c5c3_Err != nil {
@@ -912,7 +907,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var43 string
 				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.next_artist"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 281, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 279, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 				if templ_7745c5c3_Err != nil {
@@ -925,7 +920,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.next_artist"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 282, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 280, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 				if templ_7745c5c3_Err != nil {
@@ -956,7 +951,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/refresh")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 299, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 297, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 		if templ_7745c5c3_Err != nil {
@@ -969,7 +964,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue("#refresh-spinner-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 302, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 300, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {
@@ -982,7 +977,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.refresh_metadata"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 305, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 303, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 		if templ_7745c5c3_Err != nil {
@@ -999,7 +994,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.refresh"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 308, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 306, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 		if templ_7745c5c3_Err != nil {
@@ -1012,7 +1007,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue("refresh-spinner-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 309, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 307, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 		if templ_7745c5c3_Err != nil {
@@ -1025,7 +1020,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 321, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 319, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 		if templ_7745c5c3_Err != nil {
@@ -1038,7 +1033,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.edit_done"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 322, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 320, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
 		if templ_7745c5c3_Err != nil {
@@ -1059,7 +1054,7 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 326, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 324, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 		if templ_7745c5c3_Err != nil {
@@ -1128,7 +1123,7 @@ func artistFindingSeverity(data templates.ArtistDetailData) templ.Component {
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(tn(ctx, "artist.findings_count", data.ViolationCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 355, Col: 195}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 353, Col: 195}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 			if templ_7745c5c3_Err != nil {
@@ -1146,7 +1141,7 @@ func artistFindingSeverity(data templates.ArtistDetailData) templ.Component {
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.severity_count.error", sev["error"]))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 359, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 357, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
@@ -1165,7 +1160,7 @@ func artistFindingSeverity(data templates.ArtistDetailData) templ.Component {
 				var templ_7745c5c3_Var56 string
 				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.severity_count.warning", sev["warning"]))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 365, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 363, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 				if templ_7745c5c3_Err != nil {
@@ -1184,7 +1179,7 @@ func artistFindingSeverity(data templates.ArtistDetailData) templ.Component {
 				var templ_7745c5c3_Var57 string
 				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.severity_count.info", sev["info"]))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 371, Col: 93}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 369, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 				if templ_7745c5c3_Err != nil {
@@ -1199,7 +1194,7 @@ func artistFindingSeverity(data templates.ArtistDetailData) templ.Component {
 				var templ_7745c5c3_Var58 string
 				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.findings_count", data.ViolationCount))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 375, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 373, Col: 59}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 				if templ_7745c5c3_Err != nil {
@@ -1218,7 +1213,7 @@ func artistFindingSeverity(data templates.ArtistDetailData) templ.Component {
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.open_findings_none"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 379, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 377, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1267,7 +1262,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var61 templ.SafeURL
 		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/next/artists"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 393, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 391, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 		if templ_7745c5c3_Err != nil {
@@ -1284,7 +1279,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var62 string
 		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.artists"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 398, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 396, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 		if templ_7745c5c3_Err != nil {
@@ -1297,7 +1292,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var63 string
 		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 400, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 398, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 		if templ_7745c5c3_Err != nil {
@@ -1315,7 +1310,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(nextTypeLabel(ctx, a.Type))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 402, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 400, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
@@ -1334,7 +1329,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.findings_count", data.Detail.ViolationCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 407, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 405, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1352,7 +1347,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 419, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 417, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 		if templ_7745c5c3_Err != nil {
@@ -1365,7 +1360,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.edit_done"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 420, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 418, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var67)
 		if templ_7745c5c3_Err != nil {
@@ -1386,7 +1381,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var68 string
 		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 424, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 422, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 		if templ_7745c5c3_Err != nil {
@@ -1446,7 +1441,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var70 string
 		templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 443, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 441, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 		if templ_7745c5c3_Err != nil {
@@ -1467,7 +1462,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var71 string
 		templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 450, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 448, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 		if templ_7745c5c3_Err != nil {
@@ -1489,7 +1484,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.actions"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 453, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 451, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
@@ -1506,7 +1501,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var74 string
 		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 457, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 455, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
 		if templ_7745c5c3_Err != nil {
@@ -1564,7 +1559,7 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 477, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 475, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
 		if templ_7745c5c3_Err != nil {
@@ -1585,7 +1580,7 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var77 string
 		templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 484, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 482, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
 		if templ_7745c5c3_Err != nil {
@@ -1607,7 +1602,7 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var79 string
 		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.actions"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 487, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 485, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 		if templ_7745c5c3_Err != nil {
@@ -1624,7 +1619,7 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 491, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 489, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
@@ -1682,7 +1677,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/run-rules")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 514, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 512, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
 		if templ_7745c5c3_Err != nil {
@@ -1700,7 +1695,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var83 string
 			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 519, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 517, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var83)
 			if templ_7745c5c3_Err != nil {
@@ -1722,7 +1717,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 		var templ_7745c5c3_Var84 string
 		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.run_rules"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 523, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 521, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 		if templ_7745c5c3_Err != nil {
@@ -1735,7 +1730,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 		var templ_7745c5c3_Var85 string
 		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/reidentify")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 530, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 528, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var85)
 		if templ_7745c5c3_Err != nil {
@@ -1753,7 +1748,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.reidentify_confirm"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 534, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 532, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
 			if templ_7745c5c3_Err != nil {
@@ -1776,7 +1771,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var87 string
 			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.reidentify"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 540, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 538, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 			if templ_7745c5c3_Err != nil {
@@ -1786,7 +1781,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var88 string
 			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.identify"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 542, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 540, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 			if templ_7745c5c3_Err != nil {
@@ -1805,7 +1800,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.rename_directory_prompt"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 550, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 548, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
 			if templ_7745c5c3_Err != nil {
@@ -1818,7 +1813,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var90 string
 			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(filepath.Base(a.Path))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 551, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 549, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
 			if templ_7745c5c3_Err != nil {
@@ -1831,7 +1826,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/rename-directory")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 552, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 550, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var91)
 			if templ_7745c5c3_Err != nil {
@@ -1844,7 +1839,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var92 string
 			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.rename_directory_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 553, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 551, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var92)
 			if templ_7745c5c3_Err != nil {
@@ -1861,7 +1856,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var93 string
 			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.rename_directory"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 557, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 555, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 			if templ_7745c5c3_Err != nil {
@@ -1880,7 +1875,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var94 string
 			templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/lock")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 565, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 563, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var94)
 			if templ_7745c5c3_Err != nil {
@@ -1893,7 +1888,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var95 string
 			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.platform_action_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 567, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 565, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95)
 			if templ_7745c5c3_Err != nil {
@@ -1910,7 +1905,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var96 string
 			templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.unlock_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 571, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 569, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 			if templ_7745c5c3_Err != nil {
@@ -1928,7 +1923,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var97 string
 			templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/lock")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 578, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 576, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var97)
 			if templ_7745c5c3_Err != nil {
@@ -1941,7 +1936,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var98 string
 			templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.platform_action_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 580, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 578, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var98)
 			if templ_7745c5c3_Err != nil {
@@ -1958,7 +1953,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var99 string
 			templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.lock_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 584, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 582, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 			if templ_7745c5c3_Err != nil {
@@ -1977,7 +1972,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var100 templ.SafeURL
 			templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(conn.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 589, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 587, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 			if templ_7745c5c3_Err != nil {
@@ -1994,7 +1989,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var101 string
 			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.view_on_platform", conn.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 596, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 594, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 			if templ_7745c5c3_Err != nil {
@@ -2044,7 +2039,7 @@ func artistMetadataSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var103 string
 		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.ResolveAttributeValue("next-metadata-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 609, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 607, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var103)
 		if templ_7745c5c3_Err != nil {
@@ -2057,7 +2052,7 @@ func artistMetadataSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var104 string
 		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.tab_overview"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 609, Col: 142}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 607, Col: 142}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var104)
 		if templ_7745c5c3_Err != nil {
@@ -2070,7 +2065,7 @@ func artistMetadataSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var105 string
 		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.details"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 610, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 608, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 		if templ_7745c5c3_Err != nil {
@@ -2083,7 +2078,7 @@ func artistMetadataSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var106 string
 		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.section_identity"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 623, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 621, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 		if templ_7745c5c3_Err != nil {
@@ -2112,7 +2107,7 @@ func artistMetadataSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var107 string
 		templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue("gender-wrap-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 632, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 630, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
 		if templ_7745c5c3_Err != nil {
@@ -2229,7 +2224,7 @@ func artistMetadataSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var112 string
 		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.aliases"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 669, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 667, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
 		if templ_7745c5c3_Err != nil {
@@ -2258,7 +2253,7 @@ func artistMetadataSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var113 string
 		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tags"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 679, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 677, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
 		if templ_7745c5c3_Err != nil {
@@ -2326,7 +2321,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var115 string
 		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + artistID + "/aliases")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 703, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 701, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
 		if templ_7745c5c3_Err != nil {
@@ -2339,7 +2334,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var116 string
 		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.alias_add_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 705, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 703, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var116)
 		if templ_7745c5c3_Err != nil {
@@ -2352,7 +2347,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var117 string
 		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.ResolveAttributeValue("alias-input-label-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 708, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 706, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var117)
 		if templ_7745c5c3_Err != nil {
@@ -2365,7 +2360,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var118 string
 		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.add_alias_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 708, Col: 98}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 706, Col: 98}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 		if templ_7745c5c3_Err != nil {
@@ -2378,7 +2373,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var119 string
 		templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.add_alias_placeholder"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 711, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 709, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var119)
 		if templ_7745c5c3_Err != nil {
@@ -2391,7 +2386,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var120 string
 		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.ResolveAttributeValue("alias-input-label-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 713, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 711, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var120)
 		if templ_7745c5c3_Err != nil {
@@ -2404,7 +2399,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var121 string
 		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.add"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 721, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 719, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
 		if templ_7745c5c3_Err != nil {
@@ -2450,7 +2445,7 @@ func artistFindingsSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var123 string
 		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.tab_violations"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 731, Col: 132}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 729, Col: 132}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 		if templ_7745c5c3_Err != nil {
@@ -2463,7 +2458,7 @@ func artistFindingsSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var124 string
 		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.open_findings"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 739, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 737, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 		if templ_7745c5c3_Err != nil {
@@ -2476,7 +2471,7 @@ func artistFindingsSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var125 string
 		templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue("artist-violations-tab-" + data.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 742, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 740, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var125)
 		if templ_7745c5c3_Err != nil {
@@ -2489,7 +2484,7 @@ func artistFindingsSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var126 string
 		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue("/artists/" + data.Artist.ID + "/violations/tab")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 743, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 741, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 		if templ_7745c5c3_Err != nil {
@@ -2502,112 +2497,13 @@ func artistFindingsSection(data *templates.ArtistDetailData) templ.Component {
 		var templ_7745c5c3_Var127 string
 		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.loading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 747, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 745, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 190, "</p></div></div></section>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-// artistHistorySection is the merged History: the artist's revert-able change
-// log via the existing history-tab fragment, lazy-loaded on scroll. The former
-// "Open in Logs" deep link was dropped (UAT): there is no /logs page or
-// per-artist application-log filter, so it dead-ended on the dashboard, and the
-// per-artist change history shown here is already the useful record.
-func artistHistorySection(artistID string) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var128 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var128 == nil {
-			templ_7745c5c3_Var128 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "<section class=\"sw-dash-card\" data-sw-section=\"history\" data-sw-section-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var129 string
-		templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.tab_history"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 759, Col: 109}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var129)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "\" aria-labelledby=\"next-history-heading\"><div class=\"head\"><h2 id=\"next-history-heading\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var130 string
-		templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tab_history"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 761, Col: 63}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "</h2></div><div class=\"hidden\" aria-hidden=\"true\"><p id=\"history-showing-counter\"></p></div><div class=\"body\"><div id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var131 string
-		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.ResolveAttributeValue("artist-history-tab-" + artistID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 771, Col: 41}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var131)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "\" hx-get=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var132 string
-		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.ResolveAttributeValue("/artists/" + artistID + "/history/tab")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 772, Col: 52}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var132)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\"><p class=\"text-sm text-gray-400 italic py-6 text-center\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var133 string
-		templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.loading_history"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 776, Col: 95}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 196, "</p></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2636,52 +2532,52 @@ func artistIdentifiersSection(data *templates.ArtistDetailData) templ.Component 
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var134 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var134 == nil {
-			templ_7745c5c3_Var134 = templ.NopComponent
+		templ_7745c5c3_Var128 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var128 == nil {
+			templ_7745c5c3_Var128 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		a := &data.Artist
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, "<section id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "<section id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var135 string
-		templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.ResolveAttributeValue("next-identifiers-" + a.ID)
+		var templ_7745c5c3_Var129 string
+		templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.ResolveAttributeValue("next-identifiers-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 789, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 759, Col: 41}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var135)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 198, "\" class=\"sw-dash-card sw-next-identifiers opacity-90\" data-sw-section=\"identifiers\" data-sw-section-label=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var129)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var136 string
-		templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.provider_ids"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 789, Col: 179}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var136)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "\" class=\"sw-dash-card sw-next-identifiers opacity-90\" data-sw-section=\"identifiers\" data-sw-section-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 199, "\" aria-labelledby=\"next-ids-heading\"><div class=\"head\"><h2 id=\"next-ids-heading\" class=\"text-base\">")
+		var templ_7745c5c3_Var130 string
+		templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.provider_ids"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 759, Col: 179}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var130)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var137 string
-		templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.provider_ids"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 790, Col: 95}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "\" aria-labelledby=\"next-ids-heading\"><div class=\"head\"><h2 id=\"next-ids-heading\" class=\"text-base\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "</h2></div><div class=\"body\"><dl class=\"sw-next-fields\">")
+		var templ_7745c5c3_Var131 string
+		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.provider_ids"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 760, Col: 95}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var131))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "</h2></div><div class=\"body\"><dl class=\"sw-next-fields\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2705,7 +2601,7 @@ func artistIdentifiersSection(data *templates.ArtistDetailData) templ.Component 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 201, "</dl></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "</dl></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2734,12 +2630,12 @@ func artistDetailPageScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var138 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var138 == nil {
-			templ_7745c5c3_Var138 = templ.NopComponent
+		templ_7745c5c3_Var132 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var132 == nil {
+			templ_7745c5c3_Var132 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 202, "<script>\n\t\t(function () {\n\t\t\t'use strict';\n\t\t\t// Edit-all: bidirectional toggle and the SOLE entry into edit mode (the\n\t\t\t// per-field edit pencils are removed from the next/ rows). Bound on every\n\t\t\t// data-sw-edit-all trigger (hero + sticky). First activation opens every\n\t\t\t// field editor; second closes them. It drives the editors DIRECTLY via\n\t\t\t// htmx.ajax rather than clicking visible buttons: the open path reads each\n\t\t\t// field's edit endpoint (the hidden hx-get .../edit control kept only as\n\t\t\t// the canonical URL/target source), the close path reads each open\n\t\t\t// editor's Cancel (hx-get .../display). Selectors key off the hx-get suffix\n\t\t\t// so they are i18n-independent. State reflects on every trigger via\n\t\t\t// aria-pressed (+ .is-active).\n\t\t\tvar pageRoot = document.querySelector('.sw-next-artist-detail');\n\t\t\tvar editTriggers = document.querySelectorAll('[data-sw-edit-all]');\n\t\t\tvar editing = false;\n\t\t\tvar editBusy = false;\n\n\t\t\t// Ambient backdrop: on the artist-detail page, rotate through THIS\n\t\t\t// artist's OWN fanart/backdrops instead of the shared random one the\n\t\t\t// global chrome set. Random START index + random NO-REPEAT order (never\n\t\t\t// two of the same in a row), a calm ~18s cadence, and a subtle ~1.2s\n\t\t\t// CROSSFADE via two stacked layers (skipped for prefers-reduced-motion).\n\t\t\t// If the artist has no backdrops (or the list errors), hide the layers so\n\t\t\t// the fixed login-background (-z-20 in LayoutBackdrop) shows through.\n\t\t\t(function () {\n\t\t\t\tvar box = document.getElementById('ambient-backdrop');\n\t\t\t\tvar layerA = document.getElementById('ambient-backdrop-img');\n\t\t\t\tif (!box || !layerA || !pageRoot) return;\n\t\t\t\t// base is provided as a data attribute on the page root so the path\n\t\t\t\t// honors the configured base path without hardcoding /api/v1 in JS\n\t\t\t\t// (mirrors the #1858 fanart-slideshow.js fix).\n\t\t\t\tvar base = pageRoot.getAttribute('data-sw-fanart-base');\n\t\t\t\tif (!base) return;\n\t\t\t\tvar SHARP = 'brightness(0.7) saturate(1.4)';\n\t\t\t\tvar reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);\n\t\t\t\tfunction styleLayer(el) {\n\t\t\t\t\tel.style.position = 'absolute';\n\t\t\t\t\tel.style.inset = '0';\n\t\t\t\t\tel.style.width = '100%';\n\t\t\t\t\tel.style.height = '100%';\n\t\t\t\t\tel.style.objectFit = 'cover';\n\t\t\t\t\tel.style.filter = SHARP;\n\t\t\t\t\tel.style.transform = 'scale(1.03)';\n\t\t\t\t\tel.style.transition = reduce ? 'none' : 'opacity 1200ms ease';\n\t\t\t\t}\n\t\t\t\tfunction fallbackToLogin() { layerA.style.display = 'none'; layerA.removeAttribute('src'); }\n\t\t\t\tfetch(base + 'list', { credentials: 'same-origin' })\n\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\tif (r.ok) { return r.json(); }\n\t\t\t\t\t\t// Distinguish \"endpoint is erroring\" from \"artist has no fanart\"\n\t\t\t\t\t\t// (the empty-list branch below): both fall back to the login bg,\n\t\t\t\t\t\t// but only the former is a problem worth a console signal.\n\t\t\t\t\t\tif (window.console) { console.warn('ambient backdrop list failed', base + 'list', r.status); }\n\t\t\t\t\t\treturn null;\n\t\t\t\t\t})\n\t\t\t\t\t.then(function (items) {\n\t\t\t\t\t\tif (!Array.isArray(items) || items.length === 0) { fallbackToLogin(); return; }\n\t\t\t\t\t\tvar urls = items.map(function (it, i) {\n\t\t\t\t\t\t\tvar idx = (it && typeof it.index === 'number') ? it.index : i;\n\t\t\t\t\t\t\treturn base + idx + '/file';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tvar layerB = layerA.cloneNode(false);\n\t\t\t\t\t\tlayerB.removeAttribute('id');\n\t\t\t\t\t\tlayerB.removeAttribute('src');\n\t\t\t\t\t\tbox.appendChild(layerB);\n\t\t\t\t\t\tstyleLayer(layerA);\n\t\t\t\t\t\tstyleLayer(layerB);\n\t\t\t\t\t\tvar layers = [layerA, layerB];\n\t\t\t\t\t\tvar active = 0;\n\t\t\t\t\t\tvar cur = Math.floor(Math.random() * urls.length); // random start\n\t\t\t\t\t\tlayerA.style.opacity = '1';\n\t\t\t\t\t\tlayerB.style.opacity = '0';\n\t\t\t\t\t\tlayerA.src = urls[cur];\n\t\t\t\t\t\tfunction nextIndex() {\n\t\t\t\t\t\t\tif (urls.length < 2) return cur;\n\t\t\t\t\t\t\tvar n;\n\t\t\t\t\t\t\tdo { n = Math.floor(Math.random() * urls.length); } while (n === cur);\n\t\t\t\t\t\t\treturn n;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfunction rotate() {\n\t\t\t\t\t\t\tvar n = nextIndex();\n\t\t\t\t\t\t\tvar incoming = layers[1 - active];\n\t\t\t\t\t\t\tvar outgoing = layers[active];\n\t\t\t\t\t\t\tincoming.onload = function () {\n\t\t\t\t\t\t\t\tincoming.style.opacity = '1';\n\t\t\t\t\t\t\t\toutgoing.style.opacity = '0';\n\t\t\t\t\t\t\t\tactive = 1 - active;\n\t\t\t\t\t\t\t\tcur = n;\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\tincoming.src = urls[n];\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (urls.length > 1) { setInterval(rotate, 18000); }\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function (e) {\n\t\t\t\t\t\tif (window.console) { console.warn('ambient backdrop list error', e); }\n\t\t\t\t\t\tfallbackToLogin();\n\t\t\t\t\t});\n\t\t\t})();\n\t\t\t// \"Edit\" opens every field editor SEQUENTIALLY. Firing all the per-field\n\t\t\t// htmx.ajax swaps concurrently races htmx's settle pipeline and only the\n\t\t\t// first/last few survive (UAT: \"Edit doesn't edit all fields\"); awaiting\n\t\t\t// each swap in turn opens every field reliably. The open targets are the\n\t\t\t// per-field edit triggers kept in the markup purely as the canonical\n\t\t\t// URL/target source (hidden in the read view).\n\t\t\tfunction openAllEditors() {\n\t\t\t\tvar btns = Array.prototype.slice.call(\n\t\t\t\t\tdocument.querySelectorAll('.sw-next-artist-detail button[hx-get$=\"/edit\"]')\n\t\t\t\t);\n\t\t\t\tvar failed = 0;\n\t\t\t\treturn btns.reduce(function (chain, b) {\n\t\t\t\t\tvar url = b.getAttribute('hx-get');\n\t\t\t\t\tvar target = b.getAttribute('hx-target');\n\t\t\t\t\tif (!url || !target) return chain;\n\t\t\t\t\treturn chain.then(function () {\n\t\t\t\t\t\tif (typeof htmx !== 'undefined') {\n\t\t\t\t\t\t\treturn htmx.ajax('GET', url, { target: target, swap: b.getAttribute('hx-swap') || 'outerHTML' })\n\t\t\t\t\t\t\t\t.catch(function (e) {\n\t\t\t\t\t\t\t\t\t// A swallowed failure would leave the field read-only AND\n\t\t\t\t\t\t\t\t\t// absent from the save set; track it so we can warn the user\n\t\t\t\t\t\t\t\t\t// that Edit mode is partial.\n\t\t\t\t\t\t\t\t\tfailed++;\n\t\t\t\t\t\t\t\t\tif (window.console) { console.error('field editor failed to open', url, e); }\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tb.click();\n\t\t\t\t\t\treturn undefined;\n\t\t\t\t\t});\n\t\t\t\t}, Promise.resolve()).then(function () {\n\t\t\t\t\tif (failed > 0) {\n\t\t\t\t\t\tvar tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-edit-partial')) || 'Some fields could not be opened for editing. Reload and try again.';\n\t\t\t\t\t\tswNotify(tpl);\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\t\t\t// \"Done\" is the SOLE commit (the per-field save/cancel controls are removed\n\t\t\t// in this channel). It PATCHes every field whose value CHANGED, in turn,\n\t\t\t// then reloads so the read view reflects the persisted state. We use plain\n\t\t\t// fetch() rather than htmx.ajax here: htmx.ajax's promise resolves before\n\t\t\t// the swap settles, so chaining it raced (only the first/last field saved);\n\t\t\t// awaited fetch + a final reload is deterministic. Only changed fields are\n\t\t\t// written so an unchanged Done does not spam each field's history. Each\n\t\t\t// field editor is a form[hx-patch] with one name=\"value\" control; the alias\n\t\t\t// add form is a form[hx-post] and is intentionally not committed here.\n\t\t\tfunction fieldChanged(input) {\n\t\t\t\tif (!input) return false;\n\t\t\t\tvar tag = (input.tagName || '').toLowerCase();\n\t\t\t\tif (tag === 'select') {\n\t\t\t\t\tvar orig = Array.prototype.slice.call(input.options).filter(function (o) { return o.defaultSelected; });\n\t\t\t\t\treturn input.value !== (orig.length ? orig[0].value : '');\n\t\t\t\t}\n\t\t\t\treturn input.value !== input.defaultValue;\n\t\t\t}\n\t\t\tfunction swBasePath() {\n\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\treturn el ? el.content : '';\n\t\t\t}\n\t\t\tfunction swCsrf() {\n\t\t\t\tif (typeof window.swCsrfToken === 'function') { return window.swCsrfToken(); }\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t}\n\t\t\t// Toast helper (red error toast when present, alert() fallback) -- mirrors\n\t\t\t// members-apply.js so save/edit failures are never swallowed silently.\n\t\t\tfunction swNotify(msg) {\n\t\t\t\tif (typeof window.showToast === 'function') { window.showToast(msg); } else { alert(msg); }\n\t\t\t}\n\t\t\t// Human label for a field PATCH URL (.../fields/<slug>) for failure\n\t\t\t// messages: \"sort_name\" -> \"Sort Name\", \"biography\" -> \"Biography\".\n\t\t\tfunction swFieldLabel(url) {\n\t\t\t\tvar seg = (url || '').split('/').filter(Boolean).pop() || 'field';\n\t\t\t\treturn seg.replace(/_/g, ' ').replace(/\\b\\w/g, function (c) { return c.toUpperCase(); });\n\t\t\t}\n\t\t\t// Extract a human-readable error from a non-2xx body: prefer a JSON\n\t\t\t// { \"error\": ... } envelope, else strip HTML tags, else the status code.\n\t\t\tfunction swErrorFromBody(body, status) {\n\t\t\t\tvar trimmed = (body || '').trim();\n\t\t\t\tif (trimmed.charAt(0) === '{') {\n\t\t\t\t\ttry { var p = JSON.parse(trimmed); if (p && typeof p.error === 'string') { return p.error.trim(); } } catch (e) { /* not JSON */ }\n\t\t\t\t}\n\t\t\t\tif (trimmed) {\n\t\t\t\t\tvar s = trimmed.replace(/<[^>]*>/g, '').replace(/\\s+/g, ' ').trim();\n\t\t\t\t\tif (s && s.length < 500) { return s; }\n\t\t\t\t}\n\t\t\t\treturn 'HTTP ' + status;\n\t\t\t}\n\t\t\t// Mark a saved input as committed so a retry (after a sibling field\n\t\t\t// failed) does not re-PATCH an already-persisted value.\n\t\t\tfunction swMarkCommitted(input) {\n\t\t\t\tif (!input) return;\n\t\t\t\tif ((input.tagName || '').toLowerCase() === 'select') {\n\t\t\t\t\tArray.prototype.forEach.call(input.options, function (o) { o.defaultSelected = o.selected; });\n\t\t\t\t} else {\n\t\t\t\t\tinput.defaultValue = input.value;\n\t\t\t\t}\n\t\t\t}\n\t\t\t// Refresh the two editable sections (Details + Provider IDs) in place from\n\t\t\t// current server state. Each htmx GET re-fetches the page but SELECTS one\n\t\t\t// section node and swaps just that node, avoiding the full reload that\n\t\t\t// flickered (it repainted the hero/backdrop and re-fired the hx-trigger=load\n\t\t\t// findings/history fragments). Used both after a save commits and after a\n\t\t\t// history undo (revert) so the impacted field row reflects the new value.\n\t\t\t// The hero, ambient backdrop, Open Findings, and History are untouched (the\n\t\t\t// hero carries the edit-all/observer bindings; re-swapping it would detach\n\t\t\t// them). Falls back to a full reload if htmx is absent or a swap errors.\n\t\t\tfunction refreshEditableSections() {\n\t\t\t\tvar aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';\n\t\t\t\tif (typeof htmx === 'undefined' || !aid) {\n\t\t\t\t\twindow.location.reload();\n\t\t\t\t\treturn Promise.resolve();\n\t\t\t\t}\n\t\t\t\tvar sels = ['#next-metadata-' + aid, '#next-identifiers-' + aid];\n\t\t\t\treturn sels.reduce(function (chain, sel) {\n\t\t\t\t\tif (!document.querySelector(sel)) return chain;\n\t\t\t\t\treturn chain.then(function () {\n\t\t\t\t\t\treturn htmx.ajax('GET', window.location.pathname, { target: sel, swap: 'outerHTML', select: sel })\n\t\t\t\t\t\t\t.catch(function () { window.location.reload(); });\n\t\t\t\t\t});\n\t\t\t\t}, Promise.resolve());\n\t\t\t}\n\t\t\t// Swap the hero section in place so a name/type History-undo reflects\n\t\t\t// immediately in the H1/portrait/type pill without a full reload (#1850).\n\t\t\t// Uses the same select-swap pattern as refreshEditableSections.\n\t\t\tfunction refreshHero() {\n\t\t\t\tvar aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';\n\t\t\t\tvar sel = '#next-hero-' + aid;\n\t\t\t\tif (typeof htmx === 'undefined' || !aid || !document.querySelector(sel)) {\n\t\t\t\t\treturn Promise.resolve();\n\t\t\t\t}\n\t\t\t\treturn htmx.ajax('GET', window.location.pathname, { target: sel, swap: 'outerHTML', select: sel })\n\t\t\t\t\t.catch(function () { window.location.reload(); });\n\t\t\t}\n\t\t\t// Re-establish the IntersectionObserver and edit-all bindings on the\n\t\t\t// hero after a DOM swap replaces the hero node (#1850). Re-queries\n\t\t\t// fresh DOM nodes so detached listeners from the old node are never\n\t\t\t// called and the sticky header continues to work correctly.\n\t\t\tfunction rebindHero() {\n\t\t\t\tvar stick = document.querySelector('[data-sw-stickhdr]');\n\t\t\t\tvar hero = document.querySelector('.sw-next-hero');\n\t\t\t\tif (stick && hero && 'IntersectionObserver' in window) {\n\t\t\t\t\tnew IntersectionObserver(function (entries) {\n\t\t\t\t\t\tvar stuck = !entries[0].isIntersecting;\n\t\t\t\t\t\tstick.classList.toggle('is-stuck', stuck);\n\t\t\t\t\t\tstick.setAttribute('aria-hidden', stuck ? 'false' : 'true');\n\t\t\t\t\t}, { rootMargin: '-48px 0px 0px 0px', threshold: 0 }).observe(hero);\n\t\t\t\t}\n\t\t\t\t// Re-query editTriggers to include the fresh hero button and\n\t\t\t\t// re-attach the click handler so the hero Edit button works after\n\t\t\t\t// a hero DOM swap. The dataset guard keeps the binding idempotent:\n\t\t\t\t// the sticky-header trigger survives hero swaps, and without the\n\t\t\t\t// guard each rebindHero() call would stack another listener on it.\n\t\t\t\teditTriggers = document.querySelectorAll('[data-sw-edit-all]');\n\t\t\t\teditTriggers.forEach(function (trigger) {\n\t\t\t\t\tif (trigger.dataset.swEditBound) return;\n\t\t\t\t\ttrigger.dataset.swEditBound = '1';\n\t\t\t\t\ttrigger.addEventListener('click', function () { setEditAll(!editing); });\n\t\t\t\t});\n\t\t\t\t// Sync the visual state of the new hero button with the current edit mode.\n\t\t\t\treflectEditState(editing);\n\t\t\t}\n\t\t\t// Returns a Promise resolving to { failedCount }. CRITICAL: each PATCH is\n\t\t\t// checked for r.ok -- a rejected save (400/409 conflict-gate/422/500) is a\n\t\t\t// FAILURE, not a silent success. Because these are raw fetch() calls (not\n\t\t\t// htmx) they bypass the global htmx:responseError toast, so we surface\n\t\t\t// failures ourselves: collect the failed field labels, toast once, and do\n\t\t\t// NOT swap those editors back to read view (the user's input is preserved\n\t\t\t// for retry). Only when every changed field saved do we refresh the\n\t\t\t// editable sections back to their read view.\n\t\t\tfunction saveAllEditors() {\n\t\t\t\tvar forms = Array.prototype.slice.call(\n\t\t\t\t\tdocument.querySelectorAll('.sw-next-artist-detail form[hx-patch]')\n\t\t\t\t);\n\t\t\t\tvar bp = swBasePath();\n\t\t\t\tvar csrf = swCsrf();\n\t\t\t\tvar jobs = [];\n\t\t\t\t// Collect dirty fields first so we can check CSRF only when\n\t\t\t\t// there is actually something to save (mirrors the guard in\n\t\t\t\t// fanart-manage.js / artwork-modal.js).\n\t\t\t\tforms.forEach(function (form) {\n\t\t\t\t\tvar url = form.getAttribute('hx-patch');\n\t\t\t\t\tvar input = form.querySelector('[name=\"value\"]');\n\t\t\t\t\tif (url && fieldChanged(input)) {\n\t\t\t\t\t\tjobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input });\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Nothing dirty, but every editor is still open: swap the sections\n\t\t\t\t// back to their read view so Done always returns the page to its\n\t\t\t\t// pre-Edit state. Without this, an Edit -> Done round-trip with no\n\t\t\t\t// changes left all field editors mounted (pre-existing since the\n\t\t\t\t// #1895 edit-mode rebuild; surfaced in 4D-1 UAT).\n\t\t\t\tif (jobs.length === 0) {\n\t\t\t\t\treturn refreshEditableSections().then(function () { return { failedCount: 0 }; });\n\t\t\t\t}\n\t\t\t\tif (!csrf) {\n\t\t\t\t\tvar expiredMsg = (pageRoot && pageRoot.getAttribute('data-sw-msg-session-expired')) ||\n\t\t\t\t\t\t'Session expired. Please reload the page and try again.';\n\t\t\t\t\tswNotify(expiredMsg);\n\t\t\t\t\t// Return failedCount > 0 to keep edit mode open so the user\n\t\t\t\t\t// can reload and retry without losing their typed values.\n\t\t\t\t\treturn Promise.resolve({ failedCount: jobs.length });\n\t\t\t\t}\n\t\t\t\tvar failed = [];\n\t\t\t\treturn jobs.reduce(function (chain, job) {\n\t\t\t\t\treturn chain.then(function () {\n\t\t\t\t\t\treturn fetch(job.url, {\n\t\t\t\t\t\t\tmethod: 'PATCH',\n\t\t\t\t\t\t\theaders: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },\n\t\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\t\tbody: 'value=' + encodeURIComponent(job.value)\n\t\t\t\t\t\t}).then(function (r) {\n\t\t\t\t\t\t\tif (r.ok) { swMarkCommitted(job.input); return undefined; }\n\t\t\t\t\t\t\treturn r.text().then(function (body) {\n\t\t\t\t\t\t\t\tif (window.console) { console.error('field save failed', job.rawUrl, r.status, swErrorFromBody(body, r.status)); }\n\t\t\t\t\t\t\t\tfailed.push(swFieldLabel(job.rawUrl));\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}).catch(function (e) {\n\t\t\t\t\t\t\tif (window.console) { console.error('field save network error', job.rawUrl, e); }\n\t\t\t\t\t\t\tfailed.push(swFieldLabel(job.rawUrl));\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t}, Promise.resolve()).then(function () {\n\t\t\t\t\tif (failed.length > 0) {\n\t\t\t\t\t\tvar tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-save-failed')) || 'Could not save: %s. Your changes were kept so you can retry.';\n\t\t\t\t\t\tswNotify(tpl.replace('%s', failed.join(', ')));\n\t\t\t\t\t\t// Keep the open editors (incl. the failed fields' unsaved input)\n\t\t\t\t\t\t// so the user can fix and retry; do NOT refresh to read view.\n\t\t\t\t\t\treturn { failedCount: failed.length };\n\t\t\t\t\t}\n\t\t\t\t\t// All changed fields saved -> refresh the editable regions back to\n\t\t\t\t\t// their read view, in place (see refreshEditableSections).\n\t\t\t\t\treturn refreshEditableSections().then(function () { return { failedCount: 0 }; });\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction reflectEditState(on) {\n\t\t\t\tif (pageRoot) pageRoot.classList.toggle('is-editing', on);\n\t\t\t\teditTriggers.forEach(function (t) {\n\t\t\t\t\tt.setAttribute('aria-pressed', on ? 'true' : 'false');\n\t\t\t\t\tt.classList.toggle('is-active', on);\n\t\t\t\t\tvar label = t.querySelector('[data-sw-edit-label]');\n\t\t\t\t\tif (label) {\n\t\t\t\t\t\tvar next = on ? t.getAttribute('data-label-done') : t.getAttribute('data-label-edit');\n\t\t\t\t\t\tif (next) label.textContent = next;\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction setEditAll(on) {\n\t\t\t\tif (editBusy) return;\n\t\t\t\teditBusy = true;\n\t\t\t\tif (on) {\n\t\t\t\t\tediting = true;\n\t\t\t\t\treflectEditState(true);\n\t\t\t\t\topenAllEditors().then(function () { editBusy = false; });\n\t\t\t\t} else {\n\t\t\t\t\t// Commit all fields first (controls still visible), then drop to read.\n\t\t\t\t\t// If any field failed to save, STAY in edit mode so the user can fix\n\t\t\t\t\t// and retry (saveAllEditors already toasted + preserved their input).\n\t\t\t\t\tsaveAllEditors().then(function (res) {\n\t\t\t\t\t\tif (!res || res.failedCount === 0) {\n\t\t\t\t\t\t\tediting = false;\n\t\t\t\t\t\t\treflectEditState(false);\n\t\t\t\t\t\t}\n\t\t\t\t\t\teditBusy = false;\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}\n\t\t\t// History undo (revert): the revert button (in the lazily-loaded history\n\t\t\t// fragment) POSTs to /history/{id}/revert and swaps only the history list,\n\t\t\t// so the reverted value stayed stale in the Details / Provider IDs rows\n\t\t\t// until a manual reload (maintainer request). Listen for a successful\n\t\t\t// revert and refresh those editable sections and the hero in place so the\n\t\t\t// impacted field reflects the new value (no full reload, no flicker, scroll\n\t\t\t// kept). rebindHero() re-establishes the observer and click handlers on the\n\t\t\t// swapped-in hero node. Skipped while editing so an open editor's unsaved\n\t\t\t// input is never clobbered.\n\t\t\tdocument.body.addEventListener('htmx:afterRequest', function (evt) {\n\t\t\t\tvar d = evt.detail;\n\t\t\t\tif (!d || !d.successful) return;\n\t\t\t\tvar cfg = d.requestConfig;\n\t\t\t\tif (!cfg) return;\n\t\t\t\tvar verb = (cfg.verb || '').toLowerCase();\n\t\t\t\tvar path = cfg.path || '';\n\t\t\t\t// Match the revert endpoint regardless of base-path prefix or query.\n\t\t\t\tif (verb === 'post' && /\\/history\\/[^/]+\\/revert(?:[?]|$)/.test(path) && !editing) {\n\t\t\t\t\t// Refresh the field rows then the hero, so a name/type undo\n\t\t\t\t\t// updates the H1 and type pill in place (#1850).\n\t\t\t\t\trefreshEditableSections().then(refreshHero).then(rebindHero);\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Sticky mini-header: initial bind (runs once at page load). After a\n\t\t\t// hero DOM swap the revert handler calls rebindHero() to re-attach\n\t\t\t// the observer and edit-all listener on the fresh node (#1850).\n\t\t\trebindHero();\n\n\t\t\tvar root = document.querySelector('[data-sw-section-nav]');\n\t\t\tif (!root) return;\n\t\t\tvar sections = Array.prototype.slice.call(root.querySelectorAll('[data-sw-section]'));\n\t\t\tvar idx = -1;\n\n\t\t\tfunction handle(key) {\n\t\t\t\tif (key === 'h') { var p = root.getAttribute('data-sw-prev-artist'); if (p) { window.location.assign(p); return true; } return false; }\n\t\t\t\tif (key === 'l') { var n = root.getAttribute('data-sw-next-artist'); if (n) { window.location.assign(n); return true; } return false; }\n\t\t\t\tif (key === 'j' || key === 'k') {\n\t\t\t\t\tif (!sections.length) return false;\n\t\t\t\t\tidx = key === 'j' ? Math.min(sections.length - 1, idx + 1) : Math.max(0, idx - 1);\n\t\t\t\t\tsections[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });\n\t\t\t\t\tsections[idx].setAttribute('tabindex', '-1');\n\t\t\t\t\tsections[idx].focus({ preventScroll: true });\n\t\t\t\t\treturn true;\n\t\t\t\t}\n\t\t\t\treturn false;\n\t\t\t}\n\n\t\t\t// isTyping: mirrors keyboard.js's guard -- INPUT only counts as typing\n\t\t\t// when text-like; a focused checkbox/radio must NOT swallow shortcuts.\n\t\t\tfunction isTyping(el) {\n\t\t\t\tif (!el) return false;\n\t\t\t\tvar tag = el.tagName;\n\t\t\t\tif (tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return true;\n\t\t\t\tif (tag === 'INPUT') {\n\t\t\t\t\tvar nonText = ['checkbox','radio','button','submit','reset','file','image','range','color'];\n\t\t\t\t\tvar itype = (el.getAttribute('type') || 'text').toLowerCase();\n\t\t\t\t\treturn nonText.indexOf(itype) === -1;\n\t\t\t\t}\n\t\t\t\treturn false;\n\t\t\t}\n\n\t\t\t// Track the most-recently-hovered field row so 'f' has a target.\n\t\t\t// closest() walks up from any pointer target inside the row container\n\t\t\t// (value text, lock icon, etc.) to reach the wrapping div, e.g.\n\t\t\t// <div id=\"field-biography-123\">.\n\t\t\tvar focusedFieldEl = null;\n\t\t\tdocument.addEventListener('mouseover', function (mv) {\n\t\t\t\tvar el = mv.target.closest('div[id^=\"field-\"]');\n\t\t\t\tif (el) focusedFieldEl = el;\n\t\t\t});\n\n\t\t\t// Detail-page keyboard handler. keyboard.js (global) handles r/R via\n\t\t\t// data-sw-shortcut and owns 'f'/'F' on filter-flyout pages; this listener\n\t\t\t// is complementary. The onContext hook from keyboard.js targets roving-list\n\t\t\t// pages and is NOT used here (artist-detail has no data-sw-roving-list).\n\t\t\tdocument.addEventListener('keydown', function (ev) {\n\t\t\t\tif (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;\n\t\t\t\tif (isTyping(ev.target)) return;\n\n\t\t\t\t// When the artwork modal is open, its own keydown handler (registered by\n\t\t\t\t// artwork-modal.js while open) owns Escape and Tab. All other keys\n\t\t\t\t// (h/l/j/k/e/f) must NOT navigate the page behind the dialog.\n\t\t\t\tvar artworkModal = document.getElementById('artwork-modal');\n\t\t\t\tif (artworkModal && !artworkModal.classList.contains('hidden')) return;\n\n\t\t\t\t// Esc: layered dismiss in priority order.\n\t\t\t\t// (a) Lightbox + (b) artwork-modal: each registers its keydown handler\n\t\t\t\t//     only while open (added on open, removed on close) and calls\n\t\t\t\t//     e.preventDefault() -- the defaultPrevented guard above handles\n\t\t\t\t//     those before we reach this block.\n\t\t\t\t// (c) Dismiss the refresh-panel when it has content.\n\t\t\t\t// (d) Exit page edit mode when active (same as clicking Done).\n\t\t\t\tif (ev.key === 'Escape') {\n\t\t\t\t\tvar panel = document.getElementById('refresh-panel');\n\t\t\t\t\tif (panel && panel.innerHTML.trim() !== '') {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tpanel.innerHTML = '';\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (editing) {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tsetEditAll(false);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\t// e: toggle page-level Edit mode (same as clicking the Edit / Done hero\n\t\t\t\t// button). next/ uses page-wide edit-all, not per-field pencils.\n\t\t\t\tif (ev.key === 'e') {\n\t\t\t\t\tev.preventDefault();\n\t\t\t\t\tsetEditAll(!editing);\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\t// f: open the provider-fetch panel for the focused field. keyboard.js\n\t\t\t\t// handles 'f'/'F' on pages that use a filter flyout; it returns without\n\t\t\t\t// calling preventDefault when no data-sw-shortcut=\"f\" element exists,\n\t\t\t\t// so this handler still fires on the detail page.\n\t\t\t\tif (ev.key === 'f') {\n\t\t\t\t\tif (focusedFieldEl) {\n\t\t\t\t\t\tvar fetchBtn = focusedFieldEl.querySelector('button[hx-get$=\"/providers\"]');\n\t\t\t\t\t\tif (fetchBtn) { ev.preventDefault(); fetchBtn.click(); }\n\t\t\t\t\t}\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\t// h/l/j/k: prev/next artist and section nav (handled by handle()).\n\t\t\t\tif (handle(ev.key)) ev.preventDefault();\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 196, "<script>\n\t\t(function () {\n\t\t\t'use strict';\n\t\t\t// Edit-all: bidirectional toggle and the SOLE entry into edit mode (the\n\t\t\t// per-field edit pencils are removed from the next/ rows). Bound on every\n\t\t\t// data-sw-edit-all trigger (hero + sticky). First activation opens every\n\t\t\t// field editor; second closes them. It drives the editors DIRECTLY via\n\t\t\t// htmx.ajax rather than clicking visible buttons: the open path reads each\n\t\t\t// field's edit endpoint (the hidden hx-get .../edit control kept only as\n\t\t\t// the canonical URL/target source), the close path reads each open\n\t\t\t// editor's Cancel (hx-get .../display). Selectors key off the hx-get suffix\n\t\t\t// so they are i18n-independent. State reflects on every trigger via\n\t\t\t// aria-pressed (+ .is-active).\n\t\t\tvar pageRoot = document.querySelector('.sw-next-artist-detail');\n\t\t\tvar editTriggers = document.querySelectorAll('[data-sw-edit-all]');\n\t\t\tvar editing = false;\n\t\t\tvar editBusy = false;\n\t\t\tvar heroObserver = null;\n\n\t\t\t// Ambient backdrop: on the artist-detail page, rotate through THIS\n\t\t\t// artist's OWN fanart/backdrops instead of the shared random one the\n\t\t\t// global chrome set. Random START index + random NO-REPEAT order (never\n\t\t\t// two of the same in a row), a calm ~18s cadence, and a subtle ~1.2s\n\t\t\t// CROSSFADE via two stacked layers (skipped for prefers-reduced-motion).\n\t\t\t// If the artist has no backdrops (or the list errors), hide the layers so\n\t\t\t// the fixed login-background (-z-20 in LayoutBackdrop) shows through.\n\t\t\t(function () {\n\t\t\t\tvar box = document.getElementById('ambient-backdrop');\n\t\t\t\tvar layerA = document.getElementById('ambient-backdrop-img');\n\t\t\t\tif (!box || !layerA || !pageRoot) return;\n\t\t\t\t// base is provided as a data attribute on the page root so the path\n\t\t\t\t// honors the configured base path without hardcoding /api/v1 in JS\n\t\t\t\t// (mirrors the #1858 fanart-slideshow.js fix).\n\t\t\t\tvar base = pageRoot.getAttribute('data-sw-fanart-base');\n\t\t\t\tif (!base) return;\n\t\t\t\tvar SHARP = 'brightness(0.7) saturate(1.4)';\n\t\t\t\tvar reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);\n\t\t\t\tfunction styleLayer(el) {\n\t\t\t\t\tel.style.position = 'absolute';\n\t\t\t\t\tel.style.inset = '0';\n\t\t\t\t\tel.style.width = '100%';\n\t\t\t\t\tel.style.height = '100%';\n\t\t\t\t\tel.style.objectFit = 'cover';\n\t\t\t\t\tel.style.filter = SHARP;\n\t\t\t\t\tel.style.transform = 'scale(1.03)';\n\t\t\t\t\tel.style.transition = reduce ? 'none' : 'opacity 1200ms ease';\n\t\t\t\t}\n\t\t\t\tfunction fallbackToLogin() { layerA.style.display = 'none'; layerA.removeAttribute('src'); }\n\t\t\t\tfetch(base + 'list', { credentials: 'same-origin' })\n\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\tif (r.ok) { return r.json(); }\n\t\t\t\t\t\t// Distinguish \"endpoint is erroring\" from \"artist has no fanart\"\n\t\t\t\t\t\t// (the empty-list branch below): both fall back to the login bg,\n\t\t\t\t\t\t// but only the former is a problem worth a console signal.\n\t\t\t\t\t\tif (window.console) { console.warn('ambient backdrop list failed', base + 'list', r.status); }\n\t\t\t\t\t\treturn null;\n\t\t\t\t\t})\n\t\t\t\t\t.then(function (items) {\n\t\t\t\t\t\tif (!Array.isArray(items) || items.length === 0) { fallbackToLogin(); return; }\n\t\t\t\t\t\tvar urls = items.map(function (it, i) {\n\t\t\t\t\t\t\tvar idx = (it && typeof it.index === 'number') ? it.index : i;\n\t\t\t\t\t\t\treturn base + idx + '/file';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tvar layerB = layerA.cloneNode(false);\n\t\t\t\t\t\tlayerB.removeAttribute('id');\n\t\t\t\t\t\tlayerB.removeAttribute('src');\n\t\t\t\t\t\tbox.appendChild(layerB);\n\t\t\t\t\t\tstyleLayer(layerA);\n\t\t\t\t\t\tstyleLayer(layerB);\n\t\t\t\t\t\tvar layers = [layerA, layerB];\n\t\t\t\t\t\tvar active = 0;\n\t\t\t\t\t\tvar cur = Math.floor(Math.random() * urls.length); // random start\n\t\t\t\t\t\tlayerA.style.opacity = '1';\n\t\t\t\t\t\tlayerB.style.opacity = '0';\n\t\t\t\t\t\tlayerA.src = urls[cur];\n\t\t\t\t\t\tfunction nextIndex() {\n\t\t\t\t\t\t\tif (urls.length < 2) return cur;\n\t\t\t\t\t\t\tvar n;\n\t\t\t\t\t\t\tdo { n = Math.floor(Math.random() * urls.length); } while (n === cur);\n\t\t\t\t\t\t\treturn n;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfunction rotate() {\n\t\t\t\t\t\t\tvar n = nextIndex();\n\t\t\t\t\t\t\tvar incoming = layers[1 - active];\n\t\t\t\t\t\t\tvar outgoing = layers[active];\n\t\t\t\t\t\t\tincoming.onload = function () {\n\t\t\t\t\t\t\t\tincoming.style.opacity = '1';\n\t\t\t\t\t\t\t\toutgoing.style.opacity = '0';\n\t\t\t\t\t\t\t\tactive = 1 - active;\n\t\t\t\t\t\t\t\tcur = n;\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\tincoming.src = urls[n];\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (urls.length > 1) { setInterval(rotate, 18000); }\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function (e) {\n\t\t\t\t\t\tif (window.console) { console.warn('ambient backdrop list error', e); }\n\t\t\t\t\t\tfallbackToLogin();\n\t\t\t\t\t});\n\t\t\t})();\n\t\t\t// \"Edit\" opens every field editor SEQUENTIALLY. Firing all the per-field\n\t\t\t// htmx.ajax swaps concurrently races htmx's settle pipeline and only the\n\t\t\t// first/last few survive (UAT: \"Edit doesn't edit all fields\"); awaiting\n\t\t\t// each swap in turn opens every field reliably. The open targets are the\n\t\t\t// per-field edit triggers kept in the markup purely as the canonical\n\t\t\t// URL/target source (hidden in the read view).\n\t\t\tfunction openAllEditors() {\n\t\t\t\tvar btns = Array.prototype.slice.call(\n\t\t\t\t\tdocument.querySelectorAll('.sw-next-artist-detail button[hx-get$=\"/edit\"]')\n\t\t\t\t);\n\t\t\t\tvar failed = 0;\n\t\t\t\treturn btns.reduce(function (chain, b) {\n\t\t\t\t\tvar url = b.getAttribute('hx-get');\n\t\t\t\t\tvar target = b.getAttribute('hx-target');\n\t\t\t\t\tif (!url || !target) return chain;\n\t\t\t\t\treturn chain.then(function () {\n\t\t\t\t\t\tif (typeof htmx !== 'undefined') {\n\t\t\t\t\t\t\treturn htmx.ajax('GET', url, { target: target, swap: b.getAttribute('hx-swap') || 'outerHTML' })\n\t\t\t\t\t\t\t\t.catch(function (e) {\n\t\t\t\t\t\t\t\t\t// A swallowed failure would leave the field read-only AND\n\t\t\t\t\t\t\t\t\t// absent from the save set; track it so we can warn the user\n\t\t\t\t\t\t\t\t\t// that Edit mode is partial.\n\t\t\t\t\t\t\t\t\tfailed++;\n\t\t\t\t\t\t\t\t\tif (window.console) { console.error('field editor failed to open', url, e); }\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tb.click();\n\t\t\t\t\t\treturn undefined;\n\t\t\t\t\t});\n\t\t\t\t}, Promise.resolve()).then(function () {\n\t\t\t\t\tif (failed > 0) {\n\t\t\t\t\t\tvar tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-edit-partial')) || 'Some fields could not be opened for editing. Reload and try again.';\n\t\t\t\t\t\tswNotify(tpl);\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\t\t\t// \"Done\" is the SOLE commit (the per-field save/cancel controls are removed\n\t\t\t// in this channel). It PATCHes every field whose value CHANGED, in turn,\n\t\t\t// then reloads so the read view reflects the persisted state. We use plain\n\t\t\t// fetch() rather than htmx.ajax here: htmx.ajax's promise resolves before\n\t\t\t// the swap settles, so chaining it raced (only the first/last field saved);\n\t\t\t// awaited fetch + a final reload is deterministic. Only changed fields are\n\t\t\t// written so an unchanged Done does not spam each field's history. Each\n\t\t\t// field editor is a form[hx-patch] with one name=\"value\" control; the alias\n\t\t\t// add form is a form[hx-post] and is intentionally not committed here.\n\t\t\tfunction fieldChanged(input) {\n\t\t\t\tif (!input) return false;\n\t\t\t\tvar tag = (input.tagName || '').toLowerCase();\n\t\t\t\tif (tag === 'select') {\n\t\t\t\t\tvar orig = Array.prototype.slice.call(input.options).filter(function (o) { return o.defaultSelected; });\n\t\t\t\t\treturn input.value !== (orig.length ? orig[0].value : '');\n\t\t\t\t}\n\t\t\t\treturn input.value !== input.defaultValue;\n\t\t\t}\n\t\t\tfunction swBasePath() {\n\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\treturn el ? el.content : '';\n\t\t\t}\n\t\t\tfunction swCsrf() {\n\t\t\t\tif (typeof window.swCsrfToken === 'function') { return window.swCsrfToken(); }\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t}\n\t\t\t// Toast helper (red error toast when present, alert() fallback) -- mirrors\n\t\t\t// members-apply.js so save/edit failures are never swallowed silently.\n\t\t\tfunction swNotify(msg) {\n\t\t\t\tif (typeof window.showToast === 'function') { window.showToast(msg); } else { alert(msg); }\n\t\t\t}\n\t\t\t// Human label for a field PATCH URL (.../fields/<slug>) for failure\n\t\t\t// messages: \"sort_name\" -> \"Sort Name\", \"biography\" -> \"Biography\".\n\t\t\tfunction swFieldLabel(url) {\n\t\t\t\tvar seg = (url || '').split('/').filter(Boolean).pop() || 'field';\n\t\t\t\treturn seg.replace(/_/g, ' ').replace(/\\b\\w/g, function (c) { return c.toUpperCase(); });\n\t\t\t}\n\t\t\t// Extract a human-readable error from a non-2xx body: prefer a JSON\n\t\t\t// { \"error\": ... } envelope, else strip HTML tags, else the status code.\n\t\t\tfunction swErrorFromBody(body, status) {\n\t\t\t\tvar trimmed = (body || '').trim();\n\t\t\t\tif (trimmed.charAt(0) === '{') {\n\t\t\t\t\ttry { var p = JSON.parse(trimmed); if (p && typeof p.error === 'string') { return p.error.trim(); } } catch (e) { /* not JSON */ }\n\t\t\t\t}\n\t\t\t\tif (trimmed) {\n\t\t\t\t\tvar s = trimmed.replace(/<[^>]*>/g, '').replace(/\\s+/g, ' ').trim();\n\t\t\t\t\tif (s && s.length < 500) { return s; }\n\t\t\t\t}\n\t\t\t\treturn 'HTTP ' + status;\n\t\t\t}\n\t\t\t// Mark a saved input as committed so a retry (after a sibling field\n\t\t\t// failed) does not re-PATCH an already-persisted value.\n\t\t\tfunction swMarkCommitted(input) {\n\t\t\t\tif (!input) return;\n\t\t\t\tif ((input.tagName || '').toLowerCase() === 'select') {\n\t\t\t\t\tArray.prototype.forEach.call(input.options, function (o) { o.defaultSelected = o.selected; });\n\t\t\t\t} else {\n\t\t\t\t\tinput.defaultValue = input.value;\n\t\t\t\t}\n\t\t\t}\n\t\t\t// Refresh the two editable sections (Details + Provider IDs) in place from\n\t\t\t// current server state. Each htmx GET re-fetches the page but SELECTS one\n\t\t\t// section node and swaps just that node, avoiding the full reload that\n\t\t\t// flickered (it repainted the hero/backdrop and re-fired the hx-trigger=load\n\t\t\t// findings/history fragments). Used both after a save commits and after a\n\t\t\t// history undo (revert) so the impacted field row reflects the new value.\n\t\t\t// The hero, ambient backdrop, Open Findings, and History are untouched (the\n\t\t\t// hero carries the edit-all/observer bindings; re-swapping it would detach\n\t\t\t// them). Falls back to a full reload if htmx is absent or a swap errors.\n\t\t\tfunction refreshEditableSections() {\n\t\t\t\tvar aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';\n\t\t\t\tif (typeof htmx === 'undefined' || !aid) {\n\t\t\t\t\twindow.location.reload();\n\t\t\t\t\treturn Promise.resolve();\n\t\t\t\t}\n\t\t\t\tvar sels = ['#next-metadata-' + aid, '#next-identifiers-' + aid];\n\t\t\t\treturn sels.reduce(function (chain, sel) {\n\t\t\t\t\tif (!document.querySelector(sel)) return chain;\n\t\t\t\t\treturn chain.then(function () {\n\t\t\t\t\t\treturn htmx.ajax('GET', window.location.pathname, { target: sel, swap: 'outerHTML', select: sel })\n\t\t\t\t\t\t\t.catch(function () { window.location.reload(); });\n\t\t\t\t\t});\n\t\t\t\t}, Promise.resolve());\n\t\t\t}\n\t\t\t// Swap the hero section in place so a name/type History-undo reflects\n\t\t\t// immediately in the H1/portrait/type pill without a full reload (#1850).\n\t\t\t// Uses the same select-swap pattern as refreshEditableSections.\n\t\t\tfunction refreshHero() {\n\t\t\t\tvar aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';\n\t\t\t\tvar sel = '#next-hero-' + aid;\n\t\t\t\tif (typeof htmx === 'undefined' || !aid || !document.querySelector(sel)) {\n\t\t\t\t\treturn Promise.resolve();\n\t\t\t\t}\n\t\t\t\treturn htmx.ajax('GET', window.location.pathname, { target: sel, swap: 'outerHTML', select: sel })\n\t\t\t\t\t.catch(function () { window.location.reload(); });\n\t\t\t}\n\t\t\t// Re-establish the IntersectionObserver and edit-all bindings on the\n\t\t\t// hero after a DOM swap replaces the hero node (#1850). Re-queries\n\t\t\t// fresh DOM nodes so detached listeners from the old node are never\n\t\t\t// called and the sticky header continues to work correctly.\n\t\t\tfunction rebindHero() {\n\t\t\t\tvar stick = document.querySelector('[data-sw-stickhdr]');\n\t\t\t\tvar hero = document.querySelector('.sw-next-hero');\n\t\t\t\tif (stick && hero && 'IntersectionObserver' in window) {\n\t\t\t\t\t// Disconnect the previous observer before creating a new one so\n\t\t\t\t\t// rebindHero() calls after a hero DOM swap do not stack observers.\n\t\t\t\t\tif (heroObserver) { heroObserver.disconnect(); }\n\t\t\t\t\theroObserver = new IntersectionObserver(function (entries) {\n\t\t\t\t\t\tvar stuck = !entries[0].isIntersecting;\n\t\t\t\t\t\tstick.classList.toggle('is-stuck', stuck);\n\t\t\t\t\t\tstick.setAttribute('aria-hidden', stuck ? 'false' : 'true');\n\t\t\t\t\t}, { rootMargin: '-48px 0px 0px 0px', threshold: 0 });\n\t\t\t\t\theroObserver.observe(hero);\n\t\t\t\t}\n\t\t\t\t// Re-query editTriggers to include the fresh hero button and\n\t\t\t\t// re-attach the click handler so the hero Edit button works after\n\t\t\t\t// a hero DOM swap. The dataset guard keeps the binding idempotent:\n\t\t\t\t// the sticky-header trigger survives hero swaps, and without the\n\t\t\t\t// guard each rebindHero() call would stack another listener on it.\n\t\t\t\teditTriggers = document.querySelectorAll('[data-sw-edit-all]');\n\t\t\t\teditTriggers.forEach(function (trigger) {\n\t\t\t\t\tif (trigger.dataset.swEditBound) return;\n\t\t\t\t\ttrigger.dataset.swEditBound = '1';\n\t\t\t\t\ttrigger.addEventListener('click', function () { setEditAll(!editing); });\n\t\t\t\t});\n\t\t\t\t// Sync the visual state of the new hero button with the current edit mode.\n\t\t\t\treflectEditState(editing);\n\t\t\t}\n\t\t\t// swStageHistoryValue stages a prior field value from the per-field undo\n\t\t\t// clock popover into the field's live input/select/textarea. The existing\n\t\t\t// fieldChanged() dirty detection marks it for save automatically because\n\t\t\t// input.value will differ from input.defaultValue after staging.\n\t\t\twindow.swStageHistoryValue = function (btn) {\n\t\t\t\tvar v = btn.getAttribute('data-sw-stage-value') || '';\n\t\t\t\tvar sel = btn.getAttribute('data-sw-container-sel');\n\t\t\t\tvar menuID = btn.getAttribute('data-sw-menu-id');\n\t\t\t\tif (sel) {\n\t\t\t\t\tvar container = document.querySelector(sel);\n\t\t\t\t\tif (container) {\n\t\t\t\t\t\tvar input = container.querySelector('[name=\"value\"]');\n\t\t\t\t\t\tif (input) {\n\t\t\t\t\t\t\tinput.value = v;\n\t\t\t\t\t\t\tinput.dispatchEvent(new Event('input', { bubbles: true }));\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// Close the dropdown (mirrors CloseContextMenu templ script logic).\n\t\t\t\tvar panel = document.getElementById('ctx-panel-' + menuID);\n\t\t\t\tvar sheet = document.getElementById('ctx-sheet-' + menuID);\n\t\t\t\tvar trigger = document.querySelector('[aria-controls=\"ctx-panel-' + menuID + '\"]');\n\t\t\t\tif (panel) { panel.classList.add('hidden'); }\n\t\t\t\tif (sheet) {\n\t\t\t\t\tsheet.classList.remove('ctx-sheet-open');\n\t\t\t\t\tsheet.setAttribute('aria-hidden', 'true');\n\t\t\t\t\tsheet.setAttribute('inert', '');\n\t\t\t\t\tdocument.body.classList.remove('ctx-sheet-body-lock');\n\t\t\t\t}\n\t\t\t\tif (trigger) { trigger.setAttribute('aria-expanded', 'false'); trigger.focus(); }\n\t\t\t};\n\t\t\t// Returns a Promise resolving to { failedCount }. CRITICAL: each PATCH is\n\t\t\t// checked for r.ok -- a rejected save (400/409 conflict-gate/422/500) is a\n\t\t\t// FAILURE, not a silent success. Because these are raw fetch() calls (not\n\t\t\t// htmx) they bypass the global htmx:responseError toast, so we surface\n\t\t\t// failures ourselves: collect the failed field labels, toast once, and do\n\t\t\t// NOT swap those editors back to read view (the user's input is preserved\n\t\t\t// for retry). Only when every changed field saved do we refresh the\n\t\t\t// editable sections back to their read view.\n\t\t\tfunction saveAllEditors() {\n\t\t\t\tvar forms = Array.prototype.slice.call(\n\t\t\t\t\tdocument.querySelectorAll('.sw-next-artist-detail form[hx-patch]')\n\t\t\t\t);\n\t\t\t\tvar bp = swBasePath();\n\t\t\t\tvar csrf = swCsrf();\n\t\t\t\tvar jobs = [];\n\t\t\t\t// Collect dirty fields first so we can check CSRF only when\n\t\t\t\t// there is actually something to save (mirrors the guard in\n\t\t\t\t// fanart-manage.js / artwork-modal.js).\n\t\t\t\tforms.forEach(function (form) {\n\t\t\t\t\tvar url = form.getAttribute('hx-patch');\n\t\t\t\t\tvar input = form.querySelector('[name=\"value\"]');\n\t\t\t\t\tif (url && fieldChanged(input)) {\n\t\t\t\t\t\tjobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input });\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Nothing dirty, but every editor is still open: swap the sections\n\t\t\t\t// back to their read view so Done always returns the page to its\n\t\t\t\t// pre-Edit state. Without this, an Edit -> Done round-trip with no\n\t\t\t\t// changes left all field editors mounted (pre-existing since the\n\t\t\t\t// #1895 edit-mode rebuild; surfaced in 4D-1 UAT).\n\t\t\t\tif (jobs.length === 0) {\n\t\t\t\t\treturn refreshEditableSections().then(function () { return { failedCount: 0 }; });\n\t\t\t\t}\n\t\t\t\tif (!csrf) {\n\t\t\t\t\tvar expiredMsg = (pageRoot && pageRoot.getAttribute('data-sw-msg-session-expired')) ||\n\t\t\t\t\t\t'Session expired. Please reload the page and try again.';\n\t\t\t\t\tswNotify(expiredMsg);\n\t\t\t\t\t// Return failedCount > 0 to keep edit mode open so the user\n\t\t\t\t\t// can reload and retry without losing their typed values.\n\t\t\t\t\treturn Promise.resolve({ failedCount: jobs.length });\n\t\t\t\t}\n\t\t\t\tvar failed = [];\n\t\t\t\treturn jobs.reduce(function (chain, job) {\n\t\t\t\t\treturn chain.then(function () {\n\t\t\t\t\t\treturn fetch(job.url, {\n\t\t\t\t\t\t\tmethod: 'PATCH',\n\t\t\t\t\t\t\theaders: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },\n\t\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\t\tbody: 'value=' + encodeURIComponent(job.value)\n\t\t\t\t\t\t}).then(function (r) {\n\t\t\t\t\t\t\tif (r.ok) { swMarkCommitted(job.input); return undefined; }\n\t\t\t\t\t\t\treturn r.text().then(function (body) {\n\t\t\t\t\t\t\t\tif (window.console) { console.error('field save failed', job.rawUrl, r.status, swErrorFromBody(body, r.status)); }\n\t\t\t\t\t\t\t\tfailed.push(swFieldLabel(job.rawUrl));\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}).catch(function (e) {\n\t\t\t\t\t\t\tif (window.console) { console.error('field save network error', job.rawUrl, e); }\n\t\t\t\t\t\t\tfailed.push(swFieldLabel(job.rawUrl));\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t}, Promise.resolve()).then(function () {\n\t\t\t\t\tif (failed.length > 0) {\n\t\t\t\t\t\tvar tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-save-failed')) || 'Could not save: %s. Your changes were kept so you can retry.';\n\t\t\t\t\t\tswNotify(tpl.replace('%s', failed.join(', ')));\n\t\t\t\t\t\t// Keep the open editors (incl. the failed fields' unsaved input)\n\t\t\t\t\t\t// so the user can fix and retry; do NOT refresh to read view.\n\t\t\t\t\t\treturn { failedCount: failed.length };\n\t\t\t\t\t}\n\t\t\t\t\t// All changed fields saved -> refresh the editable regions back to\n\t\t\t\t\t// their read view, in place (see refreshEditableSections).\n\t\t\t\t\treturn refreshEditableSections().then(function () { return { failedCount: 0 }; });\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction reflectEditState(on) {\n\t\t\t\tif (pageRoot) pageRoot.classList.toggle('is-editing', on);\n\t\t\t\teditTriggers.forEach(function (t) {\n\t\t\t\t\tt.setAttribute('aria-pressed', on ? 'true' : 'false');\n\t\t\t\t\tt.classList.toggle('is-active', on);\n\t\t\t\t\tvar label = t.querySelector('[data-sw-edit-label]');\n\t\t\t\t\tif (label) {\n\t\t\t\t\t\tvar next = on ? t.getAttribute('data-label-done') : t.getAttribute('data-label-edit');\n\t\t\t\t\t\tif (next) label.textContent = next;\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction setEditAll(on) {\n\t\t\t\tif (editBusy) return;\n\t\t\t\teditBusy = true;\n\t\t\t\tif (on) {\n\t\t\t\t\tediting = true;\n\t\t\t\t\treflectEditState(true);\n\t\t\t\t\topenAllEditors().then(function () { editBusy = false; });\n\t\t\t\t} else {\n\t\t\t\t\t// Commit all fields first (controls still visible), then drop to read.\n\t\t\t\t\t// If any field failed to save, STAY in edit mode so the user can fix\n\t\t\t\t\t// and retry (saveAllEditors already toasted + preserved their input).\n\t\t\t\t\tsaveAllEditors().then(function (res) {\n\t\t\t\t\t\tif (!res || res.failedCount === 0) {\n\t\t\t\t\t\t\tediting = false;\n\t\t\t\t\t\t\treflectEditState(false);\n\t\t\t\t\t\t}\n\t\t\t\t\t\teditBusy = false;\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}\n\t\t\t// History undo (revert): the revert button (in the lazily-loaded history\n\t\t\t// fragment) POSTs to /history/{id}/revert and swaps only the history list,\n\t\t\t// so the reverted value stayed stale in the Details / Provider IDs rows\n\t\t\t// until a manual reload (maintainer request). Listen for a successful\n\t\t\t// revert and refresh those editable sections and the hero in place so the\n\t\t\t// impacted field reflects the new value (no full reload, no flicker, scroll\n\t\t\t// kept). rebindHero() re-establishes the observer and click handlers on the\n\t\t\t// swapped-in hero node. Skipped while editing so an open editor's unsaved\n\t\t\t// input is never clobbered.\n\t\t\tdocument.body.addEventListener('htmx:afterRequest', function (evt) {\n\t\t\t\tvar d = evt.detail;\n\t\t\t\tif (!d || !d.successful) return;\n\t\t\t\tvar cfg = d.requestConfig;\n\t\t\t\tif (!cfg) return;\n\t\t\t\tvar verb = (cfg.verb || '').toLowerCase();\n\t\t\t\tvar path = cfg.path || '';\n\t\t\t\t// Match the revert endpoint regardless of base-path prefix or query.\n\t\t\t\tif (verb === 'post' && /\\/history\\/[^/]+\\/revert(?:[?]|$)/.test(path) && !editing) {\n\t\t\t\t\t// Refresh the field rows then the hero, so a name/type undo\n\t\t\t\t\t// updates the H1 and type pill in place (#1850).\n\t\t\t\t\trefreshEditableSections().then(refreshHero).then(rebindHero);\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Sticky mini-header: initial bind (runs once at page load). After a\n\t\t\t// hero DOM swap the revert handler calls rebindHero() to re-attach\n\t\t\t// the observer and edit-all listener on the fresh node (#1850).\n\t\t\trebindHero();\n\n\t\t\tvar root = document.querySelector('[data-sw-section-nav]');\n\t\t\tif (!root) return;\n\t\t\tvar sections = Array.prototype.slice.call(root.querySelectorAll('[data-sw-section]'));\n\t\t\tvar idx = -1;\n\n\t\t\tfunction handle(key) {\n\t\t\t\tif (key === 'h') { var p = root.getAttribute('data-sw-prev-artist'); if (p) { window.location.assign(p); return true; } return false; }\n\t\t\t\tif (key === 'l') { var n = root.getAttribute('data-sw-next-artist'); if (n) { window.location.assign(n); return true; } return false; }\n\t\t\t\tif (key === 'j' || key === 'k') {\n\t\t\t\t\tif (!sections.length) return false;\n\t\t\t\t\tidx = key === 'j' ? Math.min(sections.length - 1, idx + 1) : Math.max(0, idx - 1);\n\t\t\t\t\tsections[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });\n\t\t\t\t\tsections[idx].setAttribute('tabindex', '-1');\n\t\t\t\t\tsections[idx].focus({ preventScroll: true });\n\t\t\t\t\treturn true;\n\t\t\t\t}\n\t\t\t\treturn false;\n\t\t\t}\n\n\t\t\t// isTyping: mirrors keyboard.js's guard -- INPUT only counts as typing\n\t\t\t// when text-like; a focused checkbox/radio must NOT swallow shortcuts.\n\t\t\tfunction isTyping(el) {\n\t\t\t\tif (!el) return false;\n\t\t\t\tvar tag = el.tagName;\n\t\t\t\tif (tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return true;\n\t\t\t\tif (tag === 'INPUT') {\n\t\t\t\t\tvar nonText = ['checkbox','radio','button','submit','reset','file','image','range','color'];\n\t\t\t\t\tvar itype = (el.getAttribute('type') || 'text').toLowerCase();\n\t\t\t\t\treturn nonText.indexOf(itype) === -1;\n\t\t\t\t}\n\t\t\t\treturn false;\n\t\t\t}\n\n\t\t\t// Track the most-recently-hovered field row so 'f' has a target.\n\t\t\t// closest() walks up from any pointer target inside the row container\n\t\t\t// (value text, lock icon, etc.) to reach the wrapping div, e.g.\n\t\t\t// <div id=\"field-biography-123\">.\n\t\t\tvar focusedFieldEl = null;\n\t\t\tdocument.addEventListener('mouseover', function (mv) {\n\t\t\t\tvar el = mv.target.closest('div[id^=\"field-\"]');\n\t\t\t\tif (el) focusedFieldEl = el;\n\t\t\t});\n\n\t\t\t// Detail-page keyboard handler. keyboard.js (global) handles r/R via\n\t\t\t// data-sw-shortcut and owns 'f'/'F' on filter-flyout pages; this listener\n\t\t\t// is complementary. The onContext hook from keyboard.js targets roving-list\n\t\t\t// pages and is NOT used here (artist-detail has no data-sw-roving-list).\n\t\t\tdocument.addEventListener('keydown', function (ev) {\n\t\t\t\tif (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;\n\t\t\t\tif (isTyping(ev.target)) return;\n\n\t\t\t\t// When the artwork modal is open, its own keydown handler (registered by\n\t\t\t\t// artwork-modal.js while open) owns Escape and Tab. All other keys\n\t\t\t\t// (h/l/j/k/e/f) must NOT navigate the page behind the dialog.\n\t\t\t\tvar artworkModal = document.getElementById('artwork-modal');\n\t\t\t\tif (artworkModal && !artworkModal.classList.contains('hidden')) return;\n\n\t\t\t\t// Esc: layered dismiss in priority order.\n\t\t\t\t// (a) Lightbox + (b) artwork-modal: each registers its keydown handler\n\t\t\t\t//     only while open (added on open, removed on close) and calls\n\t\t\t\t//     e.preventDefault() -- the defaultPrevented guard above handles\n\t\t\t\t//     those before we reach this block.\n\t\t\t\t// (c) Dismiss the refresh-panel when it has content.\n\t\t\t\t// (d) Exit page edit mode when active (same as clicking Done).\n\t\t\t\tif (ev.key === 'Escape') {\n\t\t\t\t\tvar panel = document.getElementById('refresh-panel');\n\t\t\t\t\tif (panel && panel.innerHTML.trim() !== '') {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tpanel.innerHTML = '';\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (editing) {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tsetEditAll(false);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\t// e: toggle page-level Edit mode (same as clicking the Edit / Done hero\n\t\t\t\t// button). next/ uses page-wide edit-all, not per-field pencils.\n\t\t\t\tif (ev.key === 'e') {\n\t\t\t\t\tev.preventDefault();\n\t\t\t\t\tsetEditAll(!editing);\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\t// f: open the provider-fetch panel for the focused field. keyboard.js\n\t\t\t\t// handles 'f'/'F' on pages that use a filter flyout; it returns without\n\t\t\t\t// calling preventDefault when no data-sw-shortcut=\"f\" element exists,\n\t\t\t\t// so this handler still fires on the detail page.\n\t\t\t\tif (ev.key === 'f') {\n\t\t\t\t\tif (focusedFieldEl) {\n\t\t\t\t\t\tvar fetchBtn = focusedFieldEl.querySelector('button[hx-get$=\"/providers\"]');\n\t\t\t\t\t\tif (fetchBtn) { ev.preventDefault(); fetchBtn.click(); }\n\t\t\t\t\t}\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\t// h/l/j/k: prev/next artist and section nav (handled by handle()).\n\t\t\t\tif (handle(ev.key)) ev.preventDefault();\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

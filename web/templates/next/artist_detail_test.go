@@ -113,10 +113,9 @@ func TestArtistDetailPage_PrototypeChrome(t *testing.T) {
 		// Edit-all is a bidirectional toggle (aria-pressed reflects state).
 		`data-sw-edit-all`,
 		`aria-pressed="false"`,
-		// OOB landing pads so the reused stable fragments don't log
-		// htmx:oobErrorNoTarget on the next/ page (bug #4).
+		// OOB landing pad so the stable violations fragment doesn't log
+		// htmx:oobErrorNoTarget on the next/ page.
 		`id="violations-tab-badge"`,
-		`id="history-showing-counter"`,
 		// A11y baseline: the Actions disclosure declares a menu popup, and the
 		// alias input has a real (sr-only) accessible name, not placeholder-only.
 		`aria-haspopup="menu"`,
@@ -324,12 +323,12 @@ func TestOrderedSections(t *testing.T) {
 	// regression in the trailing (appended) order is caught, not just the prefix.
 	// "debug" is in defaultSectionOrder (after "discography", before "identifiers").
 	if got, want := orderedSections([]string{"identifiers", "bogus", "metadata"}, nil),
-		[]string{"identifiers", "metadata", "artwork", "findings", "history", "providers", "discography", "debug"}; !slices.Equal(got, want) {
+		[]string{"identifiers", "metadata", "artwork", "findings", "providers", "discography", "debug"}; !slices.Equal(got, want) {
 		t.Errorf("pref order = %v, want %v", got, want)
 	}
 	// Hidden ids removed; the rest keep default order. Assert the full slice.
 	if got, want := orderedSections(nil, []string{"artwork", "discography"}),
-		[]string{"metadata", "findings", "history", "providers", "debug", "identifiers"}; !slices.Equal(got, want) {
+		[]string{"metadata", "findings", "providers", "debug", "identifiers"}; !slices.Equal(got, want) {
 		t.Errorf("hidden removal = %v, want %v", got, want)
 	}
 }

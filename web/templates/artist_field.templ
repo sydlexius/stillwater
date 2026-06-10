@@ -43,36 +43,38 @@ templ FieldDisplay(a *artist.Artist, field string, providers []string) {
 // providers carries the provider names that can supply this field; it drives the
 // next/ channel's edit-mode "Fetch from providers" icon (rendered by
 // fieldEditActions). It is empty/ignored for the stable channel.
-templ FieldEdit(a *artist.Artist, field string, providers []string) {
+// history carries recent per-field changes for the undo clock affordance.
+templ FieldEdit(a *artist.Artist, field string, providers []string, history []artist.MetadataChangeWithArtist) {
 	switch field {
 		case "biography":
-			@biographyEdit(a, providers)
+			@biographyEdit(a, providers, history)
 		case "genres":
-			@tagFieldEdit(a, "genres", t(ctx, "artist.genres"), a.Genres, providers)
+			@tagFieldEdit(a, "genres", t(ctx, "artist.genres"), a.Genres, providers, history)
 		case "styles":
-			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles, providers)
+			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles, providers, history)
 		case "moods":
-			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods, providers)
+			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods, providers, history)
 		case "type":
-			@selectFieldEdit(a, "type", fieldLabel(ctx, "type"), artist.FieldValueFromArtist(a, "type"), typeOptions(), providers)
+			@selectFieldEdit(a, "type", fieldLabel(ctx, "type"), artist.FieldValueFromArtist(a, "type"), typeOptions(), providers, history)
 		case "gender":
-			@selectFieldEdit(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), genderOptions(), providers)
+			@selectFieldEdit(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), genderOptions(), providers, history)
 		case "formed", "born", "disbanded", "died", "years_active", "origin",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
-			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers)
+			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers, history)
 	}
 }
 
 // fieldEditActions renders the per-field action icons that the next/ channel's
-// edit mode surfaces alongside the input (per-field lock / fetch / clear), each
-// an individual icon button with its own tooltip. It is display:none by default
-// and revealed only inside the .sw-next-artist-detail edit surface (input.css),
-// so the stable channel's edit forms keep just save/cancel and are unchanged.
+// edit mode surfaces alongside the input (per-field lock / fetch / clear / undo
+// clock), each an individual icon button with its own tooltip. It is
+// display:none by default and revealed only inside the .sw-next-artist-detail
+// edit surface (input.css), so the stable channel's edit forms keep just
+// save/cancel and are unchanged.
 // The read view never renders an edit form, so these actions only ever appear
 // when Edit mode is active -- satisfying the "nothing actionable until Edit on"
 // rule for the next/ artist-detail screen.
-templ fieldEditActions(a *artist.Artist, field string, providers []string, canClear bool) {
+templ fieldEditActions(a *artist.Artist, field string, providers []string, canClear bool, history []artist.MetadataChangeWithArtist) {
 	<span class="sw-edit-actions inline-flex items-center gap-0.5">
 		@FieldLockToggle(a, field)
 		if len(providers) > 0 {
@@ -93,6 +95,14 @@ templ fieldEditActions(a *artist.Artist, field string, providers []string, canCl
 			>
 				@components.IconArrowPath("h-3.5 w-3.5")
 			</button>
+		}
+		// Clock affordance: opens a popover of prior values. Shown when at least
+		// one history entry exists for this field. Clicking an entry stages the
+		// value into the field input via swStageHistoryValue() so the existing
+		// fieldChanged() dirty detection marks it for save. No new endpoint: data
+		// is pre-loaded by handleFieldEdit and rendered inline here.
+		if len(history) > 0 {
+			@fieldHistoryMenu(a, field, history)
 		}
 		// Clear renders only when the field has a value to clear AND is not
 		// "name". Two reasons it is gated rather than always shown:
@@ -119,6 +129,109 @@ templ fieldEditActions(a *artist.Artist, field string, providers []string, canCl
 			</button>
 		}
 	</span>
+}
+
+// fieldHistoryMenu renders a clock-icon trigger and a pre-populated popover
+// listing the most recent prior values for the field (up to 5, loaded by
+// handleFieldEdit). Clicking an entry stages the value into the field input
+// via swStageHistoryValue() which then shows the field as dirty so a normal
+// save submits the chosen value. The dropdown reuses ContextMenu's panel/sheet
+// structure and the ContextMenuGlobalJS close-outside behavior.
+templ fieldHistoryMenu(a *artist.Artist, field string, history []artist.MetadataChangeWithArtist) {
+	{{ menuID := "fh-" + field + "-" + a.ID }}
+	{{ containerSel := "#field-" + field + "-" + a.ID }}
+	<div class="relative inline-flex" data-context-menu={ menuID }>
+		<button
+			type="button"
+			class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
+			title={ tf(ctx, "artist.field_history", fieldLabel(ctx, field)) }
+			aria-label={ tf(ctx, "artist.field_history", fieldLabel(ctx, field)) }
+			aria-haspopup="true"
+			aria-expanded="false"
+			aria-controls={ "ctx-panel-" + menuID }
+			onclick={ components.ToggleContextMenu(menuID) }
+		>
+			@components.IconClock("h-3.5 w-3.5")
+		</button>
+		<!-- Desktop dropdown panel -->
+		<div
+			id={ "ctx-panel-" + menuID }
+			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg ctx-desktop-panel"
+			role="menu"
+		>
+			<p class="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{ t(ctx, "artist.field_history_heading") }</p>
+			<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+			for _, c := range history {
+				// c.NewValue is intentional: it stages the value the field was SET TO at this point (not OldValue), so clicking an entry restores that snapshot.
+				<button
+					type="button"
+					role="menuitem"
+					class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none"
+					data-sw-stage-value={ c.NewValue }
+					data-sw-container-sel={ containerSel }
+					data-sw-menu-id={ menuID }
+					onclick="swStageHistoryValue(this)"
+				>
+					<span class="text-sm text-gray-800 dark:text-gray-200 truncate w-full max-w-[12rem]">
+						if c.NewValue == "" {
+							<em class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.empty") }</em>
+						} else {
+							{ truncateText(c.NewValue, 60) }
+						}
+					</span>
+					<span class="text-xs text-gray-400 dark:text-gray-500">
+						{ historySourceLabel(ctx, c.Source) } - { historyTimeAgo(ctx, c.CreatedAt) }
+					</span>
+				</button>
+			}
+		</div>
+		<!-- Mobile bottom sheet -->
+		<div
+			id={ "ctx-sheet-" + menuID }
+			class="ctx-bottom-sheet"
+			role="menu"
+			aria-modal="true"
+			aria-label={ tf(ctx, "artist.field_history", fieldLabel(ctx, field)) }
+			aria-hidden="true"
+			inert
+		>
+			<div class="ctx-sheet-scrim" onclick={ components.CloseContextMenu(menuID) } aria-hidden="true"></div>
+			<div class="ctx-sheet-panel">
+				<div class="ctx-sheet-handle-bar" aria-hidden="true">
+					<div class="ctx-sheet-handle"></div>
+				</div>
+				<div class="ctx-sheet-items">
+					for _, c := range history {
+						<button
+							type="button"
+							role="menuitem"
+							class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none"
+							data-sw-stage-value={ c.NewValue }
+							data-sw-container-sel={ containerSel }
+							data-sw-menu-id={ menuID }
+							onclick="swStageHistoryValue(this)"
+						>
+							<span class="text-sm text-gray-800 dark:text-gray-200">
+								if c.NewValue == "" {
+									<em class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.empty") }</em>
+								} else {
+									{ truncateText(c.NewValue, 80) }
+								}
+							</span>
+							<span class="text-xs text-gray-400 dark:text-gray-500">
+								{ historySourceLabel(ctx, c.Source) } - { historyTimeAgo(ctx, c.CreatedAt) }
+							</span>
+						</button>
+					}
+				</div>
+				<div class="ctx-sheet-footer">
+					<button type="button" class="ctx-sheet-cancel" onclick={ components.CloseContextMenu(menuID) }>
+						{ t(ctx, "common.cancel") }
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
 }
 
 // fieldFindingChips renders the inline finding chip(s) for a metadata field
@@ -278,12 +391,12 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 	</div>
 }
 
-templ biographyEdit(a *artist.Artist, providers []string) {
+templ biographyEdit(a *artist.Artist, providers []string, history []artist.MetadataChangeWithArtist) {
 	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
 			<h2 class="text-lg font-semibold inline-flex items-center gap-2">
 				{ t(ctx, "artist.biography") }
-				@fieldEditActions(a, "biography", providers, a.Biography != "")
+				@fieldEditActions(a, "biography", providers, a.Biography != "", history)
 			</h2>
 		</div>
 		<form
@@ -323,11 +436,11 @@ templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colo
 	</div>
 }
 
-templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, providers []string) {
+templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, providers []string, history []artist.MetadataChangeWithArtist) {
 	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
 		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
-			@fieldEditActions(a, field, providers, len(tags) > 0)
+			@fieldEditActions(a, field, providers, len(tags) > 0, history)
 		</h3>
 		<form
 			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
@@ -434,7 +547,7 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 	}
 }
 
-templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []string) {
+templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []string, history []artist.MetadataChangeWithArtist) {
 	<div id={ "field-" + field + "-" + a.ID }>
 		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
 		<dd>
@@ -451,7 +564,7 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []
 					aria-label={ label }
 					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
-				@fieldEditActions(a, field, providers, value != "")
+				@fieldEditActions(a, field, providers, value != "", history)
 				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title={ t(ctx, "common.save") } aria-label={ tf(ctx, "artist.save_field", label) }>
 					@components.IconCheck("h-4 w-4")
 				</button>
@@ -685,7 +798,7 @@ func typeOptions() []SelectOption {
 
 // selectFieldEdit renders a detail sidebar field in edit mode with a <select>
 // dropdown instead of a free-text input. Used for type and gender fields.
-templ selectFieldEdit(a *artist.Artist, field, label, value string, options []SelectOption, providers []string) {
+templ selectFieldEdit(a *artist.Artist, field, label, value string, options []SelectOption, providers []string, history []artist.MetadataChangeWithArtist) {
 	<div id={ "field-" + field + "-" + a.ID }>
 		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
 		<dd>
@@ -714,7 +827,7 @@ templ selectFieldEdit(a *artist.Artist, field, label, value string, options []Se
 						<option value={ value } selected>{ value }</option>
 					}
 				</select>
-				@fieldEditActions(a, field, providers, value != "")
+				@fieldEditActions(a, field, providers, value != "", history)
 				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title={ t(ctx, "common.save") } aria-label={ tf(ctx, "artist.save_field", label) }>
 					@components.IconCheck("h-4 w-4")
 				</button>

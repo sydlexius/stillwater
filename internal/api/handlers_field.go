@@ -71,7 +71,26 @@ func (r *Router) handleFieldEdit(w http.ResponseWriter, req *http.Request) {
 			r.logger.Warn("loading provider priorities for field edit", "field", field, "error", err)
 		}
 		providers := buildFieldProvidersMap(priorities)[field]
-		renderTempl(w, req, templates.FieldEdit(a, field, providers))
+
+		// Pre-load per-field history for the undo affordance (clock popover).
+		// Capped at 5 entries; no new endpoint needed - data travels with the
+		// edit fragment response. Degrades gracefully when history is unavailable.
+		var fieldHistory []artist.MetadataChangeWithArtist
+		if r.historyService != nil {
+			filter := artist.GlobalHistoryFilter{
+				ArtistID: artistID,
+				Fields:   []string{field},
+				Limit:    5,
+			}
+			changes, _, listErr := r.historyService.ListGlobal(req.Context(), filter)
+			if listErr != nil {
+				r.logger.Warn("loading field history for undo affordance", "field", field, "error", listErr)
+			} else {
+				fieldHistory = changes
+			}
+		}
+
+		renderTempl(w, req, templates.FieldEdit(a, field, providers, fieldHistory))
 		return
 	}
 
