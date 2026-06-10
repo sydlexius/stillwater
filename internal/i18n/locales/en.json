@@ -90,7 +90,7 @@
   "artist.fetch_all_images": "Fetch All Images",
   "artist.fetch_from_providers": "Fetch from providers",
   "artist.field_history": "Prior values for %s",
-  "artist.field_history_heading": "Prior values",
+  "artist.field_history_heading": "Prior Values",
   "artist.fetch_members_from_providers": "Re-fetch members from providers",
   "artist.fetching_metadata": "Fetching metadata...",
   "artist.field_provenance": "Field Provenance",

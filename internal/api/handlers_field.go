@@ -84,7 +84,7 @@ func (r *Router) handleFieldEdit(w http.ResponseWriter, req *http.Request) {
 			}
 			changes, _, listErr := r.historyService.ListGlobal(req.Context(), filter)
 			if listErr != nil {
-				r.logger.Warn("loading field history for undo affordance", "field", field, "error", listErr)
+				r.logger.Warn("loading field history for undo affordance", "artist_id", artistID, "field", field, "error", listErr)
 			} else {
 				fieldHistory = changes
 			}

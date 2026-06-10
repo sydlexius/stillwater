@@ -27,6 +27,23 @@ The field saves immediately -- no separate "Save changes" button at the page lev
 
 Genres, styles, and moods are list fields. Their inline editor lets you type a new value into a text input to add it; click the **X** on an existing chip to remove one. The order matters for some platforms (the first genre is often the "primary" one).
 
+## Revert a field to a prior value
+
+Fields that have recorded prior values show a small **clock icon** (labeled "Prior values for \<Field\>") next to the field's edit controls in edit mode.
+
+Prior values accrue automatically from manual edits, provider metadata refreshes, and automated rule fixes -- you do not need to do anything to start collecting them.
+
+To revert a field:
+
+1. Click the **clock icon** next to the field. A popover opens listing up to five recent prior values, most recent first, each showing its source and timestamp.
+2. Click the value you want to restore. It is staged back into the field's input and the field is marked changed.
+3. Click **Save** to apply it (or **Cancel** to discard the staged value).
+
+This is the per-field undo path. There is no global "undo all" -- each field manages its own history independently.
+
+!!! note
+    The previously separate **History** section (a dedicated tab listing all field changes) has been removed. Per-field prior values replace it for day-to-day revert workflows.
+
 ## Lock the artist
 
 Locking the artist means: future automated runs (provider refreshes, rule fixers) skip this record entirely. The big switch.

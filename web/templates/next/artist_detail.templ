@@ -140,11 +140,11 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 				@templates.LightboxOverlay()
 			}
 			@artistDetailPageScript()
-			// Wire the ContextHelp (?) icons on this page. The History section reuses
-			// the stable history-tab fragment, which renders a ContextHelp "?" for the
-			// Source-column taxonomy; without this script its onclick=swContextHelpToggle
-			// is undefined and the icon is dead (the next/ LayoutNext does not mount it
-			// globally). Rendered once; the component's script self-guards re-injection.
+			// Wire the ContextHelp (?) icons on this page. The dedicated History section
+			// was removed; history is now surfaced per-field via the "Prior values" undo
+			// affordance (clock icon). ContextHelp icons elsewhere on the page still need
+			// swContextHelpToggle defined -- LayoutNext does not mount it globally.
+			// Rendered once; the component's script self-guards re-injection.
 			@components.ContextHelpScript()
 		</div>
 	}

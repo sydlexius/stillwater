@@ -159,7 +159,7 @@ templ fieldHistoryMenu(a *artist.Artist, field string, history []artist.Metadata
 			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg ctx-desktop-panel"
 			role="menu"
 		>
-			<p class="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{ t(ctx, "artist.field_history_heading") }</p>
+			<p class="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 tracking-wide">{ t(ctx, "artist.field_history_heading") }</p>
 			<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 			for _, c := range history {
 				// c.NewValue is intentional: it stages the value the field was SET TO at this point (not OldValue), so clicking an entry restores that snapshot.
