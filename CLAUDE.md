@@ -6,8 +6,6 @@ Stillwater is a containerized, self-hosted web application for managing artist/c
 
 ## Style and Conventions
 
-- **No emoji** in code, commits, comments, or documentation
-- **No em-dashes** in any output
 - Go 1.26+ with `net/http` stdlib routing (no third-party router needed)
 - Structured logging via `log/slog`
 - Pure Go SQLite via `modernc.org/sqlite` (no CGO)
@@ -164,9 +162,7 @@ Sequence before opening / pushing to a PR:
 
 See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround and Copilot policy. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge), not as a standalone pre-push ceremony.
 
-**Review comment scope:** Default: fix now. Defer only for architectural changes or unrelated subsystems. Never defer without creating a tracking issue.
-
-**Decompose before building.** Land shared/foundation refactors (extractions, exported helpers, new shared components) as their own small PR *before* building features on them; the feature PR then targets a clean base. When the foundation is not known up front, spike a throwaway rough-cut (delegate it to a subagent that returns a "foundation manifest") to discover what needs sharing, then split. If a feature cannot fit under the ~800 hand-written-LOC / 10-file size gate, that is a signal it bundles a foundation refactor that should have landed first. For complex multi-session screens/features, run the main session as an orchestrator (delegate implementation, tests, RCA, and UAT-evidence gathering to subagents), gate per chunk rather than once at the end, and never report work "done" without the verifying evidence in the same message. See the screen-build playbook in the M55 plan and the `feedback_screen_build_playbook` memory.
+**Decompose before building.** When the foundation is not known up front, spike a throwaway rough-cut (delegate it to a subagent that returns a "foundation manifest") to discover what needs sharing, then split. If a feature cannot fit under the ~800 hand-written-LOC / 10-file size gate, that is a signal it bundles a foundation refactor that should have landed first. For complex multi-session screens/features, run the main session as an orchestrator (delegate implementation, tests, RCA, and UAT-evidence gathering to subagents), gate per chunk rather than once at the end, and never report work "done" without the verifying evidence in the same message. See the screen-build playbook in the M55 plan and the `feedback_screen_build_playbook` memory.
 
 ## Worktrees
 
@@ -185,16 +181,12 @@ See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude
 
 ## CI/CD
 
-All GitHub Actions pinned to commit SHAs (not tags) with version tag as inline comment:
-```yaml
-uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-```
-Do not use `paths-ignore` on triggers when required status checks exist (GitHub treats missing checks as failed).
+All required status checks pinned to commit SHAs; see `.github/workflows/` for examples.
 
 ## Helper Scripts
 
 - `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files, lint, patch coverage). Run automatically by the pre-push git hook; do not invoke manually as a standalone pre-PR step (see PR Workflow).
-- `scripts/safe-push.sh [branch] [--force-with-lease]` -- `git push` wrapper that writes the full transcript to a per-worktree log under `.git/` and verifies `origin/<branch>` matches local HEAD after push. Catches silent failures that `cmd | tail` would swallow.
+- `scripts/safe-push.sh [branch] [--force-with-lease]` -- `git push` wrapper that logs transcripts to `.git/`
 - `scripts/dev-restart.sh` -- canonical dev rebuild + restart (use this; never kill by port)
 - `scripts/patch-coverage.sh` -- patch-level coverage check (called by pre-push-gate)
 - `scripts/coverage-floor.sh` -- per-package coverage floor enforcement (called by pre-push-gate)
