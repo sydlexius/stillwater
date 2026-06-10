@@ -1054,9 +1054,13 @@ templ artistDetailPageScript() {
 				}
 				// Re-query editTriggers to include the fresh hero button and
 				// re-attach the click handler so the hero Edit button works after
-				// a hero DOM swap.
+				// a hero DOM swap. The dataset guard keeps the binding idempotent:
+				// the sticky-header trigger survives hero swaps, and without the
+				// guard each rebindHero() call would stack another listener on it.
 				editTriggers = document.querySelectorAll('[data-sw-edit-all]');
 				editTriggers.forEach(function (trigger) {
+					if (trigger.dataset.swEditBound) return;
+					trigger.dataset.swEditBound = '1';
 					trigger.addEventListener('click', function () { setEditAll(!editing); });
 				});
 				// Sync the visual state of the new hero button with the current edit mode.

@@ -3178,6 +3178,19 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 .sw-next-artist-detail .sw-field-actions button.htmx-request svg {
   animation: spin 1s linear infinite;
 }
+/* Motion-disabled users keep a static icon: the in-flight state is still
+ * conveyed by the button's htmx-request styling, not motion alone. Honors
+ * both the OS query and the app's reduced_motion pref (data-motion="on"). */
+@media (prefers-reduced-motion: reduce) {
+  .sw-next-artist-detail .sw-edit-actions button.htmx-request svg,
+  .sw-next-artist-detail .sw-field-actions button.htmx-request svg {
+    animation: none;
+  }
+}
+html[data-motion="on"] .sw-next-artist-detail .sw-edit-actions button.htmx-request svg,
+html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-request svg {
+  animation: none;
+}
 
 /* Sticky mini-header (design section 6): slides in once the hero scrolls out of
  * the top. It is the first child of the page root; position:sticky pins it at

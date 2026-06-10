@@ -2,6 +2,7 @@ package templates
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -47,9 +48,11 @@ func TestArtistRow_TableHeaderNoUppercase(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
-	// All th class strings in ArtistTable must not contain "uppercase".
-	// We check that no <th ... class="...uppercase..."> appears.
-	if strings.Contains(out, `font-medium uppercase tracking-wider`) {
+	// No <th> may carry the uppercase token in its class list, regardless of
+	// where it sits in the class string (exact-sequence matching let class
+	// reordering hide a regression).
+	uppercaseTH := regexp.MustCompile(`<th[^>]*class="[^"]*\buppercase\b[^"]*"`)
+	if uppercaseTH.MatchString(out) {
 		t.Errorf("ArtistTable <th> still carries CSS uppercase class; Title Case i18n strings will render ALL CAPS")
 	}
 }
