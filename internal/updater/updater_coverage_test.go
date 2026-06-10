@@ -906,7 +906,7 @@ func waitForApplyDone(t *testing.T, svc *Service) StatusResult {
 		if svc.applyRunning.Load() == 0 {
 			return svc.Status()
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // poll interval inside waitForApplyDone; not a bare sleep-then-assert
 	}
 	t.Fatalf("runApply goroutine did not finish within %s; state = %q", timeout, svc.Status().State)
 	return StatusResult{}

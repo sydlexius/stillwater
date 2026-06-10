@@ -1732,24 +1732,21 @@ func TestStartSchedulerReactsToConfigChange(t *testing.T) {
 		t.Fatalf("seed SetConfig: %v", err)
 	}
 
-	// SetConfig itself queued a configChange wakeup before the
-	// scheduler started; clear lastChecked so the post-start initial
-	// tick (or any pre-existing one) does not poison the assertion
-	// below. We assert that a *second* SetConfig (the reactive one)
-	// causes lastChecked to advance past the timestamp we capture
-	// just before that call.
+	// Drain the configChange queued by the seed SetConfig before starting the
+	// scheduler so it enters the loop clean. The configChange arm only resets
+	// the timer (it does not run Check), so draining here has the same net
+	// effect as letting the scheduler handle it but avoids the 50ms sleep that
+	// was previously needed to wait for it to be consumed.
+	select {
+	case <-svc.configChange:
+	default:
+	}
+
 	done := make(chan struct{})
 	go func() {
 		svc.StartScheduler(ctx)
 		close(done)
 	}()
-
-	// Let the scheduler enter the select with the long interval and
-	// drain any startup-time check.
-	time.Sleep(50 * time.Millisecond)
-	svc.mu.Lock()
-	svc.lastChecked = time.Time{}
-	svc.mu.Unlock()
 
 	// Capture the moment just before the reactive SetConfig so we can
 	// assert lastChecked moves past it.

@@ -22,7 +22,8 @@ func TestCheckFileConflict_NoConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Use a reference time after the file was written
+	// Sleep to ensure mtime < since: the OS mtime resolution can be coarser than
+	// time.Now() precision, so we advance past the write before capturing since.
 	time.Sleep(50 * time.Millisecond)
 	since := time.Now()
 
@@ -39,7 +40,8 @@ func TestCheckFileConflict_HasConflict(t *testing.T) {
 	dir := t.TempDir()
 	nfoPath := filepath.Join(dir, "artist.nfo")
 
-	// Set reference time before the file is written
+	// Set reference time before the file is written. Sleep to put measurable
+	// wall-clock distance between since and the write so mtime > since reliably.
 	since := time.Now().Add(-1 * time.Second)
 	time.Sleep(50 * time.Millisecond)
 

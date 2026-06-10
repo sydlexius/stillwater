@@ -277,6 +277,8 @@ func TestDispatcher_Drain(t *testing.T) {
 
 	var received atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Artificial delay in the fake HTTP server to simulate in-flight work
+		// that Drain must wait for; not an async-synchronization sleep.
 		time.Sleep(handlerDelay)
 		received.Add(1)
 		w.WriteHeader(http.StatusOK)
@@ -324,7 +326,8 @@ func TestDispatcher_Drain_ContextCancel(t *testing.T) {
 	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
-	// Server hangs for 500ms -- longer than our drain deadline.
+	// Server hangs for 500ms to exercise the deadline-expiry path in Drain;
+	// the hang is deliberate and not an async-synchronization sleep.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
