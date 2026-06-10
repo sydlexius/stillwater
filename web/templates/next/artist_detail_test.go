@@ -247,6 +247,71 @@ func TestArtistDetailPage_Neighbors(t *testing.T) {
 	}
 }
 
+// TestArtistDetailPage_FanartBase verifies the page root carries the
+// data-sw-fanart-base attribute so the inline ambient-backdrop script can
+// derive its API path from the DOM instead of hardcoding /api/v1 (#1861).
+func TestArtistDetailPage_FanartBase(t *testing.T) {
+	t.Parallel()
+	assets := templates.AssetPaths{BasePath: "/app"}
+	data := detailPageData(nil, nil)
+	var buf bytes.Buffer
+	if err := ArtistDetailPage(assets, data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	// The data attribute must carry the full base-path-prefixed fanart list URL.
+	want := `data-sw-fanart-base="/app/api/v1/artists/art-1/images/fanart/"`
+	if !strings.Contains(out, want) {
+		t.Errorf("page root missing fanart base attr; want %q in output", want)
+	}
+	// The inline script must NOT contain a hardcoded /api/v1 path for the
+	// artist-specific fanart URL -- it must read from the data attribute.
+	if strings.Contains(out, `'/api/v1/artists/'`) {
+		t.Errorf("ambient backdrop script still hardcodes /api/v1 path")
+	}
+}
+
+// TestArtistDetailPage_HeroID verifies the hero section carries its stable
+// select ID so a History-undo revert can refresh it in place via htmx.ajax
+// select-swap (#1850).
+func TestArtistDetailPage_HeroID(t *testing.T) {
+	t.Parallel()
+	data := detailPageData(nil, nil)
+	var buf bytes.Buffer
+	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	want := `id="next-hero-art-1"`
+	if !strings.Contains(out, want) {
+		t.Errorf("hero section missing id attribute; want %q in output", want)
+	}
+}
+
+// TestArtistDetailPage_HeroTypePillNoUppercase verifies the hero type pill does
+// not carry the CSS uppercase class (#1843): the normalized label from
+// nextTypeLabel already uses Title Case and must not be forced ALL CAPS.
+func TestArtistDetailPage_HeroTypePillNoUppercase(t *testing.T) {
+	t.Parallel()
+	data := detailPageData(nil, nil)
+	data.Detail.Artist.Type = "group"
+	var buf bytes.Buffer
+	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	// The hero pill span must contain the type label but must NOT include the
+	// Tailwind "uppercase" class alongside it.
+	if !strings.Contains(out, "tracking-wide") {
+		t.Errorf("hero type pill span appears to be missing (tracking-wide not found)")
+	}
+	// Check for the pattern: "uppercase" must not appear adjacent to "tracking-wide"
+	// in the hero type span (the only pill on the page using tracking-wide).
+	if strings.Contains(out, `"rounded-full px-2 py-0.5 uppercase tracking-wide"`) {
+		t.Errorf("hero type pill still carries CSS uppercase class; want Title Case only")
+	}
+}
+
 // TestOrderedSections covers the pref/default merge + hide logic directly.
 func TestOrderedSections(t *testing.T) {
 	t.Parallel()

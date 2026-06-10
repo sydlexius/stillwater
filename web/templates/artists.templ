@@ -787,7 +787,7 @@ templ ArtistTable(data ArtistListData) {
 							<span class="sr-only">{ t(ctx, "artists.bulk.select_column") }</span>
 						</th>
 						<!-- Name column: three-state sort cycle (asc -> desc -> off) -->
-						<th scope="col" data-col="name" data-sort-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="name" data-sort-col="name" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							<button
 								type="button"
 								onclick="setSortColumn('name')"
@@ -800,7 +800,7 @@ templ ArtistTable(data ArtistListData) {
 							</button>
 						</th>
 						<!-- Type column: sortable, hidden by default via column toggle -->
-						<th scope="col" data-col="type" data-sort-col="type" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="type" data-sort-col="type" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							<button
 								type="button"
 								onclick="setSortColumn('type')"
@@ -813,7 +813,7 @@ templ ArtistTable(data ArtistListData) {
 							</button>
 						</th>
 						<!-- Origin/Country column: sortable, hidden by default via column toggle -->
-						<th scope="col" data-col="origin" data-sort-col="origin" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="origin" data-sort-col="origin" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							<button
 								type="button"
 								onclick="setSortColumn('origin')"
@@ -825,19 +825,19 @@ templ ArtistTable(data ArtistListData) {
 								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "origin" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
 							</button>
 						</th>
-						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							{ t(ctx, "artists.col.metadata") }
 						</th>
-						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							{ img.ImageTermFor("thumb", data.ProfileName) }
 						</th>
-						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							{ img.ImageTermFor("fanart", data.ProfileName) }
 						</th>
-						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							{ img.ImageTermFor("logo", data.ProfileName) }
 						</th>
-						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">
 							{ t(ctx, "artists.col.mbid") }
 						</th>
 					</tr>
@@ -898,7 +898,7 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			</div>
 		</td>
 		<td data-col="type" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-			{ a.Type }
+			{ ArtistTypeLabel(ctx, a.Type) }
 		</td>
 		<td data-col="origin" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 			{ a.Origin }
