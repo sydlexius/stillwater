@@ -38,6 +38,14 @@ const (
 	PrefBgOpacity                = "bg_opacity"
 	PrefPageSize                 = "page_size"
 
+	// M55 #1774: new preference keys introduced by the preferences flyout drawer.
+	// density controls layout density (compact/comfortable/spacious); mono_font
+	// selects the monospace font for kbd badges, IDs, and timestamps; kbd_hints
+	// governs keyboard-shortcut hint visibility.
+	PrefDensity  = "density"
+	PrefMonoFont = "mono_font"
+	PrefKbdHints = "kbd_hints"
+
 	// PrefArtistDetailSectionOrder and PrefArtistDetailHiddenSections are the
 	// per-user artist-detail layout preferences (M55 #1336/#1339). Each stores a
 	// JSON array of section identifiers. They are not in preferenceDefaults
@@ -67,18 +75,22 @@ type preferenceDef struct {
 
 // preferenceDefaults defines every supported preference key with its default and valid values.
 var preferenceDefaults = map[string]preferenceDef{
-	PrefTheme:                    {defaultValue: "dark", allowedValues: []string{"dark", "light", "system"}},
-	PrefSidebarState:             {defaultValue: "full", allowedValues: []string{"full", "icon-only", "hidden"}},
-	PrefContentWidth:             {defaultValue: "narrow", allowedValues: []string{"narrow", "wide"}},
-	PrefFontFamily:               {defaultValue: "inter", allowedValues: []string{"system", "inter", "atkinson"}},
-	PrefFontSize:                 {defaultValue: "medium", allowedValues: []string{"small", "medium", "large"}},
-	PrefLetterSpacing:            {defaultValue: "normal", allowedValues: []string{"normal", "wide", "extra-wide"}},
-	PrefThumbnailSize:            {defaultValue: "medium", allowedValues: []string{"small", "medium", "large"}},
-	PrefReducedMotion:            {defaultValue: "system", allowedValues: []string{"system", "on", "off"}},
-	PrefLiteMode:                 {defaultValue: "off", allowedValues: []string{"off", "on", "auto"}},
-	PrefLanguage:                 {defaultValue: "en", allowedValues: []string{"en"}},
-	PrefNotificationEnabled:      {defaultValue: "true", allowedValues: []string{"true", "false"}},
-	PrefAutoFetchImages:          {defaultValue: "false", allowedValues: []string{"true", "false"}},
+	PrefTheme:               {defaultValue: "dark", allowedValues: []string{"dark", "light", "system"}},
+	PrefSidebarState:        {defaultValue: "full", allowedValues: []string{"full", "icon-only", "hidden"}},
+	PrefContentWidth:        {defaultValue: "narrow", allowedValues: []string{"narrow", "wide"}},
+	PrefFontFamily:          {defaultValue: "inter", allowedValues: []string{"system", "inter", "atkinson"}},
+	PrefFontSize:            {defaultValue: "medium", allowedValues: []string{"small", "medium", "large", "x-large", "xx-large"}},
+	PrefLetterSpacing:       {defaultValue: "normal", allowedValues: []string{"normal", "wide", "extra-wide"}},
+	PrefThumbnailSize:       {defaultValue: "medium", allowedValues: []string{"small", "medium", "large"}},
+	PrefReducedMotion:       {defaultValue: "system", allowedValues: []string{"system", "on", "off"}},
+	PrefLiteMode:            {defaultValue: "off", allowedValues: []string{"off", "on", "auto"}},
+	PrefLanguage:            {defaultValue: "en", allowedValues: []string{"en"}},
+	PrefNotificationEnabled: {defaultValue: "true", allowedValues: []string{"true", "false"}},
+	PrefAutoFetchImages:     {defaultValue: "false", allowedValues: []string{"true", "false"}},
+	// M55 #1774: preferences flyout drawer keys.
+	PrefDensity:                  {defaultValue: "comfortable", allowedValues: []string{"compact", "comfortable", "spacious"}},
+	PrefMonoFont:                 {defaultValue: "jetbrains", allowedValues: []string{"system", "jetbrains", "cascadia"}},
+	PrefKbdHints:                 {defaultValue: "show", allowedValues: []string{"show", "hide"}},
 	PrefMetadataNameRomanization: {defaultValue: "true", allowedValues: []string{"true", "false"}},
 }
 
@@ -920,6 +932,14 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		PageSize:          pageSize,
 		AutoFetchImages:   autoFetchImages,
 		BackgroundOpacity: bgOpacity,
+		// M55 #1774 flyout drawer keys.
+		Density:             pref(PrefDensity),
+		MonoFont:            pref(PrefMonoFont),
+		KbdHints:            pref(PrefKbdHints),
+		NotificationEnabled: normalizeBoolPref(pref(PrefNotificationEnabled), preferenceDefaults[PrefNotificationEnabled].defaultValue),
+		// Artist detail layout: parse stored JSON arrays (nil = use default order).
+		ArtistDetailSectionOrder:   parseSectionList(stored[PrefArtistDetailSectionOrder]),
+		ArtistDetailHiddenSections: parseSectionList(stored[PrefArtistDetailHiddenSections]),
 	}
 
 	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))

@@ -169,11 +169,20 @@ templ Sidebar(assets templates.AssetPaths) {
 					</li>
 				}
 				<li>
+					<!-- M55 #1774: the preferences trigger opens the flyout drawer instead
+					     of navigating to a standalone page. data-sw-prefs-trigger marks
+					     this element so swPrefsDrawer.wire() in prefs-drawer.js can bind
+					     the click handler. The href="/next/preferences" is a progressive-
+					     enhancement fallback for users with JS disabled. -->
 					<a
 						href={ templ.SafeURL(assets.BasePath + "/next/preferences") }
 						class="sw-sidebar-link"
 						data-path="/preferences"
+						data-sw-prefs-trigger
 						aria-label={ t(ctx, "nav.preferences") }
+						aria-haspopup="dialog"
+						aria-controls="sw-prefs-drawer"
+						aria-expanded="false"
 					>
 						@components.IconAdjustmentsHorizontal("sw-sidebar-icon")
 						<span class="sw-sidebar-label">{ t(ctx, "nav.preferences") }</span>
@@ -219,8 +228,21 @@ templ Sidebar(assets templates.AssetPaths) {
 					@components.IconArrowRightOnRectangle("h-4 w-4")
 				</button>
 			</div>
-			<!-- User identity: avatar + name/role (name/role hidden in icon-only) -->
-			<div class="sw-sidebar-user" title={ sidebarName(assets) }>
+			<!-- User identity: avatar + name/role (name/role hidden in icon-only).
+				 M55 #1774: the avatar/user area is a third entry point into the
+				 Preferences flyout (spec: profile/avatar menu -> Preferences).
+				 The href is a no-JS fallback; prefs-drawer.js intercepts via
+				 data-sw-prefs-trigger and opens the flyout instead. -->
+			<a
+				href={ templ.SafeURL(assets.BasePath + "/next/preferences") }
+				class="sw-sidebar-user"
+				title={ t(ctx, "nav.preferences") }
+				data-sw-prefs-trigger
+				aria-label={ t(ctx, "nav.preferences") }
+				aria-haspopup="dialog"
+				aria-controls="sw-prefs-drawer"
+				aria-expanded="false"
+			>
 				if assets.AvatarURL != "" {
 					<img
 						src={ assets.AvatarURL }
@@ -237,7 +259,7 @@ templ Sidebar(assets templates.AssetPaths) {
 					<span class="sw-sidebar-user-name">{ sidebarName(assets) }</span>
 					<span class="sw-sidebar-user-role">{ assets.Role }</span>
 				</div>
-			</div>
+			</a>
 		</div>
 	</nav>
 	<!-- Restore button: visible only when sidebar is hidden -->

@@ -849,6 +849,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /next/{path...} fallback, so Go's mux prefers it. Renders ArtworkManageEditor
 	// scoped to ?kind= for the in-page modal's active kind.
 	mux.HandleFunc("GET "+bp+"/next/artists/{id}/artwork-modal", wrapOptionalAuth(r.handleNextArtworkModal, optAuthMw))
+	// M55 #1774: preferences flyout drawer. Two routes:
+	//   /next/preferences        - standalone page for direct-URL / bookmark access.
+	//   /next/preferences-drawer - HTMX fragment; returns only the drawer body so
+	//                             LayoutNext can lazy-load it without passing prefs
+	//                             data through every handler that calls LayoutNext.
+	mux.HandleFunc("GET "+bp+"/next/preferences", wrapOptionalAuth(r.handleNextPreferencesPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/next/preferences-drawer", wrapOptionalAuth(r.handleNextPreferencesDrawer, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last
