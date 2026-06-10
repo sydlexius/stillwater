@@ -512,17 +512,35 @@
       return el ? el.content : '';
     })();
     var csrf = typeof window.swCsrfToken === 'function' ? window.swCsrfToken() : '';
+
+    // Default section order - mirrors defaultPrefsLayoutSections in prefs_drawer.templ.
+    var DEFAULT_ORDER = ['metadata', 'artwork', 'findings', 'providers', 'discography', 'identifiers'];
+
+    // Reorder rows and unhide all entirely in-place. The drawer element is never
+    // replaced, so open-state, scrim visibility, and all event listeners are
+    // unaffected. list.appendChild(row) moves an existing child to the end, which
+    // is the correct re-sort primitive when iterating the desired order.
+    var list = document.getElementById('sw-prefs-layout-list');
+    if (list) {
+      var rowMap = {};
+      Array.prototype.slice.call(list.querySelectorAll('[data-section-id]')).forEach(function (r) {
+        rowMap[r.getAttribute('data-section-id')] = r;
+      });
+      DEFAULT_ORDER.forEach(function (id) {
+        var row = rowMap[id];
+        if (!row) { return; }
+        row.setAttribute('data-hidden', 'false');
+        list.appendChild(row);
+      });
+    }
+
+    // Persist reset to server.
     fetch(bp + '/api/v1/preferences', {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify({ artist_detail_section_order: [], artist_detail_hidden_sections: [] })
+      body: JSON.stringify({ artist_detail_section_order: DEFAULT_ORDER, artist_detail_hidden_sections: [] })
     }).then(function (r) {
-      if (r.ok && typeof htmx !== 'undefined') {
-        // Fetch the drawer fragment. The afterSwap handler re-queries the live
-        // #sw-prefs-drawer and restores open state so the drawer never closes.
-        htmx.ajax('GET', bp + '/next/preferences-drawer', { target: '#sw-prefs-drawer', swap: 'outerHTML' });
-      }
       if (r.ok && window.showSuccessToast) { showSuccessToast('Layout reset'); }
       else if (!r.ok && window.showToast) { showToast('Failed to reset layout'); }
     }).catch(function () {
@@ -535,43 +553,152 @@
   function resetAll() {
     if (!window.swPreferences) return;
     var DEFAULTS = {
-      theme: 'dark',
-      sidebar_state: 'full',
-      content_width: 'narrow',
-      font_family: 'inter',
-      font_size: 'medium',
-      letter_spacing: 'normal',
-      thumbnail_size: 'medium',
-      reduced_motion: 'system',
-      lite_mode: 'off',
+      theme:                'dark',
+      sidebar_state:        'full',
+      content_width:        'narrow',
+      font_family:          'inter',
+      font_size:            'medium',
+      letter_spacing:       'normal',
+      thumbnail_size:       'medium',
+      reduced_motion:       'system',
+      lite_mode:            'off',
       notification_enabled: 'true',
-      auto_fetch_images: 'false',
-      bg_opacity: '85',
-      page_size: '50',
-      density: 'comfortable',
-      mono_font: 'jetbrains',
-      kbd_hints: 'show',
-      language: 'en'
+      auto_fetch_images:    'false',
+      bg_opacity:           '85',
+      page_size:            '50',
+      density:              'comfortable',
+      mono_font:            'jetbrains',
+      kbd_hints:            'show',
+      language:             'en'
     };
     var bp = (function () {
       var el = document.querySelector('meta[name="htmx-base-path"]');
       return el ? el.content : '';
     })();
     var csrf = typeof window.swCsrfToken === 'function' ? window.swCsrfToken() : '';
-    // PATCH all scalar defaults at once, then PATCH artist-detail layout reset.
+
+    // Apply visual/CSS defaults immediately (theme, font, density, etc.).
+    window.swPreferences.applyAll(DEFAULTS);
+
+    // Update every drawer control in-place. The drawer element is never replaced,
+    // so open-state, scrim visibility, content position, and all event listeners
+    // are unaffected by construction.
+    var drawer = getDrawer();
+    if (drawer) {
+      // Tile groups: aria-checked + roving tabindex.
+      ['theme', 'sidebar_state', 'content_width', 'thumbnail_size',
+       'font_family', 'mono_font', 'letter_spacing'].forEach(function (prefKey) {
+        var group = drawer.querySelector('[data-prefs-tiles="' + prefKey + '"]');
+        if (!group) { return; }
+        var val = DEFAULTS[prefKey];
+        group.querySelectorAll('.sw-prefs-tile').forEach(function (t) {
+          var sel = t.getAttribute('data-value') === val;
+          t.setAttribute('aria-checked', sel ? 'true' : 'false');
+          t.setAttribute('tabindex',     sel ? '0'    : '-1');
+        });
+      });
+
+      // Segmented controls: aria-checked + roving tabindex.
+      ['density', 'reduced_motion', 'lite_mode'].forEach(function (prefKey) {
+        var group = drawer.querySelector('[data-prefs-seg="' + prefKey + '"]');
+        if (!group) { return; }
+        var val = DEFAULTS[prefKey];
+        group.querySelectorAll('.sw-prefs-seg-btn').forEach(function (b) {
+          var sel = b.getAttribute('data-value') === val;
+          b.setAttribute('aria-checked', sel ? 'true' : 'false');
+          b.setAttribute('tabindex',     sel ? '0'    : '-1');
+        });
+      });
+
+      // Toggle switches (role=switch). kbd_hints uses 'show' as its on-value;
+      // the others use 'true'.
+      [
+        { key: 'notification_enabled', on: 'true' },
+        { key: 'auto_fetch_images',    on: 'true' },
+        { key: 'kbd_hints',            on: 'show' }
+      ].forEach(function (cfg) {
+        var btn = drawer.querySelector('.sw-prefs-toggle[data-pref-key="' + cfg.key + '"]');
+        if (!btn) { return; }
+        btn.setAttribute('aria-checked', DEFAULTS[cfg.key] === cfg.on ? 'true' : 'false');
+      });
+
+      // Font-size discrete slider (0=small 1=medium 2=large 3=x-large 4=xx-large).
+      var fontSizeSlider = drawer.querySelector('#pref-d-font-size-slider');
+      if (fontSizeSlider) {
+        var FS_STOPS = { small: 0, medium: 1, large: 2, 'x-large': 3, 'xx-large': 4 };
+        var fsStop  = FS_STOPS[DEFAULTS.font_size] !== undefined ? FS_STOPS[DEFAULTS.font_size] : 1;
+        fontSizeSlider.value = String(fsStop);
+        var fsLabels = (fontSizeSlider.getAttribute('data-stop-names') || '').split('|');
+        var fsLabel  = fsLabels[fsStop] || DEFAULTS.font_size;
+        fontSizeSlider.setAttribute('aria-valuetext', fsLabel);
+        var fsValueEl = drawer.querySelector('#pref-d-font-size-value');
+        if (fsValueEl) { fsValueEl.textContent = fsLabel; }
+      }
+
+      // Background opacity slider + live value label.
+      var bgSlider = drawer.querySelector('#pref-d-bg-opacity');
+      if (bgSlider) {
+        bgSlider.value = DEFAULTS.bg_opacity;
+        var bgLabel = drawer.querySelector('#pref-d-bg-opacity-value');
+        if (bgLabel) { bgLabel.textContent = DEFAULTS.bg_opacity + '%'; }
+        if (typeof window.swUpdateBgOpacity === 'function') {
+          window.swUpdateBgOpacity(DEFAULTS.bg_opacity);
+        }
+      }
+
+      // Page size number input.
+      var pageSizeInput = drawer.querySelector('#pref-d-page-size');
+      if (pageSizeInput) { pageSizeInput.value = DEFAULTS.page_size; }
+
+      // Language select.
+      var langSelect = drawer.querySelector('#pref-d-language');
+      if (langSelect) { langSelect.value = DEFAULTS.language; }
+
+      // Artist-detail layout list: reorder to default, unhide all.
+      var DEFAULT_ORDER = ['metadata', 'artwork', 'findings', 'providers', 'discography', 'identifiers'];
+      var list = document.getElementById('sw-prefs-layout-list');
+      if (list) {
+        var rowMap = {};
+        Array.prototype.slice.call(list.querySelectorAll('[data-section-id]')).forEach(function (r) {
+          rowMap[r.getAttribute('data-section-id')] = r;
+        });
+        DEFAULT_ORDER.forEach(function (id) {
+          var row = rowMap[id];
+          if (!row) { return; }
+          row.setAttribute('data-hidden', 'false');
+          list.appendChild(row);
+        });
+      }
+    }
+
+    // Persist all scalar defaults + layout reset in a single PATCH.
     fetch(bp + '/api/v1/preferences', {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify(DEFAULTS)
+      body: JSON.stringify({
+        theme:                          DEFAULTS.theme,
+        sidebar_state:                  DEFAULTS.sidebar_state,
+        content_width:                  DEFAULTS.content_width,
+        font_family:                    DEFAULTS.font_family,
+        font_size:                      DEFAULTS.font_size,
+        letter_spacing:                 DEFAULTS.letter_spacing,
+        thumbnail_size:                 DEFAULTS.thumbnail_size,
+        reduced_motion:                 DEFAULTS.reduced_motion,
+        lite_mode:                      DEFAULTS.lite_mode,
+        notification_enabled:           DEFAULTS.notification_enabled,
+        auto_fetch_images:              DEFAULTS.auto_fetch_images,
+        bg_opacity:                     DEFAULTS.bg_opacity,
+        page_size:                      DEFAULTS.page_size,
+        density:                        DEFAULTS.density,
+        mono_font:                      DEFAULTS.mono_font,
+        kbd_hints:                      DEFAULTS.kbd_hints,
+        language:                       DEFAULTS.language,
+        artist_detail_section_order:    ['metadata', 'artwork', 'findings', 'providers', 'discography', 'identifiers'],
+        artist_detail_hidden_sections:  []
+      })
     }).then(function (r) {
       if (r.ok) {
-        window.swPreferences.applyAll(DEFAULTS);
-        // Fetch the drawer fragment. The afterSwap handler re-queries the live
-        // #sw-prefs-drawer and restores open state so the drawer never closes.
-        if (typeof htmx !== 'undefined') {
-          htmx.ajax('GET', bp + '/next/preferences-drawer', { target: '#sw-prefs-drawer', swap: 'outerHTML' });
-        }
         if (window.showSuccessToast) { showSuccessToast('Preferences reset to defaults'); }
       } else {
         if (window.showToast) { showToast('Failed to reset preferences'); }
@@ -744,44 +871,15 @@
 
   // --- Init ----------------------------------------------------------------
 
-  // After HTMX swaps the lazy-loaded drawer into the DOM, wire it up.
+  // After HTMX swaps the lazy-loaded drawer into the DOM, wire it up and open it
+  // (the user already clicked the trigger, so we should open immediately).
+  // Only the initial lazy-mount uses this path. The reset functions (resetLayout,
+  // resetAll) update the drawer in-place and never swap #sw-prefs-drawer.
   document.body.addEventListener('htmx:afterSwap', function (ev) {
     var target = ev.detail && ev.detail.target;
-
     if (target && target.id === 'sw-prefs-mount') {
-      // Initial lazy-mount: #sw-prefs-mount replaced by scrim+drawer. Wire and
-      // open - the user already clicked the trigger.
       wire();
       open();
-      return;
-    }
-
-    if (target && target.id === 'sw-prefs-drawer') {
-      // Reset swap: outerHTML replaced #sw-prefs-drawer. ev.detail.target is the
-      // OLD (now-detached) node. Re-query the live replacement from the DOM before
-      // doing anything - never use the detached reference.
-      wire();
-      var liveDrawer = getDrawer();
-      if (!liveDrawer) { return; }
-      // The drawer was open when the reset fired; restore open state directly on
-      // the live element. Do not call open() here - open() guards on isOpen() and
-      // the _keydownHandler module var may still point at the detached old node,
-      // making the state inconsistent. Apply each piece directly instead.
-      liveDrawer.classList.add('sw-prefs-drawer--open');
-      liveDrawer.setAttribute('aria-hidden', 'false');
-      liveDrawer.removeAttribute('inert');
-      document.documentElement.setAttribute('data-prefs-open', '');
-      var scrim = getScrim();
-      if (scrim) { scrim.classList.add('sw-prefs-scrim--visible'); }
-      document.querySelectorAll('[data-sw-prefs-trigger]').forEach(function (el) {
-        el.setAttribute('aria-expanded', 'true');
-      });
-      // Re-install the focus trap on the new element, clearing any stale ref.
-      if (_keydownHandler) {
-        liveDrawer.removeEventListener('keydown', _keydownHandler);
-      }
-      _keydownHandler = makeTrapHandler(liveDrawer);
-      liveDrawer.addEventListener('keydown', _keydownHandler);
     }
   });
 
