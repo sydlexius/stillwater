@@ -121,6 +121,9 @@ func TestHandleNextPreferencesPage_Unauthenticated(t *testing.T) {
 	r, _ := testRouter(t)
 
 	w := prefsPageRequest(t, r, "")
+	if w.Code != http.StatusOK {
+		t.Errorf("unauthenticated status = %d, want %d (login page)", w.Code, http.StatusOK)
+	}
 	body := w.Body.String()
 	if strings.Contains(body, "sw-prefs-drawer") {
 		t.Errorf("unauthenticated response leaked drawer content")

@@ -232,9 +232,10 @@
       } else if (action === 'toggle-visibility') {
         var current = row.getAttribute('data-hidden') === 'true';
         row.setAttribute('data-hidden', current ? 'false' : 'true');
+        btn.setAttribute('aria-label', current ? 'Hide section' : 'Show section');
         var icon = btn.querySelector('.sw-prefs-layout-eye-icon');
         if (icon) {
-          icon.setAttribute('aria-label', current ? 'Hide section' : 'Show section');
+          icon.removeAttribute('aria-label');
         }
         saveSectionOrder();
       }

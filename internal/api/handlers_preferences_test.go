@@ -1673,6 +1673,23 @@ func TestFontSizePref_AcceptsAllStops(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Errorf("expected 200 for value %q, got %d: %s", good, w.Code, w.Body.String())
 			}
+
+			// Read back to verify the value was persisted.
+			getReq := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+PrefFontSize, nil)
+			getReq.SetPathValue("key", PrefFontSize)
+			getReq = withUserCtx(getReq, userID)
+			gw := httptest.NewRecorder()
+			r.handleGetPreference(gw, getReq)
+			if gw.Code != http.StatusOK {
+				t.Fatalf("read-back GET status = %d, want 200", gw.Code)
+			}
+			var resp map[string]string
+			if err := json.NewDecoder(gw.Body).Decode(&resp); err != nil {
+				t.Fatalf("read-back decode: %v", err)
+			}
+			if got := resp["value"]; got != good {
+				t.Errorf("read-back value = %q, want %q", got, good)
+			}
 		})
 	}
 

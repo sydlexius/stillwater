@@ -1700,7 +1700,7 @@ input:-webkit-autofill:focus {
  * Left slide-over drawer for the next/ UI preference surface. Opens over the
  * sidebar on desktop; becomes a bottom sheet on mobile (<= 560 px).
  *
- * Surface: hard-floored at 85% opacity via --flyout-bg so the opacity
+ * Surface: hard-floored at 92% opacity via --flyout-bg so the opacity
  * recovery control stays legible even when the user has set a lower bg_opacity.
  * Both themes define --flyout-bg explicitly; a missing value would paint
  * transparent (binding charter).

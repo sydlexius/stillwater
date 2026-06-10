@@ -6899,7 +6899,7 @@ paths:
       responses:
         "200":
           description: >
-            All 18 preference keys with the user's values merged over defaults.
+            All preference keys with the user's values merged over defaults.
             The response always contains exactly these keys.
           content:
             application/json:
@@ -7085,6 +7085,9 @@ paths:
                 artist_detail_hidden_sections:
                   type: array
                   items: { type: string }
+                density: { type: string }
+                mono_font: { type: string }
+                kbd_hints: { type: string }
               patternProperties:
                 "^suppress_confirm_":
                   type: string
@@ -7157,6 +7160,9 @@ paths:
                   - auto_fetch_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
+                  - density
+                  - mono_font
+                  - kbd_hints
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       responses:
@@ -7228,6 +7234,9 @@ paths:
                   - auto_fetch_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
+                  - density
+                  - mono_font
+                  - kbd_hints
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       requestBody:
