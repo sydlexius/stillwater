@@ -1656,6 +1656,41 @@ func TestMetadataNameRomanizationPref_RejectsInvalidValue(t *testing.T) {
 	}
 }
 
+// TestFontSizePref_AcceptsAllStops verifies the font_size preference accepts all five
+// slider stops (small/medium/large/x-large/xx-large) and rejects unknown values.
+func TestFontSizePref_AcceptsAllStops(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	for _, good := range []string{"small", "medium", "large", "x-large", "xx-large"} {
+		t.Run("accepts_"+good, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, good)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefFontSize, strings.NewReader(body))
+			req.SetPathValue("key", PrefFontSize)
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+			if w.Code != http.StatusOK {
+				t.Errorf("expected 200 for value %q, got %d: %s", good, w.Code, w.Body.String())
+			}
+		})
+	}
+
+	for _, bad := range []string{"huge", "tiny", "2xl", "18px", ""} {
+		t.Run("rejects_"+bad, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, bad)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefFontSize, strings.NewReader(body))
+			req.SetPathValue("key", PrefFontSize)
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for value %q, got %d: %s", bad, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 // TestGetUserStringPreference verifies the string-preference getter returns the
 // fallback when no row exists and the stored value verbatim once present. The
 // section-order/hidden prefs are stored as raw JSON-array strings, so the getter
