@@ -523,7 +523,10 @@
         // all cleaned up before the outerHTML swap replaces #sw-prefs-drawer.
         // Without this the scrim stays visible and blocks reopening the drawer.
         close();
-        htmx.ajax('GET', window.location.pathname, { target: '#sw-prefs-drawer', swap: 'outerHTML', select: '#sw-prefs-drawer' });
+        // Fetch the drawer FRAGMENT endpoint, not the page path. The page path
+        // returns only the lazy-mount placeholder (<div id="sw-prefs-mount">);
+        // select:'#sw-prefs-drawer' would match nothing and delete the element.
+        htmx.ajax('GET', bp + '/next/preferences-drawer', { target: '#sw-prefs-drawer', swap: 'outerHTML' });
       }
       if (r.ok && window.showSuccessToast) { showSuccessToast('Layout reset'); }
       else if (!r.ok && window.showToast) { showToast('Failed to reset layout'); }
@@ -572,9 +575,12 @@
         // Close first so the scrim, aria-expanded triggers, and data-prefs-open are
         // all cleaned up before the outerHTML swap replaces #sw-prefs-drawer.
         close();
-        // Reload the drawer to reflect reset values.
+        // Reload the drawer to reflect reset values. Fetch the drawer FRAGMENT
+        // endpoint, not the page path - the page path only has the lazy-mount
+        // placeholder and select:'#sw-prefs-drawer' would match nothing, deleting
+        // the element. The fragment root IS #sw-prefs-drawer so no select needed.
         if (typeof htmx !== 'undefined') {
-          htmx.ajax('GET', window.location.pathname, { target: '#sw-prefs-drawer', swap: 'outerHTML', select: '#sw-prefs-drawer' });
+          htmx.ajax('GET', bp + '/next/preferences-drawer', { target: '#sw-prefs-drawer', swap: 'outerHTML' });
         }
         if (window.showSuccessToast) { showSuccessToast('Preferences reset to defaults'); }
       } else {
