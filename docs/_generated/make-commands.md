@@ -9,6 +9,7 @@
 | `make test-shuffle` | Run tests with random ordering to surface order-dependent tests (local hygiene; reproduce a failure with -shuffle=<seed>) |
 | `make test-race` | Run tests with race detector (native; CGO required for the race instrumentation) |
 | `make test-cover` | Run tests with coverage |
+| `make test-js` | Install JS dev dependencies and run Node.js unit tests for client-side JS modules. |
 | `make lint` | Run golangci-lint |
 | `make hadolint` | Lint Dockerfile for best practices |
 | `make vulncheck` | Scan for known vulnerabilities (govulncheck, pinned to the CI version) |
