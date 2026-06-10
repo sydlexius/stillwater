@@ -3084,9 +3084,9 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * #1843 retired the thead-th uppercase eyebrow; headers are Title Case now.) */
 .sw-next-artists {
   --sw-type-value: 0.875rem;   /* table body row text (13px -> text-sm) */
-  --sw-type-label: 0.75rem;    /* thead th label (11px -> text-xs) */
-  --sw-type-meta: 0.75rem;     /* tip-line prose (.sw-list-tips) */
-  --sw-type-mono: 0.75rem;     /* kbd chip glyph (.sw-kbd, mono family) */
+  --sw-type-label: max(0.75rem, 10px); /* thead th label (11px -> text-xs) */
+  --sw-type-meta: max(0.75rem, 10px);  /* tip-line prose (.sw-list-tips) */
+  --sw-type-mono: max(0.75rem, 10px);  /* kbd chip glyph (.sw-kbd, mono family) */
 }
 
 /* =====================================================================
@@ -3215,10 +3215,10 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --sw-type-stat: 1.75rem;     /* big stat number (health %, counts) */
   --sw-type-section: 0.875rem; /* card .head h2 (section heading) */
   --sw-type-value: 0.875rem;   /* primary row text (artist name, activity text) */
-  --sw-type-label: 0.75rem;    /* uppercase eyebrow / quiet label */
-  --sw-type-meta: 0.75rem;     /* secondary / quiet meta (card meta, message) */
-  --sw-type-badge: 0.75rem;    /* badge / avatar initials */
-  --sw-type-mono: 0.75rem;     /* IDs / timestamps (activity rail), mono family */
+  --sw-type-label: max(0.75rem, 10px); /* uppercase eyebrow / quiet label */
+  --sw-type-meta: max(0.75rem, 10px);  /* secondary / quiet meta (card meta, message) */
+  --sw-type-badge: max(0.75rem, 10px); /* badge / avatar initials */
+  --sw-type-mono: max(0.75rem, 10px);  /* IDs / timestamps (activity rail), mono family */
   --sw-type-track-label: 0.05em;
 }
 
@@ -3682,7 +3682,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --sw-ad-font-hero: 1.875rem;
   --sw-ad-font-section: 0.875rem;
   --sw-ad-font-body: 0.875rem;
-  --sw-ad-font-meta: 0.75rem;
+  --sw-ad-font-meta: max(0.75rem, 10px);
   --sw-ad-lh-hero: 1.15;
   --sw-ad-lh-body: 1.6;
   --sw-ad-track-hero: -0.01em;
