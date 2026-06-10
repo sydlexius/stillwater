@@ -19,6 +19,9 @@ type AssetPaths struct {
 	SidebarJS      string
 	FilterFlyoutJS string
 	KeyboardJS     string
+	// PrefsDrawerJS is the preferences flyout drawer controller (M55 #1774).
+	// Loaded on every next/ page via LayoutGlobalChrome.
+	PrefsDrawerJS string
 	// Artist-detail first-party modules (M55 #1336, 4A). Extracted from the
 	// inline scripts in artist_detail.templ / artist_field.templ.
 	ArtistFanartSlideshowJS string
@@ -206,6 +209,14 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	<script src={ assets.ArtistArtworkModalJS }></script>
 	<script src={ assets.SidebarJS }></script>
 	<script src={ assets.FilterFlyoutJS }></script>
+	if assets.PrefsDrawerJS != "" {
+		// SortableJS must precede prefs-drawer.js: the prefs layout card
+		// feature-detects window.Sortable at wire time (#1774). Scoped to
+		// next/ pages (PrefsDrawerJS is only set there); the stable settings
+		// page loads Sortable itself in settings.templ.
+		<script src={ assets.SortableJS }></script>
+		<script src={ assets.PrefsDrawerJS }></script>
+	}
 	if assets.ConflictGateJS != "" {
 		<script src={ assets.ConflictGateJS }></script>
 	}

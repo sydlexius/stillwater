@@ -147,6 +147,16 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 		a.TourJS = r.basePath + r.staticAssets.Path("/js/tour.js")
 	}
 
+	// M55 #1774: include the preferences drawer controller on all next/ pages.
+	// The drawer shell is mounted in LayoutNext; the JS must be available on
+	// every next/ route so the keyboard shortcut and sidebar trigger work.
+	// (SortableJS for the layout card's drag reordering is already set above
+	// for every page from the long-vendored /js/Sortable.min.js; the layout
+	// renders it ahead of prefs-drawer.js on next/ routes.)
+	if strings.HasPrefix(path, "/next") {
+		a.PrefsDrawerJS = r.basePath + r.staticAssets.Path("/js/prefs-drawer.js")
+	}
+
 	return a
 }
 

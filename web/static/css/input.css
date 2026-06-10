@@ -1695,6 +1695,910 @@ input:-webkit-autofill:focus {
   opacity: 1;
 }
 
+/* -- Preferences flyout drawer (M55 #1774) -------------------------------- */
+/*
+ * Left slide-over drawer for the next/ UI preference surface. Opens over the
+ * sidebar on desktop; becomes a bottom sheet on mobile (<= 560 px).
+ *
+ * Surface: hard-floored at 92% opacity via --flyout-bg so the opacity
+ * recovery control stays legible even when the user has set a lower bg_opacity.
+ * Both themes define --flyout-bg explicitly; a missing value would paint
+ * transparent (binding charter).
+ *
+ * Type: ALL sizes via --sw-type-* rem tokens (pref-aware scale). NO hardcoded
+ * px font-sizes inside .sw-prefs-drawer (typography charter).
+ */
+
+/* Dark-theme flyout background (dark is default / the primary theme). */
+.sw-prefs-drawer {
+  --flyout-bg: rgba(15, 23, 42, 0.92);
+  --flyout-ink: #e2e8f0;
+  --flyout-ink-2: #94a3b8;
+  --flyout-ink-3: #64748b;
+  --flyout-border: rgba(255, 255, 255, 0.1);
+  --flyout-row-hover: rgba(255, 255, 255, 0.05);
+  --flyout-accent: #3b82f6;
+  --flyout-accent-glow: rgba(59, 130, 246, 0.3);
+  --flyout-tile-bg: rgba(255, 255, 255, 0.07);
+  --flyout-tile-border: rgba(255, 255, 255, 0.12);
+  --flyout-toggle-off: rgba(255, 255, 255, 0.18);
+  --flyout-toggle-on: #3b82f6;
+  --sw-type-section: 0.875rem;
+  --sw-type-value: 0.875rem;
+  --sw-type-label: 0.75rem;
+  --sw-type-meta: 0.75rem;
+  --sw-type-badge: 0.75rem;
+}
+
+/* Light-theme overrides (required by the both-themes charter). */
+:root:not(.dark) .sw-prefs-drawer {
+  --flyout-bg: rgba(255, 255, 255, 0.92);
+  --flyout-ink: #1e293b;
+  --flyout-ink-2: #475569;
+  --flyout-ink-3: #94a3b8;
+  --flyout-border: rgba(0, 0, 0, 0.1);
+  --flyout-row-hover: rgba(0, 0, 0, 0.04);
+  --flyout-tile-bg: rgba(0, 0, 0, 0.04);
+  --flyout-tile-border: rgba(0, 0, 0, 0.1);
+  --flyout-toggle-off: rgba(0, 0, 0, 0.18);
+}
+
+/* Panel: fixed overlay, slides in from the left */
+.sw-prefs-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 50;
+  width: 360px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--flyout-bg);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  border-right: 1px solid var(--flyout-border);
+  border-radius: 0 var(--sw-radius-lg) var(--sw-radius-lg) 0;
+  overflow: hidden;
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform 0.25s ease, visibility 0s linear 0.25s;
+  color: var(--flyout-ink);
+  font-family: var(--sw-font-sans);
+}
+
+.sw-prefs-drawer.sw-prefs-drawer--open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.25s ease, visibility 0s linear 0s;
+}
+
+/* Flyout geometry on wide viewports (maintainer calls 2026-06-09): the drawer
+ * FLIES OUT OF THE SIDEBAR -- anchored at the rail's right edge and stacked
+ * BENEATH it (sidebar is z-index 30) so the slide-in visibly emerges from
+ * under the rail rather than covering it -- and the app canvas shifts right
+ * by the full drawer width so the live preview stays unobstructed. The scrim
+ * stays as a click-to-close catcher but goes transparent here; at narrow
+ * widths (<1100px) the plain over-everything overlay + dimmed scrim remain.
+ * The canvas transition snaps off for reduced motion (OS query or app pref). */
+@media (min-width: 1100px) {
+  main {
+    transition: margin-left 0.25s ease;
+  }
+  .sw-prefs-drawer {
+    left: var(--sw-sidebar-width-full);
+    z-index: 25;
+  }
+  html[data-sidebar="icon-only"] .sw-prefs-drawer {
+    left: var(--sw-sidebar-width-icon);
+  }
+  html[data-sidebar="hidden"] .sw-prefs-drawer {
+    left: 0;
+  }
+  /* html[...] scoping is REQUIRED for the scrim demotion: the scrim's base
+   * rule (z-index: 49) appears LATER in this file, so an equal-specificity
+   * rule here silently loses the cascade -- leaving the transparent scrim
+   * stacked ABOVE the drawer and swallowing every click inside it (UAT bug
+   * 2026-06-09). The attribute selector outranks the base rule regardless
+   * of source order. */
+  html[data-prefs-open] .sw-prefs-scrim {
+    z-index: 24;
+    background: transparent;
+  }
+  /* Canvas shift, content-width aware (UAT bug 2026-06-09: a flat 360px
+   * margin pulled the canvas LEFT on wide monitors, where the narrow-pref
+   * auto-centering margin already exceeds 360px). For the narrow pref the
+   * canvas re-centers within the space REMAINING right of the drawer --
+   * (100% - max-width)/2 + drawer/2 -- which is mathematically always to
+   * the RIGHT of the at-rest centered position; max() keeps the 360px
+   * floor on smaller viewports. The wide pref has no centering margin, so
+   * it takes the flat clearance. (margin-left cannot interpolate from
+   * auto, so the shift is a single-frame step; the drawer's own slide
+   * carries the motion.) */
+  html[data-prefs-open][data-width="narrow"] main {
+    margin-left: max(360px, calc((100% - var(--sw-content-max-width)) / 2 + 180px));
+  }
+  html[data-prefs-open][data-width="wide"] main {
+    margin-left: 360px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  main {
+    transition: none;
+  }
+}
+html[data-motion="on"] main {
+  transition: none;
+}
+
+/* Standalone /next/preferences page (#1774): the same drawer markup renders
+ * as a regular in-flow card, so the fixed flyout positioning and the
+ * closed-state hide must be neutralized or the no-JS / direct-URL fallback
+ * paints nothing at all. */
+.sw-prefs-page-wrapper .sw-prefs-drawer {
+  position: static;
+  transform: none;
+  visibility: visible;
+  width: 100%;
+  max-width: none;
+  border: 1px solid var(--flyout-border);
+  border-radius: var(--sw-radius-lg);
+}
+.sw-prefs-page-wrapper .sw-prefs-scrim {
+  display: none;
+}
+
+/* Scrim */
+.sw-prefs-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.sw-prefs-scrim--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Reduced motion / lite mode: snap instantly */
+@media (prefers-reduced-motion: reduce) {
+  .sw-prefs-drawer,
+  .sw-prefs-scrim {
+    transition: none;
+  }
+}
+[data-motion="on"] .sw-prefs-drawer,
+[data-motion="on"] .sw-prefs-scrim,
+[data-lite="on"] .sw-prefs-drawer,
+[data-lite="on"] .sw-prefs-scrim {
+  transition: none;
+}
+
+/* Lite mode: drop backdrop filter, use opaque fallback */
+[data-lite="on"] .sw-prefs-drawer {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  --flyout-bg: rgba(15, 23, 42, 0.97);
+}
+:root:not(.dark) [data-lite="on"] .sw-prefs-drawer {
+  --flyout-bg: rgba(255, 255, 255, 0.98);
+}
+
+/* Header */
+.sw-prefs-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-start;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--flyout-border);
+  flex-shrink: 0;
+}
+
+/* Icon badge in the header (accent-tinted circle). */
+.sw-prefs-drawer-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--flyout-accent);
+  flex-shrink: 0;
+}
+
+/* Push close button to the far right. */
+.sw-prefs-drawer-header .sw-prefs-drawer-close {
+  margin-left: auto;
+}
+
+.sw-prefs-drawer-title {
+  font-size: var(--sw-type-section);
+  font-weight: 700;
+  color: var(--flyout-ink);
+  font-family: var(--sw-font-sans);
+  letter-spacing: -0.01em;
+}
+
+.sw-prefs-drawer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--sw-radius-sm);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--flyout-ink-2);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sw-prefs-drawer-close:hover {
+  background: var(--flyout-row-hover);
+  color: var(--flyout-ink);
+}
+
+.sw-prefs-drawer-close:focus-visible {
+  outline: 2px solid var(--flyout-accent);
+  outline-offset: 2px;
+}
+
+/* Search/filter input */
+.sw-prefs-drawer-search {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--flyout-border);
+  flex-shrink: 0;
+}
+
+.sw-prefs-drawer-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--flyout-border);
+  background: var(--flyout-tile-bg);
+  color: var(--flyout-ink);
+  font-size: var(--sw-type-meta);
+  font-family: var(--sw-font-sans);
+  outline: none;
+}
+
+.sw-prefs-drawer-search-input:focus {
+  border-color: var(--flyout-accent);
+  box-shadow: 0 0 0 2px var(--flyout-accent-glow);
+}
+
+.sw-prefs-drawer-search-input::placeholder {
+  color: var(--flyout-ink-3);
+}
+
+/* Scrollable body */
+.sw-prefs-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+/* Accordion group */
+.sw-prefs-group {
+  border-bottom: 1px solid var(--flyout-border);
+}
+
+.sw-prefs-group-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--flyout-ink-2);
+  font-size: var(--sw-type-label);
+  font-family: var(--sw-font-sans);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  transition: color 0.15s ease;
+}
+
+.sw-prefs-group-trigger:hover {
+  color: var(--flyout-ink);
+}
+
+.sw-prefs-group-trigger:focus-visible {
+  outline: 2px solid var(--flyout-accent);
+  outline-offset: -2px;
+}
+
+.sw-prefs-group-chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+[aria-expanded="false"] .sw-prefs-group-chevron {
+  transform: rotate(-90deg);
+}
+
+.sw-prefs-group-body {
+  padding: 4px 0 8px;
+}
+
+[aria-expanded="false"] + .sw-prefs-group-body {
+  display: none;
+}
+
+/* Individual preference row */
+.sw-prefs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  min-height: 44px;
+}
+
+.sw-prefs-row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sw-prefs-row-name {
+  font-size: var(--sw-type-value);
+  font-weight: 500;
+  color: var(--flyout-ink);
+  font-family: var(--sw-font-sans);
+}
+
+.sw-prefs-row-desc {
+  font-size: var(--sw-type-meta);
+  color: var(--flyout-ink-2);
+  font-family: var(--sw-font-sans);
+  margin-top: 1px;
+}
+
+.sw-prefs-row-control {
+  flex-shrink: 0;
+}
+
+/* Tile controls (radiogroup with roving tabindex) */
+/* Tiles lay out in a CSS grid; column count is set via style attr from Go. */
+.sw-prefs-tiles {
+  display: grid;
+  gap: 6px;
+  /* Default 3 cols; overridden per-row via inline style. */
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* Tile rows are stacked vertically (glyph on top, label below).
+ * Selected = blue halo (box-shadow glow + accent border); never solid fill.
+ * Tiles carry no checkmark per the next/ design language. */
+.sw-prefs-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 8px 6px 7px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--flyout-tile-bg);
+  border: 1.5px solid var(--flyout-tile-border);
+  color: var(--flyout-ink-2);
+  font-size: var(--sw-type-meta);
+  font-family: var(--sw-font-sans);
+  cursor: pointer;
+  text-align: center;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sw-prefs-tile:hover {
+  border-color: color-mix(in srgb, var(--flyout-accent) 45%, var(--flyout-tile-border));
+  color: var(--flyout-ink);
+}
+
+.sw-prefs-tile:focus-visible {
+  outline: 2px solid var(--flyout-accent);
+  outline-offset: 2px;
+}
+
+/* Selected = blue halo only; no checkmark; no solid fill. */
+.sw-prefs-tile[aria-checked="true"] {
+  color: var(--flyout-ink);
+  border-color: var(--flyout-accent);
+  box-shadow: 0 0 0 3px var(--flyout-accent-glow);
+  background: var(--flyout-tile-bg);
+}
+
+/* Glyph area: visual preview at the top of the tile. */
+.sw-prefs-tile-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 32px;
+  color: var(--flyout-ink);
+}
+
+/* Primary tile label. */
+.sw-prefs-tile-label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--sw-type-meta);
+  line-height: 1.2;
+}
+
+/* Subtitle (e.g. "Icons + labels", "32 px"). */
+.sw-prefs-tile-sub {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--flyout-ink-3);
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+/* Tile rows span the full width; the tiles grid fills the control column. */
+.sw-prefs-row--tile {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 16px 12px;
+}
+
+.sw-prefs-row--tile .sw-prefs-row-control {
+  flex-shrink: unset;
+  width: 100%;
+}
+
+.sw-prefs-row--tile .sw-prefs-row-label {
+  flex: none;
+}
+
+/* Segmented control (used for density / reduced_motion / lite_mode). */
+.sw-prefs-seg {
+  display: inline-flex;
+  background: var(--flyout-tile-bg);
+  border: 1px solid var(--flyout-tile-border);
+  border-radius: var(--sw-radius-sm);
+  padding: 3px;
+  gap: 2px;
+}
+
+.sw-prefs-seg-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--flyout-ink-2);
+  font-family: var(--sw-font-sans);
+  font-weight: 600;
+  font-size: var(--sw-type-meta);
+  padding: 5px 8px;
+  border-radius: calc(var(--sw-radius-sm) - 2px);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
+}
+
+.sw-prefs-seg-btn:not([aria-checked="true"]):hover {
+  color: var(--flyout-ink);
+}
+
+/* Selected segment: glass button surface + accent color + halo */
+.sw-prefs-seg-btn[aria-checked="true"] {
+  background: var(--flyout-tile-bg);
+  color: var(--flyout-accent);
+  box-shadow: 0 0 0 1.5px var(--flyout-accent), 0 0 0 4px var(--flyout-accent-glow);
+}
+
+.sw-prefs-seg-btn:focus-visible {
+  outline: 2px solid var(--flyout-accent);
+  outline-offset: 2px;
+}
+
+/* Toggle (role=switch) */
+.sw-prefs-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  background: var(--flyout-toggle-off);
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sw-prefs-toggle:focus-visible {
+  outline: 2px solid var(--flyout-accent);
+  outline-offset: 2px;
+}
+
+.sw-prefs-toggle[aria-checked="true"] {
+  background: var(--flyout-toggle-on);
+  box-shadow: 0 0 0 2px var(--flyout-accent-glow);
+}
+
+.sw-prefs-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.sw-prefs-toggle[aria-checked="true"] .sw-prefs-toggle-knob {
+  transform: translateX(20px);
+}
+
+/* Range/slider control */
+.sw-prefs-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The bg_opacity slider track fades from transparent (clear) to solid so
+ * the effect is immediately legible (more opaque = the right end of the track). */
+.sw-prefs-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+
+/* Webkit track: fades clear -> solid */
+.sw-prefs-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--flyout-tile-border);
+  background: linear-gradient(to right, transparent, var(--flyout-ink));
+}
+
+/* Firefox track */
+.sw-prefs-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--flyout-tile-border);
+  background: linear-gradient(to right, transparent, var(--flyout-ink));
+}
+
+/* Webkit thumb: accent + glow */
+.sw-prefs-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--flyout-accent);
+  box-shadow: 0 0 0 3px var(--flyout-accent-glow);
+}
+
+/* Firefox thumb */
+.sw-prefs-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--flyout-accent);
+  box-shadow: 0 0 0 3px var(--flyout-accent-glow);
+}
+
+.sw-prefs-slider:focus {
+  outline: none;
+}
+
+.sw-prefs-slider-value {
+  font-size: var(--sw-type-meta);
+  font-family: var(--sw-font-mono);
+  color: var(--flyout-ink-2);
+  min-width: 2.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Font-size discrete slider (5-stop: small/medium/large/x-large/xx-large).
+ * The track gradient runs small to large; flanking "A" glyphs reinforce scale direction. */
+.sw-prefs-font-size-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sw-prefs-font-size-end {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--flyout-ink-2);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.sw-prefs-font-size-end--large {
+  font-size: 18px;
+}
+
+/* The font-size slider track gradient runs clear -> solid like bg_opacity. */
+.sw-prefs-font-size-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--flyout-border), var(--flyout-ink));
+}
+
+.sw-prefs-font-size-slider::-moz-range-track {
+  background: linear-gradient(to right, var(--flyout-border), var(--flyout-ink));
+}
+
+/* Number input + unit row */
+.sw-prefs-number-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sw-prefs-number {
+  width: 72px;
+  padding: 4px 8px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--flyout-border);
+  background: var(--flyout-tile-bg);
+  color: var(--flyout-ink);
+  font-size: var(--sw-type-meta);
+  font-family: var(--sw-font-sans);
+  font-weight: 600;
+  text-align: right;
+}
+
+.sw-prefs-number:focus {
+  border-color: var(--flyout-accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--flyout-accent-glow);
+}
+
+.sw-prefs-number-unit {
+  font-size: var(--sw-type-meta);
+  color: var(--flyout-ink-3);
+  font-family: var(--sw-font-sans);
+  white-space: nowrap;
+}
+
+/* Select control */
+.sw-prefs-select {
+  padding: 4px 8px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--flyout-border);
+  background: var(--flyout-tile-bg);
+  color: var(--flyout-ink);
+  font-size: var(--sw-type-meta);
+  font-family: var(--sw-font-sans);
+}
+
+.sw-prefs-select:focus {
+  border-color: var(--flyout-accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--flyout-accent-glow);
+}
+
+/* Footer */
+.sw-prefs-drawer-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--flyout-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sw-prefs-footer-hint {
+  font-size: var(--sw-type-meta);
+  color: var(--flyout-ink-3);
+  font-family: var(--sw-font-sans);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Green pulsing dot: "Live preview" indicator in the footer. */
+.sw-prefs-footer-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.28);
+  flex-shrink: 0;
+  animation: sw-prefs-dot-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes sw-prefs-dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.28); }
+  50%       { box-shadow: 0 0 0 5px rgba(52, 211, 153, 0.10); }
+}
+
+.sw-prefs-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--flyout-border);
+  background: transparent;
+  color: var(--flyout-ink-2);
+  font-size: var(--sw-type-meta);
+  font-family: var(--sw-font-sans);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.sw-prefs-reset-btn:hover {
+  color: var(--flyout-ink);
+  background: var(--flyout-row-hover);
+}
+
+.sw-prefs-reset-btn:focus-visible {
+  outline: 2px solid var(--flyout-accent);
+  outline-offset: 2px;
+}
+
+/* Icon inside reset / layout-reset buttons. */
+.sw-prefs-btn-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+/* Help popovers inside the drawer: inherit the global sw-context-help styles
+ * but override the z-index to sit above the flyout's content (z=50 from root).
+ * Also restrict popover width for the narrower flyout column.
+ *
+ * The drawer has overflow:hidden (for border-radius clipping). The global
+ * popover positions with left:50%/translateX(-50%), which centers it on the
+ * (?) button and extends ~120px leftward - past the drawer's left edge where
+ * overflow:hidden clips it. Override to left:0/transform:none so the popover
+ * opens rightward from the button, staying within the 360px drawer bounds. */
+.sw-prefs-help .sw-context-help-popover {
+  z-index: 60;
+  max-width: 240px;
+  left: 0;
+  transform: none;
+}
+
+/* Toggle rows have a short desc under the label; align flex direction. */
+.sw-prefs-row--toggle {
+  align-items: flex-start;
+}
+
+/* Artist detail layout card */
+.sw-prefs-layout-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sw-prefs-layout-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid transparent;
+  background: var(--flyout-tile-bg);
+  cursor: grab;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.sw-prefs-layout-row:active {
+  cursor: grabbing;
+}
+
+.sw-prefs-layout-row.sortable-ghost {
+  opacity: 0.4;
+  border-color: var(--flyout-accent);
+}
+
+.sw-prefs-layout-row.sortable-chosen {
+  background: var(--flyout-row-hover);
+}
+
+.sw-prefs-layout-handle {
+  color: var(--flyout-ink-3);
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.sw-prefs-layout-name {
+  flex: 1;
+  font-size: var(--sw-type-value);
+  color: var(--flyout-ink);
+  font-family: var(--sw-font-sans);
+}
+
+.sw-prefs-layout-row[data-hidden="true"] .sw-prefs-layout-name {
+  color: var(--flyout-ink-3);
+  text-decoration: line-through;
+}
+
+.sw-prefs-layout-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.sw-prefs-layout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--flyout-ink-3);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.sw-prefs-layout-btn:hover {
+  color: var(--flyout-ink);
+  background: var(--flyout-row-hover);
+}
+
+.sw-prefs-layout-btn:focus-visible {
+  outline: 2px solid var(--flyout-accent);
+  outline-offset: 2px;
+}
+
+.sw-prefs-layout-row[data-hidden="true"] .sw-prefs-layout-eye-icon {
+  opacity: 0.5;
+}
+
+/* Search empty state (shown by prefs-drawer.js when no groups have a match) */
+.sw-prefs-search-empty {
+  padding: 16px;
+  font-size: var(--sw-type-meta);
+  color: var(--flyout-ink-3);
+  font-family: var(--sw-font-sans);
+  text-align: center;
+}
+
+/* Mobile: bottom sheet below 560 px */
+@media (max-width: 560px) {
+  .sw-prefs-drawer {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 90vh;
+    border-radius: var(--sw-radius-xl) var(--sw-radius-xl) 0 0;
+    border-right: none;
+    border-top: 1px solid var(--flyout-border);
+    transform: translateY(100%);
+  }
+
+  .sw-prefs-drawer.sw-prefs-drawer--open {
+    transform: translateY(0);
+  }
+}
+
 /* -- Guided Tour (Driver.js overrides) ------------------------------------ */
 .sw-tour-popover {
   background: rgb(255, 255, 255) !important;
@@ -2187,9 +3091,9 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * #1843 retired the thead-th uppercase eyebrow; headers are Title Case now.) */
 .sw-next-artists {
   --sw-type-value: 0.875rem;   /* table body row text (13px -> text-sm) */
-  --sw-type-label: 0.75rem;    /* thead th label (11px -> text-xs) */
-  --sw-type-meta: 0.75rem;     /* tip-line prose (.sw-list-tips) */
-  --sw-type-mono: 0.75rem;     /* kbd chip glyph (.sw-kbd, mono family) */
+  --sw-type-label: max(0.75rem, 10px); /* thead th label (11px -> text-xs) */
+  --sw-type-meta: max(0.75rem, 10px);  /* tip-line prose (.sw-list-tips) */
+  --sw-type-mono: max(0.75rem, 10px);  /* kbd chip glyph (.sw-kbd, mono family) */
 }
 
 /* =====================================================================
@@ -2318,10 +3222,10 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --sw-type-stat: 1.75rem;     /* big stat number (health %, counts) */
   --sw-type-section: 0.875rem; /* card .head h2 (section heading) */
   --sw-type-value: 0.875rem;   /* primary row text (artist name, activity text) */
-  --sw-type-label: 0.75rem;    /* uppercase eyebrow / quiet label */
-  --sw-type-meta: 0.75rem;     /* secondary / quiet meta (card meta, message) */
-  --sw-type-badge: 0.75rem;    /* badge / avatar initials */
-  --sw-type-mono: 0.75rem;     /* IDs / timestamps (activity rail), mono family */
+  --sw-type-label: max(0.75rem, 10px); /* uppercase eyebrow / quiet label */
+  --sw-type-meta: max(0.75rem, 10px);  /* secondary / quiet meta (card meta, message) */
+  --sw-type-badge: max(0.75rem, 10px); /* badge / avatar initials */
+  --sw-type-mono: max(0.75rem, 10px);  /* IDs / timestamps (activity rail), mono family */
   --sw-type-track-label: 0.05em;
 }
 
@@ -2785,7 +3689,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --sw-ad-font-hero: 1.875rem;
   --sw-ad-font-section: 0.875rem;
   --sw-ad-font-body: 0.875rem;
-  --sw-ad-font-meta: 0.75rem;
+  --sw-ad-font-meta: max(0.75rem, 10px);
   --sw-ad-lh-hero: 1.15;
   --sw-ad-lh-body: 1.6;
   --sw-ad-track-hero: -0.01em;
