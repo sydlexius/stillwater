@@ -617,9 +617,9 @@ func nextArtistRow(a artist.Artist, data templates.ArtistListData) templ.Compone
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var35 templ.SafeURL
-		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(templates.BasePath() + "/artists/" + a.ID))
+		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(templates.BasePath() + "/next/artists/" + a.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 157, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 157, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -632,7 +632,7 @@ func nextArtistRow(a artist.Artist, data templates.ArtistListData) templ.Compone
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 157, Col: 174}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 157, Col: 179}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -983,9 +983,9 @@ func nextArtistCard(a artist.Artist, data templates.ArtistListData) templ.Compon
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var54 templ.SafeURL
-		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(templates.BasePath() + "/artists/" + a.ID))
+		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(templates.BasePath() + "/next/artists/" + a.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 235, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artists_table.templ`, Line: 235, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 		if templ_7745c5c3_Err != nil {
