@@ -33,12 +33,11 @@ import (
 // and hidden by default (aria-hidden="true" + inert). Opening is orchestrated
 // by window.swPrefsDrawer (web/static/js/prefs-drawer.js).
 templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) {
-	<!-- Scrim: closes drawer on click -->
+	<!-- Scrim: visual dim only; X button and ESC are the only dismiss triggers -->
 	<div
 		id="sw-prefs-scrim"
 		class="sw-prefs-scrim"
 		aria-hidden="true"
-		onclick="if(window.swPrefsDrawer)swPrefsDrawer.close()"
 	></div>
 	<!-- Prefs drawer panel -->
 	<aside

@@ -519,13 +519,8 @@
       body: JSON.stringify({ artist_detail_section_order: [], artist_detail_hidden_sections: [] })
     }).then(function (r) {
       if (r.ok && typeof htmx !== 'undefined') {
-        // Close first so the scrim, aria-expanded triggers, and data-prefs-open are
-        // all cleaned up before the outerHTML swap replaces #sw-prefs-drawer.
-        // Without this the scrim stays visible and blocks reopening the drawer.
-        close();
-        // Fetch the drawer FRAGMENT endpoint, not the page path. The page path
-        // returns only the lazy-mount placeholder (<div id="sw-prefs-mount">);
-        // select:'#sw-prefs-drawer' would match nothing and delete the element.
+        // Fetch the drawer fragment. The afterSwap handler re-queries the live
+        // #sw-prefs-drawer and restores open state so the drawer never closes.
         htmx.ajax('GET', bp + '/next/preferences-drawer', { target: '#sw-prefs-drawer', swap: 'outerHTML' });
       }
       if (r.ok && window.showSuccessToast) { showSuccessToast('Layout reset'); }
@@ -572,13 +567,8 @@
     }).then(function (r) {
       if (r.ok) {
         window.swPreferences.applyAll(DEFAULTS);
-        // Close first so the scrim, aria-expanded triggers, and data-prefs-open are
-        // all cleaned up before the outerHTML swap replaces #sw-prefs-drawer.
-        close();
-        // Reload the drawer to reflect reset values. Fetch the drawer FRAGMENT
-        // endpoint, not the page path - the page path only has the lazy-mount
-        // placeholder and select:'#sw-prefs-drawer' would match nothing, deleting
-        // the element. The fragment root IS #sw-prefs-drawer so no select needed.
+        // Fetch the drawer fragment. The afterSwap handler re-queries the live
+        // #sw-prefs-drawer and restores open state so the drawer never closes.
         if (typeof htmx !== 'undefined') {
           htmx.ajax('GET', bp + '/next/preferences-drawer', { target: '#sw-prefs-drawer', swap: 'outerHTML' });
         }
@@ -735,12 +725,6 @@
       layoutResetBtn.addEventListener('click', resetLayout);
     }
 
-    // Scrim click: close.
-    var scrim = getScrim();
-    if (scrim) {
-      scrim.addEventListener('click', close);
-    }
-
     // Wire any triggers that were added after the initial wireTriggers call
     // (e.g. a profile-menu item injected by HTMX after the drawer loads).
     wireTriggers();
@@ -760,17 +744,44 @@
 
   // --- Init ----------------------------------------------------------------
 
-  // After HTMX swaps the lazy-loaded drawer into the DOM, wire it up and
-  // open it (the user already clicked the trigger, so we should open immediately).
+  // After HTMX swaps the lazy-loaded drawer into the DOM, wire it up.
   document.body.addEventListener('htmx:afterSwap', function (ev) {
     var target = ev.detail && ev.detail.target;
-    // Initial lazy-mount: #sw-prefs-mount is replaced by the scrim+drawer pair.
-    // Reset swaps: resetLayout/resetAll swap #sw-prefs-drawer outerHTML; the new
-    // element has no open class and no event listeners, so wire()+open() must run
-    // here just as they do for the initial mount.
-    if (target && (target.id === 'sw-prefs-mount' || target.id === 'sw-prefs-drawer')) {
+
+    if (target && target.id === 'sw-prefs-mount') {
+      // Initial lazy-mount: #sw-prefs-mount replaced by scrim+drawer. Wire and
+      // open - the user already clicked the trigger.
       wire();
       open();
+      return;
+    }
+
+    if (target && target.id === 'sw-prefs-drawer') {
+      // Reset swap: outerHTML replaced #sw-prefs-drawer. ev.detail.target is the
+      // OLD (now-detached) node. Re-query the live replacement from the DOM before
+      // doing anything - never use the detached reference.
+      wire();
+      var liveDrawer = getDrawer();
+      if (!liveDrawer) { return; }
+      // The drawer was open when the reset fired; restore open state directly on
+      // the live element. Do not call open() here - open() guards on isOpen() and
+      // the _keydownHandler module var may still point at the detached old node,
+      // making the state inconsistent. Apply each piece directly instead.
+      liveDrawer.classList.add('sw-prefs-drawer--open');
+      liveDrawer.setAttribute('aria-hidden', 'false');
+      liveDrawer.removeAttribute('inert');
+      document.documentElement.setAttribute('data-prefs-open', '');
+      var scrim = getScrim();
+      if (scrim) { scrim.classList.add('sw-prefs-scrim--visible'); }
+      document.querySelectorAll('[data-sw-prefs-trigger]').forEach(function (el) {
+        el.setAttribute('aria-expanded', 'true');
+      });
+      // Re-install the focus trap on the new element, clearing any stale ref.
+      if (_keydownHandler) {
+        liveDrawer.removeEventListener('keydown', _keydownHandler);
+      }
+      _keydownHandler = makeTrapHandler(liveDrawer);
+      liveDrawer.addEventListener('keydown', _keydownHandler);
     }
   });
 
