@@ -13,6 +13,17 @@ const csrfTokenHeader = "X-CSRF-Token" //nolint:gosec // G101: not a credential,
 const csrfCookieName = "csrf_token"
 const csrfTokenTTL = 24 * time.Hour
 
+// Clock is the time source used by CSRF for token creation and expiry checks.
+// The default production implementation returns time.Now().UTC().
+type Clock interface {
+	Now() time.Time
+}
+
+// realClock is the production Clock implementation.
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now().UTC() }
+
 // csrfCleanupInterval is how often expired tokens are swept from the in-memory
 // map. One hour is well below csrfTokenTTL (24h), which means expired tokens
 // never linger long enough to bloat memory under sustained load, but the sweep
@@ -28,6 +39,8 @@ const csrfCleanupInterval = time.Hour
 type CSRF struct {
 	mu     sync.RWMutex
 	tokens map[string]time.Time
+
+	clock Clock
 
 	// stop is closed by Close to signal the cleanup goroutine to exit.
 	// closeOnce guards against multiple Close calls so the channel is
@@ -51,6 +64,7 @@ type CSRF struct {
 func NewCSRF() *CSRF {
 	c := &CSRF{
 		tokens: make(map[string]time.Time),
+		clock:  realClock{},
 		stop:   make(chan struct{}),
 		done:   make(chan struct{}),
 	}
@@ -59,11 +73,13 @@ func NewCSRF() *CSRF {
 }
 
 // newCSRFForTest is identical to NewCSRF except it accepts an explicit
-// cleanup interval and exposes a trigger channel so tests can fire a
-// sweep synchronously rather than waiting on wall-clock time.
-func newCSRFForTest(interval time.Duration) *CSRF {
+// cleanup interval and a Clock so tests can control time deterministically.
+// It also exposes a trigger channel so tests can fire a sweep synchronously
+// rather than waiting on wall-clock time.
+func newCSRFForTest(interval time.Duration, clk Clock) *CSRF {
 	c := &CSRF{
 		tokens:  make(map[string]time.Time),
+		clock:   clk,
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 		trigger: make(chan struct{}, 1),
@@ -166,7 +182,7 @@ func (c *CSRF) generate() string {
 	token := hex.EncodeToString(b)
 
 	c.mu.Lock()
-	c.tokens[token] = time.Now()
+	c.tokens[token] = c.clock.Now()
 	c.mu.Unlock()
 
 	return token
@@ -179,11 +195,11 @@ func (c *CSRF) valid(token string) bool {
 	if !exists {
 		return false
 	}
-	return time.Since(created) < csrfTokenTTL
+	return c.clock.Now().Sub(created) < csrfTokenTTL
 }
 
 func (c *CSRF) cleanExpiredLocked() {
-	cutoff := time.Now().Add(-csrfTokenTTL)
+	cutoff := c.clock.Now().Add(-csrfTokenTTL)
 	for t, created := range c.tokens {
 		if created.Before(cutoff) {
 			delete(c.tokens, t)
