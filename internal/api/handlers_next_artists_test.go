@@ -47,20 +47,13 @@ func TestHandleNextArtistsPage_RendersNextWhenChannelNext(t *testing.T) {
 	}
 }
 
-// TestHandleNextArtistsPage_FallsBackWhenChannelStable verifies that when the
-// channel resolves to "stable" (the lane is off, or a sw_ux=stable cookie opted
-// the user back), GET /next/artists falls back to the stable /artists page via
-// nextFallback so the path never dead-ends (decision 12). In stable mode the UX
-// middleware resolves every path -- including /next/* -- to stable.
-func TestHandleNextArtistsPage_FallsBackWhenChannelStable(t *testing.T) {
+// TestHandleNextArtistsPage_StableMode404 verifies that GET /next/artists in
+// stable mode returns 404. The /next/* lane is gated by the UX middleware so it
+// is completely unreachable when the lane is disabled.
+func TestHandleNextArtistsPage_StableMode404(t *testing.T) {
 	t.Parallel()
-	r, _, artistSvc := testRouterWithLibrary(t)
-	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Alpha Artist"}); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
+	r, _, _ := testRouterWithLibrary(t)
 
-	// Stable mode: the lane is off, so even /next/artists resolves to stable
-	// and the handler delegates to the stable handleArtistsPage.
 	h := middleware.UX("stable", "")(http.HandlerFunc(r.handleNextArtistsPage))
 
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
@@ -68,21 +61,8 @@ func TestHandleNextArtistsPage_FallsBackWhenChannelStable(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-	body := w.Body.String()
-	// The stable artists page renders its shared body container but not the
-	// next-channel scoping class.
-	if !strings.Contains(body, `id="artist-content"`) {
-		t.Errorf("stable fallback should render the stable artists page (artist-content absent)")
-	}
-	// Match the next-page ROOT element's class attribute, not the bare
-	// substring: the shared ArtistsPageScripts (rendered on both channels)
-	// references the `.sw-next-artists` selector to scope next-only behavior,
-	// so a bare "sw-next-artists" substring also appears in the stable page.
-	if strings.Contains(body, `class="sw-next-artists`) {
-		t.Errorf("stable fallback must not render the next page")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (stable mode must 404 /next/ routes)", w.Code)
 	}
 }
 

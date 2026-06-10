@@ -76,9 +76,13 @@ func UX(mode, basePath string) func(http.Handler) http.Handler {
 			ch := ResolveUX(mode, cookie)
 			// The /next lane is only reachable when explicitly enabled (next or
 			// dual). In stable mode (or any unrecognized/empty mode) the preview
-			// is fully off, so even /next/* paths and the opt-in header resolve
-			// to stable.
+			// is fully off, so /next/* requests return 404 rather than
+			// silently serving stable content under the preview URL namespace.
 			laneEnabled := mode == string(UXNext) || mode == "dual"
+			if !laneEnabled && isNextPath(r.URL.Path, nextPrefix, nextExact) {
+				http.NotFound(w, r)
+				return
+			}
 			if laneEnabled {
 				// Path opt-in: visiting a /next/* URL is an explicit request for
 				// the preview lane, regardless of cookie.

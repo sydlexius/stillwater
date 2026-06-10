@@ -71,20 +71,17 @@ func TestHandleNextArtistDetailPage_NextChannel(t *testing.T) {
 	}
 }
 
-// TestHandleNextArtistDetailPage_StableFallback verifies the stable channel
-// delegates to the existing tabbed stable detail page so /next/artists/{id}
-// never dead-ends.
-func TestHandleNextArtistDetailPage_StableFallback(t *testing.T) {
+// TestHandleNextArtistDetailPage_StableMode404 verifies that GET /next/artists/{id}
+// in stable mode returns 404. The /next/* lane is gated by the UX middleware so
+// it is completely unreachable when the lane is disabled.
+func TestHandleNextArtistDetailPage_StableMode404(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Bbb Artist")
 
 	w := nextDetailRequest(t, r, "stable", id)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), `role="tablist"`) {
-		t.Errorf("stable fallback must render the tabbed stable detail page")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (stable mode must 404 /next/ routes): %s", w.Code, w.Body.String())
 	}
 }
 
@@ -204,8 +201,10 @@ func TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
 	r, artistSvc := detailTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Auth Gate Artist")
 
-	// Build a request with NO user ID in context (empty context = unauthenticated).
-	req := httptest.NewRequest(http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
+	// Build a request with NO user ID in context (empty context = unauthenticated)
+	// but with the UX channel set so the auth check is reached.
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
 	req.SetPathValue("id", id)
 	w := httptest.NewRecorder()
 	r.handleNextArtworkModal(w, req)
@@ -217,6 +216,25 @@ func TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
 	}
 	if strings.Contains(body, "artwork-modal-body") {
 		t.Errorf("unauthenticated request must not render the artwork editor body")
+	}
+}
+
+// TestHandleNextArtworkModal_StableChannel404 verifies the Phase 2 channel guard:
+// when UXStable is in context the modal returns 404 immediately.
+func TestHandleNextArtworkModal_StableChannel404(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Channel Gate Artist")
+
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleNextArtworkModal(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("stable channel: status = %d, want 404", w.Code)
 	}
 }
 

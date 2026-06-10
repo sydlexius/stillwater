@@ -65,3 +65,15 @@ Envelope versions:
 Older envelopes remain importable. The `password_hash` inside the users block is a bcrypt digest -- never plaintext -- and only crosses the wire inside the passphrase-encrypted payload.
 
 *Where it lives: [Settings import/export](architecture/settings-import-export.md).*
+
+## Next-lane routing policy (decision 12)
+
+The `/next/*` URL namespace is hard-gated by `middleware.UX`: when `SW_UX=stable` (the default), any request whose path matches `/next/` or `/next/*` receives an immediate 404 before any handler runs. The lane is simply not there.
+
+**Why 404 and not redirect:** A redirect from `/next/X` to `/X` requires a maintained path map and re-introduces cross-channel coupling. 404 is honest -- the path does not exist when the lane is off -- and aligns with the #1929 principle that reachable-but-disabled routes are a security surface.
+
+**Why middleware, not handler registration:** All `/next/*` routes are registered unconditionally in `router.go`. The gate lives in `middleware.UX` where `laneEnabled` is already computed, so no route-table churn is needed to toggle the feature.
+
+**Handler-level guards (defense in depth):** Each `handleNext*` handler also checks `UXChannelFromContext != UXNext` and returns 404. In stable mode this is dead code (the middleware gate fires first). In next/dual mode it guards the edge case where an explicit `X-Stillwater-UX: stable` header opts a sub-request back to the stable channel -- those requests reach the handler but must not render next/ content.
+
+**Promotion path:** Set `SW_UX=next` to make the next/ lane the default (a `sw_ux=stable` cookie opts a user back). The `middleware.UX` gate is lifted automatically; no code change is required (#1757).

@@ -16,3 +16,10 @@ func WithTestUserID(ctx context.Context, userID string) context.Context {
 func WithTestRole(ctx context.Context, role string) context.Context {
 	return context.WithValue(ctx, userRoleKey, role)
 }
+
+// WithTestUXChannel injects a UXChannel into the context. This is intended for
+// handler-level unit tests that call handler methods directly (bypassing the
+// UX middleware). Production code relies on middleware.UX to populate this.
+func WithTestUXChannel(ctx context.Context, ch UXChannel) context.Context {
+	return context.WithValue(ctx, uxChannelKey, ch)
+}

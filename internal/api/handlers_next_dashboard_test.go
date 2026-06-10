@@ -299,33 +299,21 @@ func TestHandleNextDashboardPage_OnboardingIncomplete(t *testing.T) {
 	}
 }
 
-// TestHandleNextDashboardPage_StableChannelDelegates verifies that when the
-// resolved channel is NOT "next" (here: stable mode, where the /next lane is
-// fully off) the handler delegates to handleIndex and renders the stable
-// dashboard rather than the next/ page. This is the no-dead-end guarantee:
-// /next/ never 404s even on the stable channel.
-func TestHandleNextDashboardPage_StableChannelDelegates(t *testing.T) {
+// TestHandleNextDashboardPage_StableMode404 verifies that GET /next/ in stable
+// mode returns 404 (the lane is off -- /next/* is not reachable when disabled).
+func TestHandleNextDashboardPage_StableMode404(t *testing.T) {
 	t.Parallel()
 	r := testDashboardRouter(t, false)
 	markOnboardingComplete(t, r)
 
-	// UX middleware in stable mode resolves every path (even /next/) to stable.
 	h := middleware.UX("stable", "")(http.HandlerFunc(r.handleNextDashboardPage))
 	req := httptest.NewRequest(http.MethodGet, "/next/", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-	// Delegated to the stable index: the next/-only bubble links must be absent.
-	body := w.Body.String()
-	if strings.Contains(body, "/next/?fixable=yes") {
-		t.Errorf("stable delegation must not render the next/ dashboard bubbles")
-	}
-	if got := w.Header().Get("X-Stillwater-UX"); got != "stable" {
-		t.Errorf("X-Stillwater-UX = %q, want stable", got)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d (stable mode must 404 /next/ routes); body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 

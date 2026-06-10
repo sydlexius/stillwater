@@ -12,9 +12,13 @@ import (
 
 // handleNextDashboardPage serves the next/ channel dashboard (M55 #1334).
 //
-// When the resolved UI channel is not "next" (the user is on stable or opted
-// back via sw_ux=stable) it delegates to handleIndex so the /next/dashboard
-// path never 404s and never dead-ends (decision 12 in architecture-decisions.md).
+// In stable mode (SW_UX=stable) the UX middleware 404s any /next/* request
+// before this handler runs (decision 12 in architecture-decisions.md). The
+// in-handler channel guard below is therefore only reachable when the lane IS
+// enabled (next/dual mode) and the resolved channel is not "next" -- which
+// happens when the user sent an explicit X-Stillwater-UX: stable header to opt
+// back out. In that case it delegates to handleIndex so the path never
+// dead-ends (consistent with the guard in handleNextArtistsPage and others).
 //
 // When the channel is "next" it runs the same auth + onboarding checks as
 // handleIndex (checking auth from context, then the onboarding.completed
