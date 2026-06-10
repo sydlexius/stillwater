@@ -132,9 +132,7 @@ func TestDirtySubscriber_InvalidEventsAreNoOps(t *testing.T) {
 		sub.HandleEvent(e) // must not panic
 	}
 
-	// Give a tick in case any rogue write was queued.
-	time.Sleep(100 * time.Millisecond)
-
+	// HandleEvent is synchronous: no tick needed before asserting.
 	reread, err := svc.GetByID(context.Background(), a.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)

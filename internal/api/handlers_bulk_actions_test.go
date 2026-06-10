@@ -256,10 +256,10 @@ func TestBulkAction_RunRulesRequiresPipeline(t *testing.T) {
 	}
 }
 
-// waitBulkActionCompleted polls the progress snapshot the same way fix-all
-// tests do, returning once the goroutine flags completion or the deadline
-// elapses.
-func waitBulkActionCompleted(t *testing.T, r *Router) {
+// waitBulkActionStatus polls bulkActionProgress until its Status equals
+// wantStatus or the 5s deadline elapses. Returns a snapshot of the relevant
+// fields (Status, Failed) at the moment the condition is satisfied.
+func waitBulkActionStatus(t *testing.T, r *Router, wantStatus bulkActionStatus) *BulkActionProgress {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -268,15 +268,24 @@ func waitBulkActionCompleted(t *testing.T, r *Router) {
 		r.bulkActionMu.RUnlock()
 		if p != nil {
 			p.mu.RLock()
-			done := p.Status == "completed"
+			s := p.Status
+			f := p.Failed
 			p.mu.RUnlock()
-			if done {
-				return
+			if s == wantStatus {
+				return &BulkActionProgress{Status: s, Failed: f}
 			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("bulk action did not reach completed within 5s")
+	t.Fatalf("bulk action did not reach status %q within 5s", wantStatus)
+	return nil
+}
+
+// waitBulkActionCompleted polls until the bulk action reaches the completed
+// status or the deadline elapses.
+func waitBulkActionCompleted(t *testing.T, r *Router) {
+	t.Helper()
+	waitBulkActionStatus(t, r, bulkActionCompleted)
 }
 
 // TestBulkAction_SuccessDedupKickoff posts run_rules with a duplicate ID in
@@ -923,34 +932,13 @@ func TestRunBulkAction_TerminalCanceledWithFailures(t *testing.T) {
 	// Release any blocked stub goroutines so the run can finalize.
 	close(cancelGate)
 
-	// Wait for the canceled terminal state. waitBulkActionCompleted polls
-	// for Status=="completed" which won't fire here; spin manually.
-	deadline := time.Now().Add(5 * time.Second)
-	var finalStatus bulkActionStatus
-	var failed int
-	for time.Now().Before(deadline) {
-		r.bulkActionMu.RLock()
-		p := r.bulkActionProgress
-		r.bulkActionMu.RUnlock()
-		if p != nil {
-			p.mu.RLock()
-			s := p.Status
-			f := p.Failed
-			p.mu.RUnlock()
-			if s != bulkActionRunning {
-				finalStatus = s
-				failed = f
-				break
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
+	// Wait for the canceled terminal state.
+	snap := waitBulkActionStatus(t, r, bulkActionCanceled)
+	if snap.Status != bulkActionCanceled {
+		t.Errorf("final progress status = %q, want %q (cancel must supersede failed)", snap.Status, bulkActionCanceled)
 	}
-
-	if finalStatus != bulkActionCanceled {
-		t.Errorf("final progress status = %q, want %q (cancel must supersede failed)", finalStatus, bulkActionCanceled)
-	}
-	if failed < 1 {
-		t.Errorf("progress.Failed = %d, want >= 1 (first artist failed before cancel)", failed)
+	if snap.Failed < 1 {
+		t.Errorf("progress.Failed = %d, want >= 1 (first artist failed before cancel)", snap.Failed)
 	}
 
 	// Poll for the terminal canceled event rather than racing a fixed sleep:

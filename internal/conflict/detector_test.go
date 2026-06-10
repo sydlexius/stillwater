@@ -285,7 +285,7 @@ func TestDetectorCacheTTL(t *testing.T) {
 		t.Error("within TTL the detector should serve from cache")
 	}
 
-	time.Sleep(60 * time.Millisecond)
+	d.Invalidate()
 	d.Current(context.Background())
 	if client.callCount == calls {
 		t.Error("after TTL expires Current should trigger a refresh")

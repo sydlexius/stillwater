@@ -157,7 +157,9 @@ func TestDetectorCurrentCoalescesAfterTTLExpiry(t *testing.T) {
 		t.Fatalf("expected priming Refresh to fire once, got %d", got)
 	}
 
-	// Expire the cache.
+	// Expire the cache. This sleep is integral to the test scenario: we are
+	// specifically testing post-TTL-expiry coalescing behavior, so the TTL must
+	// genuinely elapse. Polling cannot substitute for real wall-clock expiry.
 	time.Sleep(30 * time.Millisecond)
 
 	// Now gate the next round of peer checks so the post-expiry stampede

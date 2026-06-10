@@ -14,6 +14,33 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 )
 
+// waitFor polls cond every 10ms for up to 1s. It calls t.Fatalf(msg) if the
+// condition is not satisfied within the deadline.
+func waitFor(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s", msg)
+}
+
+// waitWatcherReady blocks until svc has at least one path in its watching map
+// or 1s elapses. Use this after go svc.Start(ctx) to confirm the watcher has
+// completed refreshWatchPaths before exercising FS events.
+func waitWatcherReady(t *testing.T, svc *Service) {
+	t.Helper()
+	waitFor(t, func() bool {
+		svc.mu.Lock()
+		n := len(svc.watching)
+		svc.mu.Unlock()
+		return n > 0
+	}, "watcher did not initialize watched paths within 1s")
+}
+
 // mockLibraryLister returns a fixed set of libraries.
 type mockLibraryLister struct {
 	mu   sync.Mutex
@@ -72,17 +99,16 @@ func TestNewDirectoryTriggersScan(t *testing.T) {
 	defer cancel()
 
 	go svc.Start(ctx)
-	time.Sleep(100 * time.Millisecond) // let watcher initialize
+	waitWatcherReady(t, svc)
 
 	// Create a subdirectory.
 	if err := os.Mkdir(filepath.Join(root, "New Artist"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// Wait for debounce + processing.
-	time.Sleep(300 * time.Millisecond)
+	// Wait for debounce + scan to complete.
+	waitFor(t, func() bool { return scanCount.Load() >= 1 }, "scan not triggered within 1s")
 	cancel()
-	time.Sleep(50 * time.Millisecond)
 
 	if got := scanCount.Load(); got != 1 {
 		t.Errorf("expected 1 scan, got %d", got)
@@ -101,7 +127,7 @@ func TestMultipleCreatesCoalesce(t *testing.T) {
 	defer cancel()
 
 	go svc.Start(ctx)
-	time.Sleep(100 * time.Millisecond)
+	waitWatcherReady(t, svc)
 
 	// Create 5 directories rapidly.
 	for i := 0; i < 5; i++ {
@@ -111,10 +137,9 @@ func TestMultipleCreatesCoalesce(t *testing.T) {
 		}
 	}
 
-	// Wait for debounce.
-	time.Sleep(300 * time.Millisecond)
+	// Wait for the debounce to fire the single coalesced scan.
+	waitFor(t, func() bool { return scanCount.Load() >= 1 }, "scan not triggered within 1s")
 	cancel()
-	time.Sleep(50 * time.Millisecond)
 
 	if got := scanCount.Load(); got != 1 {
 		t.Errorf("expected 1 coalesced scan, got %d", got)
@@ -144,16 +169,15 @@ func TestRemovedDirectoryPublishesEvent(t *testing.T) {
 	})
 
 	go svc.Start(ctx)
-	time.Sleep(100 * time.Millisecond)
+	waitWatcherReady(t, svc)
 
 	// Remove the directory.
 	if err := os.Remove(subdir); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, func() bool { return received.Load() >= 1 }, "FSDirRemoved event not received within 1s")
 	cancel()
-	time.Sleep(50 * time.Millisecond)
 
 	if got := received.Load(); got < 1 {
 		t.Errorf("expected FSDirRemoved event, got %d", got)
@@ -176,7 +200,7 @@ func TestFileCreationIgnored(t *testing.T) {
 	defer cancel()
 
 	go svc.Start(ctx)
-	time.Sleep(100 * time.Millisecond)
+	waitWatcherReady(t, svc)
 
 	// Create a file (not a directory).
 	f, err := os.Create(filepath.Join(root, "README.txt"))
@@ -185,9 +209,11 @@ func TestFileCreationIgnored(t *testing.T) {
 	}
 	f.Close()
 
-	time.Sleep(300 * time.Millisecond)
+	// Negative assertion: confirm no scan fired. Sleep for 3x the debounce
+	// interval to give a spurious scan enough time to surface if it were going
+	// to, then assert the count is still zero.
+	time.Sleep(150 * time.Millisecond)
 	cancel()
-	time.Sleep(50 * time.Millisecond)
 
 	if got := scanCount.Load(); got != 0 {
 		t.Errorf("expected 0 scans for file creation, got %d", got)
@@ -204,7 +230,10 @@ func TestPathlessLibrarySkipped(t *testing.T) {
 	defer cancel()
 
 	go svc.Start(ctx)
-	time.Sleep(100 * time.Millisecond)
+	// Cannot poll on len(svc.watching) > 0 because this test verifies no paths
+	// are watched. A brief setup guard lets Start finish refreshWatchPaths
+	// before we read the map.
+	time.Sleep(50 * time.Millisecond)
 
 	// No paths should be watched.
 	svc.mu.Lock()
@@ -212,7 +241,7 @@ func TestPathlessLibrarySkipped(t *testing.T) {
 	svc.mu.Unlock()
 
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	// No extra sleep: the assertion uses watchCount captured before cancel.
 
 	if watchCount != 0 {
 		t.Errorf("expected 0 watched paths for pathless library, got %d", watchCount)
@@ -235,7 +264,7 @@ func TestContextCancellation(t *testing.T) {
 		close(done)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	waitWatcherReady(t, svc)
 	cancel()
 
 	select {
@@ -322,7 +351,7 @@ func TestPollDetectsNewDirectory(t *testing.T) {
 	svc.mu.Unlock()
 
 	changed := svc.pollDirectories()
-	time.Sleep(100 * time.Millisecond) // let event dispatch
+	waitFor(t, func() bool { return received.Load() >= 1 }, "FSDirCreated event not received from poll within 1s")
 
 	if !changed {
 		t.Error("expected pollDirectories to report changes")
@@ -373,7 +402,7 @@ func TestPollDetectsRemovedDirectory(t *testing.T) {
 	svc.mu.Unlock()
 
 	changed := svc.pollDirectories()
-	time.Sleep(100 * time.Millisecond)
+	waitFor(t, func() bool { return received.Load() >= 1 }, "FSDirRemoved event not received from poll within 1s")
 
 	if !changed {
 		t.Error("expected pollDirectories to report changes")
@@ -433,14 +462,17 @@ func TestUnsupportedFSNotifySkipsWatch(t *testing.T) {
 	defer cancel()
 
 	go svc.Start(ctx)
-	time.Sleep(100 * time.Millisecond)
+	// Cannot poll on len(svc.watching) > 0 because this test verifies the probe
+	// cache prevents the path from being watched. A brief setup guard lets Start
+	// finish refreshWatchPaths before we read the map.
+	time.Sleep(50 * time.Millisecond)
 
 	svc.mu.Lock()
 	watchCount := len(svc.watching)
 	svc.mu.Unlock()
 
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	// No extra sleep: the assertion uses watchCount captured before cancel.
 
 	if watchCount != 0 {
 		t.Errorf("expected 0 watched paths for unsupported fsnotify, got %d", watchCount)

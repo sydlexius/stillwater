@@ -112,7 +112,7 @@ func pollUntilServing(t *testing.T, addr string) {
 			c.Close()
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // poll interval inside pollUntilServing
 	}
 	t.Fatalf("server at %s never became ready within %s", addr, deadline)
 }
@@ -473,7 +473,8 @@ func TestRunListeners_HTTP3RoundTrip(t *testing.T) {
 
 	// QUIC has no TCP-style accept-on-ready signal. Give the UDP listener a
 	// brief grace period to enter its accept loop, then issue the request
-	// (which has its own timeout/retry).
+	// (which has its own timeout/retry loop below). Cannot be replaced with a
+	// deterministic poll because there is no observable ready-state to probe.
 	time.Sleep(100 * time.Millisecond)
 
 	tr := &http3.Transport{
@@ -498,7 +499,7 @@ func TestRunListeners_HTTP3RoundTrip(t *testing.T) {
 			break
 		}
 		lastErr = err
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // poll interval inside HTTP/3 retry loop
 	}
 	if resp == nil {
 		cancel()
