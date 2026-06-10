@@ -49,7 +49,7 @@ LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" 
       org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
       org.opencontainers.image.licenses="GPL-3.0"
 
-RUN apk add --no-cache ca-certificates tzdata su-exec curl && \
+RUN apk add --no-cache ca-certificates tzdata su-exec && \
     apk upgrade --no-cache
 
 # Create app user (guarded: GID/UID may already be claimed after apk upgrade)
@@ -81,10 +81,10 @@ EXPOSE ${SW_TLS_PORT}/udp
 
 # Healthcheck. The shell-expanded URL lets the entrypoint override
 # SW_HEALTH_URL when SW_TLS_CERT_FILE is set so the probe targets HTTPS on
-# the right port. -k is intentional: a localhost healthcheck against a
-# self-signed cert is acceptable.
+# the right port. --no-check-certificate is intentional: a localhost
+# healthcheck against a self-signed cert is acceptable.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD sh -c 'curl -fsk "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1'
+  CMD wget -q -O /dev/null --no-check-certificate "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1
 
 VOLUME ["/config", "/music"]
 

@@ -77,7 +77,7 @@ Once Stillwater detects a TLS connection, it automatically sets a strict `Strict
 
 ## Docker healthcheck
 
-The container's healthcheck targets `localhost` over the configured protocol. When `SW_TLS_CERT_FILE` is set, the entrypoint exports `SW_HEALTH_URL` so the probe uses HTTPS on the right port. The probe runs with `curl -k` to skip cert verification -- this is intentional, because a localhost healthcheck against a self-signed cert would otherwise fail for the wrong reason. You do not need to set `SW_HEALTH_URL` yourself; setting `SW_TLS_CERT_FILE` is enough.
+The container's healthcheck targets `localhost` over the configured protocol. When `SW_TLS_CERT_FILE` is set, the entrypoint exports `SW_HEALTH_URL` so the probe uses HTTPS on the right port. The probe runs with `wget --no-check-certificate` to skip cert verification -- this is intentional, because a localhost healthcheck against a self-signed cert would otherwise fail for the wrong reason. You do not need to set `SW_HEALTH_URL` yourself; setting `SW_TLS_CERT_FILE` is enough.
 
 ## ACME and HTTP redirect
 
