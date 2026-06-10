@@ -2463,10 +2463,18 @@ html[data-motion="on"] main {
 
 /* Help popovers inside the drawer: inherit the global sw-context-help styles
  * but override the z-index to sit above the flyout's content (z=50 from root).
- * Also restrict popover width for the narrower flyout column. */
+ * Also restrict popover width for the narrower flyout column.
+ *
+ * The drawer has overflow:hidden (for border-radius clipping). The global
+ * popover positions with left:50%/translateX(-50%), which centers it on the
+ * (?) button and extends ~120px leftward - past the drawer's left edge where
+ * overflow:hidden clips it. Override to left:0/transform:none so the popover
+ * opens rightward from the button, staying within the 360px drawer bounds. */
 .sw-prefs-help .sw-context-help-popover {
   z-index: 60;
   max-width: 240px;
+  left: 0;
+  transform: none;
 }
 
 /* Toggle rows have a short desc under the label; align flex direction. */
