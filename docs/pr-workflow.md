@@ -56,6 +56,24 @@ When creating a GitHub issue with `gh issue create`:
    ```
 4. Delete the temp file after creation.
 
+## PR templates
+
+Two PR templates are available:
+
+- **Default** (`.github/pull_request_template.md`) -- for feature, bug, and user-visible change PRs. Applied automatically when opening a PR via `gh pr create` with no `--body`/`--body-file` flag, or via the GitHub compare URL without a `?template=` parameter.
+- **Chore** (`.github/PULL_REQUEST_TEMPLATE/chore.md`) -- for chore, CI, refactor, and dependency PRs. Omits screenshot, UAT, OpenAPI, and `templ generate` rows. Select it with:
+
+  ```bash
+  # gh pr create: pass the template file as the body
+  gh pr create --body-file .github/PULL_REQUEST_TEMPLATE/chore.md --label chore
+  ```
+
+  In a browser, append `?template=chore.md&expand=1` to the compare URL:
+
+  ```
+  https://github.com/sydlexius/stillwater/compare/main...<branch>?expand=1&template=chore.md
+  ```
+
 ## Reading PR comments (gh API)
 
 The `!` character triggers bash history expansion inside double quotes. **Never use `!=` in `--jq` expressions.** Use `select(.field == "value" | not)` instead:
