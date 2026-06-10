@@ -7,11 +7,11 @@ import assert from 'node:assert/strict';
 import { createDom, makeFetchMock, flush } from './helpers/dom-harness.js';
 
 // ---------------------------------------------------------------------------
-// Go source of truth for kind -> image-type (handlers_next_artist_detail.go).
-// artworkKindToType switch: logo->logo, banner->banner, backdrops->fanart,
-// default (primary / unknown) -> thumb.
-// Update this constant when the Go function changes; the tests will then fail,
-// which is the intended signal.
+// Go source of truth for kind -> image-type (handlers_next_artist_detail.go,
+// artworkKindToType). This constant is MANUALLY maintained: when Go's
+// artworkKindToType gains or changes a case, update GO_KIND_TO_TYPE here.
+// The tests then catch JS drift from this constant -- they do NOT
+// auto-detect Go-side changes on their own.
 // ---------------------------------------------------------------------------
 const GO_KIND_TO_TYPE = {
   primary:   'thumb',
