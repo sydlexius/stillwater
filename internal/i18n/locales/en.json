@@ -2461,7 +2461,7 @@
   "prefs.auto_fetch.help": "Uses more bandwidth and storage up front in exchange for instant page loads.",
 
   "prefs.notification_enabled.label": "Notifications",
-  "prefs.notification_enabled.description": "Show browser notification badges for rule violations.",
+  "prefs.notification_enabled.description": "Show in-app toast notifications for rule violations.",
   "prefs.notification_enabled.help": "Affects in-app toasts only - not email or webhook notifications, which are configured in Settings.",
 
   "prefs.sidebar_state.help": "Full shows nav icons with labels. Icon-only reclaims horizontal space; Hidden removes the sidebar entirely.",

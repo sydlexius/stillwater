@@ -2003,7 +2003,6 @@ html[data-motion="on"] main {
   font-size: var(--sw-type-label);
   font-family: var(--sw-font-sans);
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
   transition: color 0.15s ease;
 }

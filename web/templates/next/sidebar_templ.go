@@ -460,7 +460,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" aria-haspopup=\"dialog\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" aria-haspopup=\"dialog\" aria-controls=\"sw-prefs-drawer\" aria-expanded=\"false\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -475,7 +475,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.preferences"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 186, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 188, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -488,7 +488,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.actions"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 196, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 198, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 		if templ_7745c5c3_Err != nil {
@@ -501,7 +501,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.cycle_theme"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 202, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 204, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 		if templ_7745c5c3_Err != nil {
@@ -514,7 +514,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.cycle_theme"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 203, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 205, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 		if templ_7745c5c3_Err != nil {
@@ -539,7 +539,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.help_shortcuts"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 212, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 214, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 		if templ_7745c5c3_Err != nil {
@@ -552,7 +552,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.help_shortcuts"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 213, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 215, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 		if templ_7745c5c3_Err != nil {
@@ -573,7 +573,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 221, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 223, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 		if templ_7745c5c3_Err != nil {
@@ -586,7 +586,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.logout"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 223, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 225, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 		if templ_7745c5c3_Err != nil {
@@ -599,7 +599,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.logout"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 224, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 226, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 		if templ_7745c5c3_Err != nil {
@@ -620,7 +620,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var37 templ.SafeURL
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/next/preferences"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 235, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 237, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -633,7 +633,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.preferences"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 237, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 239, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 		if templ_7745c5c3_Err != nil {
@@ -646,13 +646,13 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.preferences"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 239, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 241, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" aria-haspopup=\"dialog\" aria-expanded=\"false\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" aria-haspopup=\"dialog\" aria-controls=\"sw-prefs-drawer\" aria-expanded=\"false\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -664,7 +664,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.AvatarURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 245, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 248, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 			if templ_7745c5c3_Err != nil {
@@ -677,7 +677,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(sidebarInitial(sidebarName(assets)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 251, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 254, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -695,7 +695,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(sidebarInitial(sidebarName(assets)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 253, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 256, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -713,7 +713,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(sidebarName(assets))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 256, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 259, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -726,7 +726,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(assets.Role)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 257, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 260, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -739,7 +739,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.show_sidebar"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 268, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 271, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 		if templ_7745c5c3_Err != nil {
@@ -752,7 +752,7 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "nav.show_sidebar_key"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 269, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 272, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {

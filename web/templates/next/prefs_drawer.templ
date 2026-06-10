@@ -81,7 +81,7 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 		<!-- Scrollable body -->
 		<div class="sw-prefs-drawer-body">
 			<!-- Empty state (shown by prefs-drawer.js when search yields no matches) -->
-			<p id="sw-prefs-search-empty" class="sw-prefs-search-empty" hidden></p>
+			<p id="sw-prefs-search-empty" class="sw-prefs-search-empty" role="status" aria-live="polite" hidden></p>
 			<!-- Accordion groups -->
 			<div id="sw-prefs-groups">
 				<!-- Appearance group (expanded by default) -->
@@ -267,7 +267,7 @@ templ prefsTileRow(id, prefKey, label, helpText string, options []prefsOption, c
 			<div class="sw-prefs-row-name">
 				{ label }
 				if helpText != "" {
-					@prefsHelpPopover("help-" + prefKey, label, helpText)
+					@prefsHelpPopover("help-"+prefKey, label, helpText)
 				}
 			</div>
 		</div>
@@ -296,7 +296,8 @@ templ prefsTileRow(id, prefKey, label, helpText string, options []prefsOption, c
 					}() }
 				>
 					if opt.Glyph != "" {
-						<span class="sw-prefs-tile-glyph" aria-hidden="true">@templ.Raw(opt.Glyph)</span>
+						<span class="sw-prefs-tile-glyph" aria-hidden="true">@templ.Raw(opt.Glyph)
+</span>
 					}
 					<span class="sw-prefs-tile-label">{ opt.Label }</span>
 					if opt.Sub != "" {
@@ -317,7 +318,7 @@ templ prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, cu
 			<div class="sw-prefs-row-name">
 				{ label }
 				if helpText != "" {
-					@prefsHelpPopover("help-" + prefKey, label, helpText)
+					@prefsHelpPopover("help-"+prefKey, label, helpText)
 				}
 			</div>
 		</div>
@@ -409,7 +410,7 @@ templ prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked boo
 			<div class="sw-prefs-row-name">
 				{ label }
 				if helpText != "" {
-					@prefsHelpPopover("help-" + prefKey, label, helpText)
+					@prefsHelpPopover("help-"+prefKey, label, helpText)
 				}
 			</div>
 			if shortDesc != "" {
@@ -510,16 +511,6 @@ templ prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.Prefere
 			{ t(ctx, "prefs.artist_layout.reset") }
 		</button>
 	</div>
-	<!-- Load SortableJS for drag reordering (already vendored). -->
-	<script>
-		if (document.readyState === 'loading') {
-			document.addEventListener('DOMContentLoaded', function () {
-				if (window.swPrefsDrawer) { window.swPrefsDrawer.initLayoutCard(); }
-			});
-		} else {
-			if (window.swPrefsDrawer) { window.swPrefsDrawer.initLayoutCard(); }
-		}
-	</script>
 }
 
 // layoutSection describes one reorderable section in the artist-detail layout.

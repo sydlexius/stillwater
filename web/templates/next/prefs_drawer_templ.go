@@ -121,7 +121,7 @@ func PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) t
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" autocomplete=\"off\"></div><!-- Scrollable body --><div class=\"sw-prefs-drawer-body\"><!-- Empty state (shown by prefs-drawer.js when search yields no matches) --><p id=\"sw-prefs-search-empty\" class=\"sw-prefs-search-empty\" hidden></p><!-- Accordion groups --><div id=\"sw-prefs-groups\"><!-- Appearance group (expanded by default) -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" autocomplete=\"off\"></div><!-- Scrollable body --><div class=\"sw-prefs-drawer-body\"><!-- Empty state (shown by prefs-drawer.js when search yields no matches) --><p id=\"sw-prefs-search-empty\" class=\"sw-prefs-search-empty\" role=\"status\" aria-live=\"polite\" hidden></p><!-- Accordion groups --><div id=\"sw-prefs-groups\"><!-- Appearance group (expanded by default) -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -800,7 +800,7 @@ func prefsTileRow(id, prefKey, label, helpText string, options []prefsOption, cu
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(opt.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 301, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 302, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -818,7 +818,7 @@ func prefsTileRow(id, prefKey, label, helpText string, options []prefsOption, cu
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(opt.Sub)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 303, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 304, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -873,7 +873,7 @@ func prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, cur
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 318, Col: 11}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 319, Col: 11}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -896,7 +896,7 @@ func prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, cur
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 328, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 329, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 		if templ_7745c5c3_Err != nil {
@@ -909,7 +909,7 @@ func prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, cur
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(prefKey)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 329, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 330, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 		if templ_7745c5c3_Err != nil {
@@ -927,7 +927,7 @@ func prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, cur
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(opt.Value == current))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 336, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 337, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 			if templ_7745c5c3_Err != nil {
@@ -955,7 +955,7 @@ func prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, cur
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(opt.Value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 342, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 343, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 			if templ_7745c5c3_Err != nil {
@@ -968,7 +968,7 @@ func prefsSegRow(id, prefKey, label, helpText string, options []prefsOption, cur
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(opt.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 343, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 344, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
@@ -1018,7 +1018,7 @@ func prefsBgOpacityRow(bgOpacity string) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.bg_opacity.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 357, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 358, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -1035,7 +1035,7 @@ func prefsBgOpacityRow(bgOpacity string) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.appearance.bg_opacity.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 369, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 370, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 		if templ_7745c5c3_Err != nil {
@@ -1048,7 +1048,7 @@ func prefsBgOpacityRow(bgOpacity string) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(bgOpacity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 370, Col: 21}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 371, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 		if templ_7745c5c3_Err != nil {
@@ -1061,7 +1061,7 @@ func prefsBgOpacityRow(bgOpacity string) templ.Component {
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(bgOpacity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 372, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 373, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -1105,7 +1105,7 @@ func prefsPageSizeRow(pageSize int) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.page_size.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 383, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 384, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -1122,7 +1122,7 @@ func prefsPageSizeRow(pageSize int) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.appearance.page_size.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 395, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 396, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 		if templ_7745c5c3_Err != nil {
@@ -1135,7 +1135,7 @@ func prefsPageSizeRow(pageSize int) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(pageSize))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 396, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 397, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {
@@ -1180,7 +1180,7 @@ func prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 410, Col: 11}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 411, Col: 11}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 		if templ_7745c5c3_Err != nil {
@@ -1208,7 +1208,7 @@ func prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(shortDesc)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 416, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 417, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -1226,7 +1226,7 @@ func prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 422, Col: 11}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 423, Col: 11}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 		if templ_7745c5c3_Err != nil {
@@ -1239,7 +1239,7 @@ func prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(checked))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 425, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 426, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
 		if templ_7745c5c3_Err != nil {
@@ -1252,7 +1252,7 @@ func prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 426, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 427, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 		if templ_7745c5c3_Err != nil {
@@ -1265,7 +1265,7 @@ func prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool
 		var templ_7745c5c3_Var53 string
 		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(prefKey)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 427, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 428, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 		if templ_7745c5c3_Err != nil {
@@ -1308,7 +1308,7 @@ func prefsLanguageRow(language string) templ.Component {
 		var templ_7745c5c3_Var55 string
 		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 440, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 441, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 		if templ_7745c5c3_Err != nil {
@@ -1325,7 +1325,7 @@ func prefsLanguageRow(language string) templ.Component {
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.appearance.language.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 448, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 449, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 		if templ_7745c5c3_Err != nil {
@@ -1380,7 +1380,7 @@ func prefsHelpPopover(id, label, helpText string) templ.Component {
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 460, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 461, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var58)
 		if templ_7745c5c3_Err != nil {
@@ -1393,7 +1393,7 @@ func prefsHelpPopover(id, label, helpText string) templ.Component {
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue("About " + label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 464, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 465, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 		if templ_7745c5c3_Err != nil {
@@ -1406,7 +1406,7 @@ func prefsHelpPopover(id, label, helpText string) templ.Component {
 		var templ_7745c5c3_Var60 string
 		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(id + "-popover")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 466, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 467, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
 		if templ_7745c5c3_Err != nil {
@@ -1419,7 +1419,7 @@ func prefsHelpPopover(id, label, helpText string) templ.Component {
 		var templ_7745c5c3_Var61 string
 		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue(id + "-popover")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 471, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 472, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
 		if templ_7745c5c3_Err != nil {
@@ -1432,7 +1432,7 @@ func prefsHelpPopover(id, label, helpText string) templ.Component {
 		var templ_7745c5c3_Var62 string
 		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(helpText)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 475, Col: 13}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 476, Col: 13}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 		if templ_7745c5c3_Err != nil {
@@ -1481,7 +1481,7 @@ func prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.Preferen
 		var templ_7745c5c3_Var64 string
 		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "prefs.group.artist_layout"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 489, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 490, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
@@ -1498,7 +1498,7 @@ func prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.Preferen
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "prefs.artist_layout.list_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 493, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 494, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
 		if templ_7745c5c3_Err != nil {
@@ -1521,7 +1521,7 @@ func prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.Preferen
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "prefs.artist_layout.reset"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 504, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 505, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 		if templ_7745c5c3_Err != nil {
@@ -1534,13 +1534,13 @@ func prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.Preferen
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "prefs.artist_layout.reset"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 510, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 511, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</button></div><!-- Load SortableJS for drag reordering (already vendored). --><script>\n\t\tif (document.readyState === 'loading') {\n\t\t\tdocument.addEventListener('DOMContentLoaded', function () {\n\t\t\t\tif (window.swPrefsDrawer) { window.swPrefsDrawer.initLayoutCard(); }\n\t\t\t});\n\t\t} else {\n\t\t\tif (window.swPrefsDrawer) { window.swPrefsDrawer.initLayoutCard(); }\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1630,7 +1630,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(sec.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 582, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 573, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
 		if templ_7745c5c3_Err != nil {
@@ -1643,7 +1643,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 		var templ_7745c5c3_Var70 string
 		templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(hidden))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 583, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 574, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 		if templ_7745c5c3_Err != nil {
@@ -1656,7 +1656,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 		var templ_7745c5c3_Var71 string
 		templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(sec.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 593, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 584, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 		if templ_7745c5c3_Err != nil {
@@ -1669,7 +1669,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 		var templ_7745c5c3_Var72 string
 		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue("Move " + sec.Label + " up")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 600, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 591, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
 		if templ_7745c5c3_Err != nil {
@@ -1682,7 +1682,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue("Move " + sec.Label + " down")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 611, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 602, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
 		if templ_7745c5c3_Err != nil {
@@ -1700,7 +1700,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "prefs.artist_layout.show_section") + " " + sec.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 623, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 614, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
 			if templ_7745c5c3_Err != nil {
@@ -1718,7 +1718,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "prefs.artist_layout.hide_section") + " " + sec.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 625, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 616, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
 			if templ_7745c5c3_Err != nil {
@@ -1736,7 +1736,7 @@ func prefsLayoutRow(sec layoutSection, hidden bool) templ.Component {
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(hidden))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 627, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 618, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
 		if templ_7745c5c3_Err != nil {
@@ -1907,7 +1907,7 @@ func prefsFontSizeSliderRow(currentSize, label, helpText, labelSmall, labelXXLar
 		var templ_7745c5c3_Var78 string
 		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 764, Col: 11}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 755, Col: 11}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 		if templ_7745c5c3_Err != nil {
@@ -1924,7 +1924,7 @@ func prefsFontSizeSliderRow(currentSize, label, helpText, labelSmall, labelXXLar
 		var templ_7745c5c3_Var79 string
 		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 777, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 768, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
 		if templ_7745c5c3_Err != nil {
@@ -1937,7 +1937,7 @@ func prefsFontSizeSliderRow(currentSize, label, helpText, labelSmall, labelXXLar
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(fontSizeStopName(ctx, currentSize))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 778, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 769, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
@@ -1950,7 +1950,7 @@ func prefsFontSizeSliderRow(currentSize, label, helpText, labelSmall, labelXXLar
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(fontSizeToStop(currentSize)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 779, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 770, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
 		if templ_7745c5c3_Err != nil {
@@ -1963,7 +1963,7 @@ func prefsFontSizeSliderRow(currentSize, label, helpText, labelSmall, labelXXLar
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(fontSizeStopNamesAttr(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 781, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 772, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
 		if templ_7745c5c3_Err != nil {
@@ -1976,7 +1976,7 @@ func prefsFontSizeSliderRow(currentSize, label, helpText, labelSmall, labelXXLar
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(fontSizeStopName(ctx, currentSize))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 784, Col: 103}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/prefs_drawer.templ`, Line: 775, Col: 103}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {

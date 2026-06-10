@@ -7068,7 +7068,7 @@ paths:
                 sidebar_state: { type: string }
                 content_width: { type: string }
                 font_family: { type: string }
-                font_size: { type: string }
+                font_size: { type: string, enum: [small, medium, large, x-large, xx-large] }
                 letter_spacing: { type: string }
                 thumbnail_size: { type: string }
                 reduced_motion: { type: string }
@@ -7085,9 +7085,9 @@ paths:
                 artist_detail_hidden_sections:
                   type: array
                   items: { type: string }
-                density: { type: string }
-                mono_font: { type: string }
-                kbd_hints: { type: string }
+                density: { type: string, enum: [compact, comfortable, spacious] }
+                mono_font: { type: string, enum: [system, jetbrains, cascadia] }
+                kbd_hints: { type: string, enum: [show, hide] }
               patternProperties:
                 "^suppress_confirm_":
                   type: string

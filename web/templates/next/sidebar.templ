@@ -181,6 +181,8 @@ templ Sidebar(assets templates.AssetPaths) {
 						data-sw-prefs-trigger
 						aria-label={ t(ctx, "nav.preferences") }
 						aria-haspopup="dialog"
+						aria-controls="sw-prefs-drawer"
+						aria-expanded="false"
 					>
 						@components.IconAdjustmentsHorizontal("sw-sidebar-icon")
 						<span class="sw-sidebar-label">{ t(ctx, "nav.preferences") }</span>
@@ -238,6 +240,7 @@ templ Sidebar(assets templates.AssetPaths) {
 				data-sw-prefs-trigger
 				aria-label={ t(ctx, "nav.preferences") }
 				aria-haspopup="dialog"
+				aria-controls="sw-prefs-drawer"
 				aria-expanded="false"
 			>
 				if assets.AvatarURL != "" {

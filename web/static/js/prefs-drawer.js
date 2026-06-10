@@ -99,7 +99,7 @@
     }
 
     // Update trigger aria-expanded.
-    document.querySelectorAll('[data-sw-prefs-trigger]').forEach(function (el) {
+    Array.prototype.slice.call(document.querySelectorAll('[data-sw-prefs-trigger]')).forEach(function (el) {
       el.setAttribute('aria-expanded', 'true');
     });
 
@@ -130,7 +130,7 @@
     }
 
     // Update trigger aria-expanded.
-    document.querySelectorAll('[data-sw-prefs-trigger]').forEach(function (el) {
+    Array.prototype.slice.call(document.querySelectorAll('[data-sw-prefs-trigger]')).forEach(function (el) {
       el.setAttribute('aria-expanded', 'false');
     });
 
@@ -232,7 +232,9 @@
       } else if (action === 'toggle-visibility') {
         var current = row.getAttribute('data-hidden') === 'true';
         row.setAttribute('data-hidden', current ? 'false' : 'true');
-        btn.setAttribute('aria-label', current ? 'Hide section' : 'Show section');
+        var nameEl = row.querySelector('.sw-prefs-layout-name');
+        var sectionName = nameEl ? nameEl.textContent.trim() : '';
+        btn.setAttribute('aria-label', current ? ('Hide ' + sectionName + ' section') : ('Show ' + sectionName + ' section'));
         var icon = btn.querySelector('.sw-prefs-layout-eye-icon');
         if (icon) {
           icon.removeAttribute('aria-label');
@@ -248,7 +250,7 @@
   // arrow keys move selection. Activate with Space/Enter.
 
   function initTiles() {
-    document.querySelectorAll('[data-prefs-tiles]').forEach(function (group) {
+    Array.prototype.slice.call(document.querySelectorAll('[data-prefs-tiles]')).forEach(function (group) {
       var tiles = Array.prototype.slice.call(group.querySelectorAll('.sw-prefs-tile'));
       if (!tiles.length) return;
 
@@ -306,7 +308,7 @@
   }
 
   function initSegs() {
-    document.querySelectorAll('[data-prefs-seg]').forEach(function (group) {
+    Array.prototype.slice.call(document.querySelectorAll('[data-prefs-seg]')).forEach(function (group) {
       var btns = Array.prototype.slice.call(group.querySelectorAll('.sw-prefs-seg-btn'));
       if (!btns.length) return;
 
@@ -405,7 +407,7 @@
     // Snapshot expansion state before search so we can restore it exactly.
     function getExpansionState() {
       var state = {};
-      groupsContainer.querySelectorAll('[data-group-id]').forEach(function (trigger) {
+      Array.prototype.slice.call(groupsContainer.querySelectorAll('[data-group-id]')).forEach(function (trigger) {
         state[trigger.getAttribute('data-group-id')] = trigger.getAttribute('aria-expanded') !== 'false';
       });
       return state;
@@ -418,11 +420,11 @@
 
       if (!query) {
         // Clear filter: restore every row and group to its prior state.
-        groupsContainer.querySelectorAll('.sw-prefs-row').forEach(function (row) {
+        Array.prototype.slice.call(groupsContainer.querySelectorAll('.sw-prefs-row, .sw-prefs-layout-row')).forEach(function (row) {
           row.hidden = false;
         });
         if (savedState) {
-          groupsContainer.querySelectorAll('[data-group-id]').forEach(function (trigger) {
+          Array.prototype.slice.call(groupsContainer.querySelectorAll('[data-group-id]')).forEach(function (trigger) {
             var id = trigger.getAttribute('data-group-id');
             var body = document.getElementById('group-body-' + id);
             var expanded = savedState[id];
@@ -434,7 +436,7 @@
           });
           // Restore group containers themselves (they were never hidden in this path,
           // but be explicit).
-          groupsContainer.querySelectorAll('.sw-prefs-group').forEach(function (g) {
+          Array.prototype.slice.call(groupsContainer.querySelectorAll('.sw-prefs-group')).forEach(function (g) {
             g.hidden = false;
           });
           savedState = null;
@@ -450,7 +452,7 @@
 
       var anyGroupVisible = false;
 
-      groupsContainer.querySelectorAll('[data-group-id]').forEach(function (trigger) {
+      Array.prototype.slice.call(groupsContainer.querySelectorAll('[data-group-id]')).forEach(function (trigger) {
         var groupId  = trigger.getAttribute('data-group-id');
         var body     = document.getElementById('group-body-' + groupId);
         var groupEl  = trigger.closest('.sw-prefs-group');
@@ -459,7 +461,7 @@
 
         // Check each row within this group for a substring match across all text.
         var hasMatch = false;
-        body.querySelectorAll('.sw-prefs-row').forEach(function (row) {
+        Array.prototype.slice.call(body.querySelectorAll('.sw-prefs-row, .sw-prefs-layout-row')).forEach(function (row) {
           var text = row.textContent.toLowerCase();
           if (text.indexOf(query) !== -1) {
             row.hidden = false;
@@ -591,7 +593,7 @@
         var group = drawer.querySelector('[data-prefs-tiles="' + prefKey + '"]');
         if (!group) { return; }
         var val = DEFAULTS[prefKey];
-        group.querySelectorAll('.sw-prefs-tile').forEach(function (t) {
+        Array.prototype.slice.call(group.querySelectorAll('.sw-prefs-tile')).forEach(function (t) {
           var sel = t.getAttribute('data-value') === val;
           t.setAttribute('aria-checked', sel ? 'true' : 'false');
           t.setAttribute('tabindex',     sel ? '0'    : '-1');
@@ -603,7 +605,7 @@
         var group = drawer.querySelector('[data-prefs-seg="' + prefKey + '"]');
         if (!group) { return; }
         var val = DEFAULTS[prefKey];
-        group.querySelectorAll('.sw-prefs-seg-btn').forEach(function (b) {
+        Array.prototype.slice.call(group.querySelectorAll('.sw-prefs-seg-btn')).forEach(function (b) {
           var sel = b.getAttribute('data-value') === val;
           b.setAttribute('aria-checked', sel ? 'true' : 'false');
           b.setAttribute('tabindex',     sel ? '0'    : '-1');
@@ -732,7 +734,7 @@
   // link falls through to href="/next/preferences" on first click because
   // wire() early-returns when the drawer has not been mounted yet.
   function wireTriggers() {
-    document.querySelectorAll('[data-sw-prefs-trigger]').forEach(function (el) {
+    Array.prototype.slice.call(document.querySelectorAll('[data-sw-prefs-trigger]')).forEach(function (el) {
       // Guard against double-binding on subsequent wireTriggers calls.
       if (el.dataset.swPrefsTriggerBound) return;
       el.dataset.swPrefsTriggerBound = '1';
@@ -748,12 +750,12 @@
     if (!drawer) return;
 
     // Tile clicks.
-    drawer.querySelectorAll('.sw-prefs-tile').forEach(function (t) {
+    Array.prototype.slice.call(drawer.querySelectorAll('.sw-prefs-tile')).forEach(function (t) {
       t.addEventListener('click', function () { onTileClick(t); });
     });
 
     // Toggle clicks.
-    drawer.querySelectorAll('.sw-prefs-toggle').forEach(function (b) {
+    Array.prototype.slice.call(drawer.querySelectorAll('.sw-prefs-toggle')).forEach(function (b) {
       b.addEventListener('click', function () { onToggleClick(b); });
     });
 
@@ -830,7 +832,7 @@
     }
 
     // Group accordion triggers.
-    drawer.querySelectorAll('[data-group-id]').forEach(function (trigger) {
+    Array.prototype.slice.call(drawer.querySelectorAll('[data-group-id]')).forEach(function (trigger) {
       trigger.addEventListener('click', function () { toggleGroup(trigger); });
     });
 
