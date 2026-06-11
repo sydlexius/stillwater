@@ -332,6 +332,16 @@
     load: load,
     set: set,
     applyAll: applyAll,
+    // applySingle is the general-purpose apply-without-persist entry point: it
+    // applies ONE preference to the DOM immediately without writing it to the
+    // server, for any live-preview pattern (apply on `input`, persist with
+    // `set` on `change`). Exposed M55 #1773; its current consumer is the next/
+    // preferences drawer's bg_opacity slider, which previously depended on the
+    // legacy standalone preferences page's inline window.swUpdateBgOpacity/
+    // swSaveBgOpacity globals (undefined on every next/ page). Routing through
+    // this one function also keeps the rgba(--sw-glass-bg) color math (lite-mode
+    // skip included) in a single place so consumers cannot drift from it.
+    applySingle: applySingle,
     getCache: getCache,
     clearCache: clearCache
   };

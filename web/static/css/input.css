@@ -3144,11 +3144,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 
 .sw-next-dashboard,
-.sw-next-artist-detail {
-  /* Light-theme token ramp (default). Shared by the dashboard and the next/
-   * artist-detail screen (M55 #1336) so both consume the same prototype card
-   * token system. Without this scope the --swd-* vars are undefined and the
-   * cards render transparent/un-themed (the 4A UAT fidelity miss). */
+.sw-next-artist-detail,
+.sw-next-foreign-files {
+  /* Light-theme token ramp (default). Shared by the dashboard, the next/
+   * artist-detail screen (M55 #1336), and the next/ foreign-files screen
+   * (M55 #1773) so all three consume the same prototype card token system.
+   * Without this scope the --swd-* vars are undefined and the cards render
+   * transparent/un-themed (the 4A UAT fidelity miss). */
   --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
   --swd-bg-raised: #ffffff;     /* card */
   --swd-bg-elev: #f8fafc;       /* row hover / popover */
@@ -3184,7 +3186,8 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   --swd-cat-meta: #d97706;
 }
 .dark .sw-next-dashboard,
-.dark .sw-next-artist-detail {
+.dark .sw-next-artist-detail,
+.dark .sw-next-foreign-files {
   /* Prototype dark token ramp (design/tokens.css verbatim). */
   --swd-bg-base: #0b1220;
   --swd-bg-raised: #111a2e;
@@ -4660,4 +4663,150 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-next-artist-detail .sw-next-finding-dismiss:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* M55 #1773: .sw-next-foreign-files surface backgrounds.
+ * Single-layer model: only the .sw-card shell carries the opacity-aware fill;
+ * table tbody and thead MUST NOT add a second surface layer (doing so stacks
+ * two ~0.85 layers ≈ 0.98 effective alpha, making the table appear ~100% solid
+ * while the rest of the page is at the pref-controlled opacity).
+ *
+ * - .sw-card: the one and only opacity-bearing layer. Overrides the global
+ *   .sw-card rule explicitly so both the banner card and the table card source
+ *   from --swd-surface (== var(--sw-glass-bg), the opacity-driven token).
+ * - table tbody: no background rule. Cells are transparent by default, so the
+ *   parent .sw-card's single layer shows through.
+ * - table thead: Tailwind's bg-gray-50 (0,1,0) would block the glass, so we
+ *   override to transparent (0,1,2 wins). Header differentiation comes from a
+ *   border-bottom only -- no fill, no stacked layer. */
+.sw-next-foreign-files .sw-card {
+  background: var(--swd-surface);
+}
+.sw-next-foreign-files table > thead {
+  background: transparent;
+  border-bottom: 1px solid var(--swd-line-strong);
+}
+/* M55 #1773 (Task C-rev): action controls on the two foreign-files next/ pages
+ * follow the ARTIST-DETAIL button motif (the maintainer's canonical reference),
+ * reusing the swd ramp tokens directly -- the ramp's scope lists include
+ * .sw-next-foreign-files in BOTH themes (--swd-ink-2 / --swd-line resolve here),
+ * so no value mirroring is needed.
+ *   - Neutral family (Refresh/Edit hero look): --swd-ink-2 ink, --swd-line
+ *     hairline border, transparent fill, rounded-md radius, weight 500, hover =
+ *     the artist-detail flat-btn treatment (color-mix --swd-ink-2 8% fill,
+ *     --swd-ink ink); see .sw-next-artist-detail .sw-next-flat-btn above.
+ *   - Destructive (Delete): white ink on a solid red-600 fill, no border, small
+ *     radius, weight 400 -- the #fanart-delete-selected recipe (artist_detail.templ:
+ *     bg-red-600 / hover:bg-red-700 / text-white / rounded / px-3 py-1.5 / text-xs).
+ *     The shared table markup cannot take Tailwind classes (NO-LEGACY-BACKPORTS),
+ *     so the same computed values are applied here scoped to next/.
+ * All overrides scoped under .sw-next-foreign-files; the stable channel is
+ * untouched. */
+
+/* Row Allowlist button (neutral family). Radius is left to the markup's
+ * rounded-md (rem-scaled), matching the artist-detail hero buttons. */
+.sw-next-foreign-files table button[hx-post*="/allowlist"] {
+  padding: 0.375rem 0.625rem;   /* py-1.5 px-2.5 family */
+  border: 1px solid var(--swd-line);
+  color: var(--swd-ink-2);
+  background: transparent;
+  font-weight: 500;
+  box-shadow: none;
+}
+.sw-next-foreign-files table button[hx-post*="/allowlist"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+  color: var(--swd-ink);
+}
+
+/* Row Delete buttons (destructive) -- solid red fill + white ink, matching the
+ * artist-detail #fanart-delete-selected recipe (replaces the prior red-ink
+ * outline). */
+.sw-next-foreign-files table button[hx-delete*="/foreign-files/"],
+.sw-next-foreign-files table button[hx-delete*="/foreign-file-allowlist/"] {
+  padding: 0.375rem 0.75rem;    /* py-1.5 px-3 */
+  border: none;
+  border-radius: 0.25rem;       /* == Tailwind `rounded` */
+  color: #fff;
+  background: #dc2626;          /* red-600 */
+  font-weight: 400;
+  box-shadow: none;
+}
+.sw-next-foreign-files table button[hx-delete*="/foreign-files/"]:hover:not(:disabled),
+.sw-next-foreign-files table button[hx-delete*="/foreign-file-allowlist/"]:hover:not(:disabled) {
+  background: #b91c1c;          /* red-700 */
+}
+
+/* M55 #1773: page-header action links (the "Manage allowlist" entry point on
+ * the detected-files page and the "Back to detected files" link on the
+ * allowlist page). Both sit inside .sw-card headers that ARE rendered on these
+ * two next/ pages (foreign_files.templ root divs carry .sw-next-foreign-files),
+ * so this scope matches them and nothing on the stable channel.
+ *
+ * Motif (Task C-rev): the neutral artist-detail family -- --swd-line border,
+ * --swd-ink-2 ink, transparent fill, with the flat-btn hover (color-mix
+ * --swd-ink-2 8% fill, --swd-ink ink). Radius (rounded-md), padding
+ * (px-2.5 py-1.5), size (text-xs) and weight (font-medium = 500) come from the
+ * templ utilities on each control, exactly as the artist-detail hero buttons get
+ * them from their own markup. Blue appears ONLY as the keyboard-focus halo
+ * below. */
+.sw-next-foreign-files .sw-ff-action {
+  border: 1px solid var(--swd-line);
+  color: var(--swd-ink-2);
+  background: transparent;
+}
+.sw-next-foreign-files .sw-ff-action:hover {
+  background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+  color: var(--swd-ink);
+}
+/* Keyboard focus halo (the #1932 transient form): a 2px blue ring + soft glow.
+ * The transparent outline is the forced-colors / Windows high-contrast
+ * fallback -- those modes drop box-shadow, so the outline keeps a visible focus
+ * ring there. Keep it. :focus-visible (not :focus) so a mouse click does not
+ * flash the halo. */
+.sw-next-foreign-files .sw-ff-action:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 0 5px rgba(59, 130, 246, 0.22);
+}
+
+/* M55 #1773 (B6): the shared next/ pager (NextPagination, web/templates/next/
+ * pagination.templ) renders on the allowlist page inside #foreign-allowlist-body,
+ * which is under the .sw-next-foreign-files wrapper. Its enabled buttons carry a
+ * `focus:ring-2 focus:ring-blue-500` Tailwind ring (#sw-page-prev / #sw-page-next).
+ * The shared markup must stay untouched (it is reused by the artists/dashboard
+ * pages -- NO-LEGACY-BACKPORTS), so override ONLY within this page's scope,
+ * aligning the pager to the neutral artist-detail family (Task C-rev): --swd-ink-2
+ * ink, --swd-line border, weight 500, transparent fill (the Tailwind gray inset
+ * ring / white fill dropped), flat-btn hover. Radius keeps the markup's
+ * rounded-md; native nav padding (px-3.5 py-2) is kept so the page-nav click
+ * target is not shrunk. The id selectors are unique per rendered page. */
+.sw-next-foreign-files #sw-page-prev,
+.sw-next-foreign-files #sw-page-next {
+  border: 1px solid var(--swd-line);
+  background: transparent;
+  color: var(--swd-ink-2);
+  font-weight: 500;
+  box-shadow: none;
+}
+.sw-next-foreign-files #sw-page-prev:disabled,
+.sw-next-foreign-files #sw-page-next:disabled {
+  color: var(--swd-ink-3);
+  opacity: 0.6;
+}
+.sw-next-foreign-files #sw-page-prev:hover:not(:disabled),
+.sw-next-foreign-files #sw-page-next:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+  color: var(--swd-ink);
+}
+/* Keyboard-focus halo (the #1932 transient form): the transparent outline is the
+ * forced-colors fallback; :focus-visible so a mouse click does not flash it. */
+.sw-next-foreign-files #sw-page-prev:focus-visible,
+.sw-next-foreign-files #sw-page-next:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 0 5px rgba(59, 130, 246, 0.22);
 }

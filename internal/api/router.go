@@ -857,6 +857,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	//                             data through every handler that calls LayoutNext.
 	mux.HandleFunc("GET "+bp+"/next/preferences", wrapOptionalAuth(r.handleNextPreferencesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/preferences-drawer", wrapOptionalAuth(r.handleNextPreferencesDrawer, optAuthMw))
+	// M55 #1773: foreign-files management in the next/ chrome. wrapOptionalAuth
+	// (not wrapAuth) so the handler's requireForeignAdmin gate runs: it renders
+	// the login page for unauthenticated visitors rather than returning 401 JSON
+	// (which is correct for API routes but wrong for browser page requests).
+	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files", wrapOptionalAuth(r.handleNextForeignFilesPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files/allowlist", wrapOptionalAuth(r.handleNextForeignAllowlistPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

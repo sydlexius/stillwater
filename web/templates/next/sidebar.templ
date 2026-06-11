@@ -112,13 +112,28 @@ templ Sidebar(assets templates.AssetPaths) {
 						hx-trigger="load, every 60s"
 						hx-swap="innerHTML"
 					></li>
-					<!-- Foreign Files: same pattern as Compliance above. -->
-					<li
-						id="sidebar-foreign-next"
-						hx-get="/api/v1/foreign-files/count?ch=next"
-						hx-trigger="load, every 60s"
-						hx-swap="innerHTML"
-					></li>
+					<!-- Foreign Files: ALWAYS visible (allowlist must remain reachable from
+					     the sidebar even when zero foreign files are detected; this deliberately
+					     diverges from the Compliance/Duplicates hide-at-zero convention). Only
+					     the count pill is HTMX-conditional. -->
+					<li id="sidebar-foreign-next">
+						<a
+							href={ templ.SafeURL(assets.BasePath + "/next/reports/foreign-files") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports/foreign-files"
+							aria-label={ t(ctx, "nav.reports.foreign") }
+						>
+							@components.IconDocument("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.foreign") }</span>
+							<span
+								id="sidebar-foreign-pill"
+								class="contents"
+								hx-get="/api/v1/foreign-files/count?ch=next"
+								hx-trigger="load, every 60s, swFFCountChanged from:body"
+								hx-swap="innerHTML"
+							></span>
+						</a>
+					</li>
 				</ul>
 			</div>
 		}

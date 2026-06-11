@@ -1034,7 +1034,7 @@ func (r *Router) getUserPageSize(ctx context.Context, userID string, queryParam 
 		return queryParam
 	}
 
-	if userID == "" {
+	if userID == "" || r.db == nil {
 		return PageSizeDefault
 	}
 

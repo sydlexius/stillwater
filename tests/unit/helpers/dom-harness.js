@@ -13,6 +13,8 @@ export const MODULE_PATHS = {
   lightbox:     join(REPO_ROOT, 'web/static/js/artist-detail/lightbox.js'),
   fanartManage: join(REPO_ROOT, 'web/static/js/artist-detail/fanart-manage.js'),
   artworkModal: join(REPO_ROOT, 'web/static/js/artist-detail/artwork-modal.js'),
+  preferences:  join(REPO_ROOT, 'web/static/js/preferences.js'),
+  prefsDrawer:  join(REPO_ROOT, 'web/static/js/prefs-drawer.js'),
 };
 
 /**

@@ -112,13 +112,14 @@ func TestLedgerBannerStates(t *testing.T) {
 }
 
 func TestLedgerForeignFilesState(t *testing.T) {
-	// foreign_files state appears only when no real conflict is active.
-	clean := Ledger{ForeignFiles: ForeignFileSummary{Count: 3}}
-	if got := clean.BannerState(); got != "foreign_files" {
-		t.Errorf("clean ledger with foreign files: got %q, want %q", got, "foreign_files")
+	// Foreign-file detection no longer contributes a banner state (M55
+	// TRANQUILITY charter, #1773): it surfaces via the sidebar pill only.
+	// A ledger with foreign files but no real conflict must read "clean".
+	withForeign := Ledger{ForeignFiles: ForeignFileSummary{Count: 3}}
+	if got := withForeign.BannerState(); got != "clean" {
+		t.Errorf("ledger with foreign files (no conflict): got %q, want %q (foreign files must not drive a banner state)", got, "clean")
 	}
-	// A real conflict suppresses the foreign-files state so the user sees
-	// the higher-severity banner instead.
+	// A real conflict still wins; the foreign count is irrelevant to it.
 	withConflict := Ledger{
 		Connections:  []ConnectionState{{Enabled: true, ImageWriteback: true}},
 		ForeignFiles: ForeignFileSummary{Count: 3},

@@ -1,5 +1,7 @@
 package templates
 
+import "github.com/sydlexius/stillwater/web/components"
+
 // ForeignFileRow is one row rendered in the foreign-files list page.
 // Constructed by the API handler from foreign.Entry; kept on the templates
 // side so the template never imports internal/foreign and the test surface
@@ -70,7 +72,7 @@ templ ForeignFilesPage(assets AssetPaths, view ForeignFilesPageView) {
 // rows after a per-row Allowlist or Delete completes. Empty state renders an
 // inline notice so the user is not left staring at an empty card.
 templ ForeignFilesTable(view ForeignFilesPageView) {
-	<div id="foreign-files-table" class="sw-card rounded-lg p-0 overflow-hidden">
+	<div id="foreign-files-table" class="sw-card rounded-lg p-0 overflow-hidden" tabindex="-1">
 		if view.Count == 0 {
 			<div class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "foreign_files.empty_state") }
@@ -79,16 +81,16 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 			<table class="min-w-full text-sm">
 				<thead class="bg-gray-50 dark:bg-gray-800/50">
 					<tr>
-						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_artist") }</th>
-						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_file") }</th>
-						<th class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_size") }</th>
-						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_detected") }</th>
-						<th class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_actions") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_artist") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_file") }</th>
+						<th scope="col" class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_size") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_detected") }</th>
+						<th scope="col" class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.col_actions") }</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
 					for _, r := range view.Rows {
-						<tr id={ "foreign-row-" + r.ID }>
+						<tr id={ "foreign-row-" + r.ID } data-sw-roving-item data-sw-roving-key={ r.ID }>
 							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">
 								{ r.ArtistName }
 								if r.DuplicateCount > 1 {
@@ -104,7 +106,7 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 							<td class="px-4 py-2 text-right">
 								<button
 									type="button"
-									class="px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs hover:bg-blue-100"
+									class="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
 									hx-post={ "/api/v1/foreign-files/" + r.ID + "/allowlist" }
 									hx-target="#foreign-files-table"
 									hx-swap="outerHTML"
@@ -112,6 +114,7 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 									data-sw-net-error={ t(ctx, "foreign_files.allowlist_send_error") }
 									hx-on::response-error="alert(this.dataset.swError)"
 									hx-on::send-error="alert(this.dataset.swNetError)"
+									data-sw-roving-activate
 								>{ t(ctx, "foreign_files.action_allowlist") }</button>
 								<button
 									type="button"
@@ -146,8 +149,12 @@ type ForeignAllowlistRow struct {
 }
 
 // ForeignAllowlistPageView models /settings/foreign-files/allowlist.
+// Pagination is populated by the next/ handler for server-side paging; the
+// stable handler leaves it at its zero value so the Pagination component
+// renders nothing (TotalPages = 0 <= 1 suppresses the nav).
 type ForeignAllowlistPageView struct {
-	Rows []ForeignAllowlistRow
+	Rows       []ForeignAllowlistRow
+	Pagination components.PaginationData
 }
 
 // ForeignAllowlistPage renders the permanent allowlist with per-row Remove.
@@ -183,16 +190,16 @@ templ ForeignAllowlistTable(view ForeignAllowlistPageView) {
 			<table class="min-w-full text-sm">
 				<thead class="bg-gray-50 dark:bg-gray-800/50">
 					<tr>
-						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_scope") }</th>
-						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_artist") }</th>
-						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_filename") }</th>
-						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_added") }</th>
-						<th class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_actions") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_scope") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_artist") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_filename") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_added") }</th>
+						<th scope="col" class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "foreign_files.allowlist_col_actions") }</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
 					for _, r := range view.Rows {
-						<tr id={ "allowlist-row-" + r.ID }>
+						<tr id={ "allowlist-row-" + r.ID } data-sw-roving-item data-sw-roving-key={ r.ID }>
 							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ r.Scope }</td>
 							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">
 								if r.Scope == "global" {
@@ -210,6 +217,7 @@ templ ForeignAllowlistTable(view ForeignAllowlistPageView) {
 									hx-delete={ "/api/v1/foreign-file-allowlist/" + r.ID }
 									hx-target="#foreign-allowlist-table"
 									hx-swap="outerHTML"
+									data-sw-roving-activate
 								>{ t(ctx, "foreign_files.action_remove") }</button>
 							</td>
 						</tr>
@@ -217,5 +225,6 @@ templ ForeignAllowlistTable(view ForeignAllowlistPageView) {
 				</tbody>
 			</table>
 		}
+		@components.Pagination(view.Pagination)
 	</div>
 }

@@ -53,25 +53,20 @@ func (r *Router) handleForeignFilesCount(w http.ResponseWriter, req *http.Reques
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	count := r.foreignSummaryForBanner(req.Context())
-
 	w.WriteHeader(http.StatusOK)
+	if req.URL.Query().Get("ch") == "next" {
+		// The sidebar entry is static (always visible); only inject the count pill.
+		// Empty response at count==0 clears the pill span without hiding the entry.
+		if count > 0 {
+			fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
+				`<span class="sw-sidebar-count-pill">%d</span>`, count)
+		}
+		return
+	}
 	if count <= 0 {
 		return
 	}
-
 	label := html.EscapeString(i18n.TFromCtx(req.Context()).T("nav.reports.foreign"))
-	if req.URL.Query().Get("ch") == "next" {
-		href := html.EscapeString(r.basePath + "/next/foreign")
-		fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
-			`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/foreign" aria-label="%s">`+
-				`<svg class="sw-sidebar-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">`+
-				`<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"></path></svg>`+
-				`<span class="sw-sidebar-label">%s</span>`+
-				`<span class="sw-sidebar-count-pill">%d</span>`+
-				`</a>`,
-			href, label, label, count)
-		return
-	}
 	href := html.EscapeString(r.basePath + "/settings/foreign-files")
 	fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
 		`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/settings/foreign-files" aria-label="%s">`+
@@ -391,6 +386,16 @@ func (r *Router) renderForeignFilesTable(w http.ResponseWriter, req *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing foreign files"})
 		return
 	}
+	// QOL (M55 #1773): every caller of this helper is a successful mutation
+	// (per-row allowlist, per-row delete, bulk dismiss), so the detected-file
+	// count just changed. Emit an HX-Trigger so the next/ sidebar count pill
+	// (#sidebar-foreign-pill, hx-trigger "... swFFCountChanged from:body")
+	// refreshes immediately instead of waiting up to 60s for its poll. htmx
+	// dispatches this as a body event on the client; the stable channel has no
+	// listener for it, so this is inert there (no stable behavior change). The
+	// camelCase event name matches the existing header-driven precedent in this
+	// codebase (clobberRecheck / oobeConflictRefresh / logRefresh).
+	w.Header().Set("HX-Trigger", "swFFCountChanged")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if rerr := templates.ForeignFilesTable(view).Render(req.Context(), w); rerr != nil {
 		r.logger.Warn(errLabel, "error", rerr)

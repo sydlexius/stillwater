@@ -643,8 +643,14 @@
         bgSlider.value = DEFAULTS.bg_opacity;
         var bgLabel = drawer.querySelector('#pref-d-bg-opacity-value');
         if (bgLabel) { bgLabel.textContent = DEFAULTS.bg_opacity + '%'; }
-        if (typeof window.swUpdateBgOpacity === 'function') {
-          window.swUpdateBgOpacity(DEFAULTS.bg_opacity);
+        // Live-preview the default via the same self-contained path as the
+        // slider (M55 #1773). The persisted reset happens in the single PATCH
+        // below (it includes bg_opacity), so applySingle here only updates the
+        // visible surface immediately. Fail loudly, never silently no-op.
+        if (window.swPreferences && typeof window.swPreferences.applySingle === 'function') {
+          window.swPreferences.applySingle('bg_opacity', DEFAULTS.bg_opacity);
+        } else {
+          console.error('prefs-drawer: window.swPreferences.applySingle unavailable; bg-opacity reset preview skipped');
         }
       }
 
@@ -785,18 +791,36 @@
     }
 
     // Range slider: bg_opacity live update + save on change.
+    //
+    // The drawer is self-contained (M55 #1773): it drives bg_opacity through
+    // window.swPreferences (preferences.js), which is present on every next/
+    // page. It does NOT use the legacy standalone preferences page's inline
+    // window.swUpdateBgOpacity/swSaveBgOpacity globals -- those are undefined
+    // on next/ pages, so the previous typeof-guarded calls silently no-opped
+    // and the slider did nothing but move its % label.
+    //   - `input`  (dragging): live-preview via applySingle(), no persist.
+    //   - `change` (release):  persist via set(), which also re-applies.
+    // Each call is guarded, but the guard FAILS LOUDLY (console.error) instead
+    // of silently no-opping, so a missing dependency is diagnosable, not
+    // invisible.
     var bgSlider = drawer.querySelector('#pref-d-bg-opacity');
     if (bgSlider) {
       bgSlider.addEventListener('input', function () {
         var label = drawer.querySelector('#pref-d-bg-opacity-value');
         if (label) label.textContent = bgSlider.value + '%';
-        if (typeof window.swUpdateBgOpacity === 'function') {
-          window.swUpdateBgOpacity(bgSlider.value);
+        if (window.swPreferences && typeof window.swPreferences.applySingle === 'function') {
+          window.swPreferences.applySingle('bg_opacity', bgSlider.value);
+        } else {
+          console.error('prefs-drawer: window.swPreferences.applySingle unavailable; bg-opacity live preview disabled');
         }
       });
       bgSlider.addEventListener('change', function () {
-        if (typeof window.swSaveBgOpacity === 'function') {
-          window.swSaveBgOpacity(bgSlider.value);
+        if (window.swPreferences && typeof window.swPreferences.set === 'function') {
+          window.swPreferences.set('bg_opacity', bgSlider.value).catch(function () {
+            if (window.showToast) { showToast('Failed to save background opacity'); }
+          });
+        } else {
+          console.error('prefs-drawer: window.swPreferences.set unavailable; bg-opacity not persisted');
         }
       });
     }
