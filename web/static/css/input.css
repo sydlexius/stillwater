@@ -3838,6 +3838,50 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   color: var(--swd-ink);
 }
 
+/* #1932 contrast fix: the artwork-modal multi-select "Save All" button
+ * (#fanart-bulk-save) is the ONLY .sw-next-flat-btn that sits on the dark
+ * floating bulk bar (#fanart-bulk-bar, bg-gray-900/90) rather than a light
+ * card surface. The neutral flat treatment above paints --swd-ink-2 (dark
+ * slate) ink on a transparent fill, which renders dark-on-dark there (~2:1,
+ * fails AA) -- in LIGHT theme especially, since --swd-ink-2 is dark slate.
+ * The bar is dark in BOTH themes, so give this one button white ink and a
+ * light-alpha outline to match the bar's own white text, without introducing
+ * a solid-blue fill (next/ no-blue-fill principle).
+ *
+ * The bulk bar lives in web/templates/image_search.templ, which renders under
+ * the plain @Layout with NO .sw-next-artist-detail ancestor (that next/ wrapper
+ * class only exists in web/templates/next/artist_detail.templ). So this rule
+ * MUST be a bare ID selector, not scoped under .sw-next-artist-detail, or it
+ * would match nothing on the page where the button actually exists. The button
+ * id is unique across all templates, so the bare ID cannot leak. The ID
+ * selector (0,1,0,0) still out-prioritizes every .sw-next-flat-btn class rule.
+ * The sibling per-card Save buttons stay neutral-flat: they sit on white cards
+ * where dark-slate ink is high-contrast, so they are correct in context.
+ *
+ * Keyboard focus (WCAG 2.4.7): use the shared next/ blue-halo motif (the
+ * transient form of the active-toggle halo on the kind tabs / Edit-Done; see
+ * the [aria-pressed="true"] rule above) -- blue-500 vs the bar's composited
+ * dark bg is ~3.6:1, passing the 3:1 focus-appearance bar, and the halo is the
+ * one sanctioned blue in next/. The transparent outline is deliberate: box-
+ * shadow is dropped in forced-colors / Windows High Contrast mode, where a
+ * transparent outline gets repainted, so keyboard users there still get a ring. */
+#fanart-bulk-save {
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  background: transparent;
+}
+#fanart-bulk-save:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+}
+#fanart-bulk-save:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 0 5px rgba(59, 130, 246, 0.22);
+}
+
 /* The Manage-artwork modal surface honors the ~88% legibility floor (text never
  * sits on a bare photo): a near-opaque paper backed by a blur, independent of
  * the card background-opacity preference. */

@@ -2086,7 +2086,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "\"><span id=\"fanart-bulk-count\">0 selected</span> <button type=\"button\" id=\"fanart-bulk-save\" class=\"sw-next-flat-btn px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 transition-colors font-medium\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "\"><span id=\"fanart-bulk-count\">0 selected</span> <button type=\"button\" id=\"fanart-bulk-save\" class=\"sw-next-flat-btn px-4 py-2 text-sm rounded transition-colors font-medium\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
