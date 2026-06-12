@@ -137,12 +137,23 @@ func TestHandleFieldsEditAll_SingleListGlobalCall(t *testing.T) {
 }
 
 // TestHandleFieldsEditAll_AllFieldsRendered asserts that the response contains
-// an edit fragment for every editable field in EditableFieldsList().
+// an edit fragment for every type-applicable field. Uses an artist with an
+// unknown type (empty string) so all 20 editable fields apply and none are
+// skipped by the type-applicability guard (F2).
 func TestHandleFieldsEditAll_AllFieldsRendered(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, _, _ := testRouterWithSpyHistory(t)
 
-	a := addTestArtist(t, artistSvc, "Edit All Fields Artist")
+	a := &artist.Artist{
+		Name:     "Edit All Fields Artist",
+		SortName: "Edit All Fields Artist",
+		Type:     "", // unknown type: all 20 editable fields apply
+		Path:     "/music/edit-all-fields",
+		Genres:   []string{"Rock"},
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
 
 	req := makeFieldsEditAllRequest(t, a.ID)
 	w := httptest.NewRecorder()
@@ -162,14 +173,24 @@ func TestHandleFieldsEditAll_AllFieldsRendered(t *testing.T) {
 	}
 }
 
-// TestHandleFieldsEditAll_OOBAttributePresent asserts that each fragment in the
-// batch response carries hx-swap-oob="outerHTML" so htmx v2 distributes them
-// to their individual DOM targets without a targeted main swap.
+// TestHandleFieldsEditAll_OOBAttributePresent asserts that each type-applicable
+// fragment in the batch response carries hx-swap-oob="outerHTML" so htmx v2
+// distributes them to their individual DOM targets without a targeted main swap.
+// Uses an unknown type so all 20 editable fields apply (no type-based skip).
 func TestHandleFieldsEditAll_OOBAttributePresent(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, _, _ := testRouterWithSpyHistory(t)
 
-	a := addTestArtist(t, artistSvc, "Edit All OOB Artist")
+	a := &artist.Artist{
+		Name:     "Edit All OOB Artist",
+		SortName: "Edit All OOB Artist",
+		Type:     "", // unknown type: all 20 editable fields apply
+		Path:     "/music/edit-all-oob",
+		Genres:   []string{"Rock"},
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
 
 	req := makeFieldsEditAllRequest(t, a.ID)
 	w := httptest.NewRecorder()
