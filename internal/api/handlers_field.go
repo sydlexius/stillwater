@@ -92,7 +92,7 @@ func (r *Router) handleFieldEdit(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 
-		renderTempl(w, req, templates.FieldEdit(a, field, providers, fieldHistory))
+		renderTempl(w, req, templates.FieldEdit(a, field, providers, fieldHistory, false))
 		return
 	}
 
@@ -100,6 +100,68 @@ func (r *Router) handleFieldEdit(w http.ResponseWriter, req *http.Request) {
 		"field": field,
 		"value": artist.FieldValueFromArtist(a, field),
 	})
+}
+
+// handleFieldsEditAll returns edit-mode HTMX fragments for every editable field
+// in a single response. Called by the next/ "Edit All" button; replaces the N
+// sequential per-field htmx.ajax calls in openAllEditors() with one round-trip
+// that issues one ListGlobal windowed query instead of one query per field.
+// Each fragment carries hx-swap-oob="outerHTML" so htmx distributes them to
+// their individual DOM targets without a targeted main swap.
+// GET /api/v1/artists/{id}/fields/edit-all
+func (r *Router) handleFieldsEditAll(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+
+	if !isHTMXRequest(req) {
+		writeError(w, req, http.StatusBadRequest, "edit-all requires an HTMX request")
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
+	// Load provider priorities once for all fields (eliminates N GetPriorities calls
+	// that handleFieldEdit would otherwise make per-field).
+	priorities, err := r.providerSettings.GetPriorities(req.Context())
+	if err != nil {
+		r.logger.Warn("loading provider priorities for edit-all", "artist_id", artistID, "error", err)
+	}
+	fieldProviders := buildFieldProvidersMap(priorities)
+
+	// Load top-6-per-field history in ONE windowed query (ROW_NUMBER() OVER
+	// PARTITION BY mc.field). This replaces ~12 individual ListGlobal calls
+	// (one per trackable field) that the sequential per-field path would issue.
+	historyByField := make(map[string][]artist.MetadataChangeWithArtist)
+	if r.historyService != nil {
+		filter := artist.GlobalHistoryFilter{
+			ArtistID:      artistID,
+			Fields:        artist.TrackableFields(),
+			PerFieldLimit: 6,
+		}
+		changes, _, listErr := r.historyService.ListGlobal(req.Context(), filter)
+		if listErr != nil {
+			r.logger.Warn("loading batch field history for edit-all", "artist_id", artistID, "error", listErr)
+		} else {
+			for i := range changes {
+				historyByField[changes[i].Field] = append(historyByField[changes[i].Field], changes[i])
+			}
+		}
+	}
+
+	// Render each editable field as an OOB swap fragment. htmx (v2) distributes
+	// all hx-swap-oob elements in the response to their matching DOM targets
+	// regardless of the main swap mode (which the JS caller sets to "none").
+	for _, field := range artist.EditableFieldsList() {
+		h := historyByField[field]
+		// The windowed query already caps at 6; guard here for defensive clarity.
+		if len(h) > 6 {
+			h = h[:6]
+		}
+		renderTempl(w, req, templates.FieldEdit(a, field, fieldProviders[field], h, true))
+	}
 }
 
 // handleFieldUpdate saves a single field value.

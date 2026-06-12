@@ -110,7 +110,15 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 
 // ListGlobal returns paginated metadata changes across all artists, joining
 // the artists table to include the artist name in each result.
+// When filter.PerFieldLimit > 0 a windowed CTE query is used that returns
+// at most PerFieldLimit rows per distinct field (ROW_NUMBER() OVER
+// PARTITION BY mc.field); the global Limit/Offset fields are ignored on
+// that path and the returned total is always 0.
 func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistoryFilter) ([]MetadataChangeWithArtist, int, error) {
+	if filter.PerFieldLimit > 0 {
+		return r.listGlobalPerFieldCapped(ctx, filter)
+	}
+
 	// Build dynamic WHERE clause.
 	var where []string
 	var args []any
@@ -212,6 +220,113 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 	}
 
 	return changes, total, nil
+}
+
+// listGlobalPerFieldCapped returns the most-recent filter.PerFieldLimit rows
+// per distinct field using a windowed CTE query. This is the path taken when
+// GlobalHistoryFilter.PerFieldLimit > 0. The returned total is always 0
+// (windowed results have no meaningful pagination total).
+//
+// SQLite supports window functions since 3.25.0 (2018-09-15). The CTE uses
+// ROW_NUMBER() OVER (PARTITION BY mc.field ORDER BY created_at DESC, id DESC)
+// so each field gets its own independent top-N cut.
+func (r *sqliteHistoryRepo) listGlobalPerFieldCapped(ctx context.Context, filter GlobalHistoryFilter) ([]MetadataChangeWithArtist, int, error) {
+	// Build the same WHERE clause as ListGlobal (artist_id, fields, etc.)
+	var where []string
+	var args []any
+
+	if filter.ArtistID != "" {
+		where = append(where, "mc.artist_id = ?")
+		args = append(args, filter.ArtistID)
+	}
+	if len(filter.Fields) > 0 {
+		placeholders := make([]string, len(filter.Fields))
+		for i, f := range filter.Fields {
+			placeholders[i] = "?"
+			args = append(args, f)
+		}
+		where = append(where, "mc.field IN ("+strings.Join(placeholders, ", ")+")")
+	}
+	if len(filter.Sources) > 0 || len(filter.SourcePrefixes) > 0 {
+		var sourceClauses []string
+		if len(filter.Sources) > 0 {
+			placeholders := make([]string, len(filter.Sources))
+			for i, s := range filter.Sources {
+				placeholders[i] = "?"
+				args = append(args, s)
+			}
+			sourceClauses = append(sourceClauses, "mc.source IN ("+strings.Join(placeholders, ", ")+")")
+		}
+		for _, prefix := range filter.SourcePrefixes {
+			sourceClauses = append(sourceClauses, "mc.source LIKE ? ESCAPE '\\'")
+			escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+			args = append(args, escaped+"%")
+		}
+		where = append(where, "("+strings.Join(sourceClauses, " OR ")+")")
+	}
+	if !filter.From.IsZero() {
+		where = append(where, "mc.created_at >= ?")
+		args = append(args, filter.From.UTC().Format(time.RFC3339))
+	}
+	if !filter.To.IsZero() {
+		where = append(where, "mc.created_at <= ?")
+		args = append(args, filter.To.UTC().Format(time.RFC3339))
+	}
+
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	// CTE: rank each row within its field partition, most-recent first.
+	// The outer query filters to rn <= PerFieldLimit and orders by field then rank
+	// so results are grouped by field in a predictable order.
+	selectQ := `
+		WITH ranked AS (
+			SELECT
+				mc.id, mc.artist_id, a.name, mc.field,
+				mc.old_value, mc.new_value, mc.source, mc.created_at,
+				ROW_NUMBER() OVER (
+					PARTITION BY mc.field
+					ORDER BY mc.created_at DESC, mc.id DESC
+				) AS rn
+			FROM metadata_changes mc
+			JOIN artists a ON a.id = mc.artist_id
+			` + whereClause + `
+		)
+		SELECT id, artist_id, name, field, old_value, new_value, source, created_at
+		FROM ranked
+		WHERE rn <= ?
+		ORDER BY field, rn`
+
+	queryArgs := make([]any, 0, len(args)+1)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, filter.PerFieldLimit)
+
+	rows, err := r.db.QueryContext(ctx, selectQ, queryArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("querying per-field-capped metadata changes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var changes []MetadataChangeWithArtist
+	for rows.Next() {
+		var c MetadataChangeWithArtist
+		var createdAtStr string
+		if err := rows.Scan(
+			&c.ID, &c.ArtistID, &c.ArtistName,
+			&c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scanning per-field-capped metadata change row: %w", err)
+		}
+		c.CreatedAt = parseHistoryTimestamp(c.ID, createdAtStr)
+		changes = append(changes, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating per-field-capped metadata change rows: %w", err)
+	}
+
+	return changes, 0, nil
 }
 
 // parseHistoryTimestamp parses a created_at string from the metadata_changes

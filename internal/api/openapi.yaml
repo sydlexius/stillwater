@@ -10714,6 +10714,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/{id}/fields/edit-all:
+    get:
+      tags: [Artists]
+      summary: Get all field edit views (batch)
+      description: |
+        Returns HTMX edit fragments for every editable field in a single
+        response. Each fragment carries hx-swap-oob="outerHTML" so htmx
+        distributes them to their DOM targets without a targeted main swap.
+        Requires an HTMX request (HX-Request header); rejects non-HTMX
+        requests with 400.
+      operationId: getFieldsEditAll
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: All field edit fragments as OOB HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Non-HTMX request or unknown artist
+        "404":
+          description: Artist not found
+
   /artists/{id}/fields/{field}/edit:
     get:
       tags: [Artists]

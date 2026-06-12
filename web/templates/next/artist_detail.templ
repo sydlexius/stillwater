@@ -876,41 +876,34 @@ templ artistDetailPageScript() {
 						fallbackToLogin();
 					});
 			})();
-			// "Edit" opens every field editor SEQUENTIALLY. Firing all the per-field
-			// htmx.ajax swaps concurrently races htmx's settle pipeline and only the
-			// first/last few survive (UAT: "Edit doesn't edit all fields"); awaiting
-			// each swap in turn opens every field reliably. The open targets are the
-			// per-field edit triggers kept in the markup purely as the canonical
-			// URL/target source (hidden in the read view).
+			// "Edit" opens every field editor in ONE request. The batch endpoint
+			// GET /api/v1/artists/{id}/fields/edit-all returns all field edit
+			// fragments as hx-swap-oob="outerHTML" elements; htmx v2 distributes
+			// them to their individual DOM targets in a single round-trip, replacing
+			// the previous N sequential per-field htmx.ajax calls that each issued
+			// their own DB history query (N+1 fix, #1919).
 			function openAllEditors() {
-				var btns = Array.prototype.slice.call(
-					document.querySelectorAll('.sw-next-artist-detail button[hx-get$="/edit"]')
-				);
-				var failed = 0;
-				return btns.reduce(function (chain, b) {
-					var url = b.getAttribute('hx-get');
-					var target = b.getAttribute('hx-target');
-					if (!url || !target) return chain;
-					return chain.then(function () {
-						if (typeof htmx !== 'undefined') {
-							return htmx.ajax('GET', url, { target: target, swap: b.getAttribute('hx-swap') || 'outerHTML' })
-								.catch(function (e) {
-									// A swallowed failure would leave the field read-only AND
-									// absent from the save set; track it so we can warn the user
-									// that Edit mode is partial.
-									failed++;
-									if (window.console) { console.error('field editor failed to open', url, e); }
-								});
-						}
-						b.click();
-						return undefined;
-					});
-				}, Promise.resolve()).then(function () {
-					if (failed > 0) {
-						var tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-edit-partial')) || 'Some fields could not be opened for editing. Reload and try again.';
+				var aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';
+				var bp = swBasePath();
+				var tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-edit-partial')) ||
+					'Some fields could not be opened for editing. Reload and try again.';
+				if (!aid || typeof htmx === 'undefined') {
+					// htmx unavailable or artist ID missing: click the hidden per-field
+					// edit buttons as a last-resort fallback (graceful degradation).
+					Array.prototype.forEach.call(
+						document.querySelectorAll('.sw-next-artist-detail button[hx-get$="/edit"]'),
+						function (b) { b.click(); }
+					);
+					return Promise.resolve();
+				}
+				var batchUrl = bp + '/api/v1/artists/' + aid + '/fields/edit-all';
+				// swap: 'none' -- all real content is in OOB fragments; htmx
+				// processes those regardless of the main swap target/mode.
+				return htmx.ajax('GET', batchUrl, { swap: 'none' })
+					.catch(function (e) {
+						if (window.console) { console.error('batch field edit-all failed', batchUrl, e); }
 						swNotify(tpl);
-					}
-				});
+					});
 			}
 			// "Done" is the SOLE commit (the per-field save/cancel controls are removed
 			// in this channel). It PATCHes every field whose value CHANGED, in turn,

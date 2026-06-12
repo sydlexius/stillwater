@@ -695,6 +695,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Field-level edit routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fields/{field}/display", wrapAuth(r.handleFieldDisplay, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fields/{field}/edit", wrapAuth(r.handleFieldEdit, authMw))
+	// Batch edit: returns all field edit fragments in one OOB response,
+	// eliminating the N+1 history queries from the next/ "Edit All" flow.
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fields/edit-all", wrapAuth(r.handleFieldsEditAll, authMw))
 	mux.HandleFunc("PATCH "+bp+"/api/v1/artists/{id}/fields/{field}", wrapAuth(r.handleFieldUpdate, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/fields/{field}", wrapAuth(r.handleFieldClear, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fields/{field}/history/fragment", wrapAuth(r.handleFieldHistoryFragment, authMw))

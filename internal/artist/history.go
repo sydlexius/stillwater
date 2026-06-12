@@ -44,6 +44,11 @@ type GlobalHistoryFilter struct {
 	To             time.Time // optional: include changes on or before this timestamp
 	Limit          int
 	Offset         int
+	// PerFieldLimit, when > 0, switches to a windowed query that returns at most
+	// this many rows per distinct field value (ROW_NUMBER() OVER PARTITION BY
+	// mc.field). The global Limit/Offset are ignored on this path. Use this
+	// instead of Limit when you need the top-N per field, not the global top-N.
+	PerFieldLimit int
 }
 
 // HistoryRepository defines the persistence interface for metadata change records.
@@ -145,6 +150,12 @@ func (h *HistoryService) List(ctx context.Context, artistID string, limit, offse
 	return h.repo.List(ctx, artistID, limit, offset)
 }
 
+// Repo returns the underlying HistoryRepository. Exposed for testing so spy
+// wrappers can delegate to the real repository without requiring a separate DB.
+func (h *HistoryService) Repo() HistoryRepository {
+	return h.repo
+}
+
 // ListGlobal returns paginated metadata changes across all artists.
 func (h *HistoryService) ListGlobal(ctx context.Context, filter GlobalHistoryFilter) ([]MetadataChangeWithArtist, int, error) {
 	if filter.Limit <= 0 {
@@ -168,4 +179,11 @@ func IsTrackableField(field string) bool {
 		}
 	}
 	return false
+}
+
+// TrackableFields returns a copy of the field names tracked by the history system.
+func TrackableFields() []string {
+	cp := make([]string, len(trackableFields))
+	copy(cp, trackableFields)
+	return cp
 }
