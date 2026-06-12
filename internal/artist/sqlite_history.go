@@ -309,7 +309,7 @@ func (r *sqliteHistoryRepo) listGlobalPerFieldCapped(ctx context.Context, filter
 	}
 	defer func() { _ = rows.Close() }()
 
-	var changes []MetadataChangeWithArtist
+	changes := make([]MetadataChangeWithArtist, 0)
 	for rows.Next() {
 		var c MetadataChangeWithArtist
 		var createdAtStr string

@@ -71,6 +71,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 			data-sw-violations-sync
 			data-artist-id={ data.Detail.Artist.ID }
 			data-sw-fanart-base={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/fanart/", data.Detail.Artist.ID) }
+			data-sw-edit-all-url={ fmt.Sprintf("/api/v1/artists/%s/fields/edit-all", data.Detail.Artist.ID) }
 			data-sw-msg-save-failed={ t(ctx, "artist.save_failed_some") }
 			data-sw-msg-edit-partial={ t(ctx, "artist.edit_partial") }
 			data-sw-msg-session-expired={ t(ctx, "common.session_expired") }
@@ -882,26 +883,30 @@ templ artistDetailPageScript() {
 			// them to their individual DOM targets in a single round-trip, replacing
 			// the previous N sequential per-field htmx.ajax calls that each issued
 			// their own DB history query (N+1 fix, #1919).
+			function openAllEditorsFallback() {
+				// Click the hidden per-field edit buttons when the batch path is
+				// unavailable or fails (htmx absent, artist ID missing, or request error).
+				Array.prototype.forEach.call(
+					document.querySelectorAll('.sw-next-artist-detail button[hx-get$="/edit"]'),
+					function (b) { b.click(); }
+				);
+			}
 			function openAllEditors() {
-				var aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';
-				var bp = swBasePath();
+				// Root-relative path from DOM; htmx:configRequest auto-prepends basePath.
+				var batchUrl = pageRoot ? pageRoot.getAttribute('data-sw-edit-all-url') : '';
 				var tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-edit-partial')) ||
 					'Some fields could not be opened for editing. Reload and try again.';
-				if (!aid || typeof htmx === 'undefined') {
-					// htmx unavailable or artist ID missing: click the hidden per-field
-					// edit buttons as a last-resort fallback (graceful degradation).
-					Array.prototype.forEach.call(
-						document.querySelectorAll('.sw-next-artist-detail button[hx-get$="/edit"]'),
-						function (b) { b.click(); }
-					);
+				if (!batchUrl || typeof htmx === 'undefined') {
+					// htmx unavailable or URL missing: degrade to per-field opens.
+					openAllEditorsFallback();
 					return Promise.resolve();
 				}
-				var batchUrl = bp + '/api/v1/artists/' + aid + '/fields/edit-all';
 				// swap: 'none' -- all real content is in OOB fragments; htmx
 				// processes those regardless of the main swap target/mode.
 				return htmx.ajax('GET', batchUrl, { swap: 'none' })
 					.catch(function (e) {
 						if (window.console) { console.error('batch field edit-all failed', batchUrl, e); }
+						openAllEditorsFallback();
 						swNotify(tpl);
 					});
 			}

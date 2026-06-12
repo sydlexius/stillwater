@@ -28,7 +28,7 @@ func TestFieldEdit_ClearGating(t *testing.T) {
 	render := func(t *testing.T, a *artist.Artist, field string) string {
 		t.Helper()
 		var buf bytes.Buffer
-		if err := FieldEdit(a, field, nil, nil).Render(testCtx(t), &buf); err != nil {
+		if err := FieldEdit(a, field, nil, nil, false).Render(testCtx(t), &buf); err != nil {
 			t.Fatalf("render %s: %v", field, err)
 		}
 		return buf.String()

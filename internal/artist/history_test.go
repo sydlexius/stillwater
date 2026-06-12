@@ -673,6 +673,8 @@ func TestHistoryService_ListGlobal_PerFieldLimit(t *testing.T) {
 		ArtistID:      "artist-pfl",
 		Fields:        []string{"biography", "genres"},
 		PerFieldLimit: 6,
+		Limit:         1,
+		Offset:        10,
 	})
 	if err != nil {
 		t.Fatalf("ListGlobal(PerFieldLimit=6) error = %v", err)
