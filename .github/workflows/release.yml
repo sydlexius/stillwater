@@ -8,19 +8,19 @@ on:
 permissions: {}
 
 jobs:
-  release:
-    name: Release
+  # Run templ generate + Tailwind CSS build once; fan out to all binary/Docker
+  # jobs via a 1-day artifact. Avoids repeating slow asset generation per runner.
+  prepare:
+    name: Prepare generated assets
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
-      id-token: write
-      attestations: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -28,8 +28,183 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4
+      - name: Generate templ templates
+        run: go tool templ generate
+
+      - name: Build Tailwind CSS
+        run: |
+          set -euo pipefail
+          curl -sL \
+            https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.0/tailwindcss-linux-x64 \
+            -o /tmp/tailwindcss
+          chmod +x /tmp/tailwindcss
+          /tmp/tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
+
+      - name: Upload generated assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generated-assets
+          path: |
+            web/static/css/styles.css
+            **/*_templ.go
+          retention-days: 1
+
+  # Cross-compile 5 binaries in parallel across native and cross-compile runners.
+  # linux/arm64 runs natively on ubuntu-24.04-arm; the rest cross-compile on
+  # ubuntu-latest (CGO_ENABLED=0 makes pure-Go cross-compile trivial).
+  build-binaries:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: [prepare]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - runner: ubuntu-latest
+            goos: darwin
+            goarch: amd64
+          - runner: ubuntu-latest
+            goos: darwin
+            goarch: arm64
+          - runner: ubuntu-latest
+            goos: windows
+            goarch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download generated assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: generated-assets
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+          SHORT_COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(git log -1 --format=%cI HEAD)
+
+          BIN_NAME=stillwater
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BIN_NAME=stillwater.exe
+          fi
+
+          go build \
+            -ldflags "-s -w \
+              -X github.com/sydlexius/stillwater/internal/version.Version=${VERSION} \
+              -X github.com/sydlexius/stillwater/internal/version.Commit=${SHORT_COMMIT} \
+              -X github.com/sydlexius/stillwater/internal/version.Date=${DATE} \
+              -X github.com/sydlexius/stillwater/internal/version.BuildType=release" \
+            -o "${BIN_NAME}" \
+            ./cmd/stillwater
+
+      - name: Create archive
+        id: archive
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+          ARCHIVE_BASE="stillwater_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}"
+
+          mkdir -p "${ARCHIVE_BASE}"
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            cp stillwater.exe "${ARCHIVE_BASE}/"
+            zip -r "${ARCHIVE_BASE}.zip" "${ARCHIVE_BASE}/"
+            echo "archive=${ARCHIVE_BASE}.zip" >> "$GITHUB_OUTPUT"
+          else
+            cp stillwater "${ARCHIVE_BASE}/"
+            tar -czf "${ARCHIVE_BASE}.tar.gz" "${ARCHIVE_BASE}/"
+            echo "archive=${ARCHIVE_BASE}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ steps.archive.outputs.archive }}
+          retention-days: 1
+
+  # Build and push a single-platform Docker image per arch. linux/amd64 uses
+  # ubuntu-latest; linux/arm64 uses ubuntu-24.04-arm (native, no QEMU).
+  # Each job pushes a platform-specific tag (:vVERSION-amd64 / :vVERSION-arm64)
+  # that the release job merges into a multi-arch manifest.
+  build-docker:
+    name: Docker ${{ matrix.arch }}
+    needs: [build-binaries]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            goarch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Download linux/${{ matrix.arch }} binary artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binary-linux-${{ matrix.goarch }}
+          path: /tmp/bin-download
+
+      - name: Stage binary for Docker build context
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+          ARCHIVE="stillwater_${VERSION}_linux_${{ matrix.goarch }}.tar.gz"
+
+          # Dockerfile.goreleaser expects the binary at $TARGETPLATFORM/stillwater
+          # (e.g. linux/amd64/stillwater). Strip the archive's wrapper directory.
+          mkdir -p "linux/${{ matrix.arch }}"
+          tar -xzf "/tmp/bin-download/${ARCHIVE}" \
+            --strip-components=1 \
+            -C "linux/${{ matrix.arch }}"
+
+          if [ ! -f "linux/${{ matrix.arch }}/stillwater" ]; then
+            echo "ERROR: binary not found at linux/${{ matrix.arch }}/stillwater" >&2
+            ls -la "linux/${{ matrix.arch }}/" >&2
+            exit 1
+          fi
+
+      - name: Extract Docker base image metadata
+        id: base
+        run: |
+          set -euo pipefail
+          BASE_REF=$(grep '^FROM' build/docker/Dockerfile.goreleaser | head -1 | awk '{print $2}')
+          echo "image=${BASE_REF%%@*}" >> "$GITHUB_OUTPUT"
+          echo "digest=${BASE_REF##*@}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -41,16 +216,90 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push single-platform image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: build/docker/Dockerfile.goreleaser
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          # Platform-specific tag; release job merges into multi-arch manifest.
+          tags: ghcr.io/sydlexius/stillwater:${{ github.ref_name }}-${{ matrix.arch }}
+          # TARGETPLATFORM is set automatically by Buildkit for the declared
+          # --platform, but listed here explicitly to keep the ARG transparent.
+          build-args: |
+            TARGETPLATFORM=linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.base.name=${{ steps.base.outputs.image }}
+            org.opencontainers.image.base.digest=${{ steps.base.outputs.digest }}
+            org.opencontainers.image.source=https://github.com/sydlexius/stillwater
+            org.opencontainers.image.licenses=GPL-3.0
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # Disable per-image provenance attestation to keep per-arch images as
+          # simple single-platform manifests; attestation is added at release level.
+          provenance: false
+
+  # Assemble the release: checksums + cosign signing + GitHub Release upload +
+  # multi-arch Docker manifest + manifest signing + SLSA provenance attestation.
+  release:
+    name: Release
+    needs: [build-binaries, build-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: 'v3.0.6'
 
-      # For stable tags (no -rc/-beta/-alpha suffix), force goreleaser to
-      # compute the changelog from the previous *stable* tag, not the most
-      # recent pre-release. Without this override, promoting vX.Y.Z after
-      # vX.Y.Z-rc.N produces a nearly-empty changelog because only the
-      # commits between rc.N and the stable tag are included.
+      - name: Download all binary archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        id: checksums
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # sha256sum produces "<hash>  <filename>" (two-space separator),
+          # matching goreleaser's default checksum format.
+          cd dist
+          sha256sum stillwater_*.tar.gz stillwater_*.zip \
+            > "stillwater_${VERSION}_checksums.txt"
+          cd ..
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign checksums with cosign (keyless)
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+          CHECKSUMS_FILE="dist/stillwater_${VERSION}_checksums.txt"
+
+          # Mirrors .goreleaser.yml signs: sign-blob --new-bundle-format
+          # --bundle=${artifact}.sigstore.json artifacts:checksum.
+          cosign sign-blob \
+            --new-bundle-format \
+            --bundle="${CHECKSUMS_FILE}.sigstore.json" \
+            "${CHECKSUMS_FILE}" \
+            --yes
+
+      # For stable tags, compute the previous stable tag for the changelog link.
       - name: Compute previous stable tag
         id: prev
         if: "!contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha')"
@@ -62,23 +311,144 @@ jobs:
           echo "prev=$prev" >> "$GITHUB_OUTPUT"
           echo "Previous stable tag: $prev"
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_PREVIOUS_TAG: ${{ steps.prev.outputs.prev }}
+      - name: Build release body
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+          TAG="${GITHUB_REF_NAME}"
 
-      # Generate a SLSA v1 build-provenance attestation covering every release
-      # artifact (checksums file + per-arch archives). The action signs the
-      # bundle via the same Sigstore keyless flow cosign already uses, so this
-      # reuses the existing OIDC trust setup. A single bundle covers all
-      # subjects (in-toto v1 supports multi-subject statements); we attach it
-      # to the GitHub Release as *.intoto.jsonl so OpenSSF Scorecard's
-      # Signed-Releases check recognizes it as provenance.
+          IS_PRERELEASE=false
+          if echo "$TAG" | grep -qE '\-(rc|beta|alpha)'; then
+            IS_PRERELEASE=true
+          fi
+
+          # Extract tag annotation body (everything below the subject line).
+          # Matches goreleaser release.header: {{ .TagBody }}.
+          TAG_BODY=$(git for-each-ref --format='%(contents:body)' "refs/tags/${TAG}" || true)
+
+          PREV="${{ steps.prev.outputs.prev }}"
+
+          # Use $'\n' for newlines to avoid embedding bare newlines in the YAML
+          # block scalar, which confuses some YAML parsers.
+          NL=$'\n'
+          BODY=""
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            BODY="${BODY}> This is a pre-release version. Use the \`beta\` Docker tag to try it out.${NL}${NL}"
+          fi
+
+          if [ -n "$TAG_BODY" ]; then
+            BODY="${BODY}${TAG_BODY}${NL}${NL}"
+          fi
+
+          BODY="${BODY}**Docker:** \`docker pull ghcr.io/sydlexius/stillwater:${VERSION}\`${NL}${NL}"
+
+          if [ -n "$PREV" ]; then
+            BODY="${BODY}**Full Changelog:** [${PREV}...${TAG}](https://github.com/sydlexius/stillwater/compare/${PREV}...${TAG})"
+          else
+            BODY="${BODY}**Full Changelog:** [${TAG}](https://github.com/sydlexius/stillwater/releases/tag/${TAG})"
+          fi
+
+          printf '%s\n' "$BODY" > /tmp/release-body.md
+
+      - name: Create GitHub Release and upload artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+          TAG="${GITHUB_REF_NAME}"
+
+          PRERELEASE_FLAG=
+          if echo "$TAG" | grep -qE '\-(rc|beta|alpha)'; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          # shellcheck disable=SC2086
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-body.md \
+            $PRERELEASE_FLAG \
+            dist/stillwater_*.tar.gz \
+            dist/stillwater_*.zip \
+            "dist/stillwater_${VERSION}_checksums.txt" \
+            "dist/stillwater_${VERSION}_checksums.txt.sigstore.json"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Create and push multi-arch Docker manifest
+        id: manifest
+        run: |
+          set -euo pipefail
+          VERSION=${GITHUB_REF_NAME#v}
+          TAG="${GITHUB_REF_NAME}"
+          IMAGE="ghcr.io/sydlexius/stillwater"
+
+          # imagetools create assembles a manifest list from the two per-arch
+          # images pushed by build-docker. References are by tag; Buildkit
+          # resolves them to content-addressed digests.
+          docker buildx imagetools create \
+            -t "${IMAGE}:${VERSION}" \
+            "${IMAGE}:${TAG}-amd64" \
+            "${IMAGE}:${TAG}-arm64"
+
+          IS_PRERELEASE=false
+          if echo "$TAG" | grep -qE '\-(rc|beta|alpha)'; then
+            IS_PRERELEASE=true
+          fi
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            # Mirrors goreleaser: {{ if .Prerelease }}beta{{ end }}
+            docker buildx imagetools create \
+              -t "${IMAGE}:beta" \
+              "${IMAGE}:${TAG}-amd64" \
+              "${IMAGE}:${TAG}-arm64"
+          else
+            # Mirrors goreleaser: {{ .Major }}.{{ .Minor }} and latest
+            MAJOR_MINOR=$(echo "${VERSION}" | cut -d. -f1-2)
+            docker buildx imagetools create \
+              -t "${IMAGE}:${MAJOR_MINOR}" \
+              "${IMAGE}:${TAG}-amd64" \
+              "${IMAGE}:${TAG}-arm64"
+            docker buildx imagetools create \
+              -t "${IMAGE}:latest" \
+              "${IMAGE}:${TAG}-amd64" \
+              "${IMAGE}:${TAG}-arm64"
+          fi
+
+          # Capture the :VERSION manifest digest for signing by digest (not
+          # by mutable tag), mirroring goreleaser docker_signs: ${artifact}@${digest}.
+          MANIFEST_DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" \
+            | grep "^Digest:" | awk '{print $2}')
+          {
+            echo "image=${IMAGE}"
+            echo "version=${VERSION}"
+            echo "manifest_digest=${MANIFEST_DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign Docker manifest with cosign (keyless)
+        run: |
+          set -euo pipefail
+          IMAGE="${{ steps.manifest.outputs.image }}"
+          VERSION="${{ steps.manifest.outputs.version }}"
+          MANIFEST_DIGEST="${{ steps.manifest.outputs.manifest_digest }}"
+
+          # Sign by immutable digest, not the mutable tag reference.
+          cosign sign --yes "${IMAGE}:${VERSION}@${MANIFEST_DIGEST}"
+
+      # SLSA v1 build-provenance attestation covering all release artifacts.
+      # Artifacts are in dist/ because download-artifact placed them there.
+      # A single bundle covers all subjects (in-toto v1 supports multi-subject
+      # statements); attached to the GitHub Release as *.intoto.jsonl so
+      # OpenSSF Scorecard's Signed-Releases check recognizes it as provenance.
       - name: Generate build provenance attestation
         id: attest
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
@@ -97,9 +467,7 @@ jobs:
           set -euo pipefail
           out="stillwater_${TAG#v}_provenance.intoto.jsonl"
           cp "$BUNDLE" "$out"
-          # --clobber: idempotent on workflow retry. gh deletes the existing
-          # asset before re-uploading, so a failed retry leaves the release
-          # without provenance until the next successful run.
+          # --clobber: idempotent on workflow retry.
           gh release upload "$TAG" "$out" --clobber
 
       - name: Mark stable release as latest
