@@ -311,20 +311,19 @@ jobs:
           # (e.g. coverage-api-1/coverage.out, coverage-rule-2/coverage.out).
           pattern: coverage-*
 
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Merge coverage profiles
-        run: |
-          # Combine per-shard text coverage profiles into one file.
-          # Each profile starts with a "mode:" header line; keep it once
-          # and strip it from all subsequent files to avoid duplicates.
-          first=true
-          for f in coverage-*/coverage.out; do
-            if $first; then
-              cat "$f" > merged-coverage.out
-              first=false
-            else
-              tail -n +2 "$f" >> merged-coverage.out
-            fi
-          done
+        # go tool gocovmerge performs a per-block UNION merge (summing hit
+        # counts), so each statement block appears exactly once in the output.
+        # The naive head-1/tail concat duplicates every block across shards
+        # because each shard runs -coverpkg=./... and emits a full-module
+        # profile; plain concat causes coverage-floor.sh to sum nstmts 9x
+        # while covered stays 1x, collapsing every package to ~1/numShards.
+        run: go tool gocovmerge coverage-*/coverage.out > merged-coverage.out
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
@@ -339,15 +338,61 @@ jobs:
           # Codecov is flaky.
           fail_ci_if_error: false
 
+  coverage-floor:
+    name: Coverage Floor
+    runs-on: ubuntu-latest
+    needs: [changes, test]
+    if: always() && needs.changes.outputs.code == 'true' && needs.test.result == 'success'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-*
+
+      - name: Merge coverage profiles
+        run: go tool gocovmerge coverage-*/coverage.out > merged.out
+
+      - name: Enforce per-package coverage floor
+        run: |
+          output=$(bash scripts/coverage-floor.sh --cover merged.out 2>&1) || {
+            echo "$output"
+            {
+              echo "## Coverage Floor -- FAILED"
+              echo ""
+              echo "One or more packages fell below their coverage floor. Add tests or update"
+              echo "\`testdata/coverage-floor.json\` if the drop is intentional."
+              echo ""
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    # Build runs concurrent with the test matrix: compiling the binary does not
-    # depend on tests passing, and `Build` + `Test` are INDEPENDENTLY required by
-    # branch protection, so a test failure still blocks merge via its own check.
-    # Keep the `lint` dependency so a lint-failing PR short-circuits Build (lint
-    # is far shorter than the matrix, so this costs no wall time).
-    needs: [changes, lint]
+    # The PRIMARY coverage enforcement gate is the required status check
+    # "CI / Coverage Floor" -- branch protection MUST require that check.
+    # The `coverage-floor` dependency here is defense-in-depth only: it means
+    # a floor failure also blocks the Build artifact, but Build is not itself
+    # the gate. Never rely on this dependency as the enforcement path; if
+    # `Build` is ever dropped from required checks, floor enforcement would
+    # silently disappear without the required-check gate in place.
+    # Keep the `lint` dependency so a lint-failing PR short-circuits Build.
+    needs: [changes, lint, coverage-floor]
     if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -380,7 +425,7 @@ jobs:
     # `build`, which produces no published artifact and runs on PRs -- decoupling
     # THAT from `test` is the actual wall-time win. Docker never runs on PRs, so
     # gating it on test costs no PR-time latency.) Per CodeRabbit review on #1873.
-    needs: [changes, lint, test]
+    needs: [changes, lint, test, coverage-floor]
     if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
