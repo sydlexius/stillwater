@@ -234,8 +234,12 @@ jobs:
         run: |
           set -euo pipefail
           BASE_REF=$(grep '^FROM' build/docker/Dockerfile.goreleaser | head -1 | awk '{print $2}')
-          echo "image=${BASE_REF%%@*}" >> "$GITHUB_OUTPUT"
-          echo "digest=${BASE_REF##*@}" >> "$GITHUB_OUTPUT"
+          {
+            echo "image=${BASE_REF%%@*}"
+            echo "digest=${BASE_REF##*@}"
+            # OCI image-spec: version annotation = bare semver, no v prefix.
+            echo "version=${GITHUB_REF_NAME#v}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -265,7 +269,7 @@ jobs:
             org.opencontainers.image.base.digest=${{ steps.base.outputs.digest }}
             org.opencontainers.image.source=https://github.com/sydlexius/stillwater
             org.opencontainers.image.licenses=GPL-3.0
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ steps.base.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
           # Disable per-image provenance attestation to keep per-arch images as
           # simple single-platform manifests; attestation is added at release level.
