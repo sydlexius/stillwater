@@ -132,13 +132,13 @@ func (r *Router) handleFieldsEditAll(w http.ResponseWriter, req *http.Request) {
 	fieldProviders := buildFieldProvidersMap(priorities)
 
 	// Load top-6-per-field history in ONE windowed query (ROW_NUMBER() OVER
-	// PARTITION BY mc.field). This replaces ~12 individual ListGlobal calls
-	// (one per trackable field) that the sequential per-field path would issue.
+	// PARTITION BY mc.field). This replaces ~20 individual ListGlobal calls
+	// (one per editable field) that the sequential per-field path would issue.
 	historyByField := make(map[string][]artist.MetadataChangeWithArtist)
 	if r.historyService != nil {
 		filter := artist.GlobalHistoryFilter{
 			ArtistID:      artistID,
-			Fields:        artist.TrackableFields(),
+			Fields:        artist.EditableFieldsList(),
 			PerFieldLimit: 6,
 		}
 		changes, _, listErr := r.historyService.ListGlobal(req.Context(), filter)
@@ -154,7 +154,13 @@ func (r *Router) handleFieldsEditAll(w http.ResponseWriter, req *http.Request) {
 	// Render each editable field as an OOB swap fragment. htmx (v2) distributes
 	// all hx-swap-oob elements in the response to their matching DOM targets
 	// regardless of the main swap mode (which the JS caller sets to "none").
+	// Skip fields that don't apply to this artist's type (e.g. gender/born/died
+	// for a GROUP; formed/disbanded for a PERSON) -- those fields have no DOM
+	// container, so htmx would log oobErrorNoTarget for each unmatched swap.
 	for _, field := range artist.EditableFieldsList() {
+		if !templates.FieldAppliesToArtistType(field, a.Type) {
+			continue
+		}
 		h := historyByField[field]
 		// The windowed query already caps at 6; guard here for defensive clarity.
 		if len(h) > 6 {

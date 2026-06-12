@@ -10739,7 +10739,7 @@ paths:
               schema:
                 type: string
         "400":
-          description: Non-HTMX request or unknown artist
+          description: Non-HTMX request
         "404":
           description: Artist not found
 

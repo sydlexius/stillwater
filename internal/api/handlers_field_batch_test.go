@@ -189,19 +189,20 @@ func TestHandleFieldsEditAll_OOBAttributePresent(t *testing.T) {
 }
 
 // TestHandleFieldsEditAll_PerFieldHistoryCap asserts that a field with > 6
-// history entries is capped at 6 (triggering the "Show older" affordance) and
-// a field with fewer than 6 entries is not truncated.
+// history entries triggers the "Show older" affordance and a field with fewer
+// than 6 entries does not -- verifying the windowed query rather than just the
+// outer cap guard.
 func TestHandleFieldsEditAll_PerFieldHistoryCap(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, historySvc, _ := testRouterWithSpyHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Edit All History Cap Artist")
 
-	// biography: 7 entries -> cap+1=6 fetched -> hasMore=true -> "Show older" rendered.
+	// biography: 7 entries -> windowed query returns 6 -> hasMore=true -> "Show older" rendered.
 	for i := 0; i < 7; i++ {
 		addHistoryChange(t, historySvc, a.ID, "biography", "", "bio value", "manual")
 	}
-	// genres: 2 entries -> all 2 fetched, no "Show older".
+	// genres: 2 entries -> windowed query returns 2 -> hasMore=false -> no "Show older".
 	addHistoryChange(t, historySvc, a.ID, "genres", "", "Rock", "manual")
 	addHistoryChange(t, historySvc, a.ID, "genres", "", "Pop", "manual")
 
@@ -215,9 +216,14 @@ func TestHandleFieldsEditAll_PerFieldHistoryCap(t *testing.T) {
 	}
 	body := w.Body.String()
 
-	// Both fields show history clock (data-context-menu present).
-	if !strings.Contains(body, "data-context-menu") {
-		t.Errorf("expected history clock (data-context-menu) in response when history exists")
+	// biography: 6 entries returned -> hasMore -> "Show older" affordance URL present.
+	if !strings.Contains(body, "/fields/biography/history/fragment") {
+		t.Errorf("expected 'biography/history/fragment' URL in response (biography has >6 entries); body excerpt: %.500s", body)
+	}
+
+	// genres: 2 entries returned -> !hasMore -> no "Show older" affordance.
+	if strings.Contains(body, "/fields/genres/history/fragment") {
+		t.Errorf("expected no 'genres/history/fragment' URL (genres has <6 entries); body excerpt: %.500s", body)
 	}
 }
 
