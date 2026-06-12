@@ -1,0 +1,33 @@
+meta {
+  name: Put Preference (upsert)
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{apiBase}}/preferences/font_size
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "value": "large"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response echoes key and canonical value", function() {
+    expect(res.body.key).to.equal("font_size");
+    expect(res.body.value).to.equal("large");
+  });
+}

@@ -1,0 +1,34 @@
+meta {
+  name: Patch Preferences Unknown Key Rejects All (400)
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{apiBase}}/preferences
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "theme": "dark",
+    "nonexistent_key": "any-value"
+  }
+}
+
+tests {
+  test("should return 400 when any key is unknown", function() {
+    expect(res.status).to.equal(400);
+  });
+
+  test("error field identifies the bad key", function() {
+    expect(res.body.error).to.be.a("string");
+    expect(res.body.error).to.include("nonexistent_key");
+  });
+}

@@ -1,0 +1,32 @@
+meta {
+  name: Patch Then Get Round-Trip
+  type: http
+  seq: 8
+}
+
+patch {
+  url: {{apiBase}}/preferences
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "thumbnail_size": "small"
+  }
+}
+
+tests {
+  test("patch returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("patch echoes canonical stored value", function() {
+    expect(res.body.thumbnail_size).to.equal("small");
+  });
+}
