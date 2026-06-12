@@ -343,7 +343,7 @@ jobs:
     name: Coverage Floor
     runs-on: ubuntu-latest
     needs: [changes, test]
-    if: always() && needs.changes.outputs.code == 'true'
+    if: always() && needs.changes.outputs.code == 'true' && needs.test.result == 'success'
     permissions:
       contents: read
     steps:
@@ -394,11 +394,14 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    # Build gates on coverage-floor (which waits for all test shards) so a floor
-    # regression blocks the binary. `Build` and `Test` remain independently
-    # required by branch protection; a test failure still blocks merge via its
-    # own check. Keep the `lint` dependency so a lint-failing PR short-circuits
-    # Build.
+    # The PRIMARY coverage enforcement gate is the required status check
+    # "CI / Coverage Floor" -- branch protection MUST require that check.
+    # The `coverage-floor` dependency here is defense-in-depth only: it means
+    # a floor failure also blocks the Build artifact, but Build is not itself
+    # the gate. Never rely on this dependency as the enforcement path; if
+    # `Build` is ever dropped from required checks, floor enforcement would
+    # silently disappear without the required-check gate in place.
+    # Keep the `lint` dependency so a lint-failing PR short-circuits Build.
     needs: [changes, lint, coverage-floor]
     if: needs.changes.outputs.code == 'true'
     steps:
