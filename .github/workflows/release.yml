@@ -40,13 +40,24 @@ jobs:
           chmod +x /tmp/tailwindcss
           /tmp/tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
 
-      - name: Upload generated assets
+      - name: Package generated assets
+        run: |
+          set -euo pipefail
+          # Bundle into a single tar preserving repo-relative paths.
+          # upload-artifact strips the least-common-ancestor prefix when
+          # uploading individual files (all generated files live under web/,
+          # so LCA = web/ and that segment would be stripped). A pre-bundled
+          # tar is a single file with no LCA to strip; internal paths are
+          # preserved as-is so extraction at repo root lands files correctly.
+          find web -name '*_templ.go' > /tmp/asset-list.txt
+          echo "web/static/css/styles.css" >> /tmp/asset-list.txt
+          tar -czf /tmp/generated-assets.tar.gz -T /tmp/asset-list.txt
+
+      - name: Upload generated assets bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: generated-assets
-          path: |
-            web/static/css/styles.css
-            **/*_templ.go
+          path: /tmp/generated-assets.tar.gz
           retention-days: 1
 
   # Cross-compile 5 binaries in parallel across native and cross-compile runners.
@@ -90,10 +101,30 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Download generated assets
+      - name: Download generated assets bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: generated-assets
+          path: /tmp/assets
+
+      - name: Restore generated assets
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/assets/generated-assets.tar.gz
+
+          # Loud assertion: fail immediately if regenerated assets are not at
+          # their expected repo-relative paths. A silent fallback to committed
+          # copies would defeat the regenerate-fresh guarantee.
+          if [ ! -f web/static/css/styles.css ]; then
+            echo "ERROR: web/static/css/styles.css missing after artifact restore" >&2
+            exit 1
+          fi
+          templ_count=$(find web -name '*_templ.go' | wc -l)
+          if [ "$templ_count" -eq 0 ]; then
+            echo "ERROR: no *_templ.go files found under web/ after artifact restore" >&2
+            exit 1
+          fi
+          echo "Restored ${templ_count} templ files + styles.css"
 
       - name: Build binary
         env:
@@ -364,15 +395,25 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
 
-          # shellcheck disable=SC2086
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes-file /tmp/release-body.md \
-            $PRERELEASE_FLAG \
-            dist/stillwater_*.tar.gz \
-            dist/stillwater_*.zip \
-            "dist/stillwater_${VERSION}_checksums.txt" \
-            "dist/stillwater_${VERSION}_checksums.txt.sigstore.json"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Release already exists (retry scenario): upload/overwrite assets.
+            gh release upload "$TAG" \
+              dist/stillwater_*.tar.gz \
+              dist/stillwater_*.zip \
+              "dist/stillwater_${VERSION}_checksums.txt" \
+              "dist/stillwater_${VERSION}_checksums.txt.sigstore.json" \
+              --clobber
+          else
+            # shellcheck disable=SC2086
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file /tmp/release-body.md \
+              $PRERELEASE_FLAG \
+              dist/stillwater_*.tar.gz \
+              dist/stillwater_*.zip \
+              "dist/stillwater_${VERSION}_checksums.txt" \
+              "dist/stillwater_${VERSION}_checksums.txt.sigstore.json"
+          fi
 
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
@@ -427,7 +468,7 @@ jobs:
           # Capture the :VERSION manifest digest for signing by digest (not
           # by mutable tag), mirroring goreleaser docker_signs: ${artifact}@${digest}.
           MANIFEST_DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" \
-            | grep "^Digest:" | awk '{print $2}')
+            | grep "^Digest:" | head -1 | awk '{print $2}')
           {
             echo "image=${IMAGE}"
             echo "version=${VERSION}"
