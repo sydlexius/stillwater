@@ -100,14 +100,14 @@ type RoundTrip struct {
 }
 
 // ForeignFileSummary surfaces the foreign-file ledger size on the global
-// conflict ledger so the banner handler can render the slate/blue warning
-// state in one place. The detector does not write this field; it is
-// populated by the banner handler from the foreign repository before the
-// banner template is rendered. Kept on the same view-side struct so the
-// banner has a single source of truth across all five states.
+// conflict ledger for the JSON /conflicts consumer. The detector does not
+// write this field; it is populated by the /conflicts handler from the
+// foreign repository. It no longer drives any banner state: per the M55
+// TRANQUILITY charter (#1773) foreign-file detection surfaces only via the
+// sidebar "Unmatched Files" pill, not the conflict banner.
 type ForeignFileSummary struct {
 	// Count is the number of unallowlisted foreign-file rows currently in
-	// the foreign_files table. Zero suppresses the warning state.
+	// the foreign_files table.
 	Count int `json:"count"`
 }
 
@@ -118,10 +118,11 @@ type Ledger struct {
 	GeneratedAt time.Time         `json:"generated_at"`
 	Connections []ConnectionState `json:"connections"`
 	RoundTrips  []RoundTrip       `json:"round_trips,omitempty"`
-	// ForeignFiles is populated by the banner handler (not by the
-	// connection detector) with the current foreign-file count. A non-zero
-	// Count enables the slate/blue warning state in BannerState only when
-	// no other (image/nfo/round-trip) state is present.
+	// ForeignFiles is populated by the /conflicts JSON handler (not by the
+	// connection detector) with the current foreign-file count. It is
+	// informational for that JSON consumer only and does NOT affect
+	// BannerState: foreign-file detection surfaces via the sidebar pill, not
+	// the banner (M55 TRANQUILITY charter, #1773).
 	ForeignFiles ForeignFileSummary `json:"foreign_files,omitempty"`
 }
 
@@ -187,18 +188,17 @@ func (l Ledger) AnyNFOConflict() bool {
 //     writeback.
 //   - "both" (state A+B composite, amber): both image and NFO writeback.
 //     Rendered as the image-axis variant with NFO noted.
-//   - "foreign_files" (state E, slate/blue): no configuration conflict, but
-//     unallowlisted foreign image files were detected by the foreign-file
-//     scanner (#1185). Deliberately NOT amber/red because this is a
-//     warning, not a configuration alarm: nothing is gated, the user is
-//     simply being told that media-server-named files exist without
-//     Stillwater provenance.
-//   - "clean" (state D, emerald): no conflicts and no foreign files.
+//   - "clean" (state D, emerald): no conflicts.
 //
 // Precedence is highest-severity-wins: round_trip > image/nfo write-back >
-// foreign_files > clean. Foreign-file warnings are intentionally suppressed
-// while a real conflict is active so the user is not shown two banners at
-// once; the foreign-files page remains reachable from the settings sidebar.
+// clean.
+//
+// Foreign-file detection deliberately does NOT contribute a banner state.
+// Per the M55 TRANQUILITY charter (#1773) it surfaces only via the sidebar
+// "Unmatched Files" pill, never as a "files detected" banner, so the former
+// slate/blue "foreign_files" warning state was removed. ForeignFiles is still
+// carried on the ledger for the JSON /conflicts consumer but no longer affects
+// the banner variant.
 //
 // Callers use this to pick the banner variant; the gate decisions
 // (AnyImageConflict / AnyNFOConflict) remain independent.
@@ -215,9 +215,6 @@ func (l Ledger) BannerState() string {
 		return "image_only"
 	case nfo:
 		return "nfo_only"
-	}
-	if l.ForeignFiles.Count > 0 {
-		return "foreign_files"
 	}
 	return "clean"
 }

@@ -26,16 +26,3 @@ func TestHumanBytes(t *testing.T) {
 		}
 	}
 }
-
-func TestForeignFilesSummary(t *testing.T) {
-	if got := foreignFilesSummary(0); got != "" {
-		t.Errorf("zero count should produce empty string; got %q", got)
-	}
-	if got := foreignFilesSummary(1); got == "" {
-		t.Error("singular count should produce non-empty summary")
-	}
-	got := foreignFilesSummary(5)
-	if got == "" {
-		t.Error("plural count should produce non-empty summary")
-	}
-}

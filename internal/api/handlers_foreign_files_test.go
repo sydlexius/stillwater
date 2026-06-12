@@ -307,6 +307,12 @@ func TestHandleForeignFilesDismiss(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Errorf("dismiss should render HTML; got Content-Type=%q", got)
 	}
+	// QOL (M55 #1773): the success render emits HX-Trigger: swFFCountChanged so
+	// the next/ sidebar count pill refreshes immediately. Inert on stable (no
+	// listener). Guards the live-count-refresh wiring.
+	if got := rec.Header().Get("HX-Trigger"); got != "swFFCountChanged" {
+		t.Errorf("dismiss should set HX-Trigger=swFFCountChanged for the live count-pill refresh; got %q", got)
+	}
 	if !strings.Contains(rec.Body.String(), "foreign-files-table") {
 		t.Errorf("dismiss body should swap the foreign-files table; body=%q", rec.Body.String())
 	}
@@ -471,7 +477,7 @@ func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
 	}
 
 	// After both actions, ledger is empty -> empty-state copy must render.
-	if !strings.Contains(rec.Body.String(), "No foreign image files detected") {
+	if !strings.Contains(rec.Body.String(), "No unmatched files detected") {
 		t.Errorf("empty-state copy should appear on last-row removal; body=%q", rec.Body.String())
 	}
 }
@@ -534,7 +540,7 @@ func TestHandleForeignFilesDismiss_RendersSurvivingRows(t *testing.T) {
 		t.Fatalf("dismiss status: got %d", rec.Code)
 	}
 	// Successful dismiss against a real DB clears every row -> empty state.
-	if !strings.Contains(rec.Body.String(), "No foreign image files detected") {
+	if !strings.Contains(rec.Body.String(), "No unmatched files detected") {
 		t.Errorf("dismiss should render empty-state when ledger is fully cleared; body=%q", rec.Body.String())
 	}
 }
@@ -1024,8 +1030,8 @@ func TestHandleForeignFilesCount_StableChannel(t *testing.T) {
 }
 
 // TestHandleForeignFilesCount_NextChannel asserts the next/-sidebar branch:
-// when count > 0 and ?ch=next is set, the link uses /next/foreign,
-// sw-sidebar-count-pill, and includes the doc-question glyph SVG.
+// when count > 0 and ?ch=next is set, the handler returns only the count pill
+// span (the sidebar entry is static; no full link is generated).
 func TestHandleForeignFilesCount_NextChannel(t *testing.T) {
 	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
@@ -1046,14 +1052,17 @@ func TestHandleForeignFilesCount_NextChannel(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`href="/next/foreign"`,
-		`data-path="/foreign"`,
 		`sw-sidebar-count-pill`,
 		`>1<`,
-		`<svg`, // glyph present in next/ branch
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q\nfull body: %s", want, body)
+		}
+	}
+	// Sidebar entry is static; handler must NOT generate the full link.
+	for _, absent := range []string{`href=`, `data-path=`, `<svg`} {
+		if strings.Contains(body, absent) {
+			t.Errorf("body should not contain %q (entry is static); full body: %s", absent, body)
 		}
 	}
 }
@@ -1121,5 +1130,61 @@ func TestResolveForeignHash_BackfillsFromDisk(t *testing.T) {
 	got, err = resolveForeignHash(&foreign.Entry{FilePath: filepath.Join(dir, "missing.jpg")})
 	if err == nil {
 		t.Errorf("expected error for empty hash with missing file; got hash %q", got)
+	}
+}
+
+// TestHandleForeignFilesCount_NextChannelSidebarZeroClearsPill asserts the
+// zero-count convention for the next/-sidebar Reports entry: when no foreign
+// files are detected the handler returns an empty 200 body so the HTMX
+// hx-swap="innerHTML" clears the pill span; the static <li>/<a> stays visible.
+// This deliberately diverges from the compliance/duplicates hide-at-zero
+// convention because the allowlist must remain reachable even at count==0.
+func TestHandleForeignFilesCount_NextChannelSidebarZeroClearsPill(t *testing.T) {
+	t.Parallel()
+	r, _ := newTestRouterWithForeign(t) // empty repo: count == 0
+	req := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); body != "" {
+		t.Errorf("zero count: want pill-only/empty pill (static entry stays), got %q", body)
+	}
+}
+
+// TestHandleForeignFilesCount_NextChannelSidebarPill asserts that when foreign
+// files are detected the handler returns a sw-sidebar-count-pill span (the
+// sidebar entry is static; only the pill is injected into the placeholder span).
+func TestHandleForeignFilesCount_NextChannelSidebarPill(t *testing.T) {
+	t.Parallel()
+	r, db := newTestRouterWithForeign(t)
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('b1','Miles','/m/Miles')`)
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "b1", FilePath: "/m/Miles/extra.jpg", FileName: "extra.jpg",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	req := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("next-channel sidebar pill: status: want 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `sw-sidebar-count-pill`) {
+		t.Errorf("next-channel sidebar pill: body missing sw-sidebar-count-pill\nfull body: %s", body)
+	}
+	// Entry is static; link markup must not appear in the pill-only response.
+	for _, absent := range []string{`href=`, `data-path=`} {
+		if strings.Contains(body, absent) {
+			t.Errorf("next-channel sidebar pill: should not contain %q\nfull body: %s", absent, body)
+		}
 	}
 }

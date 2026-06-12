@@ -15,10 +15,6 @@ type ConflictBannerView struct {
 	// CTA ("Let Stillwater manage it" in states A and B). For state C the
 	// CTA flips every contributing connection via a dedicated endpoint.
 	PrimaryConnectionID string
-	// ForeignFileCount is the number of unallowlisted foreign-file rows
-	// currently recorded; non-zero drives the slate/blue warning banner
-	// (state E) when no higher-severity state is active.
-	ForeignFileCount int
 }
 
 // ConflictBannerConn is one connection that contributes to the banner's
@@ -130,8 +126,6 @@ templ ConflictBannerContent(v ConflictBannerView) {
 			@conflictBannerWarn(v, "nfo")
 		case "both":
 			@conflictBannerWarn(v, "both")
-		case "foreign_files":
-			@conflictBannerForeignFiles(v)
 		default:
 			@conflictBannerClean()
 	}
@@ -635,54 +629,5 @@ templ conflictBannerClean() {
 				} catch (e) {}
 			})();
 		</script>
-	</div>
-}
-
-// conflictBannerForeignFiles renders the slate/blue state E bar shown when
-// the foreign-file scanner detected unallowlisted media-server-named files
-// without Stillwater EXIF provenance. Deliberately not amber/red: nothing
-// is gated, this is a heads-up. "Review" links to the management page; the
-// "Dismiss" button bulk-allowlists every currently-active entry globally.
-templ conflictBannerForeignFiles(v ConflictBannerView) {
-	@clearCleanDismissal()
-	<div
-		id="sw-conflict-foreign"
-		class="bg-gradient-to-r from-slate-700/55 to-blue-700/40 dark:from-slate-700/55 dark:to-blue-700/40 backdrop-blur-md border-b border-slate-300/25 px-6 py-3"
-		role="status"
-		aria-label="Foreign image files notice"
-		data-conflict-state="foreign_files"
-	>
-		<div class="max-w-6xl mx-auto flex flex-wrap items-center gap-4">
-			<div class="flex items-center gap-3 min-w-0 flex-1">
-				<span class="inline-block h-2 w-2 rounded-full bg-blue-300 ring-4 ring-blue-300/20 shrink-0" aria-hidden="true"></span>
-				<div class="min-w-0">
-					<div class="font-semibold text-slate-100">
-						Foreign image files detected
-						<span class="font-normal text-slate-200/90">{ foreignFilesSummary(v.ForeignFileCount) }</span>
-					</div>
-					<div class="text-xs text-slate-200/70 mt-0.5">
-						These files match media-server naming patterns but do not carry Stillwater provenance. Review them on the foreign-files page or dismiss to allowlist all.
-					</div>
-				</div>
-			</div>
-			<div class="flex items-center gap-2 shrink-0">
-				<a
-					href="/settings/foreign-files"
-					class="px-3 py-1.5 rounded-md bg-blue-300 text-slate-900 text-sm font-medium hover:bg-white"
-				>Review</a>
-				<button
-					type="button"
-					class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/10 text-sm text-slate-100"
-					hx-post="/api/v1/foreign-files/dismiss"
-					hx-swap="none"
-					hx-disabled-elt="this"
-					data-sw-error={ t(ctx, "conflict.dismiss_response_error") }
-					data-sw-net-error={ t(ctx, "conflict.dismiss_send_error") }
-					hx-on::after-request="if(event.detail.successful){htmx.ajax('GET','/api/v1/config/conflict-banner',{target:'#conflict-banner',swap:'innerHTML'});}"
-					hx-on::response-error="alert(this.dataset.swError)"
-					hx-on::send-error="alert(this.dataset.swNetError)"
-				>Dismiss (allowlist all)</button>
-			</div>
-		</div>
 	</div>
 }

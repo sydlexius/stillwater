@@ -522,20 +522,6 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.1f %s", float64(n)/float64(div), suffixes[exp])
 }
 
-// foreignFilesSummary renders a short human-readable count clause for the
-// foreign-files banner state. Singular/plural and zero handled in one place
-// so the templ template can stay declarative.
-func foreignFilesSummary(n int) string {
-	switch n {
-	case 0:
-		return ""
-	case 1:
-		return "1 file matched a media-server name pattern but had no Stillwater provenance."
-	default:
-		return fmt.Sprintf("%d files matched media-server name patterns but had no Stillwater provenance.", n)
-	}
-}
-
 // boolAttr returns "true" or "false" for use in HTML attributes like aria-checked.
 func boolAttr(b bool) string {
 	if b {
