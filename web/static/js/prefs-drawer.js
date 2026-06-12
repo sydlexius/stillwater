@@ -816,7 +816,15 @@
       });
       bgSlider.addEventListener('change', function () {
         if (window.swPreferences && typeof window.swPreferences.set === 'function') {
-          window.swPreferences.set('bg_opacity', bgSlider.value).catch(function () {
+          var requested = String(bgSlider.value);
+          window.swPreferences.set('bg_opacity', requested).then(function (saved) {
+            if (String(saved) !== requested) {
+              bgSlider.value = String(saved);
+              var label = drawer.querySelector('#pref-d-bg-opacity-value');
+              if (label) { label.textContent = String(saved) + '%'; }
+              if (window.showToast) { showToast('Failed to save background opacity'); }
+            }
+          }).catch(function () {
             if (window.showToast) { showToast('Failed to save background opacity'); }
           });
         } else {

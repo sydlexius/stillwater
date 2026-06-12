@@ -123,4 +123,31 @@ describe('prefs-drawer bg-opacity: persist on change', () => {
     assert.match(puts[0].url, /\/api\/v1\/preferences\/bg_opacity$/);
     assert.equal(JSON.parse(puts[0].options.body).value, '40');
   });
+
+  it('server rejection shows toast and reverts slider + label to previous value', async () => {
+    const dom = setup('dark');
+    const win = dom.window;
+
+    const toastCalls = [];
+    win.showToast = (msg) => toastCalls.push(msg);
+
+    // Simulate a server reject (ok: false). swPreferences.set() will resolve
+    // with the previousValue ('85', the DEFAULTS.bg_opacity fallback) rather
+    // than rejecting, so the .catch() in the old handler was dead code.
+    const fetchMock = makeFetchMock({ ok: false, status: 500 });
+    win.fetch = fetchMock;
+
+    const slider = win.document.getElementById('pref-d-bg-opacity');
+    const label = win.document.getElementById('pref-d-bg-opacity-value');
+
+    fireChange(win, slider, 40);
+    await flush();
+
+    // Toast must fire so the failure is visible.
+    assert.equal(toastCalls.length, 1, 'showToast must be called on server reject');
+
+    // Slider and label must revert to the previous value (DEFAULTS.bg_opacity = '85').
+    assert.equal(slider.value, '85', 'slider must revert to previous value');
+    assert.equal(label.textContent, '85%', 'label must revert to previous value');
+  });
 });

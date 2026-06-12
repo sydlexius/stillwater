@@ -1174,6 +1174,9 @@ func TestHandleForeignFilesCount_NextChannelSidebarPill(t *testing.T) {
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 	r.handleForeignFilesCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("next-channel sidebar pill: status: want 200, got %d", rec.Code)
+	}
 	body := rec.Body.String()
 	if !strings.Contains(body, `sw-sidebar-count-pill`) {
 		t.Errorf("next-channel sidebar pill: body missing sw-sidebar-count-pill\nfull body: %s", body)
