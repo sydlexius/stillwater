@@ -126,22 +126,24 @@ jobs:
           echo "OK: all generated files are current."
 
   # ---------------------------------------------------------------------------
-  # Per-package coverage floor
+  # Per-package coverage floor (pass-through)
   #
-  # Replicates the '=== Per-package coverage floor ===' step in
-  # scripts/pre-push-gate.sh.  Runs go test to produce a coverage profile,
-  # then calls scripts/coverage-floor.sh to enforce the one-way ratchet
-  # recorded in testdata/coverage-floor.json.
+  # Real enforcement has moved to the CI workflow (ci.yml Coverage Floor job),
+  # which consumes the per-shard coverage artifacts uploaded by the test matrix
+  # instead of re-running the full ./internal/... suite.
   #
-  # Uses dorny/paths-filter to skip the expensive test run on PRs that touch
-  # no Go source (e.g. docs-only or workflow-only changes).  The job itself
-  # always runs and always emits a terminal status -- skipping only means
-  # "no Go changed; floor cannot have dropped" which is always correct.
+  # This job is kept here solely to preserve the "Pre-Push Gate / Coverage Floor"
+  # required-status-check entry.  It always runs and always emits a terminal
+  # status without running go test.
+  #
+  # BRANCH PROTECTION NOTE: add "CI / Coverage Floor" as a required status check
+  # in addition to (or replacing) this one so the enforcement in ci.yml is
+  # actually gated.  See docs/pr-workflow.md.
   # ---------------------------------------------------------------------------
   coverage-floor:
     name: Coverage Floor
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -153,43 +155,16 @@ jobs:
           filters: |
             go:
               - '.github/workflows/gate.yml'
+              - '.github/workflows/ci.yml'
               - 'scripts/coverage-floor.sh'
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
               - 'testdata/coverage-floor.json'
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - name: Coverage floor enforced by CI workflow
         if: steps.filter.outputs.go == 'true'
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run tests and collect coverage profile
-        if: steps.filter.outputs.go == 'true'
-        run: |
-          go test -count=1 -covermode=atomic \
-            -coverprofile=coverage-floor.out \
-            ./internal/...
-
-      - name: Enforce per-package coverage floor
-        if: steps.filter.outputs.go == 'true'
-        run: |
-          output=$(bash scripts/coverage-floor.sh --cover coverage-floor.out 2>&1) || {
-            echo "$output"
-            {
-              echo "## Coverage Floor -- FAILED"
-              echo ""
-              echo "One or more packages fell below their coverage floor. Add tests or update"
-              echo "\`testdata/coverage-floor.json\` if the drop is intentional."
-              echo ""
-              echo '```'
-              echo "$output"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          }
-          echo "$output"
+        run: echo "Coverage floor enforcement runs in the CI workflow (Coverage Floor job); see that check for results."
 
       - name: Skip (no Go changes)
         if: steps.filter.outputs.go != 'true'
