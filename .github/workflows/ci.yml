@@ -311,20 +311,19 @@ jobs:
           # (e.g. coverage-api-1/coverage.out, coverage-rule-2/coverage.out).
           pattern: coverage-*
 
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Merge coverage profiles
-        run: |
-          # Combine per-shard text coverage profiles into one file.
-          # Each profile starts with a "mode:" header line; keep it once
-          # and strip it from all subsequent files to avoid duplicates.
-          first=true
-          for f in coverage-*/coverage.out; do
-            if $first; then
-              cat "$f" > merged-coverage.out
-              first=false
-            else
-              tail -n +2 "$f" >> merged-coverage.out
-            fi
-          done
+        # go tool gocovmerge performs a per-block UNION merge (summing hit
+        # counts), so each statement block appears exactly once in the output.
+        # The naive head-1/tail concat duplicates every block across shards
+        # because each shard runs -coverpkg=./... and emits a full-module
+        # profile; plain concat causes coverage-floor.sh to sum nstmts 9x
+        # while covered stays 1x, collapsing every package to ~1/numShards.
+        run: go tool gocovmerge coverage-*/coverage.out > merged-coverage.out
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
@@ -362,16 +361,7 @@ jobs:
           pattern: coverage-*
 
       - name: Merge coverage profiles
-        run: |
-          first=true
-          for f in coverage-*/coverage.out; do
-            if $first; then
-              cat "$f" > merged.out
-              first=false
-            else
-              tail -n +2 "$f" >> merged.out
-            fi
-          done
+        run: go tool gocovmerge coverage-*/coverage.out > merged.out
 
       - name: Enforce per-package coverage floor
         run: |
