@@ -1,0 +1,34 @@
+meta {
+  name: Patch Then Get Round-Trip Verify
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{apiBase}}/preferences
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("previously patched thumbnail_size persists in GET-all", function() {
+    // Verifies merge semantics: the value written by the preceding PATCH
+    // (seq 8) is returned by GET-all in its canonical form.
+    expect(res.body.thumbnail_size).to.equal("small");
+  });
+
+  test("unpatched keys are still present (merge not replace)", function() {
+    // Keys not touched by the PATCH are not wiped out.
+    expect(res.body.theme).to.be.a("string");
+    expect(res.body.font_size).to.be.a("string");
+    expect(res.body.sidebar_state).to.be.a("string");
+  });
+}

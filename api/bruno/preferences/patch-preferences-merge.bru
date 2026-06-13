@@ -1,0 +1,43 @@
+meta {
+  name: Patch Preferences (merge semantics)
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{apiBase}}/preferences
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "theme": "light",
+    "sidebar_state": "icon-only"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response echoes canonical values for patched keys", function() {
+    expect(res.body.theme).to.equal("light");
+    expect(res.body.sidebar_state).to.equal("icon-only");
+  });
+
+  test("response only contains the patched keys (merge not replace)", function() {
+    // PATCH must not clobber unmentioned keys: the response body only
+    // echoes the keys that were written, not the full preference map.
+    const keys = Object.keys(res.body);
+    expect(keys).to.have.lengthOf(2);
+    expect(keys).to.include("theme");
+    expect(keys).to.include("sidebar_state");
+  });
+}

@@ -1,0 +1,32 @@
+meta {
+  name: Put Preference Invalid Value (400)
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{apiBase}}/preferences/theme
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "value": "invalid-theme-value"
+  }
+}
+
+tests {
+  test("should return 400 for invalid value", function() {
+    expect(res.status).to.equal(400);
+  });
+
+  test("error field is present", function() {
+    expect(res.body.error).to.be.a("string");
+  });
+}

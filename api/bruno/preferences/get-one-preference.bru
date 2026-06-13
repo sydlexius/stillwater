@@ -1,0 +1,31 @@
+meta {
+  name: Get One Preference
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/preferences/theme
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response contains key and value", function() {
+    expect(res.body.key).to.equal("theme");
+    expect(res.body.value).to.be.a("string");
+  });
+
+  test("value is a valid theme option", function() {
+    const valid = ["dark", "light", "system"];
+    expect(valid).to.include(res.body.value);
+  });
+}
