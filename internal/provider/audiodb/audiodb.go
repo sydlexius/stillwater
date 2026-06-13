@@ -298,7 +298,10 @@ func mapArtist(ctx context.Context, art *AudioDBArtist) *provider.ArtistMetadata
 		"nl": art.BiographyNL,
 		"es": art.BiographyES,
 	}
-	fallbackBio := firstNonEmpty(art.Biography, art.BiographyEN)
+	// Prefer the explicit English field as the no-preference fallback so that
+	// callers without a language context receive English rather than whatever
+	// locale AudioDB happens to return in the generic strBiography slot.
+	fallbackBio := firstNonEmpty(art.BiographyEN, art.Biography)
 
 	langPrefs := provider.MetadataLanguages(ctx)
 	bio := provider.SelectLocalizedBiography(bioCandidates, langPrefs, fallbackBio)
