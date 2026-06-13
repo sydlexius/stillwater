@@ -224,12 +224,15 @@ func TestCount_ConsistentWithList(t *testing.T) {
 // EXISTS clauses emitted by buildWhereClause for the per-library include and
 // exclude flyout filters (Filters["library_<id>"] = include|exclude).
 //
-// Issue #1217 changed the meaning of "include": when at least one library is
-// set to Include, the filter is a WHITELIST -- results are restricted to
-// artists whose memberships fall ENTIRELY within the included set. An artist
-// also in some non-included library is dropped, even though it is in an
-// included library too. When no library is set to Include, the exclude-only
-// behavior is unchanged: each excluded library emits its own NOT EXISTS.
+// "Include X" means HAS-MEMBERSHIP-IN-X (issue #1786). Multiple includes
+// UNION: an artist matching ANY included library passes the filter. The old
+// "entirely within" restriction (artist must have NO membership outside the
+// included set, from #1217) is dropped because platform libraries (Emby,
+// Jellyfin) mirror filesystem folders -- virtually every filesystem artist
+// also holds a platform membership, causing the guard to exclude them all.
+//
+// When no library is set to Include the exclude-only behavior is unchanged:
+// each excluded library emits its own NOT EXISTS predicate.
 func TestCount_WithLibraryFlyoutFilters(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
@@ -264,32 +267,33 @@ func TestCount_WithLibraryFlyoutFilters(t *testing.T) {
 		}
 	}
 
-	// Whitelist {lib-a}: only artists whose memberships are entirely within
-	// {lib-a}. art-a qualifies; art-ab does not (it is also in lib-b).
+	// Include {lib-a}: artists with membership in lib-a. art-a (lib-a only)
+	// and art-ab (lib-a + lib-b) both qualify. art-ab MUST be returned --
+	// the old "entirely within" guard wrongly excluded it because it also held
+	// a lib-b membership (#1786 regression case).
 	includeA, err := svc.Count(ctx, CountParams{
 		Filters: map[string]string{"library_lib-a": "include"},
 	})
 	if err != nil {
 		t.Fatalf("Count include lib-a: %v", err)
 	}
-	if includeA != 1 {
-		t.Errorf("include lib-a count = %d, want 1 (art-a only)", includeA)
+	if includeA != 2 {
+		t.Errorf("include lib-a count = %d, want 2 (art-a + art-ab)", includeA)
 	}
 
-	// Whitelist {lib-a, lib-b}: art-a, art-b, art-ab all qualify because each
-	// of their memberships is within the included set (3). art-c and art-none
-	// are excluded.
+	// Include {lib-a, lib-b}: UNION -- artists with membership in lib-a OR
+	// lib-b. art-a, art-b, art-ab all qualify (3). art-c and art-none are
+	// excluded. A count of 3 confirms art-none (zero memberships) is not
+	// matched: the include predicate requires membership in at least one
+	// included library.
 	includeAB, err := svc.Count(ctx, CountParams{
 		Filters: map[string]string{"library_lib-a": "include", "library_lib-b": "include"},
 	})
 	if err != nil {
 		t.Fatalf("Count include lib-a + lib-b: %v", err)
 	}
-	// A count of 3 also confirms art-none (zero memberships) is not matched:
-	// the whitelist requires membership in at least one included library, so a
-	// wrongly-matched art-none would push this to 4.
 	if includeAB != 3 {
-		t.Errorf("include lib-a + lib-b count = %d, want 3", includeAB)
+		t.Errorf("include lib-a + lib-b count = %d, want 3 (art-a, art-b, art-ab)", includeAB)
 	}
 
 	// Exclude-only mode is unchanged. Exclude lib-c: drop art-c. art-none has
@@ -304,16 +308,17 @@ func TestCount_WithLibraryFlyoutFilters(t *testing.T) {
 		t.Errorf("exclude lib-c count = %d, want 4", excludeC)
 	}
 
-	// Include lib-a, exclude lib-b: include is present, so whitelist mode is
-	// active and the explicit exclude is redundant. Whitelist {lib-a} keeps
-	// only art-a.
+	// Include lib-a, exclude lib-b: the explicit exclude is redundant when an
+	// include is present (parseFlyoutFilters drops explicit excludes once any
+	// include is set, per the handler normalization). Include lib-a alone:
+	// art-a + art-ab = 2.
 	mixed, err := svc.Count(ctx, CountParams{
 		Filters: map[string]string{"library_lib-a": "include", "library_lib-b": "exclude"},
 	})
 	if err != nil {
 		t.Fatalf("Count include lib-a exclude lib-b: %v", err)
 	}
-	if mixed != 1 {
-		t.Errorf("include lib-a exclude lib-b count = %d, want 1 (art-a only)", mixed)
+	if mixed != 2 {
+		t.Errorf("include lib-a exclude lib-b count = %d, want 2 (art-a + art-ab)", mixed)
 	}
 }

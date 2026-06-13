@@ -601,36 +601,28 @@ func buildWhereClause(params ListParams) (string, []any) {
 
 	// Aggregate per-library filters into EXISTS / NOT EXISTS sub-selects.
 	//
-	// Two distinct modes (issue #1217):
+	// Two distinct modes (issue #1217, revised by #1786):
 	//
-	//  1. Whitelist mode -- when at least one library is set to Include.
-	//     Results are restricted to artists whose library memberships fall
-	//     ENTIRELY within the included set. This requires BOTH:
-	//       a) the artist has a membership in at least one included library, AND
-	//       b) the artist has NO membership in any library outside that set.
-	//     Any explicit excludes are redundant in this mode (a whitelist already
-	//     excludes everything not whitelisted), so libExcludes is ignored here.
+	//  1. Include mode -- when at least one library is set to Include.
+	//     "Include X" means HAS-MEMBERSHIP-IN-X. Multiple includes UNION via IN:
+	//     the artist must belong to at least one of the included libraries.
+	//     The original #1217 implementation also required that the artist have NO
+	//     membership outside the included set (an "entirely within" guard), but
+	//     that condition over-excludes: platform libraries (Emby, Jellyfin) mirror
+	//     filesystem folders, so almost every filesystem artist also holds a
+	//     platform membership -- the guard excluded them incorrectly (#1786).
+	//     Any explicit excludes are redundant in this mode (the include predicate
+	//     already scopes results), so libExcludes is ignored here.
 	//
 	//  2. Exclude-only mode -- when no library is set to Include. Each excluded
 	//     library emits its own NOT EXISTS predicate; unset libraries stay
 	//     unconstrained. This is the historical behavior.
 	if len(libIncludes) > 0 {
-		// Whitelist mode. (a) membership in at least one included library.
+		// Include mode: artist must have membership in at least one included library.
 		conditions = append(conditions, `EXISTS (
 			SELECT 1 FROM artist_libraries al
 			WHERE al.artist_id = artists.id
 			  AND al.library_id IN (`+buildPlaceholders(len(libIncludes))+`)
-		)`)
-		for _, id := range libIncludes {
-			args = append(args, id)
-		}
-		// (b) no membership in any library OUTSIDE the included set. The
-		// NOT IN list pins the whitelist boundary: any membership row whose
-		// library_id is not in the included set disqualifies the artist.
-		conditions = append(conditions, `NOT EXISTS (
-			SELECT 1 FROM artist_libraries al
-			WHERE al.artist_id = artists.id
-			  AND al.library_id NOT IN (`+buildPlaceholders(len(libIncludes))+`)
 		)`)
 		for _, id := range libIncludes {
 			args = append(args, id)

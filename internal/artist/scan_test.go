@@ -304,11 +304,12 @@ func TestBuildWhereClause_TypeFilter_IncludeExclude(t *testing.T) {
 	}
 }
 
-// TestBuildWhereClause_LibraryFilter_Include verifies the whitelist-mode
-// clause emitted when at least one library is set to Include (issue #1217).
-// Whitelist mode emits BOTH an EXISTS (membership in an included library) and
-// a NOT EXISTS (no membership outside the included set), so the included IDs
-// are bound twice: once for the IN list, once for the NOT IN list.
+// TestBuildWhereClause_LibraryFilter_Include verifies the include-mode clause
+// emitted when at least one library is set to Include (issue #1217, #1786).
+// Include mode emits a single EXISTS (membership in any included library).
+// Each included library ID is bound exactly once. The old "entirely within"
+// NOT EXISTS guard (dropped in #1786) would exclude artists who also have a
+// platform library membership, so it must not appear.
 func TestBuildWhereClause_LibraryFilter_Include(t *testing.T) {
 	t.Parallel()
 	clause, args := buildWhereClause(ListParams{Filters: map[string]string{
@@ -318,13 +319,17 @@ func TestBuildWhereClause_LibraryFilter_Include(t *testing.T) {
 	if !strings.Contains(clause, "EXISTS") || !strings.Contains(clause, "artist_libraries") {
 		t.Errorf("expected EXISTS artist_libraries clause, got %q", clause)
 	}
-	if !strings.Contains(clause, "NOT EXISTS") || !strings.Contains(clause, "NOT IN") {
-		t.Errorf("expected whitelist NOT EXISTS ... NOT IN clause, got %q", clause)
+	// The "entirely within" guard from #1217 must be gone: it over-excluded
+	// artists who also hold platform library memberships (#1786).
+	if strings.Contains(clause, "NOT EXISTS") {
+		t.Errorf("include mode must not emit NOT EXISTS (over-excludes platform-mirrored artists); got %q", clause)
 	}
-	// Two included libraries, each bound once for the IN list and once for
-	// the NOT IN list: 4 args total.
-	if len(args) != 4 {
-		t.Errorf("expected 4 library args (2 IDs bound twice), got %d: %v", len(args), args)
+	if strings.Contains(clause, "NOT IN") {
+		t.Errorf("include mode must not emit NOT IN boundary guard; got %q", clause)
+	}
+	// Two included libraries, each bound exactly once: 2 args total.
+	if len(args) != 2 {
+		t.Errorf("expected 2 library args (one bind per included ID), got %d: %v", len(args), args)
 	}
 	gotCounts := map[string]int{}
 	for _, a := range args {
@@ -334,8 +339,64 @@ func TestBuildWhereClause_LibraryFilter_Include(t *testing.T) {
 		}
 		gotCounts[s]++
 	}
-	if gotCounts["lib-a"] != 2 || gotCounts["lib-b"] != 2 || len(gotCounts) != 2 {
-		t.Errorf("expected lib-a/lib-b each bound twice, got %v", gotCounts)
+	if gotCounts["lib-a"] != 1 || gotCounts["lib-b"] != 1 || len(gotCounts) != 2 {
+		t.Errorf("expected lib-a/lib-b each bound once, got %v", gotCounts)
+	}
+}
+
+// TestBuildWhereClause_LibraryFilter_Include_WithPlatformMembership is the
+// regression guard for issue #1786. It verifies that an artist who holds
+// membership in BOTH a filesystem library (the included one) and a platform
+// library (Emby/Jellyfin -- outside the included set) is NOT excluded.
+//
+// The old condition (b) from #1217 emitted:
+//
+//	NOT EXISTS (... al.library_id NOT IN (...))
+//
+// which disqualified any artist with an out-of-set membership. Platform
+// libraries are always present for synced artists, so this excluded virtually
+// everyone. The fix (dropping condition b) means Include X = HAS-membership-in-X.
+func TestBuildWhereClause_LibraryFilter_Include_WithPlatformMembership(t *testing.T) {
+	t.Parallel()
+	// Include only the filesystem library.
+	clause, args := buildWhereClause(ListParams{Filters: map[string]string{
+		"library_fs-local": "include",
+	}})
+	// Clause must have the EXISTS membership check.
+	if !strings.Contains(clause, "EXISTS") {
+		t.Errorf("expected EXISTS membership check, got %q", clause)
+	}
+	// The out-of-set boundary guard must be absent.
+	if strings.Contains(clause, "NOT EXISTS") {
+		t.Errorf("NOT EXISTS guard must be absent; it would exclude platform-mirrored artists: %q", clause)
+	}
+	// The library ID is bound exactly once.
+	if len(args) != 1 || args[0] != "fs-local" {
+		t.Errorf("expected [fs-local] args, got %v", args)
+	}
+}
+
+// TestBuildWhereClause_LibraryFilter_Include_MultiUnion verifies that multiple
+// Include libraries produce a single EXISTS with an IN list (UNION semantics):
+// an artist belonging to ANY included library passes the filter.
+func TestBuildWhereClause_LibraryFilter_Include_MultiUnion(t *testing.T) {
+	t.Parallel()
+	clause, args := buildWhereClause(ListParams{Filters: map[string]string{
+		"library_lib-1": "include",
+		"library_lib-2": "include",
+		"library_lib-3": "include",
+	}})
+	// Single EXISTS with an IN list -- not multiple separate EXISTS conditions.
+	existsCount := strings.Count(clause, "EXISTS (")
+	if existsCount != 1 {
+		t.Errorf("expected exactly 1 EXISTS clause for multi-include union, got %d in %q", existsCount, clause)
+	}
+	if !strings.Contains(clause, "IN (") {
+		t.Errorf("expected IN (...) for 3 included libraries, got %q", clause)
+	}
+	// Each library ID bound once.
+	if len(args) != 3 {
+		t.Errorf("expected 3 args, got %d: %v", len(args), args)
 	}
 }
 
