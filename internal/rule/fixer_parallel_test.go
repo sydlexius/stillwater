@@ -33,7 +33,7 @@ func seedArtists(t *testing.T, db *sql.DB, n int) {
 }
 
 // TestWalkScopedArtists_ParallelOverlapAndCounts is the deterministic core of
-// the issue #1730 acceptance bar. It drives walkScopedArtists directly with a
+// the issue #1730 acceptance bar. It drives walkArtistsNoMark directly with a
 // synthetic per-artist function that sleeps for a fixed duration (a stand-in
 // for provider-fetch latency) so the test can observe three things without a
 // live network:
@@ -86,10 +86,10 @@ func TestWalkScopedArtists_ParallelOverlapAndCounts(t *testing.T) {
 			}, true
 		}
 		start := time.Now()
-		processed, err := p.walkScopedArtists(context.Background(), RunScopeAll, false, result, fn)
+		processed, err := p.walkArtistsNoMark(context.Background(), RunScopeAll, result, fn)
 		elapsed = time.Since(start)
 		if err != nil {
-			t.Fatalf("walkScopedArtists(workers=%d): %v", workers, err)
+			t.Fatalf("walkArtistsNoMark(workers=%d): %v", workers, err)
 		}
 		result.ArtistsProcessed = processed
 		return result, fetches, maxActive, elapsed
