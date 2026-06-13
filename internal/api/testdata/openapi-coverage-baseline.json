@@ -19,7 +19,6 @@
   "getAPIDocs",
   "getArtist",
   "getConnectionScraperConfig",
-  "getFieldProviders",
   "getHealth",
   "getLogging",
   "getMaintenanceStatus",

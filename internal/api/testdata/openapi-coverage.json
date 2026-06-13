@@ -606,7 +606,7 @@
     "method": "GET",
     "path": "/artists/{id}/fields/{field}/providers",
     "handler": "handleFieldProviders",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getFieldsEditAll",
