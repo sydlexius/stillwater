@@ -645,6 +645,70 @@ func TestHistoryService_ListGlobal(t *testing.T) {
 	})
 }
 
+// TestHistoryService_ListGlobal_PerFieldLimit verifies that the windowed CTE
+// path (PerFieldLimit > 0) returns at most N rows per field and that a field
+// with fewer than N entries is not truncated. This exercises the correctness
+// guarantee that a single heavily-edited field cannot starve other fields.
+func TestHistoryService_ListGlobal_PerFieldLimit(t *testing.T) {
+	t.Parallel()
+	svc, db := setupHistoryTestDB(t)
+	ctx := context.Background()
+
+	seedTestArtist(t, db, "artist-pfl")
+
+	// biography: 7 changes (more than the cap of 6)
+	for i := 0; i < 7; i++ {
+		if err := svc.Record(ctx, "artist-pfl", "biography", "", "bio", "manual"); err != nil {
+			t.Fatalf("recording biography change %d: %v", i, err)
+		}
+	}
+	// genres: 2 changes (fewer than the cap)
+	for i := 0; i < 2; i++ {
+		if err := svc.Record(ctx, "artist-pfl", "genres", "", "Rock", "manual"); err != nil {
+			t.Fatalf("recording genres change %d: %v", i, err)
+		}
+	}
+
+	changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+		ArtistID:      "artist-pfl",
+		Fields:        []string{"biography", "genres"},
+		PerFieldLimit: 6,
+		Limit:         1,
+		Offset:        10,
+	})
+	if err != nil {
+		t.Fatalf("ListGlobal(PerFieldLimit=6) error = %v", err)
+	}
+	// Windowed path returns total=0 (no meaningful pagination total).
+	if total != 0 {
+		t.Errorf("total = %d, want 0 for per-field-capped path", total)
+	}
+
+	// Count per field.
+	bioCount := 0
+	genreCount := 0
+	for _, c := range changes {
+		switch c.Field {
+		case "biography":
+			bioCount++
+		case "genres":
+			genreCount++
+		}
+	}
+	// biography: 7 entries, cap=6 -> expect exactly 6
+	if bioCount != 6 {
+		t.Errorf("biography count = %d, want 6 (cap at PerFieldLimit)", bioCount)
+	}
+	// genres: 2 entries, cap=6 -> expect all 2
+	if genreCount != 2 {
+		t.Errorf("genres count = %d, want 2 (not truncated when under cap)", genreCount)
+	}
+	// Total: 6 + 2 = 8
+	if len(changes) != 8 {
+		t.Errorf("len(changes) = %d, want 8 (6 biography + 2 genres)", len(changes))
+	}
+}
+
 func TestIsTrackableField(t *testing.T) {
 	t.Parallel()
 	trackable := []string{"biography", "genres", "styles", "moods", "formed", "born", "disbanded", "died", "years_active", "type", "gender"}

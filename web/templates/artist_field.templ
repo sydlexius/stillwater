@@ -44,24 +44,27 @@ templ FieldDisplay(a *artist.Artist, field string, providers []string) {
 // next/ channel's edit-mode "Fetch from providers" icon (rendered by
 // fieldEditActions). It is empty/ignored for the stable channel.
 // history carries recent per-field changes for the undo clock affordance.
-templ FieldEdit(a *artist.Artist, field string, providers []string, history []artist.MetadataChangeWithArtist) {
+// oob, when true, adds hx-swap-oob="outerHTML" to the root element so that
+// the fragment can be distributed by htmx from a batch edit-all response.
+// Pass false from handleFieldEdit (single-field path) to keep existing behavior.
+templ FieldEdit(a *artist.Artist, field string, providers []string, history []artist.MetadataChangeWithArtist, oob bool) {
 	switch field {
 		case "biography":
-			@biographyEdit(a, providers, history)
+			@biographyEdit(a, providers, history, oob)
 		case "genres":
-			@tagFieldEdit(a, "genres", t(ctx, "artist.genres"), a.Genres, providers, history)
+			@tagFieldEdit(a, "genres", t(ctx, "artist.genres"), a.Genres, providers, history, oob)
 		case "styles":
-			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles, providers, history)
+			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles, providers, history, oob)
 		case "moods":
-			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods, providers, history)
+			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods, providers, history, oob)
 		case "type":
-			@selectFieldEdit(a, "type", fieldLabel(ctx, "type"), artist.FieldValueFromArtist(a, "type"), typeOptions(), providers, history)
+			@selectFieldEdit(a, "type", fieldLabel(ctx, "type"), artist.FieldValueFromArtist(a, "type"), typeOptions(), providers, history, oob)
 		case "gender":
-			@selectFieldEdit(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), genderOptions(), providers, history)
+			@selectFieldEdit(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), genderOptions(), providers, history, oob)
 		case "formed", "born", "disbanded", "died", "years_active", "origin",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
-			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers, history)
+			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers, history, oob)
 	}
 }
 
@@ -423,8 +426,14 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 	</div>
 }
 
-templ biographyEdit(a *artist.Artist, providers []string, history []artist.MetadataChangeWithArtist) {
-	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+templ biographyEdit(a *artist.Artist, providers []string, history []artist.MetadataChangeWithArtist, oob bool) {
+	<div
+		id={ "field-biography-" + a.ID }
+		class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow"
+		if oob {
+			hx-swap-oob="outerHTML"
+		}
+	>
 		<div class="flex items-center justify-between mb-3">
 			<h2 class="text-lg font-semibold inline-flex items-center gap-2">
 				{ t(ctx, "artist.biography") }
@@ -468,8 +477,14 @@ templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colo
 	</div>
 }
 
-templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, providers []string, history []artist.MetadataChangeWithArtist) {
-	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
+templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, providers []string, history []artist.MetadataChangeWithArtist, oob bool) {
+	<div
+		id={ "field-" + field + "-" + a.ID }
+		class="mb-3"
+		if oob {
+			hx-swap-oob="outerHTML"
+		}
+	>
 		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
 			@fieldEditActions(a, field, providers, len(tags) > 0, history)
@@ -579,8 +594,13 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 	}
 }
 
-templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []string, history []artist.MetadataChangeWithArtist) {
-	<div id={ "field-" + field + "-" + a.ID }>
+templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []string, history []artist.MetadataChangeWithArtist, oob bool) {
+	<div
+		id={ "field-" + field + "-" + a.ID }
+		if oob {
+			hx-swap-oob="outerHTML"
+		}
+	>
 		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
 		<dd>
 			<form
@@ -830,8 +850,13 @@ func typeOptions() []SelectOption {
 
 // selectFieldEdit renders a detail sidebar field in edit mode with a <select>
 // dropdown instead of a free-text input. Used for type and gender fields.
-templ selectFieldEdit(a *artist.Artist, field, label, value string, options []SelectOption, providers []string, history []artist.MetadataChangeWithArtist) {
-	<div id={ "field-" + field + "-" + a.ID }>
+templ selectFieldEdit(a *artist.Artist, field, label, value string, options []SelectOption, providers []string, history []artist.MetadataChangeWithArtist, oob bool) {
+	<div
+		id={ "field-" + field + "-" + a.ID }
+		if oob {
+			hx-swap-oob="outerHTML"
+		}
+	>
 		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
 		<dd>
 			<form

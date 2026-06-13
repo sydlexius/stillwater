@@ -1026,6 +1026,27 @@ func imageRegistryDrift(current, desired []ArtistImage) bool {
 	return false
 }
 
+// editableFieldsOrdered is the canonical ordered list of all fields that
+// FieldEdit and handleFieldsEditAll handle. Order matches the template switch
+// statement so OOB fragments appear in a predictable sequence in the DOM.
+var editableFieldsOrdered = []string{
+	"biography",
+	"genres", "styles", "moods",
+	"type", "gender",
+	"formed", "born", "disbanded", "died",
+	"years_active", "origin",
+	"name", "sort_name", "disambiguation",
+	"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id",
+}
+
+// EditableFieldsList returns the ordered list of all editable field names
+// supported by the field-level API and the FieldEdit template.
+func EditableFieldsList() []string {
+	cp := make([]string, len(editableFieldsOrdered))
+	copy(cp, editableFieldsOrdered)
+	return cp
+}
+
 // IsEditableField reports whether the given field name can be updated via
 // the field-level API. This includes both direct-column fields (in
 // fieldColumnMap) and provider-ID fields (in providerFieldMap).

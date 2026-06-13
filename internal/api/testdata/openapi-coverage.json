@@ -609,6 +609,13 @@
     "covered": false
   },
   {
+    "operationId": "getFieldsEditAll",
+    "method": "GET",
+    "path": "/artists/{id}/fields/edit-all",
+    "handler": "handleFieldsEditAll",
+    "covered": true
+  },
+  {
     "operationId": "getForeignFilesCountBadge",
     "method": "GET",
     "path": "/foreign-files/count",
