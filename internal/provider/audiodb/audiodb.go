@@ -281,8 +281,15 @@ func mapArtist(ctx context.Context, art *AudioDBArtist) *provider.ArtistMetadata
 	// AudioDB provides per-language biography fields for a fixed set of languages.
 	// strBiography is the API's own default/locale-specific value; it is used as a
 	// final fallback when no preference-ordered field matches.
+	// AudioDB's strBiographyEN is frequently null even for artists that have
+	// English content; in those cases strBiography carries the English text.
+	// Treat strBiography as the English candidate so it ranks correctly against
+	// other language candidates (e.g. strBiographyFR) when the user's first
+	// preference is "en". Without this, an empty strBiographyEN causes
+	// SelectLocalizedBiography to skip "en" and return the next non-empty
+	// language (e.g. French) instead of the English text in strBiography.
 	bioCandidates := map[string]string{
-		"en": art.BiographyEN,
+		"en": firstNonEmpty(art.BiographyEN, art.Biography),
 		"de": art.BiographyDE,
 		"fr": art.BiographyFR,
 		"ja": art.BiographyJA,
@@ -298,9 +305,10 @@ func mapArtist(ctx context.Context, art *AudioDBArtist) *provider.ArtistMetadata
 		"nl": art.BiographyNL,
 		"es": art.BiographyES,
 	}
-	// Prefer the explicit English field as the no-preference fallback so that
-	// callers without a language context receive English rather than whatever
-	// locale AudioDB happens to return in the generic strBiography slot.
+	// No-preference fallback: prefer the explicit English field, then the
+	// generic strBiography. The bioCandidates["en"] entry already covers this
+	// ordering for preference-aware callers; the fallback serves callers that
+	// pass no language context at all.
 	fallbackBio := firstNonEmpty(art.BiographyEN, art.Biography)
 
 	langPrefs := provider.MetadataLanguages(ctx)
