@@ -437,8 +437,12 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// Inject language preferences so providers receive the user's locale
+	// settings and return biography text in the correct language.
+	ctx := r.injectMetadataLanguages(req.Context())
+
 	results, err := r.orchestrator.FetchFieldFromProviders(
-		req.Context(), a.MusicBrainzID, a.Name, field, a.ProviderIDMap(),
+		ctx, a.MusicBrainzID, a.Name, field, a.ProviderIDMap(),
 	)
 	if err != nil {
 		r.logger.Error("fetching field from providers",

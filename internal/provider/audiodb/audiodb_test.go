@@ -241,11 +241,14 @@ func TestMapArtist_BiographyLocalization(t *testing.T) {
 			wantBio:   "English biography.",
 		},
 		{
-			name:      "Non-English preference falls back to default bio",
+			// User prefers German but BiographyDE is not set; fallback order is
+			// now firstNonEmpty(BiographyEN, Biography) so English is returned
+			// rather than the ambiguous locale-default strBiography field.
+			name:      "Non-English preference without that language falls back to EN",
 			bio:       "Biographie auf Deutsch.",
 			bioEN:     "English biography.",
 			langPrefs: []string{"de"},
-			wantBio:   "Biographie auf Deutsch.",
+			wantBio:   "English biography.",
 		},
 		{
 			name:      "Empty English bio falls back to default bio",
@@ -255,11 +258,13 @@ func TestMapArtist_BiographyLocalization(t *testing.T) {
 			wantBio:   "Biographie par default.",
 		},
 		{
-			name:      "No preferences uses fallback",
+			// After swapping the fallback to firstNonEmpty(BiographyEN, Biography),
+			// the English field is preferred when no language preference is set.
+			name:      "No preferences prefers English bio over locale default",
 			bio:       "Default bio.",
 			bioEN:     "English bio.",
 			langPrefs: nil,
-			wantBio:   "Default bio.",
+			wantBio:   "English bio.",
 		},
 		{
 			name:      "No preferences and empty EN falls back to strBiography",
