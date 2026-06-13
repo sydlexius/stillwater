@@ -71,8 +71,12 @@ func TestHandleGetConflictBanner_NoForeignFilesStateWhenFilesPresent(t *testing.
 
 	// Companion: the sidebar pill (next channel) still renders the count, so
 	// foreign-file presence remains discoverable -- just not via the banner.
-	pillReq := httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil)
-	pillReq = pillReq.WithContext(middleware.WithTestRole(pillReq.Context(), "administrator"))
+	// Apply the same three-step context chain used by sibling tests in
+	// handlers_foreign_files_test.go: i18n first, then user ID, then role.
+	pillReq := withI18nCtx(t, httptest.NewRequest(http.MethodGet, "/api/v1/foreign-files/count?ch=next", nil))
+	pillCtx := middleware.WithTestUserID(pillReq.Context(), "admin-1")
+	pillCtx = middleware.WithTestRole(pillCtx, "administrator")
+	pillReq = pillReq.WithContext(pillCtx)
 	pillRec := httptest.NewRecorder()
 	r.handleForeignFilesCount(pillRec, pillReq)
 	if pillRec.Code != http.StatusOK {
