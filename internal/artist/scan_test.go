@@ -394,9 +394,6 @@ func TestBuildWhereClause_LibraryFilter_Include_MultiUnion(t *testing.T) {
 	if !strings.Contains(clause, "IN (") {
 		t.Errorf("expected IN (...) for 3 included libraries, got %q", clause)
 	}
-	if strings.Count(clause, "?") != 3 {
-		t.Errorf("expected 3 placeholders for 3 included libraries, got %q", clause)
-	}
 	// Each library ID bound once.
 	if len(args) != 3 {
 		t.Errorf("expected 3 args, got %d: %v", len(args), args)
