@@ -1985,3 +1985,27 @@ func TestScan_ExistingArtistGainsFilesystemMembership(t *testing.T) {
 		t.Errorf("after scan 2 emby membership = %q, want 'emby'", after2["lib-emby"])
 	}
 }
+
+func TestHasNumericSuffix(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"", false},
+		{"1", true},
+		{"42", true},
+		{"007", true},
+		{"a", false},
+		{"1a", false},
+		{"a1", false},
+		{"1-2", false},
+		{"!", false},
+	}
+	for _, tc := range tests {
+		got := hasNumericSuffix(tc.input)
+		if got != tc.want {
+			t.Errorf("hasNumericSuffix(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}

@@ -672,6 +672,19 @@ func preserveDimensions(existing *artist.Artist, detected *detectedFiles) {
 	}
 }
 
+// hasNumericSuffix reports whether s is non-empty and consists entirely of ASCII digits.
+func hasNumericSuffix(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // publishArtistUpdated publishes an ArtistUpdated event if the event bus is
 // configured. It is a no-op when no bus is set.
 func (s *Service) publishArtistUpdated(artistID string) {
@@ -985,8 +998,6 @@ var errFastPathFileTouched = fmt.Errorf("fast path: canonical file mtime advance
 // isCanonicalArtistFile reports whether lower (a lowercase filename) matches
 // any pattern the scanner reads on the artist hot path: NFO, thumb/folder,
 // fanart (including numbered variants), logo, banner.
-//
-//nolint:gocognit // Pattern-family fan-out across NFO + thumb/fanart/logo/banner pattern slices plus the numbered-fanart variant check that requires the suffix to be purely numeric (DiscoverFanart only recognizes the numeric form so unrelated files like fanart-old.jpg must stay off the fast path). The hot-path predicate is called per directory entry during scans, so an allocation-free implementation matters more than a few cog points; refactor tracked in #1553.
 func isCanonicalArtistFile(lower string) bool {
 	if lower == "artist.nfo" {
 		return true
@@ -1013,17 +1024,7 @@ func isCanonicalArtistFile(lower string) bool {
 				continue
 			}
 			suffix := strings.TrimSuffix(strings.TrimPrefix(lower, base), ext)
-			if suffix == "" {
-				continue
-			}
-			numeric := true
-			for _, ch := range suffix {
-				if ch < '0' || ch > '9' {
-					numeric = false
-					break
-				}
-			}
-			if numeric {
+			if hasNumericSuffix(suffix) {
 				return true
 			}
 		}
