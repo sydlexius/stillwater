@@ -1,0 +1,29 @@
+meta {
+  name: Patch Unknown Key - No Partial Write (atomic rejection)
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{apiBase}}/preferences
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("rejected PATCH did not write the valid key (atomic rejection)", function() {
+    // The preceding test (seq 7) sent {"theme": "dark", "nonexistent_key": "any-value"}
+    // and received a 400. The rejection must be atomic: the valid key "theme"
+    // must NOT have been written. seq 6 set theme to "light", so it must
+    // still be "light" here.
+    expect(res.body.theme).to.equal("light");
+  });
+}
