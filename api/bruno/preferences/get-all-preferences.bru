@@ -1,0 +1,33 @@
+meta {
+  name: Get All Preferences
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/preferences
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is an object", function() {
+    expect(res.body).to.be.an("object");
+  });
+
+  test("known keys are present with default values", function() {
+    expect(res.body.theme).to.be.a("string");
+    expect(res.body.font_size).to.be.a("string");
+    expect(res.body.thumbnail_size).to.be.a("string");
+    expect(res.body.page_size).to.be.a("string");
+    expect(res.body.density).to.be.a("string");
+  });
+}

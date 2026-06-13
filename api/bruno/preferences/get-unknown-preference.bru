@@ -1,0 +1,25 @@
+meta {
+  name: Get Unknown Preference (400)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{apiBase}}/preferences/nonexistent_key
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 400 for unknown key", function() {
+    expect(res.status).to.equal(400);
+  });
+
+  test("error field is present", function() {
+    expect(res.body.error).to.be.a("string");
+  });
+}
