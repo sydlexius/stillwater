@@ -510,6 +510,24 @@ func TestMapArtist_BiographyExtendedLanguages(t *testing.T) {
 			langPrefs: []string{"he"},
 			wantBio:   "\u05d1\u05d9\u05d5\u05d2\u05e8\u05e4\u05d9\u05d4 \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea.",
 		},
+		{
+			// Regression test for the Adele scenario: AudioDB's strBiographyEN is
+			// null for many artists (the English text lives in strBiography instead).
+			// When the user prefers ["en","fr"] and strBiographyEN is empty but
+			// strBiographyFR is populated, we must return English (strBiography)
+			// rather than French. The fix is to treat strBiography as the "en"
+			// candidate when strBiographyEN is absent/empty.
+			name: "English strBiography used as EN candidate when strBiographyEN is absent",
+			art: AudioDBArtist{
+				IDArtist:    "19",
+				Artist:      "S",
+				Biography:   "English text from strBiography.",
+				BiographyEN: "", // null/absent in AudioDB v2 response
+				BiographyFR: "Texte en francais.",
+			},
+			langPrefs: []string{"en", "fr"},
+			wantBio:   "English text from strBiography.",
+		},
 	}
 
 	for _, tt := range tests {
