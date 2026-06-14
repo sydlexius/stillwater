@@ -748,28 +748,48 @@ func TestGetIntSetting_AbsentKey(t *testing.T) {
 
 // TestGetIntSetting_InvalidValue verifies that a stored non-integer value
 // returns the fallback AND emits a Warn log line (Item 2 observability).
+// TestGetIntSetting_InvalidValue verifies that a stored value that is not a
+// valid integer returns the fallback and logs a Warn. The cases cover both a
+// fully non-numeric value and a partial-numeric value (e.g. "12abc"): the
+// latter is the case strconv.Atoi rejects but the old fmt.Sscanf(v, "%d", &n)
+// would silently accept (parsing the leading "12" and ignoring the rest).
 func TestGetIntSetting_InvalidValue(t *testing.T) {
 	t.Parallel()
-	db, dbPath := setupTestDB(t)
-	ctx := context.Background()
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO settings (key, value) VALUES ('test.bad', 'notanint')`); err != nil {
-		t.Fatalf("seeding bad int: %v", err)
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"non_numeric", "notanint"},
+		{"leading_numeric_trailing_garbage", "12abc"},
+		{"float_like", "3.14"},
+		{"whitespace_padded", " 12 "},
 	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			db, dbPath := setupTestDB(t)
+			ctx := context.Background()
+			if _, err := db.ExecContext(ctx,
+				`INSERT INTO settings (key, value) VALUES ('test.bad', ?)`, tc.value); err != nil {
+				t.Fatalf("seeding bad int: %v", err)
+			}
 
-	buf, lg := warnLogger()
-	svc := NewService(db, dbPath, "", lg)
+			buf, lg := warnLogger()
+			svc := NewService(db, dbPath, "", lg)
 
-	got := svc.getIntSetting(ctx, "test.bad", 33)
-	if got != 33 {
-		t.Errorf("getIntSetting invalid value: got %d, want 33 (fallback)", got)
-	}
-	logged := buf.String()
-	if !strings.Contains(logged, "int setting value is not a valid integer") {
-		t.Errorf("getIntSetting invalid value: expected warn log, got %q", logged)
-	}
-	if !strings.Contains(logged, "level=WARN") {
-		t.Errorf("getIntSetting invalid value: expected WARN level, got %q", logged)
+			got := svc.getIntSetting(ctx, "test.bad", 33)
+			if got != 33 {
+				t.Errorf("getIntSetting(%q): got %d, want 33 (fallback)", tc.value, got)
+			}
+			logged := buf.String()
+			if !strings.Contains(logged, "int setting value is not a valid integer") {
+				t.Errorf("getIntSetting(%q): expected warn log, got %q", tc.value, logged)
+			}
+			if !strings.Contains(logged, "level=WARN") {
+				t.Errorf("getIntSetting(%q): expected WARN level, got %q", tc.value, logged)
+			}
+		})
 	}
 }
 

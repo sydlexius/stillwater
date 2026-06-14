@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/foreign"
@@ -391,8 +392,8 @@ func (s *Service) getIntSetting(ctx context.Context, key string, fallback int) i
 	if v == "" {
 		return fallback
 	}
-	var n int
-	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+	n, err := strconv.Atoi(v)
+	if err != nil {
 		s.logger.Warn("int setting value is not a valid integer", "key", key, "stored_value", v, "fallback", fallback)
 		return fallback
 	}
