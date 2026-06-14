@@ -775,6 +775,13 @@ func effectiveFieldOrdering(field FieldConfig, chain FallbackChain, priority []p
 		ordered = append(ordered, p)
 	}
 
+	// Guard: if every input list was empty, ordered is empty and indexed access
+	// below would panic. Return the originals unchanged so downstream callers
+	// simply find no providers and skip normally.
+	if len(ordered) == 0 {
+		return field, chain
+	}
+
 	effField := field
 	effField.Primary = ordered[0]
 

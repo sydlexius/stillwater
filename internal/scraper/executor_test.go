@@ -1437,3 +1437,64 @@ func TestFieldAppliers_VocabFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveFieldOrdering_EmptyProviders_NoPanic(t *testing.T) {
+	// Regression test for #1963: ordered[0] panics when all provider lists
+	// (priority, field.Primary, chain.Providers) contribute nothing.
+	// The function must return the original field and chain unchanged.
+	field := FieldConfig{
+		Field:    "biography",
+		Category: "metadata",
+		Primary:  "",
+	}
+	chain := FallbackChain{
+		Category:  "metadata",
+		Providers: nil,
+	}
+
+	// hasPriority=true with empty priority list triggers the empty-ordered path.
+	// (The call site skips the call when hasPriority && len(priority)==0, but the
+	// function must still not panic if called directly or from a future code path.)
+	gotField, gotChain := effectiveFieldOrdering(field, chain, nil, true)
+
+	if gotField.Field != field.Field {
+		t.Errorf("expected original field %q, got %q", field.Field, gotField.Field)
+	}
+	if gotField.Primary != field.Primary {
+		t.Errorf("expected original Primary %q, got %q", field.Primary, gotField.Primary)
+	}
+	if len(gotChain.Providers) != 0 {
+		t.Errorf("expected empty Providers, got %v", gotChain.Providers)
+	}
+}
+
+func TestEffectiveFieldOrdering_NonEmpty_Unchanged(t *testing.T) {
+	// Non-empty priority list must still produce the correct ordered output.
+	field := FieldConfig{
+		Field:    "biography",
+		Category: "metadata",
+		Primary:  "fanart",
+	}
+	chain := FallbackChain{
+		Category:  "metadata",
+		Providers: []provider.ProviderName{"musicbrainz"},
+	}
+	priority := []provider.ProviderName{"theaudiodb", "fanart"}
+
+	gotField, gotChain := effectiveFieldOrdering(field, chain, priority, true)
+
+	if gotField.Primary != "theaudiodb" {
+		t.Errorf("expected Primary %q, got %q", "theaudiodb", gotField.Primary)
+	}
+	// Expected order: theaudiodb (priority[0]), fanart (priority[1] == field.Primary),
+	// musicbrainz (chain.Providers[0], not yet seen).
+	want := []provider.ProviderName{"theaudiodb", "fanart", "musicbrainz"}
+	if len(gotChain.Providers) != len(want) {
+		t.Fatalf("expected %d providers, got %d: %v", len(want), len(gotChain.Providers), gotChain.Providers)
+	}
+	for i, p := range want {
+		if gotChain.Providers[i] != p {
+			t.Errorf("Providers[%d]: want %q, got %q", i, p, gotChain.Providers[i])
+		}
+	}
+}
