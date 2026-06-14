@@ -27,6 +27,11 @@ A platform profile bundles the NFO format and image filename conventions for one
 - **Save Filenames** -- Image filenames are how each platform discovers cover art on disk (folder.jpg, fanart.jpg, banner.jpg, and so on). Saves the per-image-type filenames you edited above into the active profile so future image writes land at those paths.
 {: #settings-general-active-profile-save-filenames }
 
+### Profile naming  {#settings-general-profile-naming}
+
+- **Enter filename (e.g. folder.jpg):**
+{: #settings-general-profile-naming-prompt-filename }
+
 ### Use symlinks for duplicates  {#settings-general-symlinks}
 
 ### TLS Status  {#settings-general-tls-status}

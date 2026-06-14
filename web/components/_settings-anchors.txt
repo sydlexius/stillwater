@@ -71,6 +71,8 @@ settings-general-image-cache-max-size
 settings-general-image-cache-unlimited
 settings-general-platform-debug
 settings-general-platform-profile
+settings-general-profile-naming
+settings-general-profile-naming-prompt-filename
 settings-general-symlinks
 settings-general-tls-status
 settings-general-tls-status-acme-experimental-badge
