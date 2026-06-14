@@ -73,6 +73,51 @@ func (r *Router) eligibleArtistsTotal(ctx context.Context) int {
 	return n
 }
 
+// computeViolationTally derives the post-run violation counts shared by the
+// single-rule and run-all handlers. It reads the found/auto-fixed totals from
+// the pipeline result, then queries the DB for the remaining active-violation
+// badge count, summing only the severities the operator has enabled via the
+// notif_badge_severity_* settings (error and warning default on, info default
+// off). If the DB query fails it logs a warning and falls back to
+// found-minus-auto-fixed, clamped at zero. Both handlers share a single
+// r.ruleRun status slot, so the tally is computed identically in each;
+// extracting it here keeps that behavior in one place. caller identifies the
+// invoking context ("single-rule" or "run-all") for log messages. If result
+// is nil the function logs an error and returns zeros immediately.
+func (r *Router) computeViolationTally(ctx context.Context, result *rule.RunResult, caller string) (violationsFound, violationsAutoFixed, violationsRemaining int) {
+	if result == nil {
+		r.logger.Error("computeViolationTally called with nil result; pipeline returned nil without error", "caller", caller)
+		return 0, 0, 0
+	}
+
+	violationsFound = result.ViolationsFound
+	violationsAutoFixed = result.FixesSucceeded
+
+	counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{})
+	if dbErr != nil {
+		r.logger.Warn("querying active violations for toast count", "caller", caller, "error", dbErr)
+		// Fall back to the computed remaining count.
+		violationsRemaining = violationsFound - violationsAutoFixed
+		if violationsRemaining < 0 {
+			violationsRemaining = 0
+		}
+		return violationsFound, violationsAutoFixed, violationsRemaining
+	}
+
+	total := 0
+	if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
+		total += counts["error"]
+	}
+	if r.getBoolSetting(ctx, "notif_badge_severity_warning", true) {
+		total += counts["warning"]
+	}
+	if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
+		total += counts["info"]
+	}
+	violationsRemaining = total
+	return violationsFound, violationsAutoFixed, violationsRemaining
+}
+
 // handleListRules returns all rules as JSON. Each rule includes a
 // filesystem_dependent field indicating whether it requires a local library
 // with a filesystem path. The response also includes has_local_library so
@@ -333,8 +378,6 @@ func (r *Router) handleArtistRuleResults(w http.ResponseWriter, req *http.Reques
 // Returns 202 Accepted immediately. Poll GET /api/v1/rules/run-all/status for progress
 // (shared status slot with run-all; 409 if either is already running).
 // POST /api/v1/rules/{id}/run
-//
-//nolint:gocognit // Rule existence + pipeline-configured + scope-parse guards, shared-slot conflict check, async goroutine with panic recovery, post-run violation-count computation gated by per-severity badge settings, and final mutex-protected status flip; the violation-count branch mirrors handleRunAllRules because both share the rule-run status slot, and refactoring requires the run-all variant to land at the same time; refactor tracked in #1555.
 func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	ruleID, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -410,30 +453,11 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		result, err := r.pipeline.RunRuleScoped(ctx, ruleID, scope)
 
 		// Compute violation counts outside the mutex (same pattern as run-all).
+		var violationsFound int
 		var violationsAutoFixed int
 		var violationsRemaining int
 		if err == nil {
-			violationsAutoFixed = result.FixesSucceeded
-			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{})
-			if dbErr != nil {
-				r.logger.Warn("querying active violations for single-rule toast count", "error", dbErr)
-				violationsRemaining = result.ViolationsFound - violationsAutoFixed
-				if violationsRemaining < 0 {
-					violationsRemaining = 0
-				}
-			} else {
-				total := 0
-				if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
-					total += counts["error"]
-				}
-				if r.getBoolSetting(ctx, "notif_badge_severity_warning", true) {
-					total += counts["warning"]
-				}
-				if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
-					total += counts["info"]
-				}
-				violationsRemaining = total
-			}
+			violationsFound, violationsAutoFixed, violationsRemaining = r.computeViolationTally(ctx, result, "single-rule")
 		}
 
 		r.ruleRunMu.Lock()
@@ -453,7 +477,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.ArtistsTotal = result.ArtistsTotal
 		r.ruleRun.ArtistsSkipped = result.ArtistsSkipped
 		r.ruleRun.Scope = result.Scope
-		r.ruleRun.ViolationsFound = result.ViolationsFound
+		r.ruleRun.ViolationsFound = violationsFound
 		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
 		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRun.FixesAttempted = result.FixesAttempted
@@ -633,30 +657,7 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		var violationsAutoFixed int
 		var violationsRemaining int
 		if err == nil {
-			violationsFound = result.ViolationsFound
-			violationsAutoFixed = result.FixesSucceeded
-			// Query remaining active violations from DB (badge count).
-			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{})
-			if dbErr != nil {
-				r.logger.Warn("querying active violations for toast count", "error", dbErr)
-				// Fall back to computed remaining count.
-				violationsRemaining = violationsFound - violationsAutoFixed
-				if violationsRemaining < 0 {
-					violationsRemaining = 0
-				}
-			} else {
-				total := 0
-				if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
-					total += counts["error"]
-				}
-				if r.getBoolSetting(ctx, "notif_badge_severity_warning", true) {
-					total += counts["warning"]
-				}
-				if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
-					total += counts["info"]
-				}
-				violationsRemaining = total
-			}
+			violationsFound, violationsAutoFixed, violationsRemaining = r.computeViolationTally(ctx, result, "run-all")
 		}
 
 		r.ruleRunMu.Lock()
