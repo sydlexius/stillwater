@@ -490,16 +490,6 @@ templ complianceRow(row ComplianceRow, profileName string, basePath string) {
 			@components.StatusBadge(row.Artist.MusicBrainzID != "", "MBID")
 		</td>
 		<td data-col="actions" class="px-4 py-3 text-sm text-right">
-			<div class="flex items-center justify-end gap-1">
-				if row.Artist.NFOExists {
-					<a
-						href={ templ.SafeURL(basePath + "/artists/" + row.Artist.ID + "/nfo") }
-						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					>
-						{ t(ctx, "report.changes") }
-					</a>
-				}
-			</div>
 		</td>
 	</tr>
 }

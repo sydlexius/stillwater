@@ -707,13 +707,6 @@
     "covered": true
   },
   {
-    "operationId": "getNFODiff",
-    "method": "GET",
-    "path": "/artists/{id}/nfo/diff",
-    "handler": "handleNFODiff",
-    "covered": true
-  },
-  {
     "operationId": "getNFOOutput",
     "method": "GET",
     "path": "/settings/nfo-output",
