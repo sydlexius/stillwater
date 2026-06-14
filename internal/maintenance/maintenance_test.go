@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -648,4 +650,151 @@ func TestStartForeignFileScanner_NilListerNoOp(t *testing.T) {
 	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	// Passing nil should return immediately without panicking.
 	svc.StartForeignFileScanner(context.Background(), nil, 0, 0)
+}
+
+// -- get*Setting error-discrimination tests -----------------------------------
+
+// warnLogger returns a bytes.Buffer and a *slog.Logger that writes WARN+ to it.
+// This lets tests assert that the right Warn log line was (or was not) emitted.
+func warnLogger() (*bytes.Buffer, *slog.Logger) {
+	var buf bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	return &buf, lg
+}
+
+// TestGetBoolSetting_DBError verifies that a genuine DB error (closed connection)
+// returns the fallback AND emits a Warn log line.
+func TestGetBoolSetting_DBError(t *testing.T) {
+	t.Parallel()
+	db, dbPath := setupTestDB(t)
+	buf, lg := warnLogger()
+	svc := NewService(db, dbPath, "", lg)
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	got := svc.getBoolSetting(context.Background(), "any.key", false)
+	if got {
+		t.Errorf("getBoolSetting DB error: got true, want false (fallback)")
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "reading bool setting") {
+		t.Errorf("getBoolSetting DB error: expected warn log, got %q", logged)
+	}
+	if !strings.Contains(logged, "level=WARN") {
+		t.Errorf("getBoolSetting DB error: expected WARN level, got %q", logged)
+	}
+}
+
+// TestGetBoolSetting_AbsentKey verifies that a missing row returns the
+// fallback without emitting any log line.
+func TestGetBoolSetting_AbsentKey(t *testing.T) {
+	t.Parallel()
+	db, dbPath := setupTestDB(t)
+	buf, lg := warnLogger()
+	svc := NewService(db, dbPath, "", lg)
+
+	got := svc.getBoolSetting(context.Background(), "no.such.key", true)
+	if !got {
+		t.Errorf("getBoolSetting absent key: got false, want true (fallback)")
+	}
+	if buf.Len() != 0 {
+		t.Errorf("getBoolSetting absent key: expected no log, got %q", buf.String())
+	}
+}
+
+// TestGetIntSetting_DBError verifies that a genuine DB error returns the
+// fallback AND emits a Warn log line.
+func TestGetIntSetting_DBError(t *testing.T) {
+	t.Parallel()
+	db, dbPath := setupTestDB(t)
+	buf, lg := warnLogger()
+	svc := NewService(db, dbPath, "", lg)
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	got := svc.getIntSetting(context.Background(), "any.key", 77)
+	if got != 77 {
+		t.Errorf("getIntSetting DB error: got %d, want 77 (fallback)", got)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "reading int setting") {
+		t.Errorf("getIntSetting DB error: expected warn log, got %q", logged)
+	}
+	if !strings.Contains(logged, "level=WARN") {
+		t.Errorf("getIntSetting DB error: expected WARN level, got %q", logged)
+	}
+}
+
+// TestGetIntSetting_AbsentKey verifies that a missing row returns the
+// fallback without emitting any log line.
+func TestGetIntSetting_AbsentKey(t *testing.T) {
+	t.Parallel()
+	db, dbPath := setupTestDB(t)
+	buf, lg := warnLogger()
+	svc := NewService(db, dbPath, "", lg)
+
+	got := svc.getIntSetting(context.Background(), "no.such.key", 55)
+	if got != 55 {
+		t.Errorf("getIntSetting absent key: got %d, want 55 (fallback)", got)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("getIntSetting absent key: expected no log, got %q", buf.String())
+	}
+}
+
+// TestGetIntSetting_InvalidValue verifies that a stored non-integer value
+// returns the fallback AND emits a Warn log line (Item 2 observability).
+func TestGetIntSetting_InvalidValue(t *testing.T) {
+	t.Parallel()
+	db, dbPath := setupTestDB(t)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO settings (key, value) VALUES ('test.bad', 'notanint')`); err != nil {
+		t.Fatalf("seeding bad int: %v", err)
+	}
+
+	buf, lg := warnLogger()
+	svc := NewService(db, dbPath, "", lg)
+
+	got := svc.getIntSetting(ctx, "test.bad", 33)
+	if got != 33 {
+		t.Errorf("getIntSetting invalid value: got %d, want 33 (fallback)", got)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "int setting value is not a valid integer") {
+		t.Errorf("getIntSetting invalid value: expected warn log, got %q", logged)
+	}
+	if !strings.Contains(logged, "level=WARN") {
+		t.Errorf("getIntSetting invalid value: expected WARN level, got %q", logged)
+	}
+}
+
+// TestStatus_LastOptimizeAt_DBError verifies that when the last_optimize_at
+// query hits a non-ErrNoRows DB error, Status() logs a Warn and returns
+// an empty LastOptimizeAt rather than silently swallowing the error.
+func TestStatus_LastOptimizeAt_DBError(t *testing.T) {
+	t.Parallel()
+	db, dbPath := setupTestDB(t)
+	buf, lg := warnLogger()
+	svc := NewService(db, dbPath, "", lg)
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	st, err := svc.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status returned error (should tolerate DB failures): %v", err)
+	}
+	if st.LastOptimizeAt != "" {
+		t.Errorf("Status DB error: LastOptimizeAt = %q, want empty", st.LastOptimizeAt)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "reading last_optimize_at") {
+		t.Errorf("Status DB error: expected 'reading last_optimize_at' warn, got %q", logged)
+	}
 }
