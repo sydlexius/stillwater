@@ -81,6 +81,10 @@ func TestHandleFieldProviders_LanguageContextInjected(t *testing.T) {
 
 	r.handleFieldProviders(w, req)
 
+	if w.Code != http.StatusOK {
+		t.Fatalf("handleFieldProviders status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
 	// The mock must have been called, proving FetchFieldFromProviders proceeded
 	// to the provider level (i.e., did not fail before reaching it).
 	if cap.capturedCtx == nil {
@@ -96,5 +100,26 @@ func TestHandleFieldProviders_LanguageContextInjected(t *testing.T) {
 	}
 	if langs[0] != "fr" {
 		t.Errorf("first language preference = %q, want %q", langs[0], "fr")
+	}
+}
+
+// TestHandleFieldProviders_InvalidField verifies that handleFieldProviders
+// rejects an unknown or non-editable field value with 400 Bad Request.
+func TestHandleFieldProviders_InvalidField(t *testing.T) {
+	t.Parallel()
+
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/any-id/fields/__invalid__/providers", nil)
+	req.SetPathValue("id", "any-id")
+	req.SetPathValue("field", "__invalid__")
+	req = withUserCtx(req, "test-user")
+	w := httptest.NewRecorder()
+
+	r.handleFieldProviders(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("handleFieldProviders with invalid field: status = %d, want %d; body=%s",
+			w.Code, http.StatusBadRequest, w.Body.String())
 	}
 }

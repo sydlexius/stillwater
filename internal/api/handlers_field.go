@@ -431,6 +431,11 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 	artistID := req.PathValue("id")
 	field := req.PathValue("field")
 
+	if !artist.IsEditableField(field) {
+		writeError(w, req, http.StatusBadRequest, "unknown or non-editable field: "+field)
+		return
+	}
+
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, "artist not found")
