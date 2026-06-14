@@ -431,14 +431,23 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 	artistID := req.PathValue("id")
 	field := req.PathValue("field")
 
+	if !artist.IsEditableField(field) {
+		writeError(w, req, http.StatusBadRequest, "unknown or non-editable field: "+field)
+		return
+	}
+
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
 
+	// Inject language preferences so providers receive the user's locale
+	// settings and return biography text in the correct language.
+	ctx := r.injectMetadataLanguages(req.Context())
+
 	results, err := r.orchestrator.FetchFieldFromProviders(
-		req.Context(), a.MusicBrainzID, a.Name, field, a.ProviderIDMap(),
+		ctx, a.MusicBrainzID, a.Name, field, a.ProviderIDMap(),
 	)
 	if err != nil {
 		r.logger.Error("fetching field from providers",

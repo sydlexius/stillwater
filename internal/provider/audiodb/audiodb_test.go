@@ -241,11 +241,14 @@ func TestMapArtist_BiographyLocalization(t *testing.T) {
 			wantBio:   "English biography.",
 		},
 		{
-			name:      "Non-English preference falls back to default bio",
+			// User prefers German but BiographyDE is not set; fallback order is
+			// now firstNonEmpty(BiographyEN, Biography) so English is returned
+			// rather than the ambiguous locale-default strBiography field.
+			name:      "Non-English preference without that language falls back to EN",
 			bio:       "Biographie auf Deutsch.",
 			bioEN:     "English biography.",
 			langPrefs: []string{"de"},
-			wantBio:   "Biographie auf Deutsch.",
+			wantBio:   "English biography.",
 		},
 		{
 			name:      "Empty English bio falls back to default bio",
@@ -255,11 +258,13 @@ func TestMapArtist_BiographyLocalization(t *testing.T) {
 			wantBio:   "Biographie par default.",
 		},
 		{
-			name:      "No preferences uses fallback",
+			// After swapping the fallback to firstNonEmpty(BiographyEN, Biography),
+			// the English field is preferred when no language preference is set.
+			name:      "No preferences prefers English bio over locale default",
 			bio:       "Default bio.",
 			bioEN:     "English bio.",
 			langPrefs: nil,
-			wantBio:   "Default bio.",
+			wantBio:   "English bio.",
 		},
 		{
 			name:      "No preferences and empty EN falls back to strBiography",
@@ -504,6 +509,24 @@ func TestMapArtist_BiographyExtendedLanguages(t *testing.T) {
 			},
 			langPrefs: []string{"he"},
 			wantBio:   "\u05d1\u05d9\u05d5\u05d2\u05e8\u05e4\u05d9\u05d4 \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea.",
+		},
+		{
+			// Regression test for the Adele scenario: AudioDB's strBiographyEN is
+			// null for many artists (the English text lives in strBiography instead).
+			// When the user prefers ["en","fr"] and strBiographyEN is empty but
+			// strBiographyFR is populated, we must return English (strBiography)
+			// rather than French. The fix is to treat strBiography as the "en"
+			// candidate when strBiographyEN is absent/empty.
+			name: "English strBiography used as EN candidate when strBiographyEN is absent",
+			art: AudioDBArtist{
+				IDArtist:    "19",
+				Artist:      "S",
+				Biography:   "English text from strBiography.",
+				BiographyEN: "", // null/absent in AudioDB v2 response
+				BiographyFR: "Texte en francais.",
+			},
+			langPrefs: []string{"en", "fr"},
+			wantBio:   "English text from strBiography.",
 		},
 	}
 
