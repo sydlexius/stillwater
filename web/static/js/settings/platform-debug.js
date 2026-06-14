@@ -6,6 +6,8 @@
 // cookie-parse regex.
 // Network: /api/v1/settings
 //
+// DOM contract: platform-debug-i18n (hidden i18n element in settings_sections.templ)
+//
 // Export surface: window.swPlatformDebug doubles as the load-once guard;
 // the following are re-exported to window because markup event
 // handlers or sibling modules call them by name: togglePlatformDebug.
@@ -17,6 +19,16 @@
       function togglePlatformDebug(btn) {
         var isOn = btn.getAttribute('aria-checked') === 'true';
         var newVal = !isOn;
+
+        // Translated strings sourced from the hidden #platform-debug-i18n
+        // element. English fallbacks are kept so the toggle still reports
+        // something useful if the i18n element is absent (older cached templ
+        // render, JS loaded outside the Settings page, etc.).
+        var i18n = document.getElementById('platform-debug-i18n');
+        var ds = (i18n && i18n.dataset) || {};
+        var msgSaveFailed = ds.toastSaveFailed || 'Failed to update platform debug setting.';
+        var msgNetwork = ds.toastNetwork || 'Network error while updating setting.';
+
         var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
         var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
         fetch(bp + '/api/v1/settings', {
@@ -44,12 +56,12 @@
             }
           } else {
             if (typeof showToast === 'function') {
-              showToast('Failed to update platform debug setting.');
+              showToast(msgSaveFailed);
             }
           }
         }).catch(function() {
           if (typeof showToast === 'function') {
-            showToast('Network error while updating setting.');
+            showToast(msgNetwork);
           }
         });
       }

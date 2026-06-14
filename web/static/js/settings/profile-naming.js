@@ -5,7 +5,8 @@
 // window.swCsrfToken() helper (preferences.js) instead of an inline
 // cookie-parse regex.
 //
-// DOM contract (ids bound in settings.templ): naming-save-status
+// DOM contract (ids bound in settings.templ): naming-save-status,
+//   profile-naming-i18n (hidden i18n element in settings_sections.templ)
 // Network: /api/v1/platforms/
 //
 // Export surface: window.swProfileNaming doubles as the load-once guard;
@@ -17,28 +18,42 @@
   if (window.swProfileNaming) return;
 
       function addNamingChip(btn, imageType) {
-        var name = prompt('Enter filename (e.g. folder.jpg):');
+        // Translated strings sourced from the hidden #profile-naming-i18n
+        // element. English fallbacks are kept so the editor still reports
+        // something useful if the i18n element is absent (older cached templ
+        // render, JS loaded outside the Settings page, etc.).
+        var i18n = document.getElementById('profile-naming-i18n');
+        var ds = (i18n && i18n.dataset) || {};
+        var msgPromptFilename = ds.promptFilename || 'Enter filename (e.g. folder.jpg):';
+        var msgErrPathSeparator = ds.errorPathSeparator || 'Filename must not contain path separators.';
+        var msgErrNoExtension = ds.errorNoExtension || 'Filename must have an extension (.jpg, .jpeg or .png).';
+        var msgErrInvalidExtension = ds.errorInvalidExtension || 'Extension must be .jpg, .jpeg or .png.';
+        var msgErrLogoExtension = ds.errorLogoExtension || 'Logo filenames must use .png extension.';
+        var msgErrDuplicate = ds.errorDuplicate || 'Duplicate filename.';
+        var msgAriaRemove = ds.ariaRemove || 'Remove';
+
+        var name = prompt(msgPromptFilename);
         if (!name) return;
         name = name.trim();
         if (!name) return;
 
         // Client-side validation
         if (name.indexOf('/') !== -1 || name.indexOf('\\') !== -1) {
-          alert('Filename must not contain path separators.');
+          alert(msgErrPathSeparator);
           return;
         }
         var dotIdx = name.lastIndexOf('.');
         if (dotIdx === -1) {
-          alert('Filename must have an extension (.jpg, .jpeg or .png).');
+          alert(msgErrNoExtension);
           return;
         }
         var ext = name.substring(dotIdx).toLowerCase();
         if (ext !== '.jpg' && ext !== '.jpeg' && ext !== '.png') {
-          alert('Extension must be .jpg, .jpeg or .png.');
+          alert(msgErrInvalidExtension);
           return;
         }
         if (imageType === 'logo' && ext !== '.png') {
-          alert('Logo filenames must use .png extension.');
+          alert(msgErrLogoExtension);
           return;
         }
 
@@ -47,7 +62,7 @@
         var chips = container.querySelectorAll('[data-naming-chip]');
         for (var i = 0; i < chips.length; i++) {
           if (chips[i].dataset.namingChip.toLowerCase() === name.toLowerCase()) {
-            alert('Duplicate filename.');
+            alert(msgErrDuplicate);
             return;
           }
         }
@@ -59,7 +74,7 @@
         var removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'ml-0.5 text-gray-400 hover:text-red-500 focus:outline-none';
-        removeBtn.setAttribute('aria-label', 'Remove ' + name);
+        removeBtn.setAttribute('aria-label', msgAriaRemove + ' ' + name);
         removeBtn.innerHTML = '&times;';
         removeBtn.onclick = function() { chip.remove(); };
         chip.appendChild(removeBtn);
@@ -67,6 +82,17 @@
       }
 
       function saveProfileNaming(btn) {
+        // Translated strings sourced from the hidden #profile-naming-i18n
+        // element. English fallbacks are kept so the save action still reports
+        // something useful if the i18n element is absent (older cached templ
+        // render, JS loaded outside the Settings page, etc.).
+        var i18n = document.getElementById('profile-naming-i18n');
+        var ds = (i18n && i18n.dataset) || {};
+        var msgSaving = ds.statusSaving || 'Saving...';
+        var msgSaved = ds.statusSaved || 'Saved.';
+        var msgSaveFailed = ds.statusSaveFailed || 'Save failed.';
+        var msgNetwork = ds.statusNetwork || 'Network error.';
+
         var profileId = btn.dataset.profileId;
         var payload = {};
         var types = ['thumb', 'fanart', 'logo', 'banner'];
@@ -85,7 +111,7 @@
         var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
         var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
         var status = document.getElementById('naming-save-status');
-        status.textContent = 'Saving...';
+        status.textContent = msgSaving;
 
         fetch(bp + '/api/v1/platforms/' + profileId, {
           method: 'PUT',
@@ -97,19 +123,19 @@
           credentials: 'same-origin'
         }).then(function(r) {
           if (r.ok) {
-            status.textContent = 'Saved.';
+            status.textContent = msgSaved;
             setTimeout(function() { status.textContent = ''; }, 2000);
           } else {
             r.json().then(function(data) {
-              var msg = data.error || 'Save failed.';
+              var msg = data.error || msgSaveFailed;
               if (data.details) msg += ' ' + data.details.join('; ');
               status.textContent = msg;
             }).catch(function() {
-              status.textContent = 'Save failed.';
+              status.textContent = msgSaveFailed;
             });
           }
         }).catch(function() {
-          status.textContent = 'Network error.';
+          status.textContent = msgNetwork;
         });
       }
 
