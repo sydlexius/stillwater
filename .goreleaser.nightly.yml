@@ -68,6 +68,8 @@ builds:
     ignore:
       - goos: windows
         goarch: arm64
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X github.com/sydlexius/stillwater/internal/version.Version={{ .Version }}
