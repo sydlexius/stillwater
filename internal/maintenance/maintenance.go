@@ -3,6 +3,7 @@ package maintenance
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -103,6 +104,8 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		`SELECT value FROM settings WHERE key = 'db_maintenance.last_optimize_at'`).Scan(&lastOpt)
 	if err == nil {
 		st.LastOptimizeAt = lastOpt
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		s.logger.Warn("reading last_optimize_at", "error", err)
 	}
 
 	// Schedule config
@@ -358,24 +361,39 @@ func (s *Service) StartScheduler(ctx context.Context, interval time.Duration) {
 }
 
 // getBoolSetting reads a boolean setting from the key-value table.
+// Returns the fallback value if the key does not exist or cannot be parsed.
+// Logs a warning for genuine DB errors (i.e. anything other than a missing row).
 func (s *Service) getBoolSetting(ctx context.Context, key string, fallback bool) bool {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
 	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			s.logger.Warn("reading bool setting", "key", key, "error", err)
+		}
 		return fallback
 	}
 	return v == "true" || v == "1"
 }
 
 // getIntSetting reads an integer setting from the key-value table.
+// Returns the fallback value if the key does not exist or cannot be parsed.
+// Logs a warning for genuine DB errors (i.e. anything other than a missing row).
+// Logs a warning when a stored value is not a valid integer.
 func (s *Service) getIntSetting(ctx context.Context, key string, fallback int) int {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
-	if err != nil || v == "" {
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			s.logger.Warn("reading int setting", "key", key, "error", err)
+		}
+		return fallback
+	}
+	if v == "" {
 		return fallback
 	}
 	var n int
 	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+		s.logger.Warn("int setting value is not a valid integer", "key", key, "stored_value", v, "fallback", fallback)
 		return fallback
 	}
 	return n

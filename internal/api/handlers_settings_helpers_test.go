@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+// insertSetting is a test helper that writes a key/value pair into the
+// settings table of the test router's DB.
+func insertSetting(t *testing.T, r *Router, key, value string) {
+	t.Helper()
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO settings (key, value) VALUES (?, ?)`, key, value)
+	if err != nil {
+		t.Fatalf("insertSetting(%q=%q): %v", key, value, err)
+	}
+}
+
+// -- getStringSetting ---------------------------------------------------------
+
 // TestGetStringSetting_AbsentKey verifies that a missing settings row
 // returns the fallback without emitting a log line.
 func TestGetStringSetting_AbsentKey(t *testing.T) {
@@ -23,6 +36,32 @@ func TestGetStringSetting_AbsentKey(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Errorf("getStringSetting absent key: expected no log output, got %q", buf.String())
+	}
+}
+
+// TestGetStringSetting_StoredValue verifies that a present, non-empty stored
+// value is returned directly (happy path).
+func TestGetStringSetting_StoredValue(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	insertSetting(t, r, "test.str", "hello")
+
+	got := r.getStringSetting(context.Background(), "test.str", "fallback")
+	if got != "hello" {
+		t.Errorf("getStringSetting stored value: got %q, want %q", got, "hello")
+	}
+}
+
+// TestGetStringSetting_EmptyStoredValue verifies that a stored empty string
+// returns the fallback (empty string is treated as absent).
+func TestGetStringSetting_EmptyStoredValue(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	insertSetting(t, r, "test.empty", "")
+
+	got := r.getStringSetting(context.Background(), "test.empty", "fallback")
+	if got != "fallback" {
+		t.Errorf("getStringSetting empty stored value: got %q, want %q", got, "fallback")
 	}
 }
 
@@ -53,6 +92,8 @@ func TestGetStringSetting_DBError(t *testing.T) {
 	}
 }
 
+// -- getBoolSetting -----------------------------------------------------------
+
 // TestGetBoolSetting_AbsentKey verifies that a missing settings row
 // returns the fallback without emitting a log line.
 func TestGetBoolSetting_AbsentKey(t *testing.T) {
@@ -68,6 +109,34 @@ func TestGetBoolSetting_AbsentKey(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Errorf("getBoolSetting absent key: expected no log output, got %q", buf.String())
+	}
+}
+
+// TestGetBoolSetting_True verifies that stored "true" and "1" both parse to true.
+func TestGetBoolSetting_True(t *testing.T) {
+	t.Parallel()
+	for _, stored := range []string{"true", "1"} {
+		stored := stored
+		t.Run(stored, func(t *testing.T) {
+			t.Parallel()
+			r, _ := testRouter(t)
+			insertSetting(t, r, "test.bool.on", stored)
+			got := r.getBoolSetting(context.Background(), "test.bool.on", false)
+			if !got {
+				t.Errorf("getBoolSetting(%q): got false, want true", stored)
+			}
+		})
+	}
+}
+
+// TestGetBoolSetting_False verifies that stored "false" parses to false.
+func TestGetBoolSetting_False(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	insertSetting(t, r, "test.bool.off", "false")
+	got := r.getBoolSetting(context.Background(), "test.bool.off", true)
+	if got {
+		t.Errorf("getBoolSetting(\"false\"): got true, want false")
 	}
 }
 
@@ -97,6 +166,8 @@ func TestGetBoolSetting_DBError(t *testing.T) {
 	}
 }
 
+// -- getIntSetting ------------------------------------------------------------
+
 // TestGetIntSetting_AbsentKey verifies that a missing settings row
 // returns the fallback without emitting a log line.
 func TestGetIntSetting_AbsentKey(t *testing.T) {
@@ -112,6 +183,55 @@ func TestGetIntSetting_AbsentKey(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Errorf("getIntSetting absent key: expected no log output, got %q", buf.String())
+	}
+}
+
+// TestGetIntSetting_StoredValue verifies that a stored valid integer is
+// returned correctly (happy path, previously untested).
+func TestGetIntSetting_StoredValue(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	insertSetting(t, r, "test.int", "42")
+
+	got := r.getIntSetting(context.Background(), "test.int", 0)
+	if got != 42 {
+		t.Errorf("getIntSetting stored value: got %d, want 42", got)
+	}
+}
+
+// TestGetIntSetting_EmptyStoredValue verifies that a stored empty string
+// returns the fallback (empty is treated as absent).
+func TestGetIntSetting_EmptyStoredValue(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	insertSetting(t, r, "test.int.empty", "")
+
+	got := r.getIntSetting(context.Background(), "test.int.empty", 7)
+	if got != 7 {
+		t.Errorf("getIntSetting empty stored value: got %d, want 7 (fallback)", got)
+	}
+}
+
+// TestGetIntSetting_InvalidValue verifies that a stored non-integer returns
+// the fallback AND emits a Warn log line (Item 2 observability).
+func TestGetIntSetting_InvalidValue(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	insertSetting(t, r, "test.int.bad", "bad")
+
+	var buf bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	got := r.getIntSetting(context.Background(), "test.int.bad", 99)
+	if got != 99 {
+		t.Errorf("getIntSetting invalid value: got %d, want 99 (fallback)", got)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "int setting value is not a valid integer") {
+		t.Errorf("getIntSetting invalid value: expected warn log, got %q", logged)
+	}
+	if !strings.Contains(logged, "level=WARN") {
+		t.Errorf("getIntSetting invalid value: expected WARN level, got %q", logged)
 	}
 }
 

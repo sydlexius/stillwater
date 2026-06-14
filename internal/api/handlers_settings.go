@@ -292,7 +292,7 @@ func (r *Router) getBoolSetting(ctx context.Context, key string, fallback bool) 
 // getIntSetting reads an integer setting from the key-value table.
 // Returns the fallback value if the key does not exist or cannot be parsed.
 // Logs a warning for genuine DB errors (i.e. anything other than a missing row).
-// Parse errors from a stored non-integer value are silently ignored.
+// Logs a warning when a stored value is not a valid integer.
 func (r *Router) getIntSetting(ctx context.Context, key string, fallback int) int {
 	var v string
 	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
@@ -307,6 +307,7 @@ func (r *Router) getIntSetting(ctx context.Context, key string, fallback int) in
 	}
 	n, err2 := strconv.Atoi(v)
 	if err2 != nil {
+		r.logger.Warn("int setting value is not a valid integer", "key", key, "stored_value", v, "fallback", fallback)
 		return fallback
 	}
 	return n
