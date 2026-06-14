@@ -81,15 +81,21 @@ func (r *Router) eligibleArtistsTotal(ctx context.Context) int {
 // off). If the DB query fails it logs a warning and falls back to
 // found-minus-auto-fixed, clamped at zero. Both handlers share a single
 // r.ruleRun status slot, so the tally is computed identically in each;
-// extracting it here keeps that behavior in one place. Callers invoke this
-// only when the pipeline returned no error (result is non-nil).
-func (r *Router) computeViolationTally(ctx context.Context, result *rule.RunResult) (violationsFound, violationsAutoFixed, violationsRemaining int) {
+// extracting it here keeps that behavior in one place. caller identifies the
+// invoking context ("single-rule" or "run-all") for log messages. If result
+// is nil the function logs an error and returns zeros immediately.
+func (r *Router) computeViolationTally(ctx context.Context, result *rule.RunResult, caller string) (violationsFound, violationsAutoFixed, violationsRemaining int) {
+	if result == nil {
+		r.logger.Error("computeViolationTally called with nil result; pipeline returned nil without error", "caller", caller)
+		return 0, 0, 0
+	}
+
 	violationsFound = result.ViolationsFound
 	violationsAutoFixed = result.FixesSucceeded
 
 	counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{})
 	if dbErr != nil {
-		r.logger.Warn("querying active violations for toast count", "error", dbErr)
+		r.logger.Warn("querying active violations for toast count", "caller", caller, "error", dbErr)
 		// Fall back to the computed remaining count.
 		violationsRemaining = violationsFound - violationsAutoFixed
 		if violationsRemaining < 0 {
@@ -447,10 +453,11 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		result, err := r.pipeline.RunRuleScoped(ctx, ruleID, scope)
 
 		// Compute violation counts outside the mutex (same pattern as run-all).
+		var violationsFound int
 		var violationsAutoFixed int
 		var violationsRemaining int
 		if err == nil {
-			_, violationsAutoFixed, violationsRemaining = r.computeViolationTally(ctx, result)
+			violationsFound, violationsAutoFixed, violationsRemaining = r.computeViolationTally(ctx, result, "single-rule")
 		}
 
 		r.ruleRunMu.Lock()
@@ -470,7 +477,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.ArtistsTotal = result.ArtistsTotal
 		r.ruleRun.ArtistsSkipped = result.ArtistsSkipped
 		r.ruleRun.Scope = result.Scope
-		r.ruleRun.ViolationsFound = result.ViolationsFound
+		r.ruleRun.ViolationsFound = violationsFound
 		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
 		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRun.FixesAttempted = result.FixesAttempted
@@ -650,7 +657,7 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		var violationsAutoFixed int
 		var violationsRemaining int
 		if err == nil {
-			violationsFound, violationsAutoFixed, violationsRemaining = r.computeViolationTally(ctx, result)
+			violationsFound, violationsAutoFixed, violationsRemaining = r.computeViolationTally(ctx, result, "run-all")
 		}
 
 		r.ruleRunMu.Lock()
