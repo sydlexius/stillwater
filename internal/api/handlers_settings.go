@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -275,10 +276,14 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 
 // getBoolSetting reads a boolean setting from the key-value table.
 // Returns the fallback value if the key does not exist or cannot be parsed.
+// Logs a warning for genuine DB errors (i.e. anything other than a missing row).
 func (r *Router) getBoolSetting(ctx context.Context, key string, fallback bool) bool {
 	var v string
 	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
 	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Warn("reading bool setting", "key", key, "error", err)
+		}
 		return fallback
 	}
 	return v == "true" || v == "1"
@@ -286,10 +291,18 @@ func (r *Router) getBoolSetting(ctx context.Context, key string, fallback bool) 
 
 // getIntSetting reads an integer setting from the key-value table.
 // Returns the fallback value if the key does not exist or cannot be parsed.
+// Logs a warning for genuine DB errors (i.e. anything other than a missing row).
+// Parse errors from a stored non-integer value are silently ignored.
 func (r *Router) getIntSetting(ctx context.Context, key string, fallback int) int {
 	var v string
 	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
-	if err != nil || v == "" {
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Warn("reading int setting", "key", key, "error", err)
+		}
+		return fallback
+	}
+	if v == "" {
 		return fallback
 	}
 	n, err2 := strconv.Atoi(v)
@@ -326,11 +339,19 @@ func (r *Router) ruleScheduleMinutes(ctx context.Context) int {
 }
 
 // getStringSetting reads a string setting from the key-value table.
-// Returns the fallback value if the key does not exist.
+// Returns the fallback value if the key does not exist or the stored value is
+// empty. Logs a warning for genuine DB errors (i.e. anything other than a
+// missing row).
 func (r *Router) getStringSetting(ctx context.Context, key string, fallback string) string {
 	var v string
 	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
-	if err != nil || v == "" {
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Warn("reading string setting", "key", key, "error", err)
+		}
+		return fallback
+	}
+	if v == "" {
 		return fallback
 	}
 	return v
