@@ -270,7 +270,7 @@ templ ArtistMergeModal() {
 		function closeModal() {
 			modal.classList.add('hidden');
 			optionsRoot.innerHTML = '';
-			previewBody.innerHTML = '<p class="italic">' + escapeHtml(tx('preview_loading')) + '</p>';
+			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
 			confirmBtn.disabled = true;
 			current = { members: [], survivorId: null, dryRunOK: false };
 			// Restore focus to the element that opened the modal so keyboard
@@ -336,7 +336,7 @@ templ ArtistMergeModal() {
 		}
 
 		function runDryRun() {
-			previewBody.innerHTML = '<p class="italic">' + escapeHtml(tx('preview_loading')) + '</p>';
+			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
 			confirmBtn.disabled = true;
 			postMerge(true).then(function(out) {
 				if (out.kind === 'success') {
@@ -514,12 +514,6 @@ templ ArtistMergeModal() {
 		function cssEscape(s) {
 			if (window.CSS && window.CSS.escape) return window.CSS.escape(s);
 			return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
-		}
-
-		function escapeHtml(s) {
-			var div = document.createElement('div');
-			div.textContent = s;
-			return div.innerHTML;
 		}
 
 		document.addEventListener('click', function(e) {
