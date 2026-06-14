@@ -3915,31 +3915,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConflictWriteBlock"
 
-  /artists/{id}/nfo/diff:
-    get:
-      tags: [NFO]
-      summary: Get NFO field-level diff
-      description: >
-        For pathless artists (no filesystem path), returns a virtual NFO
-        generated from database fields instead of reading from disk.
-      operationId: getNFODiff
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: NFO diff result (returns HTML fragment when HX-Request header is set)
-          content:
-            application/json:
-              schema:
-                type: object
-            text/html:
-              schema:
-                type: string
-
   /artists/{id}/nfo/conflict:
     get:
       tags: [NFO]

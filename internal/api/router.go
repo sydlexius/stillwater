@@ -688,8 +688,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/history/{id}/revert", wrapAuth(r.handleRevertHistory, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/history", wrapAuth(r.handleListGlobalHistory, authMw))
 
-	// NFO diff routes (snapshot routes removed -- field-level undo via /history)
-	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/diff", wrapAuth(r.handleNFODiff, authMw))
+	// NFO conflict check route (field-level undo via /history; diff view retired)
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/conflict", wrapAuth(r.handleNFOConflictCheck, authMw))
 
 	// Field-level edit routes
@@ -770,7 +769,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		// the request, which cannot redirect off-origin.
 		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the query string flows from req.
 	}, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/activity", wrapOptionalAuth(r.handleActivityPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/activity/content", wrapOptionalAuth(r.handleActivityContent, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/dashboard/actions", wrapOptionalAuth(r.handleDashboardActionQueue, optAuthMw))
