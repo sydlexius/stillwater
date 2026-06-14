@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -50,7 +51,7 @@ func (r *sqliteHistoryRepo) GetByID(ctx context.Context, id string) (*MetadataCh
 		&c.ID, &c.ArtistID, &c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", ErrChangeNotFound, id)
 		}
 		return nil, fmt.Errorf("querying metadata change: %w", err)

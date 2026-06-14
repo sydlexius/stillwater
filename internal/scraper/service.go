@@ -96,7 +96,7 @@ func (s *Service) SaveConfig(ctx context.Context, scope string, cfg *ScraperConf
 		err := s.db.QueryRowContext(ctx,
 			"SELECT id FROM scraper_config WHERE scope = ?", scope,
 		).Scan(&existingID)
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			cfg.ID = uuid.New().String()
 		} else if err != nil {
 			return fmt.Errorf("checking existing config: %w", err)
