@@ -51,6 +51,7 @@ func (r *Router) assets() templates.AssetPaths {
 		PollingJS:      r.basePath + r.staticAssets.Path("/js/polling.js"),
 		SessionJS:      r.basePath + r.staticAssets.Path("/js/session.js"),
 		PreferencesJS:  r.basePath + r.staticAssets.Path("/js/preferences.js"),
+		UtilsJS:        r.basePath + r.staticAssets.Path("/js/utils.js"),
 		SidebarJS:      r.basePath + r.staticAssets.Path("/js/sidebar.js"),
 		FilterFlyoutJS: r.basePath + r.staticAssets.Path("/js/filter-flyout.js"),
 		KeyboardJS:     r.basePath + r.staticAssets.Path("/js/keyboard.js"),

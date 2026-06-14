@@ -65,6 +65,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			<!-- preferences.js exposes window.swPreferences + window.swCsrfToken,
 			     consumed by the shared LanguagePicker further down. -->
 			<script src={ assets.PreferencesJS }></script>
+			<!-- utils.js exposes window.escapeHTML for inline scripts below. -->
+			if assets.UtilsJS != "" {
+				<script src={ assets.UtilsJS }></script>
+			}
 			<script>
 				(function() {
 					var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
@@ -1047,14 +1051,14 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						}
 						var html = '';
 						libs.forEach(function(lib) {
-							var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(lib.path) + '</div>' : '';
+							var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + escapeHTML(lib.path) + '</div>' : '';
 							var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>' : '';
 							html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="ob-lib-' + lib.id + '">'
 								+ '<div>'
-								+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHtml(lib.name) + '</div>'
+								+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHTML(lib.name) + '</div>'
 								+ pathLine
 								+ '<div class="flex items-center gap-1.5 mt-1">'
-								+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + escapeHtml(lib.type) + '</span>'
+								+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + escapeHTML(lib.type) + '</span>'
 								+ connectionBadge
 								+ '</div>'
 								+ '</div>'
@@ -1084,12 +1088,6 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}).catch(function() {
 						alert('Network error removing library. Please try again.');
 					});
-				}
-
-				function escapeHtml(str) {
-					var div = document.createElement('div');
-					div.textContent = str;
-					return div.innerHTML;
 				}
 
 				function escapeJsString(s) {
@@ -1364,11 +1362,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						headerBtn.setAttribute('aria-controls', 'review-content-' + item.artist_id);
 						headerBtn.onclick = function(b) { return function() { toggleReviewRow(b); }; }(headerBtn);
 						headerBtn.innerHTML = '<div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0">'
-							+ escapeHtml(initials)
+							+ escapeHTML(initials)
 							+ '</div>'
 							+ '<div class="flex-1 min-w-0">'
-							+ '<span class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate block">' + escapeHtml(item.artist_name) + '</span>'
-							+ '<span class="text-xs text-gray-500 dark:text-gray-400">' + String(candidateCount) + ' candidate' + (candidateCount !== 1 ? 's' : '') + ' / ' + escapeHtml(tierLabel) + '</span>'
+							+ '<span class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate block">' + escapeHTML(item.artist_name) + '</span>'
+							+ '<span class="text-xs text-gray-500 dark:text-gray-400">' + String(candidateCount) + ' candidate' + (candidateCount !== 1 ? 's' : '') + ' / ' + escapeHTML(tierLabel) + '</span>'
 							+ '</div>'
 							+ '<svg class="w-4 h-4 text-gray-400 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>';
 
@@ -1404,18 +1402,18 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 
 						html += '<div class="flex items-center justify-between">'
 							+ '<div class="flex-1 min-w-0">'
-							+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHtml(cand.name) + '</div>';
+							+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHTML(cand.name) + '</div>';
 
 						// Type, country, disambiguation line
 						var meta = '';
-						if (cand.type) meta += escapeHtml(cand.type);
-						if (cand.country) meta += (meta ? ' from ' : '') + escapeHtml(cand.country);
-						if (cand.disambiguation) meta += (meta ? ' ' : '') + '<span class="italic">(' + escapeHtml(cand.disambiguation) + ')</span>';
+						if (cand.type) meta += escapeHTML(cand.type);
+						if (cand.country) meta += (meta ? ' from ' : '') + escapeHTML(cand.country);
+						if (cand.disambiguation) meta += (meta ? ' ' : '') + '<span class="italic">(' + escapeHTML(cand.disambiguation) + ')</span>';
 						if (meta) html += '<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">' + meta + '</div>';
 
 						// MBID in monospace
 						if (cand.musicbrainz_id) {
-							html += '<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">' + escapeHtml(cand.musicbrainz_id) + '</div>';
+							html += '<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">' + escapeHTML(cand.musicbrainz_id) + '</div>';
 						}
 
 						// Album match badge
@@ -1506,7 +1504,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								+ '<svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
 								+ '</div>'
 								+ '<div class="flex-1 min-w-0">'
-								+ '<span class="text-sm font-medium text-gray-900 dark:text-gray-100">' + escapeHtml(artistName) + '</span>'
+								+ '<span class="text-sm font-medium text-gray-900 dark:text-gray-100">' + escapeHTML(artistName) + '</span>'
 								+ '<span class="text-xs text-green-600 dark:text-green-400 ml-2">Linked successfully</span>'
 								+ '</div>'
 								+ '</div>';

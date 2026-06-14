@@ -516,15 +516,6 @@ templ ArtistMergeModal() {
 			return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
 		}
 
-		function escapeHTML(s) {
-			return String(s)
-				.replace(/&/g, '&amp;')
-				.replace(/</g, '&lt;')
-				.replace(/>/g, '&gt;')
-				.replace(/"/g, '&quot;')
-				.replace(/'/g, '&#39;');
-		}
-
 		document.addEventListener('click', function(e) {
 			var open = e.target.closest('[data-merge-open]');
 			if (open) {

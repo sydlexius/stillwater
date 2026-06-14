@@ -16,6 +16,10 @@ type AssetPaths struct {
 	ConflictGateJS string
 	SessionJS      string
 	PreferencesJS  string
+	// UtilsJS is the shared client-side utility module (web/static/js/utils.js).
+	// Exposes window.escapeHTML so inline scripts on every Layout-based page
+	// and onboarding.templ can call it without each defining their own copy.
+	UtilsJS        string
 	SidebarJS      string
 	FilterFlyoutJS string
 	KeyboardJS     string
@@ -196,6 +200,9 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	@components.ProgressPill()
 	@components.ContextMenuGlobalJS()
 	@HelpOverlay()
+	if assets.UtilsJS != "" {
+		<script src={ assets.UtilsJS }></script>
+	}
 	<script src={ assets.PollingJS }></script>
 	<script src={ assets.SessionJS }></script>
 	<script src={ assets.PreferencesJS }></script>

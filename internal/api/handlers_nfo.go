@@ -2,14 +2,11 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/sydlexius/stillwater/internal/api/middleware"
-	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -17,86 +14,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/web/templates"
 )
-
-// handleNFODiff computes a field-level diff between the on-disk NFO and
-// the current database metadata.
-// GET /api/v1/artists/{id}/nfo/diff
-func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
-	artistID, ok := RequirePathParam(w, req, "id")
-	if !ok {
-		return
-	}
-
-	a, err := r.artistService.GetByID(req.Context(), artistID)
-	if err != nil {
-		if errors.Is(err, artist.ErrNotFound) {
-			writeError(w, req, http.StatusNotFound, "artist not found")
-			return
-		}
-		r.logger.Error("fetching artist for NFO diff", "artist_id", artistID, "error", err)
-		writeError(w, req, http.StatusInternalServerError, "internal error")
-		return
-	}
-
-	// Compare on-disk NFO (previous state) against current database metadata.
-	// For pathless artists, both sides come from the database, so no diff.
-	dbNFO := nfo.FromArtist(a)
-	onDiskNFO := dbNFO // default: identical, so no diff for pathless artists
-	if a.Path != "" {
-		nfoPath := filepath.Join(a.Path, "artist.nfo")
-		parsed, parseErr := parseNFOFile(nfoPath)
-		switch {
-		case parseErr == nil:
-			onDiskNFO = parsed
-		case errors.Is(parseErr, os.ErrNotExist):
-			// No file on disk: diff against nil (full added-fields diff).
-			onDiskNFO = nil
-		default:
-			// Read/parse failure: surface via log so operators can
-			// diagnose, and treat as no on-disk NFO so the diff does
-			// not silently hide corruption.
-			onDiskNFO = nil
-			r.logger.Warn("failed to parse artist.nfo for nfo diff",
-				"artist_id", artistID, "path", nfoPath, "error", parseErr)
-		}
-	}
-	diff := nfo.Diff(onDiskNFO, dbNFO)
-
-	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.NFODiffFragment(*diff))
-		return
-	}
-	writeJSON(w, http.StatusOK, diff)
-}
-
-// handleNFODiffPage renders the NFO diff HTML page.
-// GET /artists/{id}/nfo
-func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		r.renderLoginPage(w, req)
-		return
-	}
-
-	artistID := req.PathValue("id")
-	a, err := r.artistService.GetByID(req.Context(), artistID)
-	if err != nil {
-		if errors.Is(err, artist.ErrNotFound) {
-			http.Error(w, "artist not found", http.StatusNotFound)
-			return
-		}
-		r.logger.Error("fetching artist for NFO diff page", "artist_id", artistID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	data := templates.NFODiffPageData{
-		Artist:     *a,
-		Diff:       nfo.DiffResult{},
-		IsPathless: a.Path == "",
-	}
-	renderTempl(w, req, templates.NFODiffPage(r.assetsFor(req), data))
-}
 
 // handleNFOConflictCheck checks whether an artist's NFO has been modified externally.
 // GET /api/v1/artists/{id}/nfo/conflict
