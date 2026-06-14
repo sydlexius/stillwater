@@ -594,7 +594,8 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 				// synchronously on load).
 				function cycleTheme() {
 					var cached = window.swPreferences ? window.swPreferences.getCache() : null;
-					var current = (cached && cached.theme) || localStorage.getItem('theme') || 'dark';
+					var lsTheme; try { lsTheme = localStorage.getItem('theme'); } catch (e) {}
+					var current = (cached && cached.theme) || lsTheme || 'dark';
 					var next;
 					if (current === 'light') {
 						next = 'dark';
