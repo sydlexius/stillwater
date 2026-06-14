@@ -140,6 +140,7 @@ nav:
       - Rules catalogue: reference/rules-catalogue.md
       - Providers: reference/providers.md
       - Environment variables: reference/environment-variables.md
+      - UI label glossary: reference/ui-labels.md
   - Troubleshooting:
       - troubleshooting/index.md
       - Platform authentication: troubleshooting/platform-auth.md

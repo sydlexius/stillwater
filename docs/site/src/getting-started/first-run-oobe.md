@@ -151,7 +151,7 @@ Everything the wizard touched lives under the **Settings** menu, organized by ar
 
 - **Settings** > **Libraries** to add, remove, or reconfigure libraries.
 - **Settings** > **Providers** > **Metadata Language Preferences** for language preferences, and **Settings** > **General** for other account-level defaults.
-- **Settings** > **Platform** to switch platform profiles.
+- **Settings** > **General** to switch platform profiles.
 - **Settings** > **Providers** for API keys and per-provider configuration.
 - **Settings** > **Connections** for media server and Lidarr connections.
 - **Settings** > **Rules** for the rule engine.

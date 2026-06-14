@@ -93,7 +93,7 @@ The same configuration in YAML (still supported for existing deployments) uses k
 
 ### Backup numeric parsing
 
-`SW_BACKUP_RETENTION` and `SW_BACKUP_INTERVAL` require a positive integer. **Invalid values silently fall through to the defaults** (no error logged). Set carefully; verify under Settings > Backups after restart.
+`SW_BACKUP_RETENTION` and `SW_BACKUP_INTERVAL` require a positive integer. **Invalid values silently fall through to the defaults** (no error logged). Set carefully; verify under Settings > Maintenance after restart.
 
 ### Backup-enabled accepts only `true` or `1`
 

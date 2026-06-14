@@ -12,7 +12,7 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
 
     ---
 
-    A guided tour of every tab in Settings: General, Providers, Connections, Libraries, Automation, Rules, Users, Auth providers, Maintenance, Logs, and Updates.
+    A guided tour of every tab in Settings: General, Providers, Connections, Libraries, Automation, Rules, Users, Auth Providers, Maintenance, Logs, and Updates.
 
     [Read more](settings-by-tab.md)
 
@@ -39,6 +39,14 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
     Every `SW_` environment variable Stillwater honors at startup, with defaults and YAML field equivalents.
 
     [Read more](environment-variables.md)
+
+- __UI label glossary__
+
+    ---
+
+    Exact wording for sidebar navigation, Settings tabs, artist page sections, image type names, and key action buttons. Use when writing docs to match what users see.
+
+    [Read more](ui-labels.md)
 
 </div>
 
