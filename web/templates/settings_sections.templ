@@ -62,6 +62,30 @@ templ SectionActiveProfile(data SettingsData) {
 					</p>
 				}
 			</div>
+			<!-- Hidden elements carrying translated strings for symlink.js and
+			     profile-naming.js. The JS reads these via dataset.* rather than
+			     embedding raw English, mirroring the #base-path-i18n pattern. -->
+			<div
+				id="symlink-i18n"
+				class="hidden"
+				data-toast-save-failed={ t(ctx, "settings.symlinks.toast_save_failed") }
+				data-toast-network={ t(ctx, "settings.symlinks.toast_network") }
+			></div>
+			<div
+				id="profile-naming-i18n"
+				class="hidden"
+				data-prompt-filename={ t(ctx, "settings.profile_naming.prompt_filename") }
+				data-error-path-separator={ t(ctx, "settings.profile_naming.error_path_separator") }
+				data-error-no-extension={ t(ctx, "settings.profile_naming.error_no_extension") }
+				data-error-invalid-extension={ t(ctx, "settings.profile_naming.error_invalid_extension") }
+				data-error-logo-extension={ t(ctx, "settings.profile_naming.error_logo_extension") }
+				data-error-duplicate={ t(ctx, "settings.profile_naming.error_duplicate") }
+				data-aria-remove={ t(ctx, "settings.profile_naming.aria_remove") }
+				data-status-saving={ t(ctx, "settings.profile_naming.status_saving") }
+				data-status-saved={ t(ctx, "settings.profile_naming.status_saved") }
+				data-status-save-failed={ t(ctx, "settings.profile_naming.status_save_failed") }
+				data-status-network={ t(ctx, "settings.profile_naming.status_network") }
+			></div>
 			<div class="px-6 py-4 space-y-4">
 				<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
 					<div>
@@ -336,6 +360,15 @@ templ SectionBehavior(data SettingsData) {
 				{ t(ctx, "settings.behavior.description") }
 			</p>
 		</div>
+		<!-- Hidden element carrying translated toast strings for platform-debug.js.
+		     The JS reads these via dataset.* rather than embedding raw English,
+		     mirroring the #base-path-i18n pattern. -->
+		<div
+			id="platform-debug-i18n"
+			class="hidden"
+			data-toast-save-failed={ t(ctx, "settings.platform_debug.toast_save_failed") }
+			data-toast-network={ t(ctx, "settings.platform_debug.toast_network") }
+		></div>
 		<div class="px-6 py-4">
 			<div class="flex items-center justify-between">
 				<div>

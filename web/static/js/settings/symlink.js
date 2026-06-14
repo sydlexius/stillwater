@@ -6,6 +6,8 @@
 // cookie-parse regex.
 // Network: /api/v1/platforms/
 //
+// DOM contract: symlink-i18n (hidden i18n element in settings_sections.templ)
+//
 // Export surface: window.swSymlink doubles as the load-once guard;
 // the following are re-exported to window because markup event
 // handlers or sibling modules call them by name: toggleSymlinks.
@@ -17,6 +19,16 @@
       function toggleSymlinks(btn) {
         var isOn = btn.getAttribute('aria-checked') === 'true';
         var newVal = !isOn;
+
+        // Translated strings sourced from the hidden #symlink-i18n element.
+        // English fallbacks are kept so the toggle still reports something
+        // useful if the i18n element is absent (older cached templ render,
+        // JS loaded outside the Settings page, etc.).
+        var i18n = document.getElementById('symlink-i18n');
+        var ds = (i18n && i18n.dataset) || {};
+        var msgSaveFailed = ds.toastSaveFailed || 'Failed to update symlink setting.';
+        var msgNetwork = ds.toastNetwork || 'Network error while updating setting.';
+
         var profileId = btn.getAttribute('data-profile-id');
         var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
         var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
@@ -45,12 +57,12 @@
             }
           } else {
             if (typeof showToast === 'function') {
-              showToast('Failed to update symlink setting.');
+              showToast(msgSaveFailed);
             }
           }
         }).catch(function() {
           if (typeof showToast === 'function') {
-            showToast('Network error while updating setting.');
+            showToast(msgNetwork);
           }
         });
       }
