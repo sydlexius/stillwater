@@ -241,7 +241,6 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
 						{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
 						{Key: "mbid", Label: "MBID"},
-						{Key: "actions", Label: "Actions"},
 					})
 					<a
 						id="compliance-export-link"
@@ -428,15 +427,12 @@ templ ComplianceTable(data ComplianceData) {
 						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							MBID
 						</th>
-						<th scope="col" data-col="actions" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ t(ctx, "common.actions") }
-						</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
 					if len(data.Rows) == 0 {
 						<tr>
-							<td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+							<td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 								{ t(ctx, "report.no_artists") }
 							</td>
 						</tr>
@@ -488,18 +484,6 @@ templ complianceRow(row ComplianceRow, profileName string, basePath string) {
 		</td>
 		<td data-col="mbid" class="px-4 py-3 text-center">
 			@components.StatusBadge(row.Artist.MusicBrainzID != "", "MBID")
-		</td>
-		<td data-col="actions" class="px-4 py-3 text-sm text-right">
-			<div class="flex items-center justify-end gap-1">
-				if row.Artist.NFOExists {
-					<a
-						href={ templ.SafeURL(basePath + "/artists/" + row.Artist.ID + "/nfo") }
-						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					>
-						{ t(ctx, "report.changes") }
-					</a>
-				}
-			</div>
 		</td>
 	</tr>
 }
