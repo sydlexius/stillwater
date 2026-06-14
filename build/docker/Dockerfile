@@ -40,7 +40,19 @@ COPY . .
 
 # Build Tailwind CSS and Go binary in a single layer (hadolint DL3059).
 RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify \
-    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/stillwater ./cmd/stillwater
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /bin/stillwater ./cmd/stillwater
+
+# --- SYNC with Dockerfile.goreleaser runtime stanza ---
+# The runtime stage below must stay in sync with Dockerfile.goreleaser.
+# Allowed intentional differences (do not "fix" these):
+#   - LABEL block: present here (for `docker build` / CI); absent in
+#     Dockerfile.goreleaser (goreleaser injects OCI labels via .goreleaser.yml).
+#   - Binary COPY source: `--from=builder /bin/stillwater` here; in
+#     Dockerfile.goreleaser it is `ARG TARGETPLATFORM` + `COPY $TARGETPLATFORM/stillwater`
+#     (goreleaser's multi-platform buildx context, no builder stage).
+# Any other runtime change (base image digest, apk packages, users, ports,
+# healthcheck, volumes, entrypoint) MUST be mirrored in Dockerfile.goreleaser.
+# --- END SYNC ---
 
 # Runtime stage
 FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
