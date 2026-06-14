@@ -63,7 +63,7 @@ func (r *sqlitePlatformIDRepo) Get(ctx context.Context, artistID, connectionID s
 		WHERE artist_id = ? AND connection_id = ?
 	`, artistID, connectionID).Scan(&platformArtistID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", fmt.Errorf("getting platform id: %w", err)

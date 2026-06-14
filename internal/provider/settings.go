@@ -169,7 +169,7 @@ func (s *SettingsService) GetKeyStatus(ctx context.Context, name ProviderName) (
 	key := keyStatusSettingKey(name)
 	var value string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {
@@ -375,7 +375,7 @@ func (s *SettingsService) GetPriorities(ctx context.Context) ([]FieldPriority, e
 		key := prioritySettingKey(d.Field)
 		var value string
 		err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			result[i] = d
 		} else if err != nil {
 			return nil, fmt.Errorf("reading priority for %s: %w", d.Field, err)
@@ -574,7 +574,7 @@ func (s *SettingsService) IsWebSearchEnabled(ctx context.Context, name ProviderN
 	key := webSearchEnabledKey(name)
 	var value string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
@@ -647,7 +647,7 @@ func (s *SettingsService) GetBaseURL(ctx context.Context, name ProviderName) (st
 	key := baseURLSettingKey(name)
 	var value string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {
