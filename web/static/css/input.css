@@ -407,20 +407,21 @@
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1;
-  /* a11y (#1715): opaque red fill (not a translucent tint) so the count digits
-     keep WCAG AA contrast independent of the Background-Opacity pref and whatever
-     bleeds through the glass. Soft red-100 fill + red-900 text reads as a red
-     count and measures ~6.9:1. A same-hue translucent tint over the glass only
-     reached ~3:1 at the 85% default. */
-  background: #fecaca;
-  color: #7f1d1d;
-  border: 1px solid #fca5a5;
+  /* a11y (#1715, #1937): opaque blue fill (not a translucent tint) so the count
+     digits keep WCAG AA contrast independent of the Background-Opacity pref and
+     whatever bleeds through the glass. This is an informational count badge, not
+     a danger/alarm state, so it uses a neutral blue rather than red (#1937): a
+     soft blue-200 fill + blue-900 text. A same-hue translucent tint over the
+     glass only reached ~3:1 at the 85% default. */
+  background: #bfdbfe;
+  color: #1e3a8a;
+  border: 1px solid #93c5fd;
 }
 .dark .sw-sidebar-count-pill {
-  /* Dark inverts: deep red-900 fill + pale red-200 text, ~6.9:1. */
-  background: #7f1d1d;
-  color: #fecaca;
-  border-color: #991b1b;
+  /* Dark inverts: deep blue-900 fill + pale blue-200 text. */
+  background: #1e3a8a;
+  color: #bfdbfe;
+  border-color: #1e40af;
 }
 /* icon-only / hidden: hide the count pills (no room; user expands to see). */
 #sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-count-pill,
