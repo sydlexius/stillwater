@@ -47,7 +47,7 @@ coverage:
         paths:
           - internal/conflict
       connection:
-        target: 83%
+        target: 84%
         paths:
           - internal/connection
       connection_emby:
@@ -99,7 +99,7 @@ coverage:
         paths:
           - internal/i18n
       image:
-        target: 81%
+        target: 87%
         paths:
           - internal/image
       imagebridge:
