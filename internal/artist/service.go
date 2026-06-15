@@ -1065,28 +1065,42 @@ func IsProviderIDField(field string) bool {
 	return ok
 }
 
+// normalizeFieldValue normalizes a field value for equality comparison to detect
+// no-op writes before touching the DB. For slice fields it trims and re-joins
+// entries with ", "; for string fields it trims surrounding whitespace. This
+// mirrors the round-trip through the repository layer so comparisons are accurate.
+func normalizeFieldValue(field, value string) string {
+	if sliceFields[field] {
+		return strings.Join(splitTags(value), ", ")
+	}
+	return strings.TrimSpace(value)
+}
+
 // UpdateField updates a single metadata field on an artist record.
 // For slice fields (genres, styles, moods), the value is a comma-separated
 // string that gets marshaled to a JSON array for storage.
 //
-// When a HistoryService is attached, the old value is read before the update
-// and a MetadataChange is recorded if the value changed. History recording is
-// best-effort and will not cause the update to fail.
+// If the normalized new value equals the current value the write is skipped
+// entirely (no DB mutation, no history entry). When a HistoryService is
+// attached, a MetadataChange is recorded for genuine changes. History
+// recording is best-effort and will not cause the update to fail.
 func (s *Service) UpdateField(ctx context.Context, id, field, value string) error {
-	// Capture old value before the mutation so we can record the diff.
-	// Track whether the read succeeded so we don't fabricate history from
-	// an unknown old state if GetByID fails transiently.
+	// Fetch current value unconditionally so the no-op check runs regardless
+	// of whether history is enabled.
 	var oldValue string
 	oldKnown := false
-	if s.history != nil {
-		a, err := s.artists.GetByID(ctx, id)
-		if err != nil {
-			slog.Warn("history: could not fetch artist for UpdateField diff",
-				"artist_id", id, "field", field, "error", err)
-		} else {
-			oldValue = FieldValueFromArtist(a, field)
-			oldKnown = true
-		}
+	a, fetchErr := s.artists.GetByID(ctx, id)
+	if fetchErr != nil {
+		slog.Warn("no-op check: could not fetch artist for UpdateField diff",
+			"artist_id", id, "field", field, "error", fetchErr)
+	} else {
+		oldValue = FieldValueFromArtist(a, field)
+		oldKnown = true
+	}
+
+	// Skip the write if the normalized value is unchanged.
+	if oldKnown && normalizeFieldValue(field, value) == normalizeFieldValue(field, oldValue) {
+		return nil
 	}
 
 	if err := s.artists.UpdateField(ctx, id, field, value); err != nil {
@@ -1120,20 +1134,27 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 
 // ClearField sets a single metadata field to its zero value.
 //
-// When a HistoryService is attached, the old value is read before clearing
-// and a MetadataChange is recorded if the field was non-empty. History
-// recording is best-effort and will not cause the clear to fail.
+// If the field is already empty the write is skipped entirely (no DB mutation,
+// no history entry). When a HistoryService is attached, a MetadataChange is
+// recorded for genuine clears. History recording is best-effort and will not
+// cause the clear to fail.
 func (s *Service) ClearField(ctx context.Context, id, field string) error {
-	// Capture old value before clearing so we can record the diff.
+	// Fetch current value unconditionally so the no-op check runs regardless
+	// of whether history is enabled.
 	var oldValue string
-	if s.history != nil {
-		a, err := s.artists.GetByID(ctx, id)
-		if err != nil {
-			slog.Warn("history: could not fetch artist for ClearField diff",
-				"artist_id", id, "field", field, "error", err)
-		} else {
-			oldValue = FieldValueFromArtist(a, field)
-		}
+	oldKnown := false
+	a, fetchErr := s.artists.GetByID(ctx, id)
+	if fetchErr != nil {
+		slog.Warn("no-op check: could not fetch artist for ClearField diff",
+			"artist_id", id, "field", field, "error", fetchErr)
+	} else {
+		oldValue = FieldValueFromArtist(a, field)
+		oldKnown = true
+	}
+
+	// Skip the write if the field is already empty.
+	if oldKnown && oldValue == "" {
+		return nil
 	}
 
 	if err := s.artists.ClearField(ctx, id, field); err != nil {
@@ -1144,7 +1165,7 @@ func (s *Service) ClearField(ctx context.Context, id, field string) error {
 
 	// Record the change only if the field was non-empty before clearing.
 	// Use FieldValueFromArtist on the post-clear state for consistent representation.
-	if s.history != nil && oldValue != "" {
+	if s.history != nil && oldKnown && oldValue != "" {
 		newA, err := s.artists.GetByID(ctx, id)
 		if err != nil {
 			slog.Warn("history: could not fetch artist after ClearField",

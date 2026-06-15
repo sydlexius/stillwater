@@ -98,6 +98,9 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 	if source == "" {
 		return fmt.Errorf("source is required")
 	}
+	if oldValue == newValue {
+		return nil
+	}
 	validSource := source == "manual" || source == "scan" || source == "import" ||
 		source == "revert" ||
 		strings.HasPrefix(source, "provider:") || strings.HasPrefix(source, "rule:")
