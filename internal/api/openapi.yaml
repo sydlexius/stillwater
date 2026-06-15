@@ -1697,7 +1697,7 @@ components:
             when the check found no matching release on the current channel.
     UpdateStatus:
       type: object
-      required: [state, progress, is_docker, update_available, restart_required]
+      required: [state, progress, is_docker, update_available, restart_required, skipped_versions]
       properties:
         state:
           type: string
