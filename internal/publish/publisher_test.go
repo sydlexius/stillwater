@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -796,5 +798,69 @@ func TestPushMetadataAsync_NotifierNotCalledOnSuccess(t *testing.T) {
 	}
 	if got := notifier.snapshot(); len(got) != 0 {
 		t.Errorf("notifier calls on success = %d, want 0; calls=%+v", len(got), got)
+	}
+}
+
+// TestSyncImageToPlatforms_NotifierFiresOnUploadFailure mirrors
+// TestPushMetadataAsync_NotifierFiresOnPushFailure for the image-upload
+// surface (#1687). When the platform POST returns 401, SyncImageToPlatforms
+// must invoke the Notifier with the connection name, "auth_failed" class,
+// and the "image_upload" operation slug. Without this hook the operator
+// sees a blank warning string while the platform silently rejected the
+// image write.
+func TestSyncImageToPlatforms_NotifierFiresOnUploadFailure(t *testing.T) {
+	// Reject every image upload POST with 401.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	// SyncImageToPlatforms reads an image file from the artist's filesystem
+	// path. Place a minimal folder.jpg (the first "thumb" pattern) in a temp
+	// dir so the file-read step succeeds and the upload is actually attempted.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), []byte("JFIF"), 0o600); err != nil {
+		t.Fatalf("writing test image: %v", err)
+	}
+
+	notifier := &recordingNotifier{}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+		}},
+		Logger:   silentLogger(),
+		Notifier: notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Path: dir}
+	// SyncImageToPlatforms is synchronous, so the notifier is called before
+	// the function returns -- no polling or channel signaling needed.
+	p.SyncImageToPlatforms(context.Background(), a, "thumb")
+
+	got := notifier.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	if got[0].connection != "my-emby" {
+		t.Errorf("connection = %q, want %q", got[0].connection, "my-emby")
+	}
+	// classifyPushErr maps "image upload failed with status 401" -> "auth_failed".
+	if got[0].errorClass != "auth_failed" {
+		t.Errorf("errorClass = %q, want %q (401 should classify as auth_failed)", got[0].errorClass, "auth_failed")
+	}
+	if got[0].artistID != "a1" {
+		t.Errorf("artistID = %q, want %q", got[0].artistID, "a1")
+	}
+	if got[0].artistName != "Test Artist" {
+		t.Errorf("artistName = %q, want %q", got[0].artistName, "Test Artist")
+	}
+	if got[0].operation != pushOpImageUpload {
+		t.Errorf("operation = %q, want %q", got[0].operation, pushOpImageUpload)
+	}
+	if got[0].err == nil {
+		t.Error("err = nil, want a non-nil error so logs can correlate")
 	}
 }
