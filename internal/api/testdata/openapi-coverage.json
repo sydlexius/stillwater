@@ -1215,7 +1215,7 @@
     "method": "POST",
     "path": "/artists/{id}/pull",
     "handler": "handlePullMetadata",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "pushImages",

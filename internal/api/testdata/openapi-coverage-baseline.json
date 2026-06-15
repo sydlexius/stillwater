@@ -48,7 +48,6 @@
   "oidcLogin",
   "providerFetch",
   "providerSearch",
-  "pullMetadata",
   "pushMetadata",
   "refreshArtist",
   "refreshLink",
