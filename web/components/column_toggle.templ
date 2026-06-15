@@ -121,7 +121,13 @@ templ columnToggleScript() {
 			}
 
 			function applyColumnVisibility(storageKey, tableID, wrapper) {
-				var raw = localStorage.getItem('columns.' + storageKey);
+				var raw;
+				try {
+					raw = localStorage.getItem('columns.' + storageKey);
+				} catch (e) {
+					console.warn('[column_toggle] column state not accessible (private mode/quota):', e);
+					return;
+				}
 				if (!raw) return;
 
 				var hidden;
