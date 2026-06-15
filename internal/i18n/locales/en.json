@@ -2521,5 +2521,7 @@
   "prefs.section.findings": "Findings",
   "prefs.section.providers": "Providers",
   "prefs.section.discography": "Discography",
-  "prefs.section.identifiers": "Identifiers"
+  "prefs.section.identifiers": "Identifiers",
+
+  "prefs.search.no_match": "No preferences match \"%s\""
 }

@@ -81,7 +81,12 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 		<!-- Scrollable body -->
 		<div class="sw-prefs-drawer-body">
 			<!-- Empty state (shown by prefs-drawer.js when search yields no matches) -->
-			<p id="sw-prefs-search-empty" class="sw-prefs-search-empty" role="status" aria-live="polite" hidden></p>
+			<!-- data-empty-tmpl: localized string from en.json. The %s token inside the string is a
+			     JS-level placeholder; prefs-drawer.js replaces it via .replace('%s', input.value).
+			     t() returns the raw string as-is; tf()/Sprintf is not needed here. -->
+			<p id="sw-prefs-search-empty" class="sw-prefs-search-empty" role="status" aria-live="polite" hidden
+				data-empty-tmpl={ t(ctx, "prefs.search.no_match") }
+			></p>
 			<!-- Accordion groups -->
 			<div id="sw-prefs-groups">
 				<!-- Appearance group (expanded by default) -->
