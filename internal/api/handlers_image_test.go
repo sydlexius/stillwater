@@ -2782,6 +2782,77 @@ func TestProcessAndSaveImage_BackupFailureAborts(t *testing.T) {
 	}
 }
 
+// stubWebImageProvider is a minimal WebImageProvider for testing handleWebImageSearch.
+// It returns a fixed set of ImageResult values regardless of the query parameters.
+type stubWebImageProvider struct {
+	name    provider.ProviderName
+	results []provider.ImageResult
+}
+
+func (s *stubWebImageProvider) Name() provider.ProviderName { return s.name }
+func (s *stubWebImageProvider) RequiresAuth() bool          { return false }
+func (s *stubWebImageProvider) SearchImages(_ context.Context, _ string, _ provider.ImageType) ([]provider.ImageResult, error) {
+	return s.results, nil
+}
+
+// TestHandleWebImageSearch_NormalizesHTTPToHTTPS verifies that http:// thumbnail
+// URLs returned by a web-search provider are rewritten to https:// before the
+// response is sent, so they satisfy the "img-src 'self' data: https:" CSP header.
+// An already-https:// URL must remain unchanged.
+func TestHandleWebImageSearch_NormalizesHTTPToHTTPS(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+
+	a := &artist.Artist{Name: "CSP Artist", SortName: "CSP Artist", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Stub provider returns one http:// URL and one https:// URL.
+	stub := &stubWebImageProvider{
+		name: provider.NameDuckDuckGo,
+		results: []provider.ImageResult{
+			{URL: "http://example.com/img.jpg", Type: provider.ImageThumb, Source: "duckduckgo"},
+			{URL: "https://example.com/img2.jpg", Type: provider.ImageThumb, Source: "duckduckgo"},
+		},
+	}
+	r.webSearchRegistry.Register(stub)
+
+	if err := r.providerSettings.SetWebSearchEnabled(context.Background(), provider.NameDuckDuckGo, true); err != nil {
+		t.Fatalf("enabling provider: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/websearch?type=thumb", nil)
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleWebImageSearch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Images []provider.ImageResult `json:"images"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(resp.Images) != 2 {
+		t.Fatalf("images = %d, want 2", len(resp.Images))
+	}
+	for _, im := range resp.Images {
+		if strings.HasPrefix(im.URL, "http://") {
+			t.Errorf("URL %q still uses http://, want https://", im.URL)
+		}
+	}
+	// Verify the http:// URL was upgraded and the https:// URL was left alone.
+	if want := "https://example.com/img.jpg"; resp.Images[0].URL != want {
+		t.Errorf("images[0].URL = %q, want %q", resp.Images[0].URL, want)
+	}
+	if want := "https://example.com/img2.jpg"; resp.Images[1].URL != want {
+		t.Errorf("images[1].URL = %q, want %q", resp.Images[1].URL, want)
+	}
+}
+
 // TestHandleLogoTrim_BackupFailureAborts proves F3/T2: a backup-write failure
 // aborts the trim with 500 and leaves the original logo intact.
 func TestHandleLogoTrim_BackupFailureAborts(t *testing.T) {
