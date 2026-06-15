@@ -98,6 +98,13 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 	if source == "" {
 		return fmt.Errorf("source is required")
 	}
+	// Only skip when BOTH values are non-empty and identical. If oldValue is ""
+	// (as in rule_fix records, which always pass oldValue==""), the guard must
+	// not fire even when newValue is also "" - an accidental empty Message on a
+	// fix result would otherwise be silently dropped and leave no audit trail.
+	if oldValue != "" && oldValue == newValue {
+		return nil
+	}
 	validSource := source == "manual" || source == "scan" || source == "import" ||
 		source == "revert" ||
 		strings.HasPrefix(source, "provider:") || strings.HasPrefix(source, "rule:")

@@ -3982,11 +3982,20 @@ paths:
                 properties:
                   reverted:
                     type: boolean
-                    description: Whether the change was successfully reverted.
+                    description: >
+                      True when a write occurred (the field differed from OldValue
+                      and was updated). False when the revert was a no-op because
+                      the field already equalled OldValue.
+                  noop:
+                    type: boolean
+                    description: >
+                      True when the revert was a no-op (field already at OldValue,
+                      no write or history record created). Always the inverse of
+                      reverted.
                   change_id:
                     type: string
-                    description: ID of the reverted change record.
-                required: [reverted, change_id]
+                    description: ID of the original change that was targeted for revert.
+                required: [reverted, noop, change_id]
             text/html:
               schema:
                 type: string
