@@ -712,9 +712,7 @@
 				return resp.json();
 			})
 			.then(function() {
-				// Reload so the SSR'd skipped-list row picks up the
-				// new entry without a separate hydrate path.
-				window.location.reload();
+				fetchAndPopulateUpdateStatus({silent: true});
 			})
 			.catch(function(err) {
 				btn.disabled = false;
@@ -826,6 +824,80 @@
 					if (checkBtn) checkBtn.disabled = false;
 				}
 			}
+			// Hydrate the three auto-update metadata rows from the extended
+			// /status payload so they reflect live state after toggling
+			// AutoUpdate or clicking "Check now" without a full page reload.
+
+			// updates-last-auto-applied-row: shown when auto_update is on
+			// and a last_auto_applied timestamp is present.
+			var autoAppliedRow = document.getElementById('updates-last-auto-applied-row');
+			if (autoAppliedRow) {
+				var showAutoApplied = !!(d.auto_update && d.last_auto_applied);
+				if (showAutoApplied) {
+					autoAppliedRow.classList.remove('hidden');
+				} else {
+					autoAppliedRow.classList.add('hidden');
+				}
+				var vwrap = document.getElementById('updates-last-auto-applied-version-wrap');
+				var vspan = document.getElementById('updates-last-auto-applied-version');
+				var tsspan = document.getElementById('updates-last-auto-applied-time');
+				if (tsspan) tsspan.textContent = d.last_auto_applied || '';
+				if (vspan) vspan.textContent = d.last_auto_applied_version || '';
+				if (vwrap) {
+					if (d.last_auto_applied_version) {
+						vwrap.classList.remove('hidden');
+					} else {
+						vwrap.classList.add('hidden');
+					}
+				}
+			}
+
+			// updates-skip-version-wrap: shown when an update is available
+			// and the latest version is not in the skipped list.
+			var skipWrap = document.getElementById('updates-skip-version-wrap');
+			if (skipWrap) {
+				var skipped = Array.isArray(d.skipped_versions) ? d.skipped_versions : [];
+				var showSkip = !!(d.update_available && d.latest && skipped.indexOf(d.latest) === -1);
+				if (showSkip) {
+					skipWrap.classList.remove('hidden');
+				} else {
+					skipWrap.classList.add('hidden');
+				}
+				if (showSkip && d.latest) {
+					var skipBtn = document.getElementById('updates-skip-version-btn');
+					if (skipBtn) {
+						skipBtn.dataset.version = d.latest;
+						var i18nEl = document.getElementById('updates-i18n');
+						var fmt = i18nEl ? (i18nEl.dataset.skipVersionFmt || 'Skip %s') : 'Skip %s';
+						var skipBtnText = document.getElementById('updates-skip-version-btn-text');
+						if (skipBtnText) {
+							skipBtnText.textContent = fmt.replace('%s', d.latest);
+						}
+					}
+				}
+			}
+
+			// updates-skipped-versions-row: shown when one or more versions
+			// have been marked to skip.
+			var skippedRow = document.getElementById('updates-skipped-versions-row');
+			var skippedList = document.getElementById('updates-skipped-versions-list');
+			if (skippedRow) {
+				var svArr = Array.isArray(d.skipped_versions) ? d.skipped_versions : [];
+				if (svArr.length > 0) {
+					skippedRow.classList.remove('hidden');
+				} else {
+					skippedRow.classList.add('hidden');
+				}
+				if (skippedList) {
+					var parts = [];
+					for (var si = 0; si < svArr.length; si++) {
+						if (si > 0) parts.push(', ');
+						parts.push('<span class="font-mono">' + escHtml(svArr[si]) + '</span>');
+					}
+					skippedList.innerHTML = parts.join('');
+				}
+			}
+
 			// If an operation is in progress, show its state and start polling.
 			if (d.state === 'error') {
 				setUpdaterStatus('error', d.error || 'update failed');

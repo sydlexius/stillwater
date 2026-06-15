@@ -2879,6 +2879,9 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 		data-restart-required-body={ t(ctx, "settings.updates.restart_required_body") }
 		data-restart-required-native-instruction={ t(ctx, "settings.updates.restart_required_native_instruction") }
 		data-load-failed-save-blocked={ t(ctx, "settings.updates.load_failed_save_blocked") }
+		data-skip-version-fmt={ t(ctx, "settings.updates.skip_version.label") }
+		data-last-auto-applied-label={ t(ctx, "settings.updates.last_auto_applied.label") }
+		data-skipped-versions-label={ t(ctx, "settings.updates.skip_version.list_label") }
 	></div>
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -3126,45 +3129,48 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 						)
 						@components.ContextHelp("help-updates-auto-update", t(ctx, "settings.updates.auto_update.label"), t(ctx, "settings.updates.auto_update.help"), "settings-updates-updates-auto-update")
 					</div>
-					if data.AutoUpdate && data.LastAutoApplied != "" {
-						<div class="mt-2 text-xs text-gray-500 dark:text-gray-400" id="updates-last-auto-applied-row">
-							{ t(ctx, "settings.updates.last_auto_applied.label") }:
-							if data.LastAutoAppliedVersion != "" {
-								<span class="font-mono">{ data.LastAutoAppliedVersion }</span>,
-							}
-							<span class="font-mono">{ data.LastAutoApplied }</span>
-						</div>
-					}
+					<div
+						id="updates-last-auto-applied-row"
+						class={ "mt-2 text-xs text-gray-500 dark:text-gray-400", templ.KV("hidden", !(data.AutoUpdate && data.LastAutoApplied != "")) }
+					>
+						{ t(ctx, "settings.updates.last_auto_applied.label") }:
+						<span id="updates-last-auto-applied-version-wrap" class={ templ.KV("hidden", data.LastAutoAppliedVersion == "") }><span id="updates-last-auto-applied-version" class="font-mono">{ data.LastAutoAppliedVersion }</span>,</span>
+						<span id="updates-last-auto-applied-time" class="font-mono">{ data.LastAutoApplied }</span>
+					</div>
 					<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
 						{ t(ctx, "settings.updates.auto_update.rollback_hint") }
 						<a href="https://github.com/sydlexius/stillwater/releases" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">
 							{ t(ctx, "settings.updates.auto_update.rollback_link") }
 						</a>
 					</div>
-					if data.UpdateAvailable && data.LatestVersion != "" && !slices.Contains(data.SkippedVersions, data.LatestVersion) {
-						<div class="mt-2">
-							<button
-								type="button"
-								id="updates-skip-version-btn"
-								data-version={ data.LatestVersion }
-								onclick="skipThisVersion()"
-								class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-							>
-								{ tf(ctx, "settings.updates.skip_version.label", data.LatestVersion) }
-							</button>
-						</div>
-					}
-					if len(data.SkippedVersions) > 0 {
-						<div class="mt-2 text-xs text-gray-500 dark:text-gray-400" id="updates-skipped-versions-row">
-							{ t(ctx, "settings.updates.skip_version.list_label") }:
+					<div
+						id="updates-skip-version-wrap"
+						class={ "mt-2", templ.KV("hidden", !(data.UpdateAvailable && data.LatestVersion != "" && !slices.Contains(data.SkippedVersions, data.LatestVersion))) }
+					>
+						<button
+							type="button"
+							id="updates-skip-version-btn"
+							data-version={ data.LatestVersion }
+							onclick="skipThisVersion()"
+							class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+						>
+							<span id="updates-skip-version-btn-text">{ tf(ctx, "settings.updates.skip_version.label", data.LatestVersion) }</span>
+						</button>
+					</div>
+					<div
+						id="updates-skipped-versions-row"
+						class={ "mt-2 text-xs text-gray-500 dark:text-gray-400", templ.KV("hidden", len(data.SkippedVersions) == 0) }
+					>
+						{ t(ctx, "settings.updates.skip_version.list_label") }:
+						<span id="updates-skipped-versions-list">
 							for i, v := range data.SkippedVersions {
 								if i > 0 {
 									{ ", " }
 								}
 								<span class="font-mono">{ v }</span>
 							}
-						</div>
-					}
+						</span>
+					</div>
 				</div>
 				<!-- First-toggle confirmation modal: shown only when the user
 				     turns AutoUpdate on (off -> on). The modal is rendered

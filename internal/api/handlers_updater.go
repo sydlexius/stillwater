@@ -5,9 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/updater"
 )
+
+// updateStatusResponse extends updater.StatusResult with config-derived fields
+// that are not held in the service's in-memory state (AutoUpdate,
+// LastAutoApplied, LastAutoAppliedVersion, LatestVersion, SkippedVersions).
+// These are needed by the JS hydration layer so the Updates tab can refresh
+// without a full page reload after toggling AutoUpdate or clicking "Check now".
+type updateStatusResponse struct {
+	updater.StatusResult
+	// LatestVersion mirrors StatusResult.Latest under a more descriptive key,
+	// matching the UpdatesTabData.LatestVersion field name used in templates.
+	LatestVersion          string   `json:"latest_version,omitempty"`
+	AutoUpdate             bool     `json:"auto_update"`
+	LastAutoApplied        string   `json:"last_auto_applied,omitempty"`
+	LastAutoAppliedVersion string   `json:"last_auto_applied_version,omitempty"`
+	SkippedVersions        []string `json:"skipped_versions"`
+}
 
 // handlePostUpdateCheck queries GitHub for the latest release on the configured
 // channel. POST because the call mutates server-side updater state (last_checked
@@ -30,7 +47,10 @@ func (r *Router) handlePostUpdateCheck(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleGetUpdateStatus returns the current state of the update lifecycle.
+// handleGetUpdateStatus returns the current state of the update lifecycle,
+// extended with config-derived fields (AutoUpdate, LastAutoApplied,
+// LastAutoAppliedVersion, SkippedVersions) so the JS hydration layer can
+// refresh the three auto-update metadata rows without a full page reload.
 // GET /api/v1/updates/status
 func (r *Router) handleGetUpdateStatus(w http.ResponseWriter, req *http.Request) {
 	if r.updaterService == nil {
@@ -38,8 +58,30 @@ func (r *Router) handleGetUpdateStatus(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	status := r.updaterService.Status()
-	writeJSON(w, http.StatusOK, status)
+	base := r.updaterService.Status()
+	resp := updateStatusResponse{
+		StatusResult:    base,
+		LatestVersion:   base.Latest,
+		SkippedVersions: []string{},
+	}
+
+	cfg, err := r.updaterService.GetConfig(req.Context())
+	if err != nil {
+		// Log but still return the in-memory status; missing config fields are
+		// non-fatal here (the client can degrade gracefully).
+		r.logger.Warn("reading updater config for status response", "error", err)
+	} else {
+		resp.AutoUpdate = cfg.AutoUpdate
+		if !cfg.LastAutoApplied.IsZero() {
+			resp.LastAutoApplied = cfg.LastAutoApplied.UTC().Format(time.RFC3339)
+		}
+		resp.LastAutoAppliedVersion = cfg.LastAutoAppliedVersion
+		if cfg.SkippedVersions != nil {
+			resp.SkippedVersions = cfg.SkippedVersions
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handlePostUpdateApply initiates an async binary update.
