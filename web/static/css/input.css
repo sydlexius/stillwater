@@ -178,6 +178,21 @@
   --sw-sidebar-font-md: 0.929rem;     /* was 13px: nav links, subnav, user name */
   --sw-sidebar-font-sm: 0.857rem;     /* was 12px: avatar initial */
   --sw-sidebar-font-xs: 0.786rem;     /* was 11px: section label, badge, kbd, role */
+  /* Count pill tokens (#1715, #1937): opaque blue fill so the count digits keep
+     WCAG AA contrast independent of Background-Opacity and glass bleed-through.
+     Light: blue-200 fill / blue-900 text. Dark: inverted. See --sw-sidebar-count-pill-*
+     override in .dark .sw-sidebar below. */
+  --sw-sidebar-count-pill-bg:     #bfdbfe; /* blue-200 */
+  --sw-sidebar-count-pill-fg:     #1e3a8a; /* blue-900 */
+  --sw-sidebar-count-pill-border: #93c5fd; /* blue-300 */
+}
+
+/* Dark theme token overrides for the sidebar count pill. The dark scope mirrors the
+   existing .dark .sw-sidebar-* selector convention used in this file. */
+.dark .sw-sidebar {
+  --sw-sidebar-count-pill-bg:     #1e3a8a; /* blue-900 */
+  --sw-sidebar-count-pill-fg:     #bfdbfe; /* blue-200 */
+  --sw-sidebar-count-pill-border: #1e40af; /* blue-800 */
 }
 
 /* Snap (no resize animation) when motion should be reduced: system reduced-motion,
@@ -412,16 +427,12 @@
      whatever bleeds through the glass. This is an informational count badge, not
      a danger/alarm state, so it uses a neutral blue rather than red (#1937): a
      soft blue-200 fill + blue-900 text. A same-hue translucent tint over the
-     glass only reached ~3:1 at the 85% default. */
-  background: #bfdbfe;
-  color: #1e3a8a;
-  border: 1px solid #93c5fd;
-}
-.dark .sw-sidebar-count-pill {
-  /* Dark inverts: deep blue-900 fill + pale blue-200 text. */
-  background: #1e3a8a;
-  color: #bfdbfe;
-  border-color: #1e40af;
+     glass only reached ~3:1 at the 85% default.
+     Values live in --sw-sidebar-count-pill-{bg,fg,border} tokens defined in
+     .sw-sidebar (light defaults) and overridden in .dark .sw-sidebar (dark). */
+  background: var(--sw-sidebar-count-pill-bg, #bfdbfe);
+  color: var(--sw-sidebar-count-pill-fg, #1e3a8a);
+  border: 1px solid var(--sw-sidebar-count-pill-border, #93c5fd);
 }
 /* icon-only / hidden: hide the count pills (no room; user expands to see). */
 #sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-count-pill,
