@@ -90,8 +90,8 @@
         for (var i = 0; i < results.length; i++) {
             var s = results[i];
             html += '<a href="' + bp + '/guide#' + encodeURIComponent(s.id) + '" class="block rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">'
-                + '<h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">' + escapeHtml(s.title) + '</h4>'
-                + '<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">' + escapeHtml(s.summary) + '</p>'
+                + '<h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">' + window.escapeHTML(s.title) + '</h4>'
+                + '<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">' + window.escapeHTML(s.summary) + '</p>'
                 + '</a>';
         }
         container.innerHTML = html;
@@ -125,12 +125,6 @@
             }
         }
         return matched.concat(unmatched);
-    }
-
-    function escapeHtml(str) {
-        var div = document.createElement('div');
-        div.appendChild(document.createTextNode(str));
-        return div.innerHTML;
     }
 
     // Close on backdrop click
