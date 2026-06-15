@@ -113,7 +113,11 @@ templ columnToggleScript() {
 						hidden.push(cb.getAttribute('data-col-key'));
 					}
 				});
-				try { localStorage.setItem('columns.' + storageKey, JSON.stringify(hidden)); } catch(e) { /* StorageError in private/quota */ }
+				try {
+					localStorage.setItem('columns.' + storageKey, JSON.stringify(hidden));
+				} catch (e) {
+					console.warn('[column_toggle] column state not persisted (private mode/quota):', e);
+				}
 			}
 
 			function applyColumnVisibility(storageKey, tableID, wrapper) {
