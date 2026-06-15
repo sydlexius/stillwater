@@ -583,6 +583,12 @@ Stillwater keeps the most recent log lines in an in-memory ring buffer in additi
 
 Stillwater can update its own binary in place by downloading the latest release from GitHub and swapping the executable on next restart. Settings here decide whether to check, how often, and which release channel to follow. (Docker installs ignore these settings; update by pulling a new image instead.)
 
+- **Skip %s**
+{: #settings-updates-updates-skip-version }
+- **Last auto-applied**
+{: #settings-updates-updates-last-auto-applied }
+- **Skipped versions**
+{: #settings-updates-updates-skip-version-list-label }
 - **Update channel and schedule** -- These settings govern the auto-update workflow: which release channel Stillwater watches (stable, prerelease, or nightly), how often it polls GitHub, and whether it installs new builds automatically or just notifies you.
 {: #settings-updates-updates-config }
 - **Updater enabled** -- The master switch for everything in this section: when off, Stillwater never polls GitHub, never shows update banners, and the Apply Update button is grayed out regardless of the channel and auto-check settings below. Turn it off in environments where the binary is managed by an external system.
@@ -593,12 +599,6 @@ Stillwater can update its own binary in place by downloading the latest release 
 {: #settings-updates-updates-auto-check }
 - **Automatically install updates** -- When on, Stillwater installs new releases automatically as they become available. This setting has no effect on Docker installs; Docker users update by pulling a new image and recreating the container.
 {: #settings-updates-updates-auto-update }
-- **Last auto-applied**
-{: #settings-updates-updates-last-auto-applied }
-- **Skip %s**
-{: #settings-updates-updates-skip-version }
-- **Skipped versions**
-{: #settings-updates-updates-skip-version-list-label }
 - **Check interval** -- How often the background task polls the GitHub releases API to look for newer builds. Shorter intervals find releases sooner; longer intervals are gentler on GitHub's rate limit. The minimum is once per hour.
 {: #settings-updates-updates-check-interval }
 <!-- END GENERATED: settings-reference -->
