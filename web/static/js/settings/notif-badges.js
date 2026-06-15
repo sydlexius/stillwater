@@ -5,7 +5,7 @@
 //
 // DOM contract (Notification Badge Settings card in settings.templ): the badge
 // enable toggle and the error/warning/info checkboxes each carry
-// onclick="updateSetting('<key>', this.checked)". Keys in use:
+// onclick="updateSetting('<key>', this)". Keys in use:
 //   notif_badge_enabled, notif_badge_severity_error,
 //   notif_badge_severity_warning, notif_badge_severity_info.
 //
@@ -14,6 +14,13 @@
 // The csrf_token cookie is sent as X-CSRF-Token, read via the canonical
 // window.swCsrfToken() helper from preferences.js (loaded in layout.templ
 // before this module) rather than an inline cookie-parse regex.
+//
+// Save error-handling hardened per the optimistic-rollback pattern established
+// in rule-toggle.js and connection-feature-toggle.js (#1828): on a non-2xx or
+// network failure the checkbox is rolled back to its prior state and showToast()
+// surfaces the error, so the UI never shows a value the server did not persist.
+// A data-inflight guard ignores re-entrant clicks while a PUT is in flight so
+// overlapping requests cannot resolve out of order.
 //
 // Export surface: window.swNotifBadges doubles as the load-once guard. The
 // inline-handler global updateSetting is also assigned to window because the
@@ -27,11 +34,22 @@
   // bottom) doubles as the "already loaded" flag.
   if (window.swNotifBadges) return;
 
-  function updateSetting(key, checked) {
+  function updateSetting(key, el) {
+    // Serialize: ignore clicks while a PUT is in flight so overlapping requests
+    // cannot resolve out of order and leave the checkbox in a stale state.
+    if (el.dataset.inflight === '1') return;
+
+    // The browser has already toggled el.checked before onclick fires; capture
+    // the new value and compute the prior value for rollback.
+    var newVal = el.checked;
+    var oldVal = !newVal;
+
     var bp = (document.querySelector('meta[name="htmx-base-path"]') || { content: '' }).content;
     var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
     var body = {};
-    body[key] = checked ? "true" : "false";
+    body[key] = newVal ? 'true' : 'false';
+
+    el.dataset.inflight = '1';
     fetch(bp + '/api/v1/settings', {
       method: 'PUT',
       headers: {
@@ -39,6 +57,20 @@
         'X-CSRF-Token': csrfToken
       },
       body: JSON.stringify(body)
+    }).then(function(r) {
+      if (!r.ok) {
+        el.checked = oldVal;
+        if (typeof showToast === 'function') {
+          showToast('Failed to save notification badge setting.');
+        }
+      }
+    }).catch(function() {
+      el.checked = oldVal;
+      if (typeof showToast === 'function') {
+        showToast('Network error saving notification badge setting.');
+      }
+    }).then(function() {
+      delete el.dataset.inflight;
     });
   }
 
