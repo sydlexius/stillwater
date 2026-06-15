@@ -489,7 +489,8 @@
       if (emptyEl) {
         emptyEl.hidden = anyGroupVisible;
         if (!anyGroupVisible) {
-          emptyEl.textContent = 'No preferences match “' + input.value + '”';
+          var tmpl = emptyEl.dataset.emptyTmpl || 'No preferences match “%s”';
+          emptyEl.textContent = tmpl.replace('%s', input.value);
         }
       }
     });

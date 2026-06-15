@@ -2491,5 +2491,37 @@
   "prefs.artist_layout.list_label": "Artist detail sections",
   "prefs.artist_layout.reset": "Reset layout",
   "prefs.artist_layout.hide_section": "Hide",
-  "prefs.artist_layout.show_section": "Show"
+  "prefs.artist_layout.show_section": "Show",
+  "prefs.artist_layout.move_up_aria": "Move %s up",
+  "prefs.artist_layout.move_down_aria": "Move %s down",
+
+  "prefs.sidebar_state.icons_labels": "Icons + labels",
+  "prefs.sidebar_state.icons_only": "Icons only",
+  "prefs.sidebar_state.no_sidebar": "No sidebar",
+
+  "prefs.content_width.easier_reading": "Easier reading",
+  "prefs.content_width.more_per_row": "More per row",
+
+  "prefs.font_family.sub.default": "Default",
+  "prefs.font_family.sub.os_native": "OS native",
+  "prefs.font_family.sub.hyperlegible": "Hyperlegible",
+
+  "prefs.mono_font.sub.mono": "Mono",
+  "prefs.mono_font.sub.code": "Code",
+
+  "prefs.reduced_motion.full": "Full",
+  "prefs.reduced_motion.reduced": "Reduced",
+
+  "prefs.page_size.unit": "rows / page",
+
+  "prefs.help.about_aria": "About %s",
+
+  "prefs.section.metadata": "Details",
+  "prefs.section.artwork": "Artwork",
+  "prefs.section.findings": "Findings",
+  "prefs.section.providers": "Providers",
+  "prefs.section.discography": "Discography",
+  "prefs.section.identifiers": "Identifiers",
+
+  "prefs.search.no_match": "No preferences match \"%s\""
 }
