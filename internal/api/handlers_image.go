@@ -554,6 +554,14 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		allImages = append(allImages, images...)
 	}
 
+	// Normalize http:// URLs to https:// so they satisfy the img-src CSP
+	// directive ("img-src 'self' data: https:"). Known web-search providers
+	// already serve content over TLS; this is a defensive upgrade applied at
+	// the single accumulation point rather than per-provider.
+	for i := range allImages {
+		allImages[i].URL = ensureHTTPS(allImages[i].URL)
+	}
+
 	sortImageResults(allImages, sortBy)
 
 	if isHTMXRequest(req) {
@@ -1738,6 +1746,17 @@ func (r *Router) revertSideEffects(ctx context.Context, a *artist.Artist, imageT
 		return r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 	}
 	return r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
+}
+
+// ensureHTTPS rewrites an http:// URL to https:// for CSP compatibility.
+// URLs already using https://, data: URIs, and any other scheme are returned
+// unchanged. Only the scheme prefix is replaced; path, host, and query are
+// preserved exactly.
+func ensureHTTPS(u string) string {
+	if strings.HasPrefix(u, "http://") {
+		return "https://" + u[len("http://"):]
+	}
+	return u
 }
 
 // imageTypeLabel returns a human-readable label for an image type.
