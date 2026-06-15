@@ -17,9 +17,10 @@ import (
 // The artist-detail layout card writes via PATCH /api/v1/preferences.
 //
 // The panel hard-floors its own surface opacity at 85% via --flyout-bg
-// (see input.css .sw-prefs-drawer) so the bg_opacity recovery control stays
-// legible even when the user has set a lower value. Both light and dark themes
-// define --flyout-bg explicitly.
+// (see input.css .sw-prefs-drawer): dark rgba(30,41,59,0.85) / light rgba(255,255,255,0.85).
+// Hue matches the shared --sw-glass-bg slate-800 surface (#1936). --sw-glass-bg is
+// a whole rgba string rewritten by JS (no numeric sub-var), so a CSS max() clamp is not
+// possible; fixed rgba values are used instead. Both themes define --flyout-bg explicitly.
 //
 // Accessibility: role="dialog", aria-labelledby, focus-trap, Esc close,
 // tile groups are role="radiogroup" with roving tabindex + aria-checked,
