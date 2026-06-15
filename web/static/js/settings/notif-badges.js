@@ -37,7 +37,13 @@
   function updateSetting(key, el) {
     // Serialize: ignore clicks while a PUT is in flight so overlapping requests
     // cannot resolve out of order and leave the checkbox in a stale state.
-    if (el.dataset.inflight === '1') return;
+    // The browser pre-toggles el.checked before onclick fires, so we must
+    // revert that pre-toggle before returning or the UI desynchronises from
+    // the server value while no request is actually in flight.
+    if (el.dataset.inflight === '1') {
+      el.checked = !el.checked;
+      return;
+    }
 
     // The browser has already toggled el.checked before onclick fires; capture
     // the new value and compute the prior value for rollback.

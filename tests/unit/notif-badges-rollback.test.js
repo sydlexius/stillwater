@@ -109,9 +109,13 @@ describe('notif-badges updateSetting: inflight re-entrancy guard', () => {
     win.updateSetting('notif_badge_enabled', cb);
 
     // Inflight guard is now active. Simulate a second click during the PUT.
-    // The browser would toggle cb.checked, but the guard must block a second fetch.
+    // The browser pre-toggles cb.checked before the handler fires; the guard
+    // must revert that pre-toggle synchronously so the UI stays in sync.
     cb.checked = true;
     win.updateSetting('notif_badge_enabled', cb);
+
+    // The guard must have reverted the browser's pre-toggle immediately.
+    assert.equal(cb.checked, false, 'guard must revert the browser pre-toggle on re-entrant click');
 
     // Resolve the first fetch.
     resolveFetch({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve('') });
