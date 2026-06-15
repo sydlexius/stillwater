@@ -131,6 +131,57 @@ func TestHistoryServiceRecordNoopGuard(t *testing.T) {
 	}
 }
 
+// TestUpdateFieldScalarPaddedValueIsNotNoop verifies that a corrective write
+// for a scalar field whose stored value has leading/trailing whitespace is
+// never silently dropped. The repository stores scalar values verbatim, so
+// comparing "  rock  " vs "rock" must be treated as a real change.
+func TestUpdateFieldScalarPaddedValueIsNotNoop(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc, hsvc := func() (*Service, *HistoryService) {
+		s := NewService(db)
+		h := NewHistoryService(db)
+		s.SetHistoryService(h)
+		return s, h
+	}()
+	ctx := context.Background()
+
+	a := testArtist("Temple of the Dog", "/music/TempleDog")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Write a padded biography directly to the DB, bypassing the service layer,
+	// to simulate data that arrived with surrounding whitespace.
+	if _, err := db.ExecContext(ctx,
+		"UPDATE artists SET biography = ? WHERE id = ?",
+		"  A test artist.  ", a.ID,
+	); err != nil {
+		t.Fatalf("direct DB write of padded value: %v", err)
+	}
+
+	// A corrective write with the trimmed value must NOT be treated as a no-op.
+	if err := svc.UpdateField(ctx, a.ID, "biography", "A test artist."); err != nil {
+		t.Fatalf("UpdateField (corrective trim): %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Biography != "A test artist." {
+		t.Errorf("Biography = %q, want %q after corrective write", got.Biography, "A test artist.")
+	}
+
+	_, total, err := hsvc.List(ctx, a.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("List history: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("expected 1 history entry for corrective write, got %d (must not be silent no-op)", total)
+	}
+}
+
 // TestUpdateFieldNoopSliceField verifies the no-op check works for slice fields
 // (genres, styles, moods) with varying spacing/comma formatting.
 func TestUpdateFieldNoopSliceField(t *testing.T) {

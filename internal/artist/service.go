@@ -1066,14 +1066,16 @@ func IsProviderIDField(field string) bool {
 }
 
 // normalizeFieldValue normalizes a field value for equality comparison to detect
-// no-op writes before touching the DB. For slice fields it trims and re-joins
-// entries with ", "; for string fields it trims surrounding whitespace. This
-// mirrors the round-trip through the repository layer so comparisons are accurate.
+// no-op writes before touching the DB. For slice fields it mirrors the
+// repository's splitTags+join round-trip (trim+split on comma, rejoin with ", ").
+// For scalar fields the repository stores values verbatim, so exact comparison
+// is used -- trimming would silently drop corrective writes that remove
+// leading/trailing whitespace stored in the DB.
 func normalizeFieldValue(field, value string) string {
 	if sliceFields[field] {
 		return strings.Join(splitTags(value), ", ")
 	}
-	return strings.TrimSpace(value)
+	return value
 }
 
 // UpdateField updates a single metadata field on an artist record.
