@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -390,6 +391,9 @@ func (r *Router) handleSaveMembers(w http.ResponseWriter, req *http.Request) {
 // The fragment replaces the popover's inline item list (innerHTML swap) so older
 // entries become selectable without a full page reload.
 // GET /api/v1/artists/{id}/fields/{field}/history/fragment
+// Optional query param: ?offset=N for deep-history pagination; defaults to 0.
+// Uses cap+1 detection (fetches pageSize+1) to detect whether a further page
+// exists without a separate COUNT query, mirroring the inline-list pattern.
 func (r *Router) handleFieldHistoryFragment(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
 	field := req.PathValue("field")
@@ -404,12 +408,23 @@ func (r *Router) handleFieldHistoryFragment(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// Parse optional offset for deep-history pagination (entries 51+, 101+, …).
+	offset := 0
+	if s := req.URL.Query().Get("offset"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	const pageSize = 50
+
 	var history []artist.MetadataChangeWithArtist
 	if r.historyService != nil {
 		filter := artist.GlobalHistoryFilter{
 			ArtistID: artistID,
 			Fields:   []string{field},
-			Limit:    50,
+			Limit:    pageSize + 1, // cap+1: fetch one extra to detect whether more exist
+			Offset:   offset,
 		}
 		changes, _, listErr := r.historyService.ListGlobal(req.Context(), filter)
 		if listErr != nil {
@@ -419,9 +434,19 @@ func (r *Router) handleFieldHistoryFragment(w http.ResponseWriter, req *http.Req
 		}
 	}
 
+	// Cap+1 detection: trim to pageSize and build a next-page URL when more exist.
+	// The template renders a self-replacing "Show older" button using that URL so
+	// entries beyond the first page are reachable without a full-page reload.
+	nextPageURL := ""
+	if len(history) == pageSize+1 {
+		history = history[:pageSize]
+		nextPageURL = "/api/v1/artists/" + artistID + "/fields/" + field +
+			"/history/fragment?offset=" + strconv.Itoa(offset+pageSize)
+	}
+
 	menuID := "fh-" + field + "-" + artistID
 	containerSel := "#field-" + field + "-" + artistID
-	renderTempl(w, req, templates.FieldHistoryFragment(menuID, containerSel, history))
+	renderTempl(w, req, templates.FieldHistoryFragment(menuID, containerSel, history, nextPageURL))
 }
 
 // handleFieldProviders fetches a field from all configured providers and returns
