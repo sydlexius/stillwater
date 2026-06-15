@@ -1440,3 +1440,95 @@ func TestBuildUpdatesTabData_LastAutoApplied(t *testing.T) {
 		t.Errorf("LastAutoApplied = %q, not RFC3339: %v", data.LastAutoApplied, err)
 	}
 }
+
+// TestHandleGetUpdateStatus_NonEmptySkippedVersions verifies that when
+// skipped_versions are persisted in config, the status response returns them
+// as an ordered JSON array with the exact values.
+func TestHandleGetUpdateStatus_NonEmptySkippedVersions(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	ctx := context.Background()
+
+	// Persist two skipped versions so they round-trip through GetConfig.
+	for _, tag := range []string{"v1.2.3", "v1.3.0"} {
+		if err := r.updaterService.AddSkippedVersion(ctx, tag); err != nil {
+			t.Fatalf("AddSkippedVersion(%q): %v", tag, err)
+		}
+	}
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/updates/status", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	sv, ok := raw["skipped_versions"]
+	if !ok {
+		t.Fatal(`missing field "skipped_versions" in UpdateStatus`)
+	}
+	arr, ok := sv.([]any)
+	if !ok {
+		t.Fatalf(`skipped_versions type = %T, want []any`, sv)
+	}
+	if len(arr) != 2 {
+		t.Fatalf("skipped_versions len = %d, want 2; got: %v", len(arr), arr)
+	}
+	if arr[0] != "v1.2.3" || arr[1] != "v1.3.0" {
+		t.Errorf("skipped_versions = %v, want [v1.2.3, v1.3.0]", arr)
+	}
+}
+
+// TestHandleGetUpdateStatus_GetConfigError verifies graceful degradation when
+// GetConfig fails: the handler must still return 200 with the in-memory status
+// and an empty skipped_versions array rather than an error response.
+func TestHandleGetUpdateStatus_GetConfigError(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	// Close the shared DB to force GetConfig to fail with sql.ErrConnDone.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateStatus(w, req)
+
+	// Handler logs a warning and returns 200 (not 500) on config-read failure.
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 on GetConfig error; body: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// The in-memory state fields must still be present.
+	for _, key := range []string{"state", "progress", "is_docker", "update_available", "restart_required"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("missing required field %q in UpdateStatus on GetConfig error", key)
+		}
+	}
+
+	// skipped_versions must be an empty array (the handler initializes it to
+	// []string{} before attempting GetConfig, so the field is never absent).
+	sv, ok := raw["skipped_versions"]
+	if !ok {
+		t.Fatal(`missing field "skipped_versions" in UpdateStatus on GetConfig error`)
+	}
+	arr, ok := sv.([]any)
+	if !ok {
+		t.Fatalf(`skipped_versions type = %T, want []any on GetConfig error`, sv)
+	}
+	if len(arr) != 0 {
+		t.Errorf("skipped_versions = %v, want empty array on GetConfig error", arr)
+	}
+}
