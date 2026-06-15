@@ -395,3 +395,51 @@ func TestHistoryRecordRuleFxEmptyMessageNotDropped(t *testing.T) {
 		t.Errorf("expected 1 history entry for (old='', new='') record, got %d (no-op guard must not fire when oldValue is empty)", total)
 	}
 }
+
+// TestUpdateFieldDBClosedCoversWarnPath exercises the slog.Warn path that fires
+// when the pre-fetch GetByID call fails. Closing the underlying *sql.DB forces
+// that failure so the no-op guard never has a chance to fire (oldKnown stays
+// false), and the subsequent UpdateField call also fails, covering both the
+// fetch-error branch and the write-error return.
+func TestUpdateFieldDBClosedCoversWarnPath(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db) // no history service; we are testing error paths only
+	ctx := context.Background()
+
+	a := testArtist("DB Close UpdateField", "/music/DBCloseUpdateField")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Close the DB so that the no-op pre-fetch (GetByID) returns an error.
+	// UpdateField must NOT silently drop the write on fetch failure -- instead
+	// it proceeds and also returns the write error.
+	_ = db.Close()
+
+	_, err := svc.UpdateField(ctx, a.ID, "biography", "Any value.")
+	if err == nil {
+		t.Error("expected error from UpdateField on a closed DB, got nil")
+	}
+}
+
+// TestClearFieldDBClosedCoversWarnPath exercises the slog.Warn path for the
+// ClearField pre-fetch failure, mirroring TestUpdateFieldDBClosedCoversWarnPath.
+func TestClearFieldDBClosedCoversWarnPath(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("DB Close ClearField", "/music/DBCloseClearField")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_ = db.Close()
+
+	_, err := svc.ClearField(ctx, a.ID, "biography")
+	if err == nil {
+		t.Error("expected error from ClearField on a closed DB, got nil")
+	}
+}
