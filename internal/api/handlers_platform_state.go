@@ -139,17 +139,19 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	var updated []string
 
 	if state.Biography != "" {
-		if err := r.artistService.UpdateField(req.Context(), artistID, "biography", state.Biography); err != nil {
+		changed, err := r.artistService.UpdateField(req.Context(), artistID, "biography", state.Biography)
+		if err != nil {
 			r.logger.Warn("updating biography from platform", "error", err)
-		} else {
+		} else if changed {
 			updated = append(updated, "biography")
 		}
 	}
 
 	if len(state.Genres) > 0 {
-		if err := r.artistService.UpdateField(req.Context(), artistID, "genres", strings.Join(state.Genres, ", ")); err != nil {
+		changed, err := r.artistService.UpdateField(req.Context(), artistID, "genres", strings.Join(state.Genres, ", "))
+		if err != nil {
 			r.logger.Warn("updating genres from platform", "error", err)
-		} else {
+		} else if changed {
 			updated = append(updated, "genres")
 		}
 	}
@@ -161,17 +163,19 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if state.PremiereDate != "" {
-		if err := r.artistService.UpdateField(req.Context(), artistID, premiereField, dateOnly(state.PremiereDate)); err != nil {
+		changed, err := r.artistService.UpdateField(req.Context(), artistID, premiereField, dateOnly(state.PremiereDate))
+		if err != nil {
 			r.logger.Warn("updating date from platform", "field", premiereField, "error", err)
-		} else {
+		} else if changed {
 			updated = append(updated, premiereField)
 		}
 	}
 
 	if state.EndDate != "" {
-		if err := r.artistService.UpdateField(req.Context(), artistID, endField, dateOnly(state.EndDate)); err != nil {
+		changed, err := r.artistService.UpdateField(req.Context(), artistID, endField, dateOnly(state.EndDate))
+		if err != nil {
 			r.logger.Warn("updating date from platform", "field", endField, "error", err)
-		} else {
+		} else if changed {
 			updated = append(updated, endField)
 		}
 	}

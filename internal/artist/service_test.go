@@ -1405,7 +1405,7 @@ func TestUpdateFieldRecordsHistory(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := svc.UpdateField(ctx, a.ID, "biography", "New biography text"); err != nil {
+	if _, err := svc.UpdateField(ctx, a.ID, "biography", "New biography text"); err != nil {
 		t.Fatalf("UpdateField: %v", err)
 	}
 
@@ -1440,7 +1440,7 @@ func TestClearFieldRecordsHistory(t *testing.T) {
 	}
 
 	// Clear biography (non-empty) -- should produce a history entry.
-	if err := svc.ClearField(ctx, a.ID, "biography"); err != nil {
+	if _, err := svc.ClearField(ctx, a.ID, "biography"); err != nil {
 		t.Fatalf("ClearField: %v", err)
 	}
 
@@ -1463,7 +1463,7 @@ func TestClearFieldRecordsHistory(t *testing.T) {
 	}
 
 	// Clear biography again (already empty) -- should NOT produce a new entry.
-	if err := svc.ClearField(ctx, a.ID, "biography"); err != nil {
+	if _, err := svc.ClearField(ctx, a.ID, "biography"); err != nil {
 		t.Fatalf("ClearField (second): %v", err)
 	}
 	_, total2, err := hsvc.List(ctx, a.ID, 50, 0)

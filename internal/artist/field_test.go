@@ -258,13 +258,13 @@ func TestUpdateField_NameAndSortName(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := svc.UpdateField(ctx, a.ID, "name", "New Name"); err != nil {
+	if _, err := svc.UpdateField(ctx, a.ID, "name", "New Name"); err != nil {
 		t.Fatalf("UpdateField(name): %v", err)
 	}
-	if err := svc.UpdateField(ctx, a.ID, "sort_name", "Name, New"); err != nil {
+	if _, err := svc.UpdateField(ctx, a.ID, "sort_name", "Name, New"); err != nil {
 		t.Fatalf("UpdateField(sort_name): %v", err)
 	}
-	if err := svc.UpdateField(ctx, a.ID, "disambiguation", "the famous one"); err != nil {
+	if _, err := svc.UpdateField(ctx, a.ID, "disambiguation", "the famous one"); err != nil {
 		t.Fatalf("UpdateField(disambiguation): %v", err)
 	}
 

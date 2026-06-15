@@ -208,7 +208,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusInternalServerError, "failed to update field")
 			return
 		}
-	} else if err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
+	} else if _, err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to update field")
 		return
 	}
@@ -287,7 +287,7 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 			return
 		}
-	} else if err := r.artistService.ClearField(req.Context(), artistID, field); err != nil {
+	} else if _, err := r.artistService.ClearField(req.Context(), artistID, field); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 		return
 	}

@@ -381,7 +381,7 @@ func TestHandleRevertHistory(t *testing.T) {
 
 	// Update a field to create a history entry.
 	ctx := artist.ContextWithSource(context.Background(), "manual")
-	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "original bio"); err != nil {
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "biography", "original bio"); err != nil {
 		t.Fatalf("UpdateField: %v", err)
 	}
 
@@ -474,7 +474,7 @@ func TestHandleRevertHistory_HTMXActivityFragment(t *testing.T) {
 
 	a := addTestArtist(t, artistSvc, "HTMX Activity Artist")
 	ctx := artist.ContextWithSource(context.Background(), "manual")
-	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
 		t.Fatalf("UpdateField: %v", err)
 	}
 	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
@@ -509,7 +509,7 @@ func TestHandleRevertHistory_HTMXArtistTabFragment(t *testing.T) {
 
 	a := addTestArtist(t, artistSvc, "HTMX Tab Artist")
 	ctx := artist.ContextWithSource(context.Background(), "manual")
-	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "tab bio"); err != nil {
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "biography", "tab bio"); err != nil {
 		t.Fatalf("UpdateField: %v", err)
 	}
 	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
@@ -1006,7 +1006,7 @@ func TestPerformRevert_ClearBranch(t *testing.T) {
 
 	// Set biography to non-empty so ClearField has something to clear.
 	ctx := artist.ContextWithSource(context.Background(), "manual")
-	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
 		t.Fatalf("UpdateField: %v", err)
 	}
 
@@ -1018,7 +1018,7 @@ func TestPerformRevert_ClearBranch(t *testing.T) {
 		Source:   "manual",
 	}
 
-	revertChangeID, err := r.performRevert(context.Background(), change)
+	revertChangeID, _, err := r.performRevert(context.Background(), change)
 	if err != nil {
 		t.Fatalf("performRevert: %v", err)
 	}
@@ -1065,7 +1065,7 @@ func TestPerformRevert_UpdateBranch(t *testing.T) {
 		Source:   "manual",
 	}
 
-	revertChangeID, err := r.performRevert(context.Background(), change)
+	revertChangeID, _, err := r.performRevert(context.Background(), change)
 	if err != nil {
 		t.Fatalf("performRevert: %v", err)
 	}
@@ -1442,7 +1442,7 @@ func TestHandleRevertHistory_ActivitySourceFilter(t *testing.T) {
 
 	a := addTestArtist(t, artistSvc, "Source Filter Artist")
 	ctx := artist.ContextWithSource(context.Background(), "manual")
-	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "filter bio"); err != nil {
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "biography", "filter bio"); err != nil {
 		t.Fatalf("UpdateField: %v", err)
 	}
 	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
@@ -1482,7 +1482,7 @@ func TestHandleRevertHistory_ActivityDateRangeFilter(t *testing.T) {
 
 	a := addTestArtist(t, artistSvc, "Date Range Artist")
 	ctx := artist.ContextWithSource(context.Background(), "manual")
-	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "range bio"); err != nil {
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "biography", "range bio"); err != nil {
 		t.Fatalf("UpdateField: %v", err)
 	}
 	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
@@ -1551,5 +1551,102 @@ func TestHandleRevertHistory_NoopRevertFallback(t *testing.T) {
 	}
 	if !strings.Contains(body, "border-amber") {
 		t.Errorf("expected fallback amber div in body: %s", body)
+	}
+}
+
+// TestHandleRevertHistory_NoopRendersHonestMessage verifies that when a revert
+// is a no-op (the field already equals OldValue), the HTMX fallback fragment
+// contains the honest "already at the reverted value" message rather than the
+// generic "Change reverted. Refresh..." message.
+func TestHandleRevertHistory_NoopRendersHonestMessage(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Noop Revert Artist")
+
+	// Record a history entry directly (source="manual", field changes from ""
+	// to "some bio"). OldValue="" means a revert would call ClearField.
+	changeID := "test-noop-change-" + a.ID
+	ctx := context.Background()
+	err := historySvc.Repo().Record(ctx, &artist.MetadataChange{
+		ID:       changeID,
+		ArtistID: a.ID,
+		Field:    "biography",
+		OldValue: "",
+		NewValue: "some bio",
+		Source:   "manual",
+	})
+	if err != nil {
+		t.Fatalf("inserting history entry: %v", err)
+	}
+
+	// The artist's biography is already "" (empty, same as OldValue), so the
+	// revert is a no-op: ClearField will see oldValue="" and skip the write.
+	// The HTMX response should carry the honest no-op message.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/artists/"+a.ID)
+	w := httptest.NewRecorder()
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "already at the reverted value") {
+		t.Errorf("expected honest no-op message in body; got: %s", body)
+	}
+	if strings.Contains(body, "Refresh the page") {
+		t.Errorf("got generic 'Refresh the page' message for a no-op revert; want honest message; body: %s", body)
+	}
+}
+
+// TestPlatformPullNoopFieldNotInUpdated verifies the service-level contract
+// underlying the platform-pull handler: UpdateField returns changed=false when
+// the field already matches the incoming platform value, so callers must gate
+// the append to `updated` on changed==true (not nil error).
+//
+// Note: end-to-end testing of handlePullMetadata requires a real Emby/Jellyfin
+// server. This test covers the service contract that the handler relies on.
+func TestPlatformPullNoopFieldNotInUpdated(t *testing.T) {
+	t.Parallel()
+	_, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Platform Pull Noop Artist")
+	ctx := context.Background()
+
+	// Set a biography on the artist.
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "biography", "existing bio"); err != nil {
+		t.Fatalf("setting initial biography: %v", err)
+	}
+
+	// Simulate what handlePullMetadata does: try to apply the same value the
+	// platform returned. Should be a no-op (changed=false).
+	var updated []string
+	changed, err := artistSvc.UpdateField(ctx, a.ID, "biography", "existing bio")
+	if err != nil {
+		t.Fatalf("UpdateField same value: %v", err)
+	}
+	if changed {
+		updated = append(updated, "biography")
+	}
+
+	if len(updated) != 0 {
+		t.Errorf("updated = %v, want [] (matching field must not appear in updated)", updated)
+	}
+
+	// Now apply a different value; it must be in updated.
+	changed, err = artistSvc.UpdateField(ctx, a.ID, "biography", "new bio")
+	if err != nil {
+		t.Fatalf("UpdateField new value: %v", err)
+	}
+	if changed {
+		updated = append(updated, "biography")
+	}
+	if len(updated) != 1 || updated[0] != "biography" {
+		t.Errorf("updated = %v, want [biography] after a real change", updated)
 	}
 }

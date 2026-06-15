@@ -1086,7 +1086,11 @@ func normalizeFieldValue(field, value string) string {
 // entirely (no DB mutation, no history entry). When a HistoryService is
 // attached, a MetadataChange is recorded for genuine changes. History
 // recording is best-effort and will not cause the update to fail.
-func (s *Service) UpdateField(ctx context.Context, id, field, value string) error {
+//
+// The returned bool is true when a real write (and history record) occurred,
+// false when the no-op skip fired (old == new). Callers that previously
+// treated a nil error as "write happened" must check the bool instead.
+func (s *Service) UpdateField(ctx context.Context, id, field, value string) (bool, error) {
 	// Fetch current value unconditionally so the no-op check runs regardless
 	// of whether history is enabled.
 	var oldValue string
@@ -1102,11 +1106,11 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 
 	// Skip the write if the normalized value is unchanged.
 	if oldKnown && normalizeFieldValue(field, value) == normalizeFieldValue(field, oldValue) {
-		return nil
+		return false, nil
 	}
 
 	if err := s.artists.UpdateField(ctx, id, field, value); err != nil {
-		return err
+		return false, err
 	}
 
 	s.markDirtyBestEffort(ctx, id)
@@ -1131,7 +1135,7 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 // ClearField sets a single metadata field to its zero value.
@@ -1140,7 +1144,11 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 // no history entry). When a HistoryService is attached, a MetadataChange is
 // recorded for genuine clears. History recording is best-effort and will not
 // cause the clear to fail.
-func (s *Service) ClearField(ctx context.Context, id, field string) error {
+//
+// The returned bool is true when a real write (and history record) occurred,
+// false when the no-op skip fired (field already empty). Callers that
+// previously treated a nil error as "write happened" must check the bool.
+func (s *Service) ClearField(ctx context.Context, id, field string) (bool, error) {
 	// Fetch current value unconditionally so the no-op check runs regardless
 	// of whether history is enabled.
 	var oldValue string
@@ -1156,11 +1164,11 @@ func (s *Service) ClearField(ctx context.Context, id, field string) error {
 
 	// Skip the write if the field is already empty.
 	if oldKnown && oldValue == "" {
-		return nil
+		return false, nil
 	}
 
 	if err := s.artists.ClearField(ctx, id, field); err != nil {
-		return err
+		return false, err
 	}
 
 	s.markDirtyBestEffort(ctx, id)
@@ -1184,7 +1192,7 @@ func (s *Service) ClearField(ctx context.Context, id, field string) error {
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 // UpdateProviderField sets a single provider ID field (musicbrainz_id,

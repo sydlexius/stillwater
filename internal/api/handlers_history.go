@@ -343,20 +343,24 @@ func validateRevertable(change *artist.MetadataChange) error {
 // ID pre-assigned to the new history row; callers should fetch it with
 // GetByID after this call returns.
 //
+// changed is true when a real write (and history record) occurred, false when
+// the revert was a no-op because the field already equalled OldValue. Callers
+// can use changed to select an appropriate user-facing message.
+//
 // ClearField/UpdateField currently succeed silently when the artist ID does
 // not exist (UPDATE affects zero rows). The ErrNotFound guards are defensive:
 // they activate if the repo layer is updated to check RowsAffected.
-func (r *Router) performRevert(ctx context.Context, change *artist.MetadataChange) (revertChangeID string, err error) {
+func (r *Router) performRevert(ctx context.Context, change *artist.MetadataChange) (revertChangeID string, changed bool, err error) {
 	revertChangeID = uuid.New().String()
 	ctx = artist.ContextWithSource(ctx, "revert")
 	ctx = artist.ContextWithHistoryID(ctx, revertChangeID)
 
 	if change.OldValue == "" {
-		err = r.artistService.ClearField(ctx, change.ArtistID, change.Field)
+		changed, err = r.artistService.ClearField(ctx, change.ArtistID, change.Field)
 	} else {
-		err = r.artistService.UpdateField(ctx, change.ArtistID, change.Field, change.OldValue)
+		changed, err = r.artistService.UpdateField(ctx, change.ArtistID, change.Field, change.OldValue)
 	}
-	return revertChangeID, err
+	return revertChangeID, changed, err
 }
 
 // renderActivityRevertFragment renders the HTMX fragment for a revert that was
@@ -489,7 +493,7 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	revertChangeID, err := r.performRevert(req.Context(), change)
+	revertChangeID, revertChanged, err := r.performRevert(req.Context(), change)
 	if err != nil {
 		if errors.Is(err, artist.ErrNotFound) {
 			writeError(w, req, http.StatusNotFound, "artist not found")
@@ -550,20 +554,30 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 
 	// Fallback: the revert succeeded but we could not render the rich
 	// confirmation fragment. Causes: (a) new row is outside the active feed
-	// filter, (b) a lookup failed (already logged above), or (c) the row is
-	// genuinely missing. Log level distinguishes the cases.
-	if revertChange != nil {
+	// filter, (b) a lookup failed (already logged above), (c) the row is
+	// genuinely missing, or (d) the revert was a no-op (field already matched
+	// OldValue so no write occurred). Log level distinguishes the cases.
+	var fallbackMsg string
+	if !revertChanged {
+		// No-op revert: field already equalled OldValue; nothing was written.
+		r.logger.Info("revert was a no-op; field already at old value",
+			"change_id", changeID, "revert_change_id", revertChangeID,
+			"field", change.Field, "artist_id", change.ArtistID)
+		fallbackMsg = "This field was already at the reverted value, nothing to change."
+	} else if revertChange != nil {
 		r.logger.Info("revert succeeded; fragment suppressed by active filter",
 			"change_id", changeID, "revert_change_id", revertChangeID,
 			"field", change.Field, "artist_id", change.ArtistID)
+		fallbackMsg = "Change reverted. Refresh the page to see the updated entry."
 	} else {
 		r.logger.Warn("revert record not located after mutation, using fallback confirmation",
 			"change_id", changeID, "revert_change_id", revertChangeID,
 			"field", change.Field, "artist_id", change.ArtistID)
+		fallbackMsg = "Change reverted. Refresh the page to see the updated entry."
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted. Refresh the page to see the updated entry.</p></div>`))
+	_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">` + fallbackMsg + `</p></div>`))
 }
 
 // handleListGlobalHistory returns paginated metadata changes across all artists.
