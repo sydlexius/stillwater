@@ -101,17 +101,17 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 				@prefsGroup("layout", t(ctx, "prefs.group.layout"), false) {
 					@prefsTileRow("pref-d-sidebar-state", "sidebar_state", t(ctx, "settings.appearance.sidebar_default_state.label"), t(ctx, "prefs.sidebar_state.help"),
 						[]prefsOption{
-							{Value: "full", Label: t(ctx, "common.full"), Sub: "Icons + labels", Glyph: prefsGlyphSidebarFull()},
-							{Value: "icon-only", Label: t(ctx, "settings.appearance.icon_only"), Sub: "Icons only", Glyph: prefsGlyphSidebarIconOnly()},
-							{Value: "hidden", Label: t(ctx, "common.hidden"), Sub: "No sidebar", Glyph: prefsGlyphSidebarHidden()},
+							{Value: "full", Label: t(ctx, "common.full"), Sub: t(ctx, "prefs.sidebar_state.icons_labels"), Glyph: prefsGlyphSidebarFull()},
+							{Value: "icon-only", Label: t(ctx, "settings.appearance.icon_only"), Sub: t(ctx, "prefs.sidebar_state.icons_only"), Glyph: prefsGlyphSidebarIconOnly()},
+							{Value: "hidden", Label: t(ctx, "common.hidden"), Sub: t(ctx, "prefs.sidebar_state.no_sidebar"), Glyph: prefsGlyphSidebarHidden()},
 						},
 						prefs.SidebarState,
 						3,
 					)
 					@prefsTileRow("pref-d-content-width", "content_width", t(ctx, "settings.appearance.content_width.label"), t(ctx, "prefs.content_width.help"),
 						[]prefsOption{
-							{Value: "narrow", Label: t(ctx, "settings.appearance.narrow"), Sub: "Easier reading", Glyph: prefsGlyphWidthNarrow()},
-							{Value: "wide", Label: t(ctx, "common.full"), Sub: "More per row", Glyph: prefsGlyphWidthWide()},
+							{Value: "narrow", Label: t(ctx, "settings.appearance.narrow"), Sub: t(ctx, "prefs.content_width.easier_reading"), Glyph: prefsGlyphWidthNarrow()},
+							{Value: "wide", Label: t(ctx, "common.full"), Sub: t(ctx, "prefs.content_width.more_per_row"), Glyph: prefsGlyphWidthWide()},
 						},
 						prefs.ContentWidth,
 						2,
@@ -139,18 +139,18 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 				@prefsGroup("typography", t(ctx, "prefs.group.typography"), false) {
 					@prefsTileRow("pref-d-font-family", "font_family", t(ctx, "settings.appearance.font_family.label"), t(ctx, "prefs.font_family.help"),
 						[]prefsOption{
-							{Value: "inter", Label: "Inter", Sub: "Default", Glyph: prefsGlyphFont("Inter, sans-serif")},
-							{Value: "system", Label: "System", Sub: "OS native", Glyph: prefsGlyphFont("system-ui, -apple-system, sans-serif")},
-							{Value: "atkinson", Label: "Atkinson", Sub: "Hyperlegible", Glyph: prefsGlyphFont("'Atkinson Hyperlegible', sans-serif")},
+							{Value: "inter", Label: "Inter", Sub: t(ctx, "prefs.font_family.sub.default"), Glyph: prefsGlyphFont("Inter, sans-serif")},
+							{Value: "system", Label: "System", Sub: t(ctx, "prefs.font_family.sub.os_native"), Glyph: prefsGlyphFont("system-ui, -apple-system, sans-serif")},
+							{Value: "atkinson", Label: "Atkinson", Sub: t(ctx, "prefs.font_family.sub.hyperlegible"), Glyph: prefsGlyphFont("'Atkinson Hyperlegible', sans-serif")},
 						},
 						prefs.FontFamily,
 						3,
 					)
 					@prefsTileRow("pref-d-mono-font", "mono_font", t(ctx, "prefs.mono_font.label"), t(ctx, "prefs.mono_font.help"),
 						[]prefsOption{
-							{Value: "system", Label: "System", Sub: "Mono", Glyph: prefsGlyphMono("ui-monospace, SFMono-Regular, Menlo, monospace")},
-							{Value: "jetbrains", Label: "JetBrains", Sub: "Mono", Glyph: prefsGlyphMono("'JetBrains Mono', ui-monospace, monospace")},
-							{Value: "cascadia", Label: "Cascadia", Sub: "Code", Glyph: prefsGlyphMono("'Cascadia Code', ui-monospace, monospace")},
+							{Value: "system", Label: "System", Sub: t(ctx, "prefs.mono_font.sub.mono"), Glyph: prefsGlyphMono("ui-monospace, SFMono-Regular, Menlo, monospace")},
+							{Value: "jetbrains", Label: "JetBrains", Sub: t(ctx, "prefs.mono_font.sub.mono"), Glyph: prefsGlyphMono("'JetBrains Mono', ui-monospace, monospace")},
+							{Value: "cascadia", Label: "Cascadia", Sub: t(ctx, "prefs.mono_font.sub.code"), Glyph: prefsGlyphMono("'Cascadia Code', ui-monospace, monospace")},
 						},
 						prefs.MonoFont,
 						3,
@@ -171,8 +171,8 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 					@prefsSegRow("pref-d-reduced-motion", "reduced_motion", t(ctx, "settings.appearance.reduced_motion.label"), t(ctx, "settings.appearance.reduced_motion.help"),
 						[]prefsOption{
 							{Value: "system", Label: t(ctx, "common.auto")},
-							{Value: "on", Label: "Full"},
-							{Value: "off", Label: "Reduced"},
+							{Value: "on", Label: t(ctx, "prefs.reduced_motion.full")},
+							{Value: "off", Label: t(ctx, "prefs.reduced_motion.reduced")},
 						},
 						prefs.ReducedMotion,
 					)
@@ -396,7 +396,7 @@ templ prefsPageSizeRow(pageSize int) {
 				aria-label={ t(ctx, "settings.appearance.page_size.label") }
 				value={ strconv.Itoa(pageSize) }
 			/>
-			<span class="sw-prefs-number-unit">rows / page</span>
+			<span class="sw-prefs-number-unit">{ t(ctx, "prefs.page_size.unit") }</span>
 		</div>
 	</div>
 }
@@ -462,7 +462,7 @@ templ prefsHelpPopover(id, label, helpText string) {
 		<button
 			type="button"
 			class="sw-context-help-btn"
-			aria-label={ "About " + label }
+			aria-label={ tf(ctx, "prefs.help.about_aria", label) }
 			aria-expanded="false"
 			aria-controls={ id + "-popover" }
 			onclick="swContextHelpToggle(this)"
@@ -516,7 +516,7 @@ templ prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.Prefere
 // layoutSection describes one reorderable section in the artist-detail layout.
 type layoutSection struct {
 	ID    string
-	Label string // i18n-resolved label
+	Label string // i18n key for the section label; resolved via t(ctx, sec.Label) at render time
 }
 
 // defaultPrefsLayoutSections is the default order of artist-detail sections
@@ -525,12 +525,12 @@ type layoutSection struct {
 // Details section; "details" is the spec mockup name but the live code uses "metadata").
 // Sections: all reorderable and hideable per #1774 spec.
 var defaultPrefsLayoutSections = []layoutSection{
-	{ID: "metadata", Label: "Details"},
-	{ID: "artwork", Label: "Artwork"},
-	{ID: "findings", Label: "Findings"},
-	{ID: "providers", Label: "Providers"},
-	{ID: "discography", Label: "Discography"},
-	{ID: "identifiers", Label: "Identifiers"},
+	{ID: "metadata", Label: "prefs.section.metadata"},
+	{ID: "artwork", Label: "prefs.section.artwork"},
+	{ID: "findings", Label: "prefs.section.findings"},
+	{ID: "providers", Label: "prefs.section.providers"},
+	{ID: "discography", Label: "prefs.section.discography"},
+	{ID: "identifiers", Label: "prefs.section.identifiers"},
 }
 
 // orderedPrefsLayoutSections returns sections in the user's preferred order,
@@ -581,14 +581,14 @@ templ prefsLayoutRow(sec layoutSection, hidden bool) {
 				<circle cx="9" cy="19" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
 			</svg>
 		</span>
-		<span class="sw-prefs-layout-name">{ sec.Label }</span>
+		<span class="sw-prefs-layout-name">{ t(ctx, sec.Label) }</span>
 		<span class="sw-prefs-layout-actions">
 			<!-- Move up -->
 			<button
 				type="button"
 				class="sw-prefs-layout-btn"
 				data-action="move-up"
-				aria-label={ "Move " + sec.Label + " up" }
+				aria-label={ tf(ctx, "prefs.artist_layout.move_up_aria", t(ctx, sec.Label)) }
 			>
 				<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5"></path>
@@ -599,7 +599,7 @@ templ prefsLayoutRow(sec layoutSection, hidden bool) {
 				type="button"
 				class="sw-prefs-layout-btn"
 				data-action="move-down"
-				aria-label={ "Move " + sec.Label + " down" }
+				aria-label={ tf(ctx, "prefs.artist_layout.move_down_aria", t(ctx, sec.Label)) }
 			>
 				<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"></path>
@@ -611,9 +611,9 @@ templ prefsLayoutRow(sec layoutSection, hidden bool) {
 				class="sw-prefs-layout-btn"
 				data-action="toggle-visibility"
 				if hidden {
-					aria-label={ t(ctx, "prefs.artist_layout.show_section") + " " + sec.Label }
+					aria-label={ t(ctx, "prefs.artist_layout.show_section") + " " + t(ctx, sec.Label) }
 				} else {
-					aria-label={ t(ctx, "prefs.artist_layout.hide_section") + " " + sec.Label }
+					aria-label={ t(ctx, "prefs.artist_layout.hide_section") + " " + t(ctx, sec.Label) }
 				}
 				aria-pressed={ strconv.FormatBool(hidden) }
 			>
