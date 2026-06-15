@@ -12,14 +12,14 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/quic-go/quic-go v0.60.0
-	golang.org/x/crypto v0.52.0
+	golang.org/x/crypto v0.53.0
 	golang.org/x/image v0.41.0
 	golang.org/x/mod v0.36.0
 	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
-	golang.org/x/term v0.43.0
-	golang.org/x/text v0.37.0
+	golang.org/x/term v0.44.0
+	golang.org/x/text v0.38.0
 	golang.org/x/time v0.15.0
 	golang.org/x/tools v0.45.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -50,7 +50,7 @@ require (
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/wadey/gocovmerge v0.0.0-20160331181800-b5bfa59ec0ad // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
