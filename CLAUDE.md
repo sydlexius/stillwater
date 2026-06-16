@@ -1,5 +1,12 @@
 # Stillwater - Claude Code Project Instructions
 
+## >> ON SESSION START / RESUME: read SESSION-STATE.md FIRST <<
+
+`SESSION-STATE.md` (repo root; gitignored, machine-local) is the running checkpoint - the top
+banner has current status + next actions. Read it before doing anything when asked to "resume M55",
+"resume stillwater work", "pick up where we left off", or "continue". (The transient-state-here /
+durable-lessons-in-memory split is in the user-global instructions.)
+
 ## Project Overview
 
 Stillwater is a containerized, self-hosted web application for managing artist/composer metadata (NFO files) and images across media streaming platforms (Emby, Jellyfin, Kodi). Built with Go, HTMX, Templ, and Tailwind CSS.
@@ -148,19 +155,13 @@ Default when no hint: Sonnet + Plan Mode + medium effort for features; Sonnet + 
 - **Database schema:** `internal/database/migrations/001_initial_schema.sql`; interfaces in `internal/artist/repository.go`
 - **Rule engine:** Fix-all uses in-memory progress tracker (mutex-protected), one at a time (409 on concurrent starts). `FixResult` states: `Fixed`, `Dismissed`, neither. Rules have enabled toggle + automation mode (`manual`/`auto`).
 - **Tests:** Integration tests use real SQLite. Run `go test -race ./...` for concurrent code (goroutines, shared state, background workers). Native on macOS.
-- **Security:** API keys encrypted at rest (AES-256-GCM). Scrub sensitive values from logs. CSRF on state-changing requests. Validate at API boundary. No secrets in git.
+- **Security:** API keys encrypted at rest (AES-256-GCM). Scrub sensitive values from logs. CSRF on state-changing requests. Validate at API boundary.
 
 ## PR Workflow
 
-The pre-push git hook runs `scripts/pre-push-gate.sh` automatically on every push, so do **not** invoke it manually as a separate step -- the manual call duplicates the hook's work without adding signal. The pre-push action that actually does something useful is the AI code-review pass, which catches the kind of finding the deterministic gate cannot.
+Repo-specific delta on top of the global PR workflow (`/prep-pr` to open, `/handle-review`, `/merge-pr`): the pre-push git hook runs `scripts/pre-push-gate.sh` automatically on every push, so do **not** invoke it manually as a standalone pre-push step -- the manual call duplicates the hook's work without adding signal. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate only inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge).
 
-Sequence before opening / pushing to a PR:
-
-1. Run a local CodeRabbit review against the squashed HEAD via the `/coderabbit:code-review` skill (or `coderabbit review --plain` from the CLI). Address findings, re-squash if needed.
-2. Push (the pre-push hook runs the deterministic gate; if the gate fails, the push aborts).
-3. Open / update the PR with `gh pr create` (use the template; set labels).
-
-See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround and Copilot policy. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge), not as a standalone pre-push ceremony.
+See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround and Copilot policy.
 
 **Decompose before building.** When the foundation is not known up front, spike a throwaway rough-cut (delegate it to a subagent that returns a "foundation manifest") to discover what needs sharing, then split. If a feature cannot fit under the ~800 hand-written-LOC / 10-file size gate, that is a signal it bundles a foundation refactor that should have landed first. For complex multi-session screens/features, run the main session as an orchestrator (delegate implementation, tests, RCA, and UAT-evidence gathering to subagents), gate per chunk rather than once at the end, and never report work "done" without the verifying evidence in the same message. See the screen-build playbook in the M55 plan and the `feedback_screen_build_playbook` memory.
 
@@ -179,14 +180,9 @@ These supersede any older instruction, skill, or memory entry that calls `git wo
 
 See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude/plans/m<N>-<slug>-plan.md` (out-of-repo; `.gitignore` backstops `docs/plans/`, `docs/milestone-*/`, `docs/milestone-*.md`, `docs/prototypes/`, `docs/superpowers/`), use per-issue worktrees, ship docs in the same PR, run cleanup after all merges.
 
-## CI/CD
-
-All required status checks pinned to commit SHAs; see `.github/workflows/` for examples.
-
 ## Helper Scripts
 
 - `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files, lint, patch coverage). Run automatically by the pre-push git hook; do not invoke manually as a standalone pre-PR step (see PR Workflow).
-- `scripts/safe-push.sh [branch] [--force-with-lease]` -- `git push` wrapper that logs transcripts to `.git/`
 - `scripts/dev-restart.sh` -- canonical dev rebuild + restart (use this; never kill by port)
 - `scripts/patch-coverage.sh` -- patch-level coverage check (called by pre-push-gate)
 - `scripts/coverage-floor.sh` -- per-package coverage floor enforcement (called by pre-push-gate)
