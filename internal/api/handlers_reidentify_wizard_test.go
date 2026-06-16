@@ -1170,6 +1170,15 @@ func TestHandleReIdentifyWizardStep_UnauthRendersLoginPage(t *testing.T) {
 		t.Error("unauthenticated visitor must not see the wizard content")
 	}
 	if !strings.Contains(body, "/api/v1/auth/login") {
-		t.Error("response should contain the login form action (/api/v1/auth/login)")
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	// Structural proof: both a username field and a password field must be
+	// present - confirming this is the login form, not just any page that
+	// happens to mention the auth endpoint.
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
 	}
 }
