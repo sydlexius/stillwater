@@ -10,7 +10,8 @@ import (
 )
 
 // testSecret is the HMAC key used throughout the CSRF test suite.
-const testSecret = "test-secret-for-csrf-hmac-signing"
+// It is >= 32 bytes to pass the minimum-length guard in NewCSRF.
+const testSecret = "test-secret-for-csrf-hmac-signing" // 33 bytes
 
 // testClock is a fixed-time Clock for tests. It always returns the same
 // instant so time-dependent logic in CSRF is independent of wall-clock speed.
@@ -22,6 +23,15 @@ func (c testClock) Now() time.Time { return c.now }
 
 // fixedTestTime is the reference instant used across time-sensitive CSRF tests.
 var fixedTestTime = time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+// tokenParts splits a 3-part CSRF token and returns (tsPart, noncePart, sigPart, ok).
+func tokenParts(token string) (string, string, string, bool) {
+	parts := strings.SplitN(token, ":", 3)
+	if len(parts) != 3 {
+		return "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], true
+}
 
 func TestCSRF_SafeMethodSetsToken(t *testing.T) {
 	t.Parallel()
@@ -45,14 +55,18 @@ func TestCSRF_SafeMethodSetsToken(t *testing.T) {
 			continue
 		}
 		found = true
-		// Token must be in "{timestamp}:{hmac_hex}" format.
-		tsPart, sigPart, ok := strings.Cut(c.Value, ":")
+		tsPart, noncePart, sigPart, ok := tokenParts(c.Value)
 		if !ok {
-			t.Fatalf("CSRF cookie value has no colon: %q", c.Value)
+			t.Fatalf("CSRF cookie is not 3-part {ts}:{nonce}:{sig}: %q", c.Value)
 		}
 		if _, err := strconv.ParseInt(tsPart, 10, 64); err != nil {
 			t.Errorf("CSRF token timestamp part is not an integer: %q", tsPart)
 		}
+		// Nonce = 16 bytes = 32 hex chars.
+		if len(noncePart) != 32 {
+			t.Errorf("CSRF token nonce part length = %d, want 32 hex chars", len(noncePart))
+		}
+		// Signature = HMAC-SHA256 = 32 bytes = 64 hex chars.
 		if len(sigPart) != 64 {
 			t.Errorf("CSRF token signature part length = %d, want 64 hex chars", len(sigPart))
 		}
@@ -107,18 +121,22 @@ func TestCSRF_UnsafeMethodWithInvalidToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
+	validToken := csrf.generate()
+	tsPart, noncePart, _, _ := tokenParts(validToken)
+
 	cases := []struct {
 		name  string
 		token string
 	}{
 		{"bogus string", "bogus-token"},
-		{"no colon", "1735729200"},
-		{"bad timestamp", "notanumber:aabbccdd"},
-		{"wrong part count (no colon)", "onepartonly"},
-		{"empty signature", "1735729200:"},
-		{"empty timestamp", ":aabbccdd"},
-		{"bad hex in signature", "1735729200:notvalidhex!"},
-		{"tampered signature", "1735729200:" + strings.Repeat("ff", 32)},
+		{"only 1 part (no colon)", "1735729200"},
+		{"only 2 parts (missing nonce/sig)", "1735729200:aabbccdd"},
+		{"bad timestamp", "notanumber:" + strings.Repeat("aa", 16) + ":" + strings.Repeat("ff", 32)},
+		{"empty signature", tsPart + ":" + noncePart + ":"},
+		{"empty nonce", tsPart + "::" + strings.Repeat("ff", 32)},
+		{"empty timestamp", ":" + noncePart + ":" + strings.Repeat("ff", 32)},
+		{"bad hex in signature", tsPart + ":" + noncePart + ":notvalidhex!"},
+		{"tampered signature", tsPart + ":" + noncePart + ":" + strings.Repeat("aa", 32)},
 	}
 
 	for _, tc := range cases {
@@ -177,18 +195,18 @@ func TestCSRF_HeadAndOptionsAreSafe(t *testing.T) {
 	}
 }
 
-// TestCSRF_ExpiredTokenRejected asserts that a token whose timestamp is older
-// than csrfTokenTTL is rejected, simulating a restart that happened 4h ago.
+// TestCSRF_ExpiredTokenRejected asserts that a token whose timestamp is at or
+// beyond csrfTokenTTL is rejected, simulating a session surviving a long restart.
 func TestCSRF_ExpiredTokenRejected(t *testing.T) {
 	t.Parallel()
 
 	clk := testClock{now: fixedTestTime}
 	c := &CSRF{secret: []byte(testSecret), clock: clk}
 
-	// Issue a token at fixedTestTime, then advance the clock beyond TTL.
 	token := c.generate()
 
-	clk.now = fixedTestTime.Add(csrfTokenTTL) // exactly at TTL boundary: still invalid (>= not <)
+	// Exactly at TTL boundary: >= TTL means expired.
+	clk.now = fixedTestTime.Add(csrfTokenTTL)
 	c.clock = clk
 	if c.valid(token) {
 		t.Error("token at exactly TTL boundary should be rejected (>= TTL)")
@@ -201,7 +219,8 @@ func TestCSRF_ExpiredTokenRejected(t *testing.T) {
 	}
 }
 
-// TestCSRF_FreshTokenAccepted checks that a token just issued is accepted.
+// TestCSRF_FreshTokenAccepted checks that a token just issued and one just under
+// the TTL boundary are both accepted.
 func TestCSRF_FreshTokenAccepted(t *testing.T) {
 	t.Parallel()
 
@@ -213,7 +232,6 @@ func TestCSRF_FreshTokenAccepted(t *testing.T) {
 		t.Error("freshly issued token should be valid")
 	}
 
-	// Token just under the TTL boundary should also be valid.
 	clk.now = fixedTestTime.Add(csrfTokenTTL - time.Second)
 	c.clock = clk
 	if !c.valid(token) {
@@ -221,17 +239,16 @@ func TestCSRF_FreshTokenAccepted(t *testing.T) {
 	}
 }
 
-// TestCSRF_TamperedSignatureRejected verifies that modifying the HMAC component
-// of a well-formed token causes it to be rejected.
+// TestCSRF_TamperedSignatureRejected verifies that replacing the HMAC component
+// with the wrong bytes causes rejection even when the timestamp and nonce are valid.
 func TestCSRF_TamperedSignatureRejected(t *testing.T) {
 	t.Parallel()
 
 	csrf := NewCSRF(testSecret)
 	token := csrf.generate()
 
-	// Replace the signature with the correct-length but wrong bytes.
-	tsPart, _, _ := strings.Cut(token, ":")
-	tampered := tsPart + ":" + strings.Repeat("aa", 32) // 64 hex chars, wrong value
+	tsPart, noncePart, _, _ := tokenParts(token)
+	tampered := tsPart + ":" + noncePart + ":" + strings.Repeat("aa", 32) // wrong HMAC
 
 	if csrf.valid(tampered) {
 		t.Error("token with tampered signature should be rejected")
@@ -250,24 +267,32 @@ func TestCSRF_EmptySecretPanics(t *testing.T) {
 	NewCSRF("")
 }
 
+// TestCSRF_TooShortSecretPanics verifies that NewCSRF panics when the secret is
+// shorter than csrfMinSecretLen (F2: minimum 32-byte enforcement).
+func TestCSRF_TooShortSecretPanics(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("NewCSRF with short secret should panic but did not")
+		}
+	}()
+	NewCSRF("tooshort") // 8 bytes < 32
+}
+
 // TestCSRF_DifferentSecretsProduceDifferentTokens checks that the same
-// timestamp signed with two different secrets produces different HMACs, so
-// tokens from a different (or rotated) server cannot be replayed.
+// timestamp signed with two different secrets produces different HMACs.
 func TestCSRF_DifferentSecretsProduceDifferentTokens(t *testing.T) {
 	t.Parallel()
 
 	clk := testClock{now: fixedTestTime}
-	c1 := &CSRF{secret: []byte("secret-one"), clock: clk}
-	c2 := &CSRF{secret: []byte("secret-two"), clock: clk}
+	c1 := &CSRF{secret: []byte("secret-one-padded-to-32-bytes!!X"), clock: clk}
+	c2 := &CSRF{secret: []byte("secret-two-padded-to-32-bytes!!Y"), clock: clk}
 
 	tok1 := c1.generate()
 	tok2 := c2.generate()
 
-	if tok1 == tok2 {
-		t.Error("tokens with different secrets should differ")
-	}
-
-	// Cross-validation: each instance must reject the other's token.
+	// Tokens will differ due to different nonces OR different HMACs (or both).
+	// The HMAC check is what matters: each instance must reject the other's token.
 	if c1.valid(tok2) {
 		t.Error("c1 should not validate a token signed by c2")
 	}
@@ -276,15 +301,15 @@ func TestCSRF_DifferentSecretsProduceDifferentTokens(t *testing.T) {
 	}
 }
 
-// TestCSRF_SameSecretConsistentValidation confirms that a token generated by
-// one CSRF instance is accepted by a second instance sharing the same secret,
-// which is the core property that makes restart-survival work.
+// TestCSRF_SameSecretConsistentValidation is the core restart-survival test:
+// a token generated before a simulated restart validates on the new instance
+// sharing the same secret (F3 property via design, not just F1 property).
 func TestCSRF_SameSecretConsistentValidation(t *testing.T) {
 	t.Parallel()
 
 	clk := testClock{now: fixedTestTime}
 	before := &CSRF{secret: []byte(testSecret), clock: clk}
-	after := &CSRF{secret: []byte(testSecret), clock: clk} // simulates the new instance after restart
+	after := &CSRF{secret: []byte(testSecret), clock: clk} // new instance after restart
 
 	token := before.generate()
 	if !after.valid(token) {
@@ -292,23 +317,54 @@ func TestCSRF_SameSecretConsistentValidation(t *testing.T) {
 	}
 }
 
-// TestCSRF_FutureTimestampValid checks that a token with a slightly future
-// timestamp (e.g., clock skew between servers) is not rejected. Since the
-// HMAC prevents forging, a valid signature on a future timestamp is benign.
-func TestCSRF_FutureTimestampValid(t *testing.T) {
+// TestCSRF_NonceUniquePerIssuance verifies that two tokens generated at the
+// same instant carry different nonces (F3: per-issuance uniqueness).
+func TestCSRF_NonceUniquePerIssuance(t *testing.T) {
 	t.Parallel()
 
 	clk := testClock{now: fixedTestTime}
-	// Generate a token with a timestamp 1 minute in the future relative to
-	// the validator's clock. This should still be valid (not expired).
-	futureClk := testClock{now: fixedTestTime.Add(time.Minute)}
+	c := &CSRF{secret: []byte(testSecret), clock: clk}
+
+	tok1 := c.generate()
+	tok2 := c.generate()
+
+	_, nonce1, _, _ := tokenParts(tok1)
+	_, nonce2, _, _ := tokenParts(tok2)
+
+	if nonce1 == nonce2 {
+		t.Error("two tokens generated at the same instant should have different nonces")
+	}
+}
+
+// TestCSRF_FutureTimestampWithinSkewAccepted verifies that a token whose
+// timestamp is slightly in the future (within csrfMaxClockSkew) is accepted,
+// since this is normal NTP drift territory.
+func TestCSRF_FutureTimestampWithinSkewAccepted(t *testing.T) {
+	t.Parallel()
+
+	futureClk := testClock{now: fixedTestTime.Add(csrfMaxClockSkew - time.Minute)}
 	gen := &CSRF{secret: []byte(testSecret), clock: futureClk}
-	validator := &CSRF{secret: []byte(testSecret), clock: clk}
+	validator := &CSRF{secret: []byte(testSecret), clock: testClock{now: fixedTestTime}}
 
 	token := gen.generate()
-	// time.Since(future) is negative, which is < csrfTokenTTL, so it passes.
 	if !validator.valid(token) {
-		t.Error("token with slightly future timestamp should be accepted (within TTL window)")
+		t.Error("token with future timestamp within clock-skew window should be accepted")
+	}
+}
+
+// TestCSRF_FarFutureTimestampRejected verifies that a token timestamped beyond
+// csrfMaxClockSkew in the future is rejected (F4: future-timestamp cap).
+func TestCSRF_FarFutureTimestampRejected(t *testing.T) {
+	t.Parallel()
+
+	// Generate a token timestamped csrfMaxClockSkew+1s in the future.
+	farFutureClk := testClock{now: fixedTestTime.Add(csrfMaxClockSkew + time.Second)}
+	gen := &CSRF{secret: []byte(testSecret), clock: farFutureClk}
+	validator := &CSRF{secret: []byte(testSecret), clock: testClock{now: fixedTestTime}}
+
+	token := gen.generate()
+	if validator.valid(token) {
+		t.Error("token with far-future timestamp should be rejected")
 	}
 }
 

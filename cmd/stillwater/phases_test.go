@@ -487,6 +487,141 @@ func TestResolveEncryptionKey_TrailingNewlineStripped(t *testing.T) {
 
 // --- loadConfig error tests ---
 
+// --- resolveSessionSecret tests (F5) ---
+
+// TestResolveSessionSecret_GeneratesWhenMissing proves the default boot path:
+// no SW_SESSION_SECRET, no pre-existing file -> secret is generated, persisted,
+// and returned without panicking. This is the regression gate for F1.
+func TestResolveSessionSecret_GeneratesWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "data", "stillwater.db")
+
+	secret, err := resolveSessionSecret(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("resolveSessionSecret: %v", err)
+	}
+	if len(secret) < 32 {
+		t.Errorf("generated secret too short: len=%d, want >=32", len(secret))
+	}
+	// The secret must have been persisted alongside the DB directory.
+	secretFile := filepath.Join(dir, "data", "session.secret")
+	if _, statErr := os.Stat(secretFile); statErr != nil {
+		t.Errorf("expected secret file at %s: %v", secretFile, statErr)
+	}
+}
+
+// TestResolveSessionSecret_ConfigValueWins verifies that an explicitly-set
+// SW_SESSION_SECRET (cfg.Auth.SessionSecret) takes priority over any file.
+func TestResolveSessionSecret_ConfigValueWins(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	cfg.Auth.SessionSecret = "this-is-a-32-byte-long-test-key!"
+
+	secret, err := resolveSessionSecret(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("resolveSessionSecret: %v", err)
+	}
+	if secret != cfg.Auth.SessionSecret {
+		t.Errorf("secret = %q; want %q", secret, cfg.Auth.SessionSecret)
+	}
+}
+
+// TestResolveSessionSecret_LoadsFromFile verifies that an existing session.secret
+// file is read and returned, matching the encryption key pattern.
+func TestResolveSessionSecret_LoadsFromFile(t *testing.T) {
+	dir := t.TempDir()
+	const want = "this-is-a-32-byte-long-test-key!"
+	secretFile := filepath.Join(dir, "session.secret")
+	if err := os.WriteFile(secretFile, []byte(want+"\n"), 0o600); err != nil {
+		t.Fatalf("writing secret file: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	secret, err := resolveSessionSecret(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("resolveSessionSecret: %v", err)
+	}
+	if secret != want {
+		t.Errorf("secret = %q; want %q (trailing newline must be stripped)", secret, want)
+	}
+}
+
+// TestResolveSessionSecret_TooShortConfigReturnsError verifies that a
+// too-short explicitly-supplied secret produces a clear startup error (F2).
+func TestResolveSessionSecret_TooShortConfigReturnsError(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Auth.SessionSecret = "short" // only 5 bytes
+	_, err := resolveSessionSecret(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for too-short config secret, got nil")
+	}
+}
+
+// TestResolveSessionSecret_TooShortFileReturnsError verifies that a too-short
+// secret in the persist file is rejected with a clear error.
+func TestResolveSessionSecret_TooShortFileReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	secretFile := filepath.Join(dir, "session.secret")
+	if err := os.WriteFile(secretFile, []byte("short\n"), 0o600); err != nil {
+		t.Fatalf("writing secret file: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	_, err := resolveSessionSecret(cfg, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for too-short file secret, got nil")
+	}
+}
+
+// TestResolveSessionSecret_SecondStartupLoadsPersistedSecret verifies that
+// calling resolveSessionSecret twice with the same config returns the same
+// secret (idempotent generate+persist behavior).
+func TestResolveSessionSecret_SecondStartupLoadsPersistedSecret(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "data", "stillwater.db")
+
+	first, err := resolveSessionSecret(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	second, err := resolveSessionSecret(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if first != second {
+		t.Errorf("second startup returned different secret: %q != %q", first, second)
+	}
+}
+
+// TestWireSecurity_SessionSecretPopulated verifies that wireSecurity resolves
+// and populates cfg.Auth.SessionSecret so the router constructor never sees an
+// empty value (integration coverage of F1 through the Application lifecycle).
+func TestWireSecurity_SessionSecretPopulated(t *testing.T) {
+	app := newTestApp(t, WithEncKeyResolver(func(_ *config.Config, _ *slog.Logger) (string, error) {
+		return "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=", nil
+	}))
+	defer initLogging(t, app)()
+	if err := app.openStorage(); err != nil {
+		t.Fatalf("openStorage: %v", err)
+	}
+	defer app.db.Close()
+
+	if err := app.wireSecurity(); err != nil {
+		t.Fatalf("wireSecurity: %v", err)
+	}
+	if app.cfg.Auth.SessionSecret == "" {
+		t.Fatal("cfg.Auth.SessionSecret must be non-empty after wireSecurity")
+	}
+	if len(app.cfg.Auth.SessionSecret) < 32 {
+		t.Errorf("cfg.Auth.SessionSecret too short: len=%d", len(app.cfg.Auth.SessionSecret))
+	}
+}
+
 // TestLoadConfig_MalformedFile verifies that a syntactically invalid config
 // file produces a wrapped error rather than silently returning defaults.
 func TestLoadConfig_MalformedFile(t *testing.T) {
