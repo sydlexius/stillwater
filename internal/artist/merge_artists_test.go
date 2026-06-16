@@ -919,6 +919,69 @@ func TestMergeArtists_DryRunDeletesPreview(t *testing.T) {
 	}
 }
 
+// TestMergeArtists_LooseFileCollision_SurvivorDirectory verifies the
+// regular-file hardening added in #1779: when the survivor's same-named
+// child is a DIRECTORY (not a regular file) the loser's loose file must
+// NOT be deleted -- there is no genuine authoritative survivor copy.
+// The loser directory therefore remains on disk (non-empty), a warning
+// is recorded, and result.Deleted has no entry for that file.
+func TestMergeArtists_LooseFileCollision_SurvivorDirectory(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor, _ := svc.GetByID(ctx, survivorID)
+	loser, _ := svc.GetByID(ctx, loserID)
+
+	// Place a DIRECTORY named "folder.jpg" under the survivor -- same name
+	// as a loose file we add to the loser. This is the edge case: the
+	// survivor has a same-named child that is not a regular file.
+	if err := os.Mkdir(filepath.Join(survivor.Path, "folder.jpg"), 0o755); err != nil {
+		t.Fatalf("mkdir survivor folder.jpg dir: %v", err)
+	}
+	// Loser has the genuine regular file. Without the fix this would be
+	// deleted (data loss); with the fix it must be preserved.
+	if err := os.WriteFile(filepath.Join(loser.Path, "folder.jpg"), []byte("loser-jpg"), 0o600); err != nil {
+		t.Fatalf("write loser folder.jpg: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	// Loser's folder.jpg must still exist -- the fix skips the delete when
+	// the survivor child is not a regular file.
+	loserJPG := filepath.Join(loser.Path, "folder.jpg")
+	if _, statErr := os.Stat(loserJPG); statErr != nil {
+		t.Errorf("loser folder.jpg was incorrectly deleted (data-loss edge); stat err = %v", statErr)
+	}
+
+	// Because the loser dir still holds folder.jpg, it cannot be unlinked.
+	if _, statErr := os.Stat(loser.Path); statErr != nil {
+		t.Errorf("loser dir should remain on disk (folder.jpg blocks removal); stat err = %v", statErr)
+	}
+	if len(res.Removed) != 0 {
+		t.Errorf("Removed = %v, want empty (loser dir not removed due to leftover file)", res.Removed)
+	}
+
+	// A warning must be emitted for the non-empty loser directory.
+	if len(res.Warnings) == 0 {
+		t.Errorf("Warnings = empty, want at least one warning about non-empty loser dir")
+	}
+
+	// result.Deleted must not record folder.jpg -- it was NOT deleted.
+	for _, d := range res.Deleted {
+		if d.Name == "folder.jpg" {
+			t.Errorf("Deleted records folder.jpg but it should not have been deleted (survivor child is a dir, not a file)")
+		}
+	}
+}
+
 // TestMergeArtists_PerChildRenameFailure injects a rename failure between
 // the first and second album subdir. The contract (file header) promises
 // the first move stays, the second is not attempted, and the next merge

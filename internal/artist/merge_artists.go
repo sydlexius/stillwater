@@ -630,7 +630,16 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 	}
 	for _, f := range files {
 		survivorChild := filepath.Join(survivorPath, f.Name())
-		if _, statErr := os.Lstat(survivorChild); statErr == nil {
+		if info, statErr := os.Lstat(survivorChild); statErr == nil {
+			if !info.Mode().IsRegular() {
+				// Survivor has a same-named entry that is NOT a regular
+				// file (e.g. a directory or a symlink). The loser's loose
+				// file has no genuine authoritative survivor copy, so do
+				// not treat it as colliding -- leave it in the loser dir.
+				// The non-empty loser dir will trigger the "still contains"
+				// warning path in executeLoserMerge rather than a delete.
+				continue
+			}
 			// Survivor already has this file; the loser's copy is
 			// redundant and will be deleted during the commit phase.
 			// Record a preview entry so the caller can show what will
@@ -710,7 +719,15 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 	for _, f := range files {
 		src := filepath.Join(loser.Path, f.Name())
 		dst := filepath.Join(survivorPath, f.Name())
-		if _, statErr := os.Lstat(dst); statErr == nil {
+		if info, statErr := os.Lstat(dst); statErr == nil {
+			if !info.Mode().IsRegular() {
+				// Survivor's same-named entry is not a regular file (e.g.
+				// a directory or a symlink). There is no genuine
+				// authoritative survivor copy, so do not delete the
+				// loser's file -- leave it in place. The non-empty loser
+				// dir will surface via the "still contains" warning below.
+				continue
+			}
 			// Survivor already has a file with this name; its copy is
 			// authoritative. Delete the loser's redundant copy so the
 			// loser directory becomes empty and can be unlinked below.
