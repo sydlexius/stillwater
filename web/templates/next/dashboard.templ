@@ -290,7 +290,7 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 				<button
 					id="dashboard-filters-trigger"
 					type="button"
-					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					class={ "inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton }
 					aria-expanded="false"
 					aria-controls="dashboard-filter-flyout"
 					title={ t(ctx, "common.filters") }
@@ -406,12 +406,12 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 						     group: the wide primary face fixes the selection, the narrow caret
 						     toggles the menu. Hidden until the queue has rows. -->
 						<div id="toolbar-bulk-split" class="relative hidden">
-							<div class="inline-flex items-stretch rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-sm">
+							<div class="inline-flex items-stretch rounded-md border border-[var(--swd-line)]">
 								<button
 									id="toolbar-fix-selected-btn"
 									type="button"
 									disabled
-									class="inline-flex items-center gap-1.5 rounded-l-md px-2.5 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+									class="inline-flex items-center gap-1.5 rounded-l-md px-2.5 py-2 text-sm font-medium text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
 									data-label-fix-none={ t(ctx, "dashboard.fix_none_selected") }
 									data-label-fix-one={ t(ctx, "dashboard.fix_n_selected.one") }
 									data-label-fix-other={ t(ctx, "dashboard.fix_n_selected.other") }
@@ -427,7 +427,7 @@ templ DashboardPageNext(assets templates.AssetPaths, stats artist.HealthStatsRes
 									id="toolbar-bulk-menu-toggle"
 									type="button"
 									disabled
-									class="inline-flex items-center rounded-r-md border-l border-gray-300 dark:border-gray-600 px-1.5 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+									class="inline-flex items-center rounded-r-md border-l border-[var(--swd-line)] px-1.5 py-2 text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
 									aria-haspopup="true"
 									aria-expanded="false"
 									aria-controls="toolbar-bulk-menu"

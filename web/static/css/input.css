@@ -3029,8 +3029,16 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * stamps data-selection-active="true"; the grid view's strip is persistent
  * (data-contextual="false") because it hosts the page select-all. */
 .sw-next-artists .sw-next-bulk-strip {
-  border: 1px solid #e5e7eb; /* gray-200 */
-  background: #f9fafb;       /* gray-50 */
+  /* Glass line border (#1890, maintainer 2026-06-16): the strip reconciles to
+   * the same --swd-line glass convention as the dashboard/artists buttons so
+   * the whole bulk surface reads as one treatment. (--swd-line resolves on
+   * .sw-next-artists via the token block below.) The opacity-aware
+   * --swa-surface-elev fill is also set by the #1792 rule further down; sourcing
+   * it directly here (with the gray-50 literal as the var() fallback) makes this
+   * rule self-correct if that rule ever moves or is removed, instead of relying
+   * on source order. */
+  border: 1px solid var(--swd-line);
+  background: var(--swa-surface-elev, #f9fafb);       /* gray-50 fallback */
   /* Freeze the selection strip just below the sticky toolbar (M55 #1335,
    * maintainer 2026-05-30) so bulk-selection context stays visible while
    * scrolling. The offset tracks the toolbar's live height via a JS-set custom
@@ -3042,8 +3050,12 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   z-index: 9;
 }
 .dark .sw-next-artists .sw-next-bulk-strip {
-  border-color: #374151;     /* gray-700 */
-  background: #1f2937;       /* gray-800 */
+  /* Dark glass line: --swd-line carries the dark token value under
+   * .dark .sw-next-artists, so the strip border matches the dark glass buttons.
+   * (This higher-specificity rule must restate the var, else the gray border
+   * would persist over the light rule in dark mode.) */
+  border-color: var(--swd-line);
+  background: var(--swa-surface-elev, #1f2937);       /* gray-800 fallback */
 }
 .sw-next-artists .sw-next-bulk-strip-contextual[data-selection-active="false"] {
   display: none;
@@ -3161,12 +3173,19 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 
 .sw-next-dashboard,
 .sw-next-artist-detail,
-.sw-next-foreign-files {
+.sw-next-foreign-files,
+.sw-next-artists {
   /* Light-theme token ramp (default). Shared by the dashboard, the next/
-   * artist-detail screen (M55 #1336), and the next/ foreign-files screen
-   * (M55 #1773) so all three consume the same prototype card token system.
-   * Without this scope the --swd-* vars are undefined and the cards render
-   * transparent/un-themed (the 4A UAT fidelity miss). */
+   * artist-detail screen (M55 #1336), the next/ foreign-files screen
+   * (M55 #1773), and the next/ artists screen (M55 #1890) so they all consume
+   * the same prototype card token system. Without this scope the --swd-* vars
+   * are undefined and the cards/glass buttons render transparent/un-themed
+   * (the 4A UAT fidelity miss). The artists screen was added for #1890: its
+   * glass/outline toolbar + bulk buttons reference --swd-line / --swd-ink-2
+   * (helpers.go glassButton), but .sw-next-artists is NOT a descendant of the
+   * dashboard/artist-detail scopes, so without listing it here those tokens
+   * were undefined and the buttons fell back to a currentColor border +
+   * inherited text instead of the faint slate glass line. */
   --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
   --swd-bg-raised: #ffffff;     /* card */
   --swd-bg-elev: #f8fafc;       /* row hover / popover */
@@ -3203,8 +3222,11 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 .dark .sw-next-dashboard,
 .dark .sw-next-artist-detail,
-.dark .sw-next-foreign-files {
-  /* Prototype dark token ramp (design/tokens.css verbatim). */
+.dark .sw-next-foreign-files,
+.dark .sw-next-artists {
+  /* Prototype dark token ramp (design/tokens.css verbatim). .sw-next-artists
+   * added for #1890 so its glass buttons resolve --swd-line / --swd-ink-2 in
+   * dark mode too (see the light-theme block above). */
   --swd-bg-base: #0b1220;
   --swd-bg-raised: #111a2e;
   --swd-bg-elev: #1a253f;
