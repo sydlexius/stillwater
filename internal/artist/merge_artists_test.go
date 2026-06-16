@@ -1260,6 +1260,117 @@ func TestValidateMergeRequest_WhitespaceNormalized(t *testing.T) {
 	}
 }
 
+// TestMergeArtists_LoserRowSurvivesWhenNotRemoved is the regression test for
+// #2010 (follow-up to #1779). When executeLoserMerge returns removed=false
+// (the loser directory was left on disk due to a collision -- e.g. the
+// survivor has a same-named directory where the loser has a loose file),
+// commitMergeDB must NOT delete the loser's DB row. A deleted row with a
+// surviving directory causes the scanner to resurrect the loser as a new
+// artist on the next pass.
+//
+// The test uses two losers in the same merge call:
+//   - loserBlocked: has a loose "folder.jpg" that cannot be moved because the
+//     survivor already has a directory named "folder.jpg". Its dir is left on
+//     disk; its DB row must survive.
+//   - loserClean: has a non-colliding album subdir. Its dir is fully removed;
+//     its DB row must be deleted.
+func TestMergeArtists_LoserRowSurvivesWhenNotRemoved(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		 VALUES ('lib-row-survive', 'lib-row-survive', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		root); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+
+	survivorPath := filepath.Join(root, "The Cure")
+	loserBlockedPath := filepath.Join(root, "Cure, The")
+	loserCleanPath := filepath.Join(root, "Cure")
+	for _, p := range []string{survivorPath, loserBlockedPath, loserCleanPath} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", p, err)
+		}
+	}
+
+	// Survivor has an album subdir and a DIRECTORY named "folder.jpg" --
+	// the same name as a loose file on loserBlocked. This makes the survivor
+	// child non-regular, so executeLoserMerge cannot move loserBlocked's
+	// "folder.jpg" and must leave the loser dir on disk.
+	if err := os.Mkdir(filepath.Join(survivorPath, "Disintegration"), 0o755); err != nil {
+		t.Fatalf("mkdir survivor album: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(survivorPath, "folder.jpg"), 0o755); err != nil {
+		t.Fatalf("mkdir survivor folder.jpg dir: %v", err)
+	}
+
+	// loserBlocked: only a loose file that collides with the survivor dir.
+	if err := os.WriteFile(filepath.Join(loserBlockedPath, "folder.jpg"), []byte("blocked-jpg"), 0o600); err != nil {
+		t.Fatalf("write loserBlocked folder.jpg: %v", err)
+	}
+
+	// loserClean: a non-colliding album subdir; it will be fully removed.
+	if err := os.Mkdir(filepath.Join(loserCleanPath, "Wish"), 0o755); err != nil {
+		t.Fatalf("mkdir loserClean album: %v", err)
+	}
+
+	survivor := &Artist{Name: "The Cure", SortName: "Cure, The", Path: survivorPath, LibraryID: "lib-row-survive"}
+	loserBlocked := &Artist{Name: "The Cure", SortName: "Cure, The", Path: loserBlockedPath, LibraryID: "lib-row-survive"}
+	loserClean := &Artist{Name: "The Cure", SortName: "Cure, The", Path: loserCleanPath, LibraryID: "lib-row-survive"}
+	for _, a := range []*Artist{survivor, loserBlocked, loserClean} {
+		if err := svc.Create(ctx, a); err != nil {
+			t.Fatalf("Create %s (%s): %v", a.Name, a.Path, err)
+		}
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivor.ID,
+		LoserIDs:    []string{loserBlocked.ID, loserClean.ID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	// (a) loserBlocked's dir must still exist and its DB row must survive.
+	if _, statErr := os.Stat(loserBlockedPath); statErr != nil {
+		t.Errorf("loserBlocked dir should remain on disk; stat err = %v", statErr)
+	}
+	if _, getErr := svc.GetByID(ctx, loserBlocked.ID); getErr != nil {
+		t.Errorf("loserBlocked DB row must survive (not deleted); GetByID err = %v", getErr)
+	}
+	if len(res.Removed) != 1 || res.Removed[0] != loserClean.ID {
+		t.Errorf("Removed = %v, want [%s] (only loserClean)", res.Removed, loserClean.ID)
+	}
+	if len(res.LosersDeleted) != 1 || res.LosersDeleted[0] != loserClean.ID {
+		t.Errorf("LosersDeleted = %v, want [%s] (only loserClean)", res.LosersDeleted, loserClean.ID)
+	}
+
+	// (b) Warning must be emitted for the non-empty loserBlocked dir.
+	foundNonEmptyWarning := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "still contains") && strings.Contains(w, loserBlockedPath) {
+			foundNonEmptyWarning = true
+			break
+		}
+	}
+	if !foundNonEmptyWarning {
+		t.Errorf("Warnings = %v, want warning about non-empty loserBlocked dir", res.Warnings)
+	}
+
+	// (c) loserClean was fully removed; its DB row must be deleted.
+	if _, statErr := os.Stat(loserCleanPath); !os.IsNotExist(statErr) {
+		t.Errorf("loserClean dir should be removed; stat err = %v", statErr)
+	}
+	if _, getErr := svc.GetByID(ctx, loserClean.ID); !errors.Is(getErr, ErrNotFound) {
+		t.Errorf("loserClean DB row should be deleted; GetByID err = %v", getErr)
+	}
+}
+
 // --- small helpers ----------------------------------------------------------
 
 func dirNames(entries []os.DirEntry) []string {

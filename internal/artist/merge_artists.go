@@ -820,11 +820,25 @@ func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArti
 		}
 	}
 
+	// Only delete DB rows for losers whose directory was actually removed
+	// from disk (i.e. those recorded in result.Removed). A loser left on
+	// disk (removed=false, e.g. blocked by a non-regular survivor child)
+	// must keep its row so the scanner reconciles to the existing entry
+	// rather than resurrecting it as a new artist (#2010, follow-up to #1779).
+	// Metadata-forward (MBID fill above) still runs for all losers.
+	removedSet := make(map[string]bool, len(result.Removed))
+	for _, id := range result.Removed {
+		removedSet[id] = true
+	}
+
 	// Collect deleted IDs locally; only assign to result.LosersDeleted on
 	// successful commit so a failed commit does not falsely advertise
 	// loser-row deletions that never persisted.
 	var deletedIDs []string
 	for _, l := range losers {
+		if !removedSet[l.ID] {
+			continue
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM artists WHERE id = ?`, l.ID); err != nil {
 			return fmt.Errorf("deleting loser %s: %w", l.ID, err)
 		}
