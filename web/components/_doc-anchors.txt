@@ -389,6 +389,7 @@ how-to/reverse-proxy#verifying-the-proxy-works
 how-to/reverse-proxy#what-stillwater-expects-from-a-reverse-proxy
 how-to/run-scans#concurrent-scan-safety
 how-to/run-scans#imported-libraries
+how-to/run-scans#loser-directory-cleanup-after-a-merge
 how-to/run-scans#manual-libraries
 how-to/run-scans#monitor-an-in-progress-scan
 how-to/run-scans#possible-duplicate-artists

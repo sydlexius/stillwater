@@ -127,3 +127,9 @@ Each group offers a **Merge** action. Click it to open a confirmation modal that
 3. Lowest artist ID as a deterministic fallback if neither rule applies.
 
 You can override the recommendation by selecting a different survivor in the modal; the orchestrator will flag the deviation in the response but the merge still runs. Confirming the merge consolidates the directories on disk and collapses the artist records into one.
+
+### Loser directory cleanup after a merge
+
+After the album subdirectories are moved, Stillwater removes any loose metadata files (NFO files, artwork) that remain in the loser's directory and have a matching regular file in the survivor's directory. This step is **destructive** -- the loser's copies are permanently deleted from disk so that the loser's directory is left empty and can be removed, preventing the duplicate artist from reappearing on the next scan.
+
+A loser file is only deleted when the survivor already has a regular file at the same relative path. Survivor entries that are directories or symlinks are left alone, so the cleanup never removes files that the survivor side cannot clearly cover.
