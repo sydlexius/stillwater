@@ -58,7 +58,10 @@ const glassButton = "rounded-md border border-[var(--swd-line)] text-[var(--swd-
 // glassButtonHalo is appended (via templ.KV or concatenation) when a glass
 // button is in its active/pressed state. An inset ring keeps the halo inside
 // the element's border, matching the artist-detail kind-tab convention.
-const glassButtonHalo = "ring-2 ring-blue-500 ring-inset"
+// focus:ring-4 focus:ring-blue-700 override the base glassButton focus ring
+// (ring-2 ring-blue-500) with a heavier, darker indicator so keyboard focus
+// is distinguishable from the always-on halo (WCAG 2.4.7).
+const glassButtonHalo = "ring-2 ring-blue-500 ring-inset focus:ring-4 focus:ring-blue-700"
 
 // Filter-trigger class sets for the next/ toolbar. The glass base is already
 // on the element (glassButton); these constants only carry the toggled overlays
