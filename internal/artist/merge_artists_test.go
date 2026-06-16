@@ -678,11 +678,13 @@ func TestMergeArtists_MultipleLosers(t *testing.T) {
 	}
 }
 
-// TestMergeArtists_LooseFileCollision exercises the survivor-wins
-// loose-file collision path. The pre-flight collision walk warns (but
-// does not halt) when a loose file with the same name exists on both
-// sides; the commit phase leaves the loser file in place and therefore
-// the loser directory is NOT removed (the post-rename dir is non-empty).
+// TestMergeArtists_LooseFileCollision exercises the survivor-wins loose-file
+// collision path. When a loose file with the same name exists on both sides
+// the survivor's copy is authoritative; the loser's redundant copy is deleted
+// so the loser directory becomes empty and can be unlinked. This is the fix
+// for the resurrection bug (#1779): previously the loser directory was left on
+// disk with its colliding files intact, causing the next scan to re-promote it
+// as a new artist row.
 //
 // TG3 in the PR #1654 triage doc.
 func TestMergeArtists_LooseFileCollision(t *testing.T) {
@@ -714,16 +716,18 @@ func TestMergeArtists_LooseFileCollision(t *testing.T) {
 	}
 
 	// The loose-file collision should NOT halt the merge; album subdirs
-	// should still move. But the loser dir must remain because folder.jpg
-	// stays inside it.
-	if len(res.Removed) != 0 {
-		t.Errorf("Removed = %v, want empty (loose-file collision blocked dir removal)", res.Removed)
+	// should still move. The colliding loser file is deleted, leaving the
+	// loser directory empty so it can be unlinked.
+	if len(res.Removed) != 1 || res.Removed[0] != loserID {
+		t.Errorf("Removed = %v, want [%s] (loser dir should be unlinked after collision delete)", res.Removed, loserID)
 	}
-	if _, err := os.Stat(loser.Path); err != nil {
-		t.Errorf("loser dir should still exist: %v", err)
+	if _, err := os.Stat(loser.Path); !os.IsNotExist(err) {
+		t.Errorf("loser dir should be removed after merge, stat err = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(loser.Path, "folder.jpg")); err != nil {
-		t.Errorf("loser folder.jpg should still be in place: %v", err)
+	// The loser's folder.jpg was deleted (redundant copy); survivor's copy
+	// is untouched.
+	if _, err := os.Stat(filepath.Join(loser.Path, "folder.jpg")); !os.IsNotExist(err) {
+		t.Errorf("loser folder.jpg should have been deleted, stat err = %v", err)
 	}
 	// The survivor's original folder.jpg should be untouched (survivor wins).
 	got, err := os.ReadFile(filepath.Join(survivor.Path, "folder.jpg"))
@@ -732,24 +736,256 @@ func TestMergeArtists_LooseFileCollision(t *testing.T) {
 	} else if string(got) != "survivor-jpg" {
 		t.Errorf("survivor folder.jpg content = %q, want %q (overwritten by loser)", got, "survivor-jpg")
 	}
-	// A warning should mention the collided file by name so the operator
-	// can investigate.
-	foundWarning := false
-	for _, w := range res.Warnings {
-		if strings.Contains(w, "folder.jpg") {
-			foundWarning = true
+	// result.Deleted should record the deletion.
+	foundDeleted := false
+	for _, d := range res.Deleted {
+		if d.Name == "folder.jpg" {
+			foundDeleted = true
 			break
 		}
 	}
-	if !foundWarning {
-		t.Errorf("expected warning mentioning folder.jpg, got %v", res.Warnings)
+	if !foundDeleted {
+		t.Errorf("expected Deleted entry for folder.jpg, got %v", res.Deleted)
 	}
-	// LosersDeleted SHOULD still contain the loser ID -- the DB row is
-	// deleted even though the dir was not unlinked. That asymmetry is
-	// documented; the next scan will re-promote the leftover dir into a
-	// fresh row that the operator can clean up manually.
-	if len(res.LosersDeleted) != 1 {
+	// Both the DB row and the directory are gone; no resurrection is possible.
+	if len(res.LosersDeleted) != 1 || res.LosersDeleted[0] != loserID {
 		t.Errorf("LosersDeleted = %v, want [%s]", res.LosersDeleted, loserID)
+	}
+}
+
+// TestMergeArtists_LooseFileOnlyLoser tests the exact resurrection bug
+// scenario from #1779: the loser artist directory contains ONLY loose files
+// (no album subdirectories) and every one of those files already exists under
+// the survivor. Before the fix, the loser DB row was deleted but the directory
+// was left on disk, causing the next scan to re-promote it as a new artist.
+// After the fix, the colliding files are deleted, the directory becomes empty,
+// and the loser row + directory are both removed.
+func TestMergeArtists_LooseFileOnlyLoser(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		 VALUES ('lib-loose-only', 'lib-loose-only', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		root); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+
+	// "The Cure" and "Cure, The" normalize to the same duplicate key, so they
+	// will be grouped by DetectDuplicates. The loser has NO album subdirs --
+	// only loose files that all collide with the survivor. This is the
+	// resurrection bug scenario: the directory-only-metadata case.
+	survivorPath := filepath.Join(root, "The Cure")
+	loserPath := filepath.Join(root, "Cure, The")
+	for _, p := range []string{survivorPath, loserPath} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", p, err)
+		}
+	}
+
+	// Survivor has an album subdir and the same loose files as the loser.
+	if err := os.Mkdir(filepath.Join(survivorPath, "Disintegration"), 0o755); err != nil {
+		t.Fatalf("mkdir survivor album: %v", err)
+	}
+	looseFiles := []string{"artist.nfo", "folder.jpg", "fanart.jpg"}
+	for _, f := range looseFiles {
+		if err := os.WriteFile(filepath.Join(survivorPath, f), []byte("survivor-"+f), 0o600); err != nil {
+			t.Fatalf("seed survivor %s: %v", f, err)
+		}
+		// Loser has identically named files -- all collide with survivor.
+		if err := os.WriteFile(filepath.Join(loserPath, f), []byte("loser-"+f), 0o600); err != nil {
+			t.Fatalf("seed loser %s: %v", f, err)
+		}
+	}
+
+	survivor := &Artist{Name: "The Cure", SortName: "Cure, The", Path: survivorPath, LibraryID: "lib-loose-only"}
+	loser := &Artist{Name: "The Cure", SortName: "Cure, The", Path: loserPath, LibraryID: "lib-loose-only"}
+	if err := svc.Create(ctx, survivor); err != nil {
+		t.Fatalf("Create survivor: %v", err)
+	}
+	if err := svc.Create(ctx, loser); err != nil {
+		t.Fatalf("Create loser: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivor.ID,
+		LoserIDs:    []string{loser.ID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	// Loser directory must be gone -- no resurrection on next scan.
+	if _, statErr := os.Stat(loserPath); !os.IsNotExist(statErr) {
+		t.Errorf("loser dir should be removed (resurrection bug): stat err = %v", statErr)
+	}
+	// All colliding files must be deleted from the loser.
+	for _, f := range looseFiles {
+		if _, statErr := os.Stat(filepath.Join(loserPath, f)); !os.IsNotExist(statErr) {
+			t.Errorf("loser %s should be deleted: stat err = %v", f, statErr)
+		}
+	}
+	// Survivor's files must be untouched (survivor wins).
+	for _, f := range looseFiles {
+		got, err := os.ReadFile(filepath.Join(survivorPath, f))
+		if err != nil {
+			t.Errorf("survivor %s missing: %v", f, err)
+		} else if string(got) != "survivor-"+f {
+			t.Errorf("survivor %s = %q, want %q", f, got, "survivor-"+f)
+		}
+	}
+	// Both the DB row and directory are gone.
+	if len(res.Removed) != 1 || res.Removed[0] != loser.ID {
+		t.Errorf("Removed = %v, want [%s]", res.Removed, loser.ID)
+	}
+	if len(res.LosersDeleted) != 1 || res.LosersDeleted[0] != loser.ID {
+		t.Errorf("LosersDeleted = %v, want [%s]", res.LosersDeleted, loser.ID)
+	}
+	// result.Deleted should have an entry for each colliding file.
+	if len(res.Deleted) != len(looseFiles) {
+		t.Errorf("Deleted = %v (%d entries), want %d (one per colliding file)", res.Deleted, len(res.Deleted), len(looseFiles))
+	}
+	// The loser row is gone from the DB.
+	if _, err := svc.GetByID(ctx, loser.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected loser row deleted (ErrNotFound), got err = %v", err)
+	}
+}
+
+// TestMergeArtists_DryRunDeletesPreview verifies that a dry-run merge
+// previews colliding loose-file deletions in result.Deleted (not
+// result.Warnings) and makes no filesystem changes.
+func TestMergeArtists_DryRunDeletesPreview(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor, _ := svc.GetByID(ctx, survivorID)
+	loser, _ := svc.GetByID(ctx, loserID)
+
+	// Seed a loose file collision: same name on both sides.
+	if err := os.WriteFile(filepath.Join(survivor.Path, "folder.jpg"), []byte("survivor-jpg"), 0o600); err != nil {
+		t.Fatalf("seed survivor folder.jpg: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loser.Path, "folder.jpg"), []byte("loser-jpg"), 0o600); err != nil {
+		t.Fatalf("seed loser folder.jpg: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		DryRun:      true,
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("DryRun MergeArtists: %v", err)
+	}
+	if !res.DryRun {
+		t.Errorf("DryRun flag not set in result")
+	}
+
+	// Dry-run should populate Deleted with preview entries for colliding files.
+	foundDeleted := false
+	for _, d := range res.Deleted {
+		if d.Name == "folder.jpg" {
+			foundDeleted = true
+			break
+		}
+	}
+	if !foundDeleted {
+		t.Errorf("DryRun Deleted = %v, want preview entry for folder.jpg", res.Deleted)
+	}
+
+	// Dry-run must not mutate the filesystem.
+	if _, err := os.Stat(filepath.Join(loser.Path, "folder.jpg")); err != nil {
+		t.Errorf("dry-run should not remove loser folder.jpg: %v", err)
+	}
+	if _, err := os.Stat(loser.Path); err != nil {
+		t.Errorf("dry-run should not remove loser dir: %v", err)
+	}
+
+	// Dry-run Moved, Removed, and LosersDeleted must be empty.
+	if len(res.Moved) != 0 {
+		t.Errorf("DryRun Moved = %v, want empty", res.Moved)
+	}
+	if len(res.Removed) != 0 {
+		t.Errorf("DryRun Removed = %v, want empty", res.Removed)
+	}
+	if len(res.LosersDeleted) != 0 {
+		t.Errorf("DryRun LosersDeleted = %v, want empty", res.LosersDeleted)
+	}
+}
+
+// TestMergeArtists_LooseFileCollision_SurvivorDirectory verifies the
+// regular-file hardening added in #1779: when the survivor's same-named
+// child is a DIRECTORY (not a regular file) the loser's loose file must
+// NOT be deleted -- there is no genuine authoritative survivor copy.
+// The loser directory therefore remains on disk (non-empty), a warning
+// is recorded, and result.Deleted has no entry for that file.
+func TestMergeArtists_LooseFileCollision_SurvivorDirectory(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor, _ := svc.GetByID(ctx, survivorID)
+	loser, _ := svc.GetByID(ctx, loserID)
+
+	// Place a DIRECTORY named "folder.jpg" under the survivor -- same name
+	// as a loose file we add to the loser. This is the edge case: the
+	// survivor has a same-named child that is not a regular file.
+	if err := os.Mkdir(filepath.Join(survivor.Path, "folder.jpg"), 0o755); err != nil {
+		t.Fatalf("mkdir survivor folder.jpg dir: %v", err)
+	}
+	// Loser has the genuine regular file. Without the fix this would be
+	// deleted (data loss); with the fix it must be preserved.
+	if err := os.WriteFile(filepath.Join(loser.Path, "folder.jpg"), []byte("loser-jpg"), 0o600); err != nil {
+		t.Fatalf("write loser folder.jpg: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	// Loser's folder.jpg must still exist -- the fix skips the delete when
+	// the survivor child is not a regular file.
+	loserJPG := filepath.Join(loser.Path, "folder.jpg")
+	if _, statErr := os.Stat(loserJPG); statErr != nil {
+		t.Errorf("loser folder.jpg was incorrectly deleted (data-loss edge); stat err = %v", statErr)
+	}
+
+	// Because the loser dir still holds folder.jpg, it cannot be unlinked.
+	if _, statErr := os.Stat(loser.Path); statErr != nil {
+		t.Errorf("loser dir should remain on disk (folder.jpg blocks removal); stat err = %v", statErr)
+	}
+	if len(res.Removed) != 0 {
+		t.Errorf("Removed = %v, want empty (loser dir not removed due to leftover file)", res.Removed)
+	}
+
+	// A warning must be emitted for the non-empty loser directory.
+	foundNonEmptyWarning := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "still contains") && strings.Contains(w, loser.Path) {
+			foundNonEmptyWarning = true
+			break
+		}
+	}
+	if !foundNonEmptyWarning {
+		t.Errorf("Warnings = %v, want warning about non-empty loser dir %s", res.Warnings, loser.Path)
+	}
+
+	// result.Deleted must not record folder.jpg -- it was NOT deleted.
+	for _, d := range res.Deleted {
+		if d.Name == "folder.jpg" {
+			t.Errorf("Deleted records folder.jpg but it should not have been deleted (survivor child is a dir, not a file)")
+		}
 	}
 }
 
@@ -847,9 +1083,9 @@ func TestMergeArtists_PerChildRenameFailure(t *testing.T) {
 	// instrumenting the orchestrator, this test instead pre-creates the
 	// collision and asserts the pre-flight HALT semantics (a stronger
 	// guarantee than per-child resume because nothing moves at all).
-	// CG1's resume guarantee is exercised by the loose-file collision
-	// test (TestMergeArtists_LooseFileCollision) which proves the
-	// partial-state path (some children move, dir stays, row deleted).
+	// CG1's resume guarantee is exercised by the ENOENT recovery test
+	// (TestMergeArtists_ENOENTRecovery) which proves the crash-recovery
+	// path (dir already gone, orphan row cleaned up on re-run).
 	//
 	// Specifically here we prove: a post-preflight halt leaves zero
 	// half-state on disk AND a re-run resumes the same group cleanly.
