@@ -13,6 +13,9 @@ import "github.com/sydlexius/stillwater/web/templates"
 // BottomTabs is the next/ channel's mobile bottom tab bar. For the #1340 scaffold
 // it delegates to the existing stable component (full parity); screen issues
 // restyle it later.
+//
+// Delegation note: any signature change to templates.BottomTabs must be
+// reflected here to keep the next/ wrapper in sync.
 func BottomTabs(assets templates.AssetPaths) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

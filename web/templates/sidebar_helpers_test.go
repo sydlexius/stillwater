@@ -1,15 +1,12 @@
-package next
+package templates
 
-// sidebar_helpers_test.go -- unit coverage for the sidebar display-name and
-// avatar-initial helpers (#1778).
+// sidebar_helpers_test.go -- unit coverage for the shared sidebar display-name
+// and avatar-initial helpers (#1944). Relocated from web/templates/next/ when
+// the helpers were unified into the templates package.
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/sydlexius/stillwater/web/templates"
-)
-
-func TestSidebarName(t *testing.T) {
+func TestSidebarDisplayName(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		desc        string
@@ -24,9 +21,8 @@ func TestSidebarName(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.desc, func(t *testing.T) {
-			a := templates.AssetPaths{DisplayName: c.displayName, Username: c.username}
-			if got := sidebarName(a); got != c.want {
-				t.Errorf("sidebarName(%q, %q) = %q, want %q", c.displayName, c.username, got, c.want)
+			if got := SidebarDisplayName(c.displayName, c.username); got != c.want {
+				t.Errorf("SidebarDisplayName(%q, %q) = %q, want %q", c.displayName, c.username, got, c.want)
 			}
 		})
 	}
@@ -47,8 +43,8 @@ func TestSidebarInitial(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.desc, func(t *testing.T) {
-			if got := sidebarInitial(c.in); got != c.want {
-				t.Errorf("sidebarInitial(%q) = %q, want %q", c.in, got, c.want)
+			if got := SidebarInitial(c.in); got != c.want {
+				t.Errorf("SidebarInitial(%q) = %q, want %q", c.in, got, c.want)
 			}
 		})
 	}
