@@ -551,3 +551,88 @@ func TestArtistDetailHref(t *testing.T) {
 		t.Errorf("empty-base href = %q, want %q", got, "/artists/id1")
 	}
 }
+
+// TestCleanBannerTitle covers both branches of the green-banner headline
+// helper (#1793): the generic "All clear." title when no connections are
+// managed, and the "Managed by Stillwater." title when one or more are.
+func TestCleanBannerTitle(t *testing.T) {
+	ctx := testCtx(t)
+	tests := []struct {
+		name string
+		view ConflictBannerView
+		want string
+	}{
+		{
+			name: "empty managed connections -> generic title",
+			view: ConflictBannerView{},
+			want: "All clear.",
+		},
+		{
+			name: "one managed connection -> managed title",
+			view: ConflictBannerView{ManagedConnections: []ConflictBannerConn{{Name: "Emby"}}},
+			want: "Managed by Stillwater.",
+		},
+		{
+			name: "multiple managed connections -> managed title",
+			view: ConflictBannerView{ManagedConnections: []ConflictBannerConn{{Name: "Emby"}, {Name: "Jellyfin"}}},
+			want: "Managed by Stillwater.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanBannerTitle(ctx, tt.view); got != tt.want {
+				t.Errorf("cleanBannerTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCleanBannerBody covers both branches of the green-banner body helper
+// (#1793). The empty case returns the generic "no conflict gating" copy and
+// must NOT name any platform; the managed case names every managed connection
+// (joined by ", ", in order, falling back to Type when Name is blank).
+func TestCleanBannerBody(t *testing.T) {
+	ctx := testCtx(t)
+
+	t.Run("empty managed connections -> generic body, names nothing", func(t *testing.T) {
+		got := cleanBannerBody(ctx, ConflictBannerView{})
+		want := "No conflict gating is active. No write-back or round-trip overlap detected."
+		if got != want {
+			t.Errorf("cleanBannerBody() = %q, want %q", got, want)
+		}
+		// Guard against the managed copy leaking into the generic branch.
+		if strings.Contains(got, "Write-back savers disabled") {
+			t.Errorf("generic body unexpectedly contains managed copy: %q", got)
+		}
+	})
+
+	t.Run("single managed connection names the platform", func(t *testing.T) {
+		got := cleanBannerBody(ctx, ConflictBannerView{
+			ManagedConnections: []ConflictBannerConn{{Name: "My Emby"}},
+		})
+		want := "Write-back savers disabled on: My Emby. Metadata changes are controlled by Stillwater."
+		if got != want {
+			t.Errorf("cleanBannerBody() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("multiple managed connections joined by comma in order", func(t *testing.T) {
+		got := cleanBannerBody(ctx, ConflictBannerView{
+			ManagedConnections: []ConflictBannerConn{{Name: "Emby"}, {Name: "Jellyfin"}, {Name: "Kodi"}},
+		})
+		want := "Write-back savers disabled on: Emby, Jellyfin, Kodi. Metadata changes are controlled by Stillwater."
+		if got != want {
+			t.Errorf("cleanBannerBody() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("blank Name falls back to Type", func(t *testing.T) {
+		got := cleanBannerBody(ctx, ConflictBannerView{
+			ManagedConnections: []ConflictBannerConn{{Name: "", Type: "emby"}, {Name: "Library", Type: "jellyfin"}},
+		})
+		want := "Write-back savers disabled on: emby, Library. Metadata changes are controlled by Stillwater."
+		if got != want {
+			t.Errorf("cleanBannerBody() = %q, want %q", got, want)
+		}
+	})
+}
