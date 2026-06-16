@@ -2998,8 +2998,17 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 .dark .sw-next-foreign-files .sw-kbd::before {
   background: var(--sw-glass-bg, #0f172a);
 }
+/* Keyboard-shortcut footer (.sw-list-tips) -- ONE shared treatment across every
+ * next/ surface that renders it (artists, dashboard, artist-detail #1939,
+ * foreign-files #1939). The dashboard is the maintainer-blessed benchmark; this
+ * rule makes all four match it EXACTLY: same layout, same opacity-tracking
+ * panel, same hairline border, radius, and padding. Previously the panel was
+ * scoped to .sw-next-dashboard only and artist-detail carried a bespoke
+ * (non-matching) surface, so the footers diverged -- that divergence is the bug
+ * this consolidation fixes. */
 .sw-next-artists .sw-list-tips,
 .sw-next-dashboard .sw-list-tips,
+.sw-next-artist-detail .sw-list-tips,
 .sw-next-foreign-files .sw-list-tips {
   margin-top: 0.75rem;
   display: flex;
@@ -3008,36 +3017,35 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   gap: 0.25rem 0.75rem;
   /* --sw-type-meta is defined on .sw-next-artists and .sw-next-dashboard
    * (0.75rem each) so the Font Size pref rescales the tip line there through the
-   * root font-size (#1853). The foreign-files scope (#1939) doesn't define it,
-   * so the fallback (the same max(0.75rem, 10px)) keeps that footer's prose at
-   * the identical size. The artist-detail footer has its own rule below. */
+   * root font-size (#1853). The artist-detail/foreign-files scopes don't define
+   * it, so the fallback (the same max(0.75rem, 10px)) keeps their prose at the
+   * identical size. */
   font-size: var(--sw-type-meta, max(0.75rem, 10px));
-  /* slate-500: AA-legible for text-xs copy on the light theme's white surface.
-   * The lighter slate-400 used here before was too faint at this size. The
-   * dark-theme override below restores slate-400, which reads correctly on the
-   * dark surface. Shared with the next/ artists screen (intended). */
+  /* slate-500: AA-legible for text-xs copy on the light theme's surface; the
+   * dark override below restores slate-400. Uniform across all four footers. */
   color: #64748b;
+  /* a11y / #1784 contrast floor + opacity-tracking panel: the tips row sits over
+   * the dynamic photo backdrop, where bare text + keycaps were illegible. The
+   * fill routes through --swd-surface (== var(--sw-glass-bg) -- the SAME
+   * opacity-driven chain .sw-dash-card uses), so dragging the Background Opacity
+   * slider moves the footer backdrop too; it is NOT a baked alpha. The dashboard,
+   * artist-detail and foreign-files scopes define --swd-* via the shared token
+   * block (#1851); the artists scope doesn't, so each var() carries the identical
+   * underlying value as its fallback (glass token, slate hairline, 10px radius)
+   * to keep all four byte-identical. The dark hairline is set in the .dark rule
+   * below (the --swd-line token is theme-flipped there for the swd scopes; the
+   * artists fallback supplies the matching dark slate). */
+  padding: 6px 10px;
+  background: var(--swd-surface, var(--sw-glass-bg));
+  border: 1px solid var(--swd-line, rgba(15, 23, 42, 0.10));
+  border-radius: var(--swd-r-2, 10px);
 }
 .dark .sw-next-artists .sw-list-tips,
 .dark .sw-next-dashboard .sw-list-tips,
+.dark .sw-next-artist-detail .sw-list-tips,
 .dark .sw-next-foreign-files .sw-list-tips {
   color: #94a3b8;
-}
-/* a11y / #1784 contrast floor: the keyboard-shortcut tips row sits over the
- * dynamic photo backdrop, where the bare tip text + keycaps were illegible.
- * Give the row a frosted surface whose opacity tracks the Background Opacity
- * pref -- --swd-surface == var(--sw-glass-bg) on .sw-next-dashboard (the #1851
- * token block), mirroring .sw-dash-card -- so the row stays legible at high AND
- * low opacity in both themes with no bespoke pref hook. Scoped to
- * .sw-next-dashboard so the artists screen keeps its own (the artist-detail
- * teammate scopes the equivalent on its surface, avoiding a shared-rule clash).
- * The existing tip-text colors were authored AA-on-surface, so they need no
- * change now that a surface exists. */
-.sw-next-dashboard .sw-list-tips {
-  padding: 6px 10px;
-  background: var(--swd-surface);
-  border: 1px solid var(--swd-line);
-  border-radius: var(--swd-r-2);
+  border-color: var(--swd-line, rgba(148, 163, 184, 0.14));
 }
 
 /* next/ bulk selection strip (M55 #1335): the dissolved bulk bar's contextual
@@ -3947,32 +3955,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   backdrop-filter: none;
 }
 
-/* #1784 contrast floor: the bottom keyboard-shortcuts tips row on the
- * artist-detail page sits over the ambient fanart backdrop, so (unlike the
- * artists/dashboard screens, which have no photo behind it) it needs its own
- * surface. The surface sources --sw-glass-bg, so its opacity tracks the global
- * Background Opacity preference (the maintainer-endorsed reference impl). The
- * blur drops under lite mode. */
-.sw-next-artist-detail .sw-list-tips {
-  margin-top: 0.75rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem 0.75rem;
-  font-size: 12px;
-  color: #475569;
-  background: var(--sw-glass-bg);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  backdrop-filter: blur(6px);
-}
-.dark .sw-next-artist-detail .sw-list-tips {
-  color: #cbd5e1;
-}
-[data-lite="on"] .sw-next-artist-detail .sw-list-tips {
-  backdrop-filter: none;
-}
+/* The artist-detail keyboard-shortcuts tips row (#1784 contrast floor) is now
+ * styled by the shared .sw-list-tips rule near the top of this file, so every
+ * next/ footer (artists, dashboard, artist-detail, foreign-files) sits on the
+ * identical dashboard-benchmark panel: an opacity-tracking --swd-surface fill
+ * (== var(--sw-glass-bg)) plus the matching hairline/radius/padding. The prior
+ * bespoke surface (its own border/radius/padding + backdrop-filter blur) was
+ * removed because it diverged from that benchmark. */
 
 /* Biography and Members reuse the shared text-lg (18px) <h2>; inside the Details
  * card pull those group headings onto the same step as .sw-next-subhead so
