@@ -722,9 +722,9 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var44 string
-			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(sidebarInitial(sidebarName(assets)))
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(templates.SidebarInitial(templates.SidebarDisplayName(assets.DisplayName, assets.Username)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 269, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 269, Col: 170}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -740,9 +740,9 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var45 string
-			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(sidebarInitial(sidebarName(assets)))
+			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(templates.SidebarInitial(templates.SidebarDisplayName(assets.DisplayName, assets.Username)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 271, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 271, Col: 148}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -758,9 +758,9 @@ func Sidebar(assets templates.AssetPaths) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var46 string
-		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(sidebarName(assets))
+		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(templates.SidebarDisplayName(assets.DisplayName, assets.Username))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 274, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/sidebar.templ`, Line: 274, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {

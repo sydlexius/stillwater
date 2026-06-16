@@ -13,24 +13,6 @@ type SidebarData struct {
 	Version     string
 }
 
-// sidebarDisplayName returns the display name if set, otherwise the username.
-func sidebarDisplayName(data SidebarData) string {
-	if data.DisplayName != "" {
-		return data.DisplayName
-	}
-	return data.Username
-}
-
-// sidebarInitial returns the first character of s for the avatar initial,
-// or "?" if the string is empty.
-func sidebarInitial(s string) string {
-	runes := []rune(s)
-	if len(runes) == 0 {
-		return "?"
-	}
-	return string(runes[:1])
-}
-
 // Sidebar renders the three-state sidebar navigation component.
 // States are controlled via data-sidebar-state attribute: "full", "icon-only", "hidden".
 // The initial state is set by preferences.js from the user's saved preference.
@@ -246,7 +228,7 @@ templ Sidebar(data SidebarData) {
 			}
 			<div class="sw-sidebar-divider"></div>
 			<!-- User profile -->
-			<div class="sw-sidebar-user" title={ sidebarDisplayName(data) }>
+			<div class="sw-sidebar-user" title={ SidebarDisplayName(data.DisplayName, data.Username) }>
 				if data.AvatarURL != "" {
 					<img
 						src={ data.AvatarURL }
@@ -256,15 +238,15 @@ templ Sidebar(data SidebarData) {
 						onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
 					/>
 					<div class="sw-sidebar-avatar" aria-hidden="true" style="display:none;">
-						{ sidebarInitial(sidebarDisplayName(data)) }
+						{ SidebarInitial(SidebarDisplayName(data.DisplayName, data.Username)) }
 					</div>
 				} else {
 					<div class="sw-sidebar-avatar" aria-hidden="true">
-						{ sidebarInitial(sidebarDisplayName(data)) }
+						{ SidebarInitial(SidebarDisplayName(data.DisplayName, data.Username)) }
 					</div>
 				}
 				<div class="sw-sidebar-user-info">
-					<span class="sw-sidebar-user-name">{ sidebarDisplayName(data) }</span>
+					<span class="sw-sidebar-user-name">{ SidebarDisplayName(data.DisplayName, data.Username) }</span>
 					<span class="sw-sidebar-user-role">{ data.Role }</span>
 				</div>
 				<button
