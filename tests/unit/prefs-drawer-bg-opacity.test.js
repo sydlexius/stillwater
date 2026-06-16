@@ -62,20 +62,21 @@ function fireChange(win, slider, value) {
 }
 
 describe('prefs-drawer bg-opacity: live preview on input', () => {
-  it('dragging applies --sw-glass-bg without the legacy globals (dark theme)', () => {
+  it('dragging an in-range value applies --sw-glass-bg without the legacy globals (dark theme)', () => {
     const dom = setup('dark');
     const win = dom.window;
     const slider = win.document.getElementById('pref-d-bg-opacity');
 
-    fireInput(win, slider, 50);
+    // 90 is within [85, 100]; alpha must track the slider exactly.
+    fireInput(win, slider, 90);
 
-    // Dark surface base is rgb(30,41,59); alpha tracks the slider (50% -> 0.5).
+    // Dark surface base is rgb(30,41,59); alpha tracks the slider (90% -> 0.9).
     assert.equal(
       win.document.documentElement.style.getPropertyValue('--sw-glass-bg'),
-      'rgba(30, 41, 59, 0.5)',
+      'rgba(30, 41, 59, 0.9)',
     );
     // The % label updates too.
-    assert.equal(win.document.getElementById('pref-d-bg-opacity-value').textContent, '50%');
+    assert.equal(win.document.getElementById('pref-d-bg-opacity-value').textContent, '90%');
   });
 
   it('light theme uses the white surface base', () => {
@@ -83,11 +84,40 @@ describe('prefs-drawer bg-opacity: live preview on input', () => {
     const win = dom.window;
     const slider = win.document.getElementById('pref-d-bg-opacity');
 
-    fireInput(win, slider, 60);
+    // 90 is within [85, 100]; alpha must track the slider exactly.
+    fireInput(win, slider, 90);
 
     assert.equal(
       win.document.documentElement.style.getPropertyValue('--sw-glass-bg'),
-      'rgba(255, 255, 255, 0.6)',
+      'rgba(255, 255, 255, 0.9)',
+    );
+  });
+
+  it('sub-85 value is clamped to the 85% opacity floor (dark theme)', () => {
+    const dom = setup('dark');
+    const win = dom.window;
+    const slider = win.document.getElementById('pref-d-bg-opacity');
+
+    // 50 is below the global 85% floor; the CSS property must render at 0.85.
+    fireInput(win, slider, 50);
+
+    assert.equal(
+      win.document.documentElement.style.getPropertyValue('--sw-glass-bg'),
+      'rgba(30, 41, 59, 0.85)',
+    );
+  });
+
+  it('sub-85 value is clamped to the 85% opacity floor (light theme)', () => {
+    const dom = setup('');
+    const win = dom.window;
+    const slider = win.document.getElementById('pref-d-bg-opacity');
+
+    // 30 is well below the floor; the CSS property must render at 0.85.
+    fireInput(win, slider, 30);
+
+    assert.equal(
+      win.document.documentElement.style.getPropertyValue('--sw-glass-bg'),
+      'rgba(255, 255, 255, 0.85)',
     );
   });
 
