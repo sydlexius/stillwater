@@ -32,6 +32,22 @@ Step-by-step procedures for the common operations. For background and *why*, see
 
     [Read more](filter-artists.md)
 
+- __Customize preferences__
+
+    ---
+
+    Adjust theme, layout density, typography, and per-artist section order from the Preferences drawer.
+
+    [Read more](customize-preferences.md)
+
+- __Quick Actions__
+
+    ---
+
+    Cycle themes, open the keyboard shortcut reference, and log out from the sidebar Quick Actions bar.
+
+    [Read more](quick-actions.md)
+
 - __Refresh metadata__
 
     ---
