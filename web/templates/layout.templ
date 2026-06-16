@@ -92,6 +92,13 @@ type AssetPaths struct {
 	Version string
 }
 
+// Layout is the page shell for the stable UI channel.
+//
+// Chrome composition pattern: LayoutHead, LayoutBackdrop, and
+// LayoutGlobalChrome are shared components used by both stable and next
+// channels; Sidebar and BottomTabs are channel-specific. Shared sidebar
+// display helpers (SidebarInitial, SidebarDisplayName) live in
+// web/templates/sidebar_helpers.go.
 templ Layout(title string, assets AssetPaths) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
