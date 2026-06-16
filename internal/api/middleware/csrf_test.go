@@ -135,6 +135,7 @@ func TestCSRF_UnsafeMethodWithInvalidToken(t *testing.T) {
 		{"empty signature", tsPart + ":" + noncePart + ":"},
 		{"empty nonce", tsPart + "::" + strings.Repeat("ff", 32)},
 		{"empty timestamp", ":" + noncePart + ":" + strings.Repeat("ff", 32)},
+		{"bad hex in nonce", tsPart + ":notvalidhex!:" + strings.Repeat("ff", 32)},
 		{"bad hex in signature", tsPart + ":" + noncePart + ":notvalidhex!"},
 		{"tampered signature", tsPart + ":" + noncePart + ":" + strings.Repeat("aa", 32)},
 	}

@@ -506,8 +506,12 @@ func TestResolveSessionSecret_GeneratesWhenMissing(t *testing.T) {
 	}
 	// The secret must have been persisted alongside the DB directory.
 	secretFile := filepath.Join(dir, "data", "session.secret")
-	if _, statErr := os.Stat(secretFile); statErr != nil {
+	info, statErr := os.Stat(secretFile)
+	if statErr != nil {
 		t.Errorf("expected secret file at %s: %v", secretFile, statErr)
+	} else if perm := info.Mode().Perm(); perm != 0o600 {
+		// 0600 is required: world-readable secrets are a security regression.
+		t.Errorf("secret file mode = %04o, want 0600", perm)
 	}
 }
 
