@@ -18,10 +18,14 @@
   // (web-frontend.instructions.md: one window.sw<Name> export only).
   if (window.swKeyboardShortcuts) return;
 
-  // registry: array of {key, label, scope, kind} rebuilt on every scan.
+  // registry: array of {key, label, scope, kind} rebuilt on every DOM scan.
+  // manualRegistry: stable entries registered by pages for shortcuts handled by
+  // inline scripts (not discoverable from data-sw-shortcut attributes). These
+  // survive rebuild() calls; they are only removed by unregister(scope).
   var registry = [];
+  var manualRegistry = [];
 
-  function list() { return registry.slice(); }
+  function list() { return registry.slice().concat(manualRegistry.slice()); }
 
   // rovingActive: index of the currently roving-focused item (-1 when none).
   // pendingRovingPrevKey: the focused item's stable key captured on
@@ -528,6 +532,36 @@
     rebuild: rebuild,
     // scope is reserved for forward-compat (per-scope dispatch) and ignored
     // today; ctxHandler is global since one next/ screen is live at a time.
-    onContext: function (scope, fn) { ctxHandler = fn; }
+    onContext: function (scope, fn) { ctxHandler = fn; },
+    // register: add programmatic shortcut entries for shortcuts handled by
+    // inline scripts that are not discoverable via data-sw-shortcut attributes.
+    // Entries survive rebuild() calls; use unregister(scope) to remove them.
+    // Each entry: { key, label } -- scope and kind:'manual' are set here.
+    register: function (scope, entries) {
+      if (!Array.isArray(entries)) {
+        if (window.console && console.error) {
+          console.error('[swKbd] register: entries must be an array');
+        }
+        return;
+      }
+      for (var i = 0; i < entries.length; i++) {
+        manualRegistry.push({
+          key:   entries[i].key   || '',
+          label: entries[i].label || '',
+          scope: scope            || 'page',
+          kind:  'manual'
+        });
+      }
+    },
+    // unregister: remove all manually-registered entries for the given scope.
+    // Call before re-registering (e.g. if labels can change) or when a page
+    // that registered shortcuts is torn down via HTMX full-swap.
+    unregister: function (scope) {
+      for (var i = manualRegistry.length - 1; i >= 0; i--) {
+        if (manualRegistry[i].scope === scope) {
+          manualRegistry.splice(i, 1);
+        }
+      }
+    }
   };
 })();
