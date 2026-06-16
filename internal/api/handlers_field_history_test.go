@@ -286,9 +286,45 @@ func TestHandleFieldHistoryFragment_Returns200WithAllItems(t *testing.T) {
 	if count != 7 {
 		t.Errorf("expected 7 data-sw-stage-value entries from fragment endpoint, got %d; body excerpt: %.500s", count, body)
 	}
-	// No "Show older" button in the fragment (it replaces the items area).
+	// 7-entry fixture (< pageSize): fragment renders all entries with no continuation button.
 	if strings.Contains(body, "history/fragment") {
 		t.Errorf("fragment response must not contain nested 'history/fragment' URL; body excerpt: %.300s", body)
+	}
+}
+
+// TestHandleFieldHistoryFragment_ExactlyPageSizeNoContinuation verifies the
+// boundary condition where the total entry count equals the page size (50).
+// The cap+1 detection fetches pageSize+1 rows to decide whether more pages
+// exist; with exactly 50 entries the probe returns 50 rows (not 51), so no
+// continuation affordance should be rendered.
+func TestHandleFieldHistoryFragment_ExactlyPageSizeNoContinuation(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Exact PageSize History Artist")
+	for i := range 50 {
+		addHistoryChange(t, historySvc, a.ID, "biography", "", "bio value "+strconv.Itoa(i), "manual")
+	}
+
+	req := makeFieldHistoryFragmentRequest(t, a.ID, "biography")
+	w := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// All 50 entries must be rendered.
+	count := strings.Count(body, "data-sw-stage-value")
+	if count != 50 {
+		t.Errorf("expected 50 data-sw-stage-value entries for exactly-50 fixture, got %d; body excerpt: %.500s", count, body)
+	}
+
+	// No continuation affordance: the cap+1 probe returned exactly 50 rows
+	// (not 51), so no next-page offset URL should appear.
+	if strings.Contains(body, "history/fragment?offset=") {
+		t.Errorf("expected no 'history/fragment?offset=' continuation URL for exactly-50 fixture; body excerpt: %.500s", body)
 	}
 }
 
@@ -342,5 +378,65 @@ func TestHandleFieldHistoryFragment_DegradedWhenHistoryErrors(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "data-sw-stage-value") {
 		t.Errorf("expected no items in fragment when history service errors; body: %s", w.Body.String())
+	}
+}
+
+// TestHandleFieldHistoryFragment_DeepHistoryCapPlusOneDetection verifies that
+// the fragment endpoint applies cap+1 detection for deep histories: when 51
+// entries exist the response renders exactly 50 items and includes a "Show older"
+// continuation affordance with the next-page offset URL (?offset=50), making
+// entries beyond the first page reachable. A second request with ?offset=50
+// returns the remaining 1 entry with no further continuation.
+func TestHandleFieldHistoryFragment_DeepHistoryCapPlusOneDetection(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Deep History Artist")
+	for i := range 51 {
+		addHistoryChange(t, historySvc, a.ID, "biography", "", "bio value "+strconv.Itoa(i), "manual")
+	}
+
+	// --- First page (offset=0): expect 50 items + continuation affordance ---
+	req := makeFieldHistoryFragmentRequest(t, a.ID, "biography")
+	w := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("page 1: status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// Exactly 50 item buttons (not 51 - the detection entry must be trimmed).
+	count := strings.Count(body, "data-sw-stage-value")
+	if count != 50 {
+		t.Errorf("page 1: expected 50 data-sw-stage-value entries for 51-entry deep history, got %d; body excerpt: %.500s", count, body)
+	}
+
+	// A continuation affordance must appear pointing to offset=50.
+	if !strings.Contains(body, "history/fragment?offset=50") {
+		t.Errorf("page 1: expected 'history/fragment?offset=50' continuation URL; body excerpt: %.500s", body)
+	}
+
+	// --- Second page (offset=50): expect 1 remaining item, no continuation ---
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+	req2 := httptest.NewRequestWithContext(ctx, http.MethodGet,
+		"/api/v1/artists/"+a.ID+"/fields/biography/history/fragment?offset=50", nil)
+	req2.SetPathValue("id", a.ID)
+	req2.SetPathValue("field", "biography")
+	w2 := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("page 2: status = %d, want %d; body: %s", w2.Code, http.StatusOK, w2.Body.String())
+	}
+	body2 := w2.Body.String()
+
+	count2 := strings.Count(body2, "data-sw-stage-value")
+	if count2 != 1 {
+		t.Errorf("page 2: expected 1 data-sw-stage-value entry at offset=50, got %d; body excerpt: %.500s", count2, body2)
+	}
+
+	if strings.Contains(body2, "history/fragment?offset=") {
+		t.Errorf("page 2: expected no further continuation URL when all entries exhausted; body excerpt: %.500s", body2)
 	}
 }

@@ -164,9 +164,22 @@ templ fieldHistoryItem(menuID, containerSel string, c artist.MetadataChangeWithA
 // request. The handler at GET /api/v1/artists/{id}/fields/{field}/history/fragment
 // computes menuID and containerSel from path params; the response replaces the
 // inline item container's innerHTML so older entries become selectable.
-templ FieldHistoryFragment(menuID, containerSel string, history []artist.MetadataChangeWithArtist) {
+// nextPageURL is non-empty when more entries exist beyond this page; the template
+// renders a self-replacing "Show older" button (hx-target="this" hx-swap="outerHTML")
+// so deeper pages append in place without losing already-loaded items.
+templ FieldHistoryFragment(menuID, containerSel string, history []artist.MetadataChangeWithArtist, nextPageURL string) {
 	for _, c := range history {
 		@fieldHistoryItem(menuID, containerSel, c)
+	}
+	if nextPageURL != "" {
+		<button
+			type="button"
+			role="menuitem"
+			class="w-full px-3 py-1.5 text-left text-xs text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 outline-none"
+			hx-get={ nextPageURL }
+			hx-target="this"
+			hx-swap="outerHTML"
+		>{ t(ctx, "artist.field_history_show_older") }</button>
 	}
 }
 
