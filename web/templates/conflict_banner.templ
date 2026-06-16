@@ -15,6 +15,11 @@ type ConflictBannerView struct {
 	// CTA ("Let Stillwater manage it" in states A and B). For state C the
 	// CTA flips every contributing connection via a dedicated endpoint.
 	PrimaryConnectionID string
+	// ManagedConnections holds connections where Stillwater has taken over
+	// management (ManageServerFiles=true, Enabled=true, no detection error).
+	// Populated only for the clean state to name the platforms that are
+	// actively protected by Stillwater in the green banner copy.
+	ManagedConnections []ConflictBannerConn
 }
 
 // ConflictBannerConn is one connection that contributes to the banner's
@@ -127,7 +132,7 @@ templ ConflictBannerContent(v ConflictBannerView) {
 		case "both":
 			@conflictBannerWarn(v, "both")
 		default:
-			@conflictBannerClean()
+			@conflictBannerClean(v)
 	}
 	<span id="sw-conflict-state" data-state={ v.State } data-image-gated={ boolAttr(conflictImageGated(v)) } data-nfo-gated={ boolAttr(conflictNFOGated(v)) } class="hidden"></span>
 }
@@ -597,7 +602,11 @@ script resetOnboardingConflictGate() {
 // clean bar collapses for the rest of the browser session without
 // touching server state. New conflicts override the dismissal because the
 // amber/red variants render a different container that ignores the flag.
-templ conflictBannerClean() {
+//
+// When v.ManagedConnections is non-empty the copy names which platforms
+// Stillwater is actively managing so the user can see what the green
+// state covers (resolves #1793).
+templ conflictBannerClean(v ConflictBannerView) {
 	<div
 		id="sw-conflict-clean"
 		class="bg-gradient-to-r from-emerald-700/35 to-emerald-800/35 dark:from-emerald-700/35 dark:to-emerald-800/35 backdrop-blur-md border-b border-emerald-300/25 px-6 py-2"
@@ -606,8 +615,8 @@ templ conflictBannerClean() {
 	>
 		<div class="max-w-6xl mx-auto flex items-center gap-3 text-sm">
 			<span class="inline-block h-2 w-2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20" aria-hidden="true"></span>
-			<span class="text-emerald-100 font-medium">{ t(ctx, "banner.clean.title") }</span>
-			<span class="text-emerald-100/80 flex-1">{ t(ctx, "banner.clean.body") }</span>
+			<span class="text-emerald-100 font-medium">{ cleanBannerTitle(ctx, v) }</span>
+			<span class="text-emerald-100/80 flex-1">{ cleanBannerBody(ctx, v) }</span>
 			<button
 				type="button"
 				class="text-emerald-100/80 hover:text-white"

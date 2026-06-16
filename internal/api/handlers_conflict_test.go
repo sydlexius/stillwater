@@ -278,10 +278,15 @@ func TestConflictBannerView_PopulatesFromLedger(t *testing.T) {
 		Connections: []conflict.ConnectionState{
 			{ConnectionID: "a", ConnectionName: "A", ConnectionType: connection.TypeEmby,
 				Enabled: true, ImageWriteback: true, NFOWriteback: false, LibraryName: "Music"},
+			// managed, no error: should appear in ManagedConnections
 			{ConnectionID: "b", ConnectionName: "B", ConnectionType: connection.TypeJellyfin,
-				Enabled: true, ManageServerFiles: true, ImageWriteback: true}, // filtered out
+				Enabled: true, ManageServerFiles: true, ImageWriteback: true},
+			// disabled: filtered out of both lists
 			{ConnectionID: "c", ConnectionName: "C", ConnectionType: connection.TypeLidarr,
-				Enabled: false, NFOWriteback: true}, // filtered out (disabled)
+				Enabled: false, NFOWriteback: true},
+			// managed but with a detection error: omitted from ManagedConnections
+			{ConnectionID: "d", ConnectionName: "D", ConnectionType: connection.TypeEmby,
+				Enabled: true, ManageServerFiles: true, CheckErr: "connection refused"},
 		},
 		RoundTrips: []conflict.RoundTrip{{ConnectionAName: "A", ConnectionBName: "B", OverlappingPath: "/music"}},
 	}
@@ -291,6 +296,9 @@ func TestConflictBannerView_PopulatesFromLedger(t *testing.T) {
 	}
 	if len(view.RoundTrips) != 1 || view.RoundTrips[0].Path != "/music" {
 		t.Errorf("round trips should pass through: %+v", view.RoundTrips)
+	}
+	if len(view.ManagedConnections) != 1 || view.ManagedConnections[0].Name != "B" {
+		t.Errorf("ManagedConnections should include only enabled error-free managed connections: %+v", view.ManagedConnections)
 	}
 }
 

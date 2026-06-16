@@ -565,13 +565,31 @@ func writeConflictError(w http.ResponseWriter, be *conflict.BlockedError) {
 // "Let Stillwater manage it" CTA in the amber banner has a target; for
 // multi-connection conflicts the CTA is suppressed and the user reviews
 // each connection from the settings page.
+//
+// ManagedConnections is populated with every enabled, error-free connection
+// where Stillwater has taken over management (ManageServerFiles=true). This
+// lets the clean (green) banner name the platforms it is actively protecting
+// rather than showing a generic "All clear." (#1793).
 func conflictBannerView(l conflict.Ledger) templates.ConflictBannerView {
 	view := templates.ConflictBannerView{
 		State: l.BannerState(),
 	}
 	for i := range l.Connections {
 		c := &l.Connections[i]
-		if !c.Enabled || c.ManageServerFiles {
+		if !c.Enabled {
+			continue
+		}
+		if c.ManageServerFiles {
+			// Only include error-free managed connections in the clean-state
+			// list: if the last probe failed we cannot confirm the savers are
+			// still disabled, so we omit the connection to avoid false
+			// reassurance in the green banner.
+			if c.CheckErr == "" {
+				view.ManagedConnections = append(view.ManagedConnections, templates.ConflictBannerConn{
+					Name: c.ConnectionName,
+					Type: c.ConnectionType,
+				})
+			}
 			continue
 		}
 		if c.ImageWriteback || c.NFOWriteback {
