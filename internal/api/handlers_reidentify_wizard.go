@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -343,6 +344,13 @@ func (r *Router) buildWizardStartSteps(ctx context.Context, ids []string) (steps
 //
 // GET /artists/re-identify/wizard/{sid}/step/{idx}
 func (r *Router) handleReIdentifyWizardStep(w http.ResponseWriter, req *http.Request) {
+	// Render the login page for unauthenticated visitors. wrapOptionalAuth
+	// passes the request through; the handler is responsible for the check.
+	if middleware.UserIDFromContext(req.Context()) == "" {
+		r.renderLoginPage(w, req)
+		return
+	}
+
 	sid := req.PathValue("sid")
 	sess := r.reIdentifyWizardStore.get(sid)
 	if sess == nil {

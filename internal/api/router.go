@@ -656,7 +656,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// same artist IDs that /bulk-actions accepts; see
 	// handlers_reidentify_wizard.go for the session-store design.
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard", wrapAuth(r.handleReIdentifyWizardStart, authMw))
-	mux.HandleFunc("GET "+bp+"/artists/re-identify/wizard/{sid}/step/{idx}", wrapAuth(r.handleReIdentifyWizardStep, authMw))
+	mux.HandleFunc("GET "+bp+"/artists/re-identify/wizard/{sid}/step/{idx}", wrapOptionalAuth(r.handleReIdentifyWizardStep, optAuthMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/accept", wrapAuth(r.handleReIdentifyWizardAccept, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/skip", wrapAuth(r.handleReIdentifyWizardSkip, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/decline", wrapAuth(r.handleReIdentifyWizardDecline, authMw))
@@ -776,15 +776,15 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 	// Foreign-file management pages (#1185). Registered before the catch-all
 	// /settings/{section} redirect so the more-specific routes win.
-	mux.HandleFunc("GET "+bp+"/settings/foreign-files", wrapAuth(r.handleForeignFilesPage, authMw))
-	mux.HandleFunc("GET "+bp+"/settings/foreign-files/allowlist", wrapAuth(r.handleForeignAllowlistPage, authMw))
+	mux.HandleFunc("GET "+bp+"/settings/foreign-files", wrapOptionalAuth(r.handleForeignFilesPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/settings/foreign-files/allowlist", wrapOptionalAuth(r.handleForeignAllowlistPage, optAuthMw))
 	// Near-duplicate artist detection page (#1614). Canonical path is
 	// /reports/duplicates so it sits alongside /reports/compliance under
 	// the Reports hub. The old /settings/artist-duplicates path 301s to
 	// the new one so bookmarks and external links still resolve (#1615 IA
 	// move). Registered before the catch-all so the specific paths win
 	// over the /settings/{section} section redirect.
-	mux.HandleFunc("GET "+bp+"/reports/duplicates", wrapAuth(r.handleArtistDuplicatesPage, authMw))
+	mux.HandleFunc("GET "+bp+"/reports/duplicates", wrapOptionalAuth(r.handleArtistDuplicatesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {

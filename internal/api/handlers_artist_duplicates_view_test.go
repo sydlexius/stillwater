@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
@@ -91,5 +94,67 @@ func TestHandleDuplicates_Empty(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("len(groups) = %d, want 0 (empty DB)", len(got))
+	}
+}
+
+// TestHandleArtistDuplicatesPage_UnauthRendersLoginPage asserts that an
+// unauthenticated GET /reports/duplicates returns HTTP 200 with the login page
+// rather than a 401 JSON error. The route uses wrapOptionalAuth so
+// requireForeignAdmin -> renderLoginPage runs for cookieless visitors.
+func TestHandleArtistDuplicatesPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports/duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "artist-duplicates-table") {
+		t.Error("unauthenticated visitor must not see the duplicates table")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	// Structural proof: both a username field and a password field must be
+	// present - confirming this is the login form, not just any page that
+	// happens to mention the auth endpoint.
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
+}
+
+// TestHandleArtistDuplicatesPage_AuthenticatedRendersPage is the
+// authenticated-path regression test for handleArtistDuplicatesPage. An admin
+// request must reach the real duplicates page, not the login render. This
+// guards the wrapAuth change introduced in #1941: adding the auth gate must
+// not break the authed path.
+func TestHandleArtistDuplicatesPage_AuthenticatedRendersPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated admin request should get 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// The real page must render the duplicates table container, not the
+	// login form.
+	if !strings.Contains(body, "artist-duplicates-table") {
+		t.Error("authenticated admin must see the artist-duplicates-table in the response")
+	}
+	if strings.Contains(body, `type="password"`) {
+		t.Error("authenticated admin must not see a login password field")
 	}
 }
