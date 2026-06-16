@@ -379,6 +379,46 @@ func tourStepsJSON(ctx context.Context) string {
 	return string(b)
 }
 
+// cleanBannerTitle returns the title for the green (clean) banner.
+// When Stillwater is actively managing one or more connections it returns
+// a "Managed by Stillwater." heading so the user can tell the green state
+// means active protection, not merely the absence of a problem. The
+// generic "All clear." title is used when no connections are managed
+// (write-back savers were never on, or no connections are configured).
+func cleanBannerTitle(ctx context.Context, v ConflictBannerView) string {
+	if len(v.ManagedConnections) > 0 {
+		return t(ctx, "banner.clean.title_managed")
+	}
+	return t(ctx, "banner.clean.title")
+}
+
+// cleanBannerBody returns the descriptive body text for the green banner.
+// When managed connections are present it names them (using the
+// connection Name, falling back to Type when Name is blank) so the user
+// can see exactly which platforms Stillwater is protecting. For the
+// no-managed-connections case it returns the existing "no conflict
+// gating active" copy.
+func cleanBannerBody(ctx context.Context, v ConflictBannerView) string {
+	if len(v.ManagedConnections) == 0 {
+		return t(ctx, "banner.clean.body")
+	}
+	names := make([]string, 0, len(v.ManagedConnections))
+	for _, c := range v.ManagedConnections {
+		label := c.Name
+		if label == "" {
+			label = c.Type
+		}
+		if label == "" {
+			continue
+		}
+		names = append(names, label)
+	}
+	if len(names) == 0 {
+		return t(ctx, "banner.clean.body")
+	}
+	return tf(ctx, "banner.clean.body_managed", strings.Join(names, ", "))
+}
+
 // warnTitle returns the state-specific headline used by the amber banner
 // variants. Copy mirrors the approved mockup so the three axes (image,
 // nfo, both) each read as a concrete action rather than a generic warning.
