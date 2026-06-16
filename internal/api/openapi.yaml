@@ -210,6 +210,20 @@ components:
           type: string
           description: Absolute destination path under the survivor.
       required: [name, from, to]
+    MergeDeletedItem:
+      type: object
+      description: >-
+        One loose file deleted from a loser directory because the same filename
+        already existed under the survivor. Present in dry-run responses as a
+        preview and in commit responses as a record of what was removed.
+      properties:
+        name:
+          type: string
+          description: File basename.
+        path:
+          type: string
+          description: Absolute path of the file that was (or would be) deleted from the loser directory.
+      required: [name, path]
     MergeConflict:
       type: object
       description: >-
@@ -252,9 +266,20 @@ components:
             $ref: "#/components/schemas/MergeMovedItem"
           description: >-
             Every filesystem rename performed (album subdirs first, then
-            loose files). Empty on dry-run. Collisions return HTTP 409
-            with the MergeCollisionsResponse shape and are not represented
-            in this payload.
+            non-colliding loose files). Empty on dry-run. Collisions
+            return HTTP 409 with the MergeCollisionsResponse shape and are
+            not represented in this payload.
+        deleted:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeDeletedItem"
+          description: >-
+            Loose files removed from loser directories because the same
+            filename already existed under the survivor. The survivor's
+            copy is authoritative; the loser's redundant copy is deleted so
+            the loser directory can be emptied and unlinked. On dry-run this
+            previews which files WOULD be deleted; on commit it lists what
+            WAS actually removed.
         conflicts:
           type: array
           items:
@@ -271,16 +296,15 @@ components:
           description: >-
             Loser artist IDs whose on-disk directories were actually
             unlinked by the merge. A loser whose directory was left in
-            place (loose-file survivor-wins collision or a
-            destination-appeared race) is NOT listed here; see warnings
-            for the reason.
+            place (destination-appeared race or unexpected filesystem
+            content) is NOT listed here; see warnings for the reason.
         warnings:
           type: array
           items:
             type: string
           description: >-
-            Non-fatal observations (loose-file collisions skipped per
-            "survivor wins", symlinks skipped, the standing reminder that
+            Non-fatal observations (symlinks skipped, destination-appeared
+            race left a subdirectory in place, the standing reminder that
             connected platforms still index the loser path until the
             operator triggers a refresh).
         losers_deleted:
