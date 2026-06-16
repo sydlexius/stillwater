@@ -266,9 +266,10 @@ components:
             $ref: "#/components/schemas/MergeMovedItem"
           description: >-
             Every filesystem rename performed (album subdirs first, then
-            non-colliding loose files). Empty on dry-run. Collisions
-            return HTTP 409 with the MergeCollisionsResponse shape and are
-            not represented in this payload.
+            non-colliding loose files). Empty on dry-run. Album-subdirectory
+            collisions return HTTP 409 with the MergeCollisionsResponse shape.
+            Loose-file same-name collisions that are safely superseded by a
+            survivor regular file are represented in `deleted`.
         deleted:
           type: array
           items:

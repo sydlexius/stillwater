@@ -970,8 +970,15 @@ func TestMergeArtists_LooseFileCollision_SurvivorDirectory(t *testing.T) {
 	}
 
 	// A warning must be emitted for the non-empty loser directory.
-	if len(res.Warnings) == 0 {
-		t.Errorf("Warnings = empty, want at least one warning about non-empty loser dir")
+	foundNonEmptyWarning := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "still contains") && strings.Contains(w, loser.Path) {
+			foundNonEmptyWarning = true
+			break
+		}
+	}
+	if !foundNonEmptyWarning {
+		t.Errorf("Warnings = %v, want warning about non-empty loser dir %s", res.Warnings, loser.Path)
 	}
 
 	// result.Deleted must not record folder.jpg -- it was NOT deleted.
