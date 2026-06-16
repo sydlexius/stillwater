@@ -18,9 +18,11 @@ function setup(extraHtml = '') {
     </body></html>`,
     modules: ['keyboard'],
   });
-  // Force a rebuild so the DOM-discovered entries are in the registry. In
-  // jsdom the initial DOMContentLoaded listener may not fire after win.eval(),
-  // so we call rebuild() explicitly to mirror the real-browser behavior.
+  // Force a rebuild so the DOM-discovered entries are in the registry.
+  // keyboard.js checks document.readyState !== 'loading' and calls
+  // init()/rebuild() immediately when jsdom readyState is 'complete', so the
+  // explicit rebuild() here is redundant but harmless as a defensive guard in
+  // case jsdom's readyState path differs from the browser.
   dom.window.swKeyboardShortcuts.rebuild();
   return dom.window;
 }
@@ -159,5 +161,38 @@ describe('keyboard.js: register() / unregister() API', () => {
       undefined,
       'Mutating the list() snapshot must not affect the internal registry',
     );
+  });
+
+  it('register() called twice without unregister() accumulates duplicates', () => {
+    // The API comment warns callers to unregister() before re-registering;
+    // this test pins the actual behavior so a de-dup refactor is a conscious
+    // breaking change, not an accident.
+    const win = setup();
+    const kbs = win.swKeyboardShortcuts;
+
+    kbs.register('artist-detail', [{ key: 'j', label: 'Next section' }]);
+    kbs.register('artist-detail', [{ key: 'j', label: 'Next section' }]);
+
+    const entries = kbs.list().filter(e => e.key === 'j' && e.scope === 'artist-detail');
+    assert.equal(entries.length, 2,
+      'double register() without unregister() must produce duplicate entries');
+  });
+
+  it('register() skips null/non-object entries and emits console.error', () => {
+    const win = setup();
+    const kbs = win.swKeyboardShortcuts;
+
+    const errors = [];
+    win.console.error = (...args) => errors.push(args.join(' '));
+
+    assert.doesNotThrow(
+      () => kbs.register('artist-detail', [null, { key: 'j', label: 'Next section' }, undefined]),
+      'register() must not throw on a null or undefined entry',
+    );
+
+    assert.ok(errors.length > 0, 'register() must emit console.error for each bad entry');
+    const entries = kbs.list().filter(e => e.scope === 'artist-detail');
+    assert.equal(entries.length, 1, 'only the valid entry must be registered');
+    assert.equal(entries[0].key, 'j', 'the valid entry must have key "j"');
   });
 });

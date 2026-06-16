@@ -545,6 +545,12 @@
         return;
       }
       for (var i = 0; i < entries.length; i++) {
+        if (entries[i] == null || typeof entries[i] !== 'object') {
+          if (window.console && console.error) {
+            console.error('[swKbd] register: entry at index ' + i + ' is not an object; skipping');
+          }
+          continue;
+        }
         manualRegistry.push({
           key:   entries[i].key   || '',
           label: entries[i].label || '',

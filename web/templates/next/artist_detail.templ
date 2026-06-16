@@ -1336,6 +1336,9 @@ templ artistDetailPageScript() {
 				return;
 			}
 			var h = document.getElementById('sw-artist-kbdhints');
+			if (!h && window.console && console.error) {
+				console.error('[swKbd] sw-artist-kbdhints span not found on artist-detail page');
+			}
 			var ds = h ? h.dataset : {};
 			window.swKeyboardShortcuts.register('artist-detail', [
 				{ key: 'j',      label: ds.j   || '' },
