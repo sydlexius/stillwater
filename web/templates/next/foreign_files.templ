@@ -113,10 +113,12 @@ templ ForeignAllowlistPageNext(assets templates.AssetPaths, view templates.Forei
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_next") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_prev") }</span></span>
-				<span aria-hidden="true">·</span>
-				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.page_prev") }</span></span>
-				<span aria-hidden="true">·</span>
-				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.page_next") }</span></span>
+				if view.Pagination.TotalPages > 1 {
+					<span aria-hidden="true">·</span>
+					<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.page_prev") }</span></span>
+					<span aria-hidden="true">·</span>
+					<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.page_next") }</span></span>
+				}
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_remove") }</span></span>
 			</p>

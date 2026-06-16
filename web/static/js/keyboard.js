@@ -538,13 +538,14 @@
     // Entries survive rebuild() calls; use unregister(scope) to remove them.
     // Each entry: { key, label } -- scope and kind:'manual' are set here.
     register: function (scope, entries) {
+      var i;
       if (!Array.isArray(entries)) {
         if (window.console && console.error) {
           console.error('[swKbd] register: entries must be an array');
         }
         return;
       }
-      for (var i = 0; i < entries.length; i++) {
+      for (i = 0; i < entries.length; i++) {
         if (entries[i] == null || typeof entries[i] !== 'object') {
           if (window.console && console.error) {
             console.error('[swKbd] register: entry at index ' + i + ' is not an object; skipping');
@@ -563,7 +564,8 @@
     // Call before re-registering (e.g. if labels can change) or when a page
     // that registered shortcuts is torn down via HTMX full-swap.
     unregister: function (scope) {
-      for (var i = manualRegistry.length - 1; i >= 0; i--) {
+      var i;
+      for (i = manualRegistry.length - 1; i >= 0; i--) {
         if (manualRegistry[i].scope === scope) {
           manualRegistry.splice(i, 1);
         }

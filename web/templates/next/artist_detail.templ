@@ -1339,7 +1339,11 @@ templ artistDetailPageScript() {
 			if (!h && window.console && console.error) {
 				console.error('[swKbd] sw-artist-kbdhints span not found on artist-detail page');
 			}
-			var ds = h ? h.dataset : {};
+			if (!h) return;
+			if (typeof window.swKeyboardShortcuts.unregister === 'function') {
+				window.swKeyboardShortcuts.unregister('artist-detail');
+			}
+			var ds = h.dataset;
 			window.swKeyboardShortcuts.register('artist-detail', [
 				{ key: 'j',      label: ds.j   || '' },
 				{ key: 'k',      label: ds.k   || '' },
