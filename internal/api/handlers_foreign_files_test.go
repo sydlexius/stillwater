@@ -1188,3 +1188,49 @@ func TestHandleForeignFilesCount_NextChannelSidebarPill(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleForeignFilesPage_UnauthRendersLoginPage asserts that an
+// unauthenticated GET /settings/foreign-files returns HTTP 200 with the login
+// page rather than a 401 JSON error. The route uses wrapOptionalAuth so
+// requireForeignAdmin -> renderLoginPage runs for cookieless visitors.
+func TestHandleForeignFilesPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/settings/foreign-files", nil))
+	w := httptest.NewRecorder()
+	r.handleForeignFilesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "foreign-files-table") {
+		t.Error("unauthenticated visitor must not see the foreign-files table")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("response should contain the login form action (/api/v1/auth/login)")
+	}
+}
+
+// TestHandleForeignAllowlistPage_UnauthRendersLoginPage is the same check for
+// the allowlist route.
+func TestHandleForeignAllowlistPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/settings/foreign-files/allowlist", nil))
+	w := httptest.NewRecorder()
+	r.handleForeignAllowlistPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "foreign-files-table") {
+		t.Error("unauthenticated visitor must not see the allowlist table")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("response should contain the login form action (/api/v1/auth/login)")
+	}
+}
