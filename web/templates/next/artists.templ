@@ -2,6 +2,7 @@ package next
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -80,11 +81,12 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 					type="button"
 					data-sw-shortcut="f"
 					data-sw-shortcut-label={ t(ctx, "artists.shortcuts.tip_filters") }
-					class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activeFilterCount(data.Filters) > 0), templ.KV(filterTriggerNeutral, activeFilterCount(data.Filters) == 0) }
+					class={ "inline-flex items-center gap-1.5 px-3 py-2 text-sm transition-colors " + glassButton, templ.KV(filterTriggerActive, activeFilterCount(data.Filters) > 0), templ.KV(filterTriggerNeutral, activeFilterCount(data.Filters) == 0) }
 					data-active-classes={ filterTriggerActive }
 					data-neutral-classes={ filterTriggerNeutral }
 					data-badge-classes={ filterTriggerBadge }
 					aria-label={ t(ctx, "common.open_filter_panel") }
+					aria-pressed={ strconv.FormatBool(activeFilterCount(data.Filters) > 0) }
 					aria-expanded="false"
 					aria-controls="artist-filters-flyout"
 					title={ t(ctx, "common.filters") }
@@ -110,7 +112,7 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 				     view (no headers); setView toggles .hidden, scoped to next/ via the
 				     .sw-next-artists marker so the stable channel is untouched. -->
 				<details id="sort-dropdown" class={ "relative", templ.KV("hidden", data.View == "table") }>
-					<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title={ t(ctx, "common.sort") }>
+					<summary class={ "list-none cursor-pointer inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton } title={ t(ctx, "common.sort") }>
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"></path>
 						</svg>
@@ -143,18 +145,19 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 						{Key: "score", Label: t(ctx, "artists.col.score")},
 					})
 				</div>
-				<div id="view-toggle" class="ml-auto flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
+				<div id="view-toggle" class="ml-auto flex rounded-md overflow-hidden border border-[var(--swd-line)]">
 					<button
 						type="button"
 						title={ t(ctx, "artists.view.table") }
 						aria-label={ t(ctx, "artists.view.table") }
+						aria-pressed={ strconv.FormatBool(data.View == "table") }
 						hx-get="/next/artists"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
 						hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 						hx-vals='{"view":"table","page":"1"}'
 						onclick="setView('table')"
-						class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
+						class={ "p-2 transition-colors text-[var(--swd-ink-2)] hover:bg-white/5", templ.KV(glassButtonHalo, data.View == "table") }
 					>
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5"></path>
@@ -164,13 +167,14 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 						type="button"
 						title={ t(ctx, "artists.view.grid") }
 						aria-label={ t(ctx, "artists.view.grid") }
+						aria-pressed={ strconv.FormatBool(data.View == "grid") }
 						hx-get="/next/artists"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
 						hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 						hx-vals='{"view":"grid","page":"1"}'
 						onclick="setView('grid')"
-						class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }
+						class={ "p-2 transition-colors text-[var(--swd-ink-2)] hover:bg-white/5", templ.KV(glassButtonHalo, data.View == "grid") }
 					>
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"></path>
@@ -186,7 +190,7 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 					hx-swap="none"
 					data-label-scan={ t(ctx, "artists.scan_library") }
 					data-label-scanning={ t(ctx, "artists.scanning") }
-					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+					class={ "inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed " + glassButton }
 				>
 					<span id="scan-spinner" class="hidden">
 						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
