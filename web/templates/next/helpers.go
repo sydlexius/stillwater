@@ -48,11 +48,14 @@ func tf(ctx context.Context, key string, args ...any) string {
 // glassButton is the single shared class-string for all glass/outline buttons
 // across the next/ dashboard, artists, and bulk screens. It uses Tailwind v4
 // arbitrary-value utilities to reference the --swd-line and --swd-ink-2 CSS
-// variable tokens that are scoped to .sw-next-dashboard and
-// .sw-next-artist-detail, so border and text color adapt automatically to
-// both themes and the user's Background Opacity setting -- no inline style=
-// attribute required. Combine with layout utilities (inline-flex, gap, padding,
-// font-*, disabled:*) at each call site.
+// variable tokens. Those tokens are defined (light + dark) on the next/ screen
+// markers .sw-next-dashboard, .sw-next-artist-detail, .sw-next-foreign-files,
+// and .sw-next-artists (see the --swd-* token blocks in web/static/css/
+// input.css); the buttons must render inside one of those scopes for the tokens
+// to resolve. Border and text color then adapt automatically to both themes and
+// the user's Background Opacity setting -- no inline style= attribute required.
+// Combine with layout utilities (inline-flex, gap, padding, font-*, disabled:*)
+// at each call site.
 const glassButton = "rounded-md border border-[var(--swd-line)] text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
 
 // glassButtonHalo is appended (via templ.KV or concatenation) when a glass
