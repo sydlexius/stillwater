@@ -19,6 +19,9 @@ import "github.com/sydlexius/stillwater/web/templates"
 // components and are restyled by later screen issues. CSRF + base-path injection
 // and the cache-busted AssetPaths carry over unchanged via LayoutHead.
 //
+// Shared sidebar display helpers (SidebarInitial, SidebarDisplayName) live in
+// web/templates/sidebar_helpers.go and are imported by both channels.
+//
 // M55 #1774: the preferences drawer is mounted lazily. The mount point below
 // listens for the custom "sw:prefs-open" event (dispatched by swPrefsDrawer.open
 // in prefs-drawer.js on first open) and then fetches the drawer body via HTMX.
@@ -102,7 +105,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/next/preferences-drawer")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 43, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 46, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {

@@ -266,12 +266,12 @@ templ Sidebar(assets templates.AssetPaths) {
 						aria-hidden="true"
 						onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
 					/>
-					<div class="sw-sidebar-avatar" aria-hidden="true" style="display:none;">{ sidebarInitial(sidebarName(assets)) }</div>
+					<div class="sw-sidebar-avatar" aria-hidden="true" style="display:none;">{ templates.SidebarInitial(templates.SidebarDisplayName(assets.DisplayName, assets.Username)) }</div>
 				} else {
-					<div class="sw-sidebar-avatar" aria-hidden="true">{ sidebarInitial(sidebarName(assets)) }</div>
+					<div class="sw-sidebar-avatar" aria-hidden="true">{ templates.SidebarInitial(templates.SidebarDisplayName(assets.DisplayName, assets.Username)) }</div>
 				}
 				<div class="sw-sidebar-user-info">
-					<span class="sw-sidebar-user-name">{ sidebarName(assets) }</span>
+					<span class="sw-sidebar-user-name">{ templates.SidebarDisplayName(assets.DisplayName, assets.Username) }</span>
 					<span class="sw-sidebar-user-role">{ assets.Role }</span>
 				</div>
 			</a>
