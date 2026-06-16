@@ -286,9 +286,45 @@ func TestHandleFieldHistoryFragment_Returns200WithAllItems(t *testing.T) {
 	if count != 7 {
 		t.Errorf("expected 7 data-sw-stage-value entries from fragment endpoint, got %d; body excerpt: %.500s", count, body)
 	}
-	// No "Show older" button in the fragment (it replaces the items area).
+	// 7-entry fixture (< pageSize): fragment renders all entries with no continuation button.
 	if strings.Contains(body, "history/fragment") {
 		t.Errorf("fragment response must not contain nested 'history/fragment' URL; body excerpt: %.300s", body)
+	}
+}
+
+// TestHandleFieldHistoryFragment_ExactlyPageSizeNoContinuation verifies the
+// boundary condition where the total entry count equals the page size (50).
+// The cap+1 detection fetches pageSize+1 rows to decide whether more pages
+// exist; with exactly 50 entries the probe returns 50 rows (not 51), so no
+// continuation affordance should be rendered.
+func TestHandleFieldHistoryFragment_ExactlyPageSizeNoContinuation(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Exact PageSize History Artist")
+	for i := range 50 {
+		addHistoryChange(t, historySvc, a.ID, "biography", "", "bio value "+strconv.Itoa(i), "manual")
+	}
+
+	req := makeFieldHistoryFragmentRequest(t, a.ID, "biography")
+	w := httptest.NewRecorder()
+	r.handleFieldHistoryFragment(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// All 50 entries must be rendered.
+	count := strings.Count(body, "data-sw-stage-value")
+	if count != 50 {
+		t.Errorf("expected 50 data-sw-stage-value entries for exactly-50 fixture, got %d; body excerpt: %.500s", count, body)
+	}
+
+	// No continuation affordance: the cap+1 probe returned exactly 50 rows
+	// (not 51), so no next-page offset URL should appear.
+	if strings.Contains(body, "history/fragment?offset=") {
+		t.Errorf("expected no 'history/fragment?offset=' continuation URL for exactly-50 fixture; body excerpt: %.500s", body)
 	}
 }
 
