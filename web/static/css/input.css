@@ -3161,12 +3161,19 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 
 .sw-next-dashboard,
 .sw-next-artist-detail,
-.sw-next-foreign-files {
+.sw-next-foreign-files,
+.sw-next-artists {
   /* Light-theme token ramp (default). Shared by the dashboard, the next/
-   * artist-detail screen (M55 #1336), and the next/ foreign-files screen
-   * (M55 #1773) so all three consume the same prototype card token system.
-   * Without this scope the --swd-* vars are undefined and the cards render
-   * transparent/un-themed (the 4A UAT fidelity miss). */
+   * artist-detail screen (M55 #1336), the next/ foreign-files screen
+   * (M55 #1773), and the next/ artists screen (M55 #1890) so they all consume
+   * the same prototype card token system. Without this scope the --swd-* vars
+   * are undefined and the cards/glass buttons render transparent/un-themed
+   * (the 4A UAT fidelity miss). The artists screen was added for #1890: its
+   * glass/outline toolbar + bulk buttons reference --swd-line / --swd-ink-2
+   * (helpers.go glassButton), but .sw-next-artists is NOT a descendant of the
+   * dashboard/artist-detail scopes, so without listing it here those tokens
+   * were undefined and the buttons fell back to a currentColor border +
+   * inherited text instead of the faint slate glass line. */
   --swd-bg-base: #f1f5f9;       /* slate-100 -- faint base behind cards */
   --swd-bg-raised: #ffffff;     /* card */
   --swd-bg-elev: #f8fafc;       /* row hover / popover */
@@ -3203,8 +3210,11 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 }
 .dark .sw-next-dashboard,
 .dark .sw-next-artist-detail,
-.dark .sw-next-foreign-files {
-  /* Prototype dark token ramp (design/tokens.css verbatim). */
+.dark .sw-next-foreign-files,
+.dark .sw-next-artists {
+  /* Prototype dark token ramp (design/tokens.css verbatim). .sw-next-artists
+   * added for #1890 so its glass buttons resolve --swd-line / --swd-ink-2 in
+   * dark mode too (see the light-theme block above). */
   --swd-bg-base: #0b1220;
   --swd-bg-raised: #111a2e;
   --swd-bg-elev: #1a253f;
