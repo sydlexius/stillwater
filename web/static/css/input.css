@@ -1712,21 +1712,21 @@ input:-webkit-autofill:focus {
  * Left slide-over drawer for the next/ UI preference surface. Opens over the
  * sidebar on desktop; becomes a bottom sheet on mobile (<= 560 px).
  *
- * Surface: --flyout-bg is hard-floored at 85% opacity with slate-800 hue to
- * match the shared next/ glass surface (#1936) while guaranteeing the
- * bg_opacity recovery control stays legible at any user opacity setting.
- * --sw-glass-bg is a whole rgba string rewritten by JS; no numeric opacity
- * sub-var exists, so a max() clamp is not possible - fixed rgba values are
- * used instead. Lite mode overrides --flyout-bg at a higher opacity for
- * legibility when backdrop-filter is disabled.
+ * Surface: --flyout-bg tracks the shared --sw-glass-bg token, which is
+ * globally floored at 85% in preferences.js. The drawer hosts the bg_opacity
+ * recovery slider so it must stay legible; the 85% global floor guarantees
+ * this at any user opacity setting. --sw-glass-bg is theme-aware (slate-800
+ * in dark, white in light), so no per-theme override is needed here.
+ * Lite mode overrides --flyout-bg at a higher opacity for legibility when
+ * backdrop-filter is disabled.
  *
  * Type: ALL sizes via --sw-type-* rem tokens (pref-aware scale). NO hardcoded
  * px font-sizes inside .sw-prefs-drawer (typography charter).
  */
 
-/* Dark flyout background: slate-800 hue, hard-floored at 85% opacity. */
+/* Flyout background tracks the shared, theme-aware, globally-floored glass bg. */
 .sw-prefs-drawer {
-  --flyout-bg: rgba(30, 41, 59, 0.85);
+  --flyout-bg: var(--sw-glass-bg);
   --flyout-ink: #e2e8f0;
   --flyout-ink-2: #94a3b8;
   --flyout-ink-3: #64748b;
@@ -1746,10 +1746,9 @@ input:-webkit-autofill:focus {
 }
 
 /* Light-theme overrides (required by the both-themes charter).
- * --flyout-bg: white at 85% - same floor as dark mode, matches the
- * light-mode glass hue. */
+ * --flyout-bg inherits from the shared --sw-glass-bg (set to white in light
+ * mode by preferences.js) -- no per-theme override needed here. */
 :root:not(.dark) .sw-prefs-drawer {
-  --flyout-bg: rgba(255, 255, 255, 0.85);
   --flyout-ink: #1e293b;
   --flyout-ink-2: #475569;
   --flyout-ink-3: #94a3b8;
