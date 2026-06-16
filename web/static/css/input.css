@@ -2934,19 +2934,27 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
 /* Keyboard-hint badges (M55 #1335): the prototype surfaces shortcut keys as
  * small kbd chips (/ in search, f on Filters) plus a tip line under the list.
  * Mirrors design/styles.css .kbd. The tip-line prose is added during UAT.
- * Scoped to both next/ surfaces (artists + dashboard) so the same chip
- * treatment applies on the dashboard toolbar and tip line without forking. */
+ * Scoped to every next/ surface that renders a .sw-list-tips footer (artists,
+ * dashboard, artist-detail #1939, foreign-files #1939) so the same chip
+ * treatment applies across all keyboard footers without forking. The keycap
+ * class is next/-exclusive (no usage outside web/templates/next/), so each new
+ * footer surface must be added to these selector groups or it regresses to a
+ * bare monospace glyph -- which is exactly the #1939 scope-miss this fixes. */
 .sw-next-artists .sw-kbd,
-.sw-next-dashboard .sw-kbd {
+.sw-next-dashboard .sw-kbd,
+.sw-next-artist-detail .sw-kbd,
+.sw-next-foreign-files .sw-kbd {
   position: relative;
   isolation: isolate;
   /* Route the keycap glyph through the mono Font Family pref seam (matches the
    * activity-rail timestamps), so a user-picked mono applies here too. Defaults
    * to JetBrains Mono -> the same system-mono stack this used before. The size
-   * token is defined on both .sw-next-artists and .sw-next-dashboard so the
-   * Font Size pref rescales both scopes through the one rem value (#1853). */
+   * token is defined on .sw-next-artists and .sw-next-dashboard; the
+   * artist-detail and foreign-files scopes don't define it, so the fallback
+   * (the same max(0.75rem, 10px) both scopes set) keeps the glyph at the
+   * identical size there and still tracks the Font Size pref where defined. */
   font-family: var(--sw-font-mono);
-  font-size: var(--sw-type-mono);
+  font-size: var(--sw-type-mono, max(0.75rem, 10px));
   line-height: 1;
   padding: 2px 6px;
   color: #64748b;
@@ -2966,7 +2974,9 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * `isolation: isolate` keeps that local). The light/dark fill comes straight
  * from --sw-glass-bg; only the fallback tint differs per theme. */
 .sw-next-artists .sw-kbd::before,
-.sw-next-dashboard .sw-kbd::before {
+.sw-next-dashboard .sw-kbd::before,
+.sw-next-artist-detail .sw-kbd::before,
+.sw-next-foreign-files .sw-kbd::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -2977,24 +2987,31 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%20preserveAspectRatio='none'%3E%3Cpath%20d='M50%200C8%200%200%208%200%2050C0%2092%208%20100%2050%20100C92%20100%20100%2092%20100%2050C100%208%2092%200%2050%200Z'%20fill='black'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
 }
 .dark .sw-next-artists .sw-kbd,
-.dark .sw-next-dashboard .sw-kbd {
+.dark .sw-next-dashboard .sw-kbd,
+.dark .sw-next-artist-detail .sw-kbd,
+.dark .sw-next-foreign-files .sw-kbd {
   color: #94a3b8;
 }
 .dark .sw-next-artists .sw-kbd::before,
-.dark .sw-next-dashboard .sw-kbd::before {
+.dark .sw-next-dashboard .sw-kbd::before,
+.dark .sw-next-artist-detail .sw-kbd::before,
+.dark .sw-next-foreign-files .sw-kbd::before {
   background: var(--sw-glass-bg, #0f172a);
 }
 .sw-next-artists .sw-list-tips,
-.sw-next-dashboard .sw-list-tips {
+.sw-next-dashboard .sw-list-tips,
+.sw-next-foreign-files .sw-list-tips {
   margin-top: 0.75rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.75rem;
-  /* --sw-type-meta is defined on both .sw-next-artists and .sw-next-dashboard
-   * (0.75rem each) so the Font Size pref rescales the tip line on both screens
-   * through the root font-size (#1853). */
-  font-size: var(--sw-type-meta);
+  /* --sw-type-meta is defined on .sw-next-artists and .sw-next-dashboard
+   * (0.75rem each) so the Font Size pref rescales the tip line there through the
+   * root font-size (#1853). The foreign-files scope (#1939) doesn't define it,
+   * so the fallback (the same max(0.75rem, 10px)) keeps that footer's prose at
+   * the identical size. The artist-detail footer has its own rule below. */
+  font-size: var(--sw-type-meta, max(0.75rem, 10px));
   /* slate-500: AA-legible for text-xs copy on the light theme's white surface.
    * The lighter slate-400 used here before was too faint at this size. The
    * dark-theme override below restores slate-400, which reads correctly on the
@@ -3002,7 +3019,8 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   color: #64748b;
 }
 .dark .sw-next-artists .sw-list-tips,
-.dark .sw-next-dashboard .sw-list-tips {
+.dark .sw-next-dashboard .sw-list-tips,
+.dark .sw-next-foreign-files .sw-list-tips {
   color: #94a3b8;
 }
 /* a11y / #1784 contrast floor: the keyboard-shortcut tips row sits over the
