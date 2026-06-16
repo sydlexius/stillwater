@@ -474,6 +474,7 @@ func (a *Application) buildServices() error {
 		RuleScheduler:      a.ruleScheduler,
 		I18nBundle:         a.i18nBundle,
 		Encryptor:          a.encryptor,
+		SessionSecret:      cfg.Auth.SessionSecret,
 	})
 
 	// Hand ownership to run(): the caller's deferred Stop now owns the

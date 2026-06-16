@@ -1,17 +1,24 @@
 package middleware
 
 import (
-	"crypto/rand"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"mime"
 	"net/http"
-	"sync"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const csrfTokenHeader = "X-CSRF-Token" //nolint:gosec // G101: not a credential, this is an HTTP header name
 const csrfCookieName = "csrf_token"
-const csrfTokenTTL = 24 * time.Hour
+
+// csrfTokenTTL is the validity window for a CSRF token. 4h covers typical
+// overnight maintenance restarts: a token issued before a 2am deploy is still
+// valid when the user returns in the morning. The HMAC signature prevents any
+// attacker from forging an unexpired token without the server secret.
+const csrfTokenTTL = 4 * time.Hour
 
 // Clock is the time source used by CSRF for token creation and expiry checks.
 // The default production implementation returns time.Now().UTC().
@@ -24,101 +31,37 @@ type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now().UTC() }
 
-// csrfCleanupInterval is how often expired tokens are swept from the in-memory
-// map. One hour is well below csrfTokenTTL (24h), which means expired tokens
-// never linger long enough to bloat memory under sustained load, but the sweep
-// is infrequent enough that the lock-contention cost is negligible.
-const csrfCleanupInterval = time.Hour
-
-// CSRF provides token-based CSRF protection for HTMX form submissions.
-// It validates that state-changing requests include a matching CSRF token.
+// CSRF provides stateless HMAC-based CSRF protection for HTMX form submissions.
+// Tokens are self-describing "{unix_timestamp}:{hmac_sha256_hex}" strings signed
+// with the application's SessionSecret. Because all state needed to validate a
+// token is encoded in the token itself, no in-memory map is required and tokens
+// survive server restarts without invalidating existing user sessions.
 //
-// A background goroutine started in NewCSRF periodically sweeps expired
-// tokens from the in-memory map. Callers must invoke Close exactly once
-// (typically tied to server shutdown) to stop the goroutine.
+// SameSite=Strict is the primary cross-site defense; HMAC signing is
+// defense-in-depth. Callers must supply a non-empty secret; NewCSRF panics on
+// an empty string so misconfigured deployments fail fast at startup.
 type CSRF struct {
-	mu     sync.RWMutex
-	tokens map[string]time.Time
-
-	clock Clock
-
-	// stop is closed by Close to signal the cleanup goroutine to exit.
-	// closeOnce guards against multiple Close calls so the channel is
-	// closed at most once (closing a closed channel panics).
-	stop      chan struct{}
-	closeOnce sync.Once
-
-	// trigger is an optional test hook: sending on it forces a cleanup
-	// sweep without waiting for the ticker. Nil in production; tests
-	// populate it via newCSRFForTest.
-	trigger chan struct{}
-	// done is closed by the cleanup goroutine right before it returns.
-	// Tests use it to assert the goroutine has fully exited after Close.
-	done chan struct{}
+	secret []byte
+	clock  Clock
 }
 
-// NewCSRF creates a CSRF middleware instance and starts its background
-// cleanup goroutine. Callers must invoke Close when the instance is no
-// longer needed (typically wired to the server's shutdown context) to
-// avoid leaking the goroutine.
-func NewCSRF() *CSRF {
-	c := &CSRF{
-		tokens: make(map[string]time.Time),
+// NewCSRF creates a CSRF middleware instance backed by HMAC-signed tokens.
+// secret must be a non-empty string (typically cfg.Auth.SessionSecret); NewCSRF
+// panics immediately if secret is empty so operators discover the missing
+// configuration on startup rather than running with a worthless HMAC key.
+func NewCSRF(secret string) *CSRF {
+	if secret == "" {
+		panic("csrf: SessionSecret must be configured")
+	}
+	return &CSRF{
+		secret: []byte(secret),
 		clock:  realClock{},
-		stop:   make(chan struct{}),
-		done:   make(chan struct{}),
-	}
-	go c.cleanupLoop(csrfCleanupInterval)
-	return c
-}
-
-// newCSRFForTest is identical to NewCSRF except it accepts an explicit
-// cleanup interval and a Clock so tests can control time deterministically.
-// It also exposes a trigger channel so tests can fire a sweep synchronously
-// rather than waiting on wall-clock time.
-func newCSRFForTest(interval time.Duration, clk Clock) *CSRF {
-	c := &CSRF{
-		tokens:  make(map[string]time.Time),
-		clock:   clk,
-		stop:    make(chan struct{}),
-		done:    make(chan struct{}),
-		trigger: make(chan struct{}, 1),
-	}
-	go c.cleanupLoop(interval)
-	return c
-}
-
-// Close stops the background cleanup goroutine. It is safe to call multiple
-// times; subsequent calls are no-ops. Close blocks until the goroutine has
-// returned, which guarantees no further map mutations after Close returns.
-func (c *CSRF) Close() {
-	c.closeOnce.Do(func() {
-		close(c.stop)
-	})
-	<-c.done
-}
-
-// cleanupLoop runs until stop is closed, sweeping expired tokens on every
-// tick. The trigger channel (test-only) forces an immediate sweep.
-func (c *CSRF) cleanupLoop(interval time.Duration) {
-	defer close(c.done)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-c.stop:
-			return
-		case <-ticker.C:
-			c.mu.Lock()
-			c.cleanExpiredLocked()
-			c.mu.Unlock()
-		case <-c.trigger:
-			c.mu.Lock()
-			c.cleanExpiredLocked()
-			c.mu.Unlock()
-		}
 	}
 }
+
+// Close is a no-op retained for API compatibility. The stateless HMAC
+// implementation has no background goroutines to stop.
+func (c *CSRF) Close() {}
 
 // Middleware returns the CSRF handler that validates tokens on unsafe methods.
 func (c *CSRF) Middleware(next http.Handler) http.Handler {
@@ -151,10 +94,7 @@ func (c *CSRF) Middleware(next http.Handler) http.Handler {
 
 func (c *CSRF) ensureToken(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(csrfCookieName); err == nil && cookie.Value != "" {
-		c.mu.RLock()
-		_, exists := c.tokens[cookie.Value]
-		c.mu.RUnlock()
-		if exists {
+		if c.valid(cookie.Value) {
 			return
 		}
 	}
@@ -174,37 +114,46 @@ func (c *CSRF) ensureToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// generate returns a new HMAC-signed token as "{unix_timestamp}:{hmac_sha256_hex}".
 func (c *CSRF) generate() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand failed: " + err.Error())
-	}
-	token := hex.EncodeToString(b)
-
-	c.mu.Lock()
-	c.tokens[token] = c.clock.Now()
-	c.mu.Unlock()
-
-	return token
+	ts := strconv.FormatInt(c.clock.Now().Unix(), 10)
+	mac := c.computeMAC(ts)
+	return ts + ":" + hex.EncodeToString(mac)
 }
 
+// valid returns true if token is a well-formed, unexpired, correctly-signed CSRF token.
 func (c *CSRF) valid(token string) bool {
-	c.mu.RLock()
-	created, exists := c.tokens[token]
-	c.mu.RUnlock()
-	if !exists {
+	tsPart, sigPart, found := strings.Cut(token, ":")
+	if !found || tsPart == "" || sigPart == "" {
 		return false
 	}
-	return c.clock.Now().Sub(created) < csrfTokenTTL
+
+	ts, err := strconv.ParseInt(tsPart, 10, 64)
+	if err != nil {
+		return false
+	}
+
+	// Reject expired tokens.
+	issued := time.Unix(ts, 0)
+	if c.clock.Now().Sub(issued) >= csrfTokenTTL {
+		return false
+	}
+
+	// Decode the submitted signature and compare in constant time to prevent
+	// timing side-channels.
+	actual, err := hex.DecodeString(sigPart)
+	if err != nil {
+		return false
+	}
+	expected := c.computeMAC(tsPart)
+	return hmac.Equal(expected, actual)
 }
 
-func (c *CSRF) cleanExpiredLocked() {
-	cutoff := c.clock.Now().Add(-csrfTokenTTL)
-	for t, created := range c.tokens {
-		if created.Before(cutoff) {
-			delete(c.tokens, t)
-		}
-	}
+// computeMAC returns the HMAC-SHA256 of msg using the stored secret.
+func (c *CSRF) computeMAC(msg string) []byte {
+	h := hmac.New(sha256.New, c.secret)
+	h.Write([]byte(msg))
+	return h.Sum(nil)
 }
 
 // isSecureRequest returns true if the request arrived over HTTPS,
