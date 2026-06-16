@@ -210,12 +210,11 @@ clean:
 #   STILLWATER_ADMIN_PASSWORD Admin password for the ephemeral run (default: ci-ephemeral-pw)
 #   BRUNO_RESULTS_DIR        Directory for HTML report (default: /tmp/bruno-results)
 #   BRUNO_TIMEOUT_SEC        Watchdog ceiling for the bru run invocation (default: 300)
-#   MIN_TRANSPORT_PCT        Transport-pass-rate threshold for success (default: 100)
 #
 # Gate semantics MATCH the CI workflow (.github/workflows/bruno-ci.yml): the
 # target fails when Bruno's exit code is non-zero (one or more `expect`
-# assertions failed) OR when transport health drops below MIN_TRANSPORT_PCT
-# (a backstop against silent zero-test runs). The assertion gate is the
+# assertions failed) OR when any transport-level errors occur (errorRequests
+# != 0; a backstop against silent zero-test runs). The assertion gate is the
 # primary signal -- it's what catches the oneOf/discriminator drift and
 # request-body shape regressions that M49 was designed to surface.
 # The server PID is tracked in a temp file and cleaned up on exit.
