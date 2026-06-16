@@ -3032,11 +3032,13 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   /* Glass line border (#1890, maintainer 2026-06-16): the strip reconciles to
    * the same --swd-line glass convention as the dashboard/artists buttons so
    * the whole bulk surface reads as one treatment. (--swd-line resolves on
-   * .sw-next-artists via the token block below; the strip BACKGROUND is set to
-   * the opacity-aware --swa-surface-elev by the #1792 rule further down, which
-   * wins on source order, so this gray-50 fill is a non-applied fallback.) */
+   * .sw-next-artists via the token block below.) The opacity-aware
+   * --swa-surface-elev fill is also set by the #1792 rule further down; sourcing
+   * it directly here (with the gray-50 literal as the var() fallback) makes this
+   * rule self-correct if that rule ever moves or is removed, instead of relying
+   * on source order. */
   border: 1px solid var(--swd-line);
-  background: #f9fafb;       /* gray-50 (overridden by --swa-surface-elev, #1792) */
+  background: var(--swa-surface-elev, #f9fafb);       /* gray-50 fallback */
   /* Freeze the selection strip just below the sticky toolbar (M55 #1335,
    * maintainer 2026-05-30) so bulk-selection context stays visible while
    * scrolling. The offset tracks the toolbar's live height via a JS-set custom
@@ -3053,7 +3055,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
    * (This higher-specificity rule must restate the var, else the gray border
    * would persist over the light rule in dark mode.) */
   border-color: var(--swd-line);
-  background: #1f2937;       /* gray-800 (overridden by --swa-surface-elev, #1792) */
+  background: var(--swa-surface-elev, #1f2937);       /* gray-800 fallback */
 }
 .sw-next-artists .sw-next-bulk-strip-contextual[data-selection-active="false"] {
   display: none;
