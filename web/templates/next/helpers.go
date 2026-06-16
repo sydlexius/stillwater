@@ -43,14 +43,35 @@ func tf(ctx context.Context, key string, args ...any) string {
 	return fmt.Sprintf(tmpl, args...)
 }
 
-// Filter-trigger class sets for the next/ toolbar. The stable channel uses its
-// own palette; the next/ trigger is free to restyle because the client-side
-// class swap is driven by the data-active-classes / data-neutral-classes
-// attributes, not by hard-coded strings. The values below match the stable
-// look for now so behavior is identical; restyling is a later visual pass.
+// Glass/outline button convention for the next/ channel.
+//
+// glassButton is the single shared class-string for all glass/outline buttons
+// across the next/ dashboard, artists, and bulk screens. It uses Tailwind v4
+// arbitrary-value utilities to reference the --swd-line and --swd-ink-2 CSS
+// variable tokens. Those tokens are defined (light + dark) on the next/ screen
+// markers .sw-next-dashboard, .sw-next-artist-detail, .sw-next-foreign-files,
+// and .sw-next-artists (see the --swd-* token blocks in web/static/css/
+// input.css); the buttons must render inside one of those scopes for the tokens
+// to resolve. Border and text color then adapt automatically to both themes and
+// the user's Background Opacity setting -- no inline style= attribute required.
+// Combine with layout utilities (inline-flex, gap, padding, font-*, disabled:*)
+// at each call site.
+const glassButton = "rounded-md border border-[var(--swd-line)] text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+
+// glassButtonHalo is appended (via templ.KV or concatenation) when a glass
+// button is in its active/pressed state. An inset ring keeps the halo inside
+// the element's border, matching the artist-detail kind-tab convention.
+// focus:ring-4 focus:ring-blue-700 override the base glassButton focus ring
+// (ring-2 ring-blue-500) with a heavier, darker indicator so keyboard focus
+// is distinguishable from the always-on halo (WCAG 2.4.7).
+const glassButtonHalo = "ring-2 ring-blue-500 ring-inset focus:ring-4 focus:ring-blue-700"
+
+// Filter-trigger class sets for the next/ toolbar. The glass base is already
+// on the element (glassButton); these constants only carry the toggled overlays
+// the JS data-active-classes / data-neutral-classes swap switches between.
 const (
-	filterTriggerActive  = "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600"
-	filterTriggerNeutral = "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+	filterTriggerActive  = glassButtonHalo
+	filterTriggerNeutral = "hover:bg-white/5"
 	filterTriggerBadge   = "sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
 )
 
