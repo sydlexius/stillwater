@@ -55,7 +55,7 @@ func nextBulkActions(data templates.ArtistListData) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<select id=\"bulk-action-select\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50\" disabled aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<select id=\"bulk-action-select\" class=\"rounded-md border border-[var(--swd-line)] bg-white dark:bg-gray-800 px-3 py-2 text-sm text-[var(--swd-ink-2)] focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50\" disabled aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
