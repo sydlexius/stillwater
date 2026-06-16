@@ -145,7 +145,8 @@
         return;
       }
       var n = parseInt(value, 10);
-      if (isNaN(n) || n < 20 || n > 100) n = 85;
+      if (isNaN(n)) n = 85;
+      n = Math.max(85, Math.min(100, n));
       var pct = n / 100;
       var isDark = root.classList.contains('dark');
       if (isDark) {

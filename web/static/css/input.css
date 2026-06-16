@@ -1712,18 +1712,21 @@ input:-webkit-autofill:focus {
  * Left slide-over drawer for the next/ UI preference surface. Opens over the
  * sidebar on desktop; becomes a bottom sheet on mobile (<= 560 px).
  *
- * Surface: hard-floored at 92% opacity via --flyout-bg so the opacity
- * recovery control stays legible even when the user has set a lower bg_opacity.
- * Both themes define --flyout-bg explicitly; a missing value would paint
- * transparent (binding charter).
+ * Surface: --flyout-bg tracks the shared --sw-glass-bg token, which is
+ * globally floored at 85% in preferences.js. The drawer hosts the bg_opacity
+ * recovery slider so it must stay legible; the 85% global floor guarantees
+ * this at any user opacity setting. --sw-glass-bg is theme-aware (slate-800
+ * in dark, white in light), so no per-theme override is needed here.
+ * Lite mode overrides --flyout-bg at a higher opacity for legibility when
+ * backdrop-filter is disabled.
  *
  * Type: ALL sizes via --sw-type-* rem tokens (pref-aware scale). NO hardcoded
  * px font-sizes inside .sw-prefs-drawer (typography charter).
  */
 
-/* Dark-theme flyout background (dark is default / the primary theme). */
+/* Flyout background tracks the shared, theme-aware, globally-floored glass bg. */
 .sw-prefs-drawer {
-  --flyout-bg: rgba(15, 23, 42, 0.92);
+  --flyout-bg: var(--sw-glass-bg);
   --flyout-ink: #e2e8f0;
   --flyout-ink-2: #94a3b8;
   --flyout-ink-3: #64748b;
@@ -1742,9 +1745,10 @@ input:-webkit-autofill:focus {
   --sw-type-badge: 0.75rem;
 }
 
-/* Light-theme overrides (required by the both-themes charter). */
+/* Light-theme overrides (required by the both-themes charter).
+ * --flyout-bg inherits from the shared --sw-glass-bg (set to white in light
+ * mode by preferences.js) -- no per-theme override needed here. */
 :root:not(.dark) .sw-prefs-drawer {
-  --flyout-bg: rgba(255, 255, 255, 0.92);
   --flyout-ink: #1e293b;
   --flyout-ink-2: #475569;
   --flyout-ink-3: #94a3b8;
