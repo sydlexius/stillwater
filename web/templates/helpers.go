@@ -408,7 +408,13 @@ func cleanBannerBody(ctx context.Context, v ConflictBannerView) string {
 		if label == "" {
 			label = c.Type
 		}
+		if label == "" {
+			continue
+		}
 		names = append(names, label)
+	}
+	if len(names) == 0 {
+		return t(ctx, "banner.clean.body")
 	}
 	return tf(ctx, "banner.clean.body_managed", strings.Join(names, ", "))
 }

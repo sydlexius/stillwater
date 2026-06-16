@@ -635,4 +635,32 @@ func TestCleanBannerBody(t *testing.T) {
 			t.Errorf("cleanBannerBody() = %q, want %q", got, want)
 		}
 	})
+
+	t.Run("both Name and Type blank skipped, remaining connections still named", func(t *testing.T) {
+		got := cleanBannerBody(ctx, ConflictBannerView{
+			ManagedConnections: []ConflictBannerConn{
+				{Name: "", Type: ""},
+				{Name: "Emby", Type: "emby"},
+			},
+		})
+		want := "Write-back savers disabled on: Emby. Metadata changes are controlled by Stillwater."
+		if got != want {
+			t.Errorf("cleanBannerBody() = %q, want %q", got, want)
+		}
+		if strings.Contains(got, ", ") && strings.HasPrefix(got, ", ") {
+			t.Errorf("blank connection left an empty comma-slot: %q", got)
+		}
+	})
+
+	t.Run("all connections blank -> generic body", func(t *testing.T) {
+		got := cleanBannerBody(ctx, ConflictBannerView{
+			ManagedConnections: []ConflictBannerConn{
+				{Name: "", Type: ""},
+			},
+		})
+		want := "No conflict gating is active. No write-back or round-trip overlap detected."
+		if got != want {
+			t.Errorf("cleanBannerBody() = %q, want %q", got, want)
+		}
+	})
 }
