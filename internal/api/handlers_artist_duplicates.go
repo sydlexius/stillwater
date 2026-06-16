@@ -124,6 +124,15 @@ type mergeMovedPayload struct {
 	To   string `json:"to"`
 }
 
+// mergeDeletedPayload mirrors artist.DeletedItem in snake_case. Surfaced in
+// the API response so callers can preview (dry-run) or audit (commit) which
+// loose files were removed from the loser directory because the same filename
+// already existed under the survivor.
+type mergeDeletedPayload struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 // mergeResultPayload mirrors artist.MergeResult in snake_case. Conflicts is
 // omitted when empty so success responses do not carry the field.
 type mergeResultPayload struct {
@@ -132,6 +141,7 @@ type mergeResultPayload struct {
 	SurvivorPath     string                 `json:"survivor_path"`
 	SurvivorOverride bool                   `json:"survivor_override"`
 	Moved            []mergeMovedPayload    `json:"moved,omitempty"`
+	Deleted          []mergeDeletedPayload  `json:"deleted,omitempty"`
 	Conflicts        []mergeConflictPayload `json:"conflicts,omitempty"`
 	Removed          []string               `json:"removed,omitempty"`
 	Warnings         []string               `json:"warnings,omitempty"`
@@ -290,6 +300,14 @@ func toMergeMovedPayloads(in []artist.MovedItem) []mergeMovedPayload {
 	return out
 }
 
+func toMergeDeletedPayloads(in []artist.DeletedItem) []mergeDeletedPayload {
+	out := make([]mergeDeletedPayload, 0, len(in))
+	for _, d := range in {
+		out = append(out, mergeDeletedPayload{Name: d.Name, Path: d.Path})
+	}
+	return out
+}
+
 func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 	if r == nil {
 		return mergeResultPayload{}
@@ -300,6 +318,7 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 		SurvivorPath:     r.SurvivorPath,
 		SurvivorOverride: r.SurvivorOverride,
 		Moved:            toMergeMovedPayloads(r.Moved),
+		Deleted:          toMergeDeletedPayloads(r.Deleted),
 		Conflicts:        toMergeConflictPayloads(r.Conflicts),
 		Removed:          r.Removed,
 		Warnings:         r.Warnings,

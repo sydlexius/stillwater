@@ -111,6 +111,20 @@ type MovedItem struct {
 	To string
 }
 
+// DeletedItem records one loose file deleted from the loser directory during
+// the merge. When a loose file's name already exists under the survivor the
+// survivor's copy is authoritative; the loser's redundant copy is removed so
+// the loser directory can be emptied and unlinked. In dry-run mode the slice
+// previews which files WOULD be deleted; in commit mode it lists the files
+// that WERE actually removed.
+type DeletedItem struct {
+	// Name is the file basename.
+	Name string
+	// Path is the absolute path of the file that was (or would be) deleted
+	// from the loser directory.
+	Path string
+}
+
 // ConflictItem records one would-be filesystem collision found by the
 // pre-flight walk. Populated when MergeResult.Conflicts is non-empty;
 // nothing has been moved in that case.
@@ -155,14 +169,22 @@ type MergeResult struct {
 	// unlinked from the filesystem during the merge. An ID appears here
 	// only when executeLoserMerge confirmed the loser dir was empty after
 	// the rename loop AND os.Remove succeeded. A loser whose dir was left
-	// in place (loose-file collision, destination-appeared-race) is
-	// recorded in Warnings instead and does NOT appear here.
+	// in place (destination-appeared-race, symlinks, or unexpected
+	// filesystem content) does NOT appear here.
 	Removed []string
 
-	// Warnings collects non-fatal observations the user should see (loose
-	// file collisions skipped per "survivor wins", symlinks skipped, and
-	// the standing reminder that connected platforms still index the
-	// loser path until the operator triggers a refresh).
+	// Deleted lists loose files removed from loser directories because the
+	// same filename already existed under the survivor. The survivor's copy
+	// is authoritative; the loser's copy is redundant and is deleted so the
+	// loser directory becomes empty and can be unlinked. In dry-run mode
+	// this previews which files WOULD be deleted; in commit mode it lists
+	// what WAS actually removed.
+	Deleted []DeletedItem
+
+	// Warnings collects non-fatal observations the user should see (symlinks
+	// skipped, destination-appeared-race left a subdirectory in place, and
+	// the standing reminder that connected platforms still index the loser
+	// path until the operator triggers a refresh).
 	Warnings []string
 
 	// LosersDeleted lists the loser artist IDs whose rows were deleted
@@ -237,10 +259,11 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		SurvivorOverride: override,
 	}
 
-	// Pre-flight collision walk over every loser. Album-subdir
-	// collisions are halting; loose-file collisions are recorded as
-	// warnings (survivor wins, loose file stays where it is so the user
-	// can copy it manually if they want it).
+	// Pre-flight collision walk over every loser. Album-subdir collisions
+	// are halting (ErrMergeCollisions). Loose-file collisions are recorded
+	// in result.Deleted as a preview of which files will be removed from
+	// the loser during the commit phase (survivor wins; the loser's
+	// redundant copy is deleted so the loser directory can be emptied).
 	losers := lookupLosers(members, req.LoserIDs)
 	if err := preflightAllLosers(losers, survivor.Path, result); err != nil {
 		return result, err
@@ -250,14 +273,19 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		return result, nil
 	}
 
-	// Commit phase: per-loser, move each album subdir, move each
-	// non-colliding loose file, then unlink the now-empty loser dir. A
-	// failure mid-loop returns whatever has already been moved in
-	// result.Moved so the caller can reason about partial state. We only
-	// record a loser ID in result.Removed when executeLoserMerge confirms
-	// the loser directory was actually unlinked (loose-file collision and
-	// destination-appeared-race leave the dir in place; those are
-	// surfaced via result.Warnings).
+	// Clear the deletion preview populated by the pre-flight walk; the
+	// commit loop (executeLoserMerge) will repopulate result.Deleted with
+	// entries for files that were actually removed.
+	result.Deleted = nil
+
+	// Commit phase: per-loser, move each album subdir, delete each
+	// colliding loose file, move each non-colliding loose file, then
+	// unlink the now-empty loser dir. A failure mid-loop returns whatever
+	// has already been moved in result.Moved so the caller can reason
+	// about partial state. We only record a loser ID in result.Removed
+	// when executeLoserMerge confirms the loser directory was actually
+	// unlinked (destination-appeared-race leaves a subdir in place and
+	// does NOT appear here).
 	for _, loser := range losers {
 		removed, err := executeLoserMerge(loser, survivor.Path, result)
 		if err != nil {
@@ -553,9 +581,9 @@ func enumerateChildren(path string) (subdirs, files []os.DirEntry, symlinks []st
 }
 
 // preflightAllLosers walks every loser and collects collisions before any FS
-// mutation. Subdir collisions are halting (ErrMergeCollisions); loose-file
-// collisions and symlinks are recorded in result.Warnings so the caller
-// sees them but the merge can proceed.
+// mutation. Album-subdir collisions are halting (ErrMergeCollisions).
+// Loose-file collisions are recorded in result.Deleted as a preview of what
+// the commit phase will remove; symlinks are recorded in result.Warnings.
 func preflightAllLosers(losers []NearDuplicateArtist, survivorPath string, result *MergeResult) error {
 	for _, loser := range losers {
 		if err := preflightOneLoser(loser, survivorPath, result); err != nil {
@@ -603,9 +631,14 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 	for _, f := range files {
 		survivorChild := filepath.Join(survivorPath, f.Name())
 		if _, statErr := os.Lstat(survivorChild); statErr == nil {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("loose file %q already exists under survivor; left in place at %s",
-					f.Name(), filepath.Join(loser.Path, f.Name())))
+			// Survivor already has this file; the loser's copy is
+			// redundant and will be deleted during the commit phase.
+			// Record a preview entry so the caller can show what will
+			// be removed before asking the user to confirm.
+			result.Deleted = append(result.Deleted, DeletedItem{
+				Name: f.Name(),
+				Path: filepath.Join(loser.Path, f.Name()),
+			})
 		} else if !os.IsNotExist(statErr) {
 			return fmt.Errorf("checking survivor loose file %s: %w", survivorChild, statErr)
 		}
@@ -614,18 +647,20 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 }
 
 // executeLoserMerge performs the commit-phase filesystem operations for one
-// loser: move every non-colliding album subdir, move every non-colliding
-// loose file, then remove the now-empty loser directory. Per-child failures
-// abort the loop and leave the partially-moved state on disk -- the next
-// merge attempt will pick up where this one stopped (the loser dir still
-// exists and DetectDuplicates still groups it with the survivor).
+// loser: move every non-colliding album subdir, delete every colliding loose
+// file (survivor's copy wins; the loser's redundant copy is removed), move
+// every non-colliding loose file, then remove the now-empty loser directory.
+// Per-child failures abort the loop and leave the partially-moved state on
+// disk -- the next merge attempt will pick up where this one stopped (the
+// loser dir still exists and DetectDuplicates still groups it with the
+// survivor).
 //
 // Returns removed=true ONLY when the loser directory was actually unlinked
-// (rename loop drained the directory AND os.Remove succeeded). The two
-// skip cases that leave the dir on disk (loose-file survivor-wins collision
-// and destination-appeared-race) return removed=false with a warning
-// recorded in result.Warnings; the caller MUST NOT report the loser as
-// "removed" in those cases.
+// (rename/delete loop drained the directory AND os.Remove succeeded). The
+// destination-appeared-race case (a subdir collision detected between
+// pre-flight and commit) returns removed=false with a warning recorded in
+// result.Warnings; the caller MUST NOT report the loser as "removed" in
+// that case.
 //
 // Returns removed=true with no work performed if the loser directory does
 // not exist at all (ENOENT). This is the crash-recovery path: a previous
@@ -676,9 +711,13 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 		src := filepath.Join(loser.Path, f.Name())
 		dst := filepath.Join(survivorPath, f.Name())
 		if _, statErr := os.Lstat(dst); statErr == nil {
-			// Survivor wins; loose file stays in the loser dir. The loser
-			// directory removal below will skip because the dir is
-			// non-empty; the caller will see Removed unappended.
+			// Survivor already has a file with this name; its copy is
+			// authoritative. Delete the loser's redundant copy so the
+			// loser directory becomes empty and can be unlinked below.
+			if err := filesystem.RemoveFileSafe(src); err != nil {
+				return false, fmt.Errorf("deleting colliding loose file %s: %w", src, err)
+			}
+			result.Deleted = append(result.Deleted, DeletedItem{Name: f.Name(), Path: src})
 			continue
 		}
 		// RenameFileAtomic mirrors RenameDirAtomic's EXDEV fallback so a
