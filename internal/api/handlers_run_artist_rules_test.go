@@ -47,6 +47,7 @@ func testRouterWithPipelineFull(t *testing.T) (*Router, *artist.Service, *rule.S
 	providerSettings := provider.NewSettingsService(db, enc)
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		ConnectionService:  connSvc,

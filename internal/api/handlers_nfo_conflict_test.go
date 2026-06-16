@@ -45,6 +45,7 @@ func newNFOTestServer(t testing.TB) (*Router, *artist.Service, *connection.Servi
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		LibraryService:     libSvc,

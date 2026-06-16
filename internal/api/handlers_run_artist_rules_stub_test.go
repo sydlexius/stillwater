@@ -94,6 +94,7 @@ func testRouterWithStubPipeline(t *testing.T, stub *stubPipeline) (*Router, *art
 	}
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:     testSessionSecret,
 		AuthService:       authSvc,
 		ArtistService:     artistSvc,
 		ConnectionService: connSvc,

@@ -10,6 +10,13 @@ import (
 	"github.com/sydlexius/stillwater/internal/database"
 )
 
+// testSessionSecret is a fixed 64-byte hex string used as the CSRF SessionSecret
+// in Router-constructing tests. NewCSRF panics on an empty or short secret
+// (fail-fast design), so every test that calls Router.Handler() must supply one.
+// Using a shared constant here keeps test setup DRY and prevents future helpers
+// from silently introducing the same panic.
+const testSessionSecret = "61b7a3d1c8e2f9054a36b7f2d1e4c8a9b0e3f6d2c1a4b7e0f3d9c6a2b5e8f1d4"
+
 // templateDBPath holds the path to the pre-migrated SQLite file that TestMain
 // creates once. Each test copies it via newTestDB instead of re-running all
 // migrations from scratch.

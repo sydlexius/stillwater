@@ -25,10 +25,11 @@ func TestRestoreOOBE_NilService(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	db := newTestDB(t)
 	r := NewRouter(RouterDeps{
-		AuthService: auth.NewService(db),
-		DB:          db,
-		Logger:      logger,
-		StaticFS:    os.DirFS("../../web/static"),
+		SessionSecret: testSessionSecret,
+		AuthService:   auth.NewService(db),
+		DB:            db,
+		Logger:        logger,
+		StaticFS:      os.DirFS("../../web/static"),
 	})
 
 	body := &bytes.Buffer{}

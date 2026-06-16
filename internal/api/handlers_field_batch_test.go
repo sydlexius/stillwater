@@ -85,6 +85,7 @@ func testRouterWithSpyHistory(t *testing.T) (*Router, *artist.Service, *artist.H
 	}
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		HistoryService:     spySvc,

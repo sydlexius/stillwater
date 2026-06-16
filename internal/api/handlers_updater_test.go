@@ -42,6 +42,7 @@ func testRouterWithUpdater(t *testing.T) *Router {
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		RuleService:        ruleSvc,
 		NFOSnapshotService: nfoSnapSvc,
