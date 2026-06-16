@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 	templates "github.com/sydlexius/stillwater/web/templates"
@@ -509,7 +510,8 @@ func TestHandleReIdentifyWizardStart_ReportsSkippedIDs(t *testing.T) {
 func TestHandleReIdentifyWizardStep_NotFound(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
-	req := httptest.NewRequest(http.MethodGet, "/artists/re-identify/wizard/unknown/step/0", nil)
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/re-identify/wizard/unknown/step/0", nil)
 	req.SetPathValue("sid", "unknown")
 	req.SetPathValue("idx", "0")
 	w := httptest.NewRecorder()
@@ -526,7 +528,8 @@ func TestHandleReIdentifyWizardStep_InvalidIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/artists/re-identify/wizard/"+sess.ID+"/step/-1", nil)
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/re-identify/wizard/"+sess.ID+"/step/-1", nil)
 	req.SetPathValue("sid", sess.ID)
 	req.SetPathValue("idx", "nope")
 	w := httptest.NewRecorder()
@@ -1142,4 +1145,40 @@ func TestHandleReIdentifyWizardRetry(t *testing.T) {
 			t.Errorf("status = %d, want 404", w.Code)
 		}
 	})
+}
+
+// TestHandleReIdentifyWizardStep_UnauthRendersLoginPage asserts that an
+// unauthenticated GET to the wizard step page returns HTTP 200 with the login
+// page rather than a 401 JSON error. The route uses wrapOptionalAuth; the
+// handler's auth gate calls renderLoginPage when no user is present in context.
+func TestHandleReIdentifyWizardStep_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/artists/re-identify/wizard/some-sid/step/0", nil))
+	req.SetPathValue("sid", "some-sid")
+	req.SetPathValue("idx", "0")
+	w := httptest.NewRecorder()
+	r.handleReIdentifyWizardStep(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "wizard-body") {
+		t.Error("unauthenticated visitor must not see the wizard content")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	// Structural proof: both a username field and a password field must be
+	// present - confirming this is the login form, not just any page that
+	// happens to mention the auth endpoint.
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
 }
