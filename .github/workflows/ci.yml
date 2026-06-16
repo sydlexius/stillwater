@@ -21,6 +21,12 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       js: ${{ steps.filter.outputs.js }}
+      # Always emits at least one matrix leg so GitHub can interpolate the job
+      # name. Non-code PRs get a single placeholder leg marked skip=true whose
+      # build steps no-op. (An empty matrix, or a job skipped via `if:`, instead
+      # surfaces the literal, unexpanded "Build (${{ matrix.goos }},
+      # ${{ matrix.goarch }})" check name.)
+      build_matrix: ${{ steps.matrix.outputs.build_matrix }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -51,6 +57,15 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
+
+      - name: Compute build matrix
+        id: matrix
+        run: |
+          if [ "${{ steps.filter.outputs.code }}" = "true" ]; then
+            echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"},{"goos":"linux","goarch":"arm64"},{"goos":"darwin","goarch":"amd64"},{"goos":"darwin","goarch":"arm64"},{"goos":"windows","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64","skip":true}]}' >> "$GITHUB_OUTPUT"
+          fi
 
   lint:
     name: Lint
@@ -299,6 +314,8 @@ jobs:
     if: needs.test.result == 'success'
     permissions:
       contents: read
+      # Required for Codecov OIDC token exchange (use_oidc: true).
+      id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -328,7 +345,6 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           files: merged-coverage.out
           # Prevent Codecov from auto-discovering unrelated files.
           disable_search: true
@@ -337,6 +353,7 @@ jobs:
           # also be safe for the same reason, but false reduces noise when
           # Codecov is flaky.
           fail_ci_if_error: false
+          use_oidc: true
 
   coverage-floor:
     name: Coverage Floor
@@ -381,53 +398,83 @@ jobs:
           }
           echo "$output"
 
-  build:
-    name: Build
+  build-matrix:
+    # Per-target display names render as "Build Matrix (linux, amd64)", etc.
+    # The bare name "Build" is owned by the build aggregator job below so the
+    # pre-existing required check remains satisfied without a branch-protection
+    # update.
+    name: Build Matrix (${{ matrix.goos }}, ${{ matrix.goarch }})
     runs-on: ubuntu-latest
-    # The PRIMARY coverage enforcement gate is the required status check
-    # "CI / Coverage Floor" -- branch protection MUST require that check.
-    # The `coverage-floor` dependency here is defense-in-depth only: it means
-    # a floor failure also blocks the Build artifact, but Build is not itself
-    # the gate. Never rely on this dependency as the enforcement path; if
-    # `Build` is ever dropped from required checks, floor enforcement would
-    # silently disappear without the required-check gate in place.
-    # Keep the `lint` dependency so a lint-failing PR short-circuits Build.
     needs: [changes, lint, coverage-floor]
-    if: needs.changes.outputs.code == 'true'
+    # Run placeholder leg for non-code PRs (dependencies skipped); run full
+    # matrix only after lint/coverage-floor succeed for code changes.
+    if: |
+      always() &&
+      needs.changes.result == 'success' &&
+      (needs.changes.outputs.code != 'true' ||
+       (needs.lint.result == 'success' &&
+        (needs.coverage-floor.result == 'success' || needs.coverage-floor.result == 'skipped')))
+    # Avoid a job-level `if: code == 'true'`: a skipped matrix job surfaces a check
+    # named with the literal, unexpanded ${{ matrix.* }} template. Non-code PRs get
+    # a single placeholder leg (skip=true, see the `changes` job) whose steps
+    # no-op, so the check name still interpolates to a concrete goos/goarch.
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.changes.outputs.build_matrix) }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Checkout
+        if: ${{ matrix.skip != true }}
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - name: Set up Go
+        if: ${{ matrix.skip != true }}
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Generate templ
+        if: ${{ matrix.skip != true }}
         run: go tool templ generate
 
       - name: Build binary
+        if: ${{ matrix.skip != true }}
         run: |
-          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
-          COMMIT=$(git rev-parse --short HEAD)
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          PKG=github.com/sydlexius/stillwater/internal/version
-          CGO_ENABLED=0 go build \
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
             -trimpath \
-            -ldflags="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}" \
-            -o stillwater ./cmd/stillwater
+            -ldflags="-s -w" \
+            -o /dev/null \
+            ./cmd/stillwater
+
+  # Aggregate gate that owns the "Build" check name. Branch protection can keep
+  # requiring "Build" without enumerating every matrix leg. always() ensures we
+  # still emit a status when legs fail or are cancelled.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [changes, build-matrix]
+    if: always()
+    steps:
+      - name: Check matrix results
+        run: |
+          result="${{ needs.build-matrix.result }}"
+          if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+            echo "Build matrix failed or was cancelled: $result"
+            exit 1
+          fi
+          echo "Build matrix result: $result"
 
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    # Docker only runs on push to main and PUBLISHES to GHCR, so it stays gated
-    # on `test`: never publish an image for a commit whose tests failed. (Unlike
-    # `build`, which produces no published artifact and runs on PRs -- decoupling
-    # THAT from `test` is the actual wall-time win. Docker never runs on PRs, so
-    # gating it on test costs no PR-time latency.) Per CodeRabbit review on #1873.
+    # On push-to-main: gate on test (never publish an image for a commit whose
+    # tests failed). On PRs: run a build-only check (no push) to catch
+    # Dockerfile regressions early; test is not a dependency here since the
+    # PR test gate already covers correctness.
     needs: [changes, lint, test, coverage-floor]
-    if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.code == 'true' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     permissions:
       contents: read
       packages: write
@@ -437,6 +484,7 @@ jobs:
           persist-credentials: false
 
       - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
@@ -448,6 +496,6 @@ jobs:
         with:
           context: .
           file: build/docker/Dockerfile
-          push: true
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.sha }}

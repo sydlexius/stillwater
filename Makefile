@@ -210,12 +210,11 @@ clean:
 #   STILLWATER_ADMIN_PASSWORD Admin password for the ephemeral run (default: ci-ephemeral-pw)
 #   BRUNO_RESULTS_DIR        Directory for HTML report (default: /tmp/bruno-results)
 #   BRUNO_TIMEOUT_SEC        Watchdog ceiling for the bru run invocation (default: 300)
-#   MIN_TRANSPORT_PCT        Transport-pass-rate threshold for success (default: 100)
 #
 # Gate semantics MATCH the CI workflow (.github/workflows/bruno-ci.yml): the
 # target fails when Bruno's exit code is non-zero (one or more `expect`
-# assertions failed) OR when transport health drops below MIN_TRANSPORT_PCT
-# (a backstop against silent zero-test runs). The assertion gate is the
+# assertions failed) OR when any transport-level errors occur (errorRequests
+# != 0; a backstop against silent zero-test runs). The assertion gate is the
 # primary signal -- it's what catches the oneOf/discriminator drift and
 # request-body shape regressions that M49 was designed to surface.
 # The server PID is tracked in a temp file and cleaned up on exit.
@@ -299,12 +298,14 @@ bruno-ci: build
 	BRUNO_LOG="$$RESULTS_DIR/bruno-stdout.log"; \
 	echo "[bruno-ci] running Bruno collection (env=ci, port=$$SW_PORT, watchdog=$${BRUNO_TIMEOUT_SEC:-300}s)"; \
 	BRUNO_TIMEOUT_SEC="$${BRUNO_TIMEOUT_SEC:-300}"; \
-	( cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@1.22.0 run \
+	( cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@3.4.2 run \
 	    --env ci \
 	    --env-var "baseUrl=http://127.0.0.1:$$SW_PORT" \
 	    --env-var "sessionToken=$$SESSION_COOKIE" \
 	    --output "$$RESULTS_DIR/bruno-results.html" \
 	    --format html \
+	    --reporter-json "$$RESULTS_DIR/bruno-results.json" \
+	    --disable-cookies \
 	    -r \
 	    . > "$$BRUNO_LOG" 2>&1 ) & \
 	BRU_PID=$$!; \
@@ -328,22 +329,24 @@ bruno-ci: build
 	fi; \
 	\
 	echo "[bruno-ci] checking transport health (matches CI .github/workflows/bruno-ci.yml gate)"; \
-	REQ_LINE=$$(grep -E '^Requests: +[0-9]+ (passed|failed)' "$$BRUNO_LOG" | tail -1 || true); \
-	if [ -z "$$REQ_LINE" ]; then \
-	  echo "[bruno-ci] could not find Requests: summary line in Bruno output; treating as failure"; \
+	BRUNO_REPORT="$$RESULTS_DIR/bruno-results.json"; \
+	if [ ! -s "$$BRUNO_REPORT" ]; then \
+	  echo "[bruno-ci] Bruno JSON report missing or empty: $$BRUNO_REPORT; treating as failure" >&2; \
 	  exit 1; \
 	fi; \
-	PASSED=$$(echo "$$REQ_LINE" | sed -E 's/.*Requests: +([0-9]+) passed.*/\1/'); \
-	TOTAL=$$(echo "$$REQ_LINE" | sed -E 's/.* ([0-9]+) total.*/\1/'); \
+	JQ_OUT=$$(jq -r \
+	  '([.[].summary.totalRequests] | add) as $$t | ([.[].summary.errorRequests] | add) as $$e | "\($$t) \($$e)"' \
+	  "$$BRUNO_REPORT"); \
+	TOTAL="$${JQ_OUT%% *}"; \
+	ERRORS="$${JQ_OUT##* }"; \
 	if [ -z "$$TOTAL" ] || [ "$$TOTAL" = "0" ]; then \
-	  echo "[bruno-ci] Bruno reported 0 total requests; treating as failure"; \
+	  echo "[bruno-ci] Bruno reported 0 total requests; treating as failure" >&2; \
 	  exit 1; \
 	fi; \
-	PCT=$$(( PASSED * 100 / TOTAL )); \
-	MIN_PCT="$${MIN_TRANSPORT_PCT:-100}"; \
-	echo "[bruno-ci] transport: $$PASSED/$$TOTAL requests reached server = $$PCT% (threshold $$MIN_PCT%)"; \
-	if [ "$$PCT" -lt "$$MIN_PCT" ]; then \
-	  echo "[bruno-ci] transport pass rate below threshold -- failing"; \
+	REACHED=$$(( TOTAL - ERRORS )); \
+	echo "[bruno-ci] transport: $$REACHED/$$TOTAL requests reached server (errorRequests=$$ERRORS)"; \
+	if [ "$$ERRORS" -ne 0 ]; then \
+	  echo "[bruno-ci] $$ERRORS transport-level errors -- failing" >&2; \
 	  exit 1; \
 	fi; \
 	echo "[bruno-ci] transport health OK; results written to $$RESULTS_DIR/bruno-results.html"; \
