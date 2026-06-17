@@ -19,8 +19,7 @@ import (
 // GET /next/preferences
 // GET /next/preferences-drawer (drawer fragment; same handler, no chrome)
 func (r *Router) handleNextPreferencesPage(w http.ResponseWriter, req *http.Request) {
-	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
-		http.NotFound(w, req)
+	if !checkNextChannel(w, req) {
 		return
 	}
 	userID := middleware.UserIDFromContext(req.Context())
@@ -42,8 +41,7 @@ func (r *Router) handleNextPreferencesPage(w http.ResponseWriter, req *http.Requ
 //
 // GET /next/preferences-drawer
 func (r *Router) handleNextPreferencesDrawer(w http.ResponseWriter, req *http.Request) {
-	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
-		http.NotFound(w, req)
+	if !checkNextChannel(w, req) {
 		return
 	}
 	userID := middleware.UserIDFromContext(req.Context())

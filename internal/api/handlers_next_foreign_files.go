@@ -15,11 +15,11 @@ import (
 // before this handler runs (decision 12 in architecture-decisions.md). The
 // in-handler channel guard below is therefore only reachable when the lane IS
 // enabled (next/dual mode) and the resolved channel is not "next" -- triggered
-// by an explicit X-Stillwater-UX: stable header. In that edge case it delegates
-// to handleForeignFilesPage so the path never dead-ends.
+// by an explicit X-Stillwater-UX: stable header. In that edge case it returns
+// 404 (decision 12: all handleNext* handlers return 404 on an explicit /next/
+// path with the stable opt-out; the path does not serve stable content).
 func (r *Router) handleNextForeignFilesPage(w http.ResponseWriter, req *http.Request) {
-	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
-		r.handleForeignFilesPage(w, req)
+	if !checkNextChannel(w, req) {
 		return
 	}
 	if !r.requireForeignAdmin(w, req) {
@@ -41,8 +41,9 @@ func (r *Router) handleNextForeignFilesPage(w http.ResponseWriter, req *http.Req
 // before this handler runs (decision 12 in architecture-decisions.md). The
 // in-handler channel guard below is therefore only reachable when the lane IS
 // enabled (next/dual mode) and the resolved channel is not "next" -- triggered
-// by an explicit X-Stillwater-UX: stable header. In that edge case it delegates
-// to handleForeignAllowlistPage so the path never dead-ends.
+// by an explicit X-Stillwater-UX: stable header. In that edge case it returns
+// 404 (decision 12: all handleNext* handlers return 404 on an explicit /next/
+// path with the stable opt-out; the path does not serve stable content).
 //
 // Pagination: the handler reads "page" and "page_size" query parameters
 // (respecting the user's stored page-size preference via getUserPageSize) and
@@ -51,8 +52,7 @@ func (r *Router) handleNextForeignFilesPage(w http.ResponseWriter, req *http.Req
 // so the swap replaces just the table-plus-pager region without re-rendering
 // the surrounding next/ chrome.
 func (r *Router) handleNextForeignAllowlistPage(w http.ResponseWriter, req *http.Request) {
-	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
-		r.handleForeignAllowlistPage(w, req)
+	if !checkNextChannel(w, req) {
 		return
 	}
 	if !r.requireForeignAdmin(w, req) {

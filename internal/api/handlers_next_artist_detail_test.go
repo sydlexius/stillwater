@@ -85,6 +85,30 @@ func TestHandleNextArtistDetailPage_StableMode404(t *testing.T) {
 	}
 }
 
+// TestHandleNextArtistDetailPage_OptOutHeader404 verifies the handler-level
+// decision-12 guard: when the lane IS enabled (next/dual mode) but the
+// per-request X-Stillwater-UX: stable header opts back to the stable channel,
+// the handler returns 404. The channel is injected directly via
+// WithTestUXChannel, simulating the header opt-out scenario without relying on
+// the middleware-level gate (which is tested by
+// TestHandleNextArtistDetailPage_StableMode404).
+func TestHandleNextArtistDetailPage_OptOutHeader404(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := detailTestRouter(t)
+	id := seedDetailArtist(t, artistSvc, "Opt-Out Artist")
+
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id, nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleNextArtistDetailPage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("opt-out header: status = %d, want 404 (decision 12)", w.Code)
+	}
+}
+
 // TestHandleNextArtistDetailPage_Neighbors verifies prev/next-artist neighbor
 // ids are resolved from the sort_name-ascending ListIDs order and linked in the
 // hero's h/l navigation.
