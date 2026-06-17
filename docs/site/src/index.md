@@ -65,4 +65,6 @@ Stillwater shipped v1.0.0 on 2026-04-28. Active development continues; see the [
 
 [GPL-3.0](https://github.com/sydlexius/stillwater/blob/main/LICENSE) ·
 [Releases](https://github.com/sydlexius/stillwater/releases) ·
-[Contributing](https://github.com/sydlexius/stillwater/blob/main/CONTRIBUTING.md)
+[Contributing](https://github.com/sydlexius/stillwater/blob/main/CONTRIBUTING.md) ·
+[Privacy Policy](legal/privacy-policy.md) ·
+[Code Signing Policy](legal/code-signing-policy.md)

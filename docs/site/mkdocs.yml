@@ -162,6 +162,10 @@ nav:
       - PR workflow: contributing/pr-workflow.md
       - Worktrees: contributing/worktrees.md
       - Milestone protocol: contributing/milestone-protocol.md
+  - Legal:
+      - legal/index.md
+      - Privacy Policy: legal/privacy-policy.md
+      - Code Signing Policy: legal/code-signing-policy.md
   # /api/ is overwritten at deploy time with the standalone Scalar reference
   # (see docs/site/build-api-reference.sh), a document with none of Material's
   # DOM structure. With navigation.instant disabled (see theme.features above),
