@@ -272,6 +272,12 @@ SW_BACKUP_RETENTION=7
 SW_BACKUP_PATH=~/.stillwater/backups
 ```
 
+## Trust and signing
+
+Stillwater binaries are code-signed through the [SignPath Foundation](https://signpath.org/) free code-signing program. Every release is manually approved by a human before signing - no release is signed or published automatically. See the [Code Signing Policy](../legal/code-signing-policy.md) for the full process and role listing.
+
+For a description of what network connections Stillwater makes (metadata providers, the self-updater, webhooks) and what it does not collect, see the [Privacy Policy](../legal/privacy-policy.md).
+
 ## Troubleshooting
 
 See [Installation > Native binary](../troubleshooting/index.md#native-binary) in the troubleshooting docs.

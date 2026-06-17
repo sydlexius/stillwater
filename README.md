@@ -65,6 +65,12 @@ new commits. See the
 [self-update guide](https://sydlexius.github.io/stillwater/how-to/self-update/)
 for the nightly channel.
 
+Release binaries are code-signed; see the
+[Code Signing Policy](https://sydlexius.github.io/stillwater/legal/code-signing-policy/)
+for the signing process and role listing. For a description of what network
+connections Stillwater makes, see the
+[Privacy Policy](https://sydlexius.github.io/stillwater/legal/privacy-policy/).
+
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
