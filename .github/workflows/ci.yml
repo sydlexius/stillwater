@@ -209,6 +209,7 @@ jobs:
           SW_LOG_FORMAT: text
           SW_LOG_LEVEL: warn
           SW_BACKUP_ENABLED: "false"
+          SW_UX: "next"
         run: |
           ./stillwater > "${{ runner.temp }}/stillwater-a11y.log" 2>&1 &
           echo "pid=$!" >> "$GITHUB_OUTPUT"
