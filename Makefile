@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover test-js lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
 
 # Binary name
 BINARY=stillwater
@@ -50,10 +50,69 @@ test-cover:
 ## test-js: Install JS dev dependencies and run Node.js unit tests for client-side JS modules.
 # Uses Node's built-in test runner (node:test, Node 18+) and jsdom (the only npm dep).
 # No server required; tests exercise fanart-manage.js, lightbox.js, and artwork-modal.js
-# in an isolated jsdom environment. Run command: make test-js
+# in an isolated jsdom environment, plus axe-core structural a11y scans.
+# Run command: make test-js
 test-js:
 	npm ci
 	npm test
+
+## test-a11y: Build an ephemeral server and run Playwright axe-core a11y smoke tests.
+# Two-tier: (1) make test-js covers structural violations in jsdom (fast, no server);
+# (2) this target covers rendered-color-contrast violations in a real Chromium browser.
+# Required: Node 18+, Go toolchain, templ + tailwindcss on PATH (same as make build).
+# Environment variables (all optional -- defaults are ephemeral and CI-safe):
+#   SW_PORT                  Port the ephemeral server binds to (default: random free port)
+#   STILLWATER_ADMIN_USER    Admin username (default: ci-a11y-admin)
+#   STILLWATER_ADMIN_PASSWORD Admin password (default: ci-a11y-ephemeral-pw)
+test-a11y: build
+	@set -euo pipefail; \
+	SW_DB="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.db"; \
+	PID_FILE="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.pid"; \
+	LOG_FILE="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.log"; \
+	\
+	cleanup() { \
+	  if [ -f "$$PID_FILE" ]; then \
+	    kill "$$(cat $$PID_FILE)" 2>/dev/null || true; \
+	    rm -f "$$PID_FILE" "$$SW_DB" "$$SW_DB-wal" "$$SW_DB-shm" "$$LOG_FILE"; \
+	  fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	\
+	if [ -z "$${SW_PORT:-}" ]; then \
+	  SW_PORT=$$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); p=s.getsockname()[1]; s.close(); print(p)'); \
+	fi; \
+	\
+	echo "[test-a11y] starting server on port $$SW_PORT (db=$$SW_DB)"; \
+	SW_DB_PATH="$$SW_DB" SW_PORT="$$SW_PORT" SW_LOG_FORMAT=text SW_LOG_LEVEL=warn \
+	  SW_BACKUP_ENABLED=false SW_UX=next \
+	  ./$(BINARY) > "$$LOG_FILE" 2>&1 & \
+	echo $$! > "$$PID_FILE"; \
+	\
+	echo "[test-a11y] waiting for server ready..."; \
+	DEADLINE=$$(( $$(date +%s) + 60 )); \
+	READY=0; \
+	while [ $$(date +%s) -lt $$DEADLINE ]; do \
+	  if ! kill -0 "$$(cat $$PID_FILE)" 2>/dev/null; then \
+	    echo "[test-a11y] server exited before becoming ready"; \
+	    cat "$$LOG_FILE" || true; \
+	    exit 1; \
+	  fi; \
+	  HEALTH=$$(curl -sf --max-time 5 "http://127.0.0.1:$$SW_PORT/api/v1/health" 2>/dev/null || true); \
+	  if echo "$$HEALTH" | grep -q '"status":"ok"'; then \
+	    READY=1; break; \
+	  fi; \
+	  sleep 2; \
+	done; \
+	if [ "$$READY" -eq 0 ]; then \
+	  echo "[test-a11y] server did not become ready within 60s"; \
+	  cat "$$LOG_FILE" || true; \
+	  exit 1; \
+	fi; \
+	\
+	echo "[test-a11y] running Playwright a11y smoke tests..."; \
+	npm ci --silent; \
+	SW_PORT="$$SW_PORT" npx playwright test --config=playwright.config.js; \
+	echo "[test-a11y] done."
 
 ## lint: Run golangci-lint
 lint:
