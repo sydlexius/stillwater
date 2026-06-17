@@ -4,6 +4,9 @@
     "test": "node --test tests/unit/*.test.js"
   },
   "devDependencies": {
-    "jsdom": "^26.1.0"
+    "@axe-core/playwright": "4.11.3",
+    "axe-core": "4.12.1",
+    "jsdom": "^26.1.0",
+    "playwright": "1.61.0"
   }
 }

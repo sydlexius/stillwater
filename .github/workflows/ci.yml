@@ -21,6 +21,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       js: ${{ steps.filter.outputs.js }}
+      a11y: ${{ steps.filter.outputs.a11y }}
       # Always emits at least one matrix leg so GitHub can interpolate the job
       # name. Non-code PRs get a single placeholder leg marked skip=true whose
       # build steps no-op. (An empty matrix, or a job skipped via `if:`, instead
@@ -56,6 +57,17 @@ jobs:
               - 'tests/unit/**'
               - 'package.json'
               - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            a11y:
+              - 'web/templates/**'
+              - 'web/static/css/**'
+              - 'web/static/js/**'
+              - 'tests/a11y/**'
+              - 'playwright.config.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '**/*.go'
+              - '**/*.templ'
               - '.github/workflows/ci.yml'
 
       - name: Compute build matrix
@@ -130,6 +142,122 @@ jobs:
 
       - name: Run JS unit tests
         run: npm test
+
+  a11y-test:
+    name: A11y Smoke Tests (Playwright + axe-core)
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.a11y == 'true'
+    # The full pipeline (build + server boot + Playwright + teardown) comfortably
+    # finishes inside 10 min; 20 leaves headroom for slow runners and npm/browser
+    # install on cache miss.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        # Install only Chromium (no Firefox/WebKit) to keep the binary footprint small.
+        run: npx playwright install chromium --with-deps
+
+      - name: Generate templ
+        run: go tool templ generate
+
+      - uses: ./.github/actions/setup-tailwind
+
+      - name: Build Tailwind CSS
+        run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
+
+      - name: Build binary
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          PKG=github.com/sydlexius/stillwater/internal/version
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}" \
+            -o stillwater ./cmd/stillwater
+
+      - name: Pick a free port
+        id: port
+        run: |
+          PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); p=s.getsockname()[1]; s.close(); print(p)')
+          echo "port=${PORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Start Stillwater (ephemeral)
+        id: server
+        env:
+          SW_DB_PATH: ${{ runner.temp }}/stillwater-a11y.db
+          SW_PORT: ${{ steps.port.outputs.port }}
+          SW_LOG_FORMAT: text
+          SW_LOG_LEVEL: warn
+          SW_BACKUP_ENABLED: "false"
+          SW_UX: "next"
+        run: |
+          ./stillwater > "${{ runner.temp }}/stillwater-a11y.log" 2>&1 &
+          echo "pid=$!" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for server ready
+        env:
+          PORT: ${{ steps.port.outputs.port }}
+          PID: ${{ steps.server.outputs.pid }}
+        run: |
+          echo "Polling http://127.0.0.1:${PORT}/api/v1/health ..."
+          DEADLINE=$(( $(date +%s) + 60 ))
+          while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
+            if ! kill -0 "${PID}" 2>/dev/null; then
+              echo "Stillwater exited before becoming ready"
+              cat "${{ runner.temp }}/stillwater-a11y.log" || true
+              exit 1
+            fi
+            HEALTH=$(curl -sf --max-time 5 "http://127.0.0.1:${PORT}/api/v1/health" 2>/dev/null || true)
+            if echo "${HEALTH}" | grep -q '"status":"ok"'; then
+              echo "Server ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become ready within 60s"
+          cat "${{ runner.temp }}/stillwater-a11y.log" || true
+          exit 1
+
+      - name: Run Playwright a11y tests
+        env:
+          SW_PORT: ${{ steps.port.outputs.port }}
+          SW_TEST_URL: http://127.0.0.1:${{ steps.port.outputs.port }}
+        run: npx playwright test --config=playwright.config.js
+
+      - name: Stop Stillwater
+        if: always()
+        env:
+          PID: ${{ steps.server.outputs.pid }}
+        run: |
+          if kill -0 "${PID}" 2>/dev/null; then kill "${PID}"; fi
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-a11y-report
+          path: tests/a11y/report/
+          retention-days: 7
 
   test:
     # Per-shard display names render as "Test Shard (api)", "Test Shard (rule)",

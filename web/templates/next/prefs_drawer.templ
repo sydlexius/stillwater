@@ -40,8 +40,12 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 		class="sw-prefs-scrim"
 		aria-hidden="true"
 	></div>
-	<!-- Prefs drawer panel -->
-	<aside
+	<!-- Prefs drawer panel.
+	     Use <div> not <aside>: <aside> carries an implicit complementary landmark
+	     role and axe's aria-allowed-role rule rejects role="dialog" on elements with
+	     a conflicting implicit landmark role. <div> has no implicit role, so the
+	     explicit role="dialog" is valid and axe-clean. -->
+	<div
 		id="sw-prefs-drawer"
 		class="sw-prefs-drawer"
 		role="dialog"
@@ -222,7 +226,7 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 				{ t(ctx, "prefs.drawer.reset_all") }
 			</button>
 		</div>
-	</aside>
+	</div>
 	// Wire the (?) ContextHelp popovers. next/ LayoutNext does not mount the
 	// component script globally (the same trap artist_detail.templ documents),
 	// so without this every onclick=swContextHelpToggle in the drawer is dead.
