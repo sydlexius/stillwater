@@ -40,6 +40,14 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
 
     [Read more](environment-variables.md)
 
+- __Preferences reference__
+
+    ---
+
+    Every user preference key, its default value, and its allowed values or numeric range. Generated from the Go preference registry.
+
+    [Read more](preferences.md)
+
 - __UI label glossary__
 
     ---

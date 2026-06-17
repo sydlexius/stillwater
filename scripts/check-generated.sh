@@ -122,4 +122,14 @@ if [ -f docs/_generated/platform-profiles.md ]; then
   fi
 fi
 
+# Verify the preferences reference is in sync with the Go preference registry.
+# The generator runs in -check mode and exits non-zero if regeneration is needed.
+# Skip silently if the docs file is absent (e.g., a docs-stripped checkout).
+if [ -f docs/site/src/reference/preferences.md ]; then
+  if ! go run ./cmd/gen-prefs-reference -check; then
+    echo "ERROR: docs/site/src/reference/preferences.md is stale. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"
