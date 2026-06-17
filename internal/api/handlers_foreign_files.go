@@ -466,9 +466,7 @@ func (r *Router) handleForeignAllowlistRemove(w http.ResponseWriter, req *http.R
 // renders the login page for unauthenticated viewers. Mirrors the gate in
 // handleSettingsPage so the foreign-files pages stay admin-only.
 func (r *Router) requireForeignAdmin(w http.ResponseWriter, req *http.Request) bool {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		r.renderLoginPage(w, req)
+	if !r.requireAuth(w, req) {
 		return false
 	}
 	if middleware.RoleFromContext(req.Context()) != "administrator" {

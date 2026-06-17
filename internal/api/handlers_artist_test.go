@@ -499,3 +499,98 @@ func TestParseFlyoutFilters_WhitelistNormalizesExcludes(t *testing.T) {
 		}
 	})
 }
+
+// TestHandleArtistsPage_UnauthRendersLoginPage asserts that an unauthenticated
+// GET /artists returns HTTP 200 with the login page rather than artist data.
+// buildArtistListData calls requireAuth as its first action, so a visitor with
+// no session is redirected to the login form rather than receiving a 401 JSON
+// error. This covers the false-branch lines added in #2018.
+func TestHandleArtistsPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/artists", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistsPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "artist-list") {
+		t.Error("unauthenticated visitor must not see the artist list")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
+}
+
+// TestHandleArtistDetailPage_UnauthRendersLoginPage asserts that an
+// unauthenticated GET /artists/{id} returns HTTP 200 with the login page.
+// buildArtistDetailData calls requireAuth before fetching the artist record,
+// so unauthenticated visitors never reach the detail data. This covers the
+// false-branch lines added in #2018.
+func TestHandleArtistDetailPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/artists/any-id", nil))
+	req.SetPathValue("id", "any-id")
+	w := httptest.NewRecorder()
+	r.handleArtistDetailPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "artist-detail") {
+		t.Error("unauthenticated visitor must not see the artist detail page")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
+}
+
+// TestHandleArtistImagesPage_UnauthRendersLoginPage asserts that an
+// unauthenticated GET /artists/{id}/images returns HTTP 200 with the login
+// page. handleArtistImagesPage calls requireAuth as its first action, so
+// unauthenticated visitors never reach the image data. This covers the
+// false-branch lines added in #2018.
+func TestHandleArtistImagesPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/artists/any-id/images", nil))
+	req.SetPathValue("id", "any-id")
+	w := httptest.NewRecorder()
+	r.handleArtistImagesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "artist-images") {
+		t.Error("unauthenticated visitor must not see the artist images page")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
+}

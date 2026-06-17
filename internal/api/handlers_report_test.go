@@ -1370,3 +1370,35 @@ func TestHandleReportCompliance_QueryParamOverridesPref(t *testing.T) {
 		t.Errorf("expected at most 12 rows with query param override, got %d", len(rows))
 	}
 }
+
+// TestHandleCompliancePage_UnauthRendersLoginPage asserts that an
+// unauthenticated GET /reports/compliance returns HTTP 200 with the login page
+// rather than the compliance report. handleCompliancePage calls requireAuth as
+// its first action, so visitors with no session are presented the login form
+// instead of a 401 JSON error. This covers the false-branch line added in
+// #2018.
+func TestHandleCompliancePage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports/compliance", nil))
+	w := httptest.NewRecorder()
+	r.handleCompliancePage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "compliance-table") {
+		t.Error("unauthenticated visitor must not see the compliance report")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
+}

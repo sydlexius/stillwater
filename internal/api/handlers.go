@@ -564,6 +564,22 @@ func (r *Router) renderLoginPage(w http.ResponseWriter, req *http.Request) {
 	renderTempl(w, req, templates.LoginPage(r.assets(), providers, oidcInfo, returnTo))
 }
 
+// requireAuth renders the login page for unauthenticated visitors and returns
+// false, allowing callers to short-circuit with:
+//
+//	if !r.requireAuth(w, req) { return }
+//
+// It returns true when the request carries a valid session so normal handling
+// can continue. Compare with requireForeignAdmin, which adds an admin-role
+// check on top of this.
+func (r *Router) requireAuth(w http.ResponseWriter, req *http.Request) bool {
+	if middleware.UserIDFromContext(req.Context()) == "" {
+		r.renderLoginPage(w, req)
+		return false
+	}
+	return true
+}
+
 // enabledAuthProviders builds the provider list for login and registration
 // pages by reading the auth.providers.*.enabled settings from the database.
 // This ensures that toggling a provider in Settings takes effect immediately.
