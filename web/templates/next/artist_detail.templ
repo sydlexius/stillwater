@@ -776,7 +776,22 @@ templ artistIdentifiersSection(data *templates.ArtistDetailData) {
 // Esc panel/edit-mode dismiss, e edit-mode toggle, and f focused-field fetch.
 // keyboard.js (global) owns r/R (data-sw-shortcut) and f on filter-flyout
 // pages; this listener is complementary and does not conflict.
+//
+// Keyboard registry: j/k/e/f/Esc are handled by the inline script and cannot
+// be discovered from data-sw-shortcut attributes. The data-holder span below
+// carries their server-localized labels; the script calls
+// swKeyboardShortcuts.register() so the help overlay (list()) sees all
+// shortcuts alongside the DOM-discovered h/l/r/R entries.
 templ artistDetailPageScript() {
+	<span
+		id="sw-artist-kbdhints"
+		hidden
+		data-j={ t(ctx, "artist.next.shortcuts.section_next") }
+		data-k={ t(ctx, "artist.next.shortcuts.section_prev") }
+		data-e={ t(ctx, "artist.next.shortcuts.field_edit") }
+		data-f={ t(ctx, "artist.next.shortcuts.field_fetch") }
+		data-esc={ t(ctx, "artist.next.shortcuts.close") }
+	></span>
 	<script>
 		(function () {
 			'use strict';
@@ -1306,6 +1321,36 @@ templ artistDetailPageScript() {
 				// h/l/j/k: prev/next artist and section nav (handled by handle()).
 				if (handle(ev.key)) ev.preventDefault();
 			});
+		})();
+
+		// Register the inline-handled shortcuts with the shared keyboard registry
+		// so the help overlay exposes them alongside the DOM-discovered h/l/r/R
+		// entries. h/l/r/R are already in the registry via data-sw-shortcut.
+		// Must run after the IIFE above so the keydown handler is wired first.
+		(function () {
+			if (!window.swKeyboardShortcuts ||
+					typeof window.swKeyboardShortcuts.register !== 'function') {
+				if (window.console && console.error) {
+					console.error('[swKbd] register API missing on artist-detail page');
+				}
+				return;
+			}
+			var h = document.getElementById('sw-artist-kbdhints');
+			if (!h && window.console && console.error) {
+				console.error('[swKbd] sw-artist-kbdhints span not found on artist-detail page');
+			}
+			if (!h) return;
+			if (typeof window.swKeyboardShortcuts.unregister === 'function') {
+				window.swKeyboardShortcuts.unregister('artist-detail');
+			}
+			var ds = h.dataset;
+			window.swKeyboardShortcuts.register('artist-detail', [
+				{ key: 'j',      label: ds.j   || '' },
+				{ key: 'k',      label: ds.k   || '' },
+				{ key: 'e',      label: ds.e   || '' },
+				{ key: 'f',      label: ds.f   || '' },
+				{ key: 'Escape', label: ds.esc || '' }
+			]);
 		})();
 	</script>
 }

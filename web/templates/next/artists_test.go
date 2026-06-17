@@ -412,7 +412,7 @@ func TestArtistsTable_SharedNextPaginationAndRovingBoundary(t *testing.T) {
 		"next control id":         `id="sw-page-next"`,
 		"roving boundary next":    `data-sw-roving-boundary-next="#sw-page-next"`,
 		"roving boundary prev":    `data-sw-roving-boundary-prev="#sw-page-prev"`,
-		"page-prev label (h)":     `data-sw-roving-label-h="previous page"`,
+		"page-prev label (h)":     `data-sw-roving-label-h="prev page"`,
 		"page-next label (l)":     `data-sw-roving-label-l="next page"`,
 		"outerHTML fragment swap": `hx-swap="outerHTML"`,
 		"footer targets fragment": `hx-target="#artist-content"`,
