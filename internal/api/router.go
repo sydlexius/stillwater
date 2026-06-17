@@ -95,6 +95,9 @@ type RouterDeps struct {
 	// encrypted-at-rest in the settings table. Nil disables HMAC verification
 	// (secrets are never read and all requests pass through unchecked).
 	Encryptor *encryption.Encryptor
+	// SessionSecret is used to sign CSRF tokens. It must be at least 32 bytes;
+	// the CSRF middleware panics at startup if it is empty or too short.
+	SessionSecret string
 }
 
 // Router sets up all HTTP routes for the application.
@@ -219,6 +222,8 @@ type Router struct {
 	// encryptor decrypts inbound webhook HMAC secrets stored encrypted-at-rest
 	// in the settings table. Nil means HMAC verification is disabled.
 	encryptor *encryption.Encryptor
+	// sessionSecret is the HMAC key used to sign and verify CSRF tokens.
+	sessionSecret string
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -278,6 +283,7 @@ func NewRouter(deps RouterDeps) *Router {
 		webhookShutdownCtx:       webhookCtx,
 		webhookShutdownCancel:    webhookCancel,
 		encryptor:                deps.Encryptor,
+		sessionSecret:            deps.SessionSecret,
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
@@ -359,14 +365,7 @@ func (r *Router) DrainWebhooks(ctx context.Context) error {
 func (r *Router) Handler(ctx context.Context) http.Handler {
 	authMw := middleware.Auth(r.authService)
 	optAuthMw := middleware.OptionalAuth(r.authService)
-	csrf := middleware.NewCSRF()
-	// Stop the CSRF cleanup goroutine when the server context is canceled.
-	// CSRF mirrors LoginRateLimiter's lifecycle but exposes an explicit
-	// Close() so tests can stop the goroutine without a context.
-	go func() {
-		<-ctx.Done()
-		csrf.Close()
-	}()
+	csrf := middleware.NewCSRF(r.sessionSecret)
 	loginRL := middleware.NewLoginRateLimiter(ctx)
 	requireMultiUser := middleware.RequireMultiUser(r.getStringSetting)
 

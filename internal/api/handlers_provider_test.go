@@ -41,6 +41,7 @@ func testRouterWithMirror(t *testing.T) *Router {
 	registry.Register(mbAdapter)
 
 	return NewRouter(RouterDeps{
+		SessionSecret:    testSessionSecret,
 		ProviderSettings: providerSettings,
 		ProviderRegistry: registry,
 		RateLimiters:     rateLimiters,

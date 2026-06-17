@@ -54,6 +54,7 @@ func testRouterForBackdrops(t *testing.T) (*Router, *artist.Service) {
 	cacheDir := filepath.Join(t.TempDir(), "cache", "images")
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		ConnectionService:  connSvc,

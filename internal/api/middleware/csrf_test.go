@@ -3,10 +3,15 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
-	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
+
+// testSecret is the HMAC key used throughout the CSRF test suite.
+// It is >= 32 bytes to pass the minimum-length guard in NewCSRF.
+const testSecret = "test-secret-for-csrf-hmac-signing" // 33 bytes
 
 // testClock is a fixed-time Clock for tests. It always returns the same
 // instant so time-dependent logic in CSRF is independent of wall-clock speed.
@@ -16,13 +21,21 @@ type testClock struct {
 
 func (c testClock) Now() time.Time { return c.now }
 
-// fixedTestTime is the reference instant used across CSRF cleanup tests.
+// fixedTestTime is the reference instant used across time-sensitive CSRF tests.
 var fixedTestTime = time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+// tokenParts splits a 3-part CSRF token and returns (tsPart, noncePart, sigPart, ok).
+func tokenParts(token string) (string, string, string, bool) {
+	parts := strings.SplitN(token, ":", 3)
+	if len(parts) != 3 {
+		return "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], true
+}
 
 func TestCSRF_SafeMethodSetsToken(t *testing.T) {
 	t.Parallel()
-	csrf := NewCSRF()
-	t.Cleanup(csrf.Close)
+	csrf := NewCSRF(testSecret)
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -38,14 +51,27 @@ func TestCSRF_SafeMethodSetsToken(t *testing.T) {
 	cookies := w.Result().Cookies()
 	found := false
 	for _, c := range cookies {
-		if c.Name == csrfCookieName {
-			found = true
-			if c.Value == "" {
-				t.Error("CSRF cookie value is empty")
-			}
-			if c.SameSite != http.SameSiteStrictMode {
-				t.Errorf("SameSite = %v, want Strict", c.SameSite)
-			}
+		if c.Name != csrfCookieName {
+			continue
+		}
+		found = true
+		tsPart, noncePart, sigPart, ok := tokenParts(c.Value)
+		if !ok {
+			t.Fatalf("CSRF cookie is not 3-part {ts}:{nonce}:{sig}: %q", c.Value)
+		}
+		if _, err := strconv.ParseInt(tsPart, 10, 64); err != nil {
+			t.Errorf("CSRF token timestamp part is not an integer: %q", tsPart)
+		}
+		// Nonce = 16 bytes = 32 hex chars.
+		if len(noncePart) != 32 {
+			t.Errorf("CSRF token nonce part length = %d, want 32 hex chars", len(noncePart))
+		}
+		// Signature = HMAC-SHA256 = 32 bytes = 64 hex chars.
+		if len(sigPart) != 64 {
+			t.Errorf("CSRF token signature part length = %d, want 64 hex chars", len(sigPart))
+		}
+		if c.SameSite != http.SameSiteStrictMode {
+			t.Errorf("SameSite = %v, want Strict", c.SameSite)
 		}
 	}
 	if !found {
@@ -55,8 +81,7 @@ func TestCSRF_SafeMethodSetsToken(t *testing.T) {
 
 func TestCSRF_UnsafeMethodWithoutToken(t *testing.T) {
 	t.Parallel()
-	csrf := NewCSRF()
-	t.Cleanup(csrf.Close)
+	csrf := NewCSRF(testSecret)
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -72,8 +97,7 @@ func TestCSRF_UnsafeMethodWithoutToken(t *testing.T) {
 
 func TestCSRF_UnsafeMethodWithValidHeaderToken(t *testing.T) {
 	t.Parallel()
-	csrf := NewCSRF()
-	t.Cleanup(csrf.Close)
+	csrf := NewCSRF(testSecret)
 	token := csrf.generate()
 
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -92,26 +116,45 @@ func TestCSRF_UnsafeMethodWithValidHeaderToken(t *testing.T) {
 
 func TestCSRF_UnsafeMethodWithInvalidToken(t *testing.T) {
 	t.Parallel()
-	csrf := NewCSRF()
-	t.Cleanup(csrf.Close)
+	csrf := NewCSRF(testSecret)
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodDelete, "/", nil)
-	req.Header.Set(csrfTokenHeader, "bogus-token")
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	validToken := csrf.generate()
+	tsPart, noncePart, _, _ := tokenParts(validToken)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusForbidden)
+	cases := []struct {
+		name  string
+		token string
+	}{
+		{"bogus string", "bogus-token"},
+		{"only 1 part (no colon)", "1735729200"},
+		{"only 2 parts (missing nonce/sig)", "1735729200:aabbccdd"},
+		{"bad timestamp", "notanumber:" + strings.Repeat("aa", 16) + ":" + strings.Repeat("ff", 32)},
+		{"empty signature", tsPart + ":" + noncePart + ":"},
+		{"empty nonce", tsPart + "::" + strings.Repeat("ff", 32)},
+		{"empty timestamp", ":" + noncePart + ":" + strings.Repeat("ff", 32)},
+		{"bad hex in nonce", tsPart + ":notvalidhex!:" + strings.Repeat("ff", 32)},
+		{"bad hex in signature", tsPart + ":" + noncePart + ":notvalidhex!"},
+		{"tampered signature", tsPart + ":" + noncePart + ":" + strings.Repeat("aa", 32)},
+	}
+
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodDelete, "/", nil)
+		req.Header.Set(csrfTokenHeader, tc.token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("case %q: status = %d, want %d", tc.name, w.Code, http.StatusForbidden)
+		}
 	}
 }
 
 func TestCSRF_ExistingValidCookieNotReplaced(t *testing.T) {
 	t.Parallel()
-	csrf := NewCSRF()
-	t.Cleanup(csrf.Close)
+	csrf := NewCSRF(testSecret)
 	token := csrf.generate()
 
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,134 +170,17 @@ func TestCSRF_ExistingValidCookieNotReplaced(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	// Should not set a new cookie since the existing token is valid
+	// Should not set a new cookie because the existing HMAC-signed token is valid.
 	for _, c := range w.Result().Cookies() {
 		if c.Name == csrfCookieName {
-			t.Error("should not re-set cookie when valid token exists")
+			t.Error("should not re-set cookie when a valid HMAC token is already present")
 		}
 	}
-}
-
-// TestCSRF_CleanupRemovesExpiredTokens seeds 1000 already-expired tokens,
-// fires the cleanup loop via the test-only trigger channel, and asserts
-// the entire map is purged. This replaces the old len%100==0 heuristic
-// that only ran opportunistically inside generate().
-//
-// Determinism: the test uses newCSRFForTest (which exposes a trigger
-// channel) so the sweep runs synchronously instead of waiting on the
-// real ticker. No time.Sleep is used; we Gosched-yield and re-check the
-// map size in a bounded loop.
-func TestCSRF_CleanupRemovesExpiredTokens(t *testing.T) {
-	t.Parallel()
-	clk := testClock{now: fixedTestTime}
-	c := newCSRFForTest(time.Hour, clk) // ticker effectively never fires during the test
-	t.Cleanup(c.Close)
-
-	// Seed 1000 tokens with creation times well past csrfTokenTTL so the
-	// sweep marks every one of them as expired.
-	expired := fixedTestTime.Add(-2 * csrfTokenTTL)
-	c.mu.Lock()
-	for i := 0; i < 1000; i++ {
-		c.tokens[generateRandomTokenForTest(t)] = expired
-	}
-	if got := len(c.tokens); got != 1000 {
-		c.mu.Unlock()
-		t.Fatalf("seed: len(tokens) = %d, want 1000", got)
-	}
-	c.mu.Unlock()
-
-	// Fire the cleanup loop synchronously via the test hook.
-	c.trigger <- struct{}{}
-
-	// The cleanup goroutine grabs c.mu under Lock; spin-yield until we
-	// observe the post-sweep state. Bounded by a large iteration count
-	// so a regression cannot hang the suite.
-	const maxIters = 10_000
-	for i := 0; i < maxIters; i++ {
-		c.mu.RLock()
-		n := len(c.tokens)
-		c.mu.RUnlock()
-		if n == 0 {
-			return
-		}
-		runtime.Gosched()
-	}
-	c.mu.RLock()
-	n := len(c.tokens)
-	c.mu.RUnlock()
-	t.Fatalf("after cleanup trigger: len(tokens) = %d, want 0", n)
-}
-
-// TestCSRF_CleanupKeepsLiveTokens verifies that the sweep only removes
-// expired tokens; tokens issued within csrfTokenTTL must remain.
-func TestCSRF_CleanupKeepsLiveTokens(t *testing.T) {
-	t.Parallel()
-	clk := testClock{now: fixedTestTime}
-	c := newCSRFForTest(time.Hour, clk)
-	t.Cleanup(c.Close)
-
-	live := c.generate() // freshly issued relative to fixedTestTime, well inside TTL
-
-	// Add 500 expired tokens alongside the live one.
-	// fixedTestTime - 2*TTL is definitively before the cleanup cutoff
-	// (fixedTestTime - TTL), so all 500 are swept and live survives.
-	expired := fixedTestTime.Add(-2 * csrfTokenTTL)
-	c.mu.Lock()
-	for i := 0; i < 500; i++ {
-		c.tokens[generateRandomTokenForTest(t)] = expired
-	}
-	c.mu.Unlock()
-
-	c.trigger <- struct{}{}
-
-	const maxIters = 10_000
-	for i := 0; i < maxIters; i++ {
-		c.mu.RLock()
-		_, stillLive := c.tokens[live]
-		n := len(c.tokens)
-		c.mu.RUnlock()
-		if n == 1 && stillLive {
-			return
-		}
-		runtime.Gosched()
-	}
-	t.Fatal("live token was evicted or expired tokens were not swept")
-}
-
-// TestCSRF_CloseStopsGoroutine asserts Close is idempotent and that it
-// blocks until the cleanup goroutine has fully exited. The second call
-// must not panic on the already-closed stop channel.
-func TestCSRF_CloseStopsGoroutine(t *testing.T) {
-	t.Parallel()
-	c := newCSRFForTest(time.Millisecond, realClock{}) // fast ticker so any leak is obvious under -race
-	c.Close()
-	// Second Close must be a no-op. The done channel is closed before
-	// the first Close returns, so the second Close returns immediately.
-	c.Close()
-	select {
-	case <-c.done:
-		// expected: goroutine has returned
-	default:
-		t.Fatal("Close returned but cleanup goroutine is still running")
-	}
-}
-
-// generateRandomTokenForTest returns a unique opaque string. We use
-// crypto/rand via the production generator so test keys live in the
-// same key space as real tokens; collisions across the seed loop are
-// statistically impossible at 32 random bytes.
-func generateRandomTokenForTest(t *testing.T) string {
-	t.Helper()
-	// A throwaway CSRF with no cleanup goroutine is enough: generate()
-	// only touches the local map under its own mutex.
-	c := &CSRF{tokens: map[string]time.Time{}, clock: realClock{}}
-	return c.generate()
 }
 
 func TestCSRF_HeadAndOptionsAreSafe(t *testing.T) {
 	t.Parallel()
-	csrf := NewCSRF()
-	t.Cleanup(csrf.Close)
+	csrf := NewCSRF(testSecret)
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -268,4 +194,186 @@ func TestCSRF_HeadAndOptionsAreSafe(t *testing.T) {
 			t.Errorf("%s: status = %d, want %d", method, w.Code, http.StatusOK)
 		}
 	}
+}
+
+// TestCSRF_ExpiredTokenRejected asserts that a token whose timestamp is at or
+// beyond csrfTokenTTL is rejected, simulating a session surviving a long restart.
+func TestCSRF_ExpiredTokenRejected(t *testing.T) {
+	t.Parallel()
+
+	clk := testClock{now: fixedTestTime}
+	c := &CSRF{secret: []byte(testSecret), clock: clk}
+
+	token := c.generate()
+
+	// Exactly at TTL boundary: >= TTL means expired.
+	clk.now = fixedTestTime.Add(csrfTokenTTL)
+	c.clock = clk
+	if c.valid(token) {
+		t.Error("token at exactly TTL boundary should be rejected (>= TTL)")
+	}
+
+	clk.now = fixedTestTime.Add(csrfTokenTTL + time.Second)
+	c.clock = clk
+	if c.valid(token) {
+		t.Error("token older than csrfTokenTTL should be rejected")
+	}
+}
+
+// TestCSRF_FreshTokenAccepted checks that a token just issued and one just under
+// the TTL boundary are both accepted.
+func TestCSRF_FreshTokenAccepted(t *testing.T) {
+	t.Parallel()
+
+	clk := testClock{now: fixedTestTime}
+	c := &CSRF{secret: []byte(testSecret), clock: clk}
+
+	token := c.generate()
+	if !c.valid(token) {
+		t.Error("freshly issued token should be valid")
+	}
+
+	clk.now = fixedTestTime.Add(csrfTokenTTL - time.Second)
+	c.clock = clk
+	if !c.valid(token) {
+		t.Error("token just under TTL should still be valid")
+	}
+}
+
+// TestCSRF_TamperedSignatureRejected verifies that replacing the HMAC component
+// with the wrong bytes causes rejection even when the timestamp and nonce are valid.
+func TestCSRF_TamperedSignatureRejected(t *testing.T) {
+	t.Parallel()
+
+	csrf := NewCSRF(testSecret)
+	token := csrf.generate()
+
+	tsPart, noncePart, _, _ := tokenParts(token)
+	tampered := tsPart + ":" + noncePart + ":" + strings.Repeat("aa", 32) // wrong HMAC
+
+	if csrf.valid(tampered) {
+		t.Error("token with tampered signature should be rejected")
+	}
+}
+
+// TestCSRF_EmptySecretPanics verifies that NewCSRF panics immediately when
+// called with an empty secret, so misconfigured deployments fail at startup.
+func TestCSRF_EmptySecretPanics(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("NewCSRF(\"\") should panic but did not")
+		}
+	}()
+	NewCSRF("")
+}
+
+// TestCSRF_TooShortSecretPanics verifies that NewCSRF panics when the secret is
+// shorter than csrfMinSecretLen (F2: minimum 32-byte enforcement).
+func TestCSRF_TooShortSecretPanics(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("NewCSRF with short secret should panic but did not")
+		}
+	}()
+	NewCSRF("tooshort") // 8 bytes < 32
+}
+
+// TestCSRF_DifferentSecretsProduceDifferentTokens checks that the same
+// timestamp signed with two different secrets produces different HMACs.
+func TestCSRF_DifferentSecretsProduceDifferentTokens(t *testing.T) {
+	t.Parallel()
+
+	clk := testClock{now: fixedTestTime}
+	c1 := &CSRF{secret: []byte("secret-one-padded-to-32-bytes!!X"), clock: clk}
+	c2 := &CSRF{secret: []byte("secret-two-padded-to-32-bytes!!Y"), clock: clk}
+
+	tok1 := c1.generate()
+	tok2 := c2.generate()
+
+	// Tokens will differ due to different nonces OR different HMACs (or both).
+	// The HMAC check is what matters: each instance must reject the other's token.
+	if c1.valid(tok2) {
+		t.Error("c1 should not validate a token signed by c2")
+	}
+	if c2.valid(tok1) {
+		t.Error("c2 should not validate a token signed by c1")
+	}
+}
+
+// TestCSRF_SameSecretConsistentValidation is the core restart-survival test:
+// a token generated before a simulated restart validates on the new instance
+// sharing the same secret (F3 property via design, not just F1 property).
+func TestCSRF_SameSecretConsistentValidation(t *testing.T) {
+	t.Parallel()
+
+	clk := testClock{now: fixedTestTime}
+	before := &CSRF{secret: []byte(testSecret), clock: clk}
+	after := &CSRF{secret: []byte(testSecret), clock: clk} // new instance after restart
+
+	token := before.generate()
+	if !after.valid(token) {
+		t.Error("token generated before restart should be valid on the new instance with the same secret")
+	}
+}
+
+// TestCSRF_NonceUniquePerIssuance verifies that two tokens generated at the
+// same instant carry different nonces (F3: per-issuance uniqueness).
+func TestCSRF_NonceUniquePerIssuance(t *testing.T) {
+	t.Parallel()
+
+	clk := testClock{now: fixedTestTime}
+	c := &CSRF{secret: []byte(testSecret), clock: clk}
+
+	tok1 := c.generate()
+	tok2 := c.generate()
+
+	_, nonce1, _, _ := tokenParts(tok1)
+	_, nonce2, _, _ := tokenParts(tok2)
+
+	if nonce1 == nonce2 {
+		t.Error("two tokens generated at the same instant should have different nonces")
+	}
+}
+
+// TestCSRF_FutureTimestampWithinSkewAccepted verifies that a token whose
+// timestamp is slightly in the future (within csrfMaxClockSkew) is accepted,
+// since this is normal NTP drift territory.
+func TestCSRF_FutureTimestampWithinSkewAccepted(t *testing.T) {
+	t.Parallel()
+
+	futureClk := testClock{now: fixedTestTime.Add(csrfMaxClockSkew - time.Minute)}
+	gen := &CSRF{secret: []byte(testSecret), clock: futureClk}
+	validator := &CSRF{secret: []byte(testSecret), clock: testClock{now: fixedTestTime}}
+
+	token := gen.generate()
+	if !validator.valid(token) {
+		t.Error("token with future timestamp within clock-skew window should be accepted")
+	}
+}
+
+// TestCSRF_FarFutureTimestampRejected verifies that a token timestamped beyond
+// csrfMaxClockSkew in the future is rejected (F4: future-timestamp cap).
+func TestCSRF_FarFutureTimestampRejected(t *testing.T) {
+	t.Parallel()
+
+	// Generate a token timestamped csrfMaxClockSkew+1s in the future.
+	farFutureClk := testClock{now: fixedTestTime.Add(csrfMaxClockSkew + time.Second)}
+	gen := &CSRF{secret: []byte(testSecret), clock: farFutureClk}
+	validator := &CSRF{secret: []byte(testSecret), clock: testClock{now: fixedTestTime}}
+
+	token := gen.generate()
+	if validator.valid(token) {
+		t.Error("token with far-future timestamp should be rejected")
+	}
+}
+
+// TestCSRF_CloseIsNoOp verifies Close can be called multiple times without
+// panicking (retained for API compatibility with callers that still invoke it).
+func TestCSRF_CloseIsNoOp(t *testing.T) {
+	t.Parallel()
+	csrf := NewCSRF(testSecret)
+	csrf.Close()
+	csrf.Close() // must not panic
 }

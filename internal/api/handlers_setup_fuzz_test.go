@@ -223,6 +223,7 @@ func newSetupFuzzRouter(t testing.TB) *Router {
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
 	return NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ConnectionService:  connSvc,
 		RuleService:        ruleSvc,

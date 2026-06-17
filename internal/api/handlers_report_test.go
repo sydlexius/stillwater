@@ -69,6 +69,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 	}
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		ConnectionService:  connSvc,
@@ -1025,6 +1026,7 @@ func TestHandleReportHealthByLibrary(t *testing.T) {
 	})
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		LibraryService:     libSvc,

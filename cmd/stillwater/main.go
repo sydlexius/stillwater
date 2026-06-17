@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -349,7 +351,8 @@ func (a *Application) openStorage() error {
 	return nil
 }
 
-// wireSecurity resolves the encryption key and constructs the encryptor.
+// wireSecurity resolves the encryption key, constructs the encryptor, and
+// resolves (or auto-generates) the CSRF signing secret.
 func (a *Application) wireSecurity() error {
 	if a.db == nil {
 		return errors.New("wireSecurity: openStorage must run first")
@@ -363,6 +366,17 @@ func (a *Application) wireSecurity() error {
 		return fmt.Errorf("creating encryptor: %w", err)
 	}
 	a.encryptor = encryptor
+
+	// Resolve (or auto-generate + persist) the CSRF signing secret so that
+	// cfg.Auth.SessionSecret is non-empty before the router is constructed.
+	// This guarantees NewCSRF never receives an empty or too-short secret
+	// in a default deploy with no SW_SESSION_SECRET configured.
+	sessionSecret, err := resolveSessionSecret(a.cfg, a.logger)
+	if err != nil {
+		return fmt.Errorf("resolving session secret: %w", err)
+	}
+	a.cfg.Auth.SessionSecret = sessionSecret
+
 	return nil
 }
 
@@ -474,6 +488,7 @@ func (a *Application) buildServices() error {
 		RuleScheduler:      a.ruleScheduler,
 		I18nBundle:         a.i18nBundle,
 		Encryptor:          a.encryptor,
+		SessionSecret:      cfg.Auth.SessionSecret,
 	})
 
 	// Hand ownership to run(): the caller's deferred Stop now owns the
@@ -1084,6 +1099,69 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 		slog.String("path", keyFile))
 
 	return key, nil
+}
+
+// resolveSessionSecret determines the CSRF signing secret to use.
+// Priority: SW_SESSION_SECRET env var > session.secret file alongside DB > generate new.
+//
+// An explicitly supplied secret (env or file) must be at least 32 bytes; a
+// too-short value returns an error so the operator sees a clear startup message
+// rather than a silently weak HMAC key. Generated secrets are always 32 random
+// bytes (64 hex chars) and satisfy the minimum length requirement.
+func resolveSessionSecret(cfg *config.Config, logger *slog.Logger) (string, error) {
+	if cfg.Auth.SessionSecret != "" {
+		if len(cfg.Auth.SessionSecret) < 32 {
+			return "", fmt.Errorf(
+				"SW_SESSION_SECRET is too short: need at least 32 bytes, got %d; "+
+					"set a longer value or remove it to let Stillwater auto-generate one",
+				len(cfg.Auth.SessionSecret))
+		}
+		return cfg.Auth.SessionSecret, nil
+	}
+
+	dataDir := filepath.Dir(cfg.Database.Path)
+	secretFile := filepath.Join(dataDir, "session.secret")
+
+	// Try loading from file. A read error other than "file not found" must be
+	// fatal: silently falling through to generation would create a new secret and
+	// invalidate all in-flight CSRF cookies without any operator signal.
+	data, err := os.ReadFile(secretFile) //nolint:gosec // G304: path derived from trusted config
+	switch {
+	case err == nil:
+		secret := strings.TrimSpace(string(data))
+		if secret != "" {
+			if len(secret) < 32 {
+				return "", fmt.Errorf(
+					"session.secret file contains a too-short secret: need at least 32 bytes, got %d; "+
+						"remove %s and restart to auto-generate a new one",
+					len(secret), secretFile)
+			}
+			logger.Debug("loaded session secret from file", slog.String("path", secretFile))
+			return secret, nil
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return "", fmt.Errorf("reading session secret file %s: %w", secretFile, err)
+	}
+
+	// Generate 32 random bytes encoded as 64 lowercase hex characters.
+	b := make([]byte, 32)
+	if _, randErr := rand.Read(b); randErr != nil {
+		return "", fmt.Errorf("generating session secret: %w", randErr)
+	}
+	secret := hex.EncodeToString(b)
+
+	// Persist atomically. If this write fails the next startup generates a
+	// different key, invalidating all existing CSRF cookies — so the error is
+	// fatal, not a warning.
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
+		return "", fmt.Errorf("creating data directory for session secret: %w", err)
+	}
+	if err := filesystem.WriteFileAtomic(secretFile, []byte(secret+"\n"), 0o600); err != nil {
+		return "", fmt.Errorf("saving session secret to file %s: %w", secretFile, err)
+	}
+	logger.Warn("generated new CSRF session secret -- back up this file",
+		slog.String("path", secretFile))
+	return secret, nil
 }
 
 // resetCredentials wipes all stored credentials from the database.

@@ -38,6 +38,7 @@ func newTestRouterForReset(t *testing.T) *Router {
 	}
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:     testSessionSecret,
 		AuthService:       auth.NewService(db),
 		PlatformService:   platform.NewService(db),
 		ProviderSettings:  provider.NewSettingsService(db, enc),
