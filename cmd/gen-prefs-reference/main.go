@@ -204,6 +204,13 @@ func resolveDescription(key string, i18n map[string]string) string {
 // formatAllowed returns the "Allowed Values" cell text for a preference entry.
 // Enum prefs list values comma-separated in backticks. Range prefs show the
 // numeric range and step.
+//
+// The sentinel contract (from PreferenceDef): BOTH RangeMin == 0 AND
+// RangeMax == 0 means enum (no numeric range). A range whose min or max is
+// non-zero -- including ranges with a zero max, e.g. -10..0 -- must be
+// formatted as a range. The old guard `e.RangeMax > 0` incorrectly skipped
+// any range with RangeMax <= 0; this guard checks the correct both-zero
+// condition.
 func formatAllowed(e api.PreferenceDef) string {
 	if len(e.AllowedValues) > 0 {
 		parts := make([]string, len(e.AllowedValues))
@@ -212,7 +219,9 @@ func formatAllowed(e api.PreferenceDef) string {
 		}
 		return strings.Join(parts, ", ")
 	}
-	if e.RangeMax > 0 {
+	// A preference is a numeric range when at least one bound is non-zero.
+	// Both RangeMin == 0 AND RangeMax == 0 is the enum sentinel (no range).
+	if e.RangeMin != 0 || e.RangeMax != 0 {
 		if e.RangeStep > 1 {
 			return fmt.Sprintf("%d..%d (step %d)", e.RangeMin, e.RangeMax, e.RangeStep)
 		}

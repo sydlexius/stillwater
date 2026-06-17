@@ -120,6 +120,29 @@ func TestFormatAllowed_Empty(t *testing.T) {
 	}
 }
 
+// TestFormatAllowed_RangeNegativeMin covers a range whose max is zero (e.g.
+// -10..0). The old guard `RangeMax > 0` would misclassify this as an empty
+// enum entry; the corrected both-zero sentinel must format it as a range.
+func TestFormatAllowed_RangeNegativeMin(t *testing.T) {
+	e := api.PreferenceDef{Key: "neg_range", Default: "0", RangeMin: -10, RangeMax: 0, RangeStep: 1}
+	got := formatAllowed(e)
+	want := "-10..0"
+	if got != want {
+		t.Errorf("formatAllowed range with zero max = %q, want %q", got, want)
+	}
+}
+
+// TestFormatAllowed_EnumBothZero confirms that a PreferenceDef with RangeMin
+// and RangeMax both zero (the enum sentinel contract) falls through to the
+// AllowedValues path and returns "" when AllowedValues is nil.
+func TestFormatAllowed_EnumBothZero(t *testing.T) {
+	e := api.PreferenceDef{Key: "enum_entry", Default: "a", RangeMin: 0, RangeMax: 0}
+	got := formatAllowed(e)
+	if got != "" {
+		t.Errorf("enum sentinel (both-zero range, no AllowedValues) should return empty string; got %q", got)
+	}
+}
+
 // ---- resolveLabel -----------------------------------------------------------
 
 func TestResolveLabel_PrefsNamespace(t *testing.T) {
