@@ -532,9 +532,7 @@ func (r *Router) complianceListParams(w http.ResponseWriter, req *http.Request) 
 // handleCompliancePage renders the compliance report HTML page.
 // GET /reports/compliance
 func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		r.renderLoginPage(w, req)
+	if !r.requireAuth(w, req) {
 		return
 	}
 
