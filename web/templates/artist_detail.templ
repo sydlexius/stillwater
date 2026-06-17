@@ -340,7 +340,8 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 										hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/lock" }
 										hx-swap="none"
-										hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+										data-error-prefix={ t(ctx, "artist.platform_action_failed") }
+										hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
 									>
 										@components.IconLockOpen("h-4 w-4 text-gray-400")
 										{ t(ctx, "artist.unlock_artist") }
@@ -352,7 +353,8 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/lock" }
 										hx-swap="none"
-										hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+										data-error-prefix={ t(ctx, "artist.platform_action_failed") }
+										hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
 									>
 										@components.IconLockClosed("h-4 w-4 text-gray-400")
 										{ t(ctx, "artist.lock_artist") }
@@ -523,7 +525,8 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								class="flex items-center gap-2"
 								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
 								hx-swap="none"
-								hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); } else { var msg; try { msg = JSON.parse(event.detail.xhr.responseText).error; } catch(e) {} alert('Add alias failed: ' + (msg || event.detail.xhr.responseText)); }"
+								data-error-prefix={ t(ctx, "artist.alias_add_failed") }
+								hx-on::after-request="if(event.detail.successful){this.reset();window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
 							>
 								<input
 									name="alias"
@@ -864,7 +867,8 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 							aria-label={ t(ctx, "artist.trim_transparent_border") }
 							hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
 							hx-swap="none"
-							hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+							data-error-prefix={ t(ctx, "artist.platform_action_failed") }
+							hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
 						>
 							@components.IconScissors("h-5 w-5")
 						</button>
@@ -1021,7 +1025,8 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 								hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index) }
 								hx-confirm={ t(ctx, "artist.delete_fanart_confirm") }
 								hx-swap="none"
-								hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+								data-error-prefix={ t(ctx, "artist.platform_action_failed") }
+								hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
 								class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 								title={ t(ctx, "common.delete") }
 								aria-label={ tf(ctx, "artist.delete_filename", item.Filename) }
