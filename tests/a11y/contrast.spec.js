@@ -89,7 +89,13 @@ test('dashboard stat cards pass a11y scan', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. Bulk-action bar (artists list, /next/artists)
+// 2. Bulk-action bar (artists list, /next/artists?view=grid)
+//
+// Grid view (contextual=false) renders #bulk-action-bar without the
+// sw-next-bulk-strip-contextual class, so the strip is always visible.
+// Default table view (contextual=true) hides the strip via
+// display:none until a row is selected -- waitForSelector would time out
+// on an empty ephemeral DB with no rows to select.
 // ---------------------------------------------------------------------------
 
 test('bulk-action bar passes a11y scan', async ({ page }) => {
@@ -100,8 +106,8 @@ test('bulk-action bar passes a11y scan', async ({ page }) => {
     path:   '/',
   }]);
 
-  await page.goto('/next/artists');
-  // The bulk strip (#bulk-action-bar) is always rendered on the artists page.
+  await page.goto('/next/artists?view=grid');
+  // Grid view: #bulk-action-bar is always visible (no contextual hide).
   await page.waitForSelector('#bulk-action-bar', { timeout: 10_000 });
 
   // Scope the scan to the toolbar region for focused contrast coverage.
@@ -130,7 +136,10 @@ test('artwork modal passes a11y scan', async ({ page }) => {
   }]);
 
   await page.goto('/next/artists');
-  await page.waitForLoadState('networkidle');
+  // 'networkidle' never completes while the SSE event stream is live.
+  // 'load' waits for all resources to finish and is sufficient for the
+  // server-side-rendered artist list to be present in the DOM.
+  await page.waitForLoadState('load');
 
   // Click the first artist link in the list to navigate to detail.
   const firstArtistLink = page.locator('a[href^="/next/artists/"]').first();
@@ -176,7 +185,8 @@ test('prefs drawer passes a11y scan', async ({ page }) => {
   }]);
 
   await page.goto('/next/');
-  await page.waitForLoadState('networkidle');
+  // 'networkidle' never completes while the SSE event stream is live.
+  await page.waitForLoadState('load');
 
   // Open the prefs drawer.
   const prefsBtn = page.locator('.sw-prefs-btn, [data-sw-prefs-open], [aria-label*="ref"]').first();

@@ -84,7 +84,7 @@ test-a11y: build
 	\
 	echo "[test-a11y] starting server on port $$SW_PORT (db=$$SW_DB)"; \
 	SW_DB_PATH="$$SW_DB" SW_PORT="$$SW_PORT" SW_LOG_FORMAT=text SW_LOG_LEVEL=warn \
-	  SW_BACKUP_ENABLED=false \
+	  SW_BACKUP_ENABLED=false SW_UX=next \
 	  ./$(BINARY) > "$$LOG_FILE" 2>&1 & \
 	echo $$! > "$$PID_FILE"; \
 	\

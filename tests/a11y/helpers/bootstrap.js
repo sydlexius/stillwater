@@ -64,5 +64,23 @@ export async function setupAndLogin(request) {
   }
   const sessionCookie = `session=${sessionMatch[1]}`;
 
+  // Step 4: Mark onboarding as complete so /next/ dashboard does not redirect to
+  // the setup wizard on a fresh ephemeral DB. PUT /api/v1/settings is gated by
+  // RequireAdmin (satisfied -- Setup always creates role=administrator) and CSRF
+  // (satisfied -- the token from the health GET above is valid for 4h and
+  // /api/v1/auth/setup + /api/v1/auth/login are CSRF-exempt so the token is
+  // still the one issued at step 1).
+  const onboardingMark = await request.put(`${BASE_URL}/api/v1/settings`, {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrfToken,
+      'Cookie': sessionCookie,
+    },
+    data: JSON.stringify({ 'onboarding.completed': 'true' }),
+  });
+  if (!onboardingMark.ok()) {
+    throw new Error(`failed to mark onboarding complete: ${onboardingMark.status()}`);
+  }
+
   return { cookie: sessionCookie, csrfToken };
 }
