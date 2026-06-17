@@ -162,11 +162,10 @@ func parseIDsParam(raw string) []string {
 //
 //nolint:gocognit // Artists page handler (cog 50): resolves auth, parses paging/sort/filter params, validates "show selected" IDs, queries the page slice + total counts + facet counts, then renders both full-page and HTMX-partial responses. The parse/query/render stages could move into named helpers reading from a shared request-context struct without reshuffling render-time fields. Refactor tracked in #1550.
 func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (templates.ArtistListData, bool) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		r.renderLoginPage(w, req)
+	if !r.requireAuth(w, req) {
 		return templates.ArtistListData{}, false
 	}
+	userID := middleware.UserIDFromContext(req.Context())
 
 	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
 	if !ok {
@@ -470,9 +469,7 @@ func (r *Router) handleArtistMatchingIDs(w http.ResponseWriter, req *http.Reques
 // artist (callers need *a for neighbor lookups), and ok=false after it has
 // already written an error/login response to w.
 func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request) (templates.ArtistDetailData, *artist.Artist, bool) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		r.renderLoginPage(w, req)
+	if !r.requireAuth(w, req) {
 		return templates.ArtistDetailData{}, nil, false
 	}
 
@@ -646,9 +643,7 @@ func buildPlatformArtistURL(conn *connection.Connection, platformArtistID string
 // handleArtistImagesPage renders the image management page.
 // GET /artists/{id}/images
 func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		r.renderLoginPage(w, req)
+	if !r.requireAuth(w, req) {
 		return
 	}
 
