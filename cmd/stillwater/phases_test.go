@@ -523,6 +523,15 @@ func TestResolveSessionSecret_ConfigValueWins(t *testing.T) {
 	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
 	cfg.Auth.SessionSecret = "this-is-a-32-byte-long-test-key!"
 
+	// Write a conflicting persisted secret; the config value must win over it.
+	if err := os.WriteFile(
+		filepath.Join(dir, "session.secret"),
+		[]byte("different-32-byte-file-secret-value!!\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("writing conflicting secret file: %v", err)
+	}
+
 	secret, err := resolveSessionSecret(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("resolveSessionSecret: %v", err)

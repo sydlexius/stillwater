@@ -95,8 +95,8 @@ type RouterDeps struct {
 	// encrypted-at-rest in the settings table. Nil disables HMAC verification
 	// (secrets are never read and all requests pass through unchecked).
 	Encryptor *encryption.Encryptor
-	// SessionSecret is used to sign CSRF tokens. It must be a non-empty string;
-	// the CSRF middleware panics at startup if it is empty.
+	// SessionSecret is used to sign CSRF tokens. It must be at least 32 bytes;
+	// the CSRF middleware panics at startup if it is empty or too short.
 	SessionSecret string
 }
 
