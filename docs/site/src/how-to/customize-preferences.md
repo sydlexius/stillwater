@@ -213,5 +213,6 @@ The **Reset to defaults** button in the drawer footer restores every preference 
 
 ## See also
 
+- [Preferences reference](../reference/preferences.md) for a quick-lookup table of every preference key, its default, and its allowed values.
 - [Find a setting](find-a-setting.md) for application-level configuration that requires admin access.
 - [Edit an artist](edit-artist.md) for the per-field clock (prior value revert) workflow.

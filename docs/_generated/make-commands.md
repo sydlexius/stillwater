@@ -18,7 +18,7 @@
 | `make templ` | Generate Go code from Templ templates |
 | `make tailwind` | Build Tailwind CSS |
 | `make generate` | Run all code generation (templ + tailwind) |
-| `make generate-docs` | Regenerate docs site content from code (provider matrix, env-var reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles) |
+| `make generate-docs` | Regenerate docs site content from code (provider matrix, env-var reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles, preferences reference) |
 | `make tailwind-watch` | Watch and rebuild Tailwind CSS |
 | `make migrate` | Run database migrations |
 | `make favicon` | Regenerate PNG favicons from logo design |
