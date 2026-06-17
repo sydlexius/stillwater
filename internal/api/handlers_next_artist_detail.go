@@ -19,15 +19,14 @@ import (
 // before this handler runs (decision 12 in architecture-decisions.md). The
 // in-handler channel guard below is therefore only reachable when the lane IS
 // enabled (next/dual mode) and the resolved channel is not "next" -- triggered
-// by an explicit X-Stillwater-UX: stable header. In that edge case it delegates
-// to handleArtistDetailPage so the path never dead-ends (mirroring
-// handleNextArtistsPage). Otherwise it assembles the shared ArtistDetailData,
-// resolves prev/next-artist neighbor ids (for the h/l shortcuts) from the
-// filter-aware ListIDs ordering, reads the section order/hidden prefs, and
-// renders next.ArtistDetailPage.
+// by an explicit X-Stillwater-UX: stable header. In that edge case it returns
+// 404 (decision 12: all handleNext* handlers return 404 on an explicit /next/
+// path with the stable opt-out; the path does not serve stable content).
+// Otherwise it assembles the shared ArtistDetailData, resolves prev/next-artist
+// neighbor ids (for the h/l shortcuts) from the filter-aware ListIDs ordering,
+// reads the section order/hidden prefs, and renders next.ArtistDetailPage.
 func (r *Router) handleNextArtistDetailPage(w http.ResponseWriter, req *http.Request) {
-	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
-		r.handleArtistDetailPage(w, req)
+	if !checkNextChannel(w, req) {
 		return
 	}
 
@@ -82,8 +81,7 @@ func artworkKindToType(kind string) string {
 // AutoCrop:false and SelectedIndex:-1 (the modal does not pre-select a slot).
 // The modal shell lazy-loads this fragment per active kind.
 func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request) {
-	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
-		http.NotFound(w, req)
+	if !checkNextChannel(w, req) {
 		return
 	}
 	userID := middleware.UserIDFromContext(req.Context())

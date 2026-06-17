@@ -317,6 +317,29 @@ func TestHandleNextDashboardPage_StableMode404(t *testing.T) {
 	}
 }
 
+// TestHandleNextDashboardPage_OptOutHeader404 verifies the handler-level
+// decision-12 guard: when the lane IS enabled (next/dual mode) but the per-request
+// X-Stillwater-UX: stable header opts back to the stable channel, the handler
+// returns 404. This is distinct from the middleware-level stable-mode 404
+// (TestHandleNextDashboardPage_StableMode404) which fires before the handler runs.
+// Here the channel is injected directly via WithTestUXChannel, simulating the
+// header opt-out scenario.
+func TestHandleNextDashboardPage_OptOutHeader404(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, false)
+	markOnboardingComplete(t, r)
+
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/", nil)
+	w := httptest.NewRecorder()
+	r.handleNextDashboardPage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("opt-out header: status = %d, want 404 (decision 12)", w.Code)
+	}
+}
+
 // TestHandleNextDashboardPage_InitialQueryForwarded verifies that recognized
 // filter query params are forwarded into the initial HTMX load so a bookmarked
 // /next/?severity=warning opens with that filter applied. The forwarded query

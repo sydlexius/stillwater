@@ -16,9 +16,10 @@ import (
 // before this handler runs (decision 12 in architecture-decisions.md). The
 // in-handler channel guard below is therefore only reachable when the lane IS
 // enabled (next/dual mode) and the resolved channel is not "next" -- which
-// happens when the user sent an explicit X-Stillwater-UX: stable header to opt
-// back out. In that case it delegates to handleIndex so the path never
-// dead-ends (consistent with the guard in handleNextArtistsPage and others).
+// happens when a user sends an explicit X-Stillwater-UX: stable header to opt
+// back out. In that case it returns 404 (decision 12: all handleNext* handlers
+// return 404 on an explicit /next/ path with the stable opt-out; the path does
+// not serve stable content).
 //
 // When the channel is "next" it runs the same auth + onboarding checks as
 // handleIndex (checking auth from context, then the onboarding.completed
@@ -29,8 +30,7 @@ import (
 // template to show "---" placeholders rather than misleading zeros, matching
 // the defensive pattern used by DashboardActionHeader in the stable channel.
 func (r *Router) handleNextDashboardPage(w http.ResponseWriter, req *http.Request) {
-	if middleware.UXChannelFromContext(req.Context()) != middleware.UXNext {
-		r.handleIndex(w, req)
+	if !checkNextChannel(w, req) {
 		return
 	}
 

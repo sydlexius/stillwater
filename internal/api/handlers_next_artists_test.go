@@ -66,6 +66,27 @@ func TestHandleNextArtistsPage_StableMode404(t *testing.T) {
 	}
 }
 
+// TestHandleNextArtistsPage_OptOutHeader404 verifies the handler-level
+// decision-12 guard: when the lane IS enabled (next/dual mode) but the
+// per-request X-Stillwater-UX: stable header opts back to the stable channel,
+// the handler returns 404. The channel is injected directly via
+// WithTestUXChannel, simulating the header opt-out scenario without relying on
+// the middleware-level gate (which is tested by TestHandleNextArtistsPage_StableMode404).
+func TestHandleNextArtistsPage_OptOutHeader404(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithLibrary(t)
+
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists", nil)
+	w := httptest.NewRecorder()
+	r.handleNextArtistsPage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("opt-out header: status = %d, want 404 (decision 12)", w.Code)
+	}
+}
+
 // TestHandleNextArtistsPage_WiresNextBaseURL verifies the PR's core routing fix
 // end to end: when the channel is "next", buildArtistListData stamps the
 // /next/artists BaseURL, so the rendered toolbar/pagination hx-get targets

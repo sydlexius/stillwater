@@ -1429,11 +1429,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // nextFallback returns the handler for the /next/* UI-channel lane (M55 #1340).
 // Until a screen's next template lands, it re-dispatches the request to the
 // stable route by stripping the /next prefix and forwarding through the mux, so
-// navigation never breaks and no /next path 404s (decision 12). The UX
-// middleware has already set X-Stillwater-UX: next on the response. Each screen
-// issue replaces this generic fallback with a flag-aware handler as its next
-// template lands. No per-route auth wrapper is applied here because the
-// re-dispatched stable route applies its own auth.
+// navigation to unimplemented next/ paths never dead-ends. The UX middleware has
+// already set X-Stillwater-UX: next on the response. Each screen issue replaces
+// this generic fallback with a dedicated next/ handler as its template lands.
+// No per-route auth wrapper is applied here because the re-dispatched stable
+// route applies its own auth.
+//
+// Note: nextFallback only covers paths with NO dedicated next/ handler yet.
+// Implemented handlers use checkNextChannel (decision 12) and return 404 on the
+// per-request stable opt-out; that policy does not apply here because this
+// handler is the scaffolding for screens that are not yet implemented.
 func (r *Router) nextFallback(mux *http.ServeMux) http.HandlerFunc {
 	bp := r.basePath
 	return func(w http.ResponseWriter, req *http.Request) {

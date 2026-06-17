@@ -114,6 +114,43 @@ func TestHandleNextForeignAllowlistPage_StableMode404(t *testing.T) {
 	}
 }
 
+// TestHandleNextForeignFilesPage_OptOutHeader404 verifies the handler-level
+// decision-12 guard: when the lane IS enabled (next/dual mode) but the
+// per-request X-Stillwater-UX: stable header opts back to the stable channel,
+// the handler returns 404. The channel is injected directly via
+// WithTestUXChannel, simulating the header opt-out scenario without relying on
+// the middleware-level gate (which is tested by
+// TestHandleNextForeignFilesPage_StableMode404).
+func TestHandleNextForeignFilesPage_OptOutHeader404(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUXChannel(adminContext(), middleware.UXStable)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/foreign-files", nil)
+	w := httptest.NewRecorder()
+	r.handleNextForeignFilesPage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("opt-out header: status = %d, want 404 (decision 12)", w.Code)
+	}
+}
+
+// TestHandleNextForeignAllowlistPage_OptOutHeader404 verifies the handler-level
+// decision-12 guard on the allowlist handler: opt-out header returns 404.
+func TestHandleNextForeignAllowlistPage_OptOutHeader404(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUXChannel(adminContext(), middleware.UXStable)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/foreign-files/allowlist", nil)
+	w := httptest.NewRecorder()
+	r.handleNextForeignAllowlistPage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("opt-out header: status = %d, want 404 (decision 12)", w.Code)
+	}
+}
+
 // TestHandleNextForeignFilesPage_NonAdminForbidden verifies the admin gate
 // on the next/ foreign-files page handler.
 func TestHandleNextForeignFilesPage_NonAdminForbidden(t *testing.T) {
