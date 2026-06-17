@@ -4,6 +4,15 @@
 // rule.CatalogueEntry() for per-rule fix-behavior documentation metadata).
 // It writes Markdown between the well-known BEGIN/END markers in the docs file.
 //
+// Coverage contract:
+//
+//	Every rule ID returned by rule.DefaultRules() must have an entry in the
+//	catalogue (rule.CatalogueEntry returns the zero value for unknown IDs).
+//	The generator validates this at generation time and fails loudly if any
+//	rule is missing catalogue metadata. The test in internal/rule/catalogue_test.go
+//	(TestCatalogue_AllDefaultRulesPresent) provides additional coverage at
+//	`go test` time.
+//
 // Usage:
 //
 //	go run ./cmd/gen-rules-catalogue              # rewrite the file in place
@@ -48,6 +57,44 @@ func main() {
 }
 
 func run(outPath string, checkOnly bool) error {
+	rules := rule.DefaultRules()
+
+	// Coverage enforcement: every rule in DefaultRules() must have a catalogue
+	// entry. rule.CatalogueEntry returns the zero-value RuleCatalogueEntry for
+	// unknown IDs, which would silently produce incomplete documentation. Fail
+	// loudly here so a newly registered rule without catalogue metadata is
+	// caught at generation time rather than shipping incomplete docs.
+	// (internal/rule/catalogue_test.go TestCatalogue_AllDefaultRulesPresent
+	// provides defense-in-depth at `go test` time.)
+	var missing []string
+	for i := range rules {
+		r := &rules[i]
+		entry := rule.CatalogueEntry(r.ID)
+		// The zero-value has an empty Guards field and all other fields empty.
+		// Using a field that would always be non-empty for a real entry to
+		// distinguish zero-value from intentional defaults is fragile. Instead
+		// we check whether the ID key is present in the catalogue by comparing
+		// against the public CatalogueEntry accessor. A zero-value entry with
+		// all empty strings is the sentinel for "missing"; a rule intentionally
+		// marked detection-only must still have an explicit entry with at least
+		// FixBehavior: "" set (the struct zero value -- but stored explicitly).
+		// To avoid a false positive for rules that genuinely have empty Guards
+		// and FixBehavior, we gate on: the entry is zero AND the rule is NOT
+		// in the catalogue map (by re-checking via a helper).
+		if rule.CatalogueEntryPresent(r.ID) {
+			_ = entry // validated; used during rendering
+			continue
+		}
+		missing = append(missing, r.ID)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"coverage gap: the following rule IDs have no entry in the catalogue; "+
+				"add an entry in internal/rule/catalogue.go for each: %v",
+			missing,
+		)
+	}
+
 	// outPath comes from the -output flag (or the default docs path); this
 	// is a developer-only build-time tool, so a configurable path is intended.
 	existing, err := os.ReadFile(outPath) //nolint:gosec // G304: developer CLI, path is intentionally configurable
@@ -55,7 +102,7 @@ func run(outPath string, checkOnly bool) error {
 		return fmt.Errorf("read %s: %w", outPath, err)
 	}
 
-	rendered := renderCatalogue(rule.DefaultRules())
+	rendered := renderCatalogue(rules)
 	updated, err := replaceBetweenMarkers(existing, beginMarker, endMarker, rendered)
 	if err != nil {
 		return fmt.Errorf("update %s: %w", outPath, err)

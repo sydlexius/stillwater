@@ -313,6 +313,15 @@ func CatalogueEntry(id string) RuleCatalogueEntry {
 	return rulesCatalogue[id]
 }
 
+// CatalogueEntryPresent reports whether id has an explicit entry in the
+// catalogue map. It is used by generators that need to distinguish a
+// deliberately-empty entry from a missing one (a two-value map lookup
+// unavailable through CatalogueEntry's single-return signature).
+func CatalogueEntryPresent(id string) bool {
+	_, ok := rulesCatalogue[id]
+	return ok
+}
+
 // RuleFields returns the metadata field key(s) the given rule inspects, or nil
 // for image / whole-record / cross-field rules that carry no field tag. The
 // artist-detail page uses this to render an inline finding chip on the row of

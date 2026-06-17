@@ -17,7 +17,7 @@ import (
 // FixBehavior: "" -- the explicit entry is what this test enforces.
 func TestCatalogue_AllDefaultRulesPresent(t *testing.T) {
 	for _, r := range DefaultRules() {
-		if _, ok := rulesCatalogue[r.ID]; !ok {
+		if !CatalogueEntryPresent(r.ID) {
 			t.Errorf("rule %q has no entry in rulesCatalogue (add one in internal/rule/catalogue.go)", r.ID)
 		}
 	}

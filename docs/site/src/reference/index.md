@@ -40,6 +40,14 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
 
     [Read more](environment-variables.md)
 
+- __CLI reference__
+
+    ---
+
+    Every command-line flag and subcommand the stillwater binary accepts, with types, defaults, and descriptions. Generated from the Go flags registry.
+
+    [Read more](cli.md)
+
 - __Preferences reference__
 
     ---

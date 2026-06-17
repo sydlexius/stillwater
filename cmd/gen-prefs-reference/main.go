@@ -4,6 +4,17 @@
 // preference key, its default value, allowed values or range, and a
 // description resolved from the i18n locale file.
 //
+// Coverage contract:
+//
+//	Every preference in api.PreferenceRegistry() appears in the generated
+//	table (the generator covers the full registry). The label and description
+//	columns are resolved from the i18n locale file (internal/i18n/locales/en.json);
+//	a preference key without a matching i18n entry renders with an empty
+//	description rather than failing (soft coverage -- the label falls back to
+//	a snake_case-to-Title conversion). Adding a new preference to the registry
+//	without corresponding i18n entries will produce a table row with an empty
+//	Description; this is a soft gap, not a build failure.
+//
 // Usage:
 //
 //	go run ./cmd/gen-prefs-reference              # rewrite the file in place
