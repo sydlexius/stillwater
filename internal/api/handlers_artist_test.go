@@ -503,7 +503,7 @@ func TestParseFlyoutFilters_WhitelistNormalizesExcludes(t *testing.T) {
 // TestHandleArtistsPage_UnauthRendersLoginPage asserts that an unauthenticated
 // GET /artists returns HTTP 200 with the login page rather than artist data.
 // buildArtistListData calls requireAuth as its first action, so a visitor with
-// no session is redirected to the login form rather than receiving a 401 JSON
+// no session is shown the login page in-page (HTTP 200) rather than a 401 JSON
 // error. This covers the false-branch lines added in #2018.
 func TestHandleArtistsPage_UnauthRendersLoginPage(t *testing.T) {
 	t.Parallel()
@@ -592,5 +592,84 @@ func TestHandleArtistImagesPage_UnauthRendersLoginPage(t *testing.T) {
 	}
 	if !strings.Contains(body, `type="password"`) {
 		t.Error("login page must include a password input field (type=password)")
+	}
+}
+
+// TestHandleArtistsPage_AuthRendersArtistList asserts that an authenticated
+// GET /artists returns HTTP 200 with the real artist list page (not the login
+// page). buildArtistListData calls requireAuth as its first action; with a
+// valid user ID in context, the list page renders normally.
+func TestHandleArtistsPage_AuthRendersArtistList(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated request should get artist list (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("authenticated user must not see the login page")
+	}
+	if !strings.Contains(body, "artist-sort-input") {
+		t.Error("artist list page must include the sort input (artist-sort-input)")
+	}
+}
+
+// TestHandleArtistDetailPage_AuthRendersArtistDetail asserts that an
+// authenticated GET /artists/{id} returns HTTP 200 with the real artist detail
+// page. buildArtistDetailData calls requireAuth before fetching the artist; with
+// a valid user ID in context, the detail page renders for the requested artist.
+func TestHandleArtistDetailPage_AuthRendersArtistDetail(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := addTestArtist(t, artistSvc, "Auth Detail Artist")
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+a.ID, nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleArtistDetailPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated request should get artist detail (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("authenticated user must not see the login page")
+	}
+	if !strings.Contains(body, "data-artist-id") {
+		t.Error("artist detail page must include the data-artist-id attribute")
+	}
+}
+
+// TestHandleArtistImagesPage_AuthRendersArtistImages asserts that an
+// authenticated GET /artists/{id}/images returns HTTP 200 with the real image
+// management page. handleArtistImagesPage calls requireAuth as its first
+// action; with a valid user ID in context, the image management page renders.
+func TestHandleArtistImagesPage_AuthRendersArtistImages(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := addTestArtist(t, artistSvc, "Auth Images Artist")
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+a.ID+"/images", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleArtistImagesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated request should get artist images (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("authenticated user must not see the login page")
+	}
+	if !strings.Contains(body, a.Name) {
+		t.Errorf("artist images page must include the artist name (%q)", a.Name)
 	}
 }
