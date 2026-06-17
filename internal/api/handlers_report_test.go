@@ -1402,3 +1402,28 @@ func TestHandleCompliancePage_UnauthRendersLoginPage(t *testing.T) {
 		t.Error("login page must include a password input field (type=password)")
 	}
 }
+
+// TestHandleCompliancePage_AuthRendersCompliancePage asserts that an
+// authenticated GET /reports/compliance returns HTTP 200 with the real
+// compliance report. handleCompliancePage calls requireAuth as its first
+// action; with a valid user ID in context, the compliance table renders.
+func TestHandleCompliancePage_AuthRendersCompliancePage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/compliance", nil)
+	w := httptest.NewRecorder()
+	r.handleCompliancePage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated request should get compliance page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("authenticated user must not see the login page")
+	}
+	if !strings.Contains(body, "compliance-table") {
+		t.Error("compliance page must include the compliance table (compliance-table)")
+	}
+}
