@@ -10,6 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../..');
 
 export const MODULE_PATHS = {
+  keyboard:     join(REPO_ROOT, 'web/static/js/keyboard.js'),
   lightbox:     join(REPO_ROOT, 'web/static/js/artist-detail/lightbox.js'),
   fanartManage: join(REPO_ROOT, 'web/static/js/artist-detail/fanart-manage.js'),
   artworkModal: join(REPO_ROOT, 'web/static/js/artist-detail/artwork-modal.js'),

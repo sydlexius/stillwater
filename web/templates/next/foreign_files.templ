@@ -73,6 +73,16 @@ templ ForeignFilesPageNext(assets templates.AssetPaths, view templates.ForeignFi
 			>
 				@templates.ForeignFilesTable(view)
 			</div>
+			// Keyboard tip line: mirrors the artists/dashboard sw-list-tips footer.
+			// j/k navigate rows; Enter allowlists the focused file.
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "foreign_files.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_allowlist") }</span></span>
+			</p>
 		</div>
 	}
 }
@@ -96,6 +106,22 @@ templ ForeignAllowlistPageNext(assets templates.AssetPaths, view templates.Forei
 				</div>
 			</div>
 			@ForeignAllowlistBodyNext(view)
+			// Keyboard tip line: mirrors the artists/dashboard sw-list-tips footer.
+			// j/k navigate rows; Enter removes; h/l page-jump when multiple pages exist.
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "foreign_files.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_prev") }</span></span>
+				if view.Pagination.TotalPages > 1 {
+					<span aria-hidden="true">·</span>
+					<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.page_prev") }</span></span>
+					<span aria-hidden="true">·</span>
+					<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.page_next") }</span></span>
+				}
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_remove") }</span></span>
+			</p>
 		</div>
 	}
 }
