@@ -3005,7 +3005,8 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
  * panel, same hairline border, radius, and padding. Previously the panel was
  * scoped to .sw-next-dashboard only and artist-detail carried a bespoke
  * (non-matching) surface, so the footers diverged -- that divergence is the bug
- * this consolidation fixes. */
+ * this consolidation fixes. The footer is horizontally centered across all four
+ * next/ surfaces via justify-content: center. */
 .sw-next-artists .sw-list-tips,
 .sw-next-dashboard .sw-list-tips,
 .sw-next-artist-detail .sw-list-tips,
@@ -3014,6 +3015,7 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0.25rem 0.75rem;
   /* --sw-type-meta is defined on .sw-next-artists and .sw-next-dashboard
    * (0.75rem each) so the Font Size pref rescales the tip line there through the
