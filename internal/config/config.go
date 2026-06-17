@@ -102,7 +102,7 @@ type DatabaseConfig struct {
 
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
-	SessionSecret string `yaml:"session_secret" toml:"session_secret" env:"SW_SESSION_SECRET" default:"unset" desc:"Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory."`
+	SessionSecret string `yaml:"session_secret" toml:"session_secret" env:"SW_SESSION_SECRET" default:"" desc:"Secret used to sign CSRF tokens (minimum 32 bytes). When unset Stillwater generates 32 random bytes on first run and persists them alongside the database file as session.secret. Must be kept stable across restarts; rotating it invalidates all in-flight CSRF cookies."`
 }
 
 // EncryptionConfig holds encryption key settings.

@@ -1188,3 +1188,121 @@ func TestHandleForeignFilesCount_NextChannelSidebarPill(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleForeignFilesPage_UnauthRendersLoginPage asserts that an
+// unauthenticated GET /settings/foreign-files returns HTTP 200 with the login
+// page rather than a 401 JSON error. The route uses wrapOptionalAuth so
+// requireForeignAdmin -> renderLoginPage runs for cookieless visitors.
+func TestHandleForeignFilesPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/settings/foreign-files", nil))
+	w := httptest.NewRecorder()
+	r.handleForeignFilesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "foreign-files-table") {
+		t.Error("unauthenticated visitor must not see the foreign-files table")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	// Structural proof: both a username field and a password field must be
+	// present - confirming this is the login form, not just any page that
+	// happens to mention the auth endpoint.
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
+}
+
+// TestHandleForeignAllowlistPage_UnauthRendersLoginPage is the same check for
+// the allowlist route.
+func TestHandleForeignAllowlistPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/settings/foreign-files/allowlist", nil))
+	w := httptest.NewRecorder()
+	r.handleForeignAllowlistPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "foreign-files-table") {
+		t.Error("unauthenticated visitor must not see the allowlist table")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+	// Structural proof: both a username field and a password field must be
+	// present - confirming this is the login form, not just any page that
+	// happens to mention the auth endpoint.
+	if !strings.Contains(body, `name="username"`) {
+		t.Error("login page must include a username input field (name=username)")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("login page must include a password input field (type=password)")
+	}
+}
+
+// TestHandleForeignFilesPage_AuthenticatedRendersPage is the authenticated-path
+// regression test for handleForeignFilesPage. An admin request must reach the
+// real foreign-files page, not the login render. This guards the wrapAuth change
+// introduced in #1941: adding the auth gate must not break the authed path.
+func TestHandleForeignFilesPage_AuthenticatedRendersPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files", nil))
+	w := httptest.NewRecorder()
+	r.handleForeignFilesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated admin request should get 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// The real page must render the foreign-files table container, not the
+	// login form.
+	if !strings.Contains(body, "foreign-files-table") {
+		t.Error("authenticated admin must see the foreign-files-table in the response")
+	}
+	if strings.Contains(body, `type="password"`) {
+		t.Error("authenticated admin must not see a login password field")
+	}
+}
+
+// TestHandleForeignAllowlistPage_AuthenticatedRendersPage is the
+// authenticated-path regression test for handleForeignAllowlistPage.
+func TestHandleForeignAllowlistPage_AuthenticatedRendersPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files/allowlist", nil))
+	w := httptest.NewRecorder()
+	r.handleForeignAllowlistPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated admin request should get 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// The real page must render the allowlist table container, not the login
+	// form.
+	if !strings.Contains(body, "foreign-allowlist-table") {
+		t.Error("authenticated admin must see the foreign-allowlist-table in the response")
+	}
+	if strings.Contains(body, `type="password"`) {
+		t.Error("authenticated admin must not see a login password field")
+	}
+}

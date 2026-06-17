@@ -457,6 +457,7 @@ func TestRootRoute_RendersLayout_WithSidebar(t *testing.T) {
 
 	// Create router with all necessary services
 	r := NewRouter(RouterDeps{
+		SessionSecret:     testSessionSecret,
 		AuthService:       auth.NewService(db),
 		PlatformService:   platform.NewService(db),
 		ProviderSettings:  provider.NewSettingsService(db, enc),

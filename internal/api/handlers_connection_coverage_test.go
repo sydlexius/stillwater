@@ -51,6 +51,7 @@ func newConnectionTestRouter(t *testing.T) *Router {
 	cacheDir := filepath.Join(t.TempDir(), "cache", "images")
 
 	return NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		ConnectionService:  connSvc,

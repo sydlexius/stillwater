@@ -32,6 +32,7 @@ func testRouterForConflictToggle(t *testing.T) (*Router, *connection.Service) {
 	}
 	connSvc := connection.NewService(db, enc)
 	r := NewRouter(RouterDeps{
+		SessionSecret:     testSessionSecret,
 		ConnectionService: connSvc,
 		DB:                db,
 		Logger:            slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),

@@ -76,6 +76,7 @@ func testRouterWithErrHistoryService(t *testing.T) (*Router, *artist.Service) {
 	}
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		HistoryService:     errHistSvc,

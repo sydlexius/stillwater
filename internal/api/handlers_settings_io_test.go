@@ -64,6 +64,7 @@ func settingsIOTestDeps(t *testing.T) (*Router, *settingsio.Service, *sql.DB) {
 		WithScraperService(scraperSvc)
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		RuleService:        ruleSvc,
 		NFOSnapshotService: nfo.NewSnapshotService(db),
@@ -129,10 +130,11 @@ func TestHandleSettingsExport_NilService(t *testing.T) {
 	db := setupTestDBForIO(t)
 	authSvc := auth.NewService(db)
 	r := NewRouter(RouterDeps{
-		AuthService: authSvc,
-		DB:          db,
-		Logger:      logger,
-		StaticFS:    os.DirFS("../../web/static"),
+		SessionSecret: testSessionSecret,
+		AuthService:   authSvc,
+		DB:            db,
+		Logger:        logger,
+		StaticFS:      os.DirFS("../../web/static"),
 	})
 
 	body := `{"passphrase":"secret"}`
@@ -248,10 +250,11 @@ func TestHandleSettingsImport_NilService(t *testing.T) {
 	db := setupTestDBForIO(t)
 	authSvc := auth.NewService(db)
 	r := NewRouter(RouterDeps{
-		AuthService: authSvc,
-		DB:          db,
-		Logger:      logger,
-		StaticFS:    os.DirFS("../../web/static"),
+		SessionSecret: testSessionSecret,
+		AuthService:   authSvc,
+		DB:            db,
+		Logger:        logger,
+		StaticFS:      os.DirFS("../../web/static"),
 	})
 
 	body := `{"passphrase":"secret","envelope":{}}`

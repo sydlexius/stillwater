@@ -46,6 +46,7 @@ func newArtistFuzzRouter(t testing.TB) *Router {
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
 	return NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		ConnectionService:  connSvc,

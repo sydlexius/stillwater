@@ -41,6 +41,7 @@ func testRouterWithLibrary(t *testing.T) (*Router, *library.Service, *artist.Ser
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		LibraryService:     libSvc,

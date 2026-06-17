@@ -47,6 +47,7 @@ func authSetupTestRouter(t *testing.T) (*Router, *encryption.Encryptor) {
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
 	r := NewRouter(RouterDeps{
+		SessionSecret:      testSessionSecret,
 		AuthService:        authSvc,
 		ConnectionService:  connSvc,
 		RuleService:        ruleSvc,
