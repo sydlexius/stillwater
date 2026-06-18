@@ -822,6 +822,52 @@ func TestHandleRulesStatus_NoScheduler_ReturnsDBValue(t *testing.T) {
 	}
 }
 
+// TestHandleRulesStatus_NoScheduler_DBError verifies that when the scheduler is
+// nil and LatestRulesEvaluatedAt returns an error (e.g. a malformed
+// rules_evaluated_at value in the DB), handleRulesStatus still returns HTTP 200
+// with last_evaluation_at: null and scheduler_enabled: false instead of
+// propagating the error (#1796 error-path coverage).
+func TestHandleRulesStatus_NoScheduler_DBError(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	r.ruleScheduler = nil
+
+	ctx := context.Background()
+
+	// Seed an artist so the DB has a non-excluded row for the MAX() query.
+	a := &artist.Artist{Name: "DBError Artist", Path: "/music/dberror"}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Write a non-RFC3339 value directly so time.Parse fails inside
+	// LatestRulesEvaluatedAt, exercising the error branch in handleRulesStatus.
+	if _, err := r.db.ExecContext(ctx,
+		`UPDATE artists SET rules_evaluated_at = 'INVALID-TIMESTAMP' WHERE id = ?`, a.ID); err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/rules/status", nil)
+	w := httptest.NewRecorder()
+	r.handleRulesStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	// Error must be swallowed; last_evaluation_at falls back to nil.
+	if resp["last_evaluation_at"] != nil {
+		t.Errorf("last_evaluation_at: got %v, want nil on DB parse error", resp["last_evaluation_at"])
+	}
+	if v, _ := resp["scheduler_enabled"].(bool); v {
+		t.Error("scheduler_enabled: got true, want false")
+	}
+}
+
 // TestHandleRulesStatus_NoScheduler_NoEvaluations verifies that the nil case
 // is preserved when the scheduler is nil AND no artist has been evaluated yet.
 func TestHandleRulesStatus_NoScheduler_NoEvaluations(t *testing.T) {

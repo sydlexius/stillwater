@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -517,5 +518,36 @@ func TestUpdate_DoesStampDirty(t *testing.T) {
 	}
 	if reread.DirtySince == nil {
 		t.Fatalf("dirty_since was not stamped by Update; external mutations must re-schedule evaluation")
+	}
+}
+
+// TestLatestRulesEvaluatedAt_MalformedTimestamp verifies that a non-RFC3339
+// rules_evaluated_at value stored in the DB (e.g. from a hand-edited row or a
+// future schema bug) causes LatestRulesEvaluatedAt to return a wrapped error
+// rather than silently returning a zero time or nil.
+func TestLatestRulesEvaluatedAt_MalformedTimestamp(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create an artist so the table has a non-excluded row.
+	a := testArtist("MalformedTS", "/music/malformed-ts")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Directly write a value that is not valid RFC3339 so time.Parse will fail.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE artists SET rules_evaluated_at = 'not-a-valid-rfc3339' WHERE id = ?`, a.ID); err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+
+	got, err := svc.LatestRulesEvaluatedAt(ctx)
+	if err == nil {
+		t.Fatalf("expected error for malformed timestamp, got %v", got)
+	}
+	if !strings.Contains(err.Error(), "parsing latest rules_evaluated_at") {
+		t.Errorf("error = %v, want message containing 'parsing latest rules_evaluated_at'", err)
 	}
 }
