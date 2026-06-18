@@ -816,7 +816,7 @@
     "method": "GET",
     "path": "/rules/status",
     "handler": "handleRulesStatus",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getRunAllRulesStatus",

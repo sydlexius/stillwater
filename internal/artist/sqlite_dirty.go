@@ -130,7 +130,13 @@ func (r *sqliteArtistRepo) CountEligibleArtists(ctx context.Context) (int, error
 // LatestRulesEvaluatedAt returns the most recent rules_evaluated_at timestamp
 // across all non-excluded artists, or nil when no artist has ever been evaluated.
 // Used to hydrate the scheduler's in-memory lastRunAt on startup so the
-// dashboard's "Last evaluated" stat survives a server restart (#1796).
+// dashboard's "Last evaluated" stat survives a server restart (#1796), and to
+// populate the stat when no scheduler is configured (interval_minutes=0).
+//
+// Filter: is_excluded = 0 only (deliberately unlike ListDirtyIDs, which also
+// requires locked = 0). A locked artist's past evaluation still counts toward
+// "when were rules last evaluated" -- locking prevents future pipeline runs
+// but does not erase historical evaluation history.
 func (r *sqliteArtistRepo) LatestRulesEvaluatedAt(ctx context.Context) (*time.Time, error) {
 	var raw *string
 	err := r.db.QueryRowContext(ctx,

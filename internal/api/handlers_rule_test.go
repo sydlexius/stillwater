@@ -757,3 +757,94 @@ func TestHandleRuleResults_QueryParamOverridesPref(t *testing.T) {
 		t.Errorf("expected at most 12 rows with query param override, got %d", len(rows))
 	}
 }
+
+// TestHandleRulesStatus_NoScheduler_ReturnsDBValue verifies that when no rule
+// scheduler is configured (ruleScheduler == nil, i.e. interval_minutes = 0),
+// the GET /api/v1/rules/status endpoint still returns the real last_evaluation_at
+// from the DB rather than a hard-coded nil (#1796). This is the path taken by
+// every default installation where rule_schedule.interval_minutes is not set.
+func TestHandleRulesStatus_NoScheduler_ReturnsDBValue(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	r.ruleScheduler = nil // simulate default no-schedule configuration
+
+	ctx := context.Background()
+
+	// Seed one evaluated artist so the DB has a non-nil MAX(rules_evaluated_at).
+	a := &artist.Artist{
+		Name: "Status Artist",
+		Path: "/music/status",
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create artist: %v", err)
+	}
+	evalAt := time.Date(2025, 5, 20, 12, 0, 0, 0, time.UTC)
+	if err := artistSvc.MarkRulesEvaluated(ctx, a.ID, evalAt); err != nil {
+		t.Fatalf("MarkRulesEvaluated: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/rules/status", nil)
+	w := httptest.NewRecorder()
+	r.handleRulesStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// scheduler_enabled must be false (no schedule configured).
+	if v, _ := resp["scheduler_enabled"].(bool); v {
+		t.Error("scheduler_enabled: got true, want false")
+	}
+	// interval_minutes must be 0.
+	if v, _ := resp["interval_minutes"].(float64); int(v) != 0 {
+		t.Errorf("interval_minutes: got %v, want 0", v)
+	}
+	// next_evaluation_at must be nil.
+	if resp["next_evaluation_at"] != nil {
+		t.Errorf("next_evaluation_at: got %v, want nil", resp["next_evaluation_at"])
+	}
+	// last_evaluation_at must be the DB value, not nil.
+	rawTS, ok := resp["last_evaluation_at"].(string)
+	if !ok || rawTS == "" {
+		t.Fatalf("last_evaluation_at: got %v (%T), want RFC3339 string", resp["last_evaluation_at"], resp["last_evaluation_at"])
+	}
+	got, err := time.Parse(time.RFC3339, rawTS)
+	if err != nil {
+		t.Fatalf("parsing last_evaluation_at %q: %v", rawTS, err)
+	}
+	if !got.Equal(evalAt) {
+		t.Errorf("last_evaluation_at: got %v, want %v", got, evalAt)
+	}
+}
+
+// TestHandleRulesStatus_NoScheduler_NoEvaluations verifies that the nil case
+// is preserved when the scheduler is nil AND no artist has been evaluated yet.
+func TestHandleRulesStatus_NoScheduler_NoEvaluations(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	r.ruleScheduler = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/rules/status", nil)
+	w := httptest.NewRecorder()
+	r.handleRulesStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if v, _ := resp["scheduler_enabled"].(bool); v {
+		t.Error("scheduler_enabled: got true, want false")
+	}
+	if resp["last_evaluation_at"] != nil {
+		t.Errorf("last_evaluation_at: got %v, want nil (no evaluations in DB)", resp["last_evaluation_at"])
+	}
+}
