@@ -387,6 +387,14 @@ func (s *Service) CountEligibleArtists(ctx context.Context) (int, error) {
 	return s.artists.CountEligibleArtists(ctx)
 }
 
+// LatestRulesEvaluatedAt returns the most recent rules_evaluated_at timestamp
+// across all non-excluded artists, or nil when no artist has ever been evaluated.
+// Used by the rule scheduler to hydrate its in-memory lastRunAt on startup so
+// the dashboard's "Last evaluated" stat reflects previous-session runs (#1796).
+func (s *Service) LatestRulesEvaluatedAt(ctx context.Context) (*time.Time, error) {
+	return s.artists.LatestRulesEvaluatedAt(ctx)
+}
+
 // GetByID retrieves an artist by primary key. Without opts every side-table
 // hydration runs (provider IDs, images, primary library) for API back-compat.
 // Pass a HydrateOpts value to opt into a leaner load that skips one or more

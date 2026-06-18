@@ -126,3 +126,25 @@ func (r *sqliteArtistRepo) CountEligibleArtists(ctx context.Context) (int, error
 	}
 	return n, nil
 }
+
+// LatestRulesEvaluatedAt returns the most recent rules_evaluated_at timestamp
+// across all non-excluded artists, or nil when no artist has ever been evaluated.
+// Used to hydrate the scheduler's in-memory lastRunAt on startup so the
+// dashboard's "Last evaluated" stat survives a server restart (#1796).
+func (r *sqliteArtistRepo) LatestRulesEvaluatedAt(ctx context.Context) (*time.Time, error) {
+	var raw *string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT MAX(rules_evaluated_at) FROM artists WHERE is_excluded = 0`).Scan(&raw)
+	if err != nil {
+		return nil, fmt.Errorf("querying latest rules_evaluated_at: %w", err)
+	}
+	if raw == nil || *raw == "" {
+		return nil, nil
+	}
+	ts, err := time.Parse(time.RFC3339, *raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing latest rules_evaluated_at %q: %w", *raw, err)
+	}
+	ts = ts.UTC()
+	return &ts, nil
+}

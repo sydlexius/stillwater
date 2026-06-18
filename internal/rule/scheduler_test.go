@@ -122,6 +122,50 @@ func TestScheduler_MarkEvaluated(t *testing.T) {
 	}
 }
 
+// TestScheduler_SeedLastEvaluated verifies that SeedLastEvaluated hydrates the
+// scheduler's in-memory lastRunAt from a persisted timestamp (e.g. from the DB)
+// so the dashboard's "Last evaluated" stat survives a server restart (#1796).
+// Before this fix, lastRunAt was always zero after a restart, so Status()
+// returned nil for LastEvaluationAt and the JS always showed "Never" even when
+// artists had been evaluated in a previous session.
+func TestScheduler_SeedLastEvaluated(t *testing.T) {
+	logger := slog.Default()
+	pipeline := &Pipeline{logger: logger.With(slog.String("component", "fix-pipeline"))}
+	sched := NewScheduler(pipeline, nil, nil, logger)
+
+	if sched.Status().LastEvaluationAt != nil {
+		t.Fatal("precondition: LastEvaluationAt should be nil before seeding")
+	}
+
+	// Seed with a known past timestamp (simulating a DB-loaded value).
+	seed := time.Date(2025, 1, 15, 10, 0, 0, 0, time.UTC)
+	sched.SeedLastEvaluated(seed)
+
+	got := sched.Status().LastEvaluationAt
+	if got == nil {
+		t.Fatal("LastEvaluationAt should be non-nil after SeedLastEvaluated")
+	}
+	if !got.Equal(seed) {
+		t.Errorf("LastEvaluationAt = %v, want %v", got, seed)
+	}
+
+	// SeedLastEvaluated is a no-op when lastRunAt is already set (prevents
+	// overwriting a live tick that advanced beyond the seed value).
+	later := seed.Add(time.Hour)
+	sched.SeedLastEvaluated(later)
+	got2 := sched.Status().LastEvaluationAt
+	if !got2.Equal(seed) {
+		t.Errorf("SeedLastEvaluated should not overwrite existing value: got %v, want %v", got2, seed)
+	}
+
+	// Zero value is silently ignored.
+	sched2 := NewScheduler(pipeline, nil, nil, logger)
+	sched2.SeedLastEvaluated(time.Time{})
+	if sched2.Status().LastEvaluationAt != nil {
+		t.Error("SeedLastEvaluated with zero time should be a no-op")
+	}
+}
+
 func TestScheduler_Status_AfterRun(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
