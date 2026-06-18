@@ -9,21 +9,27 @@
 // Usage in the main binary:
 //
 //	var f cli.Flags
-//	cli.RegisterFlags(flag.CommandLine, &f)
+//	if err := cli.RegisterFlags(flag.CommandLine, &f); err != nil { ... }
 //	flag.Parse()
 //	if f.ResetPassword { ... }
 package cli
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"reflect"
+	"strconv"
 )
 
 // Flags holds all global CLI flags accepted by the stillwater binary.
 // Each field carries three struct tags:
 //
 //   - flag:    the exact flag name users pass on the command line
-//   - default: the default value as a string (used in generated docs)
+//   - default: the default value as a string. RegisterFlags parses this and
+//     passes it to the flag package, so it is the actual runtime default the
+//     flag holds when unset (not merely documentation); it also appears in the
+//     generated docs.
 //   - desc:    a one-sentence user-facing description (required; the generator
 //     fails loudly if absent, enforcing coverage for every flag)
 type Flags struct {
@@ -76,16 +82,31 @@ var Subcommands = []SubcommandInfo{
 }
 
 // RegisterFlags binds the fields of f to the given flag set using the flag:
-// and default: struct tags. Call this before flag.Parse(). All flags receive
-// their zero-value defaults when the corresponding flag is not passed; the
-// default: tag is documentation-only and does not affect runtime behavior
-// (the Go flag package uses the zero value of the type for unset flags unless
-// an explicit default is passed to the flag registration call, which this
-// function derives from the tag).
-func RegisterFlags(fs *flag.FlagSet, f *Flags) {
-	t := reflect.TypeOf(*f)
-	v := reflect.ValueOf(f).Elem()
+// and default: struct tags. Call this before flag.Parse(). The default: tag
+// supplies each flag's default value: RegisterFlags parses it and passes it to
+// the flag package's *Var call (BoolVar/StringVar), so it IS the value the flag
+// holds when the user does not pass the flag on the command line. (A bool's
+// default: tag is parsed with strconv.ParseBool; a string's is used verbatim.)
+//
+// RegisterFlags returns an error on misconfigured tag metadata -- an
+// unsupported field kind or an unparsable bool default -- so the binary fails
+// loudly at startup rather than letting the documented defaults and the runtime
+// defaults silently drift apart. It nil-guards both arguments.
+func RegisterFlags(fs *flag.FlagSet, f *Flags) error {
+	if fs == nil {
+		return errors.New("RegisterFlags: nil flag set")
+	}
+	if f == nil {
+		return errors.New("RegisterFlags: nil Flags")
+	}
+	return registerStructFlags(fs, reflect.TypeOf(*f), reflect.ValueOf(f).Elem())
+}
 
+// registerStructFlags reflects over the fields of the struct described by t/v
+// and registers a flag for each field carrying a flag: tag. It is the
+// unexported core of RegisterFlags, split out so its error branches are
+// reachable from tests with deliberately malformed structs.
+func registerStructFlags(fs *flag.FlagSet, t reflect.Type, v reflect.Value) error {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		flagName := field.Tag.Get("flag")
@@ -95,15 +116,25 @@ func RegisterFlags(fs *flag.FlagSet, f *Flags) {
 		}
 
 		fv := v.Field(i)
-		switch field.Type.Kind() { //nolint:exhaustive // only bool and string are used today
+		switch field.Type.Kind() {
 		case reflect.Bool:
-			defaultVal := field.Tag.Get("default") == "true"
+			raw := field.Tag.Get("default")
+			if raw == "" {
+				raw = "false"
+			}
+			defaultVal, err := strconv.ParseBool(raw)
+			if err != nil {
+				return fmt.Errorf("field %s has invalid bool default %q: %w", field.Name, raw, err)
+			}
 			// Addr().Interface() returns the concrete *bool pointer so we can
 			// pass it directly to BoolVar without importing unsafe.
 			fs.BoolVar(fv.Addr().Interface().(*bool), flagName, defaultVal, desc)
 		case reflect.String:
 			defaultVal := field.Tag.Get("default")
 			fs.StringVar(fv.Addr().Interface().(*string), flagName, defaultVal, desc)
+		default:
+			return fmt.Errorf("field %s has unsupported kind %s for flag %q", field.Name, field.Type.Kind(), flagName)
 		}
 	}
+	return nil
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"flag"
+	"reflect"
 	"testing"
 )
 
@@ -16,7 +17,9 @@ func TestRegisterFlags_AllFlagsRegistered(t *testing.T) {
 	// flag.CommandLine with repeated registrations.
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	var f Flags
-	RegisterFlags(fs, &f)
+	if err := RegisterFlags(fs, &f); err != nil {
+		t.Fatalf("RegisterFlags: %v", err)
+	}
 
 	// Verify each expected flag is registered with the correct type.
 	wantFlags := []struct {
@@ -44,7 +47,9 @@ func TestRegisterFlags_AllFlagsRegistered(t *testing.T) {
 func TestRegisterFlags_ParsesIntoStruct(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	var f Flags
-	RegisterFlags(fs, &f)
+	if err := RegisterFlags(fs, &f); err != nil {
+		t.Fatalf("RegisterFlags: %v", err)
+	}
 
 	args := []string{"--reset-password", "--username=alice", "--new-password=s3cret"}
 	if err := fs.Parse(args); err != nil {
@@ -61,12 +66,16 @@ func TestRegisterFlags_ParsesIntoStruct(t *testing.T) {
 	}
 }
 
-// TestRegisterFlags_Defaults verifies that unparsed flags retain their zero
-// defaults (not the default: struct tag values, which are documentation-only).
+// TestRegisterFlags_Defaults verifies that unparsed flags retain the defaults
+// declared via the default: struct tags. For the current Flags struct those
+// defaults happen to equal each type's zero value (false / ""), so this also
+// confirms the parsed tag value and the zero value agree here.
 func TestRegisterFlags_Defaults(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	var f Flags
-	RegisterFlags(fs, &f)
+	if err := RegisterFlags(fs, &f); err != nil {
+		t.Fatalf("RegisterFlags: %v", err)
+	}
 
 	if err := fs.Parse(nil); err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -79,6 +88,65 @@ func TestRegisterFlags_Defaults(t *testing.T) {
 	}
 	if f.NewPassword != "" {
 		t.Errorf("NewPassword should default to empty string, got %q", f.NewPassword)
+	}
+}
+
+// TestRegisterFlags_NilArgs verifies that RegisterFlags fails loudly (returns a
+// non-nil error) rather than panicking when handed a nil flag set or nil Flags.
+func TestRegisterFlags_NilArgs(t *testing.T) {
+	var f Flags
+	if err := RegisterFlags(nil, &f); err == nil {
+		t.Error("RegisterFlags(nil fs) should return an error")
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	if err := RegisterFlags(fs, nil); err == nil {
+		t.Error("RegisterFlags(nil f) should return an error")
+	}
+}
+
+// TestRegisterStructFlags_ErrorBranches exercises the fail-loud error branches
+// of the reflection core directly, using deliberately malformed local structs
+// that the exported Flags type cannot express (an unsupported field kind and an
+// unparsable bool default). These paths guard against documented defaults and
+// runtime defaults silently drifting apart.
+func TestRegisterStructFlags_ErrorBranches(t *testing.T) {
+	// (a) A flag-tagged field of an unsupported kind (int) must error.
+	type unsupportedKind struct {
+		Count int `flag:"count" default:"0" desc:"a count"`
+	}
+	// (b) A bool field with an unparsable default must error.
+	type badBoolDefault struct {
+		On bool `flag:"on" default:"notabool" desc:"a toggle"`
+	}
+	// (c) A well-formed struct must register without error.
+	type validStruct struct {
+		Verbose bool   `flag:"verbose" default:"true" desc:"verbose output"`
+		Name    string `flag:"name" default:"world" desc:"a name"`
+	}
+
+	tests := []struct {
+		name    string
+		val     any
+		wantErr bool
+	}{
+		{"unsupported kind", unsupportedKind{}, true},
+		{"invalid bool default", badBoolDefault{}, true},
+		{"valid struct", validStruct{}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			// Take an addressable copy so Field().Addr() works inside the helper.
+			rv := reflect.New(reflect.TypeOf(tc.val)).Elem()
+			rv.Set(reflect.ValueOf(tc.val))
+			err := registerStructFlags(fs, rv.Type(), rv)
+			if tc.wantErr && err == nil {
+				t.Errorf("registerStructFlags(%s) = nil error, want non-nil", tc.name)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("registerStructFlags(%s) = %v, want nil", tc.name, err)
+			}
+		})
 	}
 }
 

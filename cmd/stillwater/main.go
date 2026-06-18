@@ -88,7 +88,10 @@ func main() {
 	// generated docs stay in sync (the generator fails loudly if a flag: field
 	// lacks a desc: tag).
 	var cliFlags cli.Flags
-	cli.RegisterFlags(flag.CommandLine, &cliFlags)
+	if err := cli.RegisterFlags(flag.CommandLine, &cliFlags); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
 	flag.Parse()
 
 	if cliFlags.ResetPassword {
