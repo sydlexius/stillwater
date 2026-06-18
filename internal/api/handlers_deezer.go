@@ -165,7 +165,14 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 		}
 		var fieldProviders map[string][]string
 		if r.providerSettings != nil {
-			priorities, _ := r.providerSettings.GetPriorities(req.Context())
+			priorities, perr := r.providerSettings.GetPriorities(req.Context())
+			if perr != nil {
+				// Non-fatal: the row still renders without per-field provider
+				// hints (the fetch-from-providers icon set), so degrade rather
+				// than fail the link. Log it so the degraded render is debuggable.
+				r.logger.Warn("deezer link: loading provider priorities for row render failed; rendering row without provider hints",
+					"artist_id", a.ID, "error", perr)
+			}
 			fieldProviders = buildFieldProvidersMap(priorities)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

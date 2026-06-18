@@ -73,7 +73,15 @@ func TestDeezerCandidates_RendersAlbumConfidence(t *testing.T) {
 
 	for _, want := range []string{
 		`hx-post="/api/v1/artists/artist-1/deezer/link"`,
-		`hx-target="#field-provider-modal-body"`,
+		// The link button targets the Deezer ID ROW (not the modal body) and
+		// replaces it in place, mirroring the proven "Use this" field-apply
+		// pattern. This is the contract that keeps the modal's afterSwap
+		// auto-open listener from re-firing on a successful link.
+		`hx-target="#field-deezer_id-artist-1"`,
+		`hx-swap="outerHTML"`,
+		// The modal closes via the button's after-request hook, not an inline
+		// script in the success render.
+		`hx-on::after-request="hideFieldProviderModal()"`,
 		"4050205",
 		"OK Computer", // matched album name surfaced
 		"Radiohead",
@@ -81,6 +89,14 @@ func TestDeezerCandidates_RendersAlbumConfidence(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("candidate row missing %q; body:\n%s", want, body)
 		}
+	}
+
+	// The link button must NOT target the shared modal body: swapping the
+	// success fragment into #field-provider-modal-body is what re-triggered the
+	// modal's afterSwap auto-open (stuck-open blank modal + removeChild
+	// swapError). Guard against a regression to that target.
+	if strings.Contains(body, `hx-target="#field-provider-modal-body"`) {
+		t.Errorf("link button must not target the modal body; body:\n%s", body)
 	}
 }
 
@@ -109,10 +125,18 @@ func TestDeezerCandidates_NoMatchesAndProviderError(t *testing.T) {
 	}
 }
 
-// TestDeezerLinkSuccess_OOBSwapAndClose pins the success response: an OOB swap
-// of the deezer_id row so the linked value lands in place, a toast hook, and
-// the modal auto-close.
-func TestDeezerLinkSuccess_OOBSwapAndClose(t *testing.T) {
+// TestDeezerLinkSuccess_RendersRowAndToast pins the CORRECTED success-render
+// contract. The candidate link button targets the Deezer ID row with
+// hx-swap="outerHTML", so the success render IS that row's replacement: it must
+// render the field row (id="field-deezer_id-{id}") carrying the persisted value,
+// plus fire the success toast. It must NOT swap into the modal body, must NOT
+// OOB-swap (it lands in place directly), and must NOT carry an inline
+// hideFieldProviderModal close script -- the button's hx-on::after-request
+// closes the modal. The old test only asserted the substring
+// "hideFieldProviderModal" was present and so passed while the runtime close was
+// broken (the swap-into-modal-body path re-opened the modal); this asserts the
+// real contract instead.
+func TestDeezerLinkSuccess_RendersRowAndToast(t *testing.T) {
 	t.Parallel()
 
 	a := artist.Artist{ID: "artist-1", Name: "Radiohead", DeezerID: "4050205"}
@@ -123,13 +147,28 @@ func TestDeezerLinkSuccess_OOBSwapAndClose(t *testing.T) {
 	}
 	body := buf.String()
 
+	// The render replaces the deezer_id row in place and shows the linked value.
 	for _, want := range []string{
-		"outerHTML:#field-deezer_id-artist-1",
-		"data-deezer-toast",
-		"hideFieldProviderModal",
+		`id="field-deezer_id-artist-1"`, // the row updates in place (outerHTML target)
+		"4050205",                       // the persisted Deezer ID is rendered in the row
+		"data-deezer-toast",             // toast marker present
+		"showSuccessToast",              // toast actually fires
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("link success missing %q; body:\n%s", want, body)
+		}
+	}
+
+	// Regression guards for the close blocker: the success render must not route
+	// into the modal body, must not OOB-swap, and must not try to close the
+	// modal itself (that is the link button's job via hx-on::after-request).
+	for _, banned := range []string{
+		"field-provider-modal-body",
+		"hx-swap-oob",
+		"hideFieldProviderModal",
+	} {
+		if strings.Contains(body, banned) {
+			t.Errorf("link success must not contain %q; body:\n%s", banned, body)
 		}
 	}
 }

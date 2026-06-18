@@ -430,7 +430,7 @@ func TestHandleDeezerLink_Success(t *testing.T) {
 	}
 }
 
-func TestHandleDeezerLink_HTMXOOBSwap(t *testing.T) {
+func TestHandleDeezerLink_HTMXRowAndToast(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Link HTMX DZ")
@@ -447,18 +447,26 @@ func TestHandleDeezerLink_HTMXOOBSwap(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	// Must OOB-swap the deezer_id row so the linked value appears in place
-	// behind the modal.
-	if !strings.Contains(body, "outerHTML:#field-deezer_id-"+a.ID) {
-		t.Errorf("missing OOB deezer_id row swap; body=%s", body)
+	// The success render IS the deezer_id row's outerHTML replacement (the
+	// candidate link button targets #field-deezer_id-{id}, not the modal body):
+	// it must render that row in place, carrying the persisted value, and fire
+	// the success toast.
+	if !strings.Contains(body, `id="field-deezer_id-`+a.ID+`"`) {
+		t.Errorf("missing in-place deezer_id row render; body=%s", body)
 	}
-	// The next/ flow auto-closes the identify modal and toasts on success
-	// (the legacy inline "Re-match" button is gone).
-	if !strings.Contains(body, "data-deezer-toast") {
-		t.Errorf("missing success toast hook; body=%s", body)
+	if !strings.Contains(body, "4050205") {
+		t.Errorf("linked value not rendered in row; body=%s", body)
 	}
-	if !strings.Contains(body, "hideFieldProviderModal") {
-		t.Errorf("missing modal auto-close; body=%s", body)
+	if !strings.Contains(body, "data-deezer-toast") || !strings.Contains(body, "showSuccessToast") {
+		t.Errorf("missing success toast; body=%s", body)
+	}
+	// Regression guards for the stuck-open-blank-modal blocker: the response must
+	// not route into the modal body, must not OOB-swap, and must not carry an
+	// inline modal-close script (the button's hx-on::after-request closes it).
+	for _, banned := range []string{"field-provider-modal-body", "hx-swap-oob", "hideFieldProviderModal"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("success render must not contain %q; body=%s", banned, body)
+		}
 	}
 }
 

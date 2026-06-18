@@ -144,8 +144,9 @@ templ DeezerCandidates(data DeezerCandidatesData) {
 						class="group/dz relative w-full text-left rounded border border-gray-200 dark:border-gray-700 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors [&.htmx-request]:border-blue-400 [&.htmx-request]:dark:border-blue-600"
 						hx-post={ "/api/v1/artists/" + data.ArtistID + "/deezer/link" }
 						hx-vals={ hxValsJSON(map[string]string{"deezer_id": c.Result.ProviderID}) }
-						hx-target="#field-provider-modal-body"
-						hx-swap="innerHTML"
+						hx-target={ "#field-deezer_id-" + data.ArtistID }
+						hx-swap="outerHTML"
+						hx-on::after-request="hideFieldProviderModal()"
 						hx-disabled-elt="this"
 					>
 						// Loading overlay shown while the link request is in flight.
@@ -189,35 +190,35 @@ templ DeezerCandidates(data DeezerCandidatesData) {
 	</div>
 }
 
-// DeezerLinkSuccess renders the post-link response into the modal body: a brief
-// success summary, an OOB swap of the Deezer ID row (so the linked value appears
-// in place on the page behind the modal), a global success toast, and an
-// auto-close of the modal. The toast message rides in a data attribute so the
-// translated string is not interpolated into JS source; the static inline script
-// reads it and runs once (htmx executes scripts in swapped content).
+// DeezerLinkSuccess renders the post-link response. It mirrors the proven
+// "Use this"/"Merge" field-apply pattern (artist_field.templ): the candidate
+// link button targets the Deezer ID ROW (#field-deezer_id-{id}) with
+// hx-swap="outerHTML", so this render IS the replacement for that row and lands
+// in place on the page. It does NOT swap into the modal body and carries no
+// inline close script -- the button closes the modal via hx-on::after-request,
+// and routing the swap to the row (not #field-provider-modal-body) means the
+// modal's afterSwap auto-open listener cannot re-fire (the root cause of the
+// stuck-open-blank modal + removeChild swapError). The success toast rides in a
+// data attribute (so the translated string is not interpolated into JS source)
+// read by a one-shot inline script; htmx executes scripts in swapped content.
+// The marker removes itself after firing so repeated links leave no DOM cruft.
 templ DeezerLinkSuccess(a artist.Artist, fieldProviders map[string][]string) {
-	<div class="rounded-lg border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-3">
-		<p class="text-sm font-medium text-green-800 dark:text-green-200">{ t(ctx, "artist.deezer.linked") }</p>
-	</div>
-	// OOB: update the Deezer ID row in place with the persisted value.
-	<div hx-swap-oob={ "outerHTML:#field-deezer_id-" + a.ID }>
-		@FieldDisplay(&a, "deezer_id", fieldProviders["deezer_id"])
-	</div>
+	// Primary swap content: the updated Deezer ID row, replacing the target row
+	// in place (outerHTML). FieldDisplay dispatches deezer_id to
+	// providerIDFieldDisplay, which re-emits the #field-deezer_id-{id} id so
+	// later swaps still resolve.
+	@FieldDisplay(&a, "deezer_id", fieldProviders["deezer_id"])
+	// Success toast: a hidden, self-removing marker plus a one-shot script.
 	<div data-deezer-toast={ t(ctx, "artist.deezer.linked") } class="hidden"></div>
 	<script>
 		(function() {
 			var el = document.querySelector('[data-deezer-toast]');
 			if (el) {
 				var msg = el.getAttribute('data-deezer-toast');
-				el.removeAttribute('data-deezer-toast');
+				el.remove();
 				if (msg && typeof window.showSuccessToast === 'function') {
 					window.showSuccessToast(msg);
 				}
-			}
-			// Auto-close the identify modal now that the link succeeded; the row
-			// behind it has already been OOB-swapped to show the linked value.
-			if (typeof window.hideFieldProviderModal === 'function') {
-				window.hideFieldProviderModal();
 			}
 		})();
 	</script>
