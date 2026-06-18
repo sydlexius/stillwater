@@ -1,0 +1,182 @@
+package templates
+
+import (
+	"strconv"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// DeezerCandidate wraps a Deezer search result with optional album-comparison
+// data and a confidence score, for rendering the match-by-name candidate list.
+// It is the templates-package view model populated by the api package (which
+// cannot be imported here directly).
+type DeezerCandidate struct {
+	Result          provider.ArtistSearchResult
+	AlbumComparison *artist.AlbumComparison
+	Confidence      float64
+}
+
+// DeezerCandidatesData is the view model for DeezerCandidates. ProviderError, when
+// non-empty, carries the Deezer display name so an empty result list caused by a
+// provider outage is distinguishable from a genuine "no matches" result.
+type DeezerCandidatesData struct {
+	ArtistID      string
+	Candidates    []DeezerCandidate
+	ProviderError string
+}
+
+// DeezerMatchControl renders the Deezer "Match by name" affordance for the
+// artist-detail Provider IDs section: a button plus an (initially empty) results
+// panel. It is rendered on initial page load and re-rendered by the metadata
+// refresh OOB fragments so the control survives a refresh.
+templ DeezerMatchControl(a *artist.Artist) {
+	<div class="mt-3 border-t border-gray-100 dark:border-gray-700 pt-3">
+		@DeezerMatchButton(a, false)
+		// Results / success panel. Search and link responses are swapped into
+		// this container's innerHTML.
+		<div id={ "deezer-match-panel-" + a.ID } class="mt-2"></div>
+	</div>
+}
+
+// DeezerMatchButton renders just the trigger button (and its loading indicator).
+// It is a separate element from the results panel so the link-success OOB swap
+// can flip the label from "Match by name" to "Re-match" without clearing the
+// success summary shown in the panel. When oob is true the root carries
+// hx-swap-oob so it can be distributed from a link-success response.
+templ DeezerMatchButton(a *artist.Artist, oob bool) {
+	<div
+		id={ "deezer-match-button-" + a.ID }
+		class="flex items-center gap-2"
+		if oob {
+			hx-swap-oob="outerHTML"
+		}
+	>
+		<button
+			type="button"
+			class="inline-flex items-center gap-1.5 rounded border border-gray-300 dark:border-gray-600 px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors [&.htmx-request]:opacity-60"
+			hx-post={ "/api/v1/artists/" + a.ID + "/deezer/search" }
+			hx-vals={ hxValsJSON(map[string]string{"query": a.Name}) }
+			hx-target={ "#deezer-match-panel-" + a.ID }
+			hx-swap="innerHTML"
+			hx-indicator={ "#deezer-match-spinner-" + a.ID }
+		>
+			@components.IconMagnifyingGlass("h-3.5 w-3.5")
+			if a.DeezerID != "" {
+				{ t(ctx, "artist.deezer.rematch") }
+			} else {
+				{ t(ctx, "artist.deezer.match_by_name") }
+			}
+		</button>
+		<span id={ "deezer-match-spinner-" + a.ID } class="htmx-indicator text-xs text-gray-500">{ t(ctx, "common.searching") }</span>
+	</div>
+}
+
+// DeezerCandidates renders the search result list returned by the Deezer
+// match-by-name search. It covers the provider-error, no-matches, and
+// results-list states, plus a Cancel control that dismisses the panel.
+templ DeezerCandidates(data DeezerCandidatesData) {
+	<div data-deezer-results class="space-y-2">
+		if data.ProviderError != "" {
+			<div
+				class="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs"
+				role="status"
+				aria-live="polite"
+			>
+				{ tf(ctx, "artist.deezer.provider_error", data.ProviderError) }
+			</div>
+		}
+		if len(data.Candidates) == 0 {
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-1">{ t(ctx, "artist.deezer.no_matches") }</p>
+		} else {
+			for _, c := range data.Candidates {
+				<button
+					type="button"
+					class="group/dz relative w-full text-left rounded border border-gray-200 dark:border-gray-700 p-2.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors [&.htmx-request]:border-blue-400 [&.htmx-request]:dark:border-blue-600"
+					hx-post={ "/api/v1/artists/" + data.ArtistID + "/deezer/link" }
+					hx-vals={ hxValsJSON(map[string]string{"deezer_id": c.Result.ProviderID}) }
+					hx-target={ "#deezer-match-panel-" + data.ArtistID }
+					hx-swap="innerHTML"
+					hx-disabled-elt="this"
+				>
+					// Loading overlay shown while the link request is in flight.
+					<div class="hidden group-[.htmx-request]/dz:flex absolute inset-0 items-center justify-center rounded bg-white/80 dark:bg-gray-800/80 z-10">
+						<svg class="h-4 w-4 animate-spin text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+						<span class="text-xs font-medium text-blue-600 dark:text-blue-400">{ t(ctx, "artist.deezer.linking") }</span>
+					</div>
+					<div class="flex items-center justify-between gap-2">
+						<div class="flex-1 min-w-0">
+							<div class="font-medium text-sm truncate">{ c.Result.Name }</div>
+							if c.Result.ProviderID != "" {
+								<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">{ c.Result.ProviderID }</div>
+							}
+							if c.AlbumComparison != nil && c.AlbumComparison.LocalCount > 0 {
+								<div class="mt-1 flex items-center gap-2">
+									<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", albumMatchClasses(c.AlbumComparison.MatchPercent) }>
+										{ tf(ctx, "image.album_match_count", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount) }
+									</span>
+									if hasMatchedAlbums(c.AlbumComparison) {
+										<span class="text-[10px] text-gray-400 truncate">{ joinMatchedNames(ctx, c.AlbumComparison) }</span>
+									}
+								</div>
+							}
+						</div>
+						<div class="flex items-center gap-2 ml-2 shrink-0">
+							if c.Result.Score > 0 {
+								<span class="text-xs text-gray-500">{ strconv.Itoa(c.Result.Score) }</span>
+							}
+							if logoSrcSet(string(provider.NameDeezer)) != "" {
+								<img src={ logoSrc(string(provider.NameDeezer)) } srcset={ logoSrcSet(string(provider.NameDeezer)) } alt="" class="h-4 w-4" title={ providerDisplayName(string(provider.NameDeezer)) }/>
+							} else {
+								<img src={ logoSrc(string(provider.NameDeezer)) } alt="" class="h-4 w-4" title={ providerDisplayName(string(provider.NameDeezer)) }/>
+							}
+						</div>
+					</div>
+				</button>
+			}
+		}
+		<div class="pt-0.5">
+			<button
+				type="button"
+				class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+				onclick="this.closest('[data-deezer-results]').remove()"
+			>
+				{ t(ctx, "common.cancel") }
+			</button>
+		</div>
+	</div>
+}
+
+// DeezerLinkSuccess renders the post-link response: a success summary into the
+// panel, an OOB swap of the Deezer ID row (so the linked value appears in place),
+// an OOB swap of the trigger button (so it flips to "Re-match"), and a global
+// success toast. The toast message rides in a data attribute so the translated
+// string is not interpolated into JS source; the static inline script reads it
+// and runs once (htmx executes scripts in swapped content).
+templ DeezerLinkSuccess(a artist.Artist, fieldProviders map[string][]string) {
+	<div class="rounded-lg border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-3">
+		<p class="text-sm font-medium text-green-800 dark:text-green-200">{ t(ctx, "artist.deezer.linked") }</p>
+	</div>
+	// OOB: update the Deezer ID row in place with the persisted value.
+	<div hx-swap-oob={ "outerHTML:#field-deezer_id-" + a.ID }>
+		@FieldDisplay(&a, "deezer_id", fieldProviders["deezer_id"])
+	</div>
+	// OOB: flip the trigger button to "Re-match" now that an ID is linked.
+	@DeezerMatchButton(&a, true)
+	<div data-deezer-toast={ t(ctx, "artist.deezer.linked") } class="hidden"></div>
+	<script>
+		(function() {
+			var el = document.querySelector('[data-deezer-toast]');
+			if (!el) { return; }
+			var msg = el.getAttribute('data-deezer-toast');
+			el.removeAttribute('data-deezer-toast');
+			if (msg && typeof window.showSuccessToast === 'function') {
+				window.showSuccessToast(msg);
+			}
+		})();
+	</script>
+}

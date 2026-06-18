@@ -32,4 +32,9 @@ func TestInjection_Deezer(t *testing.T) {
 	if _, err := a.GetImages(ctx, "12345"); !errors.Is(err, provider.ErrInjectedFailure) {
 		t.Errorf("GetImages: want ErrInjectedFailure, got %v", err)
 	}
+	// GetReleaseGroups with a numeric ID so the isDeezerID guard does not
+	// trigger before the injection hook.
+	if _, err := a.GetReleaseGroups(ctx, "12345"); !errors.Is(err, provider.ErrInjectedFailure) {
+		t.Errorf("GetReleaseGroups: want ErrInjectedFailure, got %v", err)
+	}
 }

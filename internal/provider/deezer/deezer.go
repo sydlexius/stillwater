@@ -157,6 +157,67 @@ func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageRes
 	return imagesFromResult(&result), nil
 }
 
+// GetReleaseGroups fetches an artist's albums from Deezer's /artist/{id}/albums
+// endpoint, implementing provider.ReleaseGroupFetcher so Deezer can participate
+// in album-comparison confidence scoring (the same role MusicBrainz plays in the
+// identify flow). Results are paginated (50 per page via Deezer's index/limit
+// params) and capped at 500 total to bound API calls on prolific artists.
+// Returns ErrNotFound for non-numeric IDs such as MusicBrainz UUIDs, consistent
+// with GetArtist and GetImages.
+func (a *Adapter) GetReleaseGroups(ctx context.Context, artistID string) ([]provider.ReleaseGroupInfo, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
+	if !isDeezerID(artistID) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameDeezer, ID: artistID}
+	}
+
+	const (
+		pageSize = 50
+		maxTotal = 500
+	)
+
+	var results []provider.ReleaseGroupInfo
+	index := 0
+
+	for {
+		params := url.Values{
+			"limit": {strconv.Itoa(pageSize)},
+			"index": {strconv.Itoa(index)},
+		}
+		reqURL := fmt.Sprintf("%s/artist/%s/albums?%s", a.baseURL, url.PathEscape(artistID), params.Encode())
+
+		body, err := a.doRequest(ctx, reqURL)
+		if err != nil {
+			return nil, err
+		}
+
+		var resp albumsResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("parsing albums response: %w", err)
+		}
+
+		for i := range resp.Data {
+			al := &resp.Data[i]
+			results = append(results, provider.ReleaseGroupInfo{
+				ID:               strconv.Itoa(al.ID),
+				Title:            al.Title,
+				PrimaryType:      al.RecordType,
+				FirstReleaseDate: al.ReleaseDate,
+			})
+		}
+
+		// Stop when the last page arrived (fewer than a full page), all
+		// available albums have been collected, or the cap is reached.
+		if len(resp.Data) < pageSize || len(results) >= resp.Total || len(results) >= maxTotal {
+			break
+		}
+		index += pageSize
+	}
+
+	return results, nil
+}
+
 // doRequest executes a GET request and returns the response body, backing off
 // and retrying on a rate-limited (429) or unavailable (503) response via
 // provider.DoWithRetry.
