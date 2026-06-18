@@ -104,6 +104,13 @@ type Repository interface {
 	// progress reporting.
 	CountEligibleArtists(ctx context.Context) (int, error)
 
+	// LatestRulesEvaluatedAt returns the most recent rules_evaluated_at
+	// timestamp across all non-excluded artists, or nil when no artist has
+	// ever been evaluated. Used to hydrate the scheduler's in-memory
+	// lastRunAt on startup so the dashboard's "Last evaluated" stat survives
+	// a server restart (#1796).
+	LatestRulesEvaluatedAt(ctx context.Context) (*time.Time, error)
+
 	// ListIDs returns the IDs of all artists matching the given filters,
 	// ordered by sort_name then id for a stable, deterministic sequence.
 	// Results are capped at MaxListIDs via a LIMIT clause. A separate

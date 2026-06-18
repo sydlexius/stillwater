@@ -2,6 +2,8 @@ package artist
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -334,6 +336,155 @@ func TestUpdateAfterRuleEvaluation_DoesNotStampDirty(t *testing.T) {
 	}
 }
 
+// TestLatestRulesEvaluatedAt_EmptyTable verifies that nil is returned when the
+// artists table is empty -- the no-data bootstrap path.
+func TestLatestRulesEvaluatedAt_EmptyTable(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	got, err := svc.LatestRulesEvaluatedAt(ctx)
+	if err != nil {
+		t.Fatalf("LatestRulesEvaluatedAt on empty table: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("want nil, got %v", got)
+	}
+}
+
+// TestLatestRulesEvaluatedAt_AllNullEvals verifies that nil is returned when
+// artists exist but none has been evaluated yet (rules_evaluated_at IS NULL).
+func TestLatestRulesEvaluatedAt_AllNullEvals(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Unevaluated", "/music/unevaluated")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := svc.LatestRulesEvaluatedAt(ctx)
+	if err != nil {
+		t.Fatalf("LatestRulesEvaluatedAt: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("all rules_evaluated_at NULL: want nil, got %v", got)
+	}
+}
+
+// TestLatestRulesEvaluatedAt_ExcludedIgnored verifies that an excluded artist
+// (is_excluded=1) with a newer stamp does not influence the result. Only
+// non-excluded artists contribute to the MAX.
+func TestLatestRulesEvaluatedAt_ExcludedIgnored(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	earlier := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	later := earlier.Add(time.Hour)
+
+	normal := testArtist("Normal", "/music/normal")
+	if err := svc.Create(ctx, normal); err != nil {
+		t.Fatalf("Create normal: %v", err)
+	}
+	if err := svc.MarkRulesEvaluated(ctx, normal.ID, earlier); err != nil {
+		t.Fatalf("MarkRulesEvaluated normal: %v", err)
+	}
+
+	excluded := testArtist("Excluded", "/music/excluded")
+	excluded.IsExcluded = true
+	if err := svc.Create(ctx, excluded); err != nil {
+		t.Fatalf("Create excluded: %v", err)
+	}
+	if err := svc.MarkRulesEvaluated(ctx, excluded.ID, later); err != nil {
+		t.Fatalf("MarkRulesEvaluated excluded: %v", err)
+	}
+
+	got, err := svc.LatestRulesEvaluatedAt(ctx)
+	if err != nil {
+		t.Fatalf("LatestRulesEvaluatedAt: %v", err)
+	}
+	if got == nil {
+		t.Fatal("want non-nil, got nil")
+	}
+	if !got.Equal(earlier) {
+		t.Fatalf("excluded artist stamp leaked: got %v, want %v", got, earlier)
+	}
+}
+
+// TestLatestRulesEvaluatedAt_ReturnsMax verifies that the chronological
+// maximum is returned when multiple non-excluded artists have been evaluated.
+func TestLatestRulesEvaluatedAt_ReturnsMax(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	base := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	stamps := []time.Time{base, base.Add(time.Hour), base.Add(2 * time.Hour)}
+
+	for i, ts := range stamps {
+		a := testArtist(fmt.Sprintf("Artist%d", i), fmt.Sprintf("/music/%d", i))
+		if err := svc.Create(ctx, a); err != nil {
+			t.Fatalf("Create artist %d: %v", i, err)
+		}
+		if err := svc.MarkRulesEvaluated(ctx, a.ID, ts); err != nil {
+			t.Fatalf("MarkRulesEvaluated artist %d: %v", i, err)
+		}
+	}
+
+	got, err := svc.LatestRulesEvaluatedAt(ctx)
+	if err != nil {
+		t.Fatalf("LatestRulesEvaluatedAt: %v", err)
+	}
+	if got == nil {
+		t.Fatal("want non-nil, got nil")
+	}
+	want := stamps[len(stamps)-1]
+	if !got.Equal(want) {
+		t.Fatalf("got %v, want %v (chronological MAX)", got, want)
+	}
+}
+
+// TestLatestRulesEvaluatedAt_RoundTrip verifies that a value written by
+// MarkRulesEvaluated survives storage as RFC3339 UTC and is returned with
+// second-level precision intact by LatestRulesEvaluatedAt.
+func TestLatestRulesEvaluatedAt_RoundTrip(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Truncate to seconds: SQLite stores RFC3339 which has 1-second resolution.
+	stamp := time.Date(2025, 3, 15, 14, 30, 45, 0, time.UTC)
+
+	a := testArtist("RoundTrip", "/music/roundtrip")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := svc.MarkRulesEvaluated(ctx, a.ID, stamp); err != nil {
+		t.Fatalf("MarkRulesEvaluated: %v", err)
+	}
+
+	got, err := svc.LatestRulesEvaluatedAt(ctx)
+	if err != nil {
+		t.Fatalf("LatestRulesEvaluatedAt: %v", err)
+	}
+	if got == nil {
+		t.Fatal("want non-nil, got nil")
+	}
+	if !got.Equal(stamp) {
+		t.Fatalf("round-trip mismatch: got %v, want %v", got, stamp)
+	}
+	if got.Location() != time.UTC {
+		t.Fatalf("expected UTC location, got %v", got.Location())
+	}
+}
+
 // TestUpdate_DoesStampDirty is the companion to the test above: a regular
 // Update must stamp dirty_since so external mutations (API handlers,
 // scanners, bulk executor) still schedule a re-evaluation. Together these
@@ -367,5 +518,55 @@ func TestUpdate_DoesStampDirty(t *testing.T) {
 	}
 	if reread.DirtySince == nil {
 		t.Fatalf("dirty_since was not stamped by Update; external mutations must re-schedule evaluation")
+	}
+}
+
+// TestLatestRulesEvaluatedAt_ScanError verifies that a DB-level error during the
+// MAX() scan (e.g. closed connection) is surfaced as a wrapped error rather than
+// silently returning nil. This covers the `if err != nil` branch after Scan.
+func TestLatestRulesEvaluatedAt_ScanError(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+
+	// Close the DB before querying so the Scan call returns sql.ErrConnDone.
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	_, err := svc.LatestRulesEvaluatedAt(context.Background())
+	if err == nil {
+		t.Fatal("expected error on closed DB, got nil")
+	}
+}
+
+// TestLatestRulesEvaluatedAt_MalformedTimestamp verifies that a non-RFC3339
+// rules_evaluated_at value stored in the DB (e.g. from a hand-edited row or a
+// future schema bug) causes LatestRulesEvaluatedAt to return a wrapped error
+// rather than silently returning a zero time or nil.
+func TestLatestRulesEvaluatedAt_MalformedTimestamp(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create an artist so the table has a non-excluded row.
+	a := testArtist("MalformedTS", "/music/malformed-ts")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Directly write a value that is not valid RFC3339 so time.Parse will fail.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE artists SET rules_evaluated_at = 'not-a-valid-rfc3339' WHERE id = ?`, a.ID); err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+
+	got, err := svc.LatestRulesEvaluatedAt(ctx)
+	if err == nil {
+		t.Fatalf("expected error for malformed timestamp, got %v", got)
+	}
+	if !strings.Contains(err.Error(), "parsing latest rules_evaluated_at") {
+		t.Errorf("error = %v, want message containing 'parsing latest rules_evaluated_at'", err)
 	}
 }

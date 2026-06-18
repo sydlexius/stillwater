@@ -591,6 +591,17 @@ func resolveRuleSchedule(a *Application, db *sql.DB, logger *slog.Logger) {
 		a.ruleScheduler = rule.NewScheduler(a.pipeline, a.ruleService, a.artistService, logger)
 		langprefRepo := langpref.NewRepository(db)
 		a.ruleScheduler.SetLangPrefProvider(langprefRepo.EffectiveForBackground)
+		// Seed the scheduler's in-memory lastRunAt from the DB so the
+		// dashboard's "Last evaluated" stat reflects the most recent previous-
+		// session evaluation after a server restart (#1796). Without this, the
+		// stat always shows "Never" until the first tick fires because lastRunAt
+		// is zero-initialized and never persisted across restarts.
+		if ts, err := a.artistService.LatestRulesEvaluatedAt(ctx); err != nil {
+			logger.Warn("could not seed last-evaluated timestamp from DB", "error", err)
+		} else if ts != nil {
+			a.ruleScheduler.SeedLastEvaluated(*ts)
+			logger.Debug("seeded scheduler last-evaluated from DB", "ts", ts.String())
+		}
 	} else if a.ruleScheduleMinutes > 0 && a.ruleScheduleMinutes < 5 {
 		logger.Warn("rule scheduler interval too short (minimum 5 minutes); scheduler not started",
 			"minutes", a.ruleScheduleMinutes)

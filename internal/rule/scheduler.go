@@ -142,6 +142,23 @@ func (s *Scheduler) MarkEvaluated() {
 	s.mu.Unlock()
 }
 
+// SeedLastEvaluated hydrates the in-memory lastRunAt from a persisted value
+// (e.g. MAX(rules_evaluated_at) from the DB) so the dashboard's "Last
+// evaluated" stat survives a server restart (#1796). It is a no-op when
+// lastRunAt is already non-zero (i.e. the scheduler has already run a tick or
+// MarkEvaluated was called), so it is safe to call at any point after
+// construction without racing the running ticker.
+func (s *Scheduler) SeedLastEvaluated(t time.Time) {
+	if t.IsZero() {
+		return
+	}
+	s.mu.Lock()
+	if s.lastRunAt.IsZero() {
+		s.lastRunAt = t.UTC()
+	}
+	s.mu.Unlock()
+}
+
 // Status returns the current scheduler state for the status endpoint.
 func (s *Scheduler) Status() SchedulerStatus {
 	s.mu.RLock()
