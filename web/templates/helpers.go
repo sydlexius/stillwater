@@ -759,6 +759,22 @@ func joinMatchedNames(ctx context.Context, comp *artist.AlbumComparison) string 
 	return result
 }
 
+// identifyProvider maps a provider-id metadata field to the provider that
+// supports a "match by name" identify flow in the next/ edit surface (the
+// per-row circle-arrow icon in fieldEditActions). It returns the URL path
+// segment for the identify/search/link endpoints, the provider's display name
+// (for the icon tooltip + modal heading), and ok=false for fields with no
+// match-by-name flow. Only deezer_id is wired today; the Discogs (#1831) and
+// AudioDB (#1830) siblings extend this switch alongside their backend handlers.
+func identifyProvider(field string) (segment, display string, ok bool) {
+	switch field {
+	case "deezer_id":
+		return "deezer", provider.NameDeezer.DisplayName(), true
+	default:
+		return "", "", false
+	}
+}
+
 // sourceDisplayName returns a human-readable name for a library source key.
 func sourceDisplayName(source string) string {
 	switch source {

@@ -127,6 +127,8 @@
   "artist.help.violations_overview": "Violations are the output of the rule engine. Each row names the rule that failed, the severity, and the reason. Fixable violations have a Fix button that applies the recommended change; Dismiss closes the violation without changing anything.",
   "artist.help.violations_overview.label": "About violations",
   "artist.identify": "Identify Artist",
+  "artist.identify_by_name": "Match %s by name",
+  "artist.identify_by_name_description": "Search %s for this artist and link the matching ID.",
   "artist.image_count.one": "{count} image",
   "artist.image_count.other": "{count} images",
   "artist.library_label": "Library: %s",

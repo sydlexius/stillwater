@@ -576,10 +576,6 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						@FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"])
 						@FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"])
 					</dl>
-					// Deezer match-by-name affordance (mirrors the MusicBrainz
-					// identify flow). Lets the user link a Deezer ID by searching
-					// the artist name, since Deezer has no per-field fetch row.
-					@DeezerMatchControl(&data.Artist)
 				</section>
 				// Platform state cards load lazily per connection
 				if len(data.Connections) > 0 {

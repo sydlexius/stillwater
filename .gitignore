@@ -45,6 +45,7 @@ docker-compose.wsl.yml
 setupdocker.sh
 .env
 .env.*
+profile.env
 
 # Node (Tailwind v4, MCP servers)
 node_modules/

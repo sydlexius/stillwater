@@ -11343,6 +11343,43 @@ paths:
 
   # --- Deezer match-by-name ---
 
+  /artists/{id}/deezer/identify:
+    get:
+      tags: [Artists]
+      summary: Deezer match-by-name identify modal
+      operationId: deezerIdentify
+      description: >
+        Returns the HTML body of the Deezer "match by name" identify modal: a
+        disambiguation search form pre-filled with the artist name. It is loaded
+        into the shared field-provider modal (which auto-opens on swap) by the
+        per-row identify icon on the next/ artist-detail page. The form POSTs to
+        the Deezer search endpoint. HTML-only response.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Identify modal body (HTML fragment)
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/{id}/deezer/search:
     post:
       tags: [Artists]

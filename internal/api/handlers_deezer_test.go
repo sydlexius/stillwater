@@ -447,12 +447,18 @@ func TestHandleDeezerLink_HTMXOOBSwap(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	// Must OOB-swap the deezer_id row and flip the trigger button.
+	// Must OOB-swap the deezer_id row so the linked value appears in place
+	// behind the modal.
 	if !strings.Contains(body, "outerHTML:#field-deezer_id-"+a.ID) {
 		t.Errorf("missing OOB deezer_id row swap; body=%s", body)
 	}
-	if !strings.Contains(body, "deezer-match-button-"+a.ID) {
-		t.Errorf("missing OOB button swap; body=%s", body)
+	// The next/ flow auto-closes the identify modal and toasts on success
+	// (the legacy inline "Re-match" button is gone).
+	if !strings.Contains(body, "data-deezer-toast") {
+		t.Errorf("missing success toast hook; body=%s", body)
+	}
+	if !strings.Contains(body, "hideFieldProviderModal") {
+		t.Errorf("missing modal auto-close; body=%s", body)
 	}
 }
 
@@ -603,5 +609,70 @@ func TestHandleDeezerLink_GateActiveNonexistentArtist404(t *testing.T) {
 	r.handleDeezerLink(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 (404 must precede 409); body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeezerIdentify_RendersModal asserts the identify endpoint returns
+// the modal body: a search form pre-filled with the artist name that POSTs to
+// the Deezer search endpoint.
+func TestHandleDeezerIdentify_RendersModal(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := addTestArtist(t, artistSvc, "Identify Me DZ")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/deezer/identify", nil)
+	req.SetPathValue("id", a.ID)
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerIdentify(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// The form must target the Deezer search endpoint and pre-fill the name.
+	if !strings.Contains(body, "/api/v1/artists/"+a.ID+"/deezer/search") {
+		t.Errorf("identify modal missing search action; body=%s", body)
+	}
+	if !strings.Contains(body, "Identify Me DZ") {
+		t.Errorf("identify modal missing pre-filled artist name; body=%s", body)
+	}
+	if !strings.Contains(body, "provider-identify-results-deezer_id") {
+		t.Errorf("identify modal missing results container; body=%s", body)
+	}
+}
+
+// TestHandleDeezerIdentify_NotFound covers the 404 branch: an unknown artist ID
+// must 404 rather than render a modal for a non-existent artist.
+func TestHandleDeezerIdentify_NotFound(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/nope/deezer/identify", nil)
+	req.SetPathValue("id", "nope")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerIdentify(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeezerIdentify_ServiceUnavailable covers the 503 branch: with no
+// artist service wired the identify handler must report 503.
+func TestHandleDeezerIdentify_ServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	r.artistService = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/x/deezer/identify", nil)
+	req.SetPathValue("id", "x")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerIdentify(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", w.Code, w.Body.String())
 	}
 }

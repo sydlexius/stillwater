@@ -238,6 +238,13 @@
     "covered": true
   },
   {
+    "operationId": "deezerIdentify",
+    "method": "GET",
+    "path": "/artists/{id}/deezer/identify",
+    "handler": "handleDeezerIdentify",
+    "covered": true
+  },
+  {
     "operationId": "deezerLink",
     "method": "POST",
     "path": "/artists/{id}/deezer/link",

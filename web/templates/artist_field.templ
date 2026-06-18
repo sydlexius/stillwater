@@ -99,6 +99,26 @@ templ fieldEditActions(a *artist.Artist, field string, providers []string, canCl
 				@components.IconArrowPath("h-3.5 w-3.5")
 			</button>
 		}
+		// Match-by-name identify affordance (next/ #1832): a per-row circle-arrow
+		// icon for provider-id fields that support linking by artist name (Deezer
+		// today; see identifyProvider). It mirrors the "Fetch from providers" icon
+		// motif exactly and opens the shared field-provider modal, whose body the
+		// identify endpoint fills with the disambiguation search form. It renders
+		// independently of the fetch icon above: a provider id is the provider's
+		// OWN identifier, so there is no per-field "providers" list to fetch from.
+		if segment, display, ok := identifyProvider(field); ok {
+			<button
+				type="button"
+				class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+				title={ tf(ctx, "artist.identify_by_name", display) }
+				aria-label={ tf(ctx, "artist.identify_by_name", display) }
+				hx-get={ "/api/v1/artists/" + a.ID + "/" + segment + "/identify" }
+				hx-target="#field-provider-modal-body"
+				hx-swap="innerHTML"
+			>
+				@components.IconArrowPath("h-3.5 w-3.5")
+			</button>
+		}
 		// Clock affordance: opens a popover of prior values. Shown when at least
 		// one history entry exists for this field. Clicking an entry stages the
 		// value into the field input via swStageHistoryValue() so the existing

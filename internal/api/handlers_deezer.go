@@ -9,6 +9,36 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// handleDeezerIdentify returns the Deezer "match by name" modal body: a
+// disambiguation search form pre-filled with the artist name, rendered into the
+// shared field-provider modal (#field-provider-modal-body, which auto-opens on
+// swap). The form auto-runs its first search on load and POSTs to the Deezer
+// search endpoint. This is the next/ entry point for the per-row identify icon
+// (web/templates/artist_field.templ fieldEditActions). HTML-only response.
+// GET /api/v1/artists/{id}/deezer/identify
+func (r *Router) handleDeezerIdentify(w http.ResponseWriter, req *http.Request) {
+	if r.artistService == nil {
+		writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
+		return
+	}
+
+	artistID := req.PathValue("id")
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
+	renderTempl(w, req, templates.ProviderIdentifyModal(templates.ProviderIdentifyModalData{
+		ArtistID:   a.ID,
+		Provider:   provider.NameDeezer,
+		Field:      "deezer_id",
+		ArtistName: a.Name,
+		SearchURL:  "/api/v1/artists/" + a.ID + "/deezer/search",
+	}))
+}
+
 // handleDeezerSearch searches Deezer by name and returns scored candidates for
 // linking, mirroring the MusicBrainz identify flow (handleRefreshSearch) but
 // keyed on Deezer's own provider ID. Confidence reflects name plus

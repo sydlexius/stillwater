@@ -271,8 +271,5 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 			@FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"])
 			@FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"])
 		</dl>
-		// Re-render the Deezer match-by-name affordance so a metadata refresh
-		// (which OOB-replaces this whole section) does not drop the control.
-		@DeezerMatchControl(&data.Artist)
 	</section>
 }

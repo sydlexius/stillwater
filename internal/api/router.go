@@ -711,6 +711,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Deezer match-by-name (mirrors the MusicBrainz identify flow, keyed on the
 	// Deezer provider ID). search returns scored candidates; link persists the
 	// chosen Deezer ID and refreshes.
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/deezer/identify", wrapAuth(r.handleDeezerIdentify, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/deezer/search", wrapAuth(r.handleDeezerSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/deezer/link", wrapAuth(r.handleDeezerLink, authMw))
 
