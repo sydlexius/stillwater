@@ -28,7 +28,6 @@
   "getOpenAPISpec",
   "getPlatform",
   "getPriorities",
-  "getRulesStatus",
   "getScannerStatus",
   "getScraperConfig",
   "getWebSearchProviders",

@@ -726,8 +726,18 @@ func (r *Router) handleRunAllRulesStatus(w http.ResponseWriter, req *http.Reques
 // GET /api/v1/rules/status
 func (r *Router) handleRulesStatus(w http.ResponseWriter, req *http.Request) {
 	if r.ruleScheduler == nil {
+		// No schedule is configured (rule_schedule.interval_minutes=0). The
+		// dashboard stat must still reflect real evaluations triggered by
+		// manual runs, so read last_evaluation_at directly from the DB (#1796).
+		var lastEval any
+		ts, err := r.artistService.LatestRulesEvaluatedAt(req.Context())
+		if err != nil {
+			r.logger.Warn("querying latest rules_evaluated_at for status", "error", err)
+		} else if ts != nil {
+			lastEval = ts
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"last_evaluation_at": nil,
+			"last_evaluation_at": lastEval,
 			"interval_minutes":   0,
 			"next_evaluation_at": nil,
 			"scheduler_enabled":  false,
