@@ -797,12 +797,20 @@ func TestHandleRulesStatus_NoScheduler_ReturnsDBValue(t *testing.T) {
 	}
 
 	// scheduler_enabled must be false (no schedule configured).
-	if v, _ := resp["scheduler_enabled"].(bool); v {
+	seEnabled, ok := resp["scheduler_enabled"].(bool)
+	if !ok {
+		t.Fatalf("scheduler_enabled missing or not bool: %v", resp["scheduler_enabled"])
+	}
+	if seEnabled {
 		t.Error("scheduler_enabled: got true, want false")
 	}
 	// interval_minutes must be 0.
-	if v, _ := resp["interval_minutes"].(float64); int(v) != 0 {
-		t.Errorf("interval_minutes: got %v, want 0", v)
+	intervalMins, ok := resp["interval_minutes"].(float64)
+	if !ok {
+		t.Fatalf("interval_minutes missing or not float64: %v", resp["interval_minutes"])
+	}
+	if int(intervalMins) != 0 {
+		t.Errorf("interval_minutes: got %v, want 0", intervalMins)
 	}
 	// next_evaluation_at must be nil.
 	if resp["next_evaluation_at"] != nil {
@@ -863,7 +871,11 @@ func TestHandleRulesStatus_NoScheduler_DBError(t *testing.T) {
 	if resp["last_evaluation_at"] != nil {
 		t.Errorf("last_evaluation_at: got %v, want nil on DB parse error", resp["last_evaluation_at"])
 	}
-	if v, _ := resp["scheduler_enabled"].(bool); v {
+	seEnabled, ok := resp["scheduler_enabled"].(bool)
+	if !ok {
+		t.Fatalf("scheduler_enabled missing or not bool: %v", resp["scheduler_enabled"])
+	}
+	if seEnabled {
 		t.Error("scheduler_enabled: got true, want false")
 	}
 }
@@ -887,7 +899,11 @@ func TestHandleRulesStatus_NoScheduler_NoEvaluations(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if v, _ := resp["scheduler_enabled"].(bool); v {
+	seEnabled, ok := resp["scheduler_enabled"].(bool)
+	if !ok {
+		t.Fatalf("scheduler_enabled missing or not bool: %v", resp["scheduler_enabled"])
+	}
+	if seEnabled {
 		t.Error("scheduler_enabled: got true, want false")
 	}
 	if resp["last_evaluation_at"] != nil {
