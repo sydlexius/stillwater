@@ -57,6 +57,16 @@ func newTestServer(t *testing.T) *httptest.Server {
 				} else {
 					w.Write([]byte(paginatedAlbumsPage(50, 1, 51)))
 				}
+			case "6666666":
+				// 600-album discography (above maxTotal=500) to exercise the cap.
+				// Each request serves up to 50 items so the loop runs until
+				// len(results) >= 500 and stops before collecting all 600.
+				idx, _ := strconv.Atoi(r.URL.Query().Get("index"))
+				count := 600 - idx
+				if count > 50 {
+					count = 50
+				}
+				w.Write([]byte(paginatedAlbumsPage(idx, count, 600)))
 			default:
 				w.Write(loadFixture(t, "artist_albums_radiohead.json"))
 			}
@@ -473,6 +483,23 @@ func TestGetReleaseGroupsPagination(t *testing.T) {
 	}
 	if len(groups) != 51 {
 		t.Fatalf("expected 51 release groups across two pages, got %d", len(groups))
+	}
+}
+
+func TestGetReleaseGroupsCapAt500(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	// Artist 6666666 reports 600 total albums, above maxTotal=500. The adapter
+	// must stop accumulating at 500 and return exactly 500 release groups.
+	const maxTotal = 500
+	groups, err := a.GetReleaseGroups(context.Background(), "6666666")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+	if len(groups) != maxTotal {
+		t.Errorf("expected release groups capped at %d, got %d", maxTotal, len(groups))
 	}
 }
 

@@ -383,7 +383,7 @@ func DeezerCandidates(data DeezerCandidatesData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if len(data.Candidates) == 0 {
+		if len(data.Candidates) == 0 && data.ProviderError == "" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<p class=\"text-sm text-gray-500 dark:text-gray-400 italic py-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

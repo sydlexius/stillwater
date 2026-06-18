@@ -131,7 +131,7 @@ templ DeezerCandidates(data DeezerCandidatesData) {
 				{ tf(ctx, "artist.deezer.provider_error", data.ProviderError) }
 			</div>
 		}
-		if len(data.Candidates) == 0 {
+		if len(data.Candidates) == 0 && data.ProviderError == "" {
 			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-1">{ t(ctx, "artist.deezer.no_matches") }</p>
 		} else {
 			for _, c := range data.Candidates {
