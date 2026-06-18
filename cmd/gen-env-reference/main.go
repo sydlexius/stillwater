@@ -9,6 +9,14 @@
 // BEGIN/END markers in the docs file. Manual prose around the markers is
 // preserved.
 //
+// Coverage contract:
+//
+//	Every field in internal/config.Config that carries an env: tag must also
+//	carry a desc: tag. The generator enforces this at generation time: adding
+//	a new env: field without a desc: tag causes generation to fail with a
+//	clear error identifying the field and variable. This is the primary
+//	docs-coverage gate for the environment-variable surface.
+//
 // Usage:
 //
 //	go run ./cmd/gen-env-reference              # rewrite the file in place

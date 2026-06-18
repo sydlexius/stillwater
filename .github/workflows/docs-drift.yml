@@ -1,5 +1,35 @@
 name: Docs Drift
 
+# POLICY: this workflow is a SOFT advisory. It posts a PR comment and applies
+# the `needs-docs-review` label when code paths change without corresponding
+# docs updates, but it NEVER blocks merge.
+#
+# Enforcement model (as of 2026-06-17):
+#   HARD gates (fail CI, block merge):
+#     - Generated reference pages drift: scripts/check-generated.sh runs
+#       gen-env-reference, gen-cli-reference, gen-rules-catalogue,
+#       gen-settings-reference, gen-doc-anchors, gen-envelope-changelog,
+#       gen-make-reference, gen-platform-profiles, gen-prefs-reference in
+#       -check mode on every push. A stale generated file fails the gate.
+#     - Coverage gaps: each generator fails loudly at generation time if a
+#       code-defined key lacks its required metadata (e.g. env:/desc: tags
+#       for config vars; flag:/desc: tags for CLI flags; catalogue entry for
+#       rules). So adding a key without docs is a build failure.
+#   SOFT advisory (this workflow):
+#     - Hand-written narrative docs (provider guides, troubleshooting, API
+#       reference prose) are not generated and cannot be drift-checked
+#       mechanically. This workflow flags those cases.
+#
+# Raising the enforcement level: to make specific surfaces blocking, move
+# them from the soft advisory path to the hard gate (add a -check call in
+# scripts/check-generated.sh). Candidate surfaces for hardening:
+#   - openapi.yaml changes without docs/api/** updates (high-value; the API
+#     spec is the contract for external integrators).
+#   - Handler changes that add/remove destructive operations without
+#     docs updates (precedent: #1779 / PR #2007 changed filesystem deletion
+#     behavior and was only soft-flagged).
+# Decision on this policy requires maintainer sign-off; see issue #2008.
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]

@@ -22,6 +22,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
+	"github.com/sydlexius/stillwater/internal/cli"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
@@ -81,17 +82,23 @@ func main() {
 		}
 	}
 
-	// Parse global flags
-	resetPwd := flag.Bool("reset-password", false, "Reset admin password and exit")
-	username := flag.String("username", "", "Username for password reset")
-	newPassword := flag.String("new-password", "", "New password (insecure: visible in process list; prefer interactive prompt)")
+	// Parse global flags. cli.Flags is the source of truth for flag metadata;
+	// cmd/gen-cli-reference reads the same struct to generate the CLI reference
+	// page in docs/. Any new flag must be added there first so that the
+	// generated docs stay in sync (the generator fails loudly if a flag: field
+	// lacks a desc: tag).
+	var cliFlags cli.Flags
+	if err := cli.RegisterFlags(flag.CommandLine, &cliFlags); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
 	flag.Parse()
 
-	if *resetPwd {
-		if *newPassword != "" {
+	if cliFlags.ResetPassword {
+		if cliFlags.NewPassword != "" {
 			fmt.Fprintln(os.Stderr, "warning: --new-password exposes the password in process arguments; consider using the interactive prompt instead")
 		}
-		if err := resetPassword(*username, *newPassword); err != nil {
+		if err := resetPassword(cliFlags.Username, cliFlags.NewPassword); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
