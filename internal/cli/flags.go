@@ -126,12 +126,23 @@ func registerStructFlags(fs *flag.FlagSet, t reflect.Type, v reflect.Value) erro
 			if err != nil {
 				return fmt.Errorf("field %s has invalid bool default %q: %w", field.Name, raw, err)
 			}
-			// Addr().Interface() returns the concrete *bool pointer so we can
-			// pass it directly to BoolVar without importing unsafe.
-			fs.BoolVar(fv.Addr().Interface().(*bool), flagName, defaultVal, desc)
+			// Guard the type assertion: Kind()==Bool also matches named types
+			// (e.g. `type myBool bool`) whose concrete pointer is *myBool, not
+			// *bool. A bare cast would panic on those, violating this function's
+			// fail-loud contract. Use the comma-ok form and return an error
+			// instead so a misdeclared field surfaces at startup, not as a panic.
+			ptr, ok := fv.Addr().Interface().(*bool)
+			if !ok {
+				return fmt.Errorf("field %s for flag %q must be builtin bool, got %s", field.Name, flagName, field.Type)
+			}
+			fs.BoolVar(ptr, flagName, defaultVal, desc)
 		case reflect.String:
 			defaultVal := field.Tag.Get("default")
-			fs.StringVar(fv.Addr().Interface().(*string), flagName, defaultVal, desc)
+			ptr, ok := fv.Addr().Interface().(*string)
+			if !ok {
+				return fmt.Errorf("field %s for flag %q must be builtin string, got %s", field.Name, flagName, field.Type)
+			}
+			fs.StringVar(ptr, flagName, defaultVal, desc)
 		default:
 			return fmt.Errorf("field %s has unsupported kind %s for flag %q", field.Name, field.Type.Kind(), flagName)
 		}

@@ -118,7 +118,19 @@ func TestRegisterStructFlags_ErrorBranches(t *testing.T) {
 	type badBoolDefault struct {
 		On bool `flag:"on" default:"notabool" desc:"a toggle"`
 	}
-	// (c) A well-formed struct must register without error.
+	// (c) A named-bool field (Kind()==Bool but concrete pointer is *myBool,
+	// not *bool) must hit the guarded type-assertion error rather than panic.
+	type myBool bool
+	type namedBoolField struct {
+		On myBool `flag:"on" default:"false" desc:"a toggle"`
+	}
+	// (d) A named-string field (Kind()==String but concrete pointer is
+	// *myString, not *string) must likewise hit the guarded error path.
+	type myString string
+	type namedStringField struct {
+		Name myString `flag:"name" default:"x" desc:"a name"`
+	}
+	// (e) A well-formed struct must register without error.
 	type validStruct struct {
 		Verbose bool   `flag:"verbose" default:"true" desc:"verbose output"`
 		Name    string `flag:"name" default:"world" desc:"a name"`
@@ -131,6 +143,8 @@ func TestRegisterStructFlags_ErrorBranches(t *testing.T) {
 	}{
 		{"unsupported kind", unsupportedKind{}, true},
 		{"invalid bool default", badBoolDefault{}, true},
+		{"named bool type", namedBoolField{}, true},
+		{"named string type", namedStringField{}, true},
 		{"valid struct", validStruct{}, false},
 	}
 	for _, tc := range tests {

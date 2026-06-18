@@ -69,20 +69,10 @@ func run(outPath string, checkOnly bool) error {
 	var missing []string
 	for i := range rules {
 		r := &rules[i]
-		entry := rule.CatalogueEntry(r.ID)
-		// The zero-value has an empty Guards field and all other fields empty.
-		// Using a field that would always be non-empty for a real entry to
-		// distinguish zero-value from intentional defaults is fragile. Instead
-		// we check whether the ID key is present in the catalogue by comparing
-		// against the public CatalogueEntry accessor. A zero-value entry with
-		// all empty strings is the sentinel for "missing"; a rule intentionally
-		// marked detection-only must still have an explicit entry with at least
-		// FixBehavior: "" set (the struct zero value -- but stored explicitly).
-		// To avoid a false positive for rules that genuinely have empty Guards
-		// and FixBehavior, we gate on: the entry is zero AND the rule is NOT
-		// in the catalogue map (by re-checking via a helper).
+		// Coverage enforcement: every DefaultRules() ID must have an explicit
+		// catalogue entry (CatalogueEntryPresent). Fail loudly here rather than
+		// shipping zero-value docs (renderCatalogue re-fetches each entry).
 		if rule.CatalogueEntryPresent(r.ID) {
-			_ = entry // validated; used during rendering
 			continue
 		}
 		missing = append(missing, r.ID)
