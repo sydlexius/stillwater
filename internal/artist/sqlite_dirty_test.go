@@ -521,6 +521,25 @@ func TestUpdate_DoesStampDirty(t *testing.T) {
 	}
 }
 
+// TestLatestRulesEvaluatedAt_ScanError verifies that a DB-level error during the
+// MAX() scan (e.g. closed connection) is surfaced as a wrapped error rather than
+// silently returning nil. This covers the `if err != nil` branch after Scan.
+func TestLatestRulesEvaluatedAt_ScanError(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+
+	// Close the DB before querying so the Scan call returns sql.ErrConnDone.
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	_, err := svc.LatestRulesEvaluatedAt(context.Background())
+	if err == nil {
+		t.Fatal("expected error on closed DB, got nil")
+	}
+}
+
 // TestLatestRulesEvaluatedAt_MalformedTimestamp verifies that a non-RFC3339
 // rules_evaluated_at value stored in the DB (e.g. from a hand-edited row or a
 // future schema bug) causes LatestRulesEvaluatedAt to return a wrapped error
