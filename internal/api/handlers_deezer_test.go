@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -487,5 +488,120 @@ func TestHandleDeezerLink_NotFound(t *testing.T) {
 	r.handleDeezerLink(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeezerSearch_NotFound covers the 404 branch: a search against a path
+// ID that does not resolve to an artist must 404 (the orchestrator is wired so
+// the handler reaches the GetByID lookup rather than short-circuiting on 503).
+func TestHandleDeezerSearch_NotFound(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	installDeezerOrchestrator(t, r, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/nope/deezer/search", strings.NewReader(`{"query":"x"}`))
+	req.SetPathValue("id", "nope")
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerSearch(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeezerSearch_ServiceUnavailable covers the 503 branch: when the
+// orchestrator is not configured the search handler must report the service as
+// unavailable rather than attempting a lookup.
+func TestHandleDeezerSearch_ServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	r.orchestrator = nil // no provider orchestrator wired
+	a := addTestArtist(t, artistSvc, "No Orchestrator DZ")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/deezer/search", strings.NewReader(`{"query":"x"}`))
+	req.SetPathValue("id", a.ID)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerSearch(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeezerLink_ServiceUnavailable covers the 503 branch: when the artist
+// service is not configured the link handler must report 503.
+func TestHandleDeezerLink_ServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	r.artistService = nil // no artist service wired
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/deezer/link", strings.NewReader(`{"deezer_id":"4050205"}`))
+	req.SetPathValue("id", "x")
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerLink(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeezerLink_Blocked409 covers the 409 branch: with an active,
+// denying conflict gate, linking an EXISTING artist must be blocked with 409
+// (the image-write the refresh may perform is gated on the conflict ledger).
+func TestHandleDeezerLink_Blocked409(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	d := conflict.NewBlockingForTest(testDiscardLogger())
+	r.conflictDetector = d
+	r.conflictGate = conflict.NewGate(d)
+	a := addTestArtist(t, artistSvc, "Gate Blocked DZ")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/deezer/link", strings.NewReader(`{"deezer_id":"4050205"}`))
+	req.SetPathValue("id", a.ID)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerLink(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body=%s", w.Code, w.Body.String())
+	}
+	// The blocked link must not persist the Deezer ID.
+	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.DeezerID != "" {
+		t.Errorf("DeezerID = %q, want empty after blocked link", reloaded.DeezerID)
+	}
+}
+
+// TestHandleDeezerLink_GateActiveNonexistentArtist404 asserts finding #1's
+// corrected ordering: the artist-existence (404) check must run BEFORE the
+// conflict-gate (409) check. With the gate ACTIVE and denying, linking a
+// NON-EXISTENT artist must return 404 (not 409) -- an unknown ID is not masked
+// by the gate block.
+func TestHandleDeezerLink_GateActiveNonexistentArtist404(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	d := conflict.NewBlockingForTest(testDiscardLogger())
+	r.conflictDetector = d
+	r.conflictGate = conflict.NewGate(d)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/nope/deezer/link", strings.NewReader(`{"deezer_id":"4050205"}`))
+	req.SetPathValue("id", "nope")
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDeezerLink(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (404 must precede 409); body=%s", w.Code, w.Body.String())
 	}
 }

@@ -95,17 +95,20 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Resolve the artist first so a link to a NON-EXISTENT artist returns 404
+	// even when the conflict gate is active (the 404 check must precede the
+	// 409 gate; otherwise an unknown ID would be masked by a gate block).
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
 	// The refresh below may write images, so gate on the conflict ledger
 	// (returns 409 when blocked). deezer_id is NOT part of the lockable field
 	// vocabulary (see internal/artist/fieldname.go: only metadata fields like
 	// name, biography, genres are lockable), so no field-lock check is needed.
 	if !r.gateImageWrite(w, req) {
-		return
-	}
-
-	a, err := r.artistService.GetByID(req.Context(), artistID)
-	if err != nil {
-		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
 
@@ -124,6 +127,10 @@ func (r *Router) handleDeezerLink(w http.ResponseWriter, req *http.Request) {
 		// Re-fetch so the OOB row swap renders the persisted value.
 		fresh, ferr := r.artistService.GetByID(req.Context(), a.ID)
 		if ferr != nil {
+			// Re-fetch failed; fall back to the in-memory artist so the OOB
+			// swap still renders, but log it so the degraded render is debuggable.
+			r.logger.Warn("deezer link: re-fetch for OOB swap failed; using in-memory artist",
+				"artist_id", a.ID, "error", ferr)
 			fresh = a
 		}
 		var fieldProviders map[string][]string

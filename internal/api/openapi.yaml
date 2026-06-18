@@ -11412,6 +11412,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: Deezer search failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/deezer/link:
     post:
@@ -11478,6 +11490,18 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Conflict gate blocked the write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Failed to link Deezer ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
           content:
             application/json:
               schema:
