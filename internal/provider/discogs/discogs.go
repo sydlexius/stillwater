@@ -313,6 +313,83 @@ func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string,
 	return &resp, nil
 }
 
+// GetReleaseGroups implements provider.ReleaseGroupFetcher for Discogs. It
+// returns the artist's "master" releases (deduplicated, "Main" role only) as
+// provider.ReleaseGroupInfo values so the identify/disambiguation flow can
+// score Discogs candidates against the local library the same way it scores
+// MusicBrainz candidates. artistID must be the numeric Discogs artist ID.
+//
+// The role/type filter mirrors aggregateStyles: only "master" releases where
+// the artist's role is "Main" are treated as the artist's own albums, so
+// compilations and guest appearances do not skew the album-match score. Results
+// are capped (maxGroups across maxPages) to bound the number of Discogs API
+// calls, matching the existing pagination budget used elsewhere in this
+// adapter.
+func (a *Adapter) GetReleaseGroups(ctx context.Context, artistID string) ([]provider.ReleaseGroupInfo, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
+	// Discogs release lookups require a numeric artist ID; reject anything else
+	// (e.g. a MusicBrainz UUID) up front to avoid a wasted HTTP round-trip.
+	if !isNumericID(artistID) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: artistID}
+	}
+
+	token, err := a.getToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	const (
+		maxGroups = 50
+		maxPages  = 5
+	)
+
+	var groups []provider.ReleaseGroupInfo
+	seen := make(map[int]bool) // deduplicate master IDs across pages
+
+	for page := 1; page <= maxPages && len(groups) < maxGroups; page++ {
+		resp, err := a.getArtistReleases(ctx, artistID, token, page)
+		if err != nil {
+			return nil, fmt.Errorf("fetching artist releases page %d: %w", page, err)
+		}
+		if len(resp.Releases) == 0 {
+			break
+		}
+
+		for _, rel := range resp.Releases {
+			if len(groups) >= maxGroups {
+				break
+			}
+			if rel.Type != "master" || !strings.EqualFold(rel.Role, "Main") {
+				continue
+			}
+			if seen[rel.ID] {
+				continue
+			}
+			seen[rel.ID] = true
+
+			info := provider.ReleaseGroupInfo{
+				ID:    strconv.Itoa(rel.ID),
+				Title: rel.Title,
+			}
+			// Discogs only exposes a release year (not a full date); surface it
+			// as the FirstReleaseDate so downstream consumers have it available.
+			if rel.Year > 0 {
+				info.FirstReleaseDate = strconv.Itoa(rel.Year)
+			}
+			groups = append(groups, info)
+		}
+
+		// Stop if this was the last page.
+		if page >= resp.Pagination.Pages {
+			break
+		}
+	}
+
+	return groups, nil
+}
+
 // getMasterRelease fetches genre/style info from a master release.
 func (a *Adapter) getMasterRelease(ctx context.Context, masterID int, token string) (*MasterRelease, error) {
 	reqURL := fmt.Sprintf("%s/masters/%d", a.baseURL, masterID)

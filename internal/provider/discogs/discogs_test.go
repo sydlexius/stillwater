@@ -164,6 +164,105 @@ func TestGetArtist(t *testing.T) {
 	}
 }
 
+func TestGetReleaseGroups(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := newTestServer(t)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	groups, err := a.GetReleaseGroups(context.Background(), "3840")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+
+	// The fixture has 3 "master" releases with role "Main" (OK Computer, Kid A,
+	// In Rainbows) plus a compilation (Appearance) and a non-master single,
+	// both of which must be filtered out.
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 release groups, got %d: %+v", len(groups), groups)
+	}
+	wantTitles := map[string]bool{"OK Computer": true, "Kid A": true, "In Rainbows": true}
+	for _, g := range groups {
+		if !wantTitles[g.Title] {
+			t.Errorf("unexpected release group title %q (compilation/single not filtered?)", g.Title)
+		}
+		if g.ID == "" {
+			t.Errorf("release group %q missing ID", g.Title)
+		}
+	}
+	// OK Computer (id 5001, year 1997) should map year -> FirstReleaseDate.
+	for _, g := range groups {
+		if g.Title == "OK Computer" {
+			if g.ID != "5001" {
+				t.Errorf("OK Computer ID = %q, want 5001", g.ID)
+			}
+			if g.FirstReleaseDate != "1997" {
+				t.Errorf("OK Computer FirstReleaseDate = %q, want 1997", g.FirstReleaseDate)
+			}
+		}
+	}
+}
+
+func TestGetReleaseGroupsServerError(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	if _, err := a.GetReleaseGroups(context.Background(), "3840"); err == nil {
+		t.Fatal("expected error when the releases endpoint returns 500, got nil")
+	}
+}
+
+func TestGetReleaseGroupsAuthRequired(t *testing.T) {
+	limiter, _ := setupTest(t)
+	// A settings service with no Discogs token configured -> getToken returns
+	// ErrAuthRequired before any HTTP call.
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.ExecContext(context.Background(),
+		`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`); err != nil {
+		t.Fatalf("create settings table: %v", err)
+	}
+	enc, _, _ := encryption.NewEncryptor("")
+	noTokenSettings := provider.NewSettingsService(db, enc)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, noTokenSettings, logger)
+
+	_, err = a.GetReleaseGroups(context.Background(), "3840")
+	var authErr *provider.ErrAuthRequired
+	if !errors.As(err, &authErr) {
+		t.Errorf("expected ErrAuthRequired, got %T: %v", err, err)
+	}
+}
+
+func TestGetReleaseGroupsRejectsNonNumeric(t *testing.T) {
+	limiter, settings := setupTest(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, settings, logger)
+
+	// A MusicBrainz UUID is not a valid Discogs artist ID; reject without an
+	// HTTP round-trip.
+	_, err := a.GetReleaseGroups(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493")
+	if err == nil {
+		t.Fatal("expected error for non-numeric ID, got nil")
+	}
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
 func TestGetImages(t *testing.T) {
 	limiter, settings := setupTest(t)
 	srv := newTestServer(t)

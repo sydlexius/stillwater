@@ -770,6 +770,8 @@ func identifyProvider(field string) (segment, display string, ok bool) {
 	switch field {
 	case "deezer_id":
 		return "deezer", provider.NameDeezer.DisplayName(), true
+	case "discogs_id":
+		return "discogs", provider.NameDiscogs.DisplayName(), true
 	default:
 		return "", "", false
 	}

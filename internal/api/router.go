@@ -715,6 +715,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/deezer/search", wrapAuth(r.handleDeezerSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/deezer/link", wrapAuth(r.handleDeezerLink, authMw))
 
+	// Discogs match-by-name identify (next/ artist-detail per-row affordance;
+	// mirrors the Deezer identify flow, scoped to Discogs).
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/discogs/identify", wrapAuth(r.handleDiscogsIdentify, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/discogs/search", wrapAuth(r.handleDiscogsSearch, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/discogs/link", wrapAuth(r.handleDiscogsLink, authMw))
+
 	// MusicBrainz contribution routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/musicbrainz/diffs", wrapAuth(r.handleGetMBDiffs, authMw))
 
