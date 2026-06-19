@@ -316,6 +316,35 @@ func TestHandleDiscogsSearch_HTMXFragment(t *testing.T) {
 	}
 }
 
+func TestHandleDiscogsSearch_HTMXProviderError(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	installDiscogsOrchestrator(t, r,
+		func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
+			return nil, errors.New("api.discogs.com: 503 service unavailable")
+		}, nil)
+	a := addTestArtist(t, artistSvc, "Provider Error HTMX DG")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/discogs/search", strings.NewReader(`{"query":"x"}`))
+	req.SetPathValue("id", a.ID)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HX-Request", "true")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleDiscogsSearch(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "unavailable") {
+		t.Errorf("HTMX provider-error fragment missing error banner; body=%s", body)
+	}
+	if strings.Contains(body, "No Discogs matches found") {
+		t.Errorf("HTMX provider-error fragment must not show no-matches copy; body=%s", body)
+	}
+}
+
 func TestHandleDiscogsSearch_HTMXNoMatches(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
