@@ -79,6 +79,57 @@ jobs:
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64","skip":true}]}' >> "$GITHUB_OUTPUT"
           fi
 
+  # ---------------------------------------------------------------------------
+  # Go module + build cache primer (D3 -- shard cache consolidation)
+  #
+  # Runs a single go mod download before the 9 test shards so the module
+  # cache is warm and saved under one cache entry.  Shards restore that
+  # entry read-only (actions/cache/restore, no post-job save) to avoid
+  # 9 concurrent writes that race to save the same key.
+  #
+  # D2 (restore-keys): the explicit actions/cache step here carries a
+  # restore-keys fallback so a go.sum change warms from the last matching
+  # cache instead of cold-building.  Other Go jobs (lint, coverage, build)
+  # keep setup-go cache:true; they each have at most 1-2 concurrent
+  # instances so the multiplier effect is small compared to the 9-shard
+  # case, and fewer changes lower the diff risk.
+  # ---------------------------------------------------------------------------
+  go-cache-primer:
+    name: Go Cache Primer
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          # Disable the built-in cache so the explicit actions/cache step
+          # below owns the lifecycle (keyed on go.sum with restore-keys).
+          cache: false
+
+      - name: Restore Go module + build cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          # Exact key: cache hit restores the most recent warm build.
+          # Restore-key: cache miss on a go.sum change warms from the last
+          # compatible entry instead of forcing a cold rebuild.
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      # Populate the module cache so shards avoid redundant downloads.
+      # go mod download is fast (~5-30s) and its output is the shared
+      # ~/go/pkg/mod tree that all 9 shards will restore read-only.
+      - name: Warm Go module cache
+        run: go mod download
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -172,9 +223,29 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
-      - name: Install Playwright Chromium
-        # Install only Chromium (no Firefox/WebKit) to keep the binary footprint small.
-        run: npx playwright install chromium --with-deps
+      # Cache the Playwright browser binary on a key derived from
+      # package-lock.json (which pins the exact @playwright/* version).
+      # On a cache hit the binary download is skipped; system dependencies
+      # are installed separately below (they are OS packages, not cached).
+      - name: Cache Playwright browser binaries
+        id: playwright-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-chromium-
+
+      - name: Install Playwright Chromium browser binary
+        # Skip binary download on cache hit; the binary is already in
+        # ~/.cache/ms-playwright restored above.
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
+      - name: Install Playwright Chromium system dependencies
+        # Always install OS-level deps (libnss3, libgbm, etc.); they are
+        # not included in the cached browser archive.
+        run: npx playwright install-deps chromium
 
       - name: Generate templ
         run: go tool templ generate
@@ -266,7 +337,7 @@ jobs:
     # update at merge time.
     name: Test Shard
     runs-on: ubuntu-latest
-    needs: [changes]
+    needs: [changes, go-cache-primer]
     if: needs.changes.outputs.code == 'true'
     strategy:
       # One shard's failure should not cancel the others -- a flake in one
@@ -282,7 +353,23 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
-          cache: true
+          # Disable built-in cache; read-only restore from the primer's
+          # shared entry below.  Shards do not save (actions/cache/restore),
+          # so all 9 write to the SAME key without racing.
+          cache: false
+
+      # Restore Go cache from the shared primer entry (read-only).
+      # restore-keys ensures a go.sum change still warms from the last
+      # compatible entry rather than cold-building.
+      - name: Restore Go module + build cache (read-only)
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
       # Resolve the package list (and optional -run bucket regex) for this
       # shard. Named shards (services / settingsio / providers / scan) come from the SHARDS
@@ -593,6 +680,34 @@ jobs:
             exit 1
           fi
           echo "Build matrix result: $result"
+
+  # ---------------------------------------------------------------------------
+  # D4 -- Cache usage guardrail
+  #
+  # Reads the repository's Actions cache usage via the REST API and emits a
+  # ::warning:: annotation when usage exceeds 8 GiB (cap = 10 GiB).
+  # This is a non-blocking informational job; it never fails CI.
+  # Run on every push + PR so the signal appears in the workflow summary.
+  # ---------------------------------------------------------------------------
+  cache-usage:
+    name: Cache Usage Check
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check Actions cache usage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          usage_bytes=$(gh api "repos/${REPO}/actions/cache/usage" \
+            --jq '.active_caches_size_in_bytes')
+          usage_gib=$(awk "BEGIN{printf \"%.2f\", ${usage_bytes}/1073741824}")
+          echo "Actions cache usage: ${usage_gib} GiB / 10 GiB"
+          if awk "BEGIN{exit !(${usage_gib} > 8)}"; then
+            echo "::warning::Actions cache usage ${usage_gib} GiB exceeds 8 GiB warning threshold (cap = 10 GiB). Cache thrash risk -- consider pruning stale entries."
+          fi
 
   docker:
     name: Docker Build
