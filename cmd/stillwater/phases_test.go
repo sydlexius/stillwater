@@ -434,6 +434,30 @@ func TestResolveEncryptionKey_GeneratesOnMigratedButSecretlessDB(t *testing.T) {
 	}
 }
 
+// TestResolveEncryptionKey_AbortsOnProbeError covers the security-critical
+// fail-closed branch: when the existing DB file cannot be probed (here a
+// non-empty file that is not a valid SQLite database, so the read-only
+// PingContext/query errors), resolveEncryptionKey must surface that error
+// rather than silently generating a fresh key -- generating one could orphan
+// secrets that a transient/permission/corruption fault merely hid.
+func TestResolveEncryptionKey_AbortsOnProbeError(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "stillwater.db")
+	// Non-empty garbage: passes the size>0 gate, fails the sqlite probe.
+	if err := os.WriteFile(dbPath, []byte("this is not a sqlite database"), 0o600); err != nil {
+		t.Fatalf("writing garbage db: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Database.Path = dbPath // no env key, no sibling encryption.key
+
+	if _, err := resolveEncryptionKey(cfg, slog.Default()); err == nil {
+		t.Fatal("expected abort on unprobeable DB, got nil error (would risk orphaning secrets)")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "encryption.key")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("must not generate a key file when the probe fails; stat err = %v", statErr)
+	}
+}
+
 // TestDatabaseHasEncryptedSecrets_AbsentAndEmpty verifies the probe treats a
 // missing or empty DB file as a fresh install (no secrets).
 func TestDatabaseHasEncryptedSecrets_AbsentAndEmpty(t *testing.T) {

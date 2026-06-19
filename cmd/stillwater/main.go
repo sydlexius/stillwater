@@ -1185,8 +1185,8 @@ func databaseHasEncryptedSecrets(dbPath string) (bool, error) {
 		return false, nil // freshly created, no schema or rows yet
 	}
 
-	// Read-only DSN: mode=ro forbids any write and immutable avoids touching
-	// the WAL, so probing the DB cannot alter it.
+	// Read-only DSN: mode=ro forbids any write, so probing the DB cannot alter
+	// it.
 	db, err := sql.Open("sqlite", dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
 	if err != nil {
 		return false, fmt.Errorf("opening database read-only: %w", err)
