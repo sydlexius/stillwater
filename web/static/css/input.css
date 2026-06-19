@@ -3049,6 +3049,16 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   color: #94a3b8;
   border-color: var(--swd-line, rgba(148, 163, 184, 0.14));
 }
+/* Keyboard-hints visibility pref (#1798): when the user sets kbd_hints=hide,
+ * preferences.js stamps data-kbd="hide" on <html>. Two rules work together:
+ *   1. Hide the whole .sw-list-tips footer so descriptive labels ("Search",
+ *      "Next artist") are never orphaned when their keycap chips vanish.
+ *   2. Hide any standalone .sw-kbd badge anywhere in the UI, which
+ *      future-proofs the pref for badges outside a footer (#1775, #1789).
+ * The ? cheat-sheet affordance uses .sw-sidebar-kbd (a distinct class) and
+ * is NOT matched by either rule -- it stays visible regardless of this pref. */
+html[data-kbd="hide"] .sw-list-tips { display: none; }   /* legend footers: hide whole tip line so labels never orphan */
+html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keycap badge anywhere in the UI */
 
 /* next/ bulk selection strip (M55 #1335): the dissolved bulk bar's contextual
  * half (count + Show selected + Select all N matching). The action dropdown +

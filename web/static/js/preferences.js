@@ -272,6 +272,14 @@
     return fetch(API_BASE + '/' + encodeURIComponent(key), {
       method: 'PUT',
       credentials: 'same-origin',
+      // keepalive lets the write outlive the page: toggling a preference and
+      // immediately navigating (e.g. flip Keyboard Hints off, then click a nav
+      // link) would otherwise abort the in-flight PUT on unload, so the value
+      // never persisted and the setting reverted on the next screen
+      // (#1798/#2037). keepalive keeps the request alive through navigation.
+      // The body is tiny, well under the 64KB keepalive cap. The existing
+      // optimistic apply + rollback-on-failure handling is unchanged.
+      keepalive: true,
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
       body: JSON.stringify({ value: value })
     })

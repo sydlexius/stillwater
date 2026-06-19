@@ -194,12 +194,12 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 						},
 						prefs.LiteMode,
 					)
-					@prefsToggleRow("pref-d-kbd-hints", "kbd_hints", t(ctx, "prefs.kbd_hints.label"), t(ctx, "prefs.kbd_hints.description"), t(ctx, "prefs.kbd_hints.help"), prefs.KbdHints == "show")
+					@prefsToggleRow("pref-d-kbd-hints", "kbd_hints", t(ctx, "prefs.kbd_hints.label"), t(ctx, "prefs.kbd_hints.description"), t(ctx, "prefs.kbd_hints.help"), "show", "hide", prefs.KbdHints == "show")
 				}
 				<!-- Behavior group -->
 				@prefsGroup("behavior", t(ctx, "prefs.group.behavior"), false) {
-					@prefsToggleRow("pref-d-auto-fetch", "auto_fetch_images", t(ctx, "prefs.auto_fetch.label"), t(ctx, "prefs.auto_fetch.description"), t(ctx, "prefs.auto_fetch.help"), prefs.AutoFetchImages == "true")
-					@prefsToggleRow("pref-d-notification", "notification_enabled", t(ctx, "prefs.notification_enabled.label"), t(ctx, "prefs.notification_enabled.description"), t(ctx, "prefs.notification_enabled.help"), prefs.NotificationEnabled == "true")
+					@prefsToggleRow("pref-d-auto-fetch", "auto_fetch_images", t(ctx, "prefs.auto_fetch.label"), t(ctx, "prefs.auto_fetch.description"), t(ctx, "prefs.auto_fetch.help"), "true", "false", prefs.AutoFetchImages == "true")
+					@prefsToggleRow("pref-d-notification", "notification_enabled", t(ctx, "prefs.notification_enabled.label"), t(ctx, "prefs.notification_enabled.description"), t(ctx, "prefs.notification_enabled.help"), "true", "false", prefs.NotificationEnabled == "true")
 					@prefsLanguageRow(prefs.Language)
 				}
 				<!-- Artist detail layout group -->
@@ -414,7 +414,9 @@ templ prefsPageSizeRow(pageSize int) {
 // prefsToggleRow renders a preference row with a toggle (role=switch) control.
 // checked is the initial on/off state. shortDesc is shown inline (toggle rows
 // show a brief label under the title per the mockup). helpText goes in a (?) popover.
-templ prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked bool) {
+// onValue/offValue are the persisted vocabulary strings emitted when the toggle is
+// switched on or off (e.g. "show"/"hide" for kbd_hints, "true"/"false" for booleans).
+templ prefsToggleRow(id, prefKey, label, shortDesc, helpText, onValue, offValue string, checked bool) {
 	<div class="sw-prefs-row sw-prefs-row--toggle">
 		<div class="sw-prefs-row-label">
 			<div class="sw-prefs-row-name">
@@ -436,6 +438,8 @@ templ prefsToggleRow(id, prefKey, label, shortDesc, helpText string, checked boo
 				aria-checked={ strconv.FormatBool(checked) }
 				aria-label={ label }
 				data-pref-key={ prefKey }
+				data-pref-on={ onValue }
+				data-pref-off={ offValue }
 			>
 				<span class="sw-prefs-toggle-knob" aria-hidden="true"></span>
 			</button>

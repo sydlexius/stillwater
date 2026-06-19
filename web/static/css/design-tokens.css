@@ -248,10 +248,6 @@ body { font-family: var(--sw-font-family); }
   --sw-font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-/* -- Keyboard hints (set via data-kbd on <html>, M55 #1774) --------------- */
-/* [data-kbd="hide"] hides all keyboard shortcut hint elements.              */
-[data-kbd="hide"] [data-sw-kbd-hint] { display: none !important; }
-
 /* -- Lite mode (disables glass, backdrop-filter, transitions) ------------- */
 [data-lite="on"] {
   --sw-glass-blur: none;
