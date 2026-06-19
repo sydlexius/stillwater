@@ -1,0 +1,57 @@
+# Cache Cleanup
+#
+# Deletes all Actions cache entries scoped to a closed PR's merge ref
+# (refs/pull/<n>/merge).  Closed-PR caches accumulate forever unless
+# explicitly deleted; at the 10 GiB/repo cap they cause LRU thrash that
+# cold-rebuilds unrelated PRs.
+#
+# SCOPE: strictly limited to the PR's own merge ref.  The step uses the
+# caches?ref= filter parameter which matches the stored ref field exactly;
+# refs/heads/* and refs/tags/* are never touched.
+#
+# Permissions: job-level actions:write + contents:read.
+# No checkout step (no source needed, so persist-credentials is N/A).
+# No external actions used (pure gh-api shell); SHA-pinning is N/A.
+
+name: Cache Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+# Workflow-level: no permissions -- job-level permissions fully replace
+# workflow-level in GitHub Actions (omitted scopes become none).
+permissions: {}
+
+jobs:
+  cleanup:
+    name: Delete PR cache entries
+    runs-on: ubuntu-latest
+    permissions:
+      # write to delete cache entries
+      actions: write
+      # read required for checkout-less gh api calls against the repo
+      contents: read
+    steps:
+      - name: Delete caches for refs/pull/${{ github.event.pull_request.number }}/merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          # --paginate follows Link: next headers so all pages are collected.
+          # .actions_caches[].id extracts the numeric ID from each page.
+          # Each ID is then deleted individually via the REST API.
+          deleted=0
+          while IFS= read -r cache_id; do
+            [ -z "$cache_id" ] && continue
+            if gh api -X DELETE "repos/${REPO}/actions/caches/${cache_id}" > /dev/null; then
+              echo "Deleted cache ${cache_id} (${PR_REF})"
+              deleted=$(( deleted + 1 ))
+            else
+              echo "Warning: failed to delete cache ${cache_id}"
+            fi
+          done < <(gh api --paginate \
+            "repos/${REPO}/actions/caches?ref=${PR_REF}" \
+            --jq '.actions_caches[].id' 2>/dev/null || true)
+          echo "Cache cleanup complete: ${deleted} entr(ies) deleted for ${PR_REF}"
