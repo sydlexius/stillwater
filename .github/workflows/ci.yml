@@ -125,9 +125,11 @@ jobs:
             ~/.cache/go-build
             ~/go/pkg/mod
           # Exact key: cache hit restores the most recent warm build.
-          # Restore-key: cache miss on a go.sum change warms from the last
-          # compatible entry instead of forcing a cold rebuild.
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          # Restore-key: cache miss on a go.sum/go.mod change warms from the
+          # last compatible entry instead of forcing a cold rebuild.
+          # go.mod is hashed too so a toolchain-directive bump that leaves
+          # go.sum untouched still invalidates the stale build cache.
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
@@ -382,7 +384,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
@@ -712,13 +714,18 @@ jobs:
       contents: read
     steps:
       - name: Check Actions cache usage
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+        # Tolerate only the API being unavailable (transient gh failure or an
+        # empty response): those exit 0 so the guardrail stays non-blocking.
+        # Any real logic error past that point still fails the step rather
+        # than being silently swallowed by continue-on-error.
         run: |
           usage_bytes=$(gh api "repos/${REPO}/actions/cache/usage" \
-            --jq '.active_caches_size_in_bytes')
+            --jq '.active_caches_size_in_bytes' 2>/dev/null) || {
+            echo "Warning: cache usage API unavailable; skipping guardrail."; exit 0; }
+          [ -z "$usage_bytes" ] && { echo "Warning: empty cache-usage response; skipping guardrail."; exit 0; }
           usage_gib=$(awk "BEGIN{printf \"%.2f\", ${usage_bytes}/1073741824}")
           echo "Actions cache usage: ${usage_gib} GiB / 10 GiB"
           if awk "BEGIN{exit !(${usage_gib} > 8)}"; then
