@@ -4,7 +4,7 @@ coverage:
       default:
         # Minimum patch coverage required -- fails CI if new lines are under-tested.
         # Generated template files (*_templ.go) are excluded via the ignore list below.
-        target: 75%
+        target: 78%
     project:
       # Per-package floors mirror testdata/coverage-floor.json exactly: every
       # entry in the JSON has a matching entry here, including aggregate
@@ -38,6 +38,10 @@ coverage:
         target: 62%
         paths:
           - internal/backup
+      cli:
+        target: 90%
+        paths:
+          - internal/cli
       config:
         target: 94%
         paths:
@@ -94,6 +98,10 @@ coverage:
         target: 84%
         paths:
           - internal/foreign
+      httpsafe:
+        target: 65%
+        paths:
+          - internal/httpsafe
       i18n:
         target: 70%
         paths:
