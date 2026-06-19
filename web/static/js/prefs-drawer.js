@@ -761,6 +761,21 @@
     var drawer = getDrawer();
     if (!drawer) return;
 
+    // Idempotency guard: bind the drawer's controls exactly once per node.
+    // wire() can be invoked more than once for the same mounted drawer -- the
+    // htmx lazy-mount swaps in a fragment with several root nodes (scrim +
+    // drawer + the ContextHelp <script>) via hx-swap="outerHTML", and htmx
+    // fires htmx:afterSwap per swapped node, each one matching the
+    // #sw-prefs-mount target guard in the afterSwap handler below. Without this
+    // guard every control's listener was bound once per afterSwap, so a single
+    // toggle click fired N identical PUTs and an immediate navigation could
+    // abort the write -> the setting reverted on the next screen (#1798/#2037).
+    // A freshly swapped drawer is a NEW node with no flag, so it still wires;
+    // re-wiring the SAME node is a no-op. Mirrors wireTriggers()'s per-node
+    // dataset guard.
+    if (drawer.dataset.swPrefsWired) return;
+    drawer.dataset.swPrefsWired = '1';
+
     // Tile clicks.
     Array.prototype.slice.call(drawer.querySelectorAll('.sw-prefs-tile')).forEach(function (t) {
       t.addEventListener('click', function () { onTileClick(t); });
