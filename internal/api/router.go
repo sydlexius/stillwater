@@ -721,6 +721,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/discogs/search", wrapAuth(r.handleDiscogsSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/discogs/link", wrapAuth(r.handleDiscogsLink, authMw))
 
+	// TheAudioDB match-by-name identify (next/ artist-detail per-row affordance;
+	// mirrors the Discogs identify flow, scoped to AudioDB; album scoring reuses
+	// the shared MusicBrainz cross-MBID comparison since AudioDB results carry an
+	// MBID).
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/audiodb/identify", wrapAuth(r.handleAudioDBIdentify, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/audiodb/search", wrapAuth(r.handleAudioDBSearch, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/audiodb/link", wrapAuth(r.handleAudioDBLink, authMw))
+
 	// MusicBrainz contribution routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/musicbrainz/diffs", wrapAuth(r.handleGetMBDiffs, authMw))
 

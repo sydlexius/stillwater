@@ -48,4 +48,12 @@ const (
 	// Its string value matches the discogs_id key used throughout the UI and
 	// the FieldDisplay switch.
 	FieldDiscogsID FieldName = "discogs_id"
+
+	// FieldAudioDBID is the lock key for the TheAudioDB provider ID. Like
+	// FieldDiscogsID it is a provider-ID field (not part of the platform-side
+	// canonicalizer vocabulary) that participates in the per-field lock
+	// mechanism so the AudioDB "match by name" identify flow can refuse to
+	// overwrite a user-pinned ID. Its string value matches the audiodb_id key
+	// used throughout the UI and the FieldDisplay switch.
+	FieldAudioDBID FieldName = "audiodb_id"
 )

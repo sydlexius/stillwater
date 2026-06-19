@@ -772,6 +772,8 @@ func identifyProvider(field string) (segment, display string, ok bool) {
 		return "deezer", provider.NameDeezer.DisplayName(), true
 	case "discogs_id":
 		return "discogs", provider.NameDiscogs.DisplayName(), true
+	case "audiodb_id":
+		return "audiodb", provider.NameAudioDB.DisplayName(), true
 	default:
 		return "", "", false
 	}
