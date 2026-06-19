@@ -56,6 +56,22 @@ func (s *identifyStubProvider) GetReleaseGroups(ctx context.Context, artistID st
 	return nil, nil
 }
 
+// GetMainReleaseTitles satisfies provider.MainReleaseTitleFetcher, which the
+// Discogs album-match enrichment now requires. It derives titles from the same
+// getReleaseGrpsFn hook so existing tests exercise the broadened path without a
+// separate fixture; call count and error propagation are preserved.
+func (s *identifyStubProvider) GetMainReleaseTitles(ctx context.Context, artistID string) ([]string, error) {
+	groups, err := s.GetReleaseGroups(ctx, artistID)
+	if err != nil {
+		return nil, err
+	}
+	titles := make([]string, 0, len(groups))
+	for _, g := range groups {
+		titles = append(titles, g.Title)
+	}
+	return titles, nil
+}
+
 // newIdentifyTestServer builds a Router with a registered stub MusicBrainz
 // provider and a real orchestrator wired around it. The orchestrator only
 // uses the registry for SearchForLinking, so SettingsService can be nil.

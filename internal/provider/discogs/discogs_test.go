@@ -263,6 +263,139 @@ func TestGetReleaseGroupsRejectsNonNumeric(t *testing.T) {
 	}
 }
 
+// mainReleaseTitlesServer serves a single releases page from the given JSON body
+// and records every requested path so tests can assert which endpoints were hit.
+func mainReleaseTitlesServer(t *testing.T, releasesBody string, hits *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Discogs token=test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		*hits = append(*hits, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases"):
+			_, _ = w.Write([]byte(releasesBody))
+		case strings.HasPrefix(r.URL.Path, "/masters/"):
+			// Minimal master payload with a style so aggregateStyles has data.
+			_, _ = w.Write([]byte(`{"id":1,"title":"x","styles":["Rock"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+// TestGetMainReleaseTitlesIncludesReleaseLevelMain proves the #1831 fix: an album
+// Discogs catalogs ONLY as a release (role "Main", type "release"), never a
+// master, is now counted in the album-match title set, while non-Main entries
+// (e.g. a compilation Appearance) remain excluded.
+func TestGetMainReleaseTitlesIncludesReleaseLevelMain(t *testing.T) {
+	limiter, settings := setupTest(t)
+	body := `{"pagination":{"page":1,"pages":1},"releases":[
+		{"id":1,"title":"Master Album","type":"master","role":"Main","year":2010},
+		{"id":2,"title":"Beneath the Scars","type":"release","role":"Main","year":2012},
+		{"id":3,"title":"Some Comp","type":"release","role":"Appearance","year":2005}
+	]}`
+	var hits []string
+	srv := mainReleaseTitlesServer(t, body, &hits)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	titles, err := a.GetMainReleaseTitles(context.Background(), "3840")
+	if err != nil {
+		t.Fatalf("GetMainReleaseTitles: %v", err)
+	}
+	got := map[string]bool{}
+	for _, ti := range titles {
+		got[ti] = true
+	}
+	if !got["Beneath the Scars"] {
+		t.Errorf("release-only Main album missing from titles: %v", titles)
+	}
+	if !got["Master Album"] {
+		t.Errorf("master Main album missing from titles: %v", titles)
+	}
+	if got["Some Comp"] {
+		t.Errorf("Appearance-role entry must be excluded: %v", titles)
+	}
+	if len(titles) != 2 {
+		t.Errorf("expected 2 titles, got %d: %v", len(titles), titles)
+	}
+}
+
+// TestGetMainReleaseTitlesDedupesMasterAndRelease proves an album that appears as
+// BOTH a master and one-or-more same-title releases counts exactly once, using
+// the same normalization CompareAlbums applies (so a trailing "(Deluxe Edition)"
+// suffix on a release still collapses onto the master title).
+func TestGetMainReleaseTitlesDedupesMasterAndRelease(t *testing.T) {
+	limiter, settings := setupTest(t)
+	body := `{"pagination":{"page":1,"pages":1},"releases":[
+		{"id":1,"title":"Only Human","type":"master","role":"Main","year":2010},
+		{"id":2,"title":"Only Human","type":"release","role":"Main","year":2010},
+		{"id":3,"title":"Only Human (Deluxe Edition)","type":"release","role":"Main","year":2011}
+	]}`
+	var hits []string
+	srv := mainReleaseTitlesServer(t, body, &hits)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	titles, err := a.GetMainReleaseTitles(context.Background(), "3840")
+	if err != nil {
+		t.Fatalf("GetMainReleaseTitles: %v", err)
+	}
+	if len(titles) != 1 {
+		t.Fatalf("expected 1 deduped title, got %d: %v", len(titles), titles)
+	}
+}
+
+// TestAggregateStylesUnchangedByReleaseLevelMain is the non-regression guard for
+// requirement #2: broadening the album match must NOT change styles aggregation,
+// which stays master-only. A release-only Main album must never trigger a
+// /masters/{id} fetch for its (nonexistent) master.
+func TestAggregateStylesUnchangedByReleaseLevelMain(t *testing.T) {
+	limiter, settings := setupTest(t)
+	body := `{"pagination":{"page":1,"pages":1},"releases":[
+		{"id":100,"title":"Master Album","type":"master","role":"Main","year":2010},
+		{"id":200,"title":"Release Only","type":"release","role":"Main","year":2012}
+	]}`
+	var hits []string
+	srv := mainReleaseTitlesServer(t, body, &hits)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	token, err := a.getToken(context.Background())
+	if err != nil {
+		t.Fatalf("getToken: %v", err)
+	}
+	if _, err := a.aggregateStyles(context.Background(), "3840", token); err != nil {
+		t.Fatalf("aggregateStyles: %v", err)
+	}
+
+	// Styles must only walk the master (id 100); the release-only entry (id 200)
+	// has no master and must not be fetched.
+	for _, p := range hits {
+		if p == "/masters/200" {
+			t.Errorf("aggregateStyles fetched a master for a release-only entry: %v", hits)
+		}
+	}
+	sawMaster100 := false
+	for _, p := range hits {
+		if p == "/masters/100" {
+			sawMaster100 = true
+		}
+	}
+	if !sawMaster100 {
+		t.Errorf("aggregateStyles did not fetch the real master /masters/100: %v", hits)
+	}
+}
+
 func TestGetImages(t *testing.T) {
 	limiter, settings := setupTest(t)
 	srv := newTestServer(t)

@@ -365,6 +365,19 @@ type ReleaseGroupFetcher interface {
 	GetReleaseGroups(ctx context.Context, artistID string) ([]ReleaseGroupInfo, error)
 }
 
+// MainReleaseTitleFetcher is an optional interface providers can implement to
+// return the deduplicated set of an artist's own album titles (role "Main") for
+// the match-by-name album-comparison score. Unlike ReleaseGroupFetcher, which a
+// provider may scope narrowly (e.g. the Discogs adapter returns master releases
+// only, mirroring its styles aggregation), this set is intentionally broad: it
+// includes every entry the artist is credited on as "Main" regardless of the
+// provider's internal release/master distinction, deduplicated by normalized
+// title. Over-inclusion is safe for the album match because a remote title only
+// contributes when it equals a local album title.
+type MainReleaseTitleFetcher interface {
+	GetMainReleaseTitles(ctx context.Context, artistID string) ([]string, error)
+}
+
 // ErrProviderUnavailable indicates a transient failure (rate-limited, timeout, server error).
 type ErrProviderUnavailable struct {
 	Provider   ProviderName

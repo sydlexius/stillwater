@@ -224,7 +224,10 @@ func (r *Router) enrichDiscogsCandidates(ctx context.Context, results []provider
 	if dgProvider == nil {
 		return convertToScoredCandidates(results)
 	}
-	fetcher, ok := dgProvider.(provider.ReleaseGroupFetcher)
+	// Use the broad Main-role title set (master AND release-level, deduped) for
+	// the album match so release-only albums are not undercounted (#1831). This
+	// is distinct from the master-only ReleaseGroupFetcher used elsewhere.
+	fetcher, ok := dgProvider.(provider.MainReleaseTitleFetcher)
 	if !ok {
 		return convertToScoredCandidates(results)
 	}
@@ -245,16 +248,11 @@ func (r *Router) enrichDiscogsCandidates(ctx context.Context, results []provider
 		}
 		attempted++
 
-		groups, err := fetcher.GetReleaseGroups(ctx, res.ProviderID)
+		remoteTitles, err := fetcher.GetMainReleaseTitles(ctx, res.ProviderID)
 		if err != nil {
-			r.logger.Warn("discogs identify: fetching release groups",
+			r.logger.Warn("discogs identify: fetching main release titles",
 				"discogs_id", res.ProviderID, "error", err)
 			continue
-		}
-
-		remoteTitles := make([]string, len(groups))
-		for j, rg := range groups {
-			remoteTitles[j] = rg.Title
 		}
 
 		comp := artist.CompareAlbums(localAlbums, remoteTitles)
