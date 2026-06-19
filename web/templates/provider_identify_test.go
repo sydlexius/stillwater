@@ -123,6 +123,12 @@ func TestDeezerCandidates_NoMatchesAndProviderError(t *testing.T) {
 	if !strings.Contains(errored.String(), "Deezer") || !strings.Contains(errored.String(), "unavailable") {
 		t.Errorf("provider-error state missing banner copy; body:\n%s", errored.String())
 	}
+	// When a provider error is surfaced, the empty list must NOT also claim
+	// "no matches found" -- that would be two contradictory messages (the amber
+	// "unavailable" banner plus the italic no-matches line). The banner alone wins.
+	if strings.Contains(errored.String(), "No Deezer matches found") {
+		t.Errorf("provider-error state must not also show no-matches copy; body:\n%s", errored.String())
+	}
 }
 
 // TestDeezerLinkSuccess_RendersRowAndToast pins the CORRECTED success-render
@@ -239,6 +245,12 @@ func TestDiscogsCandidates_NoMatchesAndProviderError(t *testing.T) {
 	}
 	if !strings.Contains(errored.String(), "Discogs") || !strings.Contains(errored.String(), "unavailable") {
 		t.Errorf("provider-error state missing banner copy; body:\n%s", errored.String())
+	}
+	// When a provider error is surfaced, the empty list must NOT also claim
+	// "no matches found" -- that would be two contradictory messages (the amber
+	// "unavailable" banner plus the italic no-matches line). The banner alone wins.
+	if strings.Contains(errored.String(), "No Discogs matches found") {
+		t.Errorf("provider-error state must not also show no-matches copy; body:\n%s", errored.String())
 	}
 }
 
