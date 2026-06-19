@@ -2846,6 +2846,55 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   font-size: 0.8125rem;
 }
 
+/* ============================================================================
+ * Density preference bridge (M55 #1935, on top of the #1774 density tokens).
+ *
+ * The "Density" appearance preference is wired end to end EXCEPT for the CSS
+ * that reacts to it: preferences.js maps the `density` pref onto the
+ * data-density attribute on <html> (allowed compact|comfortable|spacious, per
+ * handlers_preferences.go PrefDensity), and design-tokens.css derives
+ * --sw-density-row-py (row vertical padding) and --sw-density-gap (gap between
+ * stacked items) from that attribute. Until now NOTHING consumed those tokens,
+ * so the preference had no visible effect. These rules consume them across the
+ * three next/ list surfaces: the artists list, the dashboard, and artist-detail.
+ *
+ * Design choice: only compact and spacious override the surfaces. "comfortable"
+ * is the native, hand-tuned rhythm of each scope (the table's py-3 cells, the
+ * scopes' own space-y-* card gaps), so it is left untouched -- the default look
+ * is unchanged and only an explicit non-default density shifts the spacing.
+ *
+ * Keyed on html[data-density="..."] (the ROOT attribute set by the pref), NOT
+ * the per-table data-density on .sw-next-artists. That table attribute is
+ * hardcoded "comfy" for the legacy compact-on-selection model (#1335) and lives
+ * on a different element, so the two never collide.
+ * ============================================================================ */
+
+/* Artists list -- the table is the densest surface (one row per artist), so its
+ * body cells track the density row-padding token. */
+html[data-density="compact"] .sw-next-artists tbody td,
+html[data-density="spacious"] .sw-next-artists tbody td {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
+}
+
+/* Artists list -- the card/grid ("gallery") view gap tracks the density gap
+ * token. Matches any responsive grid-cols-* container in the scope. */
+html[data-density="compact"] .sw-next-artists [class*="grid-cols"],
+html[data-density="spacious"] .sw-next-artists [class*="grid-cols"] {
+  gap: var(--sw-density-gap);
+}
+
+/* Dashboard + artist-detail -- both are vertical stacks of cards laid out with
+ * Tailwind space-y-* (a zero-specificity :where() utility that sets
+ * margin-block-end on every non-last child). Rebind that inter-card gap to the
+ * density gap token; the explicit selector outranks the utility cleanly. */
+html[data-density="compact"] .sw-next-dashboard > :not(:last-child),
+html[data-density="spacious"] .sw-next-dashboard > :not(:last-child),
+html[data-density="compact"] .sw-next-artist-detail > :not(:last-child),
+html[data-density="spacious"] .sw-next-artist-detail > :not(:last-child) {
+  margin-block-end: var(--sw-density-gap);
+}
+
 /* Checkbox treatment (M55 #1335; maintainer note 2026-05-30): the prototype's
  * selection checkboxes carry a surface-tinted background instead of the
  * browser-default white box, in BOTH themes. Restyle the reused native
