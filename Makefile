@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
 
 # Binary name
 BINARY=stillwater
@@ -260,6 +260,47 @@ clean:
 	rm -f $(BINARY)
 	rm -f coverage.out coverage.html
 	rm -f $(TAILWIND_OUTPUT)
+
+# Source of the live data dir to clone for UAT. Override on the command line,
+# e.g. `make uat SW_APPDATA=/path/to/data`. The DB and its sibling
+# encryption.key both live here.
+SW_APPDATA ?= $(HOME)/appdata/stillwater/data
+# Port the printed run command binds to. Override with `make uat SW_PORT=1975`.
+SW_PORT    ?= 1975
+
+## uat: Stage a UAT copy of the live DB + encryption key into ./.uat/ (siblings) and print the run command
+# Clones the live SQLite DB via the online .backup API (consistent snapshot, no
+# locking of the source) and copies the encryption key as a LITERAL SIBLING so
+# the server resolves it automatically via the encryption.key-alongside-DB path.
+# The staged copy is fully disposable; `make clean-uat` removes it. The printed
+# command intentionally does NOT set SW_ENCRYPTION_KEY_FILE -- the sibling key
+# is resolved without it.
+uat:
+	@set -euo pipefail; \
+	src_db="$(SW_APPDATA)/stillwater.db"; \
+	src_key="$(SW_APPDATA)/encryption.key"; \
+	if [ ! -f "$$src_db" ]; then \
+		echo "uat: source DB not found: $$src_db (set SW_APPDATA=<dir>)" >&2; exit 1; \
+	fi; \
+	if [ ! -f "$$src_key" ]; then \
+		echo "uat: source encryption key not found: $$src_key (set SW_APPDATA=<dir>)" >&2; exit 1; \
+	fi; \
+	command -v sqlite3 >/dev/null 2>&1 || { echo "uat: sqlite3 not found on PATH" >&2; exit 1; }; \
+	rm -rf "$(CURDIR)/.uat"; \
+	mkdir -p "$(CURDIR)/.uat"; \
+	sqlite3 "$$src_db" ".backup '$(CURDIR)/.uat/sw.db'"; \
+	cp "$$src_key" "$(CURDIR)/.uat/encryption.key"; \
+	chmod 0600 "$(CURDIR)/.uat/encryption.key"; \
+	echo ""; \
+	echo "UAT copy staged in $(CURDIR)/.uat (sw.db + sibling encryption.key)."; \
+	echo "Run it with:"; \
+	echo ""; \
+	echo "  SW_PORT=$(SW_PORT) SW_UX=dual SW_DB_PATH=$(CURDIR)/.uat/sw.db SW_RUN_ROOT=$(CURDIR)/.uat/run ./stillwater"; \
+	echo ""
+
+## clean-uat: Remove the staged ./.uat/ UAT copy (DB + key + run root)
+clean-uat:
+	rm -rf $(CURDIR)/.uat
 
 ## bruno-ci: Build binary, run ephemeral server, execute Bruno API tests, clean up.
 # Required: npx / @usebruno/cli reachable. Admin credentials are ephemeral and

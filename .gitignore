@@ -18,6 +18,11 @@ data/
 *.db-shm
 *.db-wal
 
+# UAT staging dir (cloned DB + encryption key, see `make uat`). Kept out of git
+# so secrets never land in history and `git worktree remove` (no --force) can
+# delete the worktree even with a staged copy present.
+/.uat/
+
 # Coverage
 coverage.out
 coverage.html

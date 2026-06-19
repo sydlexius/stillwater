@@ -33,5 +33,7 @@
 | `make worktree` | Create a sibling worktree with hooks wired and tracker row inserted into the Active table |
 | `make remove-worktree` | Remove a sibling worktree (via cleanup-worktree.sh) and delete its Active-table row |
 | `make clean` | Remove build artifacts |
+| `make uat` | Stage a UAT copy of the live DB + encryption key into ./.uat/ (siblings) and print the run command |
+| `make clean-uat` | Remove the staged ./.uat/ UAT copy (DB + key + run root) |
 | `make bruno-ci` | Build binary, run ephemeral server, execute Bruno API tests, clean up. |
 | `make help` | Show this help message |

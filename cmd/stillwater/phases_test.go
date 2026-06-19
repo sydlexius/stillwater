@@ -265,6 +265,201 @@ func TestResolveEncryptionKey_LoadsFromFile(t *testing.T) {
 	}
 }
 
+// TestResolveEncryptionKey_KeyFileLoadsValue verifies SW_ENCRYPTION_KEY_FILE
+// loads the key VALUE from the referenced path (priority 2: above the sibling
+// encryption.key, below SW_ENCRYPTION_KEY).
+func TestResolveEncryptionKey_KeyFileLoadsValue(t *testing.T) {
+	dir := t.TempDir()
+	keyFilePath := filepath.Join(dir, "secret", "enc.key")
+	if err := os.MkdirAll(filepath.Dir(keyFilePath), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	const want = "keyfilevalue"
+	if err := os.WriteFile(keyFilePath, []byte(want+"\n"), 0o600); err != nil {
+		t.Fatalf("writing key file: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	cfg.Encryption.KeyFile = keyFilePath
+	// A sibling encryption.key with a DIFFERENT value must lose to the key file.
+	if err := os.WriteFile(filepath.Join(dir, "encryption.key"), []byte("siblingvalue\n"), 0o600); err != nil {
+		t.Fatalf("writing sibling key: %v", err)
+	}
+
+	key, err := resolveEncryptionKey(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("resolveEncryptionKey: %v", err)
+	}
+	if key != want {
+		t.Errorf("key = %q; want %q (SW_ENCRYPTION_KEY_FILE must win over the sibling)", key, want)
+	}
+}
+
+// TestResolveEncryptionKey_ConfigKeyBeatsKeyFile verifies SW_ENCRYPTION_KEY (the
+// raw value) outranks SW_ENCRYPTION_KEY_FILE.
+func TestResolveEncryptionKey_ConfigKeyBeatsKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	keyFilePath := filepath.Join(dir, "enc.key")
+	if err := os.WriteFile(keyFilePath, []byte("fromfile\n"), 0o600); err != nil {
+		t.Fatalf("writing key file: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	cfg.Encryption.Key = "fromenv"
+	cfg.Encryption.KeyFile = keyFilePath
+
+	key, err := resolveEncryptionKey(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("resolveEncryptionKey: %v", err)
+	}
+	if key != "fromenv" {
+		t.Errorf("key = %q; want %q", key, "fromenv")
+	}
+}
+
+// TestResolveEncryptionKey_KeyFileMissingIsFatal verifies that an explicitly
+// configured but missing SW_ENCRYPTION_KEY_FILE fails loudly rather than
+// silently falling through to a different source.
+func TestResolveEncryptionKey_KeyFileMissingIsFatal(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	cfg.Encryption.KeyFile = filepath.Join(dir, "does-not-exist.key")
+	// Even with a usable sibling present, the missing explicit file must abort.
+	if err := os.WriteFile(filepath.Join(dir, "encryption.key"), []byte("sibling\n"), 0o600); err != nil {
+		t.Fatalf("writing sibling key: %v", err)
+	}
+
+	if _, err := resolveEncryptionKey(cfg, slog.Default()); err == nil {
+		t.Fatal("expected error for missing SW_ENCRYPTION_KEY_FILE, got nil")
+	}
+}
+
+// TestResolveEncryptionKey_KeyFileEmptyIsFatal verifies that an
+// SW_ENCRYPTION_KEY_FILE pointing at an empty/whitespace file aborts.
+func TestResolveEncryptionKey_KeyFileEmptyIsFatal(t *testing.T) {
+	dir := t.TempDir()
+	keyFilePath := filepath.Join(dir, "empty.key")
+	if err := os.WriteFile(keyFilePath, []byte("   \n"), 0o600); err != nil {
+		t.Fatalf("writing key file: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	cfg.Encryption.KeyFile = keyFilePath
+
+	if _, err := resolveEncryptionKey(cfg, slog.Default()); err == nil {
+		t.Fatal("expected error for empty SW_ENCRYPTION_KEY_FILE, got nil")
+	}
+}
+
+// populatedDBPath builds a migrated SQLite DB at dir/stillwater.db, runs the
+// supplied seed against it, and returns the path. The DB is closed so a later
+// read-only probe sees the persisted (checkpointed) rows.
+func populatedDBPath(t *testing.T, dir string, seed func(*sql.DB)) string {
+	t.Helper()
+	dbPath := filepath.Join(dir, "stillwater.db")
+	db, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening seed db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("migrating seed db: %v", err)
+	}
+	if seed != nil {
+		seed(db)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing seed db: %v", err)
+	}
+	return dbPath
+}
+
+// TestResolveEncryptionKey_AbortsOnPopulatedDBConnectionSecret verifies the
+// fail-loud guard: a DB holding an encrypted connection API key with no key
+// available must refuse to generate a new key (which would orphan the secret).
+func TestResolveEncryptionKey_AbortsOnPopulatedDBConnectionSecret(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := populatedDBPath(t, dir, func(db *sql.DB) {
+		if _, err := db.ExecContext(context.Background(),
+			`INSERT INTO connections (id, name, type, url, encrypted_api_key)
+			 VALUES ('c1', 'Emby', 'emby', 'http://x', 'ENCRYPTED-BLOB')`); err != nil {
+			t.Fatalf("inserting connection: %v", err)
+		}
+	})
+	cfg := &config.Config{}
+	cfg.Database.Path = dbPath // no sibling key, no env key
+
+	if _, err := resolveEncryptionKey(cfg, slog.Default()); err == nil {
+		t.Fatal("expected abort on populated DB with no key, got nil error (would orphan secrets)")
+	}
+}
+
+// TestResolveEncryptionKey_AbortsOnPopulatedDBProviderSecret covers the second
+// secret surface: provider API keys stored in the settings table.
+func TestResolveEncryptionKey_AbortsOnPopulatedDBProviderSecret(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := populatedDBPath(t, dir, func(db *sql.DB) {
+		if _, err := db.ExecContext(context.Background(),
+			`INSERT INTO settings (key, value) VALUES ('provider.fanarttv.api_key', 'ENCRYPTED-BLOB')`); err != nil {
+			t.Fatalf("inserting provider secret: %v", err)
+		}
+	})
+	cfg := &config.Config{}
+	cfg.Database.Path = dbPath
+
+	if _, err := resolveEncryptionKey(cfg, slog.Default()); err == nil {
+		t.Fatal("expected abort on populated DB with provider secret and no key, got nil")
+	}
+}
+
+// TestResolveEncryptionKey_GeneratesOnMigratedButSecretlessDB verifies the
+// guard does NOT over-trigger: a migrated DB that holds no encrypted secrets is
+// a legitimate fresh install, so key generation proceeds.
+func TestResolveEncryptionKey_GeneratesOnMigratedButSecretlessDB(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := populatedDBPath(t, dir, nil) // schema only, zero secrets
+	cfg := &config.Config{}
+	cfg.Database.Path = dbPath
+
+	key, err := resolveEncryptionKey(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("resolveEncryptionKey on secretless DB: %v", err)
+	}
+	if key == "" {
+		t.Fatal("expected a generated key on a secretless DB")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "encryption.key")); statErr != nil {
+		t.Errorf("expected generated sibling key file: %v", statErr)
+	}
+}
+
+// TestDatabaseHasEncryptedSecrets_AbsentAndEmpty verifies the probe treats a
+// missing or empty DB file as a fresh install (no secrets).
+func TestDatabaseHasEncryptedSecrets_AbsentAndEmpty(t *testing.T) {
+	dir := t.TempDir()
+
+	has, err := databaseHasEncryptedSecrets(filepath.Join(dir, "absent.db"))
+	if err != nil {
+		t.Fatalf("absent DB: %v", err)
+	}
+	if has {
+		t.Error("absent DB must report no secrets")
+	}
+
+	emptyPath := filepath.Join(dir, "empty.db")
+	if err := os.WriteFile(emptyPath, nil, 0o600); err != nil {
+		t.Fatalf("writing empty db: %v", err)
+	}
+	has, err = databaseHasEncryptedSecrets(emptyPath)
+	if err != nil {
+		t.Fatalf("empty DB: %v", err)
+	}
+	if has {
+		t.Error("empty DB must report no secrets")
+	}
+}
+
 // --- applyPersistedBasePath tests ---
 
 func TestApplyPersistedBasePath_EnvWins(t *testing.T) {

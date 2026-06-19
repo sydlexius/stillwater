@@ -1070,10 +1070,39 @@ func applyPersistedBasePath(ctx context.Context, db *sql.DB, cfg *config.Config,
 }
 
 // resolveEncryptionKey determines the encryption key to use.
-// Priority: SW_ENCRYPTION_KEY env var > encryption.key alongside DB > generate new.
+//
+// Priority, highest first:
+//  1. SW_ENCRYPTION_KEY -- the raw key VALUE (cfg.Encryption.Key).
+//  2. SW_ENCRYPTION_KEY_FILE -- a path whose CONTENTS are the key value
+//     (cfg.Encryption.KeyFile). When set the file must exist and be non-empty;
+//     a missing/empty/unreadable file is fatal so an operator who explicitly
+//     pointed at a secret file is never silently fed a different key.
+//  3. encryption.key file alongside the database (the historical default).
+//  4. Generate a new key -- BUT only when the database is genuinely fresh.
+//     Generating a fresh key against a DB that already holds encrypted secrets
+//     would orphan every one of them ("cipher: message authentication failed"),
+//     so this path aborts loudly when secrets are present.
 func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, error) {
 	if cfg.Encryption.Key != "" {
 		return cfg.Encryption.Key, nil
+	}
+
+	// SW_ENCRYPTION_KEY_FILE: read the key VALUE from the operator-supplied path.
+	// Any failure here is fatal -- the operator explicitly asked us to load the
+	// key from this file, so falling through to a different source (sibling file
+	// or a freshly generated key) would silently substitute the wrong key and
+	// orphan every encrypted secret.
+	if cfg.Encryption.KeyFile != "" {
+		data, err := os.ReadFile(cfg.Encryption.KeyFile)
+		if err != nil {
+			return "", fmt.Errorf("reading SW_ENCRYPTION_KEY_FILE %s: %w", cfg.Encryption.KeyFile, err)
+		}
+		key := strings.TrimSpace(string(data))
+		if key == "" {
+			return "", fmt.Errorf("SW_ENCRYPTION_KEY_FILE %s is empty", cfg.Encryption.KeyFile)
+		}
+		logger.Debug("loaded encryption key from SW_ENCRYPTION_KEY_FILE", slog.String("path", cfg.Encryption.KeyFile))
+		return key, nil
 	}
 
 	dataDir := filepath.Dir(cfg.Database.Path)
@@ -1093,6 +1122,22 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 		}
 	case !errors.Is(err, os.ErrNotExist):
 		return "", fmt.Errorf("reading encryption key file %s: %w", keyFile, err)
+	}
+
+	// No key was supplied or found. Generating one is only safe on a genuinely
+	// fresh database; doing it against a DB that already holds encrypted secrets
+	// would orphan all of them. Refuse loudly in that case so the operator
+	// restores the real key (SW_ENCRYPTION_KEY, SW_ENCRYPTION_KEY_FILE, or the
+	// sibling encryption.key) rather than silently losing every secret.
+	hasSecrets, err := databaseHasEncryptedSecrets(cfg.Database.Path)
+	if err != nil {
+		return "", fmt.Errorf("checking %s for existing encrypted secrets before generating a key: %w", cfg.Database.Path, err)
+	}
+	if hasSecrets {
+		return "", fmt.Errorf(
+			"refusing to generate a new encryption key: DB %s exists with encrypted secrets but no key found "+
+				"(no SW_ENCRYPTION_KEY, no SW_ENCRYPTION_KEY_FILE, no sibling encryption.key) -- "+
+				"generating now would orphan all existing secrets", cfg.Database.Path)
 	}
 
 	// Generate a new key
@@ -1117,6 +1162,66 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 		slog.String("path", keyFile))
 
 	return key, nil
+}
+
+// databaseHasEncryptedSecrets reports whether the SQLite database at dbPath
+// already holds at-rest encrypted secrets (connection API keys or provider API
+// keys). It is the guard that stops resolveEncryptionKey from generating a
+// fresh key against a populated database, which would orphan every secret.
+//
+// It opens the database read-only so the check never mutates the file or
+// creates WAL sidecars. An absent or empty file means a genuinely fresh
+// install (no secrets), so it returns false. A missing secrets table likewise
+// means there is nothing to orphan. Any other open/query error is returned so
+// the caller can fail loudly rather than guess.
+func databaseHasEncryptedSecrets(dbPath string) (bool, error) {
+	info, err := os.Stat(dbPath)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return false, nil // fresh install, nothing to orphan
+	case err != nil:
+		return false, fmt.Errorf("stat database %s: %w", dbPath, err)
+	case info.Size() == 0:
+		return false, nil // freshly created, no schema or rows yet
+	}
+
+	// Read-only DSN: mode=ro forbids any write and immutable avoids touching
+	// the WAL, so probing the DB cannot alter it.
+	db, err := sql.Open("sqlite", dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
+	if err != nil {
+		return false, fmt.Errorf("opening database read-only: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := db.PingContext(context.Background()); err != nil {
+		return false, fmt.Errorf("pinging database read-only: %w", err)
+	}
+
+	// Each probe returns sql.ErrNoRows when the table exists but holds no
+	// secret, and a "no such table" error when the schema predates that table;
+	// both mean "no secret here", so only an unexpected error is fatal.
+	probes := []struct {
+		desc  string
+		query string
+	}{
+		{"connection API keys", `SELECT 1 FROM connections WHERE TRIM(encrypted_api_key) != '' LIMIT 1`},
+		{"provider API keys", `SELECT 1 FROM settings WHERE key LIKE 'provider.%.api_key' AND TRIM(value) != '' LIMIT 1`},
+	}
+	for _, p := range probes {
+		var found int
+		err := db.QueryRowContext(context.Background(), p.query).Scan(&found)
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, sql.ErrNoRows):
+			continue
+		case strings.Contains(err.Error(), "no such table"):
+			continue
+		default:
+			return false, fmt.Errorf("probing %s: %w", p.desc, err)
+		}
+	}
+	return false, nil
 }
 
 // resolveSessionSecret determines the CSRF signing secret to use.
