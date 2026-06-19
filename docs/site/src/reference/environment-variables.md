@@ -27,6 +27,7 @@ The table below is generated from the configuration definition; do not edit it b
 | `SW_BASE_PATH` | path | `/` | URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only. |
 | `SW_DB_PATH` | path | `/config/stillwater.db` | Filesystem path to the SQLite database file. |
 | `SW_ENCRYPTION_KEY` | string | unset | Key used to encrypt provider API keys at rest. When unset Stillwater generates one on first run and persists it in the config directory. |
+| `SW_ENCRYPTION_KEY_FILE` | string | (none) | Path to a file whose contents are the encryption key. Read at startup and resolved after SW_ENCRYPTION_KEY but before the encryption.key file alongside the database. When set, the file must exist and be non-empty or startup fails. Use this to mount the key as a secret instead of baking it into SW_ENCRYPTION_KEY. |
 | `SW_HTTP3_ENABLED` | boolean | `false` | Set to true or 1 to enable an HTTP/3 (QUIC) listener over UDP. Requires direct TLS to be configured (SW_TLS_CERT_FILE and SW_TLS_KEY_FILE). The Alt-Svc header is added to HTTPS responses so HTTP/3-capable clients upgrade automatically; clients with UDP blocked fall back to HTTP/1.1+HTTP/2 over TCP. |
 | `SW_HTTP3_PORT` | integer | unset | Optional dedicated UDP port for HTTP/3. When unset HTTP/3 reuses the effective HTTPS port (SW_TLS_PORT or SW_PORT). Numeric values outside 1-65535 are rejected at startup. |
 | `SW_HTTP_REDIRECT_PORT` | integer | unset | Optional plain-HTTP listener port that 301-redirects to the HTTPS listener. Requires TLS to be configured (SW_TLS_CERT_FILE + SW_TLS_KEY_FILE). Typical value 80; must differ from SW_TLS_PORT (or SW_PORT in collapse mode). Numeric values outside 1-65535 are rejected at startup. |
@@ -104,6 +105,19 @@ Anything else disables backups -- `True`, `TRUE`, and `yes` all disable. Pin to 
 If you don't set `SW_SESSION_SECRET` and `SW_ENCRYPTION_KEY`, Stillwater writes generated values into the config directory on first run. **Back these files up.** Losing the encryption key means losing the ability to decrypt stored provider API keys (you'd have to re-enter them); losing the session secret signs everyone out.
 
 In container deployments, mount a Docker volume at `/config` so these files survive container recreation. The [install with Docker Compose](../getting-started/install-docker-compose.md) page covers this.
+
+### Encryption key resolution order
+
+At startup Stillwater resolves the encryption key from the first source that yields a value:
+
+1. `SW_ENCRYPTION_KEY` -- the key value, supplied directly.
+2. `SW_ENCRYPTION_KEY_FILE` -- a path whose **contents** are the key value. When set, the file must exist and be non-empty or startup fails (a missing or empty file is never silently skipped). Use this to mount the key as a secret.
+3. `encryption.key` alongside the database (the file Stillwater writes on first run).
+4. Generate a new key -- **only** when the database is genuinely fresh. If the database already holds encrypted secrets (connection or provider API keys) and none of the above sources supplied a key, startup aborts rather than generating a new key that would orphan every stored secret.
+
+### Local UAT against a copy of live data
+
+To exercise a real database without risking the live one, run `make uat`. It stages a consistent copy of your live DB plus its encryption key into a disposable `.uat/` directory **as siblings**, so the server resolves the key automatically (resolution step 3 above -- no `SW_ENCRYPTION_KEY_FILE` needed). The target prints the exact run command on completion; `make clean-uat` removes the staged copy. Override the source data directory with `SW_APPDATA=<dir>` and the port with `SW_PORT=<port>`.
 
 ### UI channel (`SW_UX`)
 

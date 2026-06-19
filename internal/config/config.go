@@ -107,7 +107,8 @@ type AuthConfig struct {
 
 // EncryptionConfig holds encryption key settings.
 type EncryptionConfig struct {
-	Key string `yaml:"key" toml:"key" env:"SW_ENCRYPTION_KEY" default:"unset" desc:"Key used to encrypt provider API keys at rest. When unset Stillwater generates one on first run and persists it in the config directory."`
+	Key     string `yaml:"key" toml:"key" env:"SW_ENCRYPTION_KEY" default:"unset" desc:"Key used to encrypt provider API keys at rest. When unset Stillwater generates one on first run and persists it in the config directory."`
+	KeyFile string `yaml:"key_file" toml:"key_file" env:"SW_ENCRYPTION_KEY_FILE" default:"" desc:"Path to a file whose contents are the encryption key. Read at startup and resolved after SW_ENCRYPTION_KEY but before the encryption.key file alongside the database. When set, the file must exist and be non-empty or startup fails. Use this to mount the key as a secret instead of baking it into SW_ENCRYPTION_KEY."`
 }
 
 // MusicConfig holds music library path settings.
@@ -520,6 +521,7 @@ func (c *Config) loadFromEnv() error {
 		// Auth / encryption
 		{Key: "SW_SESSION_SECRET", Apply: setString(&c.Auth.SessionSecret)},
 		{Key: "SW_ENCRYPTION_KEY", Apply: setString(&c.Encryption.Key)},
+		{Key: "SW_ENCRYPTION_KEY_FILE", Apply: setString(&c.Encryption.KeyFile)},
 		// Music
 		{Key: "SW_MUSIC_PATH", Apply: setString(&c.Music.LibraryPath)},
 		{Key: "SW_SCANNER_EXCLUSIONS", Apply: setCSV(&c.Scanner.Exclusions)},
