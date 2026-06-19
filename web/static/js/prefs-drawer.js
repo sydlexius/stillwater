@@ -372,11 +372,16 @@
   function onToggleClick(btn) {
     var prefKey = btn.getAttribute('data-pref-key');
     if (!prefKey) return;
-    var current = btn.getAttribute('aria-checked') === 'true';
-    var newVal  = !current;
-    var valStr  = String(newVal);
+    var current  = btn.getAttribute('aria-checked') === 'true';
+    var newVal   = !current;
+    // Per-toggle on/off vocabulary: data-pref-on/data-pref-off override the
+    // default "true"/"false" strings. This lets toggles like kbd_hints emit
+    // "show"/"hide" while aria-checked remains the boolean switch state.
+    var onValue  = btn.getAttribute('data-pref-on')  || 'true';
+    var offValue = btn.getAttribute('data-pref-off') || 'false';
+    var valStr   = newVal ? onValue : offValue;
 
-    btn.setAttribute('aria-checked', valStr);
+    btn.setAttribute('aria-checked', String(newVal));
     var knob = btn.querySelector('.sw-prefs-toggle-knob');
     // Knob slides via CSS transition on the toggle class.
 
