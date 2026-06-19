@@ -82,10 +82,17 @@ jobs:
   # ---------------------------------------------------------------------------
   # Go module + build cache primer (D3 -- shard cache consolidation)
   #
-  # Runs a single go mod download before the 9 test shards so the module
-  # cache is warm and saved under one cache entry.  Shards restore that
-  # entry read-only (actions/cache/restore, no post-job save) to avoid
-  # 9 concurrent writes that race to save the same key.
+  # Before the 9 test shards run, this job warms BOTH halves of the Go
+  # cache and saves them under one cache entry:
+  #   1. go mod download         -> populates the module cache (~/go/pkg/mod)
+  #   2. go test -race -run='^$'  -> compiles every test binary + dep WITH
+  #      race instrumentation (running zero tests) so the build cache
+  #      (~/.cache/go-build) holds the exact race-instrumented objects the
+  #      shards' `go test -v -race` needs.  Without this step the build
+  #      cache would be empty and all 9 read-only shards would cold-compile
+  #      -race on every run (a regression vs main's per-shard cache: true).
+  # Shards restore that entry read-only (actions/cache/restore, no post-job
+  # save) to avoid 9 concurrent writes that race to save the same key.
   #
   # D2 (restore-keys): the explicit actions/cache step here carries a
   # restore-keys fallback so a go.sum change warms from the last matching
@@ -129,6 +136,14 @@ jobs:
       # ~/go/pkg/mod tree that all 9 shards will restore read-only.
       - name: Warm Go module cache
         run: go mod download
+
+      # Warm the build cache (~/.cache/go-build) with race-instrumented
+      # objects.  -run='^$' matches no tests, so this compiles every test
+      # binary + dependency with -race but executes zero tests.  The
+      # post-job actions/cache save then captures these objects so the 9
+      # read-only shards restore them instead of cold-compiling -race.
+      - name: Warm Go build cache (race-instrumented)
+        run: go test -race -count=1 -run='^$' ./...
 
   lint:
     name: Lint
