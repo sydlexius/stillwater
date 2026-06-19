@@ -3049,6 +3049,15 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   color: #94a3b8;
   border-color: var(--swd-line, rgba(148, 163, 184, 0.14));
 }
+/* Keyboard-hints visibility pref (#1798): when the user sets kbd_hints=hide,
+ * preferences.js stamps data-kbd="hide" on <html>. Hiding the whole .sw-list-tips
+ * footer (rather than just .sw-kbd keycaps) keeps the descriptive labels from
+ * being orphaned without their keycap -- the tip line is removed cleanly as a
+ * unit. The ? cheat-sheet affordance (.sw-sidebar-kbd) is NOT scoped here and
+ * remains visible regardless of this pref. */
+html[data-kbd="hide"] .sw-list-tips {
+  display: none;
+}
 
 /* next/ bulk selection strip (M55 #1335): the dissolved bulk bar's contextual
  * half (count + Show selected + Select all N matching). The action dropdown +
