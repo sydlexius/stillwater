@@ -11544,6 +11544,208 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/{id}/discogs/identify:
+    get:
+      tags: [Artists]
+      summary: Discogs match-by-name identify modal
+      operationId: discogsIdentify
+      description: >
+        Returns the HTML body of the Discogs "match by name" identify modal: a
+        disambiguation search form pre-filled with the artist name. It is loaded
+        into the shared field-provider modal (which auto-opens on swap) by the
+        per-row identify icon on the discogs_id row of the next/ artist-detail
+        page. The form POSTs to the Discogs search endpoint. HTML-only response.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Identify modal body (HTML fragment)
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/discogs/search:
+    post:
+      tags: [Artists]
+      summary: Search Discogs by name for linking
+      operationId: discogsSearch
+      description: >
+        Searches Discogs for artists matching the given name and returns scored
+        candidates. When the artist has local album subdirectories, the top
+        candidates are enriched with album-discography comparison so confidence
+        reflects name plus album agreement. Mirrors the Deezer identify flow but
+        keyed on the Discogs provider ID. Returns an HTML fragment when the
+        HX-Request header is set.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+              required: [query]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+              required: [query]
+      responses:
+        "200":
+          description: Scored Discogs candidates (returns HTML fragment when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScoredCandidate"
+                    description: Scored Discogs candidates with optional album comparison.
+                  provider_error:
+                    type: string
+                    description: >
+                      Discogs display name, present only when the Discogs search
+                      errored (rate limit / outage). Lets clients distinguish a
+                      provider failure from a genuine empty result set.
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Missing query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Discogs search failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/discogs/link:
+    post:
+      tags: [Artists]
+      summary: Link a Discogs ID to the artist and refresh
+      operationId: discogsLink
+      description: >
+        Persists the selected numeric Discogs ID on the artist and runs a
+        metadata refresh. Two guards apply: a locked discogs_id field is refused
+        with 409 (field_locked), and because the refresh may write artist.nfo the
+        request is subject to the NFO conflict gate (409 when blocked). Returns an
+        HTML fragment when the HX-Request header is set.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                discogs_id:
+                  type: string
+                  description: Numeric Discogs artist ID.
+              required: [discogs_id]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                discogs_id:
+                  type: string
+              required: [discogs_id]
+      responses:
+        "200":
+          description: Linked and refreshed (returns HTML fragment when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  artist_id:
+                    type: string
+                  discogs_id:
+                    type: string
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Missing or non-numeric discogs_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: discogs_id field locked or conflict gate blocked the write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Failed to link Discogs ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Discography fetch ---
 
   /artists/{id}/discography/fetch:

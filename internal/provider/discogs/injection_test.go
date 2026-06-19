@@ -30,4 +30,10 @@ func TestInjection_Discogs(t *testing.T) {
 	if _, err := a.GetImages(ctx, "12345"); !errors.Is(err, provider.ErrInjectedFailure) {
 		t.Errorf("GetImages: want ErrInjectedFailure, got %v", err)
 	}
+	if _, err := a.GetReleaseGroups(ctx, "12345"); !errors.Is(err, provider.ErrInjectedFailure) {
+		t.Errorf("GetReleaseGroups: want ErrInjectedFailure, got %v", err)
+	}
+	if _, err := a.GetMainReleaseTitles(ctx, "12345"); !errors.Is(err, provider.ErrInjectedFailure) {
+		t.Errorf("GetMainReleaseTitles: want ErrInjectedFailure, got %v", err)
+	}
 }

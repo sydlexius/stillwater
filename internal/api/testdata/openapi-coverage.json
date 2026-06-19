@@ -371,6 +371,27 @@
     "covered": true
   },
   {
+    "operationId": "discogsIdentify",
+    "method": "GET",
+    "path": "/artists/{id}/discogs/identify",
+    "handler": "handleDiscogsIdentify",
+    "covered": true
+  },
+  {
+    "operationId": "discogsLink",
+    "method": "POST",
+    "path": "/artists/{id}/discogs/link",
+    "handler": "handleDiscogsLink",
+    "covered": true
+  },
+  {
+    "operationId": "discogsSearch",
+    "method": "POST",
+    "path": "/artists/{id}/discogs/search",
+    "handler": "handleDiscogsSearch",
+    "covered": true
+  },
+  {
     "operationId": "discoverLibraries",
     "method": "GET",
     "path": "/connections/{id}/libraries",

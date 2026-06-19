@@ -164,6 +164,238 @@ func TestGetArtist(t *testing.T) {
 	}
 }
 
+func TestGetReleaseGroups(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := newTestServer(t)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	groups, err := a.GetReleaseGroups(context.Background(), "3840")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+
+	// The fixture has 3 "master" releases with role "Main" (OK Computer, Kid A,
+	// In Rainbows) plus a compilation (Appearance) and a non-master single,
+	// both of which must be filtered out.
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 release groups, got %d: %+v", len(groups), groups)
+	}
+	wantTitles := map[string]bool{"OK Computer": true, "Kid A": true, "In Rainbows": true}
+	for _, g := range groups {
+		if !wantTitles[g.Title] {
+			t.Errorf("unexpected release group title %q (compilation/single not filtered?)", g.Title)
+		}
+		if g.ID == "" {
+			t.Errorf("release group %q missing ID", g.Title)
+		}
+	}
+	// OK Computer (id 5001, year 1997) should map year -> FirstReleaseDate.
+	for _, g := range groups {
+		if g.Title == "OK Computer" {
+			if g.ID != "5001" {
+				t.Errorf("OK Computer ID = %q, want 5001", g.ID)
+			}
+			if g.FirstReleaseDate != "1997" {
+				t.Errorf("OK Computer FirstReleaseDate = %q, want 1997", g.FirstReleaseDate)
+			}
+		}
+	}
+}
+
+func TestGetReleaseGroupsServerError(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	if _, err := a.GetReleaseGroups(context.Background(), "3840"); err == nil {
+		t.Fatal("expected error when the releases endpoint returns 500, got nil")
+	}
+}
+
+func TestGetReleaseGroupsAuthRequired(t *testing.T) {
+	limiter, _ := setupTest(t)
+	// A settings service with no Discogs token configured -> getToken returns
+	// ErrAuthRequired before any HTTP call.
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.ExecContext(context.Background(),
+		`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`); err != nil {
+		t.Fatalf("create settings table: %v", err)
+	}
+	enc, _, _ := encryption.NewEncryptor("")
+	noTokenSettings := provider.NewSettingsService(db, enc)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, noTokenSettings, logger)
+
+	_, err = a.GetReleaseGroups(context.Background(), "3840")
+	var authErr *provider.ErrAuthRequired
+	if !errors.As(err, &authErr) {
+		t.Errorf("expected ErrAuthRequired, got %T: %v", err, err)
+	}
+}
+
+func TestGetReleaseGroupsRejectsNonNumeric(t *testing.T) {
+	limiter, settings := setupTest(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, settings, logger)
+
+	// A MusicBrainz UUID is not a valid Discogs artist ID; reject without an
+	// HTTP round-trip.
+	_, err := a.GetReleaseGroups(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493")
+	if err == nil {
+		t.Fatal("expected error for non-numeric ID, got nil")
+	}
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+// mainReleaseTitlesServer serves a single releases page from the given JSON body
+// and records every requested path so tests can assert which endpoints were hit.
+func mainReleaseTitlesServer(t *testing.T, releasesBody string, hits *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Discogs token=test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		*hits = append(*hits, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases"):
+			_, _ = w.Write([]byte(releasesBody))
+		case strings.HasPrefix(r.URL.Path, "/masters/"):
+			// Minimal master payload with a style so aggregateStyles has data.
+			_, _ = w.Write([]byte(`{"id":1,"title":"x","styles":["Rock"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+// TestGetMainReleaseTitlesIncludesReleaseLevelMain proves the #1831 fix: an album
+// Discogs catalogs ONLY as a release (role "Main", type "release"), never a
+// master, is now counted in the album-match title set, while non-Main entries
+// (e.g. a compilation Appearance) remain excluded.
+func TestGetMainReleaseTitlesIncludesReleaseLevelMain(t *testing.T) {
+	limiter, settings := setupTest(t)
+	body := `{"pagination":{"page":1,"pages":1},"releases":[
+		{"id":1,"title":"Master Album","type":"master","role":"Main","year":2010},
+		{"id":2,"title":"Beneath the Scars","type":"release","role":"Main","year":2012},
+		{"id":3,"title":"Some Comp","type":"release","role":"Appearance","year":2005}
+	]}`
+	var hits []string
+	srv := mainReleaseTitlesServer(t, body, &hits)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	titles, err := a.GetMainReleaseTitles(context.Background(), "3840")
+	if err != nil {
+		t.Fatalf("GetMainReleaseTitles: %v", err)
+	}
+	got := map[string]bool{}
+	for _, ti := range titles {
+		got[ti] = true
+	}
+	if !got["Beneath the Scars"] {
+		t.Errorf("release-only Main album missing from titles: %v", titles)
+	}
+	if !got["Master Album"] {
+		t.Errorf("master Main album missing from titles: %v", titles)
+	}
+	if got["Some Comp"] {
+		t.Errorf("Appearance-role entry must be excluded: %v", titles)
+	}
+	if len(titles) != 2 {
+		t.Errorf("expected 2 titles, got %d: %v", len(titles), titles)
+	}
+}
+
+// TestGetMainReleaseTitlesDedupesMasterAndRelease proves an album that appears as
+// BOTH a master and one-or-more same-title releases counts exactly once, using
+// the same normalization CompareAlbums applies (so a trailing "(Deluxe Edition)"
+// suffix on a release still collapses onto the master title).
+func TestGetMainReleaseTitlesDedupesMasterAndRelease(t *testing.T) {
+	limiter, settings := setupTest(t)
+	body := `{"pagination":{"page":1,"pages":1},"releases":[
+		{"id":1,"title":"Only Human","type":"master","role":"Main","year":2010},
+		{"id":2,"title":"Only Human","type":"release","role":"Main","year":2010},
+		{"id":3,"title":"Only Human (Deluxe Edition)","type":"release","role":"Main","year":2011}
+	]}`
+	var hits []string
+	srv := mainReleaseTitlesServer(t, body, &hits)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	titles, err := a.GetMainReleaseTitles(context.Background(), "3840")
+	if err != nil {
+		t.Fatalf("GetMainReleaseTitles: %v", err)
+	}
+	if len(titles) != 1 {
+		t.Fatalf("expected 1 deduped title, got %d: %v", len(titles), titles)
+	}
+}
+
+// TestAggregateStylesUnchangedByReleaseLevelMain is the non-regression guard for
+// requirement #2: broadening the album match must NOT change styles aggregation,
+// which stays master-only. A release-only Main album must never trigger a
+// /masters/{id} fetch for its (nonexistent) master.
+func TestAggregateStylesUnchangedByReleaseLevelMain(t *testing.T) {
+	limiter, settings := setupTest(t)
+	body := `{"pagination":{"page":1,"pages":1},"releases":[
+		{"id":100,"title":"Master Album","type":"master","role":"Main","year":2010},
+		{"id":200,"title":"Release Only","type":"release","role":"Main","year":2012}
+	]}`
+	var hits []string
+	srv := mainReleaseTitlesServer(t, body, &hits)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	useLoopbackTestClient(a)
+
+	token, err := a.getToken(context.Background())
+	if err != nil {
+		t.Fatalf("getToken: %v", err)
+	}
+	if _, err := a.aggregateStyles(context.Background(), "3840", token); err != nil {
+		t.Fatalf("aggregateStyles: %v", err)
+	}
+
+	// Styles must only walk the master (id 100); the release-only entry (id 200)
+	// has no master and must not be fetched.
+	for _, p := range hits {
+		if p == "/masters/200" {
+			t.Errorf("aggregateStyles fetched a master for a release-only entry: %v", hits)
+		}
+	}
+	sawMaster100 := false
+	for _, p := range hits {
+		if p == "/masters/100" {
+			sawMaster100 = true
+		}
+	}
+	if !sawMaster100 {
+		t.Errorf("aggregateStyles did not fetch the real master /masters/100: %v", hits)
+	}
+}
+
 func TestGetImages(t *testing.T) {
 	limiter, settings := setupTest(t)
 	srv := newTestServer(t)

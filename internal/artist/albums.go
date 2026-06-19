@@ -59,9 +59,13 @@ var punctuation = regexp.MustCompile(`[^\p{L}\p{N}\s]`)
 // multiSpace collapses multiple whitespace chars into one.
 var multiSpace = regexp.MustCompile(`\s+`)
 
-// normalizeAlbumName normalizes an album name for comparison:
+// NormalizeAlbumName normalizes an album name for comparison:
 // lowercase, strip trailing parenthetical suffixes, remove punctuation, collapse whitespace.
-func normalizeAlbumName(name string) string {
+//
+// Exported so providers that build their own remote-title sets (e.g. the Discogs
+// adapter's release-level album-match list) can deduplicate titles with the same
+// normalization CompareAlbums uses, keeping dedup consistent with matching.
+func NormalizeAlbumName(name string) string {
 	s := strings.ToLower(name)
 	for parenSuffix.MatchString(s) {
 		s = parenSuffix.ReplaceAllString(s, "")
@@ -71,6 +75,9 @@ func normalizeAlbumName(name string) string {
 	s = strings.TrimFunc(s, unicode.IsSpace)
 	return s
 }
+
+// normalizeAlbumName is the internal alias retained for call-site brevity.
+func normalizeAlbumName(name string) string { return NormalizeAlbumName(name) }
 
 // CompareAlbums compares local directory names against remote release group
 // titles using case-insensitive normalized matching. MatchPercent is based

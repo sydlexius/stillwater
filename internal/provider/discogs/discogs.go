@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/version"
@@ -311,6 +312,160 @@ func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string,
 		return nil, fmt.Errorf("parsing artist releases: %w", err)
 	}
 	return &resp, nil
+}
+
+// GetReleaseGroups implements provider.ReleaseGroupFetcher for Discogs. It
+// returns the artist's "master" releases (deduplicated, "Main" role only) as
+// provider.ReleaseGroupInfo values so the identify/disambiguation flow can
+// score Discogs candidates against the local library the same way it scores
+// MusicBrainz candidates. artistID must be the numeric Discogs artist ID.
+//
+// The role/type filter mirrors aggregateStyles: only "master" releases where
+// the artist's role is "Main" are treated as the artist's own albums, so
+// compilations and guest appearances do not skew the album-match score. Results
+// are capped (maxGroups across maxPages) to bound the number of Discogs API
+// calls, matching the existing pagination budget used elsewhere in this
+// adapter.
+func (a *Adapter) GetReleaseGroups(ctx context.Context, artistID string) ([]provider.ReleaseGroupInfo, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
+	// Discogs release lookups require a numeric artist ID; reject anything else
+	// (e.g. a MusicBrainz UUID) up front to avoid a wasted HTTP round-trip.
+	if !isNumericID(artistID) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: artistID}
+	}
+
+	token, err := a.getToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	const (
+		maxGroups = 50
+		maxPages  = 5
+	)
+
+	var groups []provider.ReleaseGroupInfo
+	seen := make(map[int]bool) // deduplicate master IDs across pages
+
+	for page := 1; page <= maxPages && len(groups) < maxGroups; page++ {
+		resp, err := a.getArtistReleases(ctx, artistID, token, page)
+		if err != nil {
+			return nil, fmt.Errorf("fetching artist releases page %d: %w", page, err)
+		}
+		if len(resp.Releases) == 0 {
+			break
+		}
+
+		for _, rel := range resp.Releases {
+			if len(groups) >= maxGroups {
+				break
+			}
+			if rel.Type != "master" || !strings.EqualFold(rel.Role, "Main") {
+				continue
+			}
+			if seen[rel.ID] {
+				continue
+			}
+			seen[rel.ID] = true
+
+			info := provider.ReleaseGroupInfo{
+				ID:    strconv.Itoa(rel.ID),
+				Title: rel.Title,
+			}
+			// Discogs only exposes a release year (not a full date); surface it
+			// as the FirstReleaseDate so downstream consumers have it available.
+			if rel.Year > 0 {
+				info.FirstReleaseDate = strconv.Itoa(rel.Year)
+			}
+			groups = append(groups, info)
+		}
+
+		// Stop if this was the last page.
+		if page >= resp.Pagination.Pages {
+			break
+		}
+	}
+
+	return groups, nil
+}
+
+// GetMainReleaseTitles implements provider.MainReleaseTitleFetcher for Discogs.
+// It returns the deduplicated titles of every entry the artist is credited on as
+// role "Main", including BOTH "master" and release-level ("release") entries.
+//
+// This is intentionally broader than GetReleaseGroups (masters only): Discogs
+// catalogs some albums only as a release, never promoting them to a master, so a
+// master-only set undercounts the album match (e.g. "12 Stones" / "Beneath the
+// Scars", which exists only as a release -- #1831). Titles are deduplicated by
+// the same normalization artist.CompareAlbums uses, so a master and one-or-more
+// same-title releases count once. Over-inclusion is safe: a remote title only
+// raises the match score when it equals a local album title.
+//
+// Styles aggregation (aggregateStyles) is deliberately untouched -- it keeps its
+// own master-only release walk, so broadening the album match does not change
+// which masters feed the style counts.
+//
+// artistID must be the numeric Discogs artist ID. Results are capped
+// (maxTitles across maxPages) to bound the number of Discogs API calls, matching
+// the pagination budget GetReleaseGroups uses.
+func (a *Adapter) GetMainReleaseTitles(ctx context.Context, artistID string) ([]string, error) {
+	if provider.ShouldInjectFailure(a.Name()) {
+		return nil, provider.ErrInjectedFailure
+	}
+	// Discogs release lookups require a numeric artist ID; reject anything else
+	// (e.g. a MusicBrainz UUID) up front to avoid a wasted HTTP round-trip.
+	if !isNumericID(artistID) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: artistID}
+	}
+
+	token, err := a.getToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	const (
+		maxTitles = 50
+		maxPages  = 5
+	)
+
+	var titles []string
+	seen := make(map[string]bool) // deduplicate by normalized title across master+release
+
+	for page := 1; page <= maxPages && len(titles) < maxTitles; page++ {
+		resp, err := a.getArtistReleases(ctx, artistID, token, page)
+		if err != nil {
+			return nil, fmt.Errorf("fetching artist releases page %d: %w", page, err)
+		}
+		if len(resp.Releases) == 0 {
+			break
+		}
+
+		for _, rel := range resp.Releases {
+			if len(titles) >= maxTitles {
+				break
+			}
+			// Include every Main-role entry regardless of type (master OR
+			// release); only the artist's own albums count toward the match.
+			if !strings.EqualFold(rel.Role, "Main") {
+				continue
+			}
+			norm := artist.NormalizeAlbumName(rel.Title)
+			if norm == "" || seen[norm] {
+				continue
+			}
+			seen[norm] = true
+			titles = append(titles, rel.Title)
+		}
+
+		// Stop if this was the last page.
+		if page >= resp.Pagination.Pages {
+			break
+		}
+	}
+
+	return titles, nil
 }
 
 // getMasterRelease fetches genre/style info from a master release.

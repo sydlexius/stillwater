@@ -39,4 +39,13 @@ const (
 	FieldDied           FieldName = "died"
 	FieldDisbanded      FieldName = "disbanded"
 	FieldYearsActive    FieldName = "years_active"
+
+	// FieldDiscogsID is the lock key for the Discogs provider ID. Unlike the
+	// metadata fields above, this is a provider-ID field: it is not part of the
+	// platform-side metadata canonicalizer vocabulary, but it participates in
+	// the same per-field lock mechanism (Artist.LockedFields) so the Discogs
+	// "match by name" identify flow can refuse to overwrite a user-pinned ID.
+	// Its string value matches the discogs_id key used throughout the UI and
+	// the FieldDisplay switch.
+	FieldDiscogsID FieldName = "discogs_id"
 )
