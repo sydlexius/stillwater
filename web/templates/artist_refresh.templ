@@ -118,6 +118,7 @@ templ DisambiguationResults(data DisambiguationResultsData) {
 					hx-vals={ disambiguationHxVals(c.Result) }
 					hx-target="#refresh-panel"
 					hx-swap="innerHTML"
+					hx-on::after-request="hideFieldProviderModal()"
 					hx-disabled-elt="this"
 				>
 					// Loading overlay - shown when htmx-request is active
