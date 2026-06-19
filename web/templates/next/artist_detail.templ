@@ -527,7 +527,7 @@ templ artistActionItems(data ArtistDetailPageData, withShortcut bool) {
 		role="menuitem"
 		class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 		hx-post={ "/api/v1/artists/" + a.ID + "/reidentify" }
-		hx-target="#refresh-panel"
+		hx-target="#field-provider-modal-body"
 		hx-swap="innerHTML"
 		if a.MusicBrainzID != "" {
 			hx-confirm={ t(ctx, "artist.reidentify_confirm") }
