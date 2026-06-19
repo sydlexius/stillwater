@@ -1,0 +1,34 @@
+{
+  "data": [
+    {
+      "id": 302127,
+      "title": "OK Computer",
+      "release_date": "1997-05-28",
+      "record_type": "album",
+      "type": "album"
+    },
+    {
+      "id": 302128,
+      "title": "Kid A",
+      "release_date": "2000-10-02",
+      "record_type": "album",
+      "type": "album"
+    },
+    {
+      "id": 302129,
+      "title": "In Rainbows",
+      "release_date": "2007-10-10",
+      "record_type": "album",
+      "type": "album"
+    },
+    {
+      "id": 302130,
+      "title": "Creep",
+      "release_date": "1992-09-21",
+      "record_type": "single",
+      "type": "album"
+    }
+  ],
+  "total": 4,
+  "next": null
+}

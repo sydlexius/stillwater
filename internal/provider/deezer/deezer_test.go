@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -37,6 +38,38 @@ func newTestServer(t *testing.T) *httptest.Server {
 				return
 			}
 			w.Write(loadFixture(t, "search_radiohead.json"))
+
+		case strings.HasPrefix(r.URL.Path, "/artist/") && strings.HasSuffix(r.URL.Path, "/albums"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/artist/"), "/albums")
+			switch id {
+			case "not-found":
+				w.WriteHeader(http.StatusNotFound)
+			case "8888888":
+				// Empty discography.
+				w.Write([]byte(`{"data":[],"total":0}`))
+			case "7777777":
+				// Two-page discography to exercise pagination via index/limit.
+				// Page size in the adapter is 50; the server returns exactly 50
+				// on index=0 (with total=51) then the remainder on index=50.
+				index := r.URL.Query().Get("index")
+				if index == "0" {
+					w.Write([]byte(paginatedAlbumsPage(0, 50, 51)))
+				} else {
+					w.Write([]byte(paginatedAlbumsPage(50, 1, 51)))
+				}
+			case "6666666":
+				// 600-album discography (above maxTotal=500) to exercise the cap.
+				// Each request serves up to 50 items so the loop runs until
+				// len(results) >= 500 and stops before collecting all 600.
+				idx, _ := strconv.Atoi(r.URL.Query().Get("index"))
+				count := 600 - idx
+				if count > 50 {
+					count = 50
+				}
+				w.Write([]byte(paginatedAlbumsPage(idx, count, 600)))
+			default:
+				w.Write(loadFixture(t, "artist_albums_radiohead.json"))
+			}
 
 		case strings.HasPrefix(r.URL.Path, "/artist/"):
 			id := strings.TrimPrefix(r.URL.Path, "/artist/")
@@ -366,6 +399,122 @@ func TestDoRequestHonorsCanceledContext(t *testing.T) {
 	}
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("expected 0 requests (limiter rejected before HTTP), got %d", got)
+	}
+}
+
+// paginatedAlbumsPage builds an albums-endpoint JSON page with count entries
+// whose IDs start at startID, reporting the given total. Used to exercise the
+// adapter's index/limit pagination loop in GetReleaseGroups.
+func paginatedAlbumsPage(startID, count, total int) string {
+	var sb strings.Builder
+	sb.WriteString(`{"data":[`)
+	for i := 0; i < count; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		id := startID + i
+		sb.WriteString(`{"id":`)
+		sb.WriteString(strconv.Itoa(id))
+		sb.WriteString(`,"title":"Album `)
+		sb.WriteString(strconv.Itoa(id))
+		sb.WriteString(`","release_date":"2000-01-01","record_type":"album"}`)
+	}
+	sb.WriteString(`],"total":`)
+	sb.WriteString(strconv.Itoa(total))
+	sb.WriteString(`}`)
+	return sb.String()
+}
+
+func TestGetReleaseGroups(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	groups, err := a.GetReleaseGroups(context.Background(), "4050205")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+	if len(groups) != 4 {
+		t.Fatalf("expected 4 release groups, got %d", len(groups))
+	}
+	if groups[0].Title != "OK Computer" {
+		t.Errorf("expected first title 'OK Computer', got %q", groups[0].Title)
+	}
+	// record_type maps to PrimaryType; the single must be preserved.
+	if groups[0].PrimaryType != "album" {
+		t.Errorf("expected PrimaryType 'album', got %q", groups[0].PrimaryType)
+	}
+	if groups[3].PrimaryType != "single" {
+		t.Errorf("expected PrimaryType 'single' for Creep, got %q", groups[3].PrimaryType)
+	}
+	// release_date maps to FirstReleaseDate; ID is stringified.
+	if groups[0].FirstReleaseDate != "1997-05-28" {
+		t.Errorf("expected FirstReleaseDate '1997-05-28', got %q", groups[0].FirstReleaseDate)
+	}
+	if groups[0].ID != "302127" {
+		t.Errorf("expected ID '302127', got %q", groups[0].ID)
+	}
+}
+
+func TestGetReleaseGroupsEmpty(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	groups, err := a.GetReleaseGroups(context.Background(), "8888888")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+	if len(groups) != 0 {
+		t.Errorf("expected 0 release groups, got %d", len(groups))
+	}
+}
+
+func TestGetReleaseGroupsPagination(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	// Artist 7777777 returns 50 on the first page and 1 on the second
+	// (total=51), so the loop must follow the second page.
+	groups, err := a.GetReleaseGroups(context.Background(), "7777777")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+	if len(groups) != 51 {
+		t.Fatalf("expected 51 release groups across two pages, got %d", len(groups))
+	}
+}
+
+func TestGetReleaseGroupsCapAt500(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	// Artist 6666666 reports 600 total albums, above maxTotal=500. The adapter
+	// must stop accumulating at 500 and return exactly 500 release groups.
+	const maxTotal = 500
+	groups, err := a.GetReleaseGroups(context.Background(), "6666666")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+	if len(groups) != maxTotal {
+		t.Errorf("expected release groups capped at %d, got %d", maxTotal, len(groups))
+	}
+}
+
+func TestGetReleaseGroupsRejectsNonNumericID(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	_, err := a.GetReleaseGroups(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error for non-Deezer ID")
+	}
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
+		t.Errorf("expected *provider.ErrNotFound, got %T: %v", err, err)
 	}
 }
 

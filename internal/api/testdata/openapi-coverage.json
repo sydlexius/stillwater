@@ -238,6 +238,27 @@
     "covered": true
   },
   {
+    "operationId": "deezerIdentify",
+    "method": "GET",
+    "path": "/artists/{id}/deezer/identify",
+    "handler": "handleDeezerIdentify",
+    "covered": true
+  },
+  {
+    "operationId": "deezerLink",
+    "method": "POST",
+    "path": "/artists/{id}/deezer/link",
+    "handler": "handleDeezerLink",
+    "covered": true
+  },
+  {
+    "operationId": "deezerSearch",
+    "method": "POST",
+    "path": "/artists/{id}/deezer/search",
+    "handler": "handleDeezerSearch",
+    "covered": true
+  },
+  {
     "operationId": "deleteAPIToken",
     "method": "DELETE",
     "path": "/auth/tokens/{id}/permanent",

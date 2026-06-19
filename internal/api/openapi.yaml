@@ -11341,6 +11341,209 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  # --- Deezer match-by-name ---
+
+  /artists/{id}/deezer/identify:
+    get:
+      tags: [Artists]
+      summary: Deezer match-by-name identify modal
+      operationId: deezerIdentify
+      description: >
+        Returns the HTML body of the Deezer "match by name" identify modal: a
+        disambiguation search form pre-filled with the artist name. It is loaded
+        into the shared field-provider modal (which auto-opens on swap) by the
+        per-row identify icon on the next/ artist-detail page. The form POSTs to
+        the Deezer search endpoint. HTML-only response.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Identify modal body (HTML fragment)
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/deezer/search:
+    post:
+      tags: [Artists]
+      summary: Search Deezer by name for linking
+      operationId: deezerSearch
+      description: >
+        Searches Deezer for artists matching the given name and returns scored
+        candidates. When the artist has local album subdirectories, the top
+        candidates are enriched with album-discography comparison so confidence
+        reflects name plus album agreement. Mirrors the MusicBrainz identify flow
+        but keyed on the Deezer provider ID. Returns an HTML fragment when the
+        HX-Request header is set.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+              required: [query]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+              required: [query]
+      responses:
+        "200":
+          description: Scored Deezer candidates (returns HTML fragment when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScoredCandidate"
+                    description: Scored Deezer candidates with optional album comparison.
+                  provider_error:
+                    type: string
+                    description: >
+                      Deezer display name, present only when the Deezer search
+                      errored (rate limit / outage). Lets clients distinguish a
+                      provider failure from a genuine empty result set.
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Missing query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Deezer search failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/deezer/link:
+    post:
+      tags: [Artists]
+      summary: Link a Deezer ID to the artist and refresh
+      operationId: deezerLink
+      description: >
+        Persists the selected numeric Deezer ID on the artist and runs a metadata
+        refresh. The refresh may write images, so the request is subject to the
+        conflict gate (409 when blocked). Returns an HTML fragment when the
+        HX-Request header is set.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deezer_id:
+                  type: string
+                  description: Numeric Deezer artist ID.
+              required: [deezer_id]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                deezer_id:
+                  type: string
+              required: [deezer_id]
+      responses:
+        "200":
+          description: Linked and refreshed (returns HTML fragment when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  artist_id:
+                    type: string
+                  deezer_id:
+                    type: string
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Missing or non-numeric deezer_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Conflict gate blocked the write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Failed to link Deezer ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured / unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Discography fetch ---
 
   /artists/{id}/discography/fetch:
