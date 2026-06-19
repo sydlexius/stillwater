@@ -1193,29 +1193,47 @@ func databaseHasEncryptedSecrets(dbPath string) (bool, error) {
 	}
 	defer func() { _ = db.Close() }()
 
-	if err := db.PingContext(context.Background()); err != nil {
+	// Bound every probe with a Go-side deadline so a locked or corrupted DB
+	// cannot hang startup indefinitely; the read-only DSN's busy_timeout only
+	// covers SQLite-level lock waits, not a wedged handle.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
 		return false, fmt.Errorf("pinging database read-only: %w", err)
 	}
 
-	// Each probe returns sql.ErrNoRows when the table exists but holds no
-	// secret, and a "no such table" error when the schema predates that table;
-	// both mean "no secret here", so only an unexpected error is fatal.
+	// Each probe carries the table it reads so we can check existence explicitly
+	// via sqlite_master rather than string-matching a "no such table" error
+	// (brittle, driver-dependent). An absent table means the schema predates it,
+	// so there is nothing to orphan; an empty table (sql.ErrNoRows) likewise has
+	// no secret. Only an unexpected error is fatal.
 	probes := []struct {
 		desc  string
+		table string
 		query string
 	}{
-		{"connection API keys", `SELECT 1 FROM connections WHERE TRIM(encrypted_api_key) != '' LIMIT 1`},
-		{"provider API keys", `SELECT 1 FROM settings WHERE key LIKE 'provider.%.api_key' AND TRIM(value) != '' LIMIT 1`},
+		{"connection API keys", "connections", `SELECT 1 FROM connections WHERE TRIM(encrypted_api_key) != '' LIMIT 1`},
+		{"provider API keys", "settings", `SELECT 1 FROM settings WHERE key LIKE 'provider.%.api_key' AND TRIM(value) != '' LIMIT 1`},
 	}
 	for _, p := range probes {
+		var name string
+		err := db.QueryRowContext(ctx,
+			`SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`,
+			p.table).Scan(&name)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			continue // table absent, nothing to orphan
+		case err != nil:
+			return false, fmt.Errorf("checking %s table existence: %w", p.table, err)
+		}
+
 		var found int
-		err := db.QueryRowContext(context.Background(), p.query).Scan(&found)
+		err = db.QueryRowContext(ctx, p.query).Scan(&found)
 		switch {
 		case err == nil:
 			return true, nil
 		case errors.Is(err, sql.ErrNoRows):
-			continue
-		case strings.Contains(err.Error(), "no such table"):
 			continue
 		default:
 			return false, fmt.Errorf("probing %s: %w", p.desc, err)

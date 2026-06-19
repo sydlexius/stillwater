@@ -1,5 +1,9 @@
 .PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
 
+# Use bash for all recipes so bash-only constructs (set -o pipefail) work even
+# where /bin/sh is dash (Debian/Ubuntu); plain sh lacks pipefail.
+SHELL := /usr/bin/env bash
+
 # Binary name
 BINARY=stillwater
 BUILD_DIR=./build

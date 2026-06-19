@@ -353,6 +353,34 @@ func TestResolveEncryptionKey_KeyFileEmptyIsFatal(t *testing.T) {
 	}
 }
 
+// TestResolveEncryptionKey_KeyFileUnreadableIsFatal verifies that an
+// SW_ENCRYPTION_KEY_FILE that exists but cannot be read (permission denied)
+// surfaces the read error rather than silently generating a fresh key, which
+// would orphan every at-rest secret.
+func TestResolveEncryptionKey_KeyFileUnreadableIsFatal(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("unreadable-file perms bypassed as root")
+	}
+	dir := t.TempDir()
+	keyFilePath := filepath.Join(dir, "unreadable.key")
+	if err := os.WriteFile(keyFilePath, []byte("secretkey\n"), 0o600); err != nil {
+		t.Fatalf("writing key file: %v", err)
+	}
+	if err := os.Chmod(keyFilePath, 0o000); err != nil {
+		t.Fatalf("chmod key file unreadable: %v", err)
+	}
+	// Restore read perms so t.TempDir cleanup can remove the file.
+	t.Cleanup(func() { _ = os.Chmod(keyFilePath, 0o600) })
+
+	cfg := &config.Config{}
+	cfg.Database.Path = filepath.Join(dir, "stillwater.db")
+	cfg.Encryption.KeyFile = keyFilePath
+
+	if _, err := resolveEncryptionKey(cfg, slog.Default()); err == nil {
+		t.Fatal("expected error for unreadable SW_ENCRYPTION_KEY_FILE, got nil")
+	}
+}
+
 // populatedDBPath builds a migrated SQLite DB at dir/stillwater.db, runs the
 // supplied seed against it, and returns the path. The DB is closed so a later
 // read-only probe sees the persisted (checkpointed) rows.
