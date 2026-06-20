@@ -101,8 +101,11 @@ fi
 : > "$bruno_file"
 while IFS= read -r bru; do
   # HTTP method: the verb that opens the request block, e.g. `get {`.
-  method="$(grep -ioE '^(get|post|put|patch|delete|head|options)[[:space:]]*\{' "$bru" \
-    | head -n1 | sed -E 's/[[:space:]]*\{.*//' | tr '[:lower:]' '[:upper:]')"
+  # Tolerate optional leading whitespace so an indented method block (a request
+  # nested inside an enclosing block) is still detected; strip that indentation
+  # back off before normalizing so the captured method has no stray spaces.
+  method="$(grep -ioE '^[[:space:]]*(get|post|put|patch|delete|head|options)[[:space:]]*\{' "$bru" \
+    | head -n1 | sed -E 's/^[[:space:]]*//; s/[[:space:]]*\{.*//' | tr '[:lower:]' '[:upper:]')"
   # URL: first `url: {{apiBase}}...` line.
   url="$(grep -oE 'url:[[:space:]]*\{\{apiBase\}\}[^[:space:]]*' "$bru" | head -n1)"
   [ -z "$method" ] && continue
