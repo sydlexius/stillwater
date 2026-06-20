@@ -130,6 +130,7 @@ nav:
       - Configure provider priorities: how-to/configure-provider-priorities.md
       - Enable and configure rules: how-to/enable-and-configure-rules.md
       - Export and import settings: how-to/export-import-settings.md
+      - Convert YAML config to TOML: how-to/convert-yaml-to-toml.md
       - Update Stillwater: how-to/self-update.md
       - Reverse proxy: how-to/reverse-proxy.md
       - Direct TLS setup: how-to/direct-tls-setup.md
