@@ -1,0 +1,29 @@
+meta {
+  name: List Global History
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/history
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is a paginated envelope (changes, total, limit, offset)", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.changes).to.be.an("array");
+    expect(res.body.total).to.be.a("number");
+    expect(res.body.limit).to.be.a("number");
+    expect(res.body.offset).to.be.a("number");
+  });
+}
