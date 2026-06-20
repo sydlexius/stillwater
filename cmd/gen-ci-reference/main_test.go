@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -87,15 +89,14 @@ func TestParseWorkflow_MinimalFixture(t *testing.T) {
 	if summary.If != "always()" {
 		t.Errorf("test-summary.If = %q, want 'always()'", summary.If)
 	}
+	// Compare exact contents order-agnostically: the dependency set must be
+	// {"changes", "test"} but workflow parsers may return them in any order.
 	wantNeeds := []string{"changes", "test"}
-	if len(summary.Needs) != len(wantNeeds) {
-		t.Errorf("test-summary.Needs = %v, want %v", summary.Needs, wantNeeds)
-	} else {
-		for i, v := range wantNeeds {
-			if summary.Needs[i] != v {
-				t.Errorf("test-summary.Needs[%d] = %q, want %q", i, summary.Needs[i], v)
-			}
-		}
+	gotNeeds := append([]string(nil), summary.Needs...)
+	sort.Strings(gotNeeds)
+	sort.Strings(wantNeeds)
+	if !reflect.DeepEqual(gotNeeds, wantNeeds) {
+		t.Errorf("test-summary.Needs = %v, want %v (order-agnostic)", summary.Needs, wantNeeds)
 	}
 }
 
