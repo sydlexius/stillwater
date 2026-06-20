@@ -123,6 +123,16 @@ if [ -d docs ]; then
   fi
 fi
 
+# Verify the CI reference is in sync with .github/workflows/ci.yml. Run
+# whenever the docs/ directory is present; -check fails when the generated file
+# is missing or stale. Skip only in docs-stripped checkouts.
+if [ -d docs ]; then
+  if ! go run ./cmd/gen-ci-reference -check; then
+    echo "ERROR: docs/_generated/ci-reference.md is stale or missing. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 # Verify the platform-profiles table is in sync with the platform_profiles
 # INSERT block in 001_initial_schema.sql. Skip silently if the generated file
 # is absent (e.g., a docs-stripped checkout).

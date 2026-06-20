@@ -188,7 +188,10 @@ func TestRenderShardSection(t *testing.T) {
 		t.Fatalf("parseWorkflow: %v", err)
 	}
 
-	out := renderShardSection(wf)
+	out, err := renderShardSection(wf)
+	if err != nil {
+		t.Fatalf("renderShardSection: %v", err)
+	}
 
 	if !strings.Contains(out, "## Test Matrix Shards") {
 		t.Error("expected section heading")
@@ -197,8 +200,8 @@ func TestRenderShardSection(t *testing.T) {
 	if !strings.Contains(out, "`api-1`") {
 		t.Error("expected api-1 row")
 	}
-	if !strings.Contains(out, "Round-robin") {
-		t.Error("expected partition note for api-1")
+	if !strings.Contains(out, "Partitioned shard") {
+		t.Error("expected partitioned-shard annotation for api-1")
 	}
 	// Named shard services
 	if !strings.Contains(out, "`services`") {
@@ -213,6 +216,90 @@ func TestRenderShardSection(t *testing.T) {
 	}
 	if !strings.Contains(out, "Remainder") {
 		t.Error("expected dynamic-remainder annotation for rest shard")
+	}
+}
+
+// TestRenderShardSection_MissingTestJob verifies that an error is returned when
+// the expected test job is absent from the workflow.
+func TestRenderShardSection_MissingTestJob(t *testing.T) {
+	const noTestJobYAML = `
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+`
+	wf, err := parseWorkflow([]byte(noTestJobYAML))
+	if err != nil {
+		t.Fatalf("parseWorkflow: %v", err)
+	}
+	if _, err := renderShardSection(wf); err == nil {
+		t.Error("expected error when test job is absent, got nil")
+	}
+}
+
+// TestParseWorkflow_MissingSHARDSStep verifies that a job with a shard matrix
+// but no SHARDS declaration fails at parse time rather than silently producing
+// an empty map.
+func TestParseWorkflow_MissingSHARDSStep(t *testing.T) {
+	const missingSHARDS = `
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+  test:
+    name: Test Shard
+    runs-on: ubuntu-latest
+    needs: [changes]
+    strategy:
+      matrix:
+        shard: [api-1, api-2]
+    steps:
+      - name: Run tests
+        run: go test ./...
+`
+	if _, err := parseWorkflow([]byte(missingSHARDS)); err == nil {
+		t.Error("expected error when shard matrix exists but no SHARDS declare step is found, got nil")
+	}
+}
+
+// TestParseWorkflow_SingleNeedsString verifies that a single-element needs
+// value expressed as a bare string (not a list) is parsed correctly.
+func TestParseWorkflow_SingleNeedsString(t *testing.T) {
+	const singleNeeds = `
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: changes
+    strategy:
+      matrix:
+        shard: [rest]
+    steps:
+      - name: Resolve shard package list
+        run: |
+          declare -A SHARDS=(
+            [api]="internal/api"
+          )
+          echo done
+`
+	wf, err := parseWorkflow([]byte(singleNeeds))
+	if err != nil {
+		t.Fatalf("parseWorkflow: %v", err)
+	}
+	var testJob *ciJob
+	for i := range wf.Jobs {
+		if wf.Jobs[i].ID == "test" {
+			testJob = &wf.Jobs[i]
+		}
+	}
+	if testJob == nil {
+		t.Fatal("test job not found")
+	}
+	if len(testJob.Needs) != 1 || testJob.Needs[0] != "changes" {
+		t.Errorf("test.Needs = %v, want [changes]", testJob.Needs)
 	}
 }
 

@@ -63,7 +63,10 @@ func run(sourcePath, outPath string, checkOnly bool) error {
 		return fmt.Errorf("parse workflow from %s: %w", sourcePath, err)
 	}
 
-	rendered := renderDoc(wf)
+	rendered, err := renderDoc(wf)
+	if err != nil {
+		return fmt.Errorf("render document: %w", err)
+	}
 
 	var existing []byte
 	switch raw, rerr := os.ReadFile(outPath); { //nolint:gosec // G304: developer CLI, path is intentionally configurable
@@ -166,6 +169,10 @@ func (s *strategyYAML) shards() []string {
 	return out
 }
 
+// testJobID is the GitHub Actions job ID that owns the shard matrix. If ci.yml
+// ever renames this job, the generator fails loudly at parse time.
+const testJobID = "test"
+
 // parseWorkflow parses a GitHub Actions workflow YAML and extracts job
 // metadata including dependency graphs and test shard configuration.
 func parseWorkflow(src []byte) (*ciWorkflow, error) {
@@ -213,6 +220,13 @@ func parseWorkflow(src []byte) (*ciWorkflow, error) {
 				break
 			}
 		}
+		// If this job carries a shard matrix, its steps must include a
+		// SHARDS associative array declaration. A missing map means the
+		// step was renamed or removed, which would silently produce wrong
+		// shard-table output.
+		if len(job.Shards) > 0 && len(job.ShardMap) == 0 {
+			return nil, fmt.Errorf("job %q has a shard matrix but no 'declare -A SHARDS' step was found; update the generator if the step was renamed", id)
+		}
 		jobs = append(jobs, job)
 	}
 
@@ -236,7 +250,7 @@ func extractShardsMap(script string) map[string]string {
 }
 
 // renderDoc produces the complete Markdown document for the CI reference page.
-func renderDoc(wf *ciWorkflow) string {
+func renderDoc(wf *ciWorkflow) (string, error) {
 	var b strings.Builder
 
 	b.WriteString("# CI Reference\n\n")
@@ -246,11 +260,16 @@ func renderDoc(wf *ciWorkflow) string {
 
 	b.WriteString(renderMermaid(wf))
 	b.WriteString("\n")
-	b.WriteString(renderShardSection(wf))
+
+	shardSection, err := renderShardSection(wf)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(shardSection)
 	b.WriteString("\n")
 	b.WriteString(renderAggregatorSection())
 
-	return b.String()
+	return b.String(), nil
 }
 
 // renderMermaid generates a Mermaid flowchart of the CI job dependency graph.
@@ -288,7 +307,9 @@ func renderMermaid(wf *ciWorkflow) string {
 	return b.String()
 }
 
-// sanitizeID replaces characters that are invalid in Mermaid node IDs.
+// sanitizeID replaces hyphens with underscores for Mermaid node IDs. GHA job
+// IDs are constrained to [A-Za-z0-9_-], so hyphens are the only character
+// that needs escaping.
 func sanitizeID(id string) string {
 	return strings.NewReplacer("-", "_").Replace(id)
 }
@@ -299,21 +320,27 @@ func escapeQuotes(s string) string {
 }
 
 // renderShardSection generates the test shard table section.
-func renderShardSection(wf *ciWorkflow) string {
+// It returns an error if the expected test job (testJobID) is absent from the
+// workflow, which indicates a structural change that needs generator attention.
+// An empty shard list (job present but no matrix) is a distinct, non-error case.
+func renderShardSection(wf *ciWorkflow) (string, error) {
 	var testJob *ciJob
 	for i := range wf.Jobs {
-		if wf.Jobs[i].ID == "test" {
+		if wf.Jobs[i].ID == testJobID {
 			testJob = &wf.Jobs[i]
 			break
 		}
+	}
+	if testJob == nil {
+		return "", fmt.Errorf("expected job %q not found in workflow; if the job was renamed, update testJobID in the generator", testJobID)
 	}
 
 	var b strings.Builder
 	b.WriteString("## Test Matrix Shards\n\n")
 
-	if testJob == nil || len(testJob.Shards) == 0 {
+	if len(testJob.Shards) == 0 {
 		b.WriteString("No test shards configured.\n")
-		return b.String()
+		return b.String(), nil
 	}
 
 	b.WriteString("| Shard | Packages / Notes | Partition |\n")
@@ -328,14 +355,16 @@ func renderShardSection(wf *ciWorkflow) string {
 			pkgs = "_dynamic_"
 			partition = "Remainder: all packages not covered by a named shard, derived at runtime to auto-include new packages"
 		case strings.HasSuffix(shard, "-1") || strings.HasSuffix(shard, "-2"):
+			// The -N suffix is a ci.yml convention (case *-[12] in the shard
+			// resolver); it is not enforced here beyond the suffix check.
+			n := shard[len(shard)-1:]
 			base := shard[:len(shard)-2]
-			idx := shard[len(shard)-1:]
 			if v, ok := shardMap[base]; ok {
 				pkgs = v
 			} else {
 				pkgs = "./" + base + "/..."
 			}
-			partition = fmt.Sprintf("Round-robin by index parity (bucket %s of 2): test functions at sorted position ≡ %s mod 2", idx, string(rune('0'+idx[0]-'1')))
+			partition = fmt.Sprintf("Partitioned shard %s of 2: test functions split by round-robin over sorted names", n)
 		default:
 			if v, ok := shardMap[shard]; ok {
 				pkgs = v
@@ -347,7 +376,7 @@ func renderShardSection(wf *ciWorkflow) string {
 		fmt.Fprintf(&b, "| `%s` | `%s` | %s |\n", shard, pkgs, partition)
 	}
 
-	return b.String()
+	return b.String(), nil
 }
 
 // renderAggregatorSection generates the prose section explaining the

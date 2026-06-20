@@ -48,10 +48,10 @@ flowchart TD
 
 | Shard | Packages / Notes | Partition |
 |---|---|---|
-| `api-1` | `internal/api` | Round-robin by index parity (bucket 1 of 2): test functions at sorted position ≡ 0 mod 2 |
-| `api-2` | `internal/api` | Round-robin by index parity (bucket 2 of 2): test functions at sorted position ≡ 1 mod 2 |
-| `rule-1` | `internal/rule` | Round-robin by index parity (bucket 1 of 2): test functions at sorted position ≡ 0 mod 2 |
-| `rule-2` | `internal/rule` | Round-robin by index parity (bucket 2 of 2): test functions at sorted position ≡ 1 mod 2 |
+| `api-1` | `internal/api` | Partitioned shard 1 of 2: test functions split by round-robin over sorted names |
+| `api-2` | `internal/api` | Partitioned shard 2 of 2: test functions split by round-robin over sorted names |
+| `rule-1` | `internal/rule` | Partitioned shard 1 of 2: test functions split by round-robin over sorted names |
+| `rule-2` | `internal/rule` | Partitioned shard 2 of 2: test functions split by round-robin over sorted names |
 | `services` | `internal/auth internal/image internal/artist` | Named shard: all tests in listed packages |
 | `settingsio` | `internal/settingsio` | Named shard: all tests in listed packages |
 | `providers` | `internal/provider internal/connection` | Named shard: all tests in listed packages |
