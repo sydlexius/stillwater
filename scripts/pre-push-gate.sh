@@ -403,4 +403,22 @@ fi
 echo "OK"
 
 echo ""
+echo "=== Bruno route parity check ==="
+# Verify every /api/v1 route registered in internal/api/router.go is either
+# exercised by a Bruno request (api/bruno/**/*.bru) or explicitly recorded in
+# api/bruno/parity-ignore.json. Catches a new API endpoint shipped without an
+# accompanying Bruno smoke/contract request. Self-contained; mirrors the fuzz
+# matrix drift guard above. Hard-fail on non-zero exit.
+BRUNO_PARITY_SCRIPT="$SCRIPT_DIR/check-bruno-parity.sh"
+if [ ! -x "$BRUNO_PARITY_SCRIPT" ]; then
+  echo "pre-push-gate: check-bruno-parity.sh not found or not executable in scripts/" >&2
+  exit 1
+fi
+if ! bash "$BRUNO_PARITY_SCRIPT"; then
+  echo ""
+  echo "FAIL: Bruno route parity check reported drift (see output above)."
+  exit 1
+fi
+
+echo ""
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."
