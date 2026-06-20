@@ -8,7 +8,8 @@
 // A "write method" is any method on a *Client receiver that:
 //  1. has an error in its return list, and
 //  2. contains a write indicator in its body: a call to Post, PostJSON, or
-//     PutJSON, or a reference to http.MethodPost or http.MethodDelete.
+//     PutJSON, or a reference to http.MethodPost, http.MethodPut,
+//     http.MethodPatch, or http.MethodDelete.
 //
 // Two tests live here:
 //
@@ -45,12 +46,12 @@ import (
 //
 // Adding an entry here requires a matching rationale comment in the production
 // file explaining why wrapAuthIfStatusAuth is inappropriate for that method.
-var allowedUnwrappedWriteMethods = map[string]string{
-	// emby.refreshItem: fire-and-forget helper; its return type is void so
-	// wrapAuthIfStatusAuth is inapplicable. Errors are logged, not returned.
-	// Included here as documentation; the void-return filter already excludes it.
-	"emby.refreshItem": "void return: wrapAuthIfStatusAuth not applicable to fire-and-forget helper",
-}
+//
+// Note: emby.refreshItem uses http.MethodPost but has a void return (no error),
+// so wrapAuthIfStatusAuth is inapplicable. The void-return filter in
+// wrapAuthFuncReturnsError already excludes it from detection; no allowlist
+// entry is needed.
+var allowedUnwrappedWriteMethods = map[string]string{}
 
 // wrapAuthTargetPkgs are the three platform packages under internal/connection/
 // whose *Client write methods must use wrapAuthIfStatusAuth.
@@ -69,8 +70,8 @@ func TestWriteMethodsWrapAuthIfStatusAuth(t *testing.T) {
 	}
 
 	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedDeps,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedDeps,
 		Dir:   repoRoot,
 		Tests: false,
 	}
@@ -147,8 +148,8 @@ func (c *Client) PostJSON() error { return nil }
 	}
 
 	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedDeps,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedDeps,
 		Dir:   dir,
 		Tests: false,
 	}
@@ -163,13 +164,16 @@ func (c *Client) PostJSON() error { return nil }
 		t.Fatalf("fixture failed to load with syntax")
 	}
 
+	// pkg.Syntax is parallel to pkg.CompiledGoFiles (not GoFiles); use
+	// CompiledGoFiles here so the index alignment matches the production scan
+	// even under build tags or cgo (which can cause GoFiles to diverge).
 	var findings []string
 	for _, pkg := range pkgs {
 		for i, file := range pkg.Syntax {
-			if i >= len(pkg.GoFiles) {
+			if i >= len(pkg.CompiledGoFiles) {
 				continue
 			}
-			relPath := filepath.ToSlash(filepath.Base(pkg.GoFiles[i]))
+			relPath := filepath.ToSlash(filepath.Base(pkg.CompiledGoFiles[i]))
 			findings = append(findings, scanFileForUnwrappedWriteMethods(pkg.Fset, pkg.TypesInfo, file, pkg.Name, relPath)...)
 		}
 	}
@@ -177,12 +181,16 @@ func (c *Client) PostJSON() error { return nil }
 	if len(findings) == 0 {
 		t.Fatalf("detector did not fire on contrived fixture; the production scan may be silently broken")
 	}
-	// BadWrite is on line 3 of the fixture source (package decl on 1, blank on 2, func on 3).
+	// Compute BadWrite's line number from the fixture source rather than
+	// hardcoding it, so a future edit to src produces a clear compile-time gap
+	// rather than a silent line-number lie.
+	badWriteLine := strings.Count(src[:strings.Index(src, "func (c *Client) BadWrite()")], "\n") + 1
+	wantLineRef := fmt.Sprintf("fixture.go:%d", badWriteLine)
 	if !strings.Contains(findings[0], "BadWrite") {
 		t.Fatalf("expected finding to reference BadWrite; got: %v", findings)
 	}
-	if !strings.Contains(findings[0], "fixture.go:3") {
-		t.Fatalf("expected finding to reference fixture.go:3; got: %v", findings)
+	if !strings.Contains(findings[0], wantLineRef) {
+		t.Fatalf("expected finding to reference %s; got: %v", wantLineRef, findings)
 	}
 }
 
@@ -219,12 +227,20 @@ func scanFileForUnwrappedWriteMethods(fset *token.FileSet, info *types.Info, fil
 	return out
 }
 
-// containsWriteIndicator reports whether body contains a write operation:
-// a call to Post, PostJSON, or PutJSON, or a reference to http.MethodPost
-// or http.MethodDelete.
+// containsWriteIndicator reports whether body contains a write operation: a
+// call to Post, PostJSON, or PutJSON (known methods on httpclient.BaseClient;
+// matched by name only since they are the sole write helpers on the embedded
+// client), or a reference to http.MethodPost, http.MethodPut, http.MethodPatch,
+// or http.MethodDelete (covers raw http.NewRequestWithContext call sites).
 func containsWriteIndicator(body *ast.BlockStmt) bool {
+	// Call-name match is intentionally untyped: Post/PostJSON/PutJSON are the
+	// only write helpers on httpclient.BaseClient; no other *Client method uses
+	// these names, so a name-only check is sufficient and simpler than resolving
+	// the callee's type.
 	writeCallNames := map[string]bool{"Post": true, "PostJSON": true, "PutJSON": true}
-	writeMethodConsts := map[string]bool{"MethodPost": true, "MethodDelete": true}
+	// MethodPut and MethodPatch are included to catch future raw-request write
+	// paths; current PUTs go through the PutJSON helper (already caught above).
+	writeMethodConsts := map[string]bool{"MethodPost": true, "MethodPut": true, "MethodPatch": true, "MethodDelete": true}
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if found {
@@ -250,6 +266,8 @@ func containsWriteIndicator(body *ast.BlockStmt) bool {
 }
 
 // containsWrapAuthCall reports whether body contains a call to wrapAuthIfStatusAuth.
+// Matches by call-site name, not by resolved symbol; sufficient because
+// wrapAuthIfStatusAuth is a package-private function defined once per platform package.
 func containsWrapAuthCall(body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -289,6 +307,8 @@ func wrapAuthIsStarClientReceiver(info *types.Info, fn *ast.FuncDecl) bool {
 }
 
 // wrapAuthFuncReturnsError reports whether fn's return list includes an error type.
+// Recognizes the bare `error` identifier; sufficient for current code where no
+// platform method uses a named error interface alias in its return signature.
 func wrapAuthFuncReturnsError(fn *ast.FuncDecl) bool {
 	if fn.Type.Results == nil {
 		return false
