@@ -1,0 +1,26 @@
+meta {
+  name: Get Platform State
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/platform-state?connection_id={{connectionId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 404 for sentinel artistId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports artist not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
+  });
+}

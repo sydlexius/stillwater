@@ -1,0 +1,26 @@
+meta {
+  name: List Foreign Files
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/foreign-files
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response has items array and count", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.count).to.be.a("number");
+  });
+}
