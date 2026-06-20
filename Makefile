@@ -147,7 +147,7 @@ tailwind:
 ## generate: Run all code generation (templ + tailwind)
 generate: templ tailwind
 
-## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference, CLI reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles, preferences reference). Each generator enforces coverage: a new code-defined key without a desc: tag or doc entry fails the build.
+## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference, CLI reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles, preferences reference, CI reference). Each generator enforces coverage: a new code-defined key without a desc: tag or doc entry fails the build.
 generate-docs:
 	go run ./cmd/gen-provider-matrix
 	go run ./cmd/gen-env-reference
@@ -159,6 +159,7 @@ generate-docs:
 	go run ./cmd/gen-make-reference
 	go run ./cmd/gen-platform-profiles
 	go run ./cmd/gen-prefs-reference
+	go run ./cmd/gen-ci-reference
 
 ## tailwind-watch: Watch and rebuild Tailwind CSS
 tailwind-watch:
