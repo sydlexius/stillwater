@@ -403,6 +403,36 @@ fi
 echo "OK"
 
 echo ""
+echo "=== Accessibility (axe-core) ==="
+# Opt-in only. `make test-a11y` builds the binary, boots an ephemeral server,
+# installs npm deps, downloads a Chromium browser, and runs the Playwright +
+# @axe-core/playwright rendered-contrast smoke tests -- minutes of work plus a
+# one-time browser download. That cost is inappropriate for every push, so the
+# check is gated behind RUN_A11Y and SKIPS by default. CI runs the same
+# target unconditionally in its dedicated a11y-test job, so default-skipping
+# here only trades local speed for the CI gate, never removes coverage.
+# Self-contained block (no shared state with other steps) to minimize merge
+# conflicts with sibling branches that also append to this gate.
+# Accept common truthy values (1/true/yes/on), case-insensitive, so
+# contributors can opt in with whichever convention they reach for; anything
+# else (incl. unset/empty) skips. ${RUN_A11Y:-} keeps `set -u` happy.
+# Strip all whitespace too, so a stray leading/trailing space (e.g.
+# RUN_A11Y=' true') still matches instead of silently skipping a11y.
+a11y_flag="$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$a11y_flag" in
+  1 | true | yes | on)
+    if ! make test-a11y; then
+      echo ""
+      echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
+      exit 1
+    fi
+    echo "OK"
+    ;;
+  *)
+    echo "a11y: skipped (set RUN_A11Y=1 to run; also accepts true/yes/on)"
+    ;;
+esac
+
 echo "=== Bruno route parity check ==="
 # Verify every /api/v1 route registered in internal/api/router.go is either
 # exercised by a Bruno request (api/bruno/**/*.bru) or explicitly recorded in

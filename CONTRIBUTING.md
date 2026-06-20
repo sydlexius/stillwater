@@ -52,7 +52,13 @@ Short version:
    enforces this.
 2. Use a conventional-commit prefix (`feat:`, `fix:`, `docs:`, `chore:`,
    `refactor:`, `perf:`, `ci:`, `test:`, etc.) on the squash commit.
-3. Run `bash scripts/pre-push-gate.sh` before pushing.
+3. Run `bash scripts/pre-push-gate.sh` before pushing. The accessibility
+   (axe-core) smoke tests are opt-in and skipped by default; run them with
+   `RUN_A11Y=1 bash scripts/pre-push-gate.sh` (or `RUN_A11Y=true bash
+   scripts/pre-push-gate.sh`; downloads a Chromium browser and boots an
+   ephemeral server, so it adds minutes). The opt-in accepts any of `1`,
+   `true`, `yes`, or `on` (case-insensitive, surrounding whitespace ignored).
+   CI runs them unconditionally in its dedicated a11y job.
 4. Open one PR per logical change; never stack PRs.
 5. Apply at least one of the labels listed below so the release-notes
    generator (`.github/release.yml`) buckets your change correctly.
