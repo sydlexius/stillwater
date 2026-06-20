@@ -163,6 +163,7 @@ nav:
       - PR workflow: contributing/pr-workflow.md
       - Worktrees: contributing/worktrees.md
       - Milestone protocol: contributing/milestone-protocol.md
+      - CI Reference: contributing/ci-reference.md
   - Legal:
       - legal/index.md
       - Privacy Policy: legal/privacy-policy.md

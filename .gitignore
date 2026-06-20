@@ -7,6 +7,7 @@
 /gen-settings-reference
 /gen-envelope-changelog
 /gen-make-reference
+/gen-ci-reference
 
 # Standalone tool binaries
 /tailwindcss

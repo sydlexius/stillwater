@@ -8,7 +8,7 @@
 #   1. Generated-file freshness: templ + all doc generators.
 #      The ci.yml lint job verifies *_templ.go but does NOT run the doc
 #      generators (gen-provider-matrix, gen-env-reference, gen-rules-catalogue,
-#      gen-settings-reference, gen-doc-anchors).
+#      gen-settings-reference, gen-doc-anchors, gen-ci-reference).
 #   2. Per-package coverage floor: enforces the one-way ratchet recorded in
 #      testdata/coverage-floor.json.  ci.yml uploads to codecov but never
 #      compares against the local floor file.
@@ -95,6 +95,7 @@ jobs:
           go run ./cmd/gen-rules-catalogue
           go run ./cmd/gen-settings-reference
           go run ./cmd/gen-doc-anchors
+          go run ./cmd/gen-ci-reference
 
       - name: Fail on stale generated files
         run: |
