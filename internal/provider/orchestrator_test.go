@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider/tagdict"
@@ -3255,6 +3257,143 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 			t.Error("MembersAuthoritative must be false when provider returned an error")
 		}
 	})
+}
+
+// --- AIMD signal tests --------------------------------------------------------
+
+// newTestOrchWithAIMD builds a minimal test Orchestrator with a real
+// AIMDController so we can observe signal counts. Returns the orchestrator,
+// its AIMD controller, the registry, and the settings service.
+func newTestOrchWithAIMD(t *testing.T) (*Orchestrator, *AIMDController, *Registry, *SettingsService) {
+	t.Helper()
+	registry, settings := setupOrchestratorTest(t)
+	clk := newFakeClock(time.Now())
+	rlm := NewRateLimiterMap()
+	ctrl := NewAIMDController(rlm, clk)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger, ctrl)
+	return orch, ctrl, registry, settings
+}
+
+// aimdLastDecrease reads the lastDecrease timestamp for a provider from AIMD
+// state. Returns zero if the provider state has not been initialized yet.
+func aimdLastDecrease(ctrl *AIMDController, name ProviderName) time.Time {
+	ctrl.mu.RLock()
+	defer ctrl.mu.RUnlock()
+	if s, ok := ctrl.states[name]; ok {
+		return s.lastDecrease
+	}
+	return time.Time{}
+}
+
+// aimdSuccessCount reads the current successCount for a provider.
+func aimdSuccessCount(ctrl *AIMDController, name ProviderName) int {
+	ctrl.mu.RLock()
+	defer ctrl.mu.RUnlock()
+	if s, ok := ctrl.states[name]; ok {
+		return s.successCount
+	}
+	return 0
+}
+
+// TestAIMDOrdinaryErrorDoesNotTriggerRecordFailure verifies that a non-rate-limit
+// error (e.g. a plain fmt.Errorf, simulating a JSON parse or auth failure) from
+// GetArtist does NOT drive a RecordFailure signal. Only *ErrProviderUnavailable
+// must trigger the AIMD decrease path.
+func TestAIMDOrdinaryErrorDoesNotTriggerRecordFailure(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+	registry.Register(&mockProvider{
+		name: prov,
+		// Return an ordinary error (not *ErrProviderUnavailable).
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return nil, fmt.Errorf("simulated JSON parse error")
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, fmt.Errorf("simulated auth error")
+		},
+	})
+
+	if err := settings.SetAPIKey(context.Background(), prov, ""); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	cache := make(map[ProviderName]*providerResult)
+	var mu sync.Mutex
+	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
+
+	// lastDecrease must remain zero -- RecordFailure must NOT have been called.
+	if !aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("ordinary error incorrectly triggered RecordFailure; lastDecrease is non-zero")
+	}
+	// successCount must also be zero -- RecordSuccess must NOT have been called.
+	if aimdSuccessCount(ctrl, prov) != 0 {
+		t.Fatalf("ordinary error incorrectly triggered RecordSuccess; successCount=%d", aimdSuccessCount(ctrl, prov))
+	}
+}
+
+// TestAIMDRateLimitErrorTriggerRecordFailure verifies that an
+// *ErrProviderUnavailable from GetArtist DOES drive RecordFailure.
+func TestAIMDRateLimitErrorTriggerRecordFailure(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, _ := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+	registry.Register(&mockProvider{
+		name: prov,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return nil, &ErrProviderUnavailable{
+				Provider:   prov,
+				Cause:      fmt.Errorf("429 Too Many Requests"),
+				RetryAfter: 5 * time.Second,
+			}
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, nil
+		},
+	})
+
+	cache := make(map[ProviderName]*providerResult)
+	var mu sync.Mutex
+	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
+
+	// lastDecrease must be non-zero -- RecordFailure must have been called.
+	if aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("rate-limit error did not trigger RecordFailure; lastDecrease is still zero")
+	}
+}
+
+// TestAIMDSingleSignalPerProviderCall verifies that getProviderResult emits
+// exactly ONE AIMD signal (not two) even when both GetArtist and GetImages
+// succeed. Emitting two RecordSuccess calls would halve the effective
+// aimdSuccessThreshold and allow a fail+success to cancel out.
+func TestAIMDSingleSignalPerProviderCall(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, _ := newTestOrchWithAIMD(t)
+
+	const prov = NameFanartTV
+	registry.Register(&mockProvider{
+		name: prov,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{{URL: "http://example.com/img.jpg"}}, nil
+		},
+	})
+
+	// Drive one full getProviderResult call.
+	cache := make(map[ProviderName]*providerResult)
+	var mu sync.Mutex
+	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
+
+	// successCount must be exactly 1 (one RecordSuccess fired, not two).
+	got := aimdSuccessCount(ctrl, prov)
+	if got != 1 {
+		t.Fatalf("expected exactly 1 AIMD success signal, got %d", got)
+	}
 }
 
 // TestApplyTagSliceField_VocabFilter verifies the orchestrator tag-merge path

@@ -92,8 +92,14 @@ func (c *AIMDController) stateFor(name ProviderName) *aimdState {
 		// doesn't divide by zero or produce a nonsensical ceiling.
 		ceiling = aimdIncrement * aimdDefaultCeilingMultiplier
 	}
+	// currentLimit must start at least at aimdIncrement so that an unknown
+	// provider (floor == 0) cannot wedge itself at zero on the first failure.
+	currentLimit := floor
+	if currentLimit < aimdIncrement {
+		currentLimit = aimdIncrement
+	}
 	s := &aimdState{
-		currentLimit: floor,
+		currentLimit: currentLimit,
 		ceiling:      ceiling,
 	}
 	c.states[name] = s
@@ -156,9 +162,15 @@ func (c *AIMDController) RecordFailure(name ProviderName, retryAfter time.Durati
 	}
 
 	floor := defaultRateLimits[name]
+	// Ensure the floor is at least aimdIncrement so currentLimit can never
+	// reach zero or go negative, even for providers not in defaultRateLimits.
+	effectiveFloor := floor
+	if effectiveFloor < aimdIncrement {
+		effectiveFloor = aimdIncrement
+	}
 	newLimit := rate.Limit(float64(s.currentLimit) * aimdDecreaseFactor)
-	if newLimit < floor {
-		newLimit = floor
+	if newLimit < effectiveFloor {
+		newLimit = effectiveFloor
 	}
 	s.currentLimit = newLimit
 	s.successCount = 0
@@ -187,11 +199,20 @@ func (c *AIMDController) SetCeiling(name ProviderName, ceiling rate.Limit) {
 }
 
 // GetCeiling returns the current ceiling for a provider, initializing state
-// lazily if needed.
+// lazily if needed. The fast path uses an RLock; the first-touch init falls
+// back to a write lock with a double-checked re-read.
 func (c *AIMDController) GetCeiling(name ProviderName) rate.Limit {
+	c.mu.RLock()
+	if s, ok := c.states[name]; ok {
+		v := s.ceiling
+		c.mu.RUnlock()
+		return v
+	}
+	c.mu.RUnlock()
+
+	// State not yet initialized -- take the write lock, re-check, then init.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	s := c.stateFor(name)
+	s := c.stateFor(name) // stateFor handles the already-initialized case
 	return s.ceiling
 }

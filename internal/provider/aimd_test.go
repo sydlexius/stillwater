@@ -265,6 +265,59 @@ func TestAIMDSetCeilingZeroReverts(t *testing.T) {
 	}
 }
 
+// TestAIMDConcurrencyTwoKeys is a race-detector test that initializes two
+// different provider keys concurrently. The single-key concurrency test misses
+// the case where stateFor's lazy-init is racing on two distinct map entries at
+// the same instant. This test covers that gap.
+func TestAIMDConcurrencyTwoKeys(t *testing.T) {
+	t.Parallel()
+	clk := newFakeClock(time.Now())
+	ctrl := newTestAIMD(clk)
+
+	// Use two providers with different floors to ensure distinct state slots.
+	nameA := NameMusicBrainz // floor = 1 req/s
+	nameB := NameFanartTV    // floor = 3 req/s
+
+	const goroutines = 20
+	const opsPerGoroutine = 50
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(idx int) {
+			defer wg.Done()
+			for j := range opsPerGoroutine {
+				// Split goroutines evenly across the two keys.
+				n := nameA
+				if idx%2 == 1 {
+					n = nameB
+				}
+				if (idx+j)%3 == 0 {
+					clk.advance(time.Millisecond)
+					ctrl.RecordFailure(n, time.Second)
+				} else {
+					ctrl.RecordSuccess(n)
+				}
+				_ = ctrl.GetCeiling(n)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Both limits must remain within their respective [floor, ceiling] ranges.
+	for _, n := range []ProviderName{nameA, nameB} {
+		got := aimdCurrentLimit(ctrl, n)
+		floor := defaultRateLimits[n]
+		ceiling := ctrl.GetCeiling(n)
+		if got < floor {
+			t.Errorf("provider %s: limit %v below floor %v", n, got, floor)
+		}
+		if got > ceiling {
+			t.Errorf("provider %s: limit %v above ceiling %v", n, got, ceiling)
+		}
+	}
+}
+
 // TestAIMDConcurrency is a race-detector test that hammers RecordSuccess and
 // RecordFailure from multiple goroutines concurrently. It does not assert
 // specific limit values; the race detector catches unsafe concurrent access.
