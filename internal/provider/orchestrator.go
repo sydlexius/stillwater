@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 )
@@ -115,14 +116,18 @@ type Orchestrator struct {
 	registry *Registry
 	settings *SettingsService
 	executor ScraperExecutor
+	aimd     *AIMDController
 	logger   *slog.Logger
 }
 
-// NewOrchestrator creates a new Orchestrator.
-func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger) *Orchestrator {
+// NewOrchestrator creates a new Orchestrator. aimd may be nil; when nil, the
+// adaptive rate-limiting hook sites are skipped and the orchestrator behaves
+// exactly as before.
+func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger, aimd *AIMDController) *Orchestrator {
 	return &Orchestrator{
 		registry: registry,
 		settings: settings,
+		aimd:     aimd,
 		logger:   logger.With(slog.String("component", "orchestrator")),
 	}
 }
@@ -145,6 +150,10 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 //nolint:gocognit // Per-field provider iteration in priority order with provider-ID enrichment carry-forward between fields; this is the legacy non-scraper path retained for callers that have no scraper config, and its semantics must match ScrapeAll's outcome on a parallel diagram.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
 	if o.executor != nil {
+		// NOTE: the ScraperExecutor (scraper.Executor.ScrapeAll) is the production
+		// refresh path and bypasses all AIMD instrumentation below. Wiring AIMD
+		// signals into the executor is tracked as a follow-up; do not instrument it
+		// in this PR.
 		return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
 	}
 
@@ -335,9 +344,17 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 				slog.String("error", ScrubError(err)),
 				retryAfterAttr(err))
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", p.Name()))
+			// Only signal AIMD on rate-limit / provider-unavailable errors.
+			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
+			if o.aimd != nil && isRateLimitError(err) {
+				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			}
 			continue
 		}
 		result.Images = append(result.Images, images...)
+		if o.aimd != nil {
+			o.aimd.RecordSuccess(p.Name())
+		}
 	}
 
 	return result, nil
@@ -359,12 +376,30 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 				slog.String("provider", string(p.Name())),
 				slog.String("error", ScrubError(err)),
 				retryAfterAttr(err))
+			// Only signal AIMD on rate-limit / provider-unavailable errors.
+			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
+			if o.aimd != nil && isRateLimitError(err) {
+				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			}
 			continue
 		}
 		allResults = append(allResults, results...)
+		if o.aimd != nil {
+			o.aimd.RecordSuccess(p.Name())
+		}
 	}
 
 	return allResults, nil
+}
+
+// isRateLimitError reports whether err is a provider-rate-limit / transient-
+// unavailability signal that the AIMD controller should react to. Only
+// *ErrProviderUnavailable qualifies: it carries 429/503/Retry-After semantics.
+// Ordinary errors (ErrNotFound, auth/401, JSON parse, context cancellation)
+// must NOT drive an AIMD decrease.
+func isRateLimitError(err error) bool {
+	var unavailable *ErrProviderUnavailable
+	return errors.As(err, &unavailable)
 }
 
 // retryAfterAttr returns a slog attribute carrying the server-advised backoff
@@ -379,6 +414,18 @@ func retryAfterAttr(err error) slog.Attr {
 		return slog.Duration("retry_after", unavailable.RetryAfter)
 	}
 	return slog.Attr{}
+}
+
+// retryAfterDuration extracts the RetryAfter duration from an
+// *ErrProviderUnavailable, returning 0 when the error is not of that type or
+// carries no hint. Used to pass the server-advised backoff to the AIMD
+// controller so it can log it alongside the multiplicative decrease.
+func retryAfterDuration(err error) time.Duration {
+	var unavailable *ErrProviderUnavailable
+	if errors.As(err, &unavailable) {
+		return unavailable.RetryAfter
+	}
+	return 0
 }
 
 // availableProviders returns only the registered providers whose API keys are
@@ -473,6 +520,17 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 
 	pr := &providerResult{}
 
+	// aimdRateLimitErr records the first rate-limit / provider-unavailable error
+	// encountered across both GetArtist and GetImages within this single provider
+	// call. It is used to emit exactly ONE AIMD signal at the end of the function:
+	// RecordFailure if a rate-limit error was seen, RecordSuccess if results were
+	// returned without a rate-limit error. Ordinary errors (ErrNotFound, auth/401,
+	// JSON parse, context cancellation) are not AIMD signals.
+	var aimdRateLimitErr error
+	// aimdGotResult is true when at least one of GetArtist or GetImages returned
+	// a useful (non-error) result. Used to decide whether RecordSuccess is warranted.
+	aimdGotResult := false
+
 	// Lookup precedence: provider-specific ID > MBID > artist name.
 	// Providers like AudioDB, Discogs, and Deezer have their own numeric IDs
 	// that are more reliable than passing an MBID they may not recognize.
@@ -522,9 +580,14 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 					slog.String("error", ScrubError(err)),
 					retryAfterAttr(err))
 				pr.err = err
+				// Record the first rate-limit error for the composite AIMD signal.
+				if isRateLimitError(err) && aimdRateLimitErr == nil {
+					aimdRateLimitErr = err
+				}
 			}
 		} else {
 			pr.meta = meta
+			aimdGotResult = true
 		}
 	}
 
@@ -558,9 +621,28 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 				// marked as attempted. This prevents clearing existing image data
 				// when the provider was merely unreachable.
 				pr.imageErr = err
+				// Record the first rate-limit error for the composite AIMD signal.
+				if isRateLimitError(err) && aimdRateLimitErr == nil {
+					aimdRateLimitErr = err
+				}
 			}
 		} else {
 			pr.images = images
+			aimdGotResult = true
+		}
+	}
+
+	// Emit exactly ONE AIMD signal per provider call:
+	//   - RecordFailure when a rate-limit / provider-unavailable error was seen.
+	//   - RecordSuccess when at least one sub-call (GetArtist or GetImages)
+	//     returned a useful result and no rate-limit error was recorded.
+	// Ordinary errors (ErrNotFound, auth, JSON parse, context cancel) are NOT
+	// AIMD signals and neither case fires for them.
+	if o.aimd != nil {
+		if aimdRateLimitErr != nil {
+			o.aimd.RecordFailure(name, retryAfterDuration(aimdRateLimitErr))
+		} else if aimdGotResult {
+			o.aimd.RecordSuccess(name)
 		}
 	}
 
@@ -1198,16 +1280,25 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 			scrubbed := ScrubError(err)
 			o.logger.Warn("provider search failed",
 				slog.String("provider", string(provName)),
-				slog.String("error", scrubbed))
+				slog.String("error", scrubbed),
+				retryAfterAttr(err))
 			statuses = append(statuses, ProviderSearchStatus{
 				Provider:        provName,
 				Errored:         true,
 				ScrubbedMessage: scrubbed,
 			})
+			// Only signal AIMD on rate-limit / provider-unavailable errors.
+			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
+			if o.aimd != nil && isRateLimitError(err) {
+				o.aimd.RecordFailure(provName, retryAfterDuration(err))
+			}
 			continue
 		}
 		statuses = append(statuses, ProviderSearchStatus{Provider: provName})
 		allResults = append(allResults, results...)
+		if o.aimd != nil {
+			o.aimd.RecordSuccess(provName)
+		}
 	}
 
 	return allResults, statuses, nil

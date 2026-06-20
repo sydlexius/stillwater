@@ -722,6 +722,57 @@ func (s *SettingsService) DeleteRateLimit(ctx context.Context, name ProviderName
 	return nil
 }
 
+// rateLimitCeilingSettingKey returns the settings table key for a provider's
+// AIMD rate-limit ceiling.
+func rateLimitCeilingSettingKey(name ProviderName) string {
+	return fmt.Sprintf("provider.%s.rate_limit_ceiling", name)
+}
+
+// GetRateLimitCeiling returns the configured AIMD rate-limit ceiling (requests
+// per second) for a provider. Returns 0 if no ceiling is configured.
+func (s *SettingsService) GetRateLimitCeiling(ctx context.Context, name ProviderName) (float64, error) {
+	key := rateLimitCeilingSettingKey(name)
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("reading rate limit ceiling for %s: %w", name, err)
+	}
+	ceiling, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parsing rate limit ceiling for %s: %w", name, err)
+	}
+	return ceiling, nil
+}
+
+// SetRateLimitCeiling stores an AIMD rate-limit ceiling (requests per second)
+// for a provider.
+func (s *SettingsService) SetRateLimitCeiling(ctx context.Context, name ProviderName, ceiling float64) error {
+	key := rateLimitCeilingSettingKey(name)
+	value := strconv.FormatFloat(ceiling, 'f', -1, 64)
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, value, value,
+	)
+	if err != nil {
+		return fmt.Errorf("storing rate limit ceiling for %s: %w", name, err)
+	}
+	return nil
+}
+
+// DeleteRateLimitCeiling removes the AIMD rate-limit ceiling for a provider,
+// reverting to the default (aimdDefaultCeilingMultiplier * floor).
+func (s *SettingsService) DeleteRateLimitCeiling(ctx context.Context, name ProviderName) error {
+	key := rateLimitCeilingSettingKey(name)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+	if err != nil {
+		return fmt.Errorf("deleting rate limit ceiling for %s: %w", name, err)
+	}
+	return nil
+}
+
 // fieldVerbositySettingKey returns the settings table key for a single
 // field's verbosity selection for a provider.
 // Format: "provider.<name>.field_verbosity.<field>"

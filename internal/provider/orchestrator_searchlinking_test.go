@@ -30,7 +30,7 @@ func TestSearchForLinking_ReturnsPerProviderStatus(t *testing.T) {
 		for _, m := range mocks {
 			registry.Register(m)
 		}
-		return NewOrchestrator(registry, settings, logger)
+		return NewOrchestrator(registry, settings, logger, nil)
 	}
 
 	t.Run("all providers succeed", func(t *testing.T) {

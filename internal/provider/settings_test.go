@@ -1323,3 +1323,65 @@ func TestGetFieldVerbosity_CorruptStoredValue(t *testing.T) {
 		t.Errorf("verbosity for a corrupt stored value = %q, want the default %q", got, VerbosityIntro)
 	}
 }
+
+// TestRateLimitCeilingRoundTrip verifies that SetRateLimitCeiling persists a
+// value that GetRateLimitCeiling can read back, and that DeleteRateLimitCeiling
+// removes it so a subsequent get returns 0.
+func TestRateLimitCeilingRoundTrip(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	const prov = NameMusicBrainz
+	const want = 12.5
+
+	// Initially unset: should return 0 with no error.
+	got, err := svc.GetRateLimitCeiling(ctx, prov)
+	if err != nil {
+		t.Fatalf("GetRateLimitCeiling (unset): %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("GetRateLimitCeiling (unset): expected 0, got %v", got)
+	}
+
+	// Set a ceiling.
+	if err := svc.SetRateLimitCeiling(ctx, prov, want); err != nil {
+		t.Fatalf("SetRateLimitCeiling: %v", err)
+	}
+
+	// Read it back.
+	got, err = svc.GetRateLimitCeiling(ctx, prov)
+	if err != nil {
+		t.Fatalf("GetRateLimitCeiling (after set): %v", err)
+	}
+	if got != want {
+		t.Fatalf("GetRateLimitCeiling: expected %v, got %v", want, got)
+	}
+
+	// Overwrite with a new value.
+	const want2 = 20.0
+	if err := svc.SetRateLimitCeiling(ctx, prov, want2); err != nil {
+		t.Fatalf("SetRateLimitCeiling (overwrite): %v", err)
+	}
+	got, err = svc.GetRateLimitCeiling(ctx, prov)
+	if err != nil {
+		t.Fatalf("GetRateLimitCeiling (after overwrite): %v", err)
+	}
+	if got != want2 {
+		t.Fatalf("GetRateLimitCeiling (overwrite): expected %v, got %v", want2, got)
+	}
+
+	// Delete should revert to 0.
+	if err := svc.DeleteRateLimitCeiling(ctx, prov); err != nil {
+		t.Fatalf("DeleteRateLimitCeiling: %v", err)
+	}
+	got, err = svc.GetRateLimitCeiling(ctx, prov)
+	if err != nil {
+		t.Fatalf("GetRateLimitCeiling (after delete): %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("GetRateLimitCeiling (after delete): expected 0, got %v", got)
+	}
+}

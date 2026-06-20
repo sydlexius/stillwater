@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider/tagdict"
@@ -103,7 +105,7 @@ func TestOrchestratorFallback(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -179,7 +181,7 @@ func TestFetchMetadata_MBNameAuthoritative(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Canonical Name", nil)
 	if err != nil {
@@ -221,7 +223,7 @@ func TestFetchMetadata_MBNameAuthoritative_EmptyDoesNotClobber(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
 	if err != nil {
@@ -259,7 +261,7 @@ func TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
 	if err != nil {
@@ -305,7 +307,7 @@ func TestOrchestratorTagAggregation(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-agg", "TestArtist", nil)
 	if err != nil {
@@ -364,7 +366,7 @@ func TestOrchestratorProviderError(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -403,7 +405,7 @@ func TestOrchestratorSearch(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	results, err := orch.Search(context.Background(), "Radiohead")
 	if err != nil {
@@ -444,7 +446,7 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -500,7 +502,7 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
 	if err != nil {
@@ -540,7 +542,7 @@ func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	_, _ = orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
 
@@ -589,7 +591,7 @@ func TestFetchFieldFromProviders_ErrNotFoundSuppressed(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	results, err := orch.FetchFieldFromProviders(context.Background(), "mbid-1234", "Test Artist", "styles", nil)
 	if err != nil {
@@ -675,7 +677,7 @@ func TestOrchestratorGetImagesTimeoutDoesNotMarkImageFieldAttempted(t *testing.T
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -725,7 +727,7 @@ func TestOrchestratorGetImagesErrNotFoundMarksImageFieldAttempted(t *testing.T) 
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -768,7 +770,7 @@ func TestOrchestratorGetImagesDataMarksImageFieldAttempted(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -821,7 +823,7 @@ func TestOrchestratorGetImagesNotCalledDoesNotMarkImageFieldAttempted(t *testing
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// Pass empty MBID and providerIDs with an empty AudioDB entry.
 	// GetImages requires a numeric ID; without one it must not be called.
@@ -866,7 +868,7 @@ func TestOrchestratorProviderIDPrecedence(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// Pass a wrong MBID but the correct AudioDB numeric ID in providerIDs.
 	// The orchestrator should prefer the provider-specific ID.
@@ -905,7 +907,7 @@ func TestOrchestratorNilProviderIDsPreservesBehavior(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	_, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -930,7 +932,7 @@ func TestOrchestratorEmptyProviderIDFallsBackToMBID(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// Provider ID entry exists but is empty -- should fall back to MBID.
 	providerIDs := map[ProviderName]string{
@@ -1156,7 +1158,7 @@ func TestOrchestratorRejectsJunkBiography(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-noise", "Noise Ratchet", nil)
 	if err != nil {
@@ -1207,7 +1209,7 @@ func TestOrchestratorRejectsShortBiography(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test Artist", nil)
 	if err != nil {
@@ -1255,7 +1257,7 @@ func TestOrchestratorAllJunkBiographiesLeaveFieldEmpty(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-obscure", "Obscure Band", nil)
 	if err != nil {
@@ -1335,7 +1337,7 @@ func TestOrchestratorCrossProviderIDEnrichment(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// No stored provider IDs -- only the MBID.
 	_, err := orch.FetchMetadata(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493", "A-ha", nil)
@@ -1666,7 +1668,7 @@ func TestFetchMetadataAggregatesImagesFromMultipleProviders(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-aha", "a-ha", nil)
 	if err != nil {
@@ -1720,7 +1722,7 @@ func TestFetchMetadataTextFieldStopsAtFirstMatch(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test", nil)
 	if err != nil {
@@ -1762,7 +1764,7 @@ func TestFetchImagesCollectsFromAllProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -1833,7 +1835,7 @@ func TestFetchImagesRespectsProviderPriority(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -1910,7 +1912,7 @@ func TestFetchImages_CrossFieldPriorityConflict(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -1983,7 +1985,7 @@ func TestFetchImagesDefaultOrderWithoutCustomPriority(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -2050,7 +2052,7 @@ func TestApplyFieldImageDoesNotBlockOnWrongType(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test", nil)
 	if err != nil {
@@ -2091,7 +2093,7 @@ func TestOrchestratorErrNotFoundMarksFieldAttempted(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2137,7 +2139,7 @@ func TestOrchestratorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2167,7 +2169,7 @@ func TestOrchestratorErrNotFoundCountsAsAttemptedProvider(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2223,7 +2225,7 @@ func TestFetchImagesQueriesAllProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -2342,7 +2344,7 @@ func TestOrchestratorPopulatedFieldsTracking(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2412,7 +2414,7 @@ func TestOrchestratorPopulatedFields_DedupAcrossProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "X", nil)
 	if err != nil {
@@ -3120,7 +3122,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-sparse", "Sparse Band", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)
@@ -3158,7 +3160,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-solo", "Solo Artist", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)
@@ -3197,7 +3199,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-band", "Real Band", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)
@@ -3237,7 +3239,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-error", "Error Artist", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)
@@ -3253,6 +3255,282 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		// MembersAuthoritative must be false (provider did not contribute).
 		if result.MembersAuthoritative {
 			t.Error("MembersAuthoritative must be false when provider returned an error")
+		}
+	})
+}
+
+// --- AIMD signal tests --------------------------------------------------------
+
+// newTestOrchWithAIMD builds a minimal test Orchestrator with a real
+// AIMDController so we can observe signal counts. Returns the orchestrator,
+// its AIMD controller, the registry, and the settings service.
+func newTestOrchWithAIMD(t *testing.T) (*Orchestrator, *AIMDController, *Registry, *SettingsService) {
+	t.Helper()
+	registry, settings := setupOrchestratorTest(t)
+	clk := newFakeClock(time.Now())
+	rlm := NewRateLimiterMap()
+	ctrl := NewAIMDController(rlm, clk)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger, ctrl)
+	return orch, ctrl, registry, settings
+}
+
+// aimdLastDecrease reads the lastDecrease timestamp for a provider from AIMD
+// state. Returns zero if the provider state has not been initialized yet.
+func aimdLastDecrease(ctrl *AIMDController, name ProviderName) time.Time {
+	ctrl.mu.RLock()
+	defer ctrl.mu.RUnlock()
+	if s, ok := ctrl.states[name]; ok {
+		return s.lastDecrease
+	}
+	return time.Time{}
+}
+
+// aimdSuccessCount reads the current successCount for a provider.
+func aimdSuccessCount(ctrl *AIMDController, name ProviderName) int {
+	ctrl.mu.RLock()
+	defer ctrl.mu.RUnlock()
+	if s, ok := ctrl.states[name]; ok {
+		return s.successCount
+	}
+	return 0
+}
+
+// TestAIMDOrdinaryErrorDoesNotTriggerRecordFailure verifies that a non-rate-limit
+// error (e.g. a plain fmt.Errorf, simulating a JSON parse or auth failure) from
+// GetArtist does NOT drive a RecordFailure signal. Only *ErrProviderUnavailable
+// must trigger the AIMD decrease path.
+func TestAIMDOrdinaryErrorDoesNotTriggerRecordFailure(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+	registry.Register(&mockProvider{
+		name: prov,
+		// Return an ordinary error (not *ErrProviderUnavailable).
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return nil, fmt.Errorf("simulated JSON parse error")
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, fmt.Errorf("simulated auth error")
+		},
+	})
+
+	if err := settings.SetAPIKey(context.Background(), prov, ""); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	cache := make(map[ProviderName]*providerResult)
+	var mu sync.Mutex
+	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
+
+	// lastDecrease must remain zero -- RecordFailure must NOT have been called.
+	if !aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("ordinary error incorrectly triggered RecordFailure; lastDecrease is non-zero")
+	}
+	// successCount must also be zero -- RecordSuccess must NOT have been called.
+	if aimdSuccessCount(ctrl, prov) != 0 {
+		t.Fatalf("ordinary error incorrectly triggered RecordSuccess; successCount=%d", aimdSuccessCount(ctrl, prov))
+	}
+}
+
+// TestAIMDRateLimitErrorTriggerRecordFailure verifies that an
+// *ErrProviderUnavailable from GetArtist DOES drive RecordFailure.
+func TestAIMDRateLimitErrorTriggerRecordFailure(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, _ := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+	registry.Register(&mockProvider{
+		name: prov,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return nil, &ErrProviderUnavailable{
+				Provider:   prov,
+				Cause:      fmt.Errorf("429 Too Many Requests"),
+				RetryAfter: 5 * time.Second,
+			}
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, nil
+		},
+	})
+
+	cache := make(map[ProviderName]*providerResult)
+	var mu sync.Mutex
+	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
+
+	// lastDecrease must be non-zero -- RecordFailure must have been called.
+	if aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("rate-limit error did not trigger RecordFailure; lastDecrease is still zero")
+	}
+}
+
+// TestAIMDSingleSignalPerProviderCall verifies that getProviderResult emits
+// exactly ONE AIMD signal (not two) even when both GetArtist and GetImages
+// succeed. Emitting two RecordSuccess calls would halve the effective
+// aimdSuccessThreshold and allow a fail+success to cancel out.
+func TestAIMDSingleSignalPerProviderCall(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, _ := newTestOrchWithAIMD(t)
+
+	const prov = NameFanartTV
+	registry.Register(&mockProvider{
+		name: prov,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{{URL: "http://example.com/img.jpg"}}, nil
+		},
+	})
+
+	// Drive one full getProviderResult call.
+	cache := make(map[ProviderName]*providerResult)
+	var mu sync.Mutex
+	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
+
+	// successCount must be exactly 1 (one RecordSuccess fired, not two).
+	got := aimdSuccessCount(ctrl, prov)
+	if got != 1 {
+		t.Fatalf("expected exactly 1 AIMD success signal, got %d", got)
+	}
+}
+
+// TestAIMDFetchImagesRateLimitSignal verifies that FetchImages sends
+// RecordFailure on *ErrProviderUnavailable and RecordSuccess on a normal result.
+func TestAIMDFetchImagesRateLimitSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	// FanartTV requires an API key; store a dummy so it passes availability check.
+	const prov = NameFanartTV
+	if err := settings.SetAPIKey(context.Background(), prov, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	registry.Register(&mockProvider{
+		name: prov,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, &ErrProviderUnavailable{
+				Provider:   prov,
+				Cause:      fmt.Errorf("429"),
+				RetryAfter: time.Second,
+			}
+		},
+	})
+
+	_, _ = orch.FetchImages(context.Background(), "mbid-test", nil)
+
+	if aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("FetchImages: rate-limit error did not trigger RecordFailure")
+	}
+}
+
+// TestAIMDFetchImagesOrdinaryErrorNoSignal verifies that FetchImages does NOT
+// send RecordFailure for a non-rate-limit error.
+func TestAIMDFetchImagesOrdinaryErrorNoSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	// FanartTV requires an API key; store a dummy so it passes availability check.
+	const prov = NameFanartTV
+	if err := settings.SetAPIKey(context.Background(), prov, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	registry.Register(&mockProvider{
+		name: prov,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, fmt.Errorf("generic error")
+		},
+	})
+
+	_, _ = orch.FetchImages(context.Background(), "mbid-test", nil)
+
+	if !aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("FetchImages: ordinary error incorrectly triggered RecordFailure")
+	}
+	if aimdSuccessCount(ctrl, prov) != 0 {
+		t.Fatalf("FetchImages: ordinary error incorrectly triggered RecordSuccess")
+	}
+}
+
+// TestAIMDSearchRateLimitSignal verifies that Search sends RecordFailure on
+// *ErrProviderUnavailable and no signal on an ordinary error.
+func TestAIMDSearchRateLimitSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+	registry.Register(&mockProvider{
+		name: prov,
+		searchFn: func(_ context.Context, _ string) ([]ArtistSearchResult, error) {
+			return nil, &ErrProviderUnavailable{
+				Provider:   prov,
+				Cause:      fmt.Errorf("503"),
+				RetryAfter: time.Second,
+			}
+		},
+	})
+	// MusicBrainz does not require auth so no API key needed; mark available.
+	if err := settings.SetAPIKey(context.Background(), prov, ""); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	_, _ = orch.Search(context.Background(), "Radiohead")
+
+	if aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("Search: rate-limit error did not trigger RecordFailure")
+	}
+}
+
+// TestAIMDSearchForLinkingRateLimitSignal verifies that SearchForLinking sends
+// RecordFailure on *ErrProviderUnavailable and RecordSuccess on success.
+func TestAIMDSearchForLinkingRateLimitSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, _ := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+
+	t.Run("rate-limit fires RecordFailure", func(t *testing.T) {
+		registry.Register(&mockProvider{
+			name: prov,
+			searchFn: func(_ context.Context, _ string) ([]ArtistSearchResult, error) {
+				return nil, &ErrProviderUnavailable{
+					Provider:   prov,
+					Cause:      fmt.Errorf("429"),
+					RetryAfter: time.Second,
+				}
+			},
+		})
+
+		_, _, _ = orch.SearchForLinking(context.Background(), "Artist", []ProviderName{prov})
+
+		if aimdLastDecrease(ctrl, prov).IsZero() {
+			t.Fatalf("SearchForLinking: rate-limit error did not trigger RecordFailure")
+		}
+	})
+
+	t.Run("success fires RecordSuccess", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		rlm := NewRateLimiterMap()
+		ctrl2 := NewAIMDController(rlm, clk)
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		reg2 := NewRegistry()
+		_, settings2 := setupOrchestratorTest(t)
+		orch2 := NewOrchestrator(reg2, settings2, logger, ctrl2)
+
+		reg2.Register(&mockProvider{
+			name: prov,
+			searchFn: func(_ context.Context, _ string) ([]ArtistSearchResult, error) {
+				return []ArtistSearchResult{{Name: "Artist"}}, nil
+			},
+		})
+
+		_, _, _ = orch2.SearchForLinking(context.Background(), "Artist", []ProviderName{prov})
+
+		if aimdSuccessCount(ctrl2, prov) != 1 {
+			t.Fatalf("SearchForLinking: expected 1 RecordSuccess signal, got %d", aimdSuccessCount(ctrl2, prov))
 		}
 	})
 }

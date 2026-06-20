@@ -68,7 +68,7 @@ func TestHandleFieldProviders_LanguageContextInjected(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	providerSettings := provider.NewSettingsService(r.db, nil)
-	orch := provider.NewOrchestrator(reg, providerSettings, logger)
+	orch := provider.NewOrchestrator(reg, providerSettings, logger, nil)
 	r.orchestrator = orch
 
 	a := addTestArtist(t, artistSvc, "Language Injection Test Artist")
