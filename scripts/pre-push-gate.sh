@@ -403,4 +403,26 @@ fi
 echo "OK"
 
 echo ""
+echo "=== Accessibility (axe-core) ==="
+# Opt-in only. `make test-a11y` builds the binary, boots an ephemeral server,
+# installs npm deps, downloads a Chromium browser, and runs the Playwright +
+# @axe-core/playwright rendered-contrast smoke tests -- minutes of work plus a
+# one-time browser download. That cost is inappropriate for every push, so the
+# check is gated behind RUN_A11Y=1 and SKIPS by default. CI runs the same
+# target unconditionally in its dedicated a11y-test job, so default-skipping
+# here only trades local speed for the CI gate, never removes coverage.
+# Self-contained block (no shared state with other steps) to minimize merge
+# conflicts with sibling branches that also append to this gate.
+if [ "${RUN_A11Y:-0}" = "1" ]; then
+  if ! make test-a11y; then
+    echo ""
+    echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
+    exit 1
+  fi
+  echo "OK"
+else
+  echo "a11y: skipped (set RUN_A11Y=1 to run)"
+fi
+
+echo ""
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."
