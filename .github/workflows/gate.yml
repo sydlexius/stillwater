@@ -14,9 +14,11 @@
 #      compares against the local floor file.
 #   3. Fuzz matrix drift: verifies fuzz.yml matrix matches live Fuzz* funcs.
 #      fuzz.yml runs the drift check only on a weekly schedule, not on PRs.
-#   4. Provider failure smoke: asserts every covered handler surface reports
+#   4. Bruno route parity: asserts every /api/v1 route in router.go is either
+#      exercised by a Bruno request or recorded in api/bruno/parity-ignore.json.
+#   5. Provider failure smoke: asserts every covered handler surface reports
 #      provider failures explicitly instead of returning empty data.
-#   5. Tool version drift: asserts the lint/spell tool versions pinned in the
+#   6. Tool version drift: asserts the lint/spell tool versions pinned in the
 #      bash hook, the pre-commit config, and the CI workflows all agree.
 #
 # Trigger design:
@@ -249,6 +251,48 @@ jobs:
       - name: Skip (no relevant changes)
         if: steps.filter.outputs.relevant != 'true'
         run: echo "No Go source or fuzz workflow changes; drift check skipped."
+
+  # ---------------------------------------------------------------------------
+  # Bruno route parity
+  #
+  # Replicates the '=== Bruno route parity check ===' step in
+  # scripts/pre-push-gate.sh.  Verifies every /api/v1 route registered in
+  # internal/api/router.go is either exercised by a Bruno request
+  # (api/bruno/**/*.bru) or explicitly recorded in api/bruno/parity-ignore.json
+  # -- catching a new API endpoint shipped without an accompanying Bruno smoke
+  # request.  Pure shell, so no Go toolchain is needed.
+  #
+  # Uses dorny/paths-filter to limit the check to PRs that touch the router,
+  # the Bruno collection, or the parity script.  The job always runs and
+  # always emits a terminal status.
+  # ---------------------------------------------------------------------------
+  bruno-parity:
+    name: Bruno Route Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: filter
+        with:
+          filters: |
+            relevant:
+              - 'internal/api/router.go'
+              - 'api/bruno/**'
+              - 'scripts/check-bruno-parity.sh'
+              - 'scripts/pre-push-gate.sh'
+              - '.github/workflows/gate.yml'
+
+      - name: Check Bruno route parity
+        if: steps.filter.outputs.relevant == 'true'
+        run: bash scripts/check-bruno-parity.sh
+
+      - name: Skip (no relevant changes)
+        if: steps.filter.outputs.relevant != 'true'
+        run: echo "No router, Bruno, or parity-script changes; route parity check skipped."
 
   # ---------------------------------------------------------------------------
   # Provider failure smoke test
