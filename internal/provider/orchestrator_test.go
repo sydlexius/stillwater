@@ -3396,6 +3396,145 @@ func TestAIMDSingleSignalPerProviderCall(t *testing.T) {
 	}
 }
 
+// TestAIMDFetchImagesRateLimitSignal verifies that FetchImages sends
+// RecordFailure on *ErrProviderUnavailable and RecordSuccess on a normal result.
+func TestAIMDFetchImagesRateLimitSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	// FanartTV requires an API key; store a dummy so it passes availability check.
+	const prov = NameFanartTV
+	if err := settings.SetAPIKey(context.Background(), prov, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	registry.Register(&mockProvider{
+		name: prov,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, &ErrProviderUnavailable{
+				Provider:   prov,
+				Cause:      fmt.Errorf("429"),
+				RetryAfter: time.Second,
+			}
+		},
+	})
+
+	_, _ = orch.FetchImages(context.Background(), "mbid-test", nil)
+
+	if aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("FetchImages: rate-limit error did not trigger RecordFailure")
+	}
+}
+
+// TestAIMDFetchImagesOrdinaryErrorNoSignal verifies that FetchImages does NOT
+// send RecordFailure for a non-rate-limit error.
+func TestAIMDFetchImagesOrdinaryErrorNoSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	// FanartTV requires an API key; store a dummy so it passes availability check.
+	const prov = NameFanartTV
+	if err := settings.SetAPIKey(context.Background(), prov, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	registry.Register(&mockProvider{
+		name: prov,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, fmt.Errorf("generic error")
+		},
+	})
+
+	_, _ = orch.FetchImages(context.Background(), "mbid-test", nil)
+
+	if !aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("FetchImages: ordinary error incorrectly triggered RecordFailure")
+	}
+	if aimdSuccessCount(ctrl, prov) != 0 {
+		t.Fatalf("FetchImages: ordinary error incorrectly triggered RecordSuccess")
+	}
+}
+
+// TestAIMDSearchRateLimitSignal verifies that Search sends RecordFailure on
+// *ErrProviderUnavailable and no signal on an ordinary error.
+func TestAIMDSearchRateLimitSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, settings := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+	registry.Register(&mockProvider{
+		name: prov,
+		searchFn: func(_ context.Context, _ string) ([]ArtistSearchResult, error) {
+			return nil, &ErrProviderUnavailable{
+				Provider:   prov,
+				Cause:      fmt.Errorf("503"),
+				RetryAfter: time.Second,
+			}
+		},
+	})
+	// MusicBrainz does not require auth so no API key needed; mark available.
+	if err := settings.SetAPIKey(context.Background(), prov, ""); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	_, _ = orch.Search(context.Background(), "Radiohead")
+
+	if aimdLastDecrease(ctrl, prov).IsZero() {
+		t.Fatalf("Search: rate-limit error did not trigger RecordFailure")
+	}
+}
+
+// TestAIMDSearchForLinkingRateLimitSignal verifies that SearchForLinking sends
+// RecordFailure on *ErrProviderUnavailable and RecordSuccess on success.
+func TestAIMDSearchForLinkingRateLimitSignal(t *testing.T) {
+	t.Parallel()
+	orch, ctrl, registry, _ := newTestOrchWithAIMD(t)
+
+	const prov = NameMusicBrainz
+
+	t.Run("rate-limit fires RecordFailure", func(t *testing.T) {
+		registry.Register(&mockProvider{
+			name: prov,
+			searchFn: func(_ context.Context, _ string) ([]ArtistSearchResult, error) {
+				return nil, &ErrProviderUnavailable{
+					Provider:   prov,
+					Cause:      fmt.Errorf("429"),
+					RetryAfter: time.Second,
+				}
+			},
+		})
+
+		_, _, _ = orch.SearchForLinking(context.Background(), "Artist", []ProviderName{prov})
+
+		if aimdLastDecrease(ctrl, prov).IsZero() {
+			t.Fatalf("SearchForLinking: rate-limit error did not trigger RecordFailure")
+		}
+	})
+
+	t.Run("success fires RecordSuccess", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		rlm := NewRateLimiterMap()
+		ctrl2 := NewAIMDController(rlm, clk)
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		reg2 := NewRegistry()
+		_, settings2 := setupOrchestratorTest(t)
+		orch2 := NewOrchestrator(reg2, settings2, logger, ctrl2)
+
+		reg2.Register(&mockProvider{
+			name: prov,
+			searchFn: func(_ context.Context, _ string) ([]ArtistSearchResult, error) {
+				return []ArtistSearchResult{{Name: "Artist"}}, nil
+			},
+		})
+
+		_, _, _ = orch2.SearchForLinking(context.Background(), "Artist", []ProviderName{prov})
+
+		if aimdSuccessCount(ctrl2, prov) != 1 {
+			t.Fatalf("SearchForLinking: expected 1 RecordSuccess signal, got %d", aimdSuccessCount(ctrl2, prov))
+		}
+	})
+}
+
 // TestApplyTagSliceField_VocabFilter verifies the orchestrator tag-merge path
 // applies the user's vocab exclude filter and count cap (issue #1130). This is
 // the orchestrator half of the dual-path integration: a refresh runs through
