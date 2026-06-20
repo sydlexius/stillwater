@@ -25,5 +25,6 @@ tests {
     var ok = items === null || Array.isArray(items);
     expect(ok).to.equal(true);
     expect(res.body.count).to.be.a("number");
+    expect(res.body.count).to.equal(items === null ? 0 : items.length);
   });
 }
