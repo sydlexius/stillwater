@@ -416,7 +416,10 @@ echo "=== Accessibility (axe-core) ==="
 # Accept common truthy values (1/true/yes/on), case-insensitive, so
 # contributors can opt in with whichever convention they reach for; anything
 # else (incl. unset/empty) skips. ${RUN_A11Y:-} keeps `set -u` happy.
-case "$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]')" in
+# Strip all whitespace too, so a stray leading/trailing space (e.g.
+# RUN_A11Y=' true') still matches instead of silently skipping a11y.
+a11y_flag="$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$a11y_flag" in
   1 | true | yes | on)
     if ! make test-a11y; then
       echo ""
