@@ -84,9 +84,13 @@ ignore_file="$WORK_DIR/ignore.txt"
 # Matches: mux.Handle("METHOD "+bp+"/api/v1/...", ...)
 #          mux.HandleFunc("METHOD "+bp+"/api/v1/...", ...)
 # Captures "METHOD /api/v1/...", normalizes {param} -> {}, keeps /api/v1/ only.
-grep -oE 'mux\.(Handle|HandleFunc)\("[A-Z]+ "\+bp\+"[^"]*"' "$ROUTER" \
+# `|| true` on each grep: a no-match (exit 1) must NOT abort the pipeline under
+# `set -euo pipefail`, otherwise a genuine zero-parse aborts the script here --
+# before the `route_count -eq 0` diagnostic below can explain why. The count
+# check is the intended failure path for an empty parse, not a silent abort.
+{ grep -oE 'mux\.(Handle|HandleFunc)\("[A-Z]+ "\+bp\+"[^"]*"' "$ROUTER" || true; } \
   | sed -E 's/.*"([A-Z]+) "\+bp\+"([^"]*)".*/\1 \2/' \
-  | grep -E ' /api/v1/' \
+  | { grep -E ' /api/v1/' || true; } \
   | sed -E 's/\{[^}]*\}/{}/g' \
   | sort -u > "$routes_file"
 
@@ -104,10 +108,13 @@ while IFS= read -r bru; do
   # Tolerate optional leading whitespace so an indented method block (a request
   # nested inside an enclosing block) is still detected; strip that indentation
   # back off before normalizing so the captured method has no stray spaces.
-  method="$(grep -ioE '^[[:space:]]*(get|post|put|patch|delete|head|options)[[:space:]]*\{' "$bru" \
+  # `|| true` on the grep: a .bru with no method line (no match -> grep exit 1)
+  # must leave $method empty for the `[ -z "$method" ] && continue` skip below,
+  # NOT abort the whole script via `set -euo pipefail`. Same for the url grep.
+  method="$({ grep -ioE '^[[:space:]]*(get|post|put|patch|delete|head|options)[[:space:]]*\{' "$bru" || true; } \
     | head -n1 | sed -E 's/^[[:space:]]*//; s/[[:space:]]*\{.*//' | tr '[:lower:]' '[:upper:]')"
   # URL: first `url: {{apiBase}}...` line.
-  url="$(grep -oE 'url:[[:space:]]*\{\{apiBase\}\}[^[:space:]]*' "$bru" | head -n1)"
+  url="$({ grep -oE 'url:[[:space:]]*\{\{apiBase\}\}[^[:space:]]*' "$bru" || true; } | head -n1)"
   [ -z "$method" ] && continue
   [ -z "$url" ] && continue
   path="$(printf '%s' "$url" \
