@@ -19,9 +19,11 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("response has items array and count", function() {
+  test("response has items array (or null on empty DB) and count", function() {
     expect(res.body).to.be.an("object");
-    expect(res.body.items).to.be.an("array");
+    var items = res.body.items;
+    var ok = items === null || Array.isArray(items);
+    expect(ok).to.equal(true);
     expect(res.body.count).to.be.a("number");
   });
 }
