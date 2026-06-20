@@ -54,7 +54,7 @@ func newImageHandlerTestServer(t *testing.T) (*Router, *artist.Service) {
 	// non-error path for the test.
 	emptyRegistry := provider.NewRegistry()
 	settings := provider.NewSettingsService(r.db, nil)
-	r.orchestrator = provider.NewOrchestrator(emptyRegistry, settings, r.logger)
+	r.orchestrator = provider.NewOrchestrator(emptyRegistry, settings, r.logger, nil)
 	r.providerSettings = settings
 
 	// handleWebImageSearch ranges r.webSearchRegistry.All(); a nil registry

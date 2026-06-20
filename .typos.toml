@@ -40,3 +40,7 @@ limite = "limite"
 # capped message ("{count} artistes sur {total} chargés"). typos flags it
 # as a misspelling of English "sure".
 sur = "sur"
+# AIMD (Additive Increase / Multiplicative Decrease) is a network-congestion
+# control algorithm; its abbreviation is not a misspelling of "aimed".
+AIMD = "AIMD"
+aimd = "aimd"

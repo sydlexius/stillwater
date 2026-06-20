@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 )
@@ -115,14 +116,18 @@ type Orchestrator struct {
 	registry *Registry
 	settings *SettingsService
 	executor ScraperExecutor
+	aimd     *AIMDController
 	logger   *slog.Logger
 }
 
-// NewOrchestrator creates a new Orchestrator.
-func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger) *Orchestrator {
+// NewOrchestrator creates a new Orchestrator. aimd may be nil; when nil, the
+// adaptive rate-limiting hook sites are skipped and the orchestrator behaves
+// exactly as before.
+func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger, aimd *AIMDController) *Orchestrator {
 	return &Orchestrator{
 		registry: registry,
 		settings: settings,
+		aimd:     aimd,
 		logger:   logger.With(slog.String("component", "orchestrator")),
 	}
 }
@@ -335,9 +340,15 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 				slog.String("error", ScrubError(err)),
 				retryAfterAttr(err))
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", p.Name()))
+			if o.aimd != nil {
+				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			}
 			continue
 		}
 		result.Images = append(result.Images, images...)
+		if o.aimd != nil {
+			o.aimd.RecordSuccess(p.Name())
+		}
 	}
 
 	return result, nil
@@ -359,9 +370,15 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 				slog.String("provider", string(p.Name())),
 				slog.String("error", ScrubError(err)),
 				retryAfterAttr(err))
+			if o.aimd != nil {
+				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			}
 			continue
 		}
 		allResults = append(allResults, results...)
+		if o.aimd != nil {
+			o.aimd.RecordSuccess(p.Name())
+		}
 	}
 
 	return allResults, nil
@@ -379,6 +396,18 @@ func retryAfterAttr(err error) slog.Attr {
 		return slog.Duration("retry_after", unavailable.RetryAfter)
 	}
 	return slog.Attr{}
+}
+
+// retryAfterDuration extracts the RetryAfter duration from an
+// *ErrProviderUnavailable, returning 0 when the error is not of that type or
+// carries no hint. Used to pass the server-advised backoff to the AIMD
+// controller so it can log it alongside the multiplicative decrease.
+func retryAfterDuration(err error) time.Duration {
+	var unavailable *ErrProviderUnavailable
+	if errors.As(err, &unavailable) {
+		return unavailable.RetryAfter
+	}
+	return 0
 }
 
 // availableProviders returns only the registered providers whose API keys are
@@ -522,9 +551,15 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 					slog.String("error", ScrubError(err)),
 					retryAfterAttr(err))
 				pr.err = err
+				if o.aimd != nil {
+					o.aimd.RecordFailure(name, retryAfterDuration(err))
+				}
 			}
 		} else {
 			pr.meta = meta
+			if o.aimd != nil {
+				o.aimd.RecordSuccess(name)
+			}
 		}
 	}
 
@@ -558,9 +593,15 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 				// marked as attempted. This prevents clearing existing image data
 				// when the provider was merely unreachable.
 				pr.imageErr = err
+				if o.aimd != nil {
+					o.aimd.RecordFailure(name, retryAfterDuration(err))
+				}
 			}
 		} else {
 			pr.images = images
+			if o.aimd != nil {
+				o.aimd.RecordSuccess(name)
+			}
 		}
 	}
 

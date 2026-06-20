@@ -103,7 +103,7 @@ func TestOrchestratorFallback(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -179,7 +179,7 @@ func TestFetchMetadata_MBNameAuthoritative(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Canonical Name", nil)
 	if err != nil {
@@ -221,7 +221,7 @@ func TestFetchMetadata_MBNameAuthoritative_EmptyDoesNotClobber(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
 	if err != nil {
@@ -259,7 +259,7 @@ func TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
 	if err != nil {
@@ -305,7 +305,7 @@ func TestOrchestratorTagAggregation(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-agg", "TestArtist", nil)
 	if err != nil {
@@ -364,7 +364,7 @@ func TestOrchestratorProviderError(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -403,7 +403,7 @@ func TestOrchestratorSearch(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	results, err := orch.Search(context.Background(), "Radiohead")
 	if err != nil {
@@ -444,7 +444,7 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -500,7 +500,7 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
 	if err != nil {
@@ -540,7 +540,7 @@ func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	_, _ = orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
 
@@ -589,7 +589,7 @@ func TestFetchFieldFromProviders_ErrNotFoundSuppressed(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	results, err := orch.FetchFieldFromProviders(context.Background(), "mbid-1234", "Test Artist", "styles", nil)
 	if err != nil {
@@ -675,7 +675,7 @@ func TestOrchestratorGetImagesTimeoutDoesNotMarkImageFieldAttempted(t *testing.T
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -725,7 +725,7 @@ func TestOrchestratorGetImagesErrNotFoundMarksImageFieldAttempted(t *testing.T) 
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -768,7 +768,7 @@ func TestOrchestratorGetImagesDataMarksImageFieldAttempted(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -821,7 +821,7 @@ func TestOrchestratorGetImagesNotCalledDoesNotMarkImageFieldAttempted(t *testing
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// Pass empty MBID and providerIDs with an empty AudioDB entry.
 	// GetImages requires a numeric ID; without one it must not be called.
@@ -866,7 +866,7 @@ func TestOrchestratorProviderIDPrecedence(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// Pass a wrong MBID but the correct AudioDB numeric ID in providerIDs.
 	// The orchestrator should prefer the provider-specific ID.
@@ -905,7 +905,7 @@ func TestOrchestratorNilProviderIDsPreservesBehavior(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	_, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
@@ -930,7 +930,7 @@ func TestOrchestratorEmptyProviderIDFallsBackToMBID(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// Provider ID entry exists but is empty -- should fall back to MBID.
 	providerIDs := map[ProviderName]string{
@@ -1156,7 +1156,7 @@ func TestOrchestratorRejectsJunkBiography(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-noise", "Noise Ratchet", nil)
 	if err != nil {
@@ -1207,7 +1207,7 @@ func TestOrchestratorRejectsShortBiography(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test Artist", nil)
 	if err != nil {
@@ -1255,7 +1255,7 @@ func TestOrchestratorAllJunkBiographiesLeaveFieldEmpty(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-obscure", "Obscure Band", nil)
 	if err != nil {
@@ -1335,7 +1335,7 @@ func TestOrchestratorCrossProviderIDEnrichment(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	// No stored provider IDs -- only the MBID.
 	_, err := orch.FetchMetadata(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493", "A-ha", nil)
@@ -1666,7 +1666,7 @@ func TestFetchMetadataAggregatesImagesFromMultipleProviders(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-aha", "a-ha", nil)
 	if err != nil {
@@ -1720,7 +1720,7 @@ func TestFetchMetadataTextFieldStopsAtFirstMatch(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test", nil)
 	if err != nil {
@@ -1762,7 +1762,7 @@ func TestFetchImagesCollectsFromAllProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -1833,7 +1833,7 @@ func TestFetchImagesRespectsProviderPriority(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -1910,7 +1910,7 @@ func TestFetchImages_CrossFieldPriorityConflict(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -1983,7 +1983,7 @@ func TestFetchImagesDefaultOrderWithoutCustomPriority(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -2050,7 +2050,7 @@ func TestApplyFieldImageDoesNotBlockOnWrongType(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test", nil)
 	if err != nil {
@@ -2091,7 +2091,7 @@ func TestOrchestratorErrNotFoundMarksFieldAttempted(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2137,7 +2137,7 @@ func TestOrchestratorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2167,7 +2167,7 @@ func TestOrchestratorErrNotFoundCountsAsAttemptedProvider(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2223,7 +2223,7 @@ func TestFetchImagesQueriesAllProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -2342,7 +2342,7 @@ func TestOrchestratorPopulatedFieldsTracking(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
 	if err != nil {
@@ -2412,7 +2412,7 @@ func TestOrchestratorPopulatedFields_DedupAcrossProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
+	orch := NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "X", nil)
 	if err != nil {
@@ -3120,7 +3120,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-sparse", "Sparse Band", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)
@@ -3158,7 +3158,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-solo", "Solo Artist", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)
@@ -3197,7 +3197,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-band", "Real Band", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)
@@ -3237,7 +3237,7 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		orch := NewOrchestrator(registry, settings, logger)
+		orch := NewOrchestrator(registry, settings, logger, nil)
 		result, err := orch.FetchMetadata(context.Background(), "mb-error", "Error Artist", nil)
 		if err != nil {
 			t.Fatalf("FetchMetadata: %v", err)

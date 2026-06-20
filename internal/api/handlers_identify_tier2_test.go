@@ -98,7 +98,7 @@ func newIdentifyTestServer(t *testing.T, search func(ctx context.Context, name s
 	// (which would otherwise dereference the nil settings service), we install
 	// a no-op ScraperExecutor that short-circuits the executor branch.
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(registry, nil, logger)
+	orch := provider.NewOrchestrator(registry, nil, logger, nil)
 	orch.SetExecutor(&stubScraperExecutor{result: &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}})
 	r.orchestrator = orch
 
@@ -678,7 +678,7 @@ func TestRunBulkIdentify_PanicRecovered(t *testing.T) {
 	registry := provider.NewRegistry()
 	registry.Register(panicProv)
 	r.providerRegistry = registry
-	r.orchestrator = provider.NewOrchestrator(registry, nil, logger)
+	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil)
 
 	// Seed one unidentified artist (no path, so tier 3 fires immediately).
 	a := &artist.Artist{Name: "Boom"}
@@ -746,7 +746,7 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 	registry := provider.NewRegistry()
 	registry.Register(panicProv)
 	r.providerRegistry = registry
-	r.orchestrator = provider.NewOrchestrator(registry, nil, logger)
+	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil)
 
 	a := &artist.Artist{Name: "Crashy"}
 	if err := artistSvc.Create(context.Background(), a); err != nil {

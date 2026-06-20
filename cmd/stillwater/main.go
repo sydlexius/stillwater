@@ -678,6 +678,24 @@ func (a *Application) wireProviders(ctx context.Context) error {
 	a.providerSettings = provider.NewSettingsService(db, a.encryptor)
 	a.providerRegistry = provider.NewRegistry()
 
+	// Build the AIMD controller and load any stored per-provider ceiling
+	// overrides from the settings database.
+	aimdCtrl := provider.NewAIMDController(a.rateLimiters, provider.SystemClock())
+	for _, name := range provider.AllProviderNames() {
+		ceiling, err := a.providerSettings.GetRateLimitCeiling(ctx, name)
+		if err != nil {
+			logger.Warn("failed to load AIMD rate-limit ceiling from database",
+				slog.String("provider", string(name)), "error", err)
+			continue
+		}
+		if ceiling > 0 {
+			aimdCtrl.SetCeiling(name, rate.Limit(ceiling))
+			logger.Info("loaded AIMD rate-limit ceiling",
+				slog.String("provider", string(name)),
+				slog.Float64("ceiling_req_per_sec", ceiling))
+		}
+	}
+
 	mb := musicbrainz.New(a.rateLimiters, logger)
 	if baseURL, err := a.providerSettings.GetBaseURL(ctx, provider.NameMusicBrainz); err != nil {
 		logger.Warn("failed to load MusicBrainz mirror URL from database", "error", err)
@@ -705,7 +723,7 @@ func (a *Application) wireProviders(ctx context.Context) error {
 	a.webSearchRegistry = provider.NewWebSearchRegistry()
 	a.webSearchRegistry.Register(duckduckgo.New(a.rateLimiters, logger))
 
-	a.orchestrator = provider.NewOrchestrator(a.providerRegistry, a.providerSettings, logger)
+	a.orchestrator = provider.NewOrchestrator(a.providerRegistry, a.providerSettings, logger, aimdCtrl)
 
 	// --- Scraper ---
 	a.scraperService = scraper.NewService(db, logger)

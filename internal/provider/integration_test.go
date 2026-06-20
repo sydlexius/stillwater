@@ -245,7 +245,7 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 		registry.Register(lastfm.New(limiter, settings, logger))
 	}
 
-	orch := provider.NewOrchestrator(registry, settings, logger)
+	orch := provider.NewOrchestrator(registry, settings, logger, nil)
 
 	result, err := orch.FetchMetadata(testCtx(t), aHaMBID, aHaName, nil)
 	if err != nil {

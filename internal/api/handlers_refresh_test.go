@@ -626,7 +626,7 @@ func TestExecuteRefreshAndPostHook_ResolvesBioViolation(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil)
 	orch.SetExecutor(stub)
 	r.orchestrator = orch
 
@@ -738,7 +738,7 @@ func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil)
 	orch.SetExecutor(stub)
 	r.orchestrator = orch
 
@@ -798,7 +798,7 @@ func TestExecuteRefreshCtx_PreservesTagsWhenProviderReturnsNoData(t *testing.T) 
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil)
 	orch.SetExecutor(stub)
 	r.orchestrator = orch
 
@@ -847,7 +847,7 @@ func TestExecuteRefreshCtx_OverwritesTagsWhenProviderReturnsData(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil)
 	orch.SetExecutor(stub)
 	r.orchestrator = orch
 

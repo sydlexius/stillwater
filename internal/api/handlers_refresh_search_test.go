@@ -49,7 +49,7 @@ func installSearchOrchestrator(t *testing.T, r *Router, providers ...*minimalSea
 	}
 	r.providerRegistry = registry
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(registry, nil, logger)
+	orch := provider.NewOrchestrator(registry, nil, logger, nil)
 	r.orchestrator = orch
 }
 

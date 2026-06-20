@@ -36,7 +36,7 @@ func installDiscogsOrchestrator(t *testing.T, r *Router,
 	registry.Register(stub)
 	r.providerRegistry = registry
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	r.orchestrator = provider.NewOrchestrator(registry, nil, logger)
+	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil)
 }
 
 func TestToDiscogsTemplateCandidates(t *testing.T) {

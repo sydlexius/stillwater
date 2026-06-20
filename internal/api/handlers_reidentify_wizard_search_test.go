@@ -43,7 +43,7 @@ func TestEnsureWizardCandidates_ProviderFailureRoutesToStepFailed(t *testing.T) 
 	})
 	r.providerRegistry = registry
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	r.orchestrator = provider.NewOrchestrator(registry, nil, logger)
+	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil)
 
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: a.ID, ArtistName: a.Name, ArtistPath: a.Path},
@@ -100,7 +100,7 @@ func TestEnsureWizardCandidates_AllProvidersOKReadiesStep(t *testing.T) {
 	})
 	r.providerRegistry = registry
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	r.orchestrator = provider.NewOrchestrator(registry, nil, logger)
+	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil)
 
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: a.ID, ArtistName: a.Name, ArtistPath: a.Path},
