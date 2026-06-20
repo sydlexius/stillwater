@@ -30,6 +30,11 @@ jobs:
   bruno:
     name: Bruno API Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      # Required for Codecov OIDC token exchange (use_oidc: true).
+      id-token: write
     # Belt-and-braces against an inadvertently hanging Bruno request or stuck
     # ephemeral server. The full pipeline (build + 4 tools + Bruno + cleanup)
     # comfortably finishes inside 10 min; 15 leaves headroom for runner cold
@@ -96,6 +101,8 @@ jobs:
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           PKG=github.com/sydlexius/stillwater/internal/version
           CGO_ENABLED=0 go build \
+            -cover \
+            -coverpkg=./... \
             -trimpath \
             -ldflags="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}" \
             -o stillwater ./cmd/stillwater
@@ -119,6 +126,10 @@ jobs:
           PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); p=s.getsockname()[1]; s.close(); print(p)')
           echo "port=${PORT}" >> "$GITHUB_OUTPUT"
 
+      - name: Create coverage directory
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+        run: mkdir -p "${{ runner.temp }}/bruno-coverage"
+
       - name: Start Stillwater
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         id: server
@@ -128,6 +139,7 @@ jobs:
           SW_LOG_FORMAT: text
           SW_LOG_LEVEL: warn
           SW_BACKUP_ENABLED: "false"
+          GOCOVERDIR: ${{ runner.temp }}/bruno-coverage
         run: |
           ./stillwater > "${{ runner.temp }}/stillwater-ci.log" 2>&1 &
           echo "pid=$!" >> "$GITHUB_OUTPUT"
@@ -307,7 +319,28 @@ jobs:
         run: |
           if [ -n "${PID}" ]; then
             kill "${PID}" 2>/dev/null || true
+            wait "${PID}" 2>/dev/null || true
           fi
+
+      - name: Convert Bruno coverage
+        if: always() && (steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch')
+        run: |
+          COVERDIR="${{ runner.temp }}/bruno-coverage"
+          if [ -d "${COVERDIR}" ] && [ -n "$(ls -A "${COVERDIR}" 2>/dev/null)" ]; then
+            go tool covdata textfmt -i="${COVERDIR}" -o=bruno-coverage.out
+          else
+            echo "Coverage directory missing or empty; skipping conversion"
+          fi
+
+      - name: Upload Bruno coverage to Codecov
+        if: always() && (steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch')
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: bruno-coverage.out
+          flags: bruno
+          use_oidc: true
+          disable_search: true
+          fail_ci_if_error: false
 
       - name: Upload test results on failure
         if: failure() && (steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch')
