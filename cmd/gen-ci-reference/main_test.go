@@ -87,8 +87,15 @@ func TestParseWorkflow_MinimalFixture(t *testing.T) {
 	if summary.If != "always()" {
 		t.Errorf("test-summary.If = %q, want 'always()'", summary.If)
 	}
-	if len(summary.Needs) != 2 {
-		t.Errorf("test-summary.Needs = %v, want [changes test]", summary.Needs)
+	wantNeeds := []string{"changes", "test"}
+	if len(summary.Needs) != len(wantNeeds) {
+		t.Errorf("test-summary.Needs = %v, want %v", summary.Needs, wantNeeds)
+	} else {
+		for i, v := range wantNeeds {
+			if summary.Needs[i] != v {
+				t.Errorf("test-summary.Needs[%d] = %q, want %q", i, summary.Needs[i], v)
+			}
+		}
 	}
 }
 

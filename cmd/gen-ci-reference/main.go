@@ -256,15 +256,40 @@ func parseWorkflow(src []byte) (*ciWorkflow, error) {
 // shardsEntryRe matches lines like:    [api]="internal/api"
 var shardsEntryRe = regexp.MustCompile(`\[([^\]]+)\]="([^"]*)"`)
 
+// shardsCloseRe matches the closing paren of a bash array literal: a line
+// whose non-whitespace content is just ")".
+var shardsCloseRe = regexp.MustCompile(`^\s*\)\s*$`)
+
 // extractShardsMap finds a bash SHARDS associative array in a run: script and
 // returns the parsed key->value map, or nil if no SHARDS declaration is found.
+//
+// Parsing is scoped to the lines between the opening "declare -A SHARDS=("
+// and the first closing ")" on its own line, so that any subsequent
+// associative arrays in the same run block are not inadvertently captured.
 func extractShardsMap(script string) map[string]string {
-	if !strings.Contains(script, "declare -A SHARDS") {
+	const marker = "declare -A SHARDS"
+	idx := strings.Index(script, marker)
+	if idx < 0 {
 		return nil
 	}
+	// Advance past the marker line to the content of the array body.
+	block := script[idx:]
+	// Find the opening paren to start scanning array entries.
+	parenIdx := strings.Index(block, "(")
+	if parenIdx < 0 {
+		return nil
+	}
+	block = block[parenIdx+1:]
+
 	m := make(map[string]string)
-	for _, match := range shardsEntryRe.FindAllStringSubmatch(script, -1) {
-		m[match[1]] = match[2]
+	for _, line := range strings.Split(block, "\n") {
+		// Stop at the closing paren of the array literal.
+		if shardsCloseRe.MatchString(line) {
+			break
+		}
+		if match := shardsEntryRe.FindStringSubmatch(line); match != nil {
+			m[match[1]] = match[2]
+		}
 	}
 	return m
 }
