@@ -25,6 +25,8 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
+  # Required for Codecov OIDC token exchange (use_oidc: true).
+  id-token: write
 
 jobs:
   bruno:
@@ -313,6 +315,7 @@ jobs:
         run: |
           if [ -n "${PID}" ]; then
             kill "${PID}" 2>/dev/null || true
+            wait "${PID}" 2>/dev/null || true
           fi
 
       - name: Convert Bruno coverage
@@ -331,9 +334,9 @@ jobs:
         with:
           files: bruno-coverage.out
           flags: bruno
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           disable_search: true
-          fail_ci_if_error: true
+          fail_ci_if_error: false
 
       - name: Upload test results on failure
         if: failure() && (steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch')
