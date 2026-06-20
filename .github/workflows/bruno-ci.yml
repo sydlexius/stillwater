@@ -25,13 +25,16 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
-  # Required for Codecov OIDC token exchange (use_oidc: true).
-  id-token: write
 
 jobs:
   bruno:
     name: Bruno API Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      # Required for Codecov OIDC token exchange (use_oidc: true).
+      id-token: write
     # Belt-and-braces against an inadvertently hanging Bruno request or stuck
     # ephemeral server. The full pipeline (build + 4 tools + Bruno + cleanup)
     # comfortably finishes inside 10 min; 15 leaves headroom for runner cold
@@ -99,6 +102,7 @@ jobs:
           PKG=github.com/sydlexius/stillwater/internal/version
           CGO_ENABLED=0 go build \
             -cover \
+            -coverpkg=./... \
             -trimpath \
             -ldflags="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}" \
             -o stillwater ./cmd/stillwater
