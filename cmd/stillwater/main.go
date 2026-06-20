@@ -325,6 +325,17 @@ func (a *Application) setupLogging() error {
 	} else if a.scaffolded {
 		logger.Info("wrote first-run config scaffold", "path", a.configPath)
 	}
+
+	// Warn (but do not abort) when the config file was loaded from the
+	// deprecated YAML format. YAML still parses today; TOML is the supported
+	// format going forward (issue #1274). The config package is logger-free,
+	// so it records the format on the loaded Config and we emit the WARN here,
+	// once logging is up.
+	if a.cfg.DeprecatedYAMLFormat {
+		logger.Warn("YAML config format is deprecated; convert to TOML. "+
+			"See https://sydlexius.github.io/stillwater/how-to/convert-yaml-to-toml/",
+			"path", a.configPath)
+	}
 	return nil
 }
 
