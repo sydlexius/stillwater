@@ -56,6 +56,27 @@
     "covered": true
   },
   {
+    "operationId": "audiodbIdentify",
+    "method": "GET",
+    "path": "/artists/{id}/audiodb/identify",
+    "handler": "handleAudioDBIdentify",
+    "covered": true
+  },
+  {
+    "operationId": "audiodbLink",
+    "method": "POST",
+    "path": "/artists/{id}/audiodb/link",
+    "handler": "handleAudioDBLink",
+    "covered": true
+  },
+  {
+    "operationId": "audiodbSearch",
+    "method": "POST",
+    "path": "/artists/{id}/audiodb/search",
+    "handler": "handleAudioDBSearch",
+    "covered": true
+  },
+  {
     "operationId": "batchDeleteFanart",
     "method": "DELETE",
     "path": "/artists/{id}/images/fanart/batch",

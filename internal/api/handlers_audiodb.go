@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -89,7 +90,7 @@ func (r *Router) handleAudioDBSearch(w http.ResponseWriter, req *http.Request) {
 	// AudioDB results carry MusicBrainz IDs, so reuse the shared MusicBrainz
 	// album-comparison scorer (keyed on res.MusicBrainzID) rather than a
 	// provider-specific fetcher.
-	candidates := r.enrichAndScoreTier2(req.Context(), results, localAlbums)
+	candidates := r.enrichAudioDBCandidates(req.Context(), results, localAlbums)
 
 	if isHTMXRequest(req) {
 		providerError := ""
@@ -210,6 +211,24 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 		"artist_id":  a.ID,
 		"audiodb_id": a.AudioDBID,
 	})
+}
+
+// enrichAudioDBCandidates scores TheAudioDB search results by album-discography
+// agreement. Unlike the Discogs/Deezer siblings (which key on their own provider
+// ID via a provider-specific fetcher), AudioDB results carry a MusicBrainz ID, so
+// scoring delegates to the shared MusicBrainz cross-MBID scorer enrichAndScoreTier2.
+//
+// When there are no local album subdirectories to compare against, the album
+// comparison cannot add signal: this short-circuits to name-only scoring via
+// convertToScoredCandidates (reason "no album data available"), mirroring the
+// len(localAlbums)==0 early-return in enrichDiscogsCandidates / enrichDeezerCandidates.
+// This avoids firing pointless MusicBrainz GetReleaseGroups calls when there is
+// nothing on disk to score against.
+func (r *Router) enrichAudioDBCandidates(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []ScoredCandidate {
+	if len(localAlbums) == 0 {
+		return convertToScoredCandidates(results)
+	}
+	return r.enrichAndScoreTier2(ctx, results, localAlbums)
 }
 
 // toAudioDBTemplateCandidates adapts the api-package ScoredCandidate values to

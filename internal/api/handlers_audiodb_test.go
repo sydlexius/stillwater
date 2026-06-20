@@ -41,7 +41,7 @@ func installAudioDBOrchestrator(t *testing.T, r *Router,
 	registry.Register(mbStub)
 	r.providerRegistry = registry
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	r.orchestrator = provider.NewOrchestrator(registry, nil, logger)
+	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil)
 }
 
 func TestToAudioDBTemplateCandidates(t *testing.T) {
@@ -306,6 +306,98 @@ func TestHandleAudioDBSearch_AlbumComparisonFromDisk(t *testing.T) {
 	}
 	if resp.Results[0].Confidence != 1.0 {
 		t.Errorf("confidence = %v, want 1.0", resp.Results[0].Confidence)
+	}
+}
+
+// TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit pins the empty-localAlbums
+// short-circuit: when the artist has no local album subdirectories, the search
+// must NOT fire the MusicBrainz release-group fetcher (the album comparison has
+// nothing on disk to score against) and must tag candidates with the name-only
+// "no album data available" reason. Mirrors the len(localAlbums)==0 early-return
+// in the Discogs/Deezer siblings.
+func TestHandleAudioDBSearch_NoLocalAlbumsShortCircuit(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	fetcherCalled := false
+	installAudioDBOrchestrator(t, r,
+		func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
+			return []provider.ArtistSearchResult{
+				{Name: "No Albums", ProviderID: "777", MusicBrainzID: "mbid-777", Score: 90},
+			}, nil
+		},
+		func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+			fetcherCalled = true
+			return []provider.ReleaseGroupInfo{{Title: "Some Album"}}, nil
+		})
+
+	// An artist with no Path -> no local albums -> short-circuit path.
+	a := addTestArtist(t, artistSvc, "No Local Albums ADB")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/audiodb/search", strings.NewReader(`{"query":"No Albums"}`))
+	req.SetPathValue("id", a.ID)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(testI18nCtx(t, req.Context()))
+	w := httptest.NewRecorder()
+
+	r.handleAudioDBSearch(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if fetcherCalled {
+		t.Error("MusicBrainz release-group fetcher must NOT be called when there are no local albums")
+	}
+	var resp struct {
+		Results []struct {
+			AlbumComparison *artist.AlbumComparison `json:"album_comparison"`
+			Confidence      float64                 `json:"confidence"`
+			Reason          string                  `json:"reason"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v; body=%s", err, w.Body.String())
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("results len = %d, want 1", len(resp.Results))
+	}
+	if resp.Results[0].AlbumComparison != nil {
+		t.Errorf("album comparison must be nil on the no-local-albums path; got %+v", resp.Results[0].AlbumComparison)
+	}
+	if resp.Results[0].Confidence != 0 {
+		t.Errorf("confidence = %v, want 0 on the no-local-albums path", resp.Results[0].Confidence)
+	}
+	if resp.Results[0].Reason != "no album data available" {
+		t.Errorf("reason = %q, want %q", resp.Results[0].Reason, "no album data available")
+	}
+}
+
+// TestEnrichAudioDBCandidates_NoLocalAlbums unit-tests the short-circuit wrapper
+// directly: with no local albums it must return name-only candidates and never
+// touch the registry/fetcher.
+func TestEnrichAudioDBCandidates_NoLocalAlbums(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	fetcherCalled := false
+	installAudioDBOrchestrator(t, r, nil,
+		func(_ context.Context, _ string) ([]provider.ReleaseGroupInfo, error) {
+			fetcherCalled = true
+			return nil, nil
+		})
+
+	results := []provider.ArtistSearchResult{
+		{Name: "X", ProviderID: "1", MusicBrainzID: "mbid-1"},
+	}
+	got := r.enrichAudioDBCandidates(context.Background(), results, nil)
+	if fetcherCalled {
+		t.Error("fetcher must not be called when localAlbums is empty")
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	if got[0].AlbumComparison != nil || got[0].Confidence != 0 {
+		t.Errorf("expected name-only candidate; got %+v", got[0])
+	}
+	if got[0].Reason != "no album data available" {
+		t.Errorf("reason = %q, want %q", got[0].Reason, "no album data available")
 	}
 }
 
