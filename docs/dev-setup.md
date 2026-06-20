@@ -176,6 +176,33 @@ Use Bruno collections in `api/bruno/` to test endpoints:
 3. Run requests against a local or running instance
 4. Bruno exports as plaintext files (no binary lock-in)
 
+#### Local Bruno Coverage Recipe
+
+To measure API coverage from the Bruno collection locally:
+
+```bash
+# 1. Build an instrumented binary
+GOCOVDIR=$(mktemp -d)
+go build -cover -o /tmp/stillwater-cover ./cmd/stillwater
+
+# 2. Start the server with coverage output enabled
+GOCOVERDIR="$GOCOVDIR" /tmp/stillwater-cover &
+SERVER_PID=$!
+
+# 3. Run the Bruno collection (from api/bruno/)
+cd api/bruno
+bru run --env ci --env-var "baseUrl=http://127.0.0.1:1973" -r .
+
+# 4. Stop server gracefully (flushes coverage counters)
+kill "$SERVER_PID"
+
+# 5. Convert binary coverage to a Go coverage profile
+go tool covdata textfmt -i="$GOCOVDIR" -o bruno-coverage.out
+
+# 6. View the report
+go tool cover -func=bruno-coverage.out | tail -1
+```
+
 ## Running Tests
 
 ```bash
