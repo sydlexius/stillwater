@@ -408,21 +408,27 @@ echo "=== Accessibility (axe-core) ==="
 # installs npm deps, downloads a Chromium browser, and runs the Playwright +
 # @axe-core/playwright rendered-contrast smoke tests -- minutes of work plus a
 # one-time browser download. That cost is inappropriate for every push, so the
-# check is gated behind RUN_A11Y=1 and SKIPS by default. CI runs the same
+# check is gated behind RUN_A11Y and SKIPS by default. CI runs the same
 # target unconditionally in its dedicated a11y-test job, so default-skipping
 # here only trades local speed for the CI gate, never removes coverage.
 # Self-contained block (no shared state with other steps) to minimize merge
 # conflicts with sibling branches that also append to this gate.
-if [ "${RUN_A11Y:-0}" = "1" ]; then
-  if ! make test-a11y; then
-    echo ""
-    echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
-    exit 1
-  fi
-  echo "OK"
-else
-  echo "a11y: skipped (set RUN_A11Y=1 to run)"
-fi
+# Accept common truthy values (1/true/yes/on), case-insensitive, so
+# contributors can opt in with whichever convention they reach for; anything
+# else (incl. unset/empty) skips. ${RUN_A11Y:-} keeps `set -u` happy.
+case "$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]')" in
+  1 | true | yes | on)
+    if ! make test-a11y; then
+      echo ""
+      echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
+      exit 1
+    fi
+    echo "OK"
+    ;;
+  *)
+    echo "a11y: skipped (set RUN_A11Y=1 to run; also accepts true/yes/on)"
+    ;;
+esac
 
 echo ""
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."
