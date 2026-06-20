@@ -3829,20 +3829,27 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
  * outranks its single/double-class hardcoded base and the Tailwind utilities, and
  * the block's late source order is the final tiebreak. =========================== */
 
-/* Artist-detail: convert the root card stack from Tailwind space-y-4 (margin-top
- * on > * + *) to flex column + gap. This RETIRES the margin-collapse gotcha where
- * the reskin set margin-top while the round-1 bridge set margin-block-end (different
- * edges -> collapse -> inconsistent ladder). The flex gap is the single source of
- * inter-card spacing and tracks --sw-density-gap across all densities (compact .5rem
- * / comfortable 1rem / spacious 1.5rem; :root default 1rem = comfortable, no flash). */
+/* Artist-detail: convert the root card stack from Tailwind space-y-4 to flex
+ * column + gap. The flex gap is the SINGLE source of inter-card spacing and tracks
+ * the DEDICATED --sw-density-detail-gap token across all densities (compact 1rem=16px
+ * = today's collapsed space-y-4 default, comfortable 1.5rem=24px, spacious 2rem=32px;
+ * :root default 1.5rem = comfortable, no flash).
+ *
+ * CRITICAL (Tailwind v4): space-y-4 compiles to
+ *   :where(.space-y-4 > :not(:last-child)){ margin-block-end: 16px }
+ * -- a margin-BLOCK-END, NOT margin-top. So we must zero margin-block-end (the real
+ * property Tailwind emits); zeroing margin-top would be a no-op and the 16px residual
+ * would survive and STACK additively with the flex gap (margins don't collapse in a
+ * flex container), inflating every gap by +16px. */
 .sw-next-artist-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--sw-density-gap);
+  gap: var(--sw-density-detail-gap);
 }
-/* Neutralize the Tailwind space-y-4 margin so only the flex gap spaces the stack. */
-.sw-next-artist-detail.space-y-4 > * + * {
-  margin-top: 0;
+/* Neutralize the Tailwind space-y-4 residual margin (margin-block-end, the property
+ * Tailwind v4 actually emits) so ONLY the flex gap spaces the stack -- no residual. */
+.sw-next-artist-detail.space-y-4 > :not(:last-child) {
+  margin-block-end: 0;
 }
 
 /* Card head + body padding (both screens). :not(.tight) preserves the intentional
