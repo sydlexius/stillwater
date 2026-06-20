@@ -127,7 +127,7 @@ type jobYAML struct {
 	Name     string        `yaml:"name"`
 	Needs    interface{}   `yaml:"needs"` // string or []string
 	If       string        `yaml:"if"`
-	RunsOn   string        `yaml:"runs-on"`
+	RunsOn   interface{}   `yaml:"runs-on"` // string or []string per GHA spec
 	Strategy *strategyYAML `yaml:"strategy"`
 	Steps    []struct {
 		Name string `yaml:"name"`
@@ -169,6 +169,26 @@ func (s *strategyYAML) shards() []string {
 	return out
 }
 
+// normalizeRunsOn converts the raw YAML runs-on value (which may be a plain
+// string or a sequence of label strings) to a single normalized string.
+// A []interface{} is joined with ", "; any other type returns "".
+func normalizeRunsOn(v interface{}) string {
+	switch rv := v.(type) {
+	case string:
+		return rv
+	case []interface{}:
+		parts := make([]string, 0, len(rv))
+		for _, item := range rv {
+			if s, ok := item.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, ", ")
+	default:
+		return ""
+	}
+}
+
 // testJobID is the GitHub Actions job ID that owns the shard matrix. If ci.yml
 // ever renames this job, the generator fails loudly at parse time.
 const testJobID = "test"
@@ -198,7 +218,7 @@ func parseWorkflow(src []byte) (*ciWorkflow, error) {
 			ID:     id,
 			Name:   j.Name,
 			If:     j.If,
-			RunsOn: j.RunsOn,
+			RunsOn: normalizeRunsOn(j.RunsOn),
 		}
 		// `needs` can be a string or a sequence.
 		switch v := j.Needs.(type) {

@@ -361,6 +361,49 @@ func TestParseWorkflow_Empty(t *testing.T) {
 	}
 }
 
+// TestParseWorkflow_ListRunsOn verifies that a job whose runs-on field is a YAML
+// sequence (label list) is parsed without error and produces a comma-joined
+// RunsOn string on the resulting ciJob.
+func TestParseWorkflow_ListRunsOn(t *testing.T) {
+	const listRunsOnYAML = `
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+  test:
+    name: Test
+    runs-on: [self-hosted, linux]
+    needs: changes
+    strategy:
+      matrix:
+        shard: [rest]
+    steps:
+      - name: Resolve shard package list
+        run: |
+          declare -A SHARDS=(
+            [api]="internal/api"
+          )
+          echo done
+`
+	wf, err := parseWorkflow([]byte(listRunsOnYAML))
+	if err != nil {
+		t.Fatalf("parseWorkflow: %v", err)
+	}
+	var testJob *ciJob
+	for i := range wf.Jobs {
+		if wf.Jobs[i].ID == "test" {
+			testJob = &wf.Jobs[i]
+		}
+	}
+	if testJob == nil {
+		t.Fatal("test job not found")
+	}
+	const want = "self-hosted, linux"
+	if testJob.RunsOn != want {
+		t.Errorf("test.RunsOn = %q, want %q", testJob.RunsOn, want)
+	}
+}
+
 // TestRun_CreatesNestedOutputDir covers the MkdirAll branch.
 func TestRun_CreatesNestedOutputDir(t *testing.T) {
 	srcPath := filepath.Join("..", "..", defaultSourcePath)
