@@ -18,7 +18,7 @@
 | `make templ` | Generate Go code from Templ templates |
 | `make tailwind` | Build Tailwind CSS |
 | `make generate` | Run all code generation (templ + tailwind) |
-| `make generate-docs` | Regenerate docs site content from code (provider matrix, env-var reference, CLI reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles, preferences reference). Each generator enforces coverage: a new code-defined key without a desc: tag or doc entry fails the build. |
+| `make generate-docs` | Regenerate docs site content from code (provider matrix, env-var reference, CLI reference, rules catalogue, settings reference, doc anchors, envelope-versions, make-command reference, platform-profiles, preferences reference, CI reference). Each generator enforces coverage: a new code-defined key without a desc: tag or doc entry fails the build. |
 | `make tailwind-watch` | Watch and rebuild Tailwind CSS |
 | `make migrate` | Run database migrations |
 | `make favicon` | Regenerate PNG favicons from logo design |
