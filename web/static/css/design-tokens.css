@@ -221,18 +221,58 @@ body { font-family: var(--sw-font-family); }
 :root {
   --sw-density-row-py: 0.5rem;   /* default comfortable row padding */
   --sw-density-gap: 1rem;        /* default gap between list items  */
+  /* Dashboard + artist-detail INTERNAL spacing (#1935 rework). The row-py/gap
+   * tokens above drive the artists list; these drive the card padding / field
+   * rows / activity rows / tile gaps that the eye actually reads as density on
+   * the dashboard and artist-detail. Maintainer ladder: today's native hardcoded
+   * spacing IS "compact" -- the consuming rules in input.css deliberately do NOT
+   * match data-density="compact", so compact falls through to the native padding
+   * and looks exactly like today; "comfortable" (the new, intentionally roomier
+   * default) and "spacious" step up via these tokens. The :root defaults equal
+   * the comfortable values so a fresh page (before preferences.js sets
+   * data-density) renders at the comfortable default with no flash. A SEPARATE
+   * --sw-density-field-py keeps the artists list's locked row-py untouched. */
+  --sw-density-card-py: 1.25rem;    /* 20px card head/body + stat-bubble py */
+  --sw-density-card-px: 1.375rem;   /* 22px card head/body + stat-bubble px */
+  --sw-density-tile-gap: 0.75rem;   /* 12px header-strip / stat-grid gap     */
+  --sw-density-field-py: 0.5rem;    /* 8px  artist-detail field-row py        */
+  --sw-density-feed-py: 0.875rem;   /* 14px dashboard activity-row py         */
+  /* Artist-detail inter-CARD flex gap (#1935). DEDICATED token (not the shared
+   * --sw-density-gap, whose 8px compact + dashboard reuse caused the wrong value):
+   * compact 1rem(16px=today's collapsed space-y-4 default), comfortable 1.5rem(24px),
+   * spacious 2rem(32px). Defined at EVERY density (incl. compact) because the
+   * .sw-next-artist-detail flex block is NOT gated by :not([compact]). :root default
+   * = comfortable 1.5rem so a fresh page (pre preferences.js) renders comfortable. */
+  --sw-density-detail-gap: 1.5rem;  /* 24px comfortable default (= no-flash)   */
 }
 [data-density="compact"] {
   --sw-density-row-py: 0.25rem;
   --sw-density-gap: 0.5rem;
+  /* compact artist-detail inter-card gap = 16px = today's native collapsed
+   * space-y-4 spacing (the maintainer's hard "compact must equal today" floor). */
+  --sw-density-detail-gap: 1rem;    /* 16px */
+  /* No card-py/px/tile-gap/field-py/feed-py here on purpose: compact is the
+   * native hardcoded spacing, applied by NOT matching these rules (passthrough). */
 }
 [data-density="comfortable"] {
   --sw-density-row-py: 0.5rem;
   --sw-density-gap: 1rem;
+  --sw-density-card-py: 1.25rem;    /* 20px */
+  --sw-density-card-px: 1.375rem;   /* 22px */
+  --sw-density-tile-gap: 0.75rem;   /* 12px */
+  --sw-density-field-py: 0.5rem;    /* 8px  */
+  --sw-density-feed-py: 0.875rem;   /* 14px */
+  --sw-density-detail-gap: 1.5rem;  /* 24px */
 }
 [data-density="spacious"] {
   --sw-density-row-py: 0.875rem;
   --sw-density-gap: 1.5rem;
+  --sw-density-card-py: 1.625rem;   /* 26px */
+  --sw-density-card-px: 1.75rem;    /* 28px */
+  --sw-density-tile-gap: 1.125rem;  /* 18px */
+  --sw-density-field-py: 0.75rem;   /* 12px */
+  --sw-density-feed-py: 1.125rem;   /* 18px */
+  --sw-density-detail-gap: 2rem;    /* 32px */
 }
 
 /* -- Monospace font (set via data-mono on <html>, M55 #1774) -------------- */

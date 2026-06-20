@@ -2846,6 +2846,59 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   font-size: 0.8125rem;
 }
 
+/* ============================================================================
+ * Density preference bridge (M55 #1935, on top of the #1774 density tokens).
+ *
+ * The "Density" appearance preference is wired end to end EXCEPT for the CSS
+ * that reacts to it: preferences.js maps the `density` pref onto the
+ * data-density attribute on <html> (allowed compact|comfortable|spacious, per
+ * handlers_preferences.go PrefDensity), and design-tokens.css derives
+ * --sw-density-row-py (row vertical padding) and --sw-density-gap (gap between
+ * stacked items) from that attribute. Until now NOTHING consumed those tokens,
+ * so the preference had no visible effect. These rules consume them across the
+ * three next/ list surfaces: the artists list, the dashboard, and artist-detail.
+ *
+ * Design choice: only compact and spacious override the surfaces. "comfortable"
+ * is the native, hand-tuned rhythm of each scope (the table's py-3 cells, the
+ * scopes' own space-y-* card gaps), so it is left untouched -- the default look
+ * is unchanged and only an explicit non-default density shifts the spacing.
+ *
+ * Keyed on html[data-density="..."] (the ROOT attribute set by the pref), NOT
+ * the per-table data-density on .sw-next-artists. That table attribute is
+ * hardcoded "comfy" for the legacy compact-on-selection model (#1335) and lives
+ * on a different element, so the two never collide.
+ * ============================================================================ */
+
+/* Artists list -- the table is the densest surface (one row per artist), so its
+ * body cells track the density row-padding token. */
+html[data-density="compact"] .sw-next-artists tbody td,
+html[data-density="spacious"] .sw-next-artists tbody td {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
+}
+
+/* Artists list -- the card/grid ("gallery") view gap tracks the density gap
+ * token. Matches any responsive grid-cols-* container in the scope. */
+html[data-density="compact"] .sw-next-artists [class*="grid-cols"],
+html[data-density="spacious"] .sw-next-artists [class*="grid-cols"] {
+  gap: var(--sw-density-gap);
+}
+
+/* Dashboard -- a vertical stack of cards laid out with Tailwind space-y-* (a
+ * zero-specificity :where() utility that sets margin-block-end on every non-last
+ * child). Rebind that inter-card gap to the density gap token across ALL densities
+ * (#1935 rework: comfortable is now the intentionally-roomier default, so it must
+ * override too; html:not([data-density]) covers the pre-JS default with no flash).
+ * The explicit selector outranks the utility cleanly. Artist-detail's outer stack
+ * is handled by the flex+gap conversion in the "Density bridge II" block below
+ * (it had a margin-collapse gotcha mixing margin-top with margin-block-end). */
+html[data-density="compact"] .sw-next-dashboard > :not(:last-child),
+html[data-density="comfortable"] .sw-next-dashboard > :not(:last-child),
+html[data-density="spacious"] .sw-next-dashboard > :not(:last-child),
+html:not([data-density]) .sw-next-dashboard > :not(:last-child) {
+  margin-block-end: var(--sw-density-gap);
+}
+
 /* Checkbox treatment (M55 #1335; maintainer note 2026-05-30): the prototype's
  * selection checkboxes carry a surface-tinted background instead of the
  * browser-default white box, in BOTH themes. Restyle the reused native
@@ -3406,11 +3459,11 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 }
 
 /* Denser than the prototype (UAT round 3: the prototype wastes vertical space).
- * Tighten the card header/body padding and the inter-card gap on this screen
- * only, so the page reads compact without changing the shared dashboard. */
-.sw-next-artist-detail.space-y-4 > * + * {
-  margin-top: 0.625rem; /* 10px between cards (was 16px) */
-}
+ * These head/body paddings are the NATIVE "compact" baseline for this screen
+ * (#1935): the density bridge II block below leaves compact untouched (passthrough)
+ * and only steps comfortable/spacious roomier. The inter-card gap is no longer set
+ * here -- the bridge II block converts this root stack to flex + gap (var
+ * --sw-density-gap), which also fixes the old margin-top/margin-block-end collapse. */
 .sw-next-artist-detail .sw-dash-card > .head {
   padding: 10px 16px;
 }
@@ -3746,6 +3799,100 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--swd-line);
+}
+
+/* ============================================================================
+ * Density bridge II -- dashboard + artist-detail INTERNAL spacing (M55 #1935
+ * rework). Round 1 (the bridge above) tokenized only the OUTER card-stack gap;
+ * the maintainer UAT found the effect imperceptible on these two screens because
+ * every INTERNAL element (card head/body padding, field rows, activity rows,
+ * stat bubbles, tile gaps) was hardcoded Tailwind/CSS. These rules tokenize that
+ * internal spacing -- the spacing the eye actually reads as density.
+ *
+ * LADDER (maintainer directive): today's native spacing IS "compact". Every rule
+ * below is prefixed html:not([data-density="compact"]), so under compact NONE of
+ * them match and the screen falls through to its existing hardcoded padding =
+ * exactly today. The same selector matches "comfortable", "spacious", AND the
+ * no-attribute pre-JS state, with the per-density token values (design-tokens.css)
+ * supplying comfortable (the new, intentionally roomier default) and spacious
+ * (roomier still). The :root token defaults equal the comfortable values, so a
+ * fresh page renders comfortable with no flash.
+ *
+ * ARTISTS LIST UNTOUCHED: it passed UAT and consumes the locked --sw-density-row-py
+ * / --sw-density-gap (compact+spacious only). These rules are scoped to
+ * .sw-next-dashboard / .sw-next-artist-detail and use SEPARATE tokens
+ * (--sw-density-card-py/px, field-py, feed-py, tile-gap) so the artists list is byte-
+ * identical. (--sw-density-gap is reused for the dashboard outer gap + artist-detail
+ * flex gap, but artists consumes only its compact/spacious values, which are unchanged.)
+ *
+ * CASCADE: html:not([data-density="compact"]) contributes (0,1,1), so every rule
+ * outranks its single/double-class hardcoded base and the Tailwind utilities, and
+ * the block's late source order is the final tiebreak. =========================== */
+
+/* Artist-detail: convert the root card stack from Tailwind space-y-4 to flex
+ * column + gap. The flex gap is the SINGLE source of inter-card spacing and tracks
+ * the DEDICATED --sw-density-detail-gap token across all densities (compact 1rem=16px
+ * = today's collapsed space-y-4 default, comfortable 1.5rem=24px, spacious 2rem=32px;
+ * :root default 1.5rem = comfortable, no flash).
+ *
+ * CRITICAL (Tailwind v4): space-y-4 compiles to
+ *   :where(.space-y-4 > :not(:last-child)){ margin-block-end: 16px }
+ * -- a margin-BLOCK-END, NOT margin-top. So we must zero margin-block-end (the real
+ * property Tailwind emits); zeroing margin-top would be a no-op and the 16px residual
+ * would survive and STACK additively with the flex gap (margins don't collapse in a
+ * flex container), inflating every gap by +16px. */
+.sw-next-artist-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sw-density-detail-gap);
+}
+/* Neutralize the Tailwind space-y-4 residual margin (margin-block-end, the property
+ * Tailwind v4 actually emits) so ONLY the flex gap spaces the stack -- no residual. */
+.sw-next-artist-detail.space-y-4 > :not(:last-child) {
+  margin-block-end: 0;
+}
+
+/* Card head + body padding (both screens). :not(.tight) preserves the intentional
+ * tight body variant (dashboard queue / activity-rail lists). */
+html:not([data-density="compact"]) .sw-next-dashboard .sw-dash-card > .head,
+html:not([data-density="compact"]) .sw-next-artist-detail .sw-dash-card > .head,
+html:not([data-density="compact"]) .sw-next-dashboard .sw-dash-card > .body:not(.tight),
+html:not([data-density="compact"]) .sw-next-artist-detail .sw-dash-card > .body:not(.tight) {
+  padding: var(--sw-density-card-py) var(--sw-density-card-px);
+}
+
+/* Dashboard stat bubbles (the header-strip pills, native px-4 py-3). */
+html:not([data-density="compact"]) .sw-next-dashboard .sw-stat-bubble {
+  padding: var(--sw-density-card-py) var(--sw-density-card-px);
+}
+
+/* Dashboard header strip / stat grid gap (native gap-2 sm:gap-3). */
+html:not([data-density="compact"]) .sw-next-dashboard .sw-next-header-strip {
+  gap: var(--sw-density-tile-gap);
+}
+
+/* Dashboard activity feed rows. The .sw-activity-row class is carried by BOTH the
+ * server-rendered templ rows AND the inline-JS-built rows, so this single CSS rule
+ * covers both without touching the JS strings (native py-2.5). */
+html:not([data-density="compact"]) .sw-next-dashboard .sw-activity-row {
+  padding-top: var(--sw-density-feed-py);
+  padding-bottom: var(--sw-density-feed-py);
+}
+
+/* Artist-detail field rows ([id^="field-"]) -- the page's densest repeated element
+ * and the maintainer's "only minimal" complaint (native 3px 0). A SEPARATE field-py
+ * token so the artists list's locked row-py is never disturbed. */
+html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-fields [id^="field-"] {
+  padding-top: var(--sw-density-field-py);
+  padding-bottom: var(--sw-density-field-py);
+}
+
+/* Artist-detail between-group separators (native 14px) grow with density so the
+ * "distinct labeled blocks" rhythm gets roomier too. Reuses card-py (same vertical
+ * breathing-room concept): compact passthrough 14px, comfortable 20px, spacious 26px. */
+html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + .sw-next-meta-group {
+  margin-top: var(--sw-density-card-py);
+  padding-top: var(--sw-density-card-py);
 }
 
 /* Pref-aware type-scale tokens (M55 #1853): one rem-based ramp the whole
