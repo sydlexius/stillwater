@@ -730,7 +730,7 @@ func (a *Application) wireProviders(ctx context.Context) error {
 	if err := a.scraperService.SeedDefaults(ctx); err != nil {
 		return fmt.Errorf("seeding default scraper config: %w", err)
 	}
-	scraperExecutor := scraper.NewExecutor(a.scraperService, a.providerRegistry, a.providerSettings, logger)
+	scraperExecutor := scraper.NewExecutor(a.scraperService, a.providerRegistry, a.providerSettings, logger, aimdCtrl)
 	a.orchestrator.SetExecutor(scraperExecutor)
 
 	return nil

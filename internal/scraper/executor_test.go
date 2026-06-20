@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -122,7 +123,7 @@ func TestExecutorErrNotFoundMarksFieldAttempted(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
@@ -190,7 +191,7 @@ func TestExecutorPopulatedFields_DistinguishesAttemptedFromPopulated(t *testing.
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
 		t.Fatalf("ScrapeAll: %v", err)
@@ -241,7 +242,7 @@ func TestExecutorPopulatedFields_RecordsFieldWhenProviderReturnsData(t *testing.
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
 		t.Fatalf("ScrapeAll: %v", err)
@@ -294,7 +295,7 @@ func TestExecutorGetImagesTimeoutDoesNotMarkImageFieldAttempted(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
@@ -341,7 +342,7 @@ func TestExecutorGetImagesErrNotFoundMarksImageFieldAttempted(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
@@ -394,7 +395,7 @@ func TestExecutorGetImagesDataMarksImageFieldAttempted(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
@@ -467,7 +468,7 @@ func TestExecutorFallbackChainImageTimeout(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
@@ -523,7 +524,7 @@ func TestExecutorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
@@ -845,7 +846,7 @@ func TestExecutorHonorsConfiguredPriority(t *testing.T) {
 		t.Fatalf("SetPriority: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
 		t.Fatalf("ScrapeAll: %v", err)
@@ -922,7 +923,7 @@ func TestExecutorPriorityFallbackPreservesUnlistedProviders(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 	result, err := exec.ScrapeAll(ctx, "mbid-x", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
 		t.Fatalf("ScrapeAll: %v", err)
@@ -1014,7 +1015,7 @@ func TestExecutorPriorityFallback_AllDisabledSkipsField(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 	result, err := exec.ScrapeAll(ctx, "mbid-x", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
 		t.Fatalf("ScrapeAll: %v", err)
@@ -1200,7 +1201,7 @@ func TestScrapeAll_LocalizesGenresFromMetadataLanguage(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	exec := NewExecutor(svc, registry, settings, logger)
+	exec := NewExecutor(svc, registry, settings, logger, nil)
 	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
 	if err != nil {
@@ -1496,5 +1497,167 @@ func TestEffectiveFieldOrdering_NonEmpty_Unchanged(t *testing.T) {
 		if gotChain.Providers[i] != p {
 			t.Errorf("Providers[%d]: want %q, got %q", i, p, gotChain.Providers[i])
 		}
+	}
+}
+
+// --- AIMD executor path tests -------------------------------------------------
+
+// executorTestClock is a minimal provider.Clock for executor AIMD tests. It
+// always returns a fixed time so hysteresis cooldowns do not interfere.
+type executorTestClock struct{ t time.Time }
+
+func (c executorTestClock) Now() time.Time                                 { return c.t }
+func (c executorTestClock) Sleep(_ context.Context, _ time.Duration) error { return nil }
+
+// newExecutorTestAIMD returns an AIMDController backed by a real RateLimiterMap
+// and a fixed-time clock. The fixed time ensures that repeated RecordFailure
+// calls within one test are NOT silently absorbed by the hysteresis guard
+// (which requires time.Now() to advance by aimdHysteresisCooldown = 30s).
+// For failure tests we call RecordFailure only once; for success tests we
+// drive aimdSuccessThreshold (10) calls without triggering hysteresis.
+func newExecutorTestAIMD() *provider.AIMDController {
+	rlm := provider.NewRateLimiterMap()
+	clk := executorTestClock{t: time.Now()}
+	return provider.NewAIMDController(rlm, clk)
+}
+
+// newSingleFieldConfig returns a minimal ScraperConfig with one enabled field
+// (biography) sourced from the given primary provider in a single-entry chain.
+func newSingleFieldConfig(t *testing.T, ctx context.Context, svc *Service, prov provider.ProviderName) {
+	t.Helper()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldBiography, Primary: prov, Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{prov}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+}
+
+// TestExecutorAIMD_RateLimitErrorCallsRecordFailure verifies that when
+// getProviderResult receives an *ErrProviderUnavailable from GetArtist, it
+// drives RecordFailure on the AIMD controller, which multiplicatively decreases
+// the provider's current rate limit.
+//
+// Setup: prime the limit above the floor via aimdSuccessThreshold successful
+// calls (using a switchable mock), then flip the mock to rate-limit mode.
+// This ensures the decrease has room to move below the initial elevated limit.
+func TestExecutorAIMD_RateLimitErrorCallsRecordFailure(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+	ctx := context.Background()
+
+	// failMode gates the provider between "success" and "rate-limited" behavior.
+	var failMode bool
+
+	registry.Register(&mockProvider{
+		name: provider.NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			if failMode {
+				return nil, &provider.ErrProviderUnavailable{
+					Provider:   provider.NameAudioDB,
+					RetryAfter: 5 * time.Second,
+				}
+			}
+			return &provider.ArtistMetadata{
+				Biography: "A long enough biography for the junk filter, definitely more than fifty characters long.",
+			}, nil
+		},
+	})
+
+	newSingleFieldConfig(t, ctx, svc, provider.NameAudioDB)
+
+	aimdCtrl := newExecutorTestAIMD()
+	exec := NewExecutor(svc, registry, settings, logger, aimdCtrl)
+
+	// Prime: drive aimdSuccessThreshold (10) + 1 successful calls so the limit
+	// rises above the floor. The 10th call triggers one additive increase.
+	const primeRounds = 11
+	for i := range primeRounds {
+		if _, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil); err != nil {
+			t.Fatalf("prime ScrapeAll %d: %v", i, err)
+		}
+	}
+	primedLimit := aimdCtrl.GetCurrentLimit(provider.NameAudioDB)
+
+	// Flip to failure mode. The hysteresis cooldown is 30s; since our test
+	// clock uses a fixed time, hysteresis never fires for a FIRST decrease.
+	failMode = true
+	if _, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil); err != nil {
+		t.Fatalf("failure ScrapeAll: %v", err)
+	}
+
+	gotLimit := aimdCtrl.GetCurrentLimit(provider.NameAudioDB)
+	if gotLimit >= primedLimit {
+		t.Errorf("expected AIMD limit to decrease after rate-limit error; primed=%.3f got=%.3f",
+			float64(primedLimit), float64(gotLimit))
+	}
+}
+
+// TestExecutorAIMD_SuccessCallsRecordSuccess verifies that when getProviderResult
+// returns a valid result (no error), it drives RecordSuccess on the AIMD
+// controller. After aimdSuccessThreshold (10) consecutive successes the limit
+// increases; the test drives 11 ScrapeAll calls to guarantee a threshold crossing.
+func TestExecutorAIMD_SuccessCallsRecordSuccess(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+	ctx := context.Background()
+
+	// Register a provider that always returns valid metadata.
+	registry.Register(&mockProvider{
+		name: provider.NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{
+				Biography: "A biography that is long enough to pass the junk filter for test purposes, definitely more than 50 chars.",
+			}, nil
+		},
+	})
+
+	newSingleFieldConfig(t, ctx, svc, provider.NameAudioDB)
+
+	aimdCtrl := newExecutorTestAIMD()
+	initialLimit := aimdCtrl.GetCurrentLimit(provider.NameAudioDB)
+
+	exec := NewExecutor(svc, registry, settings, logger, aimdCtrl)
+
+	// Drive 11 successful calls. The AIMD threshold is 10 consecutive successes,
+	// so the 10th call triggers one additive increase and the 11th resets the
+	// counter; the limit must be strictly greater than the initial after this loop.
+	const calls = 11
+	for i := range calls {
+		_, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+		if err != nil {
+			t.Fatalf("ScrapeAll call %d: %v", i, err)
+		}
+	}
+
+	gotLimit := aimdCtrl.GetCurrentLimit(provider.NameAudioDB)
+	if gotLimit <= initialLimit {
+		t.Errorf("expected AIMD limit to increase after %d successes; initial=%.3f got=%.3f",
+			calls, float64(initialLimit), float64(gotLimit))
+	}
+}
+
+// TestExecutorAIMD_NilController verifies that a nil AIMDController does not
+// panic -- the executor must guard every signal with a nil check.
+func TestExecutorAIMD_NilController(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+	ctx := context.Background()
+
+	registry.Register(&mockProvider{
+		name: provider.NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return nil, &provider.ErrProviderUnavailable{Provider: provider.NameAudioDB}
+		},
+	})
+
+	newSingleFieldConfig(t, ctx, svc, provider.NameAudioDB)
+
+	exec := NewExecutor(svc, registry, settings, logger, nil) // nil AIMD
+	if _, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil); err != nil {
+		t.Fatalf("ScrapeAll with nil aimd panicked or errored: %v", err)
 	}
 }

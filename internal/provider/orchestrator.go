@@ -150,10 +150,10 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 //nolint:gocognit // Per-field provider iteration in priority order with provider-ID enrichment carry-forward between fields; this is the legacy non-scraper path retained for callers that have no scraper config, and its semantics must match ScrapeAll's outcome on a parallel diagram.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
 	if o.executor != nil {
-		// NOTE: the ScraperExecutor (scraper.Executor.ScrapeAll) is the production
-		// refresh path and bypasses all AIMD instrumentation below. Wiring AIMD
-		// signals into the executor is tracked as a follow-up; do not instrument it
-		// in this PR.
+		// The ScraperExecutor (scraper.Executor.ScrapeAll) is the production
+		// refresh path. It records AIMD signals internally via its own
+		// AIMDController reference (the same instance as o.aimd), so no
+		// additional instrumentation is needed here.
 		return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
 	}
 
@@ -392,15 +392,20 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 	return allResults, nil
 }
 
-// isRateLimitError reports whether err is a provider-rate-limit / transient-
+// IsRateLimitError reports whether err is a provider-rate-limit / transient-
 // unavailability signal that the AIMD controller should react to. Only
 // *ErrProviderUnavailable qualifies: it carries 429/503/Retry-After semantics.
 // Ordinary errors (ErrNotFound, auth/401, JSON parse, context cancellation)
 // must NOT drive an AIMD decrease.
-func isRateLimitError(err error) bool {
+func IsRateLimitError(err error) bool {
 	var unavailable *ErrProviderUnavailable
 	return errors.As(err, &unavailable)
 }
+
+// isRateLimitError is the package-internal alias used by the orchestrator's own
+// getProviderResult. Callers outside the package (e.g. scraper.Executor) use
+// the exported IsRateLimitError.
+func isRateLimitError(err error) bool { return IsRateLimitError(err) }
 
 // retryAfterAttr returns a slog attribute carrying the server-advised backoff
 // from an *ErrProviderUnavailable, or an empty (elided) attribute when the error
@@ -416,17 +421,21 @@ func retryAfterAttr(err error) slog.Attr {
 	return slog.Attr{}
 }
 
-// retryAfterDuration extracts the RetryAfter duration from an
+// RetryAfterDuration extracts the RetryAfter duration from an
 // *ErrProviderUnavailable, returning 0 when the error is not of that type or
 // carries no hint. Used to pass the server-advised backoff to the AIMD
 // controller so it can log it alongside the multiplicative decrease.
-func retryAfterDuration(err error) time.Duration {
+func RetryAfterDuration(err error) time.Duration {
 	var unavailable *ErrProviderUnavailable
 	if errors.As(err, &unavailable) {
 		return unavailable.RetryAfter
 	}
 	return 0
 }
+
+// retryAfterDuration is the package-internal alias used by the orchestrator's
+// own getProviderResult. Callers outside the package use RetryAfterDuration.
+func retryAfterDuration(err error) time.Duration { return RetryAfterDuration(err) }
 
 // availableProviders returns only the registered providers whose API keys are
 // configured (or that do not require a key). This prevents the orchestrator
