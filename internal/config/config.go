@@ -28,6 +28,14 @@ type Config struct {
 	Logging    LoggingConfig    `yaml:"logging" toml:"logging"`
 	ACME       ACMEConfig       `yaml:"acme" toml:"acme"`
 	RuleEngine RuleEngineConfig `yaml:"rule_engine" toml:"rule_engine"`
+
+	// DeprecatedYAMLFormat is set to true when Load parsed the config file as
+	// YAML. YAML config is deprecated in favor of TOML (issue #1274); the
+	// config package stays logger-free, so it only records the fact here and
+	// leaves emitting the startup deprecation WARN to cmd/stillwater (which
+	// owns the logger). The yaml:"-"/toml:"-" tags keep it off the wire so a
+	// config file can never set it directly.
+	DeprecatedYAMLFormat bool `yaml:"-" toml:"-"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -382,6 +390,10 @@ func (c *Config) loadFromFile(path string) error {
 		if err := yaml.Unmarshal(data, c); err != nil {
 			return fmt.Errorf("parsing YAML: %w", err)
 		}
+		// Record that the config was loaded from the deprecated YAML format so
+		// the startup path can WARN. Set only after a successful parse so a
+		// malformed file (which aborts Load) never flags as a live YAML deploy.
+		c.DeprecatedYAMLFormat = true
 		return nil
 	}
 	// Unreachable; detectFormat always returns one of the two formats.

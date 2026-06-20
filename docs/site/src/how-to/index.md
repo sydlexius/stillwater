@@ -96,6 +96,14 @@ Step-by-step procedures for the common operations. For background and *why*, see
 
     [Read more](export-import-settings.md)
 
+- __Convert YAML config to TOML__
+
+    ---
+
+    Migrate a deprecated YAML config file to the supported TOML format, section by section.
+
+    [Read more](convert-yaml-to-toml.md)
+
 - __Update Stillwater__
 
     ---
