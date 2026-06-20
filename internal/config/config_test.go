@@ -141,6 +141,58 @@ logging:
 	}
 }
 
+// TestLoad_YAMLSetsDeprecationFlag asserts that loading a YAML config file
+// flags the deprecated format on the returned Config (issue #1274), while TOML
+// and the missing-file/env-only paths leave the flag false. The startup path
+// reads this flag to emit the YAML deprecation WARN.
+func TestLoad_YAMLSetsDeprecationFlag(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+
+	yamlPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(yamlPath, []byte(`
+server:
+  port: 8080
+database:
+  path: /tmp/test.db
+`), 0o644); err != nil {
+		t.Fatalf("writing yaml config: %v", err)
+	}
+	yamlCfg, err := Load(yamlPath)
+	if err != nil {
+		t.Fatalf("Load yaml: %v", err)
+	}
+	if !yamlCfg.DeprecatedYAMLFormat {
+		t.Error("DeprecatedYAMLFormat = false for a YAML file, want true")
+	}
+
+	tomlPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(`
+[server]
+port = 8080
+[database]
+path = "/tmp/test.db"
+`), 0o644); err != nil {
+		t.Fatalf("writing toml config: %v", err)
+	}
+	tomlCfg, err := Load(tomlPath)
+	if err != nil {
+		t.Fatalf("Load toml: %v", err)
+	}
+	if tomlCfg.DeprecatedYAMLFormat {
+		t.Error("DeprecatedYAMLFormat = true for a TOML file, want false")
+	}
+
+	// Missing file / env-only path must not flag YAML.
+	defCfg, err := Load("/nonexistent/path/config.yaml")
+	if err != nil {
+		t.Fatalf("Load missing file: %v", err)
+	}
+	if defCfg.DeprecatedYAMLFormat {
+		t.Error("DeprecatedYAMLFormat = true for a missing file, want false")
+	}
+}
+
 func TestLoad_EnvOverridesYAML(t *testing.T) {
 	clearSWEnv(t)
 	dir := t.TempDir()
