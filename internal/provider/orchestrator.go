@@ -346,8 +346,8 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", p.Name()))
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
-			if o.aimd != nil && isRateLimitError(err) {
-				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			if o.aimd != nil && IsRateLimitError(err) {
+				o.aimd.RecordFailure(p.Name(), RetryAfterDuration(err))
 			}
 			continue
 		}
@@ -378,8 +378,8 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 				retryAfterAttr(err))
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
-			if o.aimd != nil && isRateLimitError(err) {
-				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			if o.aimd != nil && IsRateLimitError(err) {
+				o.aimd.RecordFailure(p.Name(), RetryAfterDuration(err))
 			}
 			continue
 		}
@@ -401,11 +401,6 @@ func IsRateLimitError(err error) bool {
 	var unavailable *ErrProviderUnavailable
 	return errors.As(err, &unavailable)
 }
-
-// isRateLimitError is the package-internal alias used by the orchestrator's own
-// getProviderResult. Callers outside the package (e.g. scraper.Executor) use
-// the exported IsRateLimitError.
-func isRateLimitError(err error) bool { return IsRateLimitError(err) }
 
 // retryAfterAttr returns a slog attribute carrying the server-advised backoff
 // from an *ErrProviderUnavailable, or an empty (elided) attribute when the error
@@ -432,10 +427,6 @@ func RetryAfterDuration(err error) time.Duration {
 	}
 	return 0
 }
-
-// retryAfterDuration is the package-internal alias used by the orchestrator's
-// own getProviderResult. Callers outside the package use RetryAfterDuration.
-func retryAfterDuration(err error) time.Duration { return RetryAfterDuration(err) }
 
 // availableProviders returns only the registered providers whose API keys are
 // configured (or that do not require a key). This prevents the orchestrator
@@ -590,7 +581,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 					retryAfterAttr(err))
 				pr.err = err
 				// Record the first rate-limit error for the composite AIMD signal.
-				if isRateLimitError(err) && aimdRateLimitErr == nil {
+				if IsRateLimitError(err) && aimdRateLimitErr == nil {
 					aimdRateLimitErr = err
 				}
 			}
@@ -631,7 +622,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 				// when the provider was merely unreachable.
 				pr.imageErr = err
 				// Record the first rate-limit error for the composite AIMD signal.
-				if isRateLimitError(err) && aimdRateLimitErr == nil {
+				if IsRateLimitError(err) && aimdRateLimitErr == nil {
 					aimdRateLimitErr = err
 				}
 			}
@@ -649,7 +640,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 	// AIMD signals and neither case fires for them.
 	if o.aimd != nil {
 		if aimdRateLimitErr != nil {
-			o.aimd.RecordFailure(name, retryAfterDuration(aimdRateLimitErr))
+			o.aimd.RecordFailure(name, RetryAfterDuration(aimdRateLimitErr))
 		} else if aimdGotResult {
 			o.aimd.RecordSuccess(name)
 		}
@@ -1298,8 +1289,8 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 			})
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
-			if o.aimd != nil && isRateLimitError(err) {
-				o.aimd.RecordFailure(provName, retryAfterDuration(err))
+			if o.aimd != nil && IsRateLimitError(err) {
+				o.aimd.RecordFailure(provName, RetryAfterDuration(err))
 			}
 			continue
 		}

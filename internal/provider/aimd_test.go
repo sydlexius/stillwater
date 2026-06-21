@@ -364,9 +364,9 @@ func TestAIMDGetCurrentLimit(t *testing.T) {
 	}
 }
 
-// TestRateLimitErrorHelpers exercises IsRateLimitError / RetryAfterDuration and
-// their package-internal aliases isRateLimitError / retryAfterDuration against
-// (a) an *ErrProviderUnavailable carrying a Retry-After and (b) ordinary errors.
+// TestRateLimitErrorHelpers exercises IsRateLimitError / RetryAfterDuration
+// against (a) an *ErrProviderUnavailable carrying a Retry-After and (b) ordinary
+// errors.
 func TestRateLimitErrorHelpers(t *testing.T) {
 	t.Parallel()
 
@@ -378,14 +378,8 @@ func TestRateLimitErrorHelpers(t *testing.T) {
 	if !IsRateLimitError(unavailable) {
 		t.Error("IsRateLimitError(*ErrProviderUnavailable): expected true")
 	}
-	if !isRateLimitError(unavailable) {
-		t.Error("isRateLimitError(*ErrProviderUnavailable): expected true")
-	}
 	if got := RetryAfterDuration(unavailable); got != retry {
 		t.Errorf("RetryAfterDuration(*ErrProviderUnavailable): expected %v, got %v", retry, got)
-	}
-	if got := retryAfterDuration(unavailable); got != retry {
-		t.Errorf("retryAfterDuration(*ErrProviderUnavailable): expected %v, got %v", retry, got)
 	}
 
 	// (b) Ordinary errors are NOT rate-limit signals and carry no backoff.
@@ -396,14 +390,8 @@ func TestRateLimitErrorHelpers(t *testing.T) {
 		if IsRateLimitError(ordinary) {
 			t.Errorf("IsRateLimitError(%v): expected false", ordinary)
 		}
-		if isRateLimitError(ordinary) {
-			t.Errorf("isRateLimitError(%v): expected false", ordinary)
-		}
 		if got := RetryAfterDuration(ordinary); got != 0 {
 			t.Errorf("RetryAfterDuration(%v): expected 0, got %v", ordinary, got)
-		}
-		if got := retryAfterDuration(ordinary); got != 0 {
-			t.Errorf("retryAfterDuration(%v): expected 0, got %v", ordinary, got)
 		}
 	}
 }
