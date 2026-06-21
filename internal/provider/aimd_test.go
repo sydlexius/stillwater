@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -314,6 +315,95 @@ func TestAIMDConcurrencyTwoKeys(t *testing.T) {
 		}
 		if got > ceiling {
 			t.Errorf("provider %s: limit %v above ceiling %v", n, got, ceiling)
+		}
+	}
+}
+
+// TestAIMDGetCurrentLimit verifies GetCurrentLimit across BOTH lock paths: the
+// lazy-init write-lock path (first touch of a fresh provider) and the
+// already-initialized fast path (RLock). It also confirms the returned value
+// tracks AIMD signal effects (a success ramp and a multiplicative decrease).
+func TestAIMDGetCurrentLimit(t *testing.T) {
+	t.Parallel()
+	clk := newFakeClock(time.Now())
+	ctrl := newTestAIMD(clk)
+	name := NameMusicBrainz // floor = 1 req/s, ceiling = 10
+	floor := defaultRateLimits[name]
+
+	// Lazy-init path: a fresh provider has no state slot, so GetCurrentLimit must
+	// take the write lock, initialize via stateFor, and return the floor.
+	if got := ctrl.GetCurrentLimit(name); got != floor {
+		t.Fatalf("fresh GetCurrentLimit (lazy-init/write-lock path): expected floor %v, got %v", floor, got)
+	}
+
+	// Fast path: the slot now exists, so a second call reads it under the RLock
+	// and returns the same value.
+	if got := ctrl.GetCurrentLimit(name); got != floor {
+		t.Fatalf("initialized GetCurrentLimit (RLock fast path): expected floor %v, got %v", floor, got)
+	}
+
+	// One additive increase: aimdSuccessThreshold successes raise the limit by
+	// aimdIncrement. The fast path must report the elevated value.
+	for range aimdSuccessThreshold {
+		ctrl.RecordSuccess(name)
+	}
+	wantUp := floor + aimdIncrement
+	if got := ctrl.GetCurrentLimit(name); got != wantUp {
+		t.Fatalf("GetCurrentLimit after success ramp: expected %v, got %v", wantUp, got)
+	}
+
+	// One multiplicative decrease: the limit halves, floored at the provider
+	// default. The fast path must report the post-failure value.
+	ctrl.RecordFailure(name, 0)
+	wantDown := rate.Limit(float64(wantUp) * aimdDecreaseFactor)
+	if wantDown < floor {
+		wantDown = floor
+	}
+	if got := ctrl.GetCurrentLimit(name); got != wantDown {
+		t.Fatalf("GetCurrentLimit after failure: expected %v, got %v", wantDown, got)
+	}
+}
+
+// TestRateLimitErrorHelpers exercises IsRateLimitError / RetryAfterDuration and
+// their package-internal aliases isRateLimitError / retryAfterDuration against
+// (a) an *ErrProviderUnavailable carrying a Retry-After and (b) ordinary errors.
+func TestRateLimitErrorHelpers(t *testing.T) {
+	t.Parallel()
+
+	// (a) An *ErrProviderUnavailable is a rate-limit signal and exposes its
+	// server-advised backoff.
+	const retry = 7 * time.Second
+	unavailable := &ErrProviderUnavailable{Provider: NameMusicBrainz, RetryAfter: retry}
+
+	if !IsRateLimitError(unavailable) {
+		t.Error("IsRateLimitError(*ErrProviderUnavailable): expected true")
+	}
+	if !isRateLimitError(unavailable) {
+		t.Error("isRateLimitError(*ErrProviderUnavailable): expected true")
+	}
+	if got := RetryAfterDuration(unavailable); got != retry {
+		t.Errorf("RetryAfterDuration(*ErrProviderUnavailable): expected %v, got %v", retry, got)
+	}
+	if got := retryAfterDuration(unavailable); got != retry {
+		t.Errorf("retryAfterDuration(*ErrProviderUnavailable): expected %v, got %v", retry, got)
+	}
+
+	// (b) Ordinary errors are NOT rate-limit signals and carry no backoff.
+	for _, ordinary := range []error{
+		&ErrNotFound{Provider: NameMusicBrainz, ID: "x"},
+		errors.New("some plain error"),
+	} {
+		if IsRateLimitError(ordinary) {
+			t.Errorf("IsRateLimitError(%v): expected false", ordinary)
+		}
+		if isRateLimitError(ordinary) {
+			t.Errorf("isRateLimitError(%v): expected false", ordinary)
+		}
+		if got := RetryAfterDuration(ordinary); got != 0 {
+			t.Errorf("RetryAfterDuration(%v): expected 0, got %v", ordinary, got)
+		}
+		if got := retryAfterDuration(ordinary); got != 0 {
+			t.Errorf("retryAfterDuration(%v): expected 0, got %v", ordinary, got)
 		}
 	}
 }
