@@ -104,6 +104,10 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
+    "route": "GET /api/v1/artists/{}/audiodb/identify",
+    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
+  },
+  {
     "route": "GET /api/v1/artists/{}/deezer/identify",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
@@ -389,6 +393,14 @@
   },
   {
     "route": "POST /api/v1/artists/re-identify/wizard/{}/step/{}/skip",
+    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
+  },
+  {
+    "route": "POST /api/v1/artists/{}/audiodb/link",
+    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
+  },
+  {
+    "route": "POST /api/v1/artists/{}/audiodb/search",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
