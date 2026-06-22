@@ -764,8 +764,9 @@ func joinMatchedNames(ctx context.Context, comp *artist.AlbumComparison) string 
 // per-row circle-arrow icon in fieldEditActions). It returns the URL path
 // segment for the identify/search/link endpoints, the provider's display name
 // (for the icon tooltip + modal heading), and ok=false for fields with no
-// match-by-name flow. Only deezer_id is wired today; the Discogs (#1831) and
-// AudioDB (#1830) siblings extend this switch alongside their backend handlers.
+// match-by-name flow. All three match-by-name providers are wired: deezer_id,
+// discogs_id, audiodb_id. Extend this switch alongside the backend
+// identify/search/link handlers when adding a new provider.
 func identifyProvider(field string) (segment, display string, ok bool) {
 	switch field {
 	case "deezer_id":

@@ -49,7 +49,7 @@ func (r *Router) handleAudioDBIdentify(w http.ResponseWriter, req *http.Request)
 // POST /api/v1/artists/{id}/audiodb/search
 func (r *Router) handleAudioDBSearch(w http.ResponseWriter, req *http.Request) {
 	if r.artistService == nil || r.orchestrator == nil {
-		writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
+		writeError(w, req, http.StatusServiceUnavailable, "artist service or orchestrator not configured")
 		return
 	}
 
