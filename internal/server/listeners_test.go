@@ -1049,6 +1049,80 @@ func TestRunListeners_RedirectBindFailureCancelsHTTPS(t *testing.T) {
 	}
 }
 
+// TestRunListeners_BuildEntriesError covers the buildEntries error path in
+// RunListeners by providing an ACME domain config whose cache directory cannot
+// be created (a regular file sits at the expected path). This hits both the
+// buildEntries error return (line 72-74) and the NewAutocertManager error
+// (line 188-190) in a single test.
+func TestRunListeners_BuildEntriesError(t *testing.T) {
+	t.Parallel()
+	dbDir := t.TempDir()
+	blockPath := filepath.Join(dbDir, "acme-cache")
+	if err := os.WriteFile(blockPath, []byte("blocker"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 9000},
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(dbDir, "stillwater.db")},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	if err := RunListeners(context.Background(), cfg, handler, discardLogger(), nil); err == nil {
+		t.Fatal("RunListeners with bad ACME cache dir = nil error; want error")
+	}
+}
+
+// TestBuildHTTP3Listener_BadCertError covers the deferred-error path in
+// buildHTTP3Listener: when tls.LoadX509KeyPair fails (nonexistent cert/key
+// files), the function returns a valid entry whose serve() propagates the
+// load error. Calling serve() and shutdown() explicitly covers all three
+// statement blocks that are otherwise unreachable without bad TLS material.
+func TestBuildHTTP3Listener_BadCertError(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port: 1973,
+			TLS: config.TLSConfig{
+				CertFile: "/nonexistent/cert.pem",
+				KeyFile:  "/nonexistent/key.pem",
+			},
+			HTTP3: config.HTTP3Config{Enabled: true},
+		},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	entry, ok := buildHTTP3Listener(cfg, handler, discardLogger())
+	if !ok {
+		t.Fatal("buildHTTP3Listener did not return an entry for the bad-cert path")
+	}
+	if err := entry.serve(); err == nil {
+		t.Error("serve() on bad-cert HTTP/3 entry = nil error; want load error")
+	}
+	if err := entry.shutdown(context.Background()); err != nil {
+		t.Errorf("shutdown() on bad-cert HTTP/3 entry = %v; want nil", err)
+	}
+}
+
+// TestBuildRedirectListener_TLSPortZero covers the httpsPort=0 fallback in
+// buildRedirectListener: when TLS.Port is zero the redirect targets
+// cfg.Server.Port instead.
+func TestBuildRedirectListener_TLSPortZero(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         8443,
+			TLS:          config.TLSConfig{CertFile: "cert.pem", KeyFile: "key.pem"},
+			HTTPRedirect: config.HTTPRedirectConfig{Port: 8080},
+		},
+	}
+	entry := buildRedirectListener(cfg, discardLogger())
+	if entry.name != "http-redirect" {
+		t.Errorf("entry.name = %q; want http-redirect", entry.name)
+	}
+	if entry.addr != ":8080" {
+		t.Errorf("entry.addr = %q; want :8080", entry.addr)
+	}
+}
+
 // mustParseURL is a tiny helper so the redirect-handler table tests can
 // populate http.Request.URL without bubbling parse errors through every row.
 func mustParseURL(t *testing.T, raw string) *url.URL {

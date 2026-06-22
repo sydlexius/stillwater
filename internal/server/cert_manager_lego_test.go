@@ -794,6 +794,17 @@ func TestLoadCachedCert_StoreLoadError(t *testing.T) {
 	}
 }
 
+// TestEncodeECKey_MarshalError covers the x509.MarshalECPrivateKey error branch
+// in encodeECKey. A zero-value *ecdsa.PrivateKey has a nil Curve field; Go's
+// x509 package returns "unknown elliptic curve" without panicking, hitting the
+// return that is unreachable with any normally-generated key.
+func TestEncodeECKey_MarshalError(t *testing.T) {
+	t.Parallel()
+	if _, err := encodeECKey(&ecdsa.PrivateKey{}); err == nil {
+		t.Error("encodeECKey(nil-curve key) = nil error; want x509 marshal error")
+	}
+}
+
 // TestLoadOrCreateUser_StoreLoadError verifies that a corrupt account ciphertext
 // (decrypt failure) self-heals: a fresh unregistered account is returned, no
 // hard error.

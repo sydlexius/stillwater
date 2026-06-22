@@ -89,6 +89,45 @@ func TestNewAutocertManager_HonorsCacheDirOverride(t *testing.T) {
 	}
 }
 
+// TestNewAutocertManager_MkdirAllError covers the MkdirAll error path by
+// placing a regular file where the cache directory should be created.
+func TestNewAutocertManager_MkdirAllError(t *testing.T) {
+	t.Parallel()
+	dbDir := t.TempDir()
+	blockPath := filepath.Join(dbDir, "acme-cache")
+	if err := os.WriteFile(blockPath, []byte("blocker"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg := &config.Config{
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(dbDir, "stillwater.db")},
+	}
+	if _, err := NewAutocertManager(cfg, discardLogger()); err == nil {
+		t.Error("NewAutocertManager with blocked cache dir = nil error; want error")
+	}
+}
+
+// TestNewAutocertManager_CustomCA covers the explicit CA URL branch: when
+// cfg.ACME.CA is non-empty the manager wires a custom acme.Client.DirectoryURL
+// so operators can point at a staging or alternative ACME endpoint.
+func TestNewAutocertManager_CustomCA(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		ACME: config.ACMEConfig{
+			Domain: "host.example.com",
+			CA:     "https://acme.example.com/dir",
+		},
+		Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+	}
+	mgr, err := NewAutocertManager(cfg, discardLogger())
+	if err != nil {
+		t.Fatalf("NewAutocertManager: %v", err)
+	}
+	if mgr == nil {
+		t.Fatal("NewAutocertManager returned nil manager")
+	}
+}
+
 // TestAutocertManager_TLSConfig asserts the returned tls.Config carries a
 // GetCertificate callback and is usable as a server config (no panics on
 // access). A live cert acquisition is intentionally not exercised here --
