@@ -13,13 +13,13 @@ The table below is generated from the configuration definition; do not edit it b
 <!-- BEGIN GENERATED: env-reference -->
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `SW_ACME_CA` | string | unset | ACME directory URL. Defaults to Let's Encrypt production. Set to https://acme-staging-v02.api.letsencrypt.org/directory for testing without burning rate-limit quota. |
+| `SW_ACME_CA` | string | unset | ACME directory URL. Defaults to Let's Encrypt production, or to ZeroSSL (https://acme.zerossl.com/v2/DV90) when EAB credentials are set. Set to https://acme-staging-v02.api.letsencrypt.org/directory for testing without burning rate-limit quota. |
 | `SW_ACME_CACHE_DIR` | string | unset | Directory where ACME account keys and issued certificates are cached. Defaults to the directory containing SW_DB_PATH plus /acme-cache. Persist this across restarts to avoid hitting CA rate limits. |
-| `SW_ACME_DOMAIN` | string | unset | DNS name to request certificates for via ACME (Let's Encrypt by default). Setting this turns on autocert; the domain MUST resolve to this server and port 80 MUST be reachable from the public internet. |
-| `SW_ACME_EAB_KEY_ID` | string | unset | Reserved for future use; not yet active. External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL). |
-| `SW_ACME_EAB_MAC_KEY` | string | unset | Reserved for future use; not yet active. External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; will be persisted only after AES-256-GCM encryption when the ACME path lands. |
+| `SW_ACME_DOMAIN` | string | unset | DNS name to request certificates for via ACME (Let's Encrypt by default). Setting this turns on autocert; the domain MUST resolve to this server and port 80 MUST be reachable from the public internet. Mutually exclusive with SW_ACME_IP. |
+| `SW_ACME_EAB_KEY_ID` | string | unset | External Account Binding key identifier for ACME CAs that require EAB (for example ZeroSSL). Pair with SW_ACME_EAB_MAC_KEY; when both are set Stillwater registers the ACME account with EAB via the lego provider. |
+| `SW_ACME_EAB_MAC_KEY` | string | unset | External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; the cached ACME account is persisted only after AES-256-GCM encryption at rest. |
 | `SW_ACME_EMAIL` | string | unset | Contact email registered with the ACME CA. Used for expiry notifications and account recovery; recommended but not required. |
-| `SW_ACME_IP` | string | unset | Reserved for future use; not yet active. Public IP address for IP-SAN certificate orders (ZeroSSL). Must not be an RFC1918, loopback, or link-local address. |
+| `SW_ACME_IP` | string | unset | Public IP address for IP-SAN certificate orders via the lego provider. Must be a publicly routable address (not RFC1918, loopback, link-local, or reserved). Mutually exclusive with SW_ACME_DOMAIN. |
 | `SW_BACKUP_ENABLED` | boolean | `true` | Set to true or 1 to enable automated backups. Any other value disables them. |
 | `SW_BACKUP_INTERVAL` | integer | `24` | Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored. |
 | `SW_BACKUP_PATH` | path | (none) | Override the directory where automated database backups are written. When empty Stillwater writes to a backups/ subfolder of the config directory. |

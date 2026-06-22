@@ -1012,8 +1012,10 @@ func (a *Application) startListeners() error {
 	}
 	logger.Info("server starting", startAttrs...)
 
-	// RunListeners blocks until ctx is canceled or a listener fails.
-	srvErr := server.RunListeners(ctx, cfg, a.router.Handler(ctx), logger)
+	// RunListeners blocks until ctx is canceled or a listener fails. The
+	// encryptor is threaded through for the lego ACME path, which encrypts the
+	// cached account + certificate at rest (the autocert and BYO paths ignore it).
+	srvErr := server.RunListeners(ctx, cfg, a.router.Handler(ctx), logger, a.encryptor)
 
 	logger.Info("shutting down")
 
@@ -1722,23 +1724,31 @@ func getDBIntSetting(ctx context.Context, db *sql.DB, key string, fallback int) 
 //   - off:  no cert configured        -- plain HTTP on Server.Port.
 //   - byo:  cert and key set          -- HTTPS on TLS.Port, or on Server.Port
 //     in collapse mode.
-//   - acme: SW_ACME_DOMAIN set        -- HTTPS via autocert (Let's Encrypt /
-//     Buypass). Surfaces the domain so the operator can confirm the
-//     binding without parsing logs. Config validation guarantees that
-//     ACME and BYO are mutually exclusive, so the order of branches
+//   - acme: SW_ACME_DOMAIN or SW_ACME_IP set -- HTTPS via ACME (autocert for a
+//     DNS name, or the lego provider for EAB / IP-SAN). The identifier (domain
+//     or IP) is surfaced via AcmeDomain so the operator can confirm the binding
+//     without parsing logs; the card reuses the single "acme" mode for both
+//     implementations (it stays Experimental either way). Config validation
+//     guarantees ACME and BYO are mutually exclusive, so the order of branches
 //     here is also their order of precedence.
 //
 // HTTPRedirectPort is forwarded as-is; the template renders the redirect
 // listener row only when it is non-zero.
 func buildTLSStatus(cfg *config.Config) templates.TLSStatusData {
-	if cfg.ACME.Domain != "" {
+	if cfg.ACME.Active() {
 		port := cfg.Server.TLS.Port
 		if port == 0 {
 			port = cfg.Server.Port
 		}
+		// One of Domain or IP is set (mutually exclusive); surface whichever
+		// identifies this binding.
+		identifier := cfg.ACME.Domain
+		if identifier == "" {
+			identifier = cfg.ACME.IP
+		}
 		return templates.TLSStatusData{
 			Mode:             "acme",
-			AcmeDomain:       cfg.ACME.Domain,
+			AcmeDomain:       identifier,
 			HTTPSPort:        port,
 			HTTPRedirectPort: cfg.Server.HTTPRedirect.Port,
 			HTTP3Port:        server.EffectiveHTTP3Port(cfg),

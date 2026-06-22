@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 )
 
 // Config holds all application configuration.
@@ -89,18 +91,35 @@ type HTTP3Config struct {
 
 // ACMEConfig holds Automatic Certificate Management Environment settings.
 // Domain/Email/CA/CacheDir drive the autocert (Let's Encrypt / Buypass via
-// golang.org/x/crypto/acme/autocert) path today. EabKeyID/EabMacKey/IP are
-// reserved for the ZeroSSL IP-SAN wiring (#1564, lego); leaving them
-// populated but unread keeps the env-var loader and reference docs stable
-// across the milestone.
+// golang.org/x/crypto/acme/autocert) path. EabKeyID/EabMacKey enable External
+// Account Binding for CAs that require it (notably ZeroSSL), and IP drives an
+// IP-SAN order for operators with a routable public IP but no DNS name; both
+// route through the go-acme/lego implementation (#1564) selected at startup.
 type ACMEConfig struct {
-	Domain    string `yaml:"domain" toml:"domain" env:"SW_ACME_DOMAIN" default:"unset" desc:"DNS name to request certificates for via ACME (Let's Encrypt by default). Setting this turns on autocert; the domain MUST resolve to this server and port 80 MUST be reachable from the public internet."`
+	Domain    string `yaml:"domain" toml:"domain" env:"SW_ACME_DOMAIN" default:"unset" desc:"DNS name to request certificates for via ACME (Let's Encrypt by default). Setting this turns on autocert; the domain MUST resolve to this server and port 80 MUST be reachable from the public internet. Mutually exclusive with SW_ACME_IP."`
 	Email     string `yaml:"email" toml:"email" env:"SW_ACME_EMAIL" default:"unset" desc:"Contact email registered with the ACME CA. Used for expiry notifications and account recovery; recommended but not required."`
-	CA        string `yaml:"ca" toml:"ca" env:"SW_ACME_CA" default:"unset" desc:"ACME directory URL. Defaults to Let's Encrypt production. Set to https://acme-staging-v02.api.letsencrypt.org/directory for testing without burning rate-limit quota."`
-	EabKeyID  string `yaml:"eab_key_id" toml:"eab_key_id" env:"SW_ACME_EAB_KEY_ID" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL)."`
-	EabMacKey string `yaml:"eab_mac_key" toml:"eab_mac_key" env:"SW_ACME_EAB_MAC_KEY" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; will be persisted only after AES-256-GCM encryption when the ACME path lands."`
-	IP        string `yaml:"ip" toml:"ip" env:"SW_ACME_IP" default:"unset" desc:"Reserved for future use; not yet active. Public IP address for IP-SAN certificate orders (ZeroSSL). Must not be an RFC1918, loopback, or link-local address."`
+	CA        string `yaml:"ca" toml:"ca" env:"SW_ACME_CA" default:"unset" desc:"ACME directory URL. Defaults to Let's Encrypt production, or to ZeroSSL (https://acme.zerossl.com/v2/DV90) when EAB credentials are set. Set to https://acme-staging-v02.api.letsencrypt.org/directory for testing without burning rate-limit quota."`
+	EabKeyID  string `yaml:"eab_key_id" toml:"eab_key_id" env:"SW_ACME_EAB_KEY_ID" default:"unset" desc:"External Account Binding key identifier for ACME CAs that require EAB (for example ZeroSSL). Pair with SW_ACME_EAB_MAC_KEY; when both are set Stillwater registers the ACME account with EAB via the lego provider."`
+	EabMacKey string `yaml:"eab_mac_key" toml:"eab_mac_key" env:"SW_ACME_EAB_MAC_KEY" default:"unset" desc:"External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; the cached ACME account is persisted only after AES-256-GCM encryption at rest."`
+	IP        string `yaml:"ip" toml:"ip" env:"SW_ACME_IP" default:"unset" desc:"Public IP address for IP-SAN certificate orders via the lego provider. Must be a publicly routable address (not RFC1918, loopback, link-local, or reserved). Mutually exclusive with SW_ACME_DOMAIN."`
 	CacheDir  string `yaml:"cache_dir" toml:"cache_dir" env:"SW_ACME_CACHE_DIR" default:"unset" desc:"Directory where ACME account keys and issued certificates are cached. Defaults to the directory containing SW_DB_PATH plus /acme-cache. Persist this across restarts to avoid hitting CA rate limits."`
+}
+
+// Active reports whether any ACME certificate path is configured. ACME needs an
+// identifier to order a certificate for: a DNS name (Domain) or a routable
+// public IP (IP). EAB credentials alone do not activate ACME -- they only
+// modify how the account registers against one of those identifiers (validate()
+// rejects EAB without an identifier). Callers use this to decide "is TLS served
+// via ACME?" without having to know which of autocert or lego will be selected.
+func (c ACMEConfig) Active() bool {
+	return c.Domain != "" || c.IP != ""
+}
+
+// UsesEAB reports whether External Account Binding is configured (both the key
+// identifier and the HMAC key are set). When true the lego provider registers
+// the ACME account with EAB and defaults the directory URL to ZeroSSL.
+func (c ACMEConfig) UsesEAB() bool {
+	return c.EabKeyID != "" && c.EabMacKey != ""
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -260,11 +279,11 @@ const scaffoldTOML = `# Stillwater configuration
 # [acme]
 # domain = "stillwater.example.com"
 # email = "admin@example.com"
-# ca = "https://acme-v02.api.letsencrypt.org/directory"  # Let's Encrypt production (default). Use the staging URL while testing to avoid rate limits.
+# ca = "https://acme-v02.api.letsencrypt.org/directory"  # Let's Encrypt production (default), or ZeroSSL when EAB keys are set. Use the staging URL while testing to avoid rate limits.
 # cache_dir = "/config/acme-cache"
-# eab_key_id  = ""  # Reserved for future use (ZeroSSL / IP-SAN); not yet active.
-# eab_mac_key = ""  # Reserved for future use (ZeroSSL / IP-SAN); not yet active.
-# ip          = ""  # Reserved for future use (IP-SAN certificate orders); not yet active.
+# eab_key_id  = ""  # External Account Binding key id (e.g. ZeroSSL). Pair with eab_mac_key.
+# eab_mac_key = ""  # External Account Binding HMAC key. Secret; cached account is encrypted at rest.
+# ip          = ""  # Public IP for an IP-SAN order (lego provider). Mutually exclusive with domain.
 
 [database]
 # path = "/config/stillwater.db"
@@ -563,8 +582,8 @@ func (c *Config) loadFromEnv() error {
 		// the feature off).
 		{Key: "SW_HTTP3_ENABLED", Apply: setBool(&c.Server.HTTP3.Enabled)},
 		{Key: "SW_HTTP3_PORT", Apply: setInt("SW_HTTP3_PORT", &c.Server.HTTP3.Port)},
-		// ACME stubs: populated for completeness so env-reference codegen
-		// emits stable rows, but no consumer reads them yet.
+		// ACME: Domain drives the autocert path; EabKeyID/EabMacKey/IP drive
+		// the lego provider (ZeroSSL EAB and IP-SAN orders, #1564).
 		{Key: "SW_ACME_DOMAIN", Apply: setString(&c.ACME.Domain)},
 		{Key: "SW_ACME_EMAIL", Apply: setString(&c.ACME.Email)},
 		{Key: "SW_ACME_CA", Apply: setString(&c.ACME.CA)},
@@ -613,6 +632,29 @@ func validateOptionalPort(label string, p int) error {
 	return nil
 }
 
+// validateACMEIP returns an error when ip is set but is not a valid, publicly
+// routable address suitable for an ACME IP-SAN order. An empty string is valid
+// (the field is optional). It reuses httpsafe.IsPublicIP so the ACME path
+// enforces exactly the same blocklist as the SSRF guard -- loopback, RFC 1918
+// private, link-local, unspecified, CGNAT (RFC 6598), and RFC 2544 ranges --
+// with no risk of the two checks drifting apart over time. A CA cannot validate
+// an IP-SAN order for an address that is not reachable from the public
+// internet, so rejecting these early turns a confusing CA-side failure into a
+// clear startup error.
+func validateACMEIP(ip string) error {
+	if ip == "" {
+		return nil
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return fmt.Errorf("invalid SW_ACME_IP %q: not a valid IP address", ip)
+	}
+	if !httpsafe.IsPublicIP(parsed) {
+		return fmt.Errorf("invalid SW_ACME_IP %q: must be a publicly routable address (not loopback, private, link-local, or reserved)", ip)
+	}
+	return nil
+}
+
 // crossFieldRules contains the ordered set of cross-field validation
 // functions. Each rule is independently testable. Rules run after per-field
 // validators and after BasePath normalization.
@@ -635,14 +677,50 @@ var crossFieldRules = []func(*Config) error{
 		return nil
 	},
 
-	// ACME (autocert) is mutually exclusive with BYO TLS cert/key. The
-	// listener layer would have to pick one source and silently ignore the
-	// other; rejecting the combination at config time surfaces the ambiguity
-	// loudly. Operators who want to migrate from BYO to ACME (or vice versa)
-	// flip one set of variables, not both.
+	// ACME is mutually exclusive with BYO TLS cert/key. The listener layer
+	// would have to pick one source and silently ignore the other; rejecting
+	// the combination at config time surfaces the ambiguity loudly. Operators
+	// who want to migrate from BYO to ACME (or vice versa) flip one set of
+	// variables, not both. ACME.Active() covers both the autocert (Domain) and
+	// the lego (IP) identifiers.
 	func(c *Config) error {
-		if c.ACME.Domain != "" && (c.Server.TLS.CertFile != "" || c.Server.TLS.KeyFile != "") {
-			return fmt.Errorf("SW_ACME_DOMAIN is mutually exclusive with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE; pick one TLS source")
+		if c.ACME.Active() && (c.Server.TLS.CertFile != "" || c.Server.TLS.KeyFile != "") {
+			return fmt.Errorf("SW_ACME_DOMAIN/SW_ACME_IP is mutually exclusive with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE; pick one TLS source")
+		}
+		return nil
+	},
+
+	// ACME identifier exclusivity: a single order is either DNS-named (Domain,
+	// autocert) or IP-SAN (IP, lego), never both. Setting both is ambiguous --
+	// the selection logic would silently pick one -- so reject it. Inserted
+	// directly after the ACME-vs-BYO rule so the more specific source conflict
+	// (ACME vs BYO) reports first.
+	func(c *Config) error {
+		if c.ACME.Domain != "" && c.ACME.IP != "" {
+			return fmt.Errorf("SW_ACME_DOMAIN and SW_ACME_IP are mutually exclusive; an ACME order is for a DNS name or an IP, not both")
+		}
+		return nil
+	},
+
+	// EAB credentials must be configured as a pair. A half-configured pair
+	// (key id without HMAC, or vice versa) would silently fall back to a
+	// non-EAB registration that the CA rejects; reject loudly instead.
+	func(c *Config) error {
+		keyIDSet := c.ACME.EabKeyID != ""
+		macSet := c.ACME.EabMacKey != ""
+		if keyIDSet != macSet {
+			return fmt.Errorf("SW_ACME_EAB_KEY_ID and SW_ACME_EAB_MAC_KEY must both be set or both be empty")
+		}
+		return nil
+	},
+
+	// EAB (and any IP-SAN intent) needs an identifier to order against. EAB
+	// credentials alone, with neither Domain nor IP, cannot produce a
+	// certificate; surface the misconfiguration rather than registering an
+	// account that can never obtain.
+	func(c *Config) error {
+		if c.ACME.UsesEAB() && !c.ACME.Active() {
+			return fmt.Errorf("SW_ACME_EAB_KEY_ID/SW_ACME_EAB_MAC_KEY require an identifier; set SW_ACME_DOMAIN or SW_ACME_IP")
 		}
 		return nil
 	},
@@ -660,13 +738,13 @@ var crossFieldRules = []func(*Config) error{
 	// HTTPRedirect.Port is unset, so we surface that default for the
 	// collision check too.
 	func(c *Config) error {
-		tlsConfigured := c.Server.TLS.CertFile != "" || c.ACME.Domain != ""
+		tlsConfigured := c.Server.TLS.CertFile != "" || c.ACME.Active()
 		effectiveTLSPort := c.Server.TLS.Port
 		if tlsConfigured && effectiveTLSPort == 0 {
 			effectiveTLSPort = c.Server.Port
 		}
 		redirectPort := c.Server.HTTPRedirect.Port
-		if c.ACME.Domain != "" && redirectPort == 0 {
+		if c.ACME.Active() && redirectPort == 0 {
 			redirectPort = 80
 		}
 		if effectiveTLSPort != 0 && redirectPort != 0 && effectiveTLSPort == redirectPort {
@@ -681,12 +759,12 @@ var crossFieldRules = []func(*Config) error{
 	// plain HTTP). Either BYO cert or ACME counts as "TLS configured".
 	func(c *Config) error {
 		redirectPort := c.Server.HTTPRedirect.Port
-		if c.ACME.Domain != "" && redirectPort == 0 {
+		if c.ACME.Active() && redirectPort == 0 {
 			redirectPort = 80
 		}
-		tlsConfigured := c.Server.TLS.CertFile != "" || c.ACME.Domain != ""
+		tlsConfigured := c.Server.TLS.CertFile != "" || c.ACME.Active()
 		if redirectPort != 0 && !tlsConfigured {
-			return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE, or SW_ACME_DOMAIN)")
+			return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE, or SW_ACME_DOMAIN / SW_ACME_IP)")
 		}
 		return nil
 	},
@@ -719,6 +797,9 @@ func (c *Config) validate() error {
 		return err
 	}
 	if err := validateOptionalPort("HTTP/3 port", c.Server.HTTP3.Port); err != nil {
+		return err
+	}
+	if err := validateACMEIP(c.ACME.IP); err != nil {
 		return err
 	}
 

@@ -21,3 +21,63 @@ func TestIsBlockedFailClosedMalformedIP(t *testing.T) {
 		t.Fatalf("isBlocked(%v) = false; want true (fail-closed on malformed slice)", malformed)
 	}
 }
+
+// TestIsPublicIP verifies the exported inverse of isBlocked that ACME IP-SAN
+// validation reuses. It must agree with isBlocked on every input (public iff
+// not blocked) and fail closed on nil/empty, so config validation never treats
+// an unclassifiable address as a routable public IP.
+func TestIsPublicIP(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		ip   string
+		want bool
+	}{
+		{"public IPv4", "8.8.8.8", true},
+		{"public IPv6", "2606:4700:4700::1111", true},
+		{"loopback", "127.0.0.1", false},
+		{"loopback IPv6", "::1", false},
+		{"rfc1918 10", "10.0.0.1", false},
+		{"rfc1918 172", "172.16.0.1", false},
+		{"rfc1918 192", "192.168.1.1", false},
+		{"link-local", "169.254.0.1", false},
+		{"unspecified", "0.0.0.0", false},
+		{"cgnat rfc6598", "100.64.0.1", false},
+		{"rfc2544 benchmark", "198.18.0.1", false},
+		// RFC 5737 IPv4 documentation ranges (TEST-NET-1/2/3): never routable.
+		{"rfc5737 test-net-1", "192.0.2.5", false},
+		{"rfc5737 test-net-2", "198.51.100.1", false},
+		{"rfc5737 test-net-3", "203.0.113.5", false},
+		// RFC 3849 IPv6 documentation range.
+		{"rfc3849 doc ipv6", "2001:db8::1", false},
+		// Multicast: 224.0.0.0/4 (incl. local-control 224.0.0.1 and the
+		// globally-scoped 233.252.0.0/24 doc block) and ff00::/8.
+		{"multicast local-control", "224.0.0.1", false},
+		{"multicast global doc", "233.252.0.1", false},
+		{"multicast ipv6", "ff02::1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ip := net.ParseIP(tc.ip)
+			if ip == nil {
+				t.Fatalf("test setup: %q failed to parse", tc.ip)
+			}
+			if got := IsPublicIP(ip); got != tc.want {
+				t.Fatalf("IsPublicIP(%s) = %v; want %v", tc.ip, got, tc.want)
+			}
+			// Lock in the inverse relationship with the source-of-truth blocklist.
+			if got, blocked := IsPublicIP(ip), isBlocked(ip); got == blocked {
+				t.Fatalf("IsPublicIP(%s)=%v must be the inverse of isBlocked=%v", tc.ip, got, blocked)
+			}
+		})
+	}
+
+	// Fail closed: nil and empty are not public.
+	if IsPublicIP(nil) {
+		t.Fatal("IsPublicIP(nil) = true; want false (fail closed)")
+	}
+	if IsPublicIP(net.IP{}) {
+		t.Fatal("IsPublicIP(empty) = true; want false (fail closed)")
+	}
+}

@@ -29,6 +29,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sydlexius/stillwater/internal/config"
+	"github.com/sydlexius/stillwater/internal/encryption"
 )
 
 // shutdownTimeout caps how long Shutdown waits for in-flight requests to
@@ -54,7 +55,7 @@ type listenerEntry struct {
 // non-nil shutdown error is wrapped together via errors.Join.
 //
 //nolint:contextcheck // boot-time entry point; ctx originates from main's signal handler and is the long-lived app context, not inherited from a caller's request ctx
-func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler, logger *slog.Logger) error {
+func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler, logger *slog.Logger, encryptor *encryption.Encryptor) error {
 	if cfg == nil {
 		return errors.New("server: nil config")
 	}
@@ -67,7 +68,7 @@ func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler,
 		return errors.New("server: nil logger")
 	}
 
-	entries, err := buildEntries(cfg, handler, logger)
+	entries, err := buildEntries(ctx, cfg, handler, logger, encryptor)
 	if err != nil {
 		return err
 	}
@@ -159,17 +160,36 @@ func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler,
 // redirect listener; double-binding the port would race for the socket.
 // When ACME is off and HTTPRedirect.Port is set with BYO TLS active, the
 // dedicated redirect listener is the right (and only) choice.
-func buildEntries(cfg *config.Config, handler http.Handler, logger *slog.Logger) ([]listenerEntry, error) {
+func buildEntries(ctx context.Context, cfg *config.Config, handler http.Handler, logger *slog.Logger, encryptor *encryption.Encryptor) ([]listenerEntry, error) {
 	// Build the cert manager first so any misconfiguration (missing cache
 	// dir permissions, malformed directory URL) surfaces before we bind
 	// any sockets.
+	//
+	// Implementation selection (config validation guarantees these are
+	// mutually consistent -- Domain xor IP, EAB needs an identifier):
+	//   - EAB credentials set, OR an IP-SAN order -> lego (cert_manager_lego.go)
+	//   - a DNS name with no EAB                   -> autocert (cert_manager.go)
+	//   - neither                                  -> nil (BYO TLS or plain HTTP)
 	var certMgr CertManager
-	if cfg.ACME.Domain != "" {
+	switch {
+	case cfg.ACME.UsesEAB() || cfg.ACME.IP != "":
+		mgr, err := NewLegoManager(ctx, cfg, logger, encryptor)
+		if err != nil {
+			return nil, fmt.Errorf("server: ACME (lego) setup: %w", err)
+		}
+		certMgr = mgr
+		logger.Info("ACME implementation selected",
+			slog.String("impl", "lego"),
+			slog.Bool("ip_san", cfg.ACME.IP != ""),
+			slog.Bool("eab", cfg.ACME.UsesEAB()),
+		)
+	case cfg.ACME.Domain != "":
 		mgr, err := NewAutocertManager(cfg, logger)
 		if err != nil {
 			return nil, fmt.Errorf("server: ACME setup: %w", err)
 		}
 		certMgr = mgr
+		logger.Info("ACME implementation selected", slog.String("impl", "autocert"))
 	}
 
 	primary := buildPrimaryListener(cfg, handler, logger, certMgr)

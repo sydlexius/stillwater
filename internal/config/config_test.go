@@ -774,9 +774,11 @@ func TestLoadFromEnv_TLSEnvBranches(t *testing.T) {
 }
 
 // TestLoadFromEnv_ACMEStubs covers the SW_ACME_* env-var branches in
-// isolation from BYO TLS, since SW_ACME_DOMAIN is mutually exclusive with
-// SW_TLS_CERT_FILE/SW_TLS_KEY_FILE. EAB and IP fields stay populated for
-// #931 stability even though they have no behavior today.
+// isolation from BYO TLS, since ACME is mutually exclusive with
+// SW_TLS_CERT_FILE/SW_TLS_KEY_FILE. It uses the EAB-with-DNS combination
+// (ZeroSSL against a domain), which is a valid live config: Domain + EAB pair.
+// The IP-SAN branch (SW_ACME_IP, mutually exclusive with SW_ACME_DOMAIN) is
+// covered separately by TestLoadFromEnv_ACMEIPSAN.
 func TestLoadFromEnv_ACMEStubs(t *testing.T) {
 	clearSWEnv(t)
 	t.Setenv("SW_ACME_DOMAIN", "stillwater.example.com")
@@ -784,7 +786,6 @@ func TestLoadFromEnv_ACMEStubs(t *testing.T) {
 	t.Setenv("SW_ACME_CA", "https://acme-staging-v02.api.letsencrypt.org/directory")
 	t.Setenv("SW_ACME_EAB_KEY_ID", "key-id")
 	t.Setenv("SW_ACME_EAB_MAC_KEY", "mac-key")
-	t.Setenv("SW_ACME_IP", "203.0.113.5")
 	t.Setenv("SW_ACME_CACHE_DIR", "/var/lib/acme")
 
 	cfg, err := Load("")
@@ -807,11 +808,38 @@ func TestLoadFromEnv_ACMEStubs(t *testing.T) {
 	if cfg.ACME.EabMacKey != "mac-key" {
 		t.Errorf("ACME.EabMacKey = %q", cfg.ACME.EabMacKey)
 	}
-	if cfg.ACME.IP != "203.0.113.5" {
-		t.Errorf("ACME.IP = %q", cfg.ACME.IP)
-	}
 	if cfg.ACME.CacheDir != "/var/lib/acme" {
 		t.Errorf("ACME.CacheDir = %q", cfg.ACME.CacheDir)
+	}
+	if !cfg.ACME.UsesEAB() {
+		t.Error("ACME.UsesEAB() = false; want true with both EAB fields set")
+	}
+	if !cfg.ACME.Active() {
+		t.Error("ACME.Active() = false; want true with Domain set")
+	}
+}
+
+// TestLoadFromEnv_ACMEIPSAN covers the SW_ACME_IP env-var branch in isolation.
+// IP is mutually exclusive with Domain, so this config sets IP without Domain.
+func TestLoadFromEnv_ACMEIPSAN(t *testing.T) {
+	clearSWEnv(t)
+	// Use a genuinely public IP: the RFC 5737 documentation ranges
+	// (203.0.113.0/24 et al.) are now rejected by validateACMEIP as non-routable.
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
+	t.Setenv("SW_ACME_EMAIL", "admin@example.com")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ACME.IP != "8.8.8.8" {
+		t.Errorf("ACME.IP = %q", cfg.ACME.IP)
+	}
+	if !cfg.ACME.Active() {
+		t.Error("ACME.Active() = false; want true with IP set")
+	}
+	if cfg.ACME.UsesEAB() {
+		t.Error("ACME.UsesEAB() = true; want false with no EAB fields")
 	}
 }
 
@@ -1082,6 +1110,148 @@ func TestValidate_RedirectWithTLSAccepted(t *testing.T) {
 	}
 	if cfg.Server.TLS.Port != 443 {
 		t.Errorf("TLS.Port = %d; want 443", cfg.Server.TLS.Port)
+	}
+}
+
+// TestValidateACMEIP exercises the SW_ACME_IP validator directly: empty is
+// accepted (optional field), public IPv4/IPv6 are accepted, and malformed or
+// non-routable addresses are rejected. The non-routable set mirrors the SSRF
+// blocklist via httpsafe.IsPublicIP, so this also guards against the two checks
+// drifting apart.
+func TestValidateACMEIP(t *testing.T) {
+	t.Parallel()
+	accepted := []string{"", "8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"}
+	for _, ip := range accepted {
+		if err := validateACMEIP(ip); err != nil {
+			t.Errorf("validateACMEIP(%q) = %v; want nil", ip, err)
+		}
+	}
+	rejected := []string{
+		"not-an-ip",
+		"999.999.999.999",
+		"127.0.0.1",    // loopback
+		"10.0.0.1",     // RFC1918
+		"172.16.5.4",   // RFC1918
+		"192.168.1.10", // RFC1918
+		"169.254.0.1",  // link-local
+		"0.0.0.0",      // unspecified
+		"100.64.0.1",   // CGNAT (RFC6598)
+		"198.18.0.1",   // RFC2544 benchmark
+		"192.0.2.1",    // RFC5737 documentation (TEST-NET-1)
+		"198.51.100.1", // RFC5737 documentation (TEST-NET-2)
+		"203.0.113.5",  // RFC5737 documentation (TEST-NET-3)
+		"224.0.0.1",    // multicast (224.0.0.0/4)
+		"233.252.0.1",  // multicast (globally-scoped doc block)
+		"::1",          // loopback IPv6
+		"fe80::1",      // link-local IPv6
+		"2001:db8::1",  // RFC3849 documentation IPv6
+		"ff02::1",      // multicast IPv6
+	}
+	for _, ip := range rejected {
+		if err := validateACMEIP(ip); err == nil {
+			t.Errorf("validateACMEIP(%q) = nil; want error", ip)
+		}
+	}
+}
+
+// TestValidate_ACMEDomainAndIPMutuallyExclusive rejects a config that sets both
+// SW_ACME_DOMAIN and SW_ACME_IP -- an ACME order is for a DNS name or an IP,
+// not both.
+func TestValidate_ACMEDomainAndIPMutuallyExclusive(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
+	// A genuinely public IP so the per-field IP validator passes and the
+	// cross-field exclusivity rule is the one that fires (asserted below).
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error: SW_ACME_DOMAIN and SW_ACME_IP both set")
+	}
+	if want := "SW_ACME_DOMAIN and SW_ACME_IP are mutually exclusive"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q (a wrong rule failing first must be caught)", err, want)
+	}
+}
+
+// TestValidate_ACMEDomainAlonePasses confirms a DNS-only ACME config is valid.
+func TestValidate_ACMEDomainAlonePasses(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
+	if _, err := Load(""); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+}
+
+// TestValidate_ACMEIPAlonePasses confirms an IP-SAN-only ACME config is valid.
+func TestValidate_ACMEIPAlonePasses(t *testing.T) {
+	clearSWEnv(t)
+	// Genuinely public IP: the RFC 5737 documentation ranges are now rejected.
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
+	if _, err := Load(""); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+}
+
+// TestValidate_ACMEPrivateIPRejected confirms validate() rejects a private IP
+// through the full Load path (not just the unit validator).
+func TestValidate_ACMEPrivateIPRejected(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_IP", "192.168.1.10")
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error: SW_ACME_IP is a private address")
+	}
+	if want := "must be a publicly routable address"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q", err, want)
+	}
+}
+
+// TestValidate_ACMEEabHalfConfigRejected rejects a half-configured EAB pair
+// (key id without HMAC, or vice versa).
+func TestValidate_ACMEEabHalfConfigRejected(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
+	t.Setenv("SW_ACME_EAB_KEY_ID", "key-id")
+	// SW_ACME_EAB_MAC_KEY deliberately unset.
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error: EAB key id set without EAB mac key")
+	}
+	if want := "SW_ACME_EAB_KEY_ID and SW_ACME_EAB_MAC_KEY must both be set or both be empty"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q", err, want)
+	}
+}
+
+// TestValidate_ACMEEabWithoutIdentifierRejected rejects EAB credentials with
+// neither a domain nor an IP to order against.
+func TestValidate_ACMEEabWithoutIdentifierRejected(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_EAB_KEY_ID", "key-id")
+	t.Setenv("SW_ACME_EAB_MAC_KEY", "mac-key")
+	// Neither SW_ACME_DOMAIN nor SW_ACME_IP set.
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error: EAB configured without an identifier")
+	}
+	if want := "require an identifier"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q", err, want)
+	}
+}
+
+// TestValidate_ACMEIPMutuallyExclusiveWithBYO rejects setting SW_ACME_IP
+// alongside a BYO TLS cert/key pair.
+func TestValidate_ACMEIPMutuallyExclusiveWithBYO(t *testing.T) {
+	clearSWEnv(t)
+	// Public IP so the per-field IP validator passes and the ACME-vs-BYO
+	// cross-field rule is the one that fires (asserted below).
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
+	t.Setenv("SW_TLS_CERT_FILE", "/tmp/c.pem")
+	t.Setenv("SW_TLS_KEY_FILE", "/tmp/k.pem")
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error: SW_ACME_IP set alongside BYO TLS")
+	}
+	if want := "mutually exclusive with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q (a wrong rule failing first must be caught)", err, want)
 	}
 }
 

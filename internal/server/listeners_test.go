@@ -25,6 +25,7 @@ import (
 	"github.com/quic-go/quic-go/http3"
 
 	"github.com/sydlexius/stillwater/internal/config"
+	"github.com/sydlexius/stillwater/internal/encryption"
 )
 
 // discardLogger returns a slog.Logger that discards every record. Tests do
@@ -135,7 +136,7 @@ func TestRunListeners_PlainHTTPStartAndShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger(), nil) }()
 
 	addr := "127.0.0.1:" + strconv.Itoa(port)
 	pollUntilServing(t, addr)
@@ -183,7 +184,7 @@ func TestRunListeners_TLSStartAndShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger(), nil) }()
 
 	addr := "127.0.0.1:" + strconv.Itoa(port)
 	pollUntilServing(t, addr)
@@ -245,7 +246,7 @@ func TestRunListeners_TLSCollapseToServerPort(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger(), nil) }()
 
 	addr := "127.0.0.1:" + strconv.Itoa(serverPort)
 	pollUntilServing(t, addr)
@@ -305,7 +306,7 @@ func TestRunListeners_TLSSplitPort(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger(), nil) }()
 
 	tlsAddr := "127.0.0.1:" + strconv.Itoa(tlsPort)
 	pollUntilServing(t, tlsAddr)
@@ -469,7 +470,7 @@ func TestRunListeners_HTTP3RoundTrip(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger(), nil) }()
 
 	// QUIC has no TCP-style accept-on-ready signal. Give the UDP listener a
 	// brief grace period to enter its accept loop, then issue the request
@@ -551,13 +552,13 @@ func TestRunListeners_NilArgs(t *testing.T) {
 	logger := discardLogger()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
 	cfg := &config.Config{Server: config.ServerConfig{Port: 1}}
-	if err := RunListeners(context.Background(), nil, handler, logger); err == nil {
+	if err := RunListeners(context.Background(), nil, handler, logger, nil); err == nil {
 		t.Error("nil cfg: want error, got nil")
 	}
-	if err := RunListeners(context.Background(), cfg, nil, logger); err == nil {
+	if err := RunListeners(context.Background(), cfg, nil, logger, nil); err == nil {
 		t.Error("nil handler: want error, got nil")
 	}
-	if err := RunListeners(context.Background(), cfg, handler, nil); err == nil {
+	if err := RunListeners(context.Background(), cfg, handler, nil, nil); err == nil {
 		t.Error("nil logger: want error, got nil")
 	}
 }
@@ -671,7 +672,7 @@ func TestRunListeners_RedirectIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger(), nil) }()
 
 	redirectAddr := "127.0.0.1:" + strconv.Itoa(redirectPort)
 	tlsAddr := "127.0.0.1:" + strconv.Itoa(tlsPort)
@@ -743,7 +744,7 @@ func TestRunListeners_RedirectSkippedWithoutTLS(t *testing.T) {
 		},
 	}
 	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
-	entries, err := buildEntries(cfg, handler, discardLogger())
+	entries, err := buildEntries(context.Background(), cfg, handler, discardLogger(), nil)
 	if err != nil {
 		t.Fatalf("buildEntries: %v", err)
 	}
@@ -765,7 +766,7 @@ func TestBuildEntries_NoACMEReturnsSinglePrimary(t *testing.T) {
 	t.Parallel()
 	cfg := &config.Config{Server: config.ServerConfig{Port: 1973}}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
-	entries, err := buildEntries(cfg, handler, discardLogger())
+	entries, err := buildEntries(context.Background(), cfg, handler, discardLogger(), nil)
 	if err != nil {
 		t.Fatalf("buildEntries: %v", err)
 	}
@@ -791,7 +792,7 @@ func TestBuildEntries_ACMERegistersChallengeListener(t *testing.T) {
 		ACME:     config.ACMEConfig{Domain: "host.example.com"},
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
-	entries, err := buildEntries(cfg, handler, discardLogger())
+	entries, err := buildEntries(context.Background(), cfg, handler, discardLogger(), nil)
 	if err != nil {
 		t.Fatalf("buildEntries: %v", err)
 	}
@@ -816,6 +817,62 @@ func TestBuildEntries_ACMERegistersChallengeListener(t *testing.T) {
 	}
 }
 
+// TestBuildEntries_SelectsLegoForIPSAN asserts the IP-SAN config selects the
+// lego implementation and still registers the HTTPS primary + HTTP-01 challenge
+// pair. A canceled context keeps the lego background goroutine network-free.
+func TestBuildEntries_SelectsLegoForIPSAN(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 1973},
+		Database: config.DatabaseConfig{Path: filepath.Join(tmp, "stillwater.db")},
+		ACME:     config.ACMEConfig{IP: "203.0.113.5"},
+	}
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	entries, err := buildEntries(ctx, cfg, handler, discardLogger(), enc)
+	if err != nil {
+		t.Fatalf("buildEntries: %v", err)
+	}
+	if got, want := len(entries), 2; got != want {
+		t.Fatalf("len(entries) = %d; want %d", got, want)
+	}
+	hasPrimary, hasChallenge := false, false
+	for _, e := range entries {
+		switch e.name {
+		case "https-acme":
+			hasPrimary = true
+		case "acme-challenge":
+			hasChallenge = true
+		}
+	}
+	if !hasPrimary || !hasChallenge {
+		t.Errorf("lego IP-SAN path missing https-acme/acme-challenge; got %+v", entries)
+	}
+}
+
+// TestBuildEntries_LegoRequiresEncryptor asserts the lego path fails fast when
+// no encryptor is supplied (it would otherwise have to persist secrets in
+// plaintext).
+func TestBuildEntries_LegoRequiresEncryptor(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 1973},
+		Database: config.DatabaseConfig{Path: filepath.Join(tmp, "stillwater.db")},
+		ACME:     config.ACMEConfig{IP: "203.0.113.5"},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	if _, err := buildEntries(context.Background(), cfg, handler, discardLogger(), nil); err == nil {
+		t.Fatal("buildEntries lego path with nil encryptor = nil error; want error")
+	}
+}
+
 // TestBuildEntries_ACMEChallengeReusesRedirectPort asserts the challenge
 // listener binds SW_HTTP_REDIRECT_PORT when the operator set it, rather
 // than double-binding the default port 80 alongside a future #929
@@ -834,7 +891,7 @@ func TestBuildEntries_ACMEChallengeReusesRedirectPort(t *testing.T) {
 		ACME:     config.ACMEConfig{Domain: "host.example.com"},
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
-	entries, err := buildEntries(cfg, handler, discardLogger())
+	entries, err := buildEntries(context.Background(), cfg, handler, discardLogger(), nil)
 	if err != nil {
 		t.Fatalf("buildEntries: %v", err)
 	}
@@ -868,7 +925,7 @@ func TestRunListeners_BindFailureSurfacesError(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err = RunListeners(ctx, cfg, handler, discardLogger())
+	err = RunListeners(ctx, cfg, handler, discardLogger(), nil)
 	if err == nil {
 		t.Fatal("RunListeners returned nil; want bind error")
 	}
@@ -932,7 +989,7 @@ func TestRunListeners_RedirectShutdownPropagation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger(), nil) }()
 	pollUntilServing(t, "127.0.0.1:"+strconv.Itoa(redirectPort))
 
 	cancel()
@@ -980,7 +1037,7 @@ func TestRunListeners_RedirectBindFailureCancelsHTTPS(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err = RunListeners(ctx, cfg, handler, discardLogger())
+	err = RunListeners(ctx, cfg, handler, discardLogger(), nil)
 	if err == nil {
 		t.Fatal("RunListeners returned nil; want bind error from redirect listener")
 	}
@@ -989,6 +1046,80 @@ func TestRunListeners_RedirectBindFailureCancelsHTTPS(t *testing.T) {
 	if dialErr == nil {
 		conn.Close()
 		t.Errorf("HTTPS port %d still accepting connections after sibling bind failure", tlsPort)
+	}
+}
+
+// TestRunListeners_BuildEntriesError covers the buildEntries error path in
+// RunListeners by providing an ACME domain config whose cache directory cannot
+// be created (a regular file sits at the expected path). This hits both the
+// buildEntries error return (line 72-74) and the NewAutocertManager error
+// (line 188-190) in a single test.
+func TestRunListeners_BuildEntriesError(t *testing.T) {
+	t.Parallel()
+	dbDir := t.TempDir()
+	blockPath := filepath.Join(dbDir, "acme-cache")
+	if err := os.WriteFile(blockPath, []byte("blocker"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 9000},
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(dbDir, "stillwater.db")},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	if err := RunListeners(context.Background(), cfg, handler, discardLogger(), nil); err == nil {
+		t.Fatal("RunListeners with bad ACME cache dir = nil error; want error")
+	}
+}
+
+// TestBuildHTTP3Listener_BadCertError covers the deferred-error path in
+// buildHTTP3Listener: when tls.LoadX509KeyPair fails (nonexistent cert/key
+// files), the function returns a valid entry whose serve() propagates the
+// load error. Calling serve() and shutdown() explicitly covers all three
+// statement blocks that are otherwise unreachable without bad TLS material.
+func TestBuildHTTP3Listener_BadCertError(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port: 1973,
+			TLS: config.TLSConfig{
+				CertFile: "/nonexistent/cert.pem",
+				KeyFile:  "/nonexistent/key.pem",
+			},
+			HTTP3: config.HTTP3Config{Enabled: true},
+		},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	entry, ok := buildHTTP3Listener(cfg, handler, discardLogger())
+	if !ok {
+		t.Fatal("buildHTTP3Listener did not return an entry for the bad-cert path")
+	}
+	if err := entry.serve(); err == nil {
+		t.Error("serve() on bad-cert HTTP/3 entry = nil error; want load error")
+	}
+	if err := entry.shutdown(context.Background()); err != nil {
+		t.Errorf("shutdown() on bad-cert HTTP/3 entry = %v; want nil", err)
+	}
+}
+
+// TestBuildRedirectListener_TLSPortZero covers the httpsPort=0 fallback in
+// buildRedirectListener: when TLS.Port is zero the redirect targets
+// cfg.Server.Port instead.
+func TestBuildRedirectListener_TLSPortZero(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         8443,
+			TLS:          config.TLSConfig{CertFile: "cert.pem", KeyFile: "key.pem"},
+			HTTPRedirect: config.HTTPRedirectConfig{Port: 8080},
+		},
+	}
+	entry := buildRedirectListener(cfg, discardLogger())
+	if entry.name != "http-redirect" {
+		t.Errorf("entry.name = %q; want http-redirect", entry.name)
+	}
+	if entry.addr != ":8080" {
+		t.Errorf("entry.addr = %q; want :8080", entry.addr)
 	}
 }
 
