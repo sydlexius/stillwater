@@ -11935,7 +11935,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                oneOf:
+                  - $ref: "#/components/schemas/ConflictWriteBlock"
+                  - type: object
+                    required: [error, field, reason]
+                    properties:
+                      error:
+                        type: string
+                        enum: [field_locked]
+                      field:
+                        type: string
+                        enum: [audiodb_id]
+                      reason:
+                        type: string
         "500":
           description: Failed to link TheAudioDB ID
           content:

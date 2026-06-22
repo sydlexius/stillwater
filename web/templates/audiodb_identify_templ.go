@@ -135,9 +135,9 @@ func AudioDBCandidates(data AudioDBCandidatesData) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var5 string
-					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxValsJSON(map[string]string{"audiodb_id": c.Result.ProviderID}))
+					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxValsJSON(map[string]string{string(artist.FieldAudioDBID): c.Result.ProviderID}))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/audiodb_identify.templ`, Line: 66, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/audiodb_identify.templ`, Line: 66, Col: 97}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 					if templ_7745c5c3_Err != nil {
@@ -148,9 +148,9 @@ func AudioDBCandidates(data AudioDBCandidatesData) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var6 string
-					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue("#field-audiodb_id-" + data.ArtistID)
+					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue("#field-" + string(artist.FieldAudioDBID) + "-" + data.ArtistID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/audiodb_identify.templ`, Line: 67, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/audiodb_identify.templ`, Line: 67, Col: 81}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 					if templ_7745c5c3_Err != nil {
@@ -405,7 +405,7 @@ func AudioDBLinkSuccess(a artist.Artist, fieldProviders map[string][]string) tem
 			templ_7745c5c3_Var20 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = FieldDisplay(&a, "audiodb_id", fieldProviders["audiodb_id"]).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = FieldDisplay(&a, string(artist.FieldAudioDBID), fieldProviders[string(artist.FieldAudioDBID)]).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

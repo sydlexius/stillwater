@@ -63,8 +63,8 @@ templ AudioDBCandidates(data AudioDBCandidatesData) {
 						type="button"
 						class="group/adb relative w-full text-left rounded border border-gray-200 dark:border-gray-700 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors [&.htmx-request]:border-blue-400 [&.htmx-request]:dark:border-blue-600"
 						hx-post={ "/api/v1/artists/" + data.ArtistID + "/audiodb/link" }
-						hx-vals={ hxValsJSON(map[string]string{"audiodb_id": c.Result.ProviderID}) }
-						hx-target={ "#field-audiodb_id-" + data.ArtistID }
+						hx-vals={ hxValsJSON(map[string]string{string(artist.FieldAudioDBID): c.Result.ProviderID}) }
+						hx-target={ "#field-" + string(artist.FieldAudioDBID) + "-" + data.ArtistID }
 						hx-swap="outerHTML"
 						hx-on::after-request="hideFieldProviderModal()"
 						hx-disabled-elt="this"
@@ -118,7 +118,7 @@ templ AudioDBCandidates(data AudioDBCandidatesData) {
 // auto-open listener cannot re-fire. The success toast rides in a data attribute
 // read by a one-shot, self-removing inline script.
 templ AudioDBLinkSuccess(a artist.Artist, fieldProviders map[string][]string) {
-	@FieldDisplay(&a, "audiodb_id", fieldProviders["audiodb_id"])
+	@FieldDisplay(&a, string(artist.FieldAudioDBID), fieldProviders[string(artist.FieldAudioDBID)])
 	<div data-audiodb-toast={ t(ctx, "artist.audiodb.linked") } class="hidden"></div>
 	<script>
 		(function() {
