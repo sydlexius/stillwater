@@ -924,6 +924,97 @@ func TestLoadCachedCert_IdentifierMismatch(t *testing.T) {
 	}
 }
 
+// TestLoadCachedCert_ExpiredRejected verifies that a cached certificate whose
+// SAN still covers the configured identifier but whose NotAfter is in the past
+// is treated as a cache miss (not installed), so the obtain path re-issues
+// instead of serving an expired cert on restart. VerifyHostname alone does not
+// check expiry, so loadCachedCert must pair it with an explicit NotAfter check.
+func TestLoadCachedCert_ExpiredRejected(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t) // identifier: "host.example.com"
+
+	// Persist a cert for the correct identifier but already expired.
+	certPEM, keyPEM := makeCertPEM(t, "host.example.com", time.Now().Add(-time.Hour))
+	sc := storedCert{Certificate: certPEM, PrivateKey: keyPEM}
+	data, err := json.Marshal(sc)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if err := m.store.save(certCacheName, data); err != nil {
+		t.Fatalf("store.save: %v", err)
+	}
+	if err := m.loadCachedCert(); err != nil {
+		t.Fatalf("loadCachedCert: %v", err)
+	}
+	m.mu.RLock()
+	cert := m.cert
+	m.mu.RUnlock()
+	if cert != nil {
+		t.Error("loadCachedCert installed an expired cert; want cache miss (m.cert == nil)")
+	}
+}
+
+// TestLegoManager_HTTPHandler_RedirectBracketsIPv6 verifies the HTTPS redirect
+// builds an RFC 3986-valid authority: an IPv6 IP-SAN identifier must be bracketed
+// in the Location header, while IPv4 and DNS identifiers must NOT be bracketed.
+func TestLegoManager_HTTPHandler_RedirectBracketsIPv6(t *testing.T) {
+	t.Parallel()
+
+	// managerWithIdentifier builds a network-free manager whose served identifier
+	// is the given host (IP or DNS name).
+	managerWithIdentifier := func(t *testing.T, acme config.ACMEConfig) *legoManager {
+		t.Helper()
+		cfg := &config.Config{
+			ACME:     acme,
+			Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+		}
+		m, err := newLegoManager(cfg, discardLogger(), testEncryptor(t))
+		if err != nil {
+			t.Fatalf("newLegoManager: %v", err)
+		}
+		return m
+	}
+
+	cases := []struct {
+		name    string
+		acme    config.ACMEConfig
+		wantLoc string
+	}{
+		{
+			name:    "IPv6 IP-SAN is bracketed",
+			acme:    config.ACMEConfig{IP: "2001:db8::1"},
+			wantLoc: "https://[2001:db8::1]/some/path?q=1",
+		},
+		{
+			name:    "IPv4 IP-SAN is not bracketed",
+			acme:    config.ACMEConfig{IP: "203.0.113.5"},
+			wantLoc: "https://203.0.113.5/some/path?q=1",
+		},
+		{
+			name:    "DNS name is not bracketed",
+			acme:    config.ACMEConfig{Domain: "host.example.com"},
+			wantLoc: "https://host.example.com/some/path?q=1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := managerWithIdentifier(t, tc.acme)
+			h := m.HTTPHandler(nil)
+
+			req := httptest.NewRequest(http.MethodGet, "http://request-host.invalid:80/some/path?q=1", nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusMovedPermanently {
+				t.Fatalf("redirect status = %d; want 301", rec.Code)
+			}
+			if loc := rec.Header().Get("Location"); loc != tc.wantLoc {
+				t.Errorf("Location = %q; want %q", loc, tc.wantLoc)
+			}
+		})
+	}
+}
+
 // TestEnsureCertificate_IdentifierMismatch verifies that a held certificate
 // whose SAN does not match the configured identifier triggers re-obtain even
 // when the certificate is otherwise fresh (within the renewal threshold).

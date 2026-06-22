@@ -264,7 +264,16 @@ func (m *legoManager) HTTPHandler(fallback http.Handler) http.Handler {
 		// no open-redirect vector. gosec's taint analysis flags any request-
 		// derived data in a Location header and cannot see that the host is
 		// fixed, so suppress G710 with that justification.
-		target := "https://" + m.identifier + r.URL.RequestURI()
+		// Bracket an IPv6 literal so the resulting authority is RFC 3986-valid
+		// (a bare "2001:db8::1" host is not a valid authority; it must be
+		// "[2001:db8::1]"). This manager supports IP-SAN certs (RFC 8738), so the
+		// identifier can be an IPv6 literal. A DNS name or IPv4 literal has no
+		// host-significant colon, so it is left untouched.
+		host := m.identifier
+		if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+			host = "[" + host + "]"
+		}
+		target := "https://" + host + r.URL.RequestURI()
 		//nolint:gosec // G710: host is the fixed configured identifier (not request input); only path/query is carried, which cannot change the authority.
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	})
@@ -450,11 +459,21 @@ func (m *legoManager) loadCachedCert() error {
 		return fmt.Errorf("parse cached cert: %w", err)
 	}
 	// coversIdentifier is true when the Leaf is absent (cannot check) OR the
-	// cert's SANs include the configured identifier.
+	// cert's SANs include the configured identifier. VerifyHostname checks SAN
+	// match only, NOT expiry, so we pair it with an explicit NotAfter check that
+	// mirrors ensureCertificate's renewal gate -- otherwise an expired-but-still-
+	// named cached cert would be served on restart.
 	coversIdentifier := cert.Leaf == nil || cert.Leaf.VerifyHostname(m.identifier) == nil
+	expired := cert.Leaf != nil && time.Now().After(cert.Leaf.NotAfter)
 	if !coversIdentifier {
 		m.logger.Info("ACME (lego) cached certificate does not cover configured identifier; will re-issue",
 			slog.String("identifier", m.identifier))
+		return nil
+	}
+	if expired {
+		m.logger.Info("ACME (lego) cached certificate is expired; will re-issue",
+			slog.String("identifier", m.identifier),
+			slog.Time("not_after", cert.Leaf.NotAfter))
 		return nil
 	}
 	m.mu.Lock()
