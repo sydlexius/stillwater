@@ -125,3 +125,101 @@ func TestValidate_NormalizesNilMatchingConfig(t *testing.T) {
 		t.Error("Validate() must leave non-matching configs nil")
 	}
 }
+
+func TestValidate_NormalizesNilJellyfinConfig(t *testing.T) {
+	// TypeJellyfin with nil Jellyfin must lazily allocate, matching the Lidarr
+	// and Emby paths already covered by TestValidate_NormalizesNilMatchingConfig.
+	c := &Connection{
+		Name:   "fresh-jf",
+		Type:   TypeJellyfin,
+		URL:    "http://jf:8096",
+		APIKey: "k",
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() = %v, want nil for bare Jellyfin", err)
+	}
+	if c.Jellyfin == nil {
+		t.Error("Validate() must allocate JellyfinConfig when nil")
+	}
+	if c.Emby != nil || c.Lidarr != nil {
+		t.Error("Validate() must leave non-matching configs nil")
+	}
+}
+
+func TestSetters_JellyfinPath(t *testing.T) {
+	// SetPlatformUserID / SetPlatformServerID for Jellyfin must lazily allocate
+	// JellyfinConfig and store into it.
+	jf := &Connection{Type: TypeJellyfin}
+	jf.SetPlatformUserID("u-jf")
+	jf.SetPlatformServerID("s-jf")
+	if jf.Jellyfin == nil {
+		t.Fatal("SetPlatform* must allocate JellyfinConfig for TypeJellyfin")
+	}
+	if jf.Jellyfin.PlatformUserID != "u-jf" {
+		t.Errorf("PlatformUserID = %q, want u-jf", jf.Jellyfin.PlatformUserID)
+	}
+	if jf.Jellyfin.PlatformServerID != "s-jf" {
+		t.Errorf("PlatformServerID = %q, want s-jf", jf.Jellyfin.PlatformServerID)
+	}
+	if jf.Emby != nil || jf.Lidarr != nil {
+		t.Error("SetPlatform* must not allocate non-matching configs")
+	}
+
+	// Lidarr has no platform server identity either.
+	lidarr := &Connection{Type: TypeLidarr}
+	lidarr.SetPlatformServerID("ignored")
+	if lidarr.GetPlatformServerID() != "" {
+		t.Error("Lidarr SetPlatformServerID should be a no-op")
+	}
+}
+
+func TestSetFeatures_AllocatesAndSets(t *testing.T) {
+	// SetFeatures on a bare Emby connection must lazily allocate EmbyConfig
+	// and write all five feature flags.
+	emby := &Connection{Type: TypeEmby}
+	emby.SetFeatures(true, false, true, false, true)
+	if emby.Emby == nil {
+		t.Fatal("SetFeatures must allocate EmbyConfig for TypeEmby")
+	}
+	if !emby.Emby.FeatureLibraryImport {
+		t.Error("FeatureLibraryImport must be true")
+	}
+	if emby.Emby.FeatureNFOWrite {
+		t.Error("FeatureNFOWrite must be false")
+	}
+	if !emby.Emby.FeatureImageWrite {
+		t.Error("FeatureImageWrite must be true")
+	}
+	if emby.Emby.FeatureMetadataPush {
+		t.Error("FeatureMetadataPush must be false")
+	}
+	if !emby.Emby.FeatureTriggerRefresh {
+		t.Error("FeatureTriggerRefresh must be true")
+	}
+
+	// Jellyfin path: same contract.
+	jf := &Connection{Type: TypeJellyfin}
+	jf.SetFeatures(false, true, false, true, false)
+	if jf.Jellyfin == nil {
+		t.Fatal("SetFeatures must allocate JellyfinConfig for TypeJellyfin")
+	}
+	if jf.Jellyfin.FeatureLibraryImport {
+		t.Error("FeatureLibraryImport must be false")
+	}
+	if !jf.Jellyfin.FeatureNFOWrite {
+		t.Error("FeatureNFOWrite must be true")
+	}
+	if !jf.Jellyfin.FeatureMetadataPush {
+		t.Error("FeatureMetadataPush must be true")
+	}
+
+	// Lidarr has no features; SetFeatures must be a silent no-op.
+	lidarr := &Connection{Type: TypeLidarr}
+	lidarr.SetFeatures(true, true, true, true, true)
+	if lidarr.Emby != nil || lidarr.Jellyfin != nil {
+		t.Error("SetFeatures must not allocate any sub-config for Lidarr")
+	}
+	if lidarr.GetFeatureLibraryImport() {
+		t.Error("SetFeatures on Lidarr must have no observable effect")
+	}
+}

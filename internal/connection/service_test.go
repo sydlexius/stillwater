@@ -781,3 +781,91 @@ func TestVerifyPathAfterUpdate_DefaultsFalse(t *testing.T) {
 		t.Error("VerifyPathAfterUpdate should default to false")
 	}
 }
+
+func TestUpdatePlatformServerID(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "PlatSID", Type: TypeEmby, URL: "http://platsid:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.UpdatePlatformServerID(ctx, c.ID, "srv-001"); err != nil {
+		t.Fatalf("UpdatePlatformServerID: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPlatformServerID() != "srv-001" {
+		t.Errorf("PlatformServerID = %q, want srv-001", got.GetPlatformServerID())
+	}
+
+	// Not-found path.
+	if err := svc.UpdatePlatformServerID(ctx, "nonexistent", "sid"); err == nil {
+		t.Error("expected error updating platform server ID for nonexistent connection")
+	}
+}
+
+func TestUpdate_NotFound(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+
+	c := &Connection{
+		ID:     "ghost-id",
+		Name:   "Ghost",
+		Type:   TypeEmby,
+		URL:    "http://ghost:8096",
+		APIKey: "key",
+	}
+	if err := svc.Update(context.Background(), c); err == nil {
+		t.Error("expected error updating nonexistent connection")
+	}
+}
+
+func TestListByType_SkipsUndecryptableRows(t *testing.T) {
+	t.Parallel()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	svc := NewService(db, enc)
+	ctx := context.Background()
+
+	// Create a valid Emby connection.
+	if err := svc.Create(ctx, &Connection{Name: "Good", Type: TypeEmby, URL: "http://good:8096", APIKey: "key1", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert an Emby row with a garbage encrypted key directly.
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, created_at, updated_at)
+		VALUES ('bad-sid', 'Bad', 'emby', 'http://bad:8096', 'not-valid-ciphertext', 1, 'unknown', '', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')
+	`)
+	if err != nil {
+		t.Fatalf("inserting bad row: %v", err)
+	}
+
+	conns, err := svc.ListByType(ctx, TypeEmby)
+	if err != nil {
+		t.Fatalf("ListByType() should not return error with undecryptable rows: %v", err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("got %d connections, want 1 (should skip undecryptable row)", len(conns))
+	}
+	if conns[0].Name != "Good" {
+		t.Errorf("Name = %q, want Good", conns[0].Name)
+	}
+}
