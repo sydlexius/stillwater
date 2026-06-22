@@ -55,7 +55,7 @@ RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minif
 # --- END SYNC ---
 
 # Runtime stage
-FROM alpine:3.24@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" \
       org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
