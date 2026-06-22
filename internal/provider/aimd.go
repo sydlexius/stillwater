@@ -198,6 +198,25 @@ func (c *AIMDController) SetCeiling(name ProviderName, ceiling rate.Limit) {
 	s.ceiling = ceiling
 }
 
+// GetCurrentLimit returns the provider's current AIMD rate limit, initializing
+// state lazily if needed. The fast path uses an RLock; the first-touch init
+// falls back to a write lock with a double-checked re-read.
+func (c *AIMDController) GetCurrentLimit(name ProviderName) rate.Limit {
+	c.mu.RLock()
+	if s, ok := c.states[name]; ok {
+		v := s.currentLimit
+		c.mu.RUnlock()
+		return v
+	}
+	c.mu.RUnlock()
+
+	// State not yet initialized -- take the write lock, re-check, then init.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.stateFor(name) // stateFor handles the already-initialized case
+	return s.currentLimit
+}
+
 // GetCeiling returns the current ceiling for a provider, initializing state
 // lazily if needed. The fast path uses an RLock; the first-touch init falls
 // back to a write lock with a double-checked re-read.

@@ -150,10 +150,10 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 //nolint:gocognit // Per-field provider iteration in priority order with provider-ID enrichment carry-forward between fields; this is the legacy non-scraper path retained for callers that have no scraper config, and its semantics must match ScrapeAll's outcome on a parallel diagram.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
 	if o.executor != nil {
-		// NOTE: the ScraperExecutor (scraper.Executor.ScrapeAll) is the production
-		// refresh path and bypasses all AIMD instrumentation below. Wiring AIMD
-		// signals into the executor is tracked as a follow-up; do not instrument it
-		// in this PR.
+		// The ScraperExecutor (scraper.Executor.ScrapeAll) is the production
+		// refresh path. It records AIMD signals internally via its own
+		// AIMDController reference (the same instance as o.aimd), so no
+		// additional instrumentation is needed here.
 		return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
 	}
 
@@ -346,8 +346,8 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", p.Name()))
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
-			if o.aimd != nil && isRateLimitError(err) {
-				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			if o.aimd != nil && IsRateLimitError(err) {
+				o.aimd.RecordFailure(p.Name(), RetryAfterDuration(err))
 			}
 			continue
 		}
@@ -378,8 +378,8 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 				retryAfterAttr(err))
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
-			if o.aimd != nil && isRateLimitError(err) {
-				o.aimd.RecordFailure(p.Name(), retryAfterDuration(err))
+			if o.aimd != nil && IsRateLimitError(err) {
+				o.aimd.RecordFailure(p.Name(), RetryAfterDuration(err))
 			}
 			continue
 		}
@@ -392,12 +392,12 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 	return allResults, nil
 }
 
-// isRateLimitError reports whether err is a provider-rate-limit / transient-
+// IsRateLimitError reports whether err is a provider-rate-limit / transient-
 // unavailability signal that the AIMD controller should react to. Only
 // *ErrProviderUnavailable qualifies: it carries 429/503/Retry-After semantics.
 // Ordinary errors (ErrNotFound, auth/401, JSON parse, context cancellation)
 // must NOT drive an AIMD decrease.
-func isRateLimitError(err error) bool {
+func IsRateLimitError(err error) bool {
 	var unavailable *ErrProviderUnavailable
 	return errors.As(err, &unavailable)
 }
@@ -416,11 +416,11 @@ func retryAfterAttr(err error) slog.Attr {
 	return slog.Attr{}
 }
 
-// retryAfterDuration extracts the RetryAfter duration from an
+// RetryAfterDuration extracts the RetryAfter duration from an
 // *ErrProviderUnavailable, returning 0 when the error is not of that type or
 // carries no hint. Used to pass the server-advised backoff to the AIMD
 // controller so it can log it alongside the multiplicative decrease.
-func retryAfterDuration(err error) time.Duration {
+func RetryAfterDuration(err error) time.Duration {
 	var unavailable *ErrProviderUnavailable
 	if errors.As(err, &unavailable) {
 		return unavailable.RetryAfter
@@ -581,7 +581,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 					retryAfterAttr(err))
 				pr.err = err
 				// Record the first rate-limit error for the composite AIMD signal.
-				if isRateLimitError(err) && aimdRateLimitErr == nil {
+				if IsRateLimitError(err) && aimdRateLimitErr == nil {
 					aimdRateLimitErr = err
 				}
 			}
@@ -622,7 +622,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 				// when the provider was merely unreachable.
 				pr.imageErr = err
 				// Record the first rate-limit error for the composite AIMD signal.
-				if isRateLimitError(err) && aimdRateLimitErr == nil {
+				if IsRateLimitError(err) && aimdRateLimitErr == nil {
 					aimdRateLimitErr = err
 				}
 			}
@@ -640,7 +640,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 	// AIMD signals and neither case fires for them.
 	if o.aimd != nil {
 		if aimdRateLimitErr != nil {
-			o.aimd.RecordFailure(name, retryAfterDuration(aimdRateLimitErr))
+			o.aimd.RecordFailure(name, RetryAfterDuration(aimdRateLimitErr))
 		} else if aimdGotResult {
 			o.aimd.RecordSuccess(name)
 		}
@@ -1289,8 +1289,8 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 			})
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
-			if o.aimd != nil && isRateLimitError(err) {
-				o.aimd.RecordFailure(provName, retryAfterDuration(err))
+			if o.aimd != nil && IsRateLimitError(err) {
+				o.aimd.RecordFailure(provName, RetryAfterDuration(err))
 			}
 			continue
 		}

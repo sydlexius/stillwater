@@ -17,6 +17,7 @@ type Executor struct {
 	service          *Service
 	registry         *provider.Registry
 	providerSettings *provider.SettingsService
+	aimd             *provider.AIMDController // may be nil; when nil, AIMD signals are skipped
 	logger           *slog.Logger
 }
 
@@ -30,12 +31,16 @@ type FieldResult struct {
 	Err          error                   `json:"-"`
 }
 
-// NewExecutor creates a new scraper executor.
-func NewExecutor(service *Service, registry *provider.Registry, settings *provider.SettingsService, logger *slog.Logger) *Executor {
+// NewExecutor creates a new scraper executor. aimd may be nil; when nil,
+// adaptive rate-limiting signals are skipped and the executor behaves exactly
+// as before. In production, pass the same AIMDController instance used by the
+// Orchestrator so both code paths share per-provider rate-limit state.
+func NewExecutor(service *Service, registry *provider.Registry, settings *provider.SettingsService, logger *slog.Logger, aimd *provider.AIMDController) *Executor {
 	return &Executor{
 		service:          service,
 		registry:         registry,
 		providerSettings: settings,
+		aimd:             aimd,
 		logger:           logger.With(slog.String("component", "scraper-executor")),
 	}
 }
@@ -367,6 +372,17 @@ func (e *Executor) getProviderResult(
 
 	pr := &providerResult{}
 
+	// aimdRateLimitErr records the first rate-limit / provider-unavailable error
+	// encountered across both GetArtist and GetImages within this single provider
+	// call. It is used to emit exactly ONE AIMD signal at the end of the function:
+	// RecordFailure if a rate-limit error was seen, RecordSuccess if results were
+	// returned without a rate-limit error. Ordinary errors (ErrNotFound, auth/401,
+	// JSON parse, context cancellation) are not AIMD signals.
+	var aimdRateLimitErr error
+	// aimdGotResult is true when at least one of GetArtist or GetImages returned
+	// a useful (non-error) result. Used to decide whether RecordSuccess is warranted.
+	aimdGotResult := false
+
 	// Lookup precedence: provider-specific ID > MBID > artist name.
 	usedProviderID := false
 	id := mbid
@@ -413,9 +429,14 @@ func (e *Executor) getProviderResult(
 					slog.String("provider", string(name)),
 					slog.String("error", err.Error()))
 				pr.err = err
+				// Record the first rate-limit error for the composite AIMD signal.
+				if provider.IsRateLimitError(err) && aimdRateLimitErr == nil {
+					aimdRateLimitErr = err
+				}
 			}
 		} else {
 			pr.meta = meta
+			aimdGotResult = true
 		}
 	}
 
@@ -448,9 +469,28 @@ func (e *Executor) getProviderResult(
 				// marked as attempted. This prevents clearing existing image data
 				// when the provider was merely unreachable.
 				pr.imageErr = err
+				// Record the first rate-limit error for the composite AIMD signal.
+				if provider.IsRateLimitError(err) && aimdRateLimitErr == nil {
+					aimdRateLimitErr = err
+				}
 			}
 		} else {
 			pr.images = images
+			aimdGotResult = true
+		}
+	}
+
+	// Emit exactly ONE AIMD signal per provider call:
+	//   - RecordFailure when a rate-limit / provider-unavailable error was seen.
+	//   - RecordSuccess when at least one sub-call (GetArtist or GetImages)
+	//     returned a useful result and no rate-limit error was recorded.
+	// Ordinary errors (ErrNotFound, auth, JSON parse, context cancel) are NOT
+	// AIMD signals and neither case fires for them.
+	if e.aimd != nil {
+		if aimdRateLimitErr != nil {
+			e.aimd.RecordFailure(name, provider.RetryAfterDuration(aimdRateLimitErr))
+		} else if aimdGotResult {
+			e.aimd.RecordSuccess(name)
 		}
 	}
 
