@@ -883,6 +883,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// (which is correct for API routes but wrong for browser page requests).
 	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files", wrapOptionalAuth(r.handleNextForeignFilesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files/allowlist", wrapOptionalAuth(r.handleNextForeignAllowlistPage, optAuthMw))
+	// M55 #1337: next/ reports two-pane workspace. /next/reports defaults to the
+	// Compliance overview. /next/reports/{name} selects a built-in report by ID.
+	// These are registered after the more-specific foreign-files routes above so
+	// Go's mux prefers exact paths (e.g. foreign-files) over the {name} pattern.
+	// wrapOptionalAuth so the in-handler requireAuth gate renders the login page
+	// for unauthenticated visitors instead of returning 401 JSON.
+	mux.HandleFunc("GET "+bp+"/next/reports", wrapOptionalAuth(r.handleNextReportsPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/next/reports/{name}", wrapOptionalAuth(r.handleNextReportPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

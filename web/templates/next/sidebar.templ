@@ -95,6 +95,20 @@ templ Sidebar(assets templates.AssetPaths) {
 			<div class="sw-sidebar-section">
 				<span class="sw-sidebar-section-label" aria-hidden="true">{ t(ctx, "nav.reports") }</span>
 				<ul role="list" class="sw-sidebar-nav-list">
+					<!-- Reports workspace: direct link to the two-pane reports screen
+					     (#1337). Always visible so the built-in reports remain reachable
+					     even when the Compliance/Duplicates count pills are empty. -->
+					<li>
+						<a
+							href={ templ.SafeURL(assets.BasePath + "/next/reports") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports"
+							aria-label={ t(ctx, "reports.page_title") }
+						>
+							@components.IconChartBar("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ t(ctx, "reports.page_title") }</span>
+						</a>
+					</li>
 					<!-- Compliance: HTMX-hydrated; count = non-compliant artists
 					     (health_score < 100). Empty body hides the item when the library
 					     is fully compliant. ?ch=next tells the handler to use the /next/
