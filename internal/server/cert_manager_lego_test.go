@@ -742,3 +742,118 @@ func TestSaveAccount_NonECKey(t *testing.T) {
 		t.Error("saveAccount(RSA key) = nil error; want error from encodeECKey")
 	}
 }
+
+// TestNewLegoManager_MkdirAllError covers the os.MkdirAll error branch in
+// newLegoManager by placing a regular file where the cache directory should go.
+func TestNewLegoManager_MkdirAllError(t *testing.T) {
+	t.Parallel()
+	dbDir := t.TempDir()
+	// Place a plain file at the path MkdirAll would need to traverse.
+	blockPath := filepath.Join(dbDir, "acme-cache")
+	if err := os.WriteFile(blockPath, []byte("blocker"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg := &config.Config{
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(dbDir, "stillwater.db")},
+	}
+	if _, err := newLegoManager(cfg, discardLogger(), testEncryptor(t)); err == nil {
+		t.Error("newLegoManager with blocked cache dir = nil error; want error")
+	}
+}
+
+// TestLoadCachedCert_StoreLoadError covers the store.load error path in
+// loadCachedCert by injecting an invalid (non-base64) ciphertext directly.
+func TestLoadCachedCert_StoreLoadError(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	// Write bytes that are not valid base64/GCM ciphertext directly to the file,
+	// bypassing the store's encrypt-then-write to force a Decrypt error.
+	if err := os.WriteFile(m.store.path(certCacheName), []byte{0xFF, 0xFE, 0xFD}, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := m.loadCachedCert(); err == nil {
+		t.Error("loadCachedCert (store.load error) = nil error; want error")
+	}
+}
+
+// TestLoadOrCreateUser_StoreLoadError covers the store.load error path in
+// loadOrCreateUser by injecting invalid ciphertext for the account cache entry.
+func TestLoadOrCreateUser_StoreLoadError(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	if err := os.WriteFile(m.store.path(accountCacheName), []byte{0xFF, 0xFE, 0xFD}, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := m.loadOrCreateUser(); err == nil {
+		t.Error("loadOrCreateUser (store.load error) = nil error; want error")
+	}
+}
+
+// TestEnsureCertificate_BuildClientError verifies that when buildClient fails
+// (here: corrupt account cache makes loadOrCreateUser fail before any network
+// I/O), ensureCertificate logs the error and returns cleanly.
+func TestEnsureCertificate_BuildClientError(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	// Force loadOrCreateUser to fail so buildClient returns before dialing.
+	if err := os.WriteFile(m.store.path(accountCacheName), []byte{0xFF, 0xFE, 0xFD}, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// m.cert is nil and the context is live: ensureCertificate will call
+	// buildClient, which fails at loadOrCreateUser without touching the network.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.ensureCertificate(ctx)
+}
+
+// TestLegoManager_Run_LoadCachedCertError exercises the warning path in run()
+// when loadCachedCert returns an error (corrupt cert cache). A fresh cert is
+// pre-installed so ensureCertificate short-circuits without network I/O.
+func TestLegoManager_Run_LoadCachedCertError(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+
+	// Corrupt the cert cache so loadCachedCert returns an error inside run.
+	if err := os.WriteFile(m.store.path(certCacheName), []byte{0xFF, 0xFE, 0xFD}, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Pre-install a fresh cert so ensureCertificate returns without a network call.
+	fresh := selfSignedCert(t, time.Now().Add(60*24*time.Hour))
+	m.mu.Lock()
+	m.cert = fresh
+	m.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.run(ctx)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not exit after context cancellation")
+	}
+}
+
+// TestEncryptedStore_LoadReadError covers the os.ReadFile error branch (when
+// the file exists but is unreadable) in encryptedStore.load.
+func TestEncryptedStore_LoadReadError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := &encryptedStore{dir: dir, encryptor: testEncryptor(t)}
+	if err := store.save("item", []byte("secret")); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	path := filepath.Join(dir, "item.enc")
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Skip("cannot make file unreadable:", err)
+	}
+	defer os.Chmod(path, 0o600) // restore for cleanup
+	if _, _, err := store.load("item"); err == nil {
+		t.Error("load(unreadable) = nil error; want error")
+	}
+}
