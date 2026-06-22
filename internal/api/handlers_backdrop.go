@@ -32,9 +32,9 @@ type backdropClient interface {
 func (r *Router) newBackdropClient(conn *connection.Connection) (backdropClient, error) {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger), nil
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger), nil
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger), nil
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger), nil
 	default:
 		return nil, fmt.Errorf("connection type %q does not support backdrop operations", conn.Type)
 	}

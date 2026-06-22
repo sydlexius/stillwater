@@ -231,7 +231,7 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 
 // checkEmbyImageFetchers queries an Emby connection for image fetcher settings.
 func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Connection) []connection.ImageFetcherWarning {
-	client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+	client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 	statuses, err := client.CheckImageFetchersEnabled(ctx)
 	if err != nil {
 		r.logger.Warn("checking emby image fetchers", "connection", conn.Name, "error", err)
@@ -261,7 +261,7 @@ func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Co
 
 // checkJellyfinImageFetchers queries a Jellyfin connection for image fetcher settings.
 func (r *Router) checkJellyfinImageFetchers(ctx context.Context, conn *connection.Connection) []connection.ImageFetcherWarning {
-	client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+	client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 	statuses, err := client.CheckImageFetchersEnabled(ctx)
 	if err != nil {
 		r.logger.Warn("checking jellyfin image fetchers", "connection", conn.Name, "error", err)

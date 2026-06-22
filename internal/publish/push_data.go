@@ -191,9 +191,9 @@ func memberRoleString(m *artist.BandMember) string {
 func NewMetadataPusher(conn *connection.Connection, logger *slog.Logger) (connection.MetadataPusher, bool) {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger), true
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger), true
 	default:
 		return nil, false
 	}

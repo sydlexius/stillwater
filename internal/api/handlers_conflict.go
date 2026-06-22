@@ -430,9 +430,9 @@ func (r *Router) clearStillwaterManaged(ctx context.Context, conn *connection.Co
 func (r *Router) snapshotLibraryOptions(ctx context.Context, conn *connection.Connection) (string, error) {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).SnapshotLibraryOptions(ctx)
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger).SnapshotLibraryOptions(ctx)
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).SnapshotLibraryOptions(ctx)
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger).SnapshotLibraryOptions(ctx)
 	case connection.TypeLidarr:
 		return lidarr.New(conn.URL, conn.APIKey, r.logger).SnapshotLibraryOptions(ctx)
 	default:
@@ -443,9 +443,9 @@ func (r *Router) snapshotLibraryOptions(ctx context.Context, conn *connection.Co
 func (r *Router) disableFileWriteBack(ctx context.Context, conn *connection.Connection) error {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).DisableFileWriteBack(ctx)
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger).DisableFileWriteBack(ctx)
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).DisableFileWriteBack(ctx)
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger).DisableFileWriteBack(ctx)
 	case connection.TypeLidarr:
 		return lidarr.New(conn.URL, conn.APIKey, r.logger).DisableFileWriteBack(ctx)
 	default:
@@ -456,9 +456,9 @@ func (r *Router) disableFileWriteBack(ctx context.Context, conn *connection.Conn
 func (r *Router) restoreLibraryOptions(ctx context.Context, conn *connection.Connection, snapshotJSON string) error {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).RestoreLibraryOptions(ctx, snapshotJSON)
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger).RestoreLibraryOptions(ctx, snapshotJSON)
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).RestoreLibraryOptions(ctx, snapshotJSON)
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger).RestoreLibraryOptions(ctx, snapshotJSON)
 	case connection.TypeLidarr:
 		return lidarr.New(conn.URL, conn.APIKey, r.logger).RestoreLibraryOptions(ctx, snapshotJSON)
 	default:

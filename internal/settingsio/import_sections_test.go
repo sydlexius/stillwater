@@ -197,10 +197,12 @@ func TestImportConnections_PreV14EnvelopePreservesV14Fields(t *testing.T) {
 		URL:                      "http://emby.local:8096",
 		APIKey:                   "key1",
 		Enabled:                  true,
-		FeatureMetadataPush:      true,
-		FeatureTriggerRefresh:    true,
 		FeatureManageServerFiles: true,
 		PreStillwaterConfigJSON:  `{"some":"snapshot"}`,
+		Emby: &connection.EmbyConfig{
+			FeatureMetadataPush:   true,
+			FeatureTriggerRefresh: true,
+		},
 	}
 	if err := connSvc.Create(ctx, seed); err != nil {
 		t.Fatalf("seeding target connection: %v", err)
@@ -228,10 +230,10 @@ func TestImportConnections_PreV14EnvelopePreservesV14Fields(t *testing.T) {
 	if got.APIKey != "key2" {
 		t.Errorf("APIKey: got %q, want key2 (legacy import must still rotate keys)", got.APIKey)
 	}
-	if !got.FeatureMetadataPush {
+	if !got.GetFeatureMetadataPush() {
 		t.Error("FeatureMetadataPush was cleared by a legacy import; target value must be preserved")
 	}
-	if !got.FeatureTriggerRefresh {
+	if !got.GetFeatureTriggerRefresh() {
 		t.Error("FeatureTriggerRefresh was cleared by a legacy import; target value must be preserved")
 	}
 	if !got.FeatureManageServerFiles {
@@ -304,12 +306,12 @@ func TestImportConnections_PreV15EnvelopePreservesV15Fields(t *testing.T) {
 	// Seed the target with VerifyPathAfterUpdate=true, simulating an
 	// operator who upgraded to a v1.5 binary and then enabled the toggle.
 	seed := &connection.Connection{
-		Name:                  "Lidarr A",
-		Type:                  "lidarr",
-		URL:                   "http://lidarr.local:8686",
-		APIKey:                "key1",
-		Enabled:               true,
-		VerifyPathAfterUpdate: true,
+		Name:    "Lidarr A",
+		Type:    "lidarr",
+		URL:     "http://lidarr.local:8686",
+		APIKey:  "key1",
+		Enabled: true,
+		Lidarr:  &connection.LidarrConfig{VerifyPathAfterUpdate: true},
 	}
 	if err := connSvc.Create(ctx, seed); err != nil {
 		t.Fatalf("seeding target connection: %v", err)
@@ -336,7 +338,7 @@ func TestImportConnections_PreV15EnvelopePreservesV15Fields(t *testing.T) {
 	if got.APIKey != "key2" {
 		t.Errorf("APIKey: got %q, want key2 (legacy import must still rotate keys)", got.APIKey)
 	}
-	if !got.VerifyPathAfterUpdate {
+	if !got.GetVerifyPathAfterUpdate() {
 		t.Error("VerifyPathAfterUpdate was cleared by a legacy import; target value must be preserved")
 	}
 }

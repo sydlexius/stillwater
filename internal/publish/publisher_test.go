@@ -112,8 +112,8 @@ func TestPushLocks_RoutesToEachConnection(t *testing.T) {
 	defer srv.Close()
 
 	conns := &fakeConnectionGetter{conns: map[string]*connection.Connection{
-		"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
-		"c-jf":   {ID: "c-jf", Name: "jf", Type: connection.TypeJellyfin, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+		"c-jf":   {ID: "c-jf", Name: "jf", Type: connection.TypeJellyfin, URL: srv.URL, Enabled: true, Jellyfin: &connection.JellyfinConfig{PlatformUserID: "u1"}},
 	}}
 	p := New(Deps{
 		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
@@ -169,7 +169,7 @@ func TestPushLocks_DisabledConnectionSkipped(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-off", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-off": {ID: "c-off", Name: "off", Type: connection.TypeEmby, URL: srv.URL, Enabled: false, PlatformUserID: "u1"},
+			"c-off": {ID: "c-off", Name: "off", Type: connection.TypeEmby, URL: srv.URL, Enabled: false, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 		Logger: silentLogger(),
 	})
@@ -261,10 +261,10 @@ func TestLockSyncClientFactory(t *testing.T) {
 	if got := factory(nil, logger); got != nil {
 		t.Errorf("nil connection -> %T, want nil", got)
 	}
-	if got := factory(&connection.Connection{Type: connection.TypeEmby, URL: "http://e", PlatformUserID: "u"}, logger); got == nil {
+	if got := factory(&connection.Connection{Type: connection.TypeEmby, URL: "http://e", Emby: &connection.EmbyConfig{PlatformUserID: "u"}}, logger); got == nil {
 		t.Error("TypeEmby -> nil; want non-nil emby client")
 	}
-	if got := factory(&connection.Connection{Type: connection.TypeJellyfin, URL: "http://j", PlatformUserID: "u"}, logger); got == nil {
+	if got := factory(&connection.Connection{Type: connection.TypeJellyfin, URL: "http://j", Jellyfin: &connection.JellyfinConfig{PlatformUserID: "u"}}, logger); got == nil {
 		t.Error("TypeJellyfin -> nil; want non-nil jellyfin client")
 	}
 	if got := factory(&connection.Connection{Type: connection.TypeLidarr}, logger); got != nil {
@@ -425,7 +425,7 @@ func TestPushLocks_NotifierFiresOnSyncFailure(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 		Logger:   silentLogger(),
 		Notifier: notifier,
@@ -492,7 +492,7 @@ func TestPushLocks_NotifierNotCalledOnSuccess(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 		Logger:   silentLogger(),
 		Notifier: notifier,
@@ -647,7 +647,7 @@ func TestPushMetadataAsync_NotifierFiresOnPushFailure(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 		Logger:   silentLogger(),
 		Notifier: notifier,
@@ -771,7 +771,7 @@ func TestPushMetadataAsync_NotifierNotCalledOnSuccess(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 		Logger:   silentLogger(),
 		Notifier: notifier,
@@ -829,7 +829,7 @@ func TestSyncImageToPlatforms_NotifierFiresOnUploadFailure(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 		Logger:   silentLogger(),
 		Notifier: notifier,

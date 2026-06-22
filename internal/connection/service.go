@@ -58,11 +58,11 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 		dbutil.BoolToInt(c.Enabled), c.Status, c.StatusMessage,
 		dbutil.FormatNullableTime(c.LastCheckedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
-		dbutil.BoolToInt(c.FeatureLibraryImport), dbutil.BoolToInt(c.FeatureNFOWrite), dbutil.BoolToInt(c.FeatureImageWrite),
-		dbutil.BoolToInt(c.FeatureMetadataPush), dbutil.BoolToInt(c.FeatureTriggerRefresh),
+		dbutil.BoolToInt(c.GetFeatureLibraryImport()), dbutil.BoolToInt(c.GetFeatureNFOWrite()), dbutil.BoolToInt(c.GetFeatureImageWrite()),
+		dbutil.BoolToInt(c.GetFeatureMetadataPush()), dbutil.BoolToInt(c.GetFeatureTriggerRefresh()),
 		dbutil.BoolToInt(c.FeatureManageServerFiles),
-		dbutil.BoolToInt(c.VerifyPathAfterUpdate),
-		c.PlatformUserID, c.PlatformServerID,
+		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
+		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
 	)
 	if err != nil {
@@ -205,11 +205,11 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 		c.Name, c.Type, c.URL, encKey, dbutil.BoolToInt(c.Enabled),
 		c.Status, c.StatusMessage,
 		c.UpdatedAt.Format(time.RFC3339),
-		dbutil.BoolToInt(c.FeatureLibraryImport), dbutil.BoolToInt(c.FeatureNFOWrite), dbutil.BoolToInt(c.FeatureImageWrite),
-		dbutil.BoolToInt(c.FeatureMetadataPush), dbutil.BoolToInt(c.FeatureTriggerRefresh),
+		dbutil.BoolToInt(c.GetFeatureLibraryImport()), dbutil.BoolToInt(c.GetFeatureNFOWrite()), dbutil.BoolToInt(c.GetFeatureImageWrite()),
+		dbutil.BoolToInt(c.GetFeatureMetadataPush()), dbutil.BoolToInt(c.GetFeatureTriggerRefresh()),
 		dbutil.BoolToInt(c.FeatureManageServerFiles),
-		dbutil.BoolToInt(c.VerifyPathAfterUpdate),
-		c.PlatformUserID, c.PlatformServerID,
+		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
+		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
 		c.ID,
 	)
@@ -397,18 +397,39 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 		c.APIKey = apiKey
 	}
 	c.Enabled = enabled == 1
-	c.FeatureLibraryImport = featLibImport == 1
-	c.FeatureNFOWrite = featNFOWrite == 1
-	c.FeatureImageWrite = featImageWrite == 1
-	c.FeatureMetadataPush = featMetadataPush == 1
-	c.FeatureTriggerRefresh = featTriggerRefresh == 1
 	c.FeatureManageServerFiles = featManageServerFiles == 1
-	c.VerifyPathAfterUpdate = verifyPathAfterUpdate == 1
 	c.CreatedAt = dbutil.ParseTime(createdAt)
 	c.UpdatedAt = dbutil.ParseTime(updatedAt)
-	c.PlatformUserID = platformUserID.String
-	c.PlatformServerID = platformServerID.String
 	c.PreStillwaterConfigJSON = preStillwaterConfigJSON.String
+
+	// Map the flat platform columns into the type-discriminated sub-config
+	// matching the connection type (#1686). Persistence is unchanged - the
+	// sub-structs are purely the in-memory shape - so a Lidarr row's Emby
+	// feature columns (always 0) simply never reach a sub-config.
+	switch c.Type {
+	case TypeLidarr:
+		c.Lidarr = &LidarrConfig{VerifyPathAfterUpdate: verifyPathAfterUpdate == 1}
+	case TypeEmby:
+		c.Emby = &EmbyConfig{
+			PlatformUserID:        platformUserID.String,
+			PlatformServerID:      platformServerID.String,
+			FeatureLibraryImport:  featLibImport == 1,
+			FeatureNFOWrite:       featNFOWrite == 1,
+			FeatureImageWrite:     featImageWrite == 1,
+			FeatureMetadataPush:   featMetadataPush == 1,
+			FeatureTriggerRefresh: featTriggerRefresh == 1,
+		}
+	case TypeJellyfin:
+		c.Jellyfin = &JellyfinConfig{
+			PlatformUserID:        platformUserID.String,
+			PlatformServerID:      platformServerID.String,
+			FeatureLibraryImport:  featLibImport == 1,
+			FeatureNFOWrite:       featNFOWrite == 1,
+			FeatureImageWrite:     featImageWrite == 1,
+			FeatureMetadataPush:   featMetadataPush == 1,
+			FeatureTriggerRefresh: featTriggerRefresh == 1,
+		}
+	}
 
 	if lastCheckedAt.Valid {
 		t := dbutil.ParseTime(lastCheckedAt.String)

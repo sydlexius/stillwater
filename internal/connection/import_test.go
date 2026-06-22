@@ -44,7 +44,7 @@ func TestImportCreateTx_RoundTrip(t *testing.T) {
 
 	c := &Connection{
 		Name: "ImportTx Emby", Type: TypeEmby, URL: "http://importtx:8096",
-		APIKey: "k", Enabled: true, VerifyPathAfterUpdate: false,
+		APIKey: "k", Enabled: true,
 	}
 	if err := svc.ImportCreateTx(ctx, db, c); err != nil {
 		t.Fatalf("ImportCreateTx: %v", err)
@@ -82,7 +82,9 @@ func TestImportUpdateTx_RoundTrip(t *testing.T) {
 	}
 
 	c.APIKey = "k2"
-	c.VerifyPathAfterUpdate = true
+	// Mutate a platform-appropriate field (Emby feature toggle) to prove the
+	// update round-trips. Create normalized c, so c.Emby is non-nil here.
+	c.Emby.FeatureImageWrite = true
 	if err := svc.ImportUpdateTx(ctx, db, c); err != nil {
 		t.Fatalf("ImportUpdateTx: %v", err)
 	}
@@ -94,8 +96,8 @@ func TestImportUpdateTx_RoundTrip(t *testing.T) {
 	if got.APIKey != "k2" {
 		t.Errorf("APIKey after update: got %q, want k2", got.APIKey)
 	}
-	if !got.VerifyPathAfterUpdate {
-		t.Error("VerifyPathAfterUpdate did not round-trip through ImportUpdateTx")
+	if !got.GetFeatureImageWrite() {
+		t.Error("FeatureImageWrite did not round-trip through ImportUpdateTx")
 	}
 }
 

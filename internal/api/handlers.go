@@ -737,13 +737,37 @@ func (r *Router) authenticateByName(ctx context.Context, authMethod, serverURL, 
 
 // updateConnectionToken updates the stored API key for a federated connection
 // if the media server issued a new access token during login.
+// setMediaServerDefaults seeds the type-appropriate sub-config for an
+// auto-provisioned media-server connection created during federated login:
+// the three default write features enabled plus the resolved platform user ID
+// (#1686). authMethod is always emby or jellyfin on this path; a non-media
+// type leaves the sub-config nil and Validate normalizes it.
+func setMediaServerDefaults(conn *connection.Connection, platformUserID string) {
+	switch conn.Type {
+	case connection.TypeEmby:
+		conn.Emby = &connection.EmbyConfig{
+			FeatureLibraryImport: true,
+			FeatureNFOWrite:      true,
+			FeatureImageWrite:    true,
+			PlatformUserID:       platformUserID,
+		}
+	case connection.TypeJellyfin:
+		conn.Jellyfin = &connection.JellyfinConfig{
+			FeatureLibraryImport: true,
+			FeatureNFOWrite:      true,
+			FeatureImageWrite:    true,
+			PlatformUserID:       platformUserID,
+		}
+	}
+}
+
 func (r *Router) updateConnectionToken(ctx context.Context, authMethod, serverURL, platformUserID, newToken string) {
 	conn, err := r.connectionService.GetByTypeAndURL(ctx, authMethod, serverURL)
 	if err != nil {
 		r.logger.Warn("failed to look up connection for token update", "method", authMethod, "error", err)
 		return
 	}
-	if conn == nil || conn.PlatformUserID != platformUserID {
+	if conn == nil || conn.GetPlatformUserID() != platformUserID {
 		return
 	}
 	// The service decrypts the stored key on read; compare with the new token.
@@ -970,16 +994,13 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 	// Auto-create the first server connection.
 	connName := authMethodDisplayName(authMethod)
 	conn := &connection.Connection{
-		Name:                 connName,
-		Type:                 authMethod,
-		URL:                  cleanedURL,
-		APIKey:               result.AccessToken,
-		Enabled:              true,
-		FeatureLibraryImport: true,
-		FeatureNFOWrite:      true,
-		FeatureImageWrite:    true,
-		PlatformUserID:       result.User.ID,
+		Name:    connName,
+		Type:    authMethod,
+		URL:     cleanedURL,
+		APIKey:  result.AccessToken,
+		Enabled: true,
 	}
+	setMediaServerDefaults(conn, result.User.ID)
 	if err := r.connectionService.Create(req.Context(), conn); err != nil {
 		r.logger.Error("failed to auto-create connection during federated setup", "error", err)
 		// Non-fatal: the user can add the connection manually later.
@@ -1127,16 +1148,13 @@ func (r *Router) handleSetupWithIdentity(w http.ResponseWriter, req *http.Reques
 		// Auto-create the first server connection.
 		connName := authMethodDisplayName(authMethod)
 		conn := &connection.Connection{
-			Name:                 connName,
-			Type:                 authMethod,
-			URL:                  serverURL,
-			APIKey:               identity.RawToken,
-			Enabled:              true,
-			FeatureLibraryImport: true,
-			FeatureNFOWrite:      true,
-			FeatureImageWrite:    true,
-			PlatformUserID:       identity.ProviderID,
+			Name:    connName,
+			Type:    authMethod,
+			URL:     serverURL,
+			APIKey:  identity.RawToken,
+			Enabled: true,
 		}
+		setMediaServerDefaults(conn, identity.ProviderID)
 		if err := r.connectionService.Create(ctx, conn); err != nil {
 			r.logger.Error("failed to auto-create connection during federated setup", "error", err)
 			// Non-fatal: the user can add the connection manually later.

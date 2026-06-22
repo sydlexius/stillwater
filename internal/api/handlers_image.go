@@ -1405,9 +1405,9 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 		var deleter connection.ImageDeleter
 		switch conn.Type {
 		case connection.TypeEmby:
-			deleter = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+			deleter = emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		case connection.TypeJellyfin:
-			deleter = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+			deleter = jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		default:
 			r.logger.Warn("unsupported connection type for image delete sync", "type", conn.Type)
 			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))

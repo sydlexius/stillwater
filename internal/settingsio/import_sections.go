@@ -79,50 +79,31 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 			existing.Name = ce.Name
 			existing.APIKey = ce.APIKey
 			existing.Enabled = ce.Enabled
-			existing.FeatureLibraryImport = ce.FeatureLibraryImport
-			existing.FeatureNFOWrite = ce.FeatureNFOWrite
-			existing.FeatureImageWrite = ce.FeatureImageWrite
 			if carryV14Fields {
-				existing.FeatureMetadataPush = ce.FeatureMetadataPush
-				existing.FeatureTriggerRefresh = ce.FeatureTriggerRefresh
 				existing.FeatureManageServerFiles = ce.FeatureManageServerFiles
 				existing.PreStillwaterConfigJSON = ce.PreStillwaterConfigJSON
 			}
-			if carryV15Fields {
-				existing.VerifyPathAfterUpdate = ce.VerifyPathAfterUpdate
-			}
-			// platform_user_id and platform_server_id reflect the live peer's
-			// identity. Preserve the receiving instance's value if it already
-			// has one (a prior connection-test resolved it); fall back to the
-			// envelope's value for restore-into-fresh-install path where the
-			// receiving row was just created and has empty strings.
-			if existing.PlatformUserID == "" {
-				existing.PlatformUserID = ce.PlatformUserID
-			}
-			if existing.PlatformServerID == "" {
-				existing.PlatformServerID = ce.PlatformServerID
-			}
+			// Map the flat envelope's platform-specific fields onto the
+			// type-discriminated sub-config (#1686). existing already carries
+			// the matching sub-config from the DB scan; platform identity is
+			// preserved when already resolved (see applyExportConfig).
+			applyExportConfig(existing, ce, carryV14Fields, carryV15Fields)
 			if err := s.connectionSvc.ImportUpdateTx(ctx, db, existing); err != nil {
 				return fmt.Errorf("updating connection %q: %w", ce.Name, err)
 			}
 		} else {
+			// A fresh row: every envelope field is authoritative (pre-1.4/1.5
+			// envelopes simply decoded the newer fields as zero values).
 			c := &connection.Connection{
 				Name:                     ce.Name,
 				Type:                     ce.Type,
 				URL:                      ce.URL,
 				APIKey:                   ce.APIKey,
 				Enabled:                  ce.Enabled,
-				FeatureLibraryImport:     ce.FeatureLibraryImport,
-				FeatureNFOWrite:          ce.FeatureNFOWrite,
-				FeatureImageWrite:        ce.FeatureImageWrite,
-				FeatureMetadataPush:      ce.FeatureMetadataPush,
-				FeatureTriggerRefresh:    ce.FeatureTriggerRefresh,
 				FeatureManageServerFiles: ce.FeatureManageServerFiles,
-				VerifyPathAfterUpdate:    ce.VerifyPathAfterUpdate,
 				PreStillwaterConfigJSON:  ce.PreStillwaterConfigJSON,
-				PlatformUserID:           ce.PlatformUserID,
-				PlatformServerID:         ce.PlatformServerID,
 			}
+			applyExportConfig(c, ce, true, true)
 			if err := s.connectionSvc.ImportCreateTx(ctx, db, c); err != nil {
 				return fmt.Errorf("creating connection %q: %w", ce.Name, err)
 			}
@@ -130,6 +111,63 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 		result.Connections++
 	}
 	return nil
+}
+
+// applyExportConfig maps the flat ConnectionExport platform-specific fields
+// onto the type-discriminated sub-config of conn (#1686). The flat envelope
+// shape is retained for backward compatibility with older Stillwater versions;
+// this is the single place the import path translates it into the sub-structs.
+//
+// gateV14/gateV15 mirror the version gating in importConnections: when false,
+// the corresponding fields are not authoritative in this envelope and must not
+// overwrite values already on conn. Platform identity (user/server ID) reflects
+// the live peer and is only seeded from the envelope when conn does not already
+// have one resolved - so a fresh row (empty) takes the envelope value while an
+// existing row keeps its own.
+func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14, gateV15 bool) {
+	switch conn.Type {
+	case connection.TypeLidarr:
+		if conn.Lidarr == nil {
+			conn.Lidarr = &connection.LidarrConfig{}
+		}
+		if gateV15 {
+			conn.Lidarr.VerifyPathAfterUpdate = ce.VerifyPathAfterUpdate
+		}
+	case connection.TypeEmby:
+		if conn.Emby == nil {
+			conn.Emby = &connection.EmbyConfig{}
+		}
+		conn.Emby.FeatureLibraryImport = ce.FeatureLibraryImport
+		conn.Emby.FeatureNFOWrite = ce.FeatureNFOWrite
+		conn.Emby.FeatureImageWrite = ce.FeatureImageWrite
+		if gateV14 {
+			conn.Emby.FeatureMetadataPush = ce.FeatureMetadataPush
+			conn.Emby.FeatureTriggerRefresh = ce.FeatureTriggerRefresh
+		}
+		if conn.Emby.PlatformUserID == "" {
+			conn.Emby.PlatformUserID = ce.PlatformUserID
+		}
+		if conn.Emby.PlatformServerID == "" {
+			conn.Emby.PlatformServerID = ce.PlatformServerID
+		}
+	case connection.TypeJellyfin:
+		if conn.Jellyfin == nil {
+			conn.Jellyfin = &connection.JellyfinConfig{}
+		}
+		conn.Jellyfin.FeatureLibraryImport = ce.FeatureLibraryImport
+		conn.Jellyfin.FeatureNFOWrite = ce.FeatureNFOWrite
+		conn.Jellyfin.FeatureImageWrite = ce.FeatureImageWrite
+		if gateV14 {
+			conn.Jellyfin.FeatureMetadataPush = ce.FeatureMetadataPush
+			conn.Jellyfin.FeatureTriggerRefresh = ce.FeatureTriggerRefresh
+		}
+		if conn.Jellyfin.PlatformUserID == "" {
+			conn.Jellyfin.PlatformUserID = ce.PlatformUserID
+		}
+		if conn.Jellyfin.PlatformServerID == "" {
+			conn.Jellyfin.PlatformServerID = ce.PlatformServerID
+		}
+	}
 }
 
 // importPlatformProfiles upserts platform profiles by name. An existing profile

@@ -39,9 +39,9 @@ type pathUpdater interface {
 var renamePathUpdaterFactory = func(conn *connection.Connection, logger *slog.Logger) (pathUpdater, bool) {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger), true
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger), true
 	case connection.TypeLidarr:
 		// VerifyPathAfterUpdate is the per-connection opt-in: when true,
 		// UpdateArtistPath issues a follow-up GET and confirms the
@@ -51,7 +51,7 @@ var renamePathUpdaterFactory = func(conn *connection.Connection, logger *slog.Lo
 		// dead code. Default false on the model means existing rows keep
 		// today's single-PUT behavior.
 		client := lidarr.New(conn.URL, conn.APIKey, logger)
-		client.SetVerifyPathAfterUpdate(conn.VerifyPathAfterUpdate)
+		client.SetVerifyPathAfterUpdate(conn.GetVerifyPathAfterUpdate())
 		return client, true
 	default:
 		return nil, false

@@ -542,7 +542,7 @@ func TestPushMetadataAsync_HappyPath(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 
@@ -597,7 +597,7 @@ func TestPushMetadataAsync_MemberListErrorContinues(t *testing.T) {
 			membersErr: errors.New("simulated member-list failure"),
 		},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 
@@ -749,7 +749,7 @@ func TestPushMetadataAsync_PlatformUnreachable(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: closedURL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: closedURL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 	p.PushMetadataAsync(context.Background(), &artist.Artist{ID: "a1", Name: "X"})
@@ -775,7 +775,7 @@ func TestPushMetadataAsync_OutlivesParentCancel(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 
@@ -819,7 +819,7 @@ func TestPublishMetadata_WritesNFOAndPushes(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 
@@ -853,7 +853,7 @@ func TestPublishMetadata_NoPathSkipsNFOButStillPushes(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 

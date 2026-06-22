@@ -97,14 +97,14 @@ func addTestConnectionWithURLForBackdrop(t *testing.T, r *Router, url string) {
 	t.Helper()
 	const id = "conn-emby"
 	c := &connection.Connection{
-		ID:             id,
-		Name:           "My Emby",
-		Type:           "emby",
-		URL:            url,
-		APIKey:         "test-key",
-		Enabled:        true,
-		Status:         "ok",
-		PlatformUserID: "test-user-1",
+		ID:      id,
+		Name:    "My Emby",
+		Type:    "emby",
+		URL:     url,
+		APIKey:  "test-key",
+		Enabled: true,
+		Status:  "ok",
+		Emby:    &connection.EmbyConfig{PlatformUserID: "test-user-1"},
 	}
 	if err := r.connectionService.Create(context.Background(), c); err != nil {
 		t.Fatalf("creating test connection %s: %v", id, err)

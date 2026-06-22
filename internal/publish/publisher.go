@@ -457,9 +457,9 @@ func (p *Publisher) PushLocks(ctx context.Context, a *artist.Artist) {
 func newLockSyncer(conn *connection.Connection, logger *slog.Logger) connection.LockSyncer {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 	default:
 		return nil
 	}
@@ -477,9 +477,9 @@ func LockSyncClientFactory() connection.LockSyncClientFactory {
 		}
 		switch conn.Type {
 		case connection.TypeEmby:
-			return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+			return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 		case connection.TypeJellyfin:
-			return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+			return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 		default:
 			return nil
 		}
@@ -717,9 +717,9 @@ func (p *Publisher) getActiveFanartPrimary(ctx context.Context) string {
 func newImageUploader(conn *connection.Connection, logger *slog.Logger) connection.ImageUploader {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 	default:
 		return nil
 	}
@@ -730,9 +730,9 @@ func newImageUploader(conn *connection.Connection, logger *slog.Logger) connecti
 func newIndexedImageUploader(conn *connection.Connection, logger *slog.Logger) connection.IndexedImageUploader {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), logger)
 	default:
 		return nil
 	}

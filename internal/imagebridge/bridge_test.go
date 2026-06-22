@@ -67,12 +67,12 @@ func TestFetchArtistImage_Success(t *testing.T) {
 
 	// Create a connection pointed at our test server.
 	conn := &connection.Connection{
-		Name:              "Test Emby",
-		Type:              connection.TypeEmby,
-		URL:               srv.URL,
-		APIKey:            "test-key",
-		Enabled:           true,
-		FeatureImageWrite: true,
+		Name:    "Test Emby",
+		Type:    connection.TypeEmby,
+		URL:     srv.URL,
+		APIKey:  "test-key",
+		Enabled: true,
+		Emby:    &connection.EmbyConfig{FeatureImageWrite: true},
 	}
 	if err := connSvc.Create(ctx, conn); err != nil {
 		t.Fatalf("creating connection: %v", err)
@@ -194,12 +194,12 @@ func TestUploadArtistImage_Success(t *testing.T) {
 	ctx := context.Background()
 
 	conn := &connection.Connection{
-		Name:              "Upload Emby",
-		Type:              connection.TypeEmby,
-		URL:               srv.URL,
-		APIKey:            "test-key",
-		Enabled:           true,
-		FeatureImageWrite: true,
+		Name:    "Upload Emby",
+		Type:    connection.TypeEmby,
+		URL:     srv.URL,
+		APIKey:  "test-key",
+		Enabled: true,
+		Emby:    &connection.EmbyConfig{FeatureImageWrite: true},
 	}
 	if err := connSvc.Create(ctx, conn); err != nil {
 		t.Fatalf("creating connection: %v", err)
@@ -245,14 +245,16 @@ func TestUploadArtistImage_NoImageWriteFeature(t *testing.T) {
 	// Create with library_import enabled to prevent the "all false -> all true"
 	// default, then explicitly disable image_write via UpdateFeatures.
 	conn := &connection.Connection{
-		Name:                 "No Write",
-		Type:                 connection.TypeEmby,
-		URL:                  "http://localhost:9999",
-		APIKey:               "test-key",
-		Enabled:              true,
-		FeatureLibraryImport: true,
-		FeatureNFOWrite:      false,
-		FeatureImageWrite:    true, // will be disabled below
+		Name:    "No Write",
+		Type:    connection.TypeEmby,
+		URL:     "http://localhost:9999",
+		APIKey:  "test-key",
+		Enabled: true,
+		Emby: &connection.EmbyConfig{
+			FeatureLibraryImport: true,
+			FeatureNFOWrite:      false,
+			FeatureImageWrite:    true, // will be disabled below
+		},
 	}
 	if err := connSvc.Create(ctx, conn); err != nil {
 		t.Fatalf("creating connection: %v", err)
@@ -303,12 +305,12 @@ func TestFetchArtistImage_JellyfinConnection(t *testing.T) {
 	ctx := context.Background()
 
 	conn := &connection.Connection{
-		Name:              "Test Jellyfin",
-		Type:              connection.TypeJellyfin,
-		URL:               srv.URL,
-		APIKey:            "jf-key",
-		Enabled:           true,
-		FeatureImageWrite: true,
+		Name:     "Test Jellyfin",
+		Type:     connection.TypeJellyfin,
+		URL:      srv.URL,
+		APIKey:   "jf-key",
+		Enabled:  true,
+		Jellyfin: &connection.JellyfinConfig{FeatureImageWrite: true},
 	}
 	if err := connSvc.Create(ctx, conn); err != nil {
 		t.Fatalf("creating connection: %v", err)

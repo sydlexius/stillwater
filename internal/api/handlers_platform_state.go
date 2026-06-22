@@ -190,9 +190,9 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 func (r *Router) newStateGetter(conn *connection.Connection) (connection.ArtistStateGetter, error) {
 	switch conn.Type {
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger), nil
+		return emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger), nil
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger), nil
+		return jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger), nil
 	default:
 		return nil, errUnsupportedConnectionType
 	}

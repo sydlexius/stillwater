@@ -404,7 +404,7 @@ func TestSyncImageToPlatforms_HappyPath(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "X", Path: dir}, "thumb")
@@ -433,7 +433,7 @@ func TestSyncImageToPlatforms_PerConnectionBranches(t *testing.T) {
 		// Unsupported type (Lidarr -> nil uploader, warning appended).
 		"c-lid": {ID: "c-lid", Type: connection.TypeLidarr, URL: srv.URL, Enabled: true, Status: "ok"},
 		// Happy path (counts as 1 upload).
-		"c-ok": {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+		"c-ok": {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 	}}
 
 	p := New(Deps{
@@ -542,7 +542,7 @@ func TestSyncImageToPlatforms_PNGContentType(t *testing.T) {
 			{ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"}, "thumb")
@@ -656,7 +656,7 @@ func TestSyncAllFanartToPlatforms_HappyPath(t *testing.T) {
 			{ConnectionID: "c", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c": {ID: "c", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+			"c": {ID: "c", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 	warnings := p.SyncAllFanartToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"})
@@ -686,7 +686,7 @@ func TestSyncAllFanartToPlatforms_PerConnectionBranches(t *testing.T) {
 		"c-off": {ID: "c-off", Type: connection.TypeEmby, URL: srv.URL, Enabled: false, Status: "ok"},
 		"c-bad": {ID: "c-bad", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "error"},
 		"c-lid": {ID: "c-lid", Type: connection.TypeLidarr, URL: srv.URL, Enabled: true, Status: "ok"},
-		"c-ok":  {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+		"c-ok":  {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 	}}
 
 	p := New(Deps{
@@ -752,7 +752,7 @@ func TestSyncAllFanartToPlatforms_ReadErrorWarning(t *testing.T) {
 			{ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", PlatformUserID: "u1"},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		}},
 	})
 	warnings := p.SyncAllFanartToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"})

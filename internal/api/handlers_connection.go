@@ -42,17 +42,17 @@ func toConnectionResponse(c connection.Connection) connectionResponse {
 		Type:                  c.Type,
 		URL:                   c.URL,
 		HasKey:                c.APIKey != "",
-		HasPlatformUserID:     c.PlatformUserID != "",
+		HasPlatformUserID:     c.GetPlatformUserID() != "",
 		Enabled:               c.Enabled,
 		Status:                c.Status,
 		StatusMessage:         c.StatusMessage,
 		CreatedAt:             c.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:             c.UpdatedAt.UTC().Format(time.RFC3339),
-		FeatureLibraryImport:  c.FeatureLibraryImport,
-		FeatureNFOWrite:       c.FeatureNFOWrite,
-		FeatureImageWrite:     c.FeatureImageWrite,
-		FeatureMetadataPush:   c.FeatureMetadataPush,
-		FeatureTriggerRefresh: c.FeatureTriggerRefresh,
+		FeatureLibraryImport:  c.GetFeatureLibraryImport(),
+		FeatureNFOWrite:       c.GetFeatureNFOWrite(),
+		FeatureImageWrite:     c.GetFeatureImageWrite(),
+		FeatureMetadataPush:   c.GetFeatureMetadataPush(),
+		FeatureTriggerRefresh: c.GetFeatureTriggerRefresh(),
 	}
 	if c.LastCheckedAt != nil {
 		s := c.LastCheckedAt.UTC().Format(time.RFC3339)
@@ -240,7 +240,7 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		}
 		existing.Enabled = body.Enabled
 		if !body.SkipTest {
-			existing.PlatformUserID = platformUserID
+			existing.SetPlatformUserID(platformUserID)
 		}
 		if updateErr := r.connectionService.Update(req.Context(), existing); updateErr != nil {
 			r.logger.Error("updating existing connection", "error", updateErr)
@@ -259,23 +259,18 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	// Lidarr is a read-only metadata source (MBID seeding). Default its
-	// library-import and write feature flags to false.
-	libImport := body.Type != connection.TypeLidarr
-	nfoWrite := body.Type != connection.TypeLidarr
-	imageWrite := body.Type != connection.TypeLidarr
-
+	// Lidarr is a read-only metadata source (MBID seeding) with no write
+	// features: setMediaServerDefaults seeds the three default write toggles
+	// (true) plus the resolved platform user ID only for emby/jellyfin, and
+	// is a no-op for Lidarr (Validate then allocates an empty LidarrConfig).
 	c := &connection.Connection{
-		Name:                 body.Name,
-		Type:                 body.Type,
-		URL:                  body.URL,
-		APIKey:               body.APIKey,
-		Enabled:              body.Enabled,
-		FeatureLibraryImport: libImport,
-		FeatureNFOWrite:      nfoWrite,
-		FeatureImageWrite:    imageWrite,
-		PlatformUserID:       platformUserID,
+		Name:    body.Name,
+		Type:    body.Type,
+		URL:     body.URL,
+		APIKey:  body.APIKey,
+		Enabled: body.Enabled,
 	}
+	setMediaServerDefaults(c, platformUserID)
 	if err := r.connectionService.Create(req.Context(), c); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -351,8 +346,12 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	if body.Name != "" {
 		existing.Name = body.Name
 	}
-	if body.Type != "" {
+	if body.Type != "" && body.Type != existing.Type {
+		// A type change invalidates the platform-specific config carried from
+		// the old type; clear all sub-configs so Validate re-allocates the one
+		// matching the new type (#1686).
 		existing.Type = body.Type
+		existing.Lidarr, existing.Emby, existing.Jellyfin = nil, nil, nil
 	}
 	if body.URL != "" {
 		existing.URL = body.URL
@@ -363,21 +362,30 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	if body.Enabled != nil {
 		existing.Enabled = *body.Enabled
 	}
+	// Apply the partial feature-flag update against the matching media
+	// sub-config: read current values via the getters, override the fields
+	// present in the request, then write them back. No-op for Lidarr.
+	libImport := existing.GetFeatureLibraryImport()
+	nfoWrite := existing.GetFeatureNFOWrite()
+	imageWrite := existing.GetFeatureImageWrite()
+	metadataPush := existing.GetFeatureMetadataPush()
+	triggerRefresh := existing.GetFeatureTriggerRefresh()
 	if body.FeatureLibraryImport != nil {
-		existing.FeatureLibraryImport = *body.FeatureLibraryImport
+		libImport = *body.FeatureLibraryImport
 	}
 	if body.FeatureNFOWrite != nil {
-		existing.FeatureNFOWrite = *body.FeatureNFOWrite
+		nfoWrite = *body.FeatureNFOWrite
 	}
 	if body.FeatureImageWrite != nil {
-		existing.FeatureImageWrite = *body.FeatureImageWrite
+		imageWrite = *body.FeatureImageWrite
 	}
 	if body.FeatureMetadataPush != nil {
-		existing.FeatureMetadataPush = *body.FeatureMetadataPush
+		metadataPush = *body.FeatureMetadataPush
 	}
 	if body.FeatureTriggerRefresh != nil {
-		existing.FeatureTriggerRefresh = *body.FeatureTriggerRefresh
+		triggerRefresh = *body.FeatureTriggerRefresh
 	}
+	existing.SetFeatures(libImport, nfoWrite, imageWrite, metadataPush, triggerRefresh)
 
 	if err := r.connectionService.Update(req.Context(), existing); err != nil {
 		r.logger.Error("updating connection", "error", err)
@@ -470,7 +478,7 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 	var driftWarnings []string
 	switch conn.Type {
 	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		testErr = client.TestConnection(testCtx)
 		if testErr == nil {
 			uid, uidErr := client.GetFirstUserID(testCtx)
@@ -504,7 +512,7 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 			}
 		}
 	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		testErr = client.TestConnection(testCtx)
 		if testErr == nil {
 			uid, uidErr := client.GetFirstUserID(testCtx)
@@ -598,11 +606,11 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 		return
 	}
 
-	libImport := existing.FeatureLibraryImport
-	nfoWrite := existing.FeatureNFOWrite
-	imageWrite := existing.FeatureImageWrite
-	metadataPush := existing.FeatureMetadataPush
-	triggerRefresh := existing.FeatureTriggerRefresh
+	libImport := existing.GetFeatureLibraryImport()
+	nfoWrite := existing.GetFeatureNFOWrite()
+	imageWrite := existing.GetFeatureImageWrite()
+	metadataPush := existing.GetFeatureMetadataPush()
+	triggerRefresh := existing.GetFeatureTriggerRefresh()
 	if body.FeatureLibraryImport != nil {
 		libImport = *body.FeatureLibraryImport
 	}
@@ -650,7 +658,7 @@ func (r *Router) handleGetPlatformSettings(w http.ResponseWriter, req *http.Requ
 
 	switch conn.Type {
 	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		settings, settingsErr := client.GetLibrarySettings(settingsCtx)
 		if settingsErr != nil {
 			r.logger.Error("reading emby platform settings", "connection_id", id, "error", settingsErr)
@@ -663,7 +671,7 @@ func (r *Router) handleGetPlatformSettings(w http.ResponseWriter, req *http.Requ
 		})
 
 	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		settings, settingsErr := client.GetLibrarySettings(settingsCtx)
 		if settingsErr != nil {
 			r.logger.Error("reading jellyfin platform settings", "connection_id", id, "error", settingsErr)
@@ -727,7 +735,7 @@ func (r *Router) handleDisablePlatformSettings(w http.ResponseWriter, req *http.
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required for Emby connections"})
 			return
 		}
-		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		if disableErr := client.DisableConflictingSettings(disableCtx, body.LibraryID); disableErr != nil {
 			r.logger.Error("disabling emby conflicting settings", "connection_id", id, "library_id", body.LibraryID, "error", disableErr)
 			if strings.Contains(disableErr.Error(), "not found") {
@@ -744,7 +752,7 @@ func (r *Router) handleDisablePlatformSettings(w http.ResponseWriter, req *http.
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required for Jellyfin connections"})
 			return
 		}
-		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		if disableErr := client.DisableConflictingSettings(disableCtx, body.LibraryID); disableErr != nil {
 			r.logger.Error("disabling jellyfin conflicting settings", "connection_id", id, "library_id", body.LibraryID, "error", disableErr)
 			if strings.Contains(disableErr.Error(), "not found") {
@@ -796,7 +804,7 @@ func (r *Router) handleGetPlatformSummary(w http.ResponseWriter, req *http.Reque
 
 	switch conn.Type {
 	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		settings, settingsErr := client.GetLibrarySettings(summaryCtx)
 		if settingsErr != nil {
 			r.logger.Error("reading emby settings for summary", "connection_id", id, "error", settingsErr)
@@ -817,7 +825,7 @@ func (r *Router) handleGetPlatformSummary(w http.ResponseWriter, req *http.Reque
 		})
 
 	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 		settings, settingsErr := client.GetLibrarySettings(summaryCtx)
 		if settingsErr != nil {
 			r.logger.Error("reading jellyfin settings for summary", "connection_id", id, "error", settingsErr)

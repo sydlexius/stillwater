@@ -594,10 +594,10 @@ func realClientFactory(logger *slog.Logger) func(connection.Connection) (peerCli
 	return func(c connection.Connection) (peerClient, pathProvider) {
 		switch c.Type {
 		case connection.TypeEmby:
-			client := emby.New(c.URL, c.APIKey, c.PlatformUserID, logger)
+			client := emby.New(c.URL, c.APIKey, c.GetPlatformUserID(), logger)
 			return client, embyPaths{client: client}
 		case connection.TypeJellyfin:
-			client := jellyfin.New(c.URL, c.APIKey, c.PlatformUserID, logger)
+			client := jellyfin.New(c.URL, c.APIKey, c.GetPlatformUserID(), logger)
 			return client, jellyfinPaths{client: client}
 		case connection.TypeLidarr:
 			client := lidarr.New(c.URL, c.APIKey, logger)
