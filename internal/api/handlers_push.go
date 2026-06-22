@@ -153,9 +153,9 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 	}
 	switch conn.Type {
 	case connection.TypeEmby:
-		client = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client = emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 	case connection.TypeJellyfin:
-		client = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client = jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection type does not support image upload"})
 		return
@@ -310,9 +310,9 @@ func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request)
 	var deleter connection.ImageDeleter
 	switch conn.Type {
 	case connection.TypeEmby:
-		deleter = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		deleter = emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 	case connection.TypeJellyfin:
-		deleter = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		deleter = jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection type does not support image delete"})
 		return

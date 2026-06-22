@@ -231,12 +231,12 @@ func TestRoundTrip_ConnectionVerifyPathAfterUpdate(t *testing.T) {
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 
 	c := &connection.Connection{
-		Name:                  "Lidarr A",
-		Type:                  "lidarr",
-		URL:                   "http://lidarr.local:8686",
-		APIKey:                "lidarr-key",
-		Enabled:               true,
-		VerifyPathAfterUpdate: true,
+		Name:    "Lidarr A",
+		Type:    "lidarr",
+		URL:     "http://lidarr.local:8686",
+		APIKey:  "lidarr-key",
+		Enabled: true,
+		Lidarr:  &connection.LidarrConfig{VerifyPathAfterUpdate: true},
 	}
 	if err := connSvc.Create(ctx, c); err != nil {
 		t.Fatalf("creating connection: %v", err)
@@ -273,7 +273,7 @@ func TestRoundTrip_ConnectionVerifyPathAfterUpdate(t *testing.T) {
 	if got == nil {
 		t.Fatalf("imported connections missing %q; got %d rows", "Lidarr A", len(conns))
 	}
-	if !got.VerifyPathAfterUpdate {
+	if !got.GetVerifyPathAfterUpdate() {
 		t.Error("VerifyPathAfterUpdate did not survive export/import round-trip")
 	}
 }

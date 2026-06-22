@@ -169,9 +169,9 @@ func TestHandleCreateConnection_JSON_SkipTest_Lidarr(t *testing.T) {
 	if got.Type != connection.TypeLidarr {
 		t.Errorf("type = %q, want lidarr", got.Type)
 	}
-	if got.FeatureLibraryImport || got.FeatureNFOWrite || got.FeatureImageWrite {
+	if got.GetFeatureLibraryImport() || got.GetFeatureNFOWrite() || got.GetFeatureImageWrite() {
 		t.Errorf("lidarr features should default false: import=%v nfo=%v image=%v",
-			got.FeatureLibraryImport, got.FeatureNFOWrite, got.FeatureImageWrite)
+			got.GetFeatureLibraryImport(), got.GetFeatureNFOWrite(), got.GetFeatureImageWrite())
 	}
 }
 
@@ -363,7 +363,7 @@ func TestHandleUpdateConnection_PatchesFields(t *testing.T) {
 	if got.Name != "After" || got.Enabled {
 		t.Errorf("got = %+v, want name=After, enabled=false", got)
 	}
-	if !got.FeatureLibraryImport || !got.FeatureNFOWrite {
+	if !got.GetFeatureLibraryImport() || !got.GetFeatureNFOWrite() {
 		t.Errorf("feature flags not flipped: %+v", got)
 	}
 }
@@ -670,7 +670,7 @@ func TestHandleUpdateConnectionFeatures_Patches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if !got.FeatureLibraryImport || !got.FeatureMetadataPush || !got.FeatureTriggerRefresh {
+	if !got.GetFeatureLibraryImport() || !got.GetFeatureMetadataPush() || !got.GetFeatureTriggerRefresh() {
 		t.Errorf("features not toggled: %+v", got)
 	}
 }

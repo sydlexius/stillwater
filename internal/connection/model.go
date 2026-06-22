@@ -14,52 +14,251 @@ const (
 	TypeLidarr   = "lidarr"
 )
 
-// Connection represents an external service connection.
+// LidarrConfig holds the fields that are only meaningful for a Lidarr
+// connection. Keeping them on a dedicated sub-struct (rather than flat on
+// Connection) makes invalid combinations - e.g. VerifyPathAfterUpdate set on
+// an Emby connection - unrepresentable in the type system instead of merely
+// discouraged by a doc comment (#1686).
+type LidarrConfig struct {
+	// VerifyPathAfterUpdate enables a follow-up GET after the
+	// UpdateArtistPath PUT that confirms the returned path field matches
+	// what Stillwater sent. Mismatch produces an error with "sent X, got Y"
+	// context so the operator can identify that Lidarr coerced the path
+	// against its Root Folder list. Default false (opt-in): a healthy Lidarr
+	// rarely drifts and the extra request roughly doubles the per-rename
+	// HTTP cost.
+	VerifyPathAfterUpdate bool `json:"verify_path_after_update,omitempty"`
+}
+
+// EmbyConfig holds the fields that are only meaningful for an Emby
+// connection: the resolved platform identity and the per-feature write
+// toggles.
+type EmbyConfig struct {
+	// PlatformUserID is the Emby user the API key resolves to. Empty until
+	// the first successful connection test resolves it.
+	PlatformUserID string `json:"platform_user_id,omitempty"`
+	// PlatformServerID is the Emby server identity returned by /System/Info.
+	// Web deep-links must include serverId=<id> so the platform client loads
+	// the correct item view; without it the URL lands on a generic page or
+	// an unrelated server in multi-server setups. Empty until the first
+	// successful connection test resolves it.
+	PlatformServerID      string `json:"platform_server_id,omitempty"`
+	FeatureLibraryImport  bool   `json:"feature_library_import,omitempty"`
+	FeatureNFOWrite       bool   `json:"feature_nfo_write,omitempty"`
+	FeatureImageWrite     bool   `json:"feature_image_write,omitempty"`
+	FeatureMetadataPush   bool   `json:"feature_metadata_push,omitempty"`
+	FeatureTriggerRefresh bool   `json:"feature_trigger_refresh,omitempty"`
+}
+
+// JellyfinConfig holds the Jellyfin-only fields. It is structurally identical
+// to EmbyConfig today but kept as a distinct type so the two platforms can
+// diverge later without a second refactor (matches the ticket's spec).
+type JellyfinConfig struct {
+	PlatformUserID        string `json:"platform_user_id,omitempty"`
+	PlatformServerID      string `json:"platform_server_id,omitempty"`
+	FeatureLibraryImport  bool   `json:"feature_library_import,omitempty"`
+	FeatureNFOWrite       bool   `json:"feature_nfo_write,omitempty"`
+	FeatureImageWrite     bool   `json:"feature_image_write,omitempty"`
+	FeatureMetadataPush   bool   `json:"feature_metadata_push,omitempty"`
+	FeatureTriggerRefresh bool   `json:"feature_trigger_refresh,omitempty"`
+}
+
+// Connection represents an external service connection. Platform-specific
+// state lives on exactly one of the Lidarr/Emby/Jellyfin sub-configs (the one
+// matching Type); Validate enforces that invariant and lazily allocates the
+// matching empty config when a caller leaves it nil. Persistence still uses
+// the original flat columns (see service.go scanConnection / Create / Update):
+// the sub-structs are purely the in-memory representation, so no schema
+// migration is required (#1686).
 type Connection struct {
-	ID                    string     `json:"id"`
-	Name                  string     `json:"name"`
-	Type                  string     `json:"type"`
-	URL                   string     `json:"url"`
-	APIKey                string     `json:"api_key,omitempty"`
-	Enabled               bool       `json:"enabled"`
-	Status                string     `json:"status"`
-	StatusMessage         string     `json:"status_message,omitempty"`
-	LastCheckedAt         *time.Time `json:"last_checked_at,omitempty"`
-	CreatedAt             time.Time  `json:"created_at"`
-	UpdatedAt             time.Time  `json:"updated_at"`
-	FeatureLibraryImport  bool       `json:"feature_library_import"`
-	FeatureNFOWrite       bool       `json:"feature_nfo_write"`
-	FeatureImageWrite     bool       `json:"feature_image_write"`
-	FeatureMetadataPush   bool       `json:"feature_metadata_push"`
-	FeatureTriggerRefresh bool       `json:"feature_trigger_refresh"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Type          string     `json:"type"`
+	URL           string     `json:"url"`
+	APIKey        string     `json:"api_key,omitempty"`
+	Enabled       bool       `json:"enabled"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message,omitempty"`
+	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 	// FeatureManageServerFiles is the per-connection opt-in toggle
 	// "Let Stillwater manage images and NFO files on this server". When
 	// true, Stillwater has patched the peer's library options to disable
 	// its NFO saver + image saver (SaveLocalMetadata=false) and snapshotted
 	// the prior config into PreStillwaterConfigJSON for restore on opt-out
-	// or connection delete. Default false.
+	// or connection delete. Default false. Kept on the main struct because
+	// it is demonstrably cross-platform.
 	FeatureManageServerFiles bool `json:"feature_manage_server_files"`
 	// PreStillwaterConfigJSON is the JSON snapshot of the peer's library
 	// options taken when FeatureManageServerFiles was flipped on. Empty
 	// string when the toggle has never been flipped or has been restored.
 	PreStillwaterConfigJSON string `json:"pre_stillwater_config_json,omitempty"`
-	// VerifyPathAfterUpdate, for Lidarr connections only, enables a
-	// follow-up GET after UpdateArtistPath PUT that confirms the returned
-	// path field matches what Stillwater sent. Mismatch produces an error
-	// with "sent X, got Y" context so the operator can identify that
-	// Lidarr coerced the path against its Root Folder list. Default false
-	// (opt-in): a healthy Lidarr rarely drifts and the extra request
-	// roughly doubles the per-rename HTTP cost. Ignored for non-Lidarr
-	// types because they do not expose this failure mode.
-	VerifyPathAfterUpdate bool   `json:"verify_path_after_update"`
-	PlatformUserID        string `json:"platform_user_id,omitempty"`
-	// PlatformServerID is the Emby/Jellyfin server identity returned by
-	// /System/Info. Web deep-links must include serverId=<id> so the
-	// platform client loads the correct item view; without it the URL
-	// lands on a generic page or an unrelated server in multi-server
-	// setups. Empty for connection types that have no server concept
-	// (Lidarr) or until the first successful connection test resolves it.
-	PlatformServerID string `json:"platform_server_id,omitempty"`
+	// Lidarr/Emby/Jellyfin hold the platform-specific config. Exactly one is
+	// non-nil after Validate, corresponding to Type.
+	Lidarr   *LidarrConfig   `json:"lidarr,omitempty"`
+	Emby     *EmbyConfig     `json:"emby,omitempty"`
+	Jellyfin *JellyfinConfig `json:"jellyfin,omitempty"`
+}
+
+// GetPlatformUserID returns the resolved platform user ID for an Emby or
+// Jellyfin connection, or "" for Lidarr / an unresolved connection. Nil-safe:
+// callers iterating a mixed-type connection list can call it unconditionally.
+func (c *Connection) GetPlatformUserID() string {
+	switch {
+	case c.Emby != nil:
+		return c.Emby.PlatformUserID
+	case c.Jellyfin != nil:
+		return c.Jellyfin.PlatformUserID
+	default:
+		return ""
+	}
+}
+
+// GetPlatformServerID returns the resolved platform server ID for an Emby or
+// Jellyfin connection, or "" otherwise. Nil-safe.
+func (c *Connection) GetPlatformServerID() string {
+	switch {
+	case c.Emby != nil:
+		return c.Emby.PlatformServerID
+	case c.Jellyfin != nil:
+		return c.Jellyfin.PlatformServerID
+	default:
+		return ""
+	}
+}
+
+// GetVerifyPathAfterUpdate returns the Lidarr verify-after-PUT toggle, or
+// false for non-Lidarr / unresolved connections. Nil-safe.
+func (c *Connection) GetVerifyPathAfterUpdate() bool {
+	if c.Lidarr != nil {
+		return c.Lidarr.VerifyPathAfterUpdate
+	}
+	return false
+}
+
+// GetFeatureLibraryImport reports the library-import toggle. False for Lidarr
+// (which has no such feature) and unresolved connections. Nil-safe.
+func (c *Connection) GetFeatureLibraryImport() bool {
+	switch {
+	case c.Emby != nil:
+		return c.Emby.FeatureLibraryImport
+	case c.Jellyfin != nil:
+		return c.Jellyfin.FeatureLibraryImport
+	default:
+		return false
+	}
+}
+
+// GetFeatureNFOWrite reports the NFO-write toggle. Nil-safe.
+func (c *Connection) GetFeatureNFOWrite() bool {
+	switch {
+	case c.Emby != nil:
+		return c.Emby.FeatureNFOWrite
+	case c.Jellyfin != nil:
+		return c.Jellyfin.FeatureNFOWrite
+	default:
+		return false
+	}
+}
+
+// GetFeatureImageWrite reports the image-write toggle. Nil-safe.
+func (c *Connection) GetFeatureImageWrite() bool {
+	switch {
+	case c.Emby != nil:
+		return c.Emby.FeatureImageWrite
+	case c.Jellyfin != nil:
+		return c.Jellyfin.FeatureImageWrite
+	default:
+		return false
+	}
+}
+
+// GetFeatureMetadataPush reports the metadata-push toggle. Nil-safe.
+func (c *Connection) GetFeatureMetadataPush() bool {
+	switch {
+	case c.Emby != nil:
+		return c.Emby.FeatureMetadataPush
+	case c.Jellyfin != nil:
+		return c.Jellyfin.FeatureMetadataPush
+	default:
+		return false
+	}
+}
+
+// GetFeatureTriggerRefresh reports the trigger-refresh toggle. Nil-safe.
+func (c *Connection) GetFeatureTriggerRefresh() bool {
+	switch {
+	case c.Emby != nil:
+		return c.Emby.FeatureTriggerRefresh
+	case c.Jellyfin != nil:
+		return c.Jellyfin.FeatureTriggerRefresh
+	default:
+		return false
+	}
+}
+
+// SetPlatformUserID stores the resolved platform user ID on the matching
+// sub-config, allocating it if nil. No-op for connection types without a
+// platform identity (Lidarr).
+func (c *Connection) SetPlatformUserID(id string) {
+	switch c.Type {
+	case TypeEmby:
+		if c.Emby == nil {
+			c.Emby = &EmbyConfig{}
+		}
+		c.Emby.PlatformUserID = id
+	case TypeJellyfin:
+		if c.Jellyfin == nil {
+			c.Jellyfin = &JellyfinConfig{}
+		}
+		c.Jellyfin.PlatformUserID = id
+	}
+}
+
+// SetPlatformServerID stores the resolved platform server ID on the matching
+// sub-config, allocating it if nil. No-op for Lidarr.
+func (c *Connection) SetPlatformServerID(id string) {
+	switch c.Type {
+	case TypeEmby:
+		if c.Emby == nil {
+			c.Emby = &EmbyConfig{}
+		}
+		c.Emby.PlatformServerID = id
+	case TypeJellyfin:
+		if c.Jellyfin == nil {
+			c.Jellyfin = &JellyfinConfig{}
+		}
+		c.Jellyfin.PlatformServerID = id
+	}
+}
+
+// SetFeatures writes the five Emby/Jellyfin write-feature toggles onto the
+// matching media sub-config, allocating it if nil. No-op for Lidarr (which has
+// no such features). Mirrors Service.UpdateFeatures' parameter order so callers
+// holding an in-memory Connection (e.g. the update handler) set features the
+// same way the targeted DB updater does.
+func (c *Connection) SetFeatures(libImport, nfoWrite, imageWrite, metadataPush, triggerRefresh bool) {
+	switch c.Type {
+	case TypeEmby:
+		if c.Emby == nil {
+			c.Emby = &EmbyConfig{}
+		}
+		c.Emby.FeatureLibraryImport = libImport
+		c.Emby.FeatureNFOWrite = nfoWrite
+		c.Emby.FeatureImageWrite = imageWrite
+		c.Emby.FeatureMetadataPush = metadataPush
+		c.Emby.FeatureTriggerRefresh = triggerRefresh
+	case TypeJellyfin:
+		if c.Jellyfin == nil {
+			c.Jellyfin = &JellyfinConfig{}
+		}
+		c.Jellyfin.FeatureLibraryImport = libImport
+		c.Jellyfin.FeatureNFOWrite = nfoWrite
+		c.Jellyfin.FeatureImageWrite = imageWrite
+		c.Jellyfin.FeatureMetadataPush = metadataPush
+		c.Jellyfin.FeatureTriggerRefresh = triggerRefresh
+	}
 }
 
 // ValidateBaseURL checks that a base URL is safe for use as an HTTP client target.
@@ -189,6 +388,43 @@ func (c *Connection) Validate() error {
 	c.URL = cleaned
 	if c.APIKey == "" {
 		return fmt.Errorf("api_key is required")
+	}
+	if err := c.normalizeConfig(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// normalizeConfig enforces the type-discriminated config invariant: exactly
+// one of Lidarr/Emby/Jellyfin is non-nil and corresponds to Type. A sub-config
+// belonging to a different platform is rejected (that is the invalid state the
+// type system now makes loud); the matching config is lazily allocated when
+// the caller left it nil so construction sites that set no platform-specific
+// fields (e.g. a fresh Lidarr connection or the federated-login auto-provision
+// path) still validate. Type is already known valid by the time this runs.
+func (c *Connection) normalizeConfig() error {
+	switch c.Type {
+	case TypeLidarr:
+		if c.Emby != nil || c.Jellyfin != nil {
+			return fmt.Errorf("lidarr connection must not carry emby or jellyfin config")
+		}
+		if c.Lidarr == nil {
+			c.Lidarr = &LidarrConfig{}
+		}
+	case TypeEmby:
+		if c.Lidarr != nil || c.Jellyfin != nil {
+			return fmt.Errorf("emby connection must not carry lidarr or jellyfin config")
+		}
+		if c.Emby == nil {
+			c.Emby = &EmbyConfig{}
+		}
+	case TypeJellyfin:
+		if c.Lidarr != nil || c.Emby != nil {
+			return fmt.Errorf("jellyfin connection must not carry lidarr or emby config")
+		}
+		if c.Jellyfin == nil {
+			c.Jellyfin = &JellyfinConfig{}
+		}
 	}
 	return nil
 }

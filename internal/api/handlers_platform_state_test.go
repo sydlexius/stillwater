@@ -40,12 +40,12 @@ func TestHandlePullMetadata_MatchingFieldNotInUpdated(t *testing.T) {
 
 	// Create a connection pointing to the test server.
 	conn := &connection.Connection{
-		Name:           "Test Emby",
-		Type:           connection.TypeEmby,
-		URL:            srv.URL,
-		APIKey:         "test-api-key",
-		PlatformUserID: "user-001",
-		Enabled:        true,
+		Name:    "Test Emby",
+		Type:    connection.TypeEmby,
+		URL:     srv.URL,
+		APIKey:  "test-api-key",
+		Emby:    &connection.EmbyConfig{PlatformUserID: "user-001"},
+		Enabled: true,
 	}
 	if err := r.connectionService.Create(ctx, conn); err != nil {
 		t.Fatalf("creating connection: %v", err)
@@ -106,12 +106,12 @@ func TestHandlePullMetadata_ChangedFieldInUpdated(t *testing.T) {
 	defer srv.Close()
 
 	conn := &connection.Connection{
-		Name:           "Test Emby Changed",
-		Type:           connection.TypeEmby,
-		URL:            srv.URL,
-		APIKey:         "test-api-key",
-		PlatformUserID: "user-001",
-		Enabled:        true,
+		Name:    "Test Emby Changed",
+		Type:    connection.TypeEmby,
+		URL:     srv.URL,
+		APIKey:  "test-api-key",
+		Emby:    &connection.EmbyConfig{PlatformUserID: "user-001"},
+		Enabled: true,
 	}
 	if err := r.connectionService.Create(ctx, conn); err != nil {
 		t.Fatalf("creating connection: %v", err)

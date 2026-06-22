@@ -68,6 +68,10 @@ func TestCreateAndGetByID(t *testing.T) {
 	if got.Status != "unknown" {
 		t.Errorf("Status = %q, want %q", got.Status, "unknown")
 	}
+	// An Emby connection round-trips with exactly the EmbyConfig populated.
+	if got.Emby == nil || got.Lidarr != nil || got.Jellyfin != nil {
+		t.Errorf("expected only EmbyConfig populated, got Lidarr=%v Emby=%v Jellyfin=%v", got.Lidarr, got.Emby, got.Jellyfin)
+	}
 }
 
 func TestCreate_Validation(t *testing.T) {
@@ -399,20 +403,25 @@ func TestCreatePreservesFeatureFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.FeatureLibraryImport {
+	// A Lidarr connection gets only the LidarrConfig; the Emby/Jellyfin
+	// feature toggles are unrepresentable rather than merely false.
+	if got.Lidarr == nil || got.Emby != nil || got.Jellyfin != nil {
+		t.Errorf("Lidarr connection should have only Lidarr config, got Lidarr=%v Emby=%v Jellyfin=%v", got.Lidarr, got.Emby, got.Jellyfin)
+	}
+	if got.GetFeatureLibraryImport() {
 		t.Error("expected FeatureLibraryImport to remain false for Lidarr")
 	}
-	if got.FeatureNFOWrite {
+	if got.GetFeatureNFOWrite() {
 		t.Error("expected FeatureNFOWrite to remain false for Lidarr")
 	}
-	if got.FeatureImageWrite {
+	if got.GetFeatureImageWrite() {
 		t.Error("expected FeatureImageWrite to remain false for Lidarr")
 	}
 
 	// Verify that explicitly-true flags are also preserved.
 	c2 := &Connection{
 		Name: "Emby", Type: TypeEmby, URL: "http://emby:8096", APIKey: "key2", Enabled: true,
-		FeatureLibraryImport: true, FeatureNFOWrite: true, FeatureImageWrite: true,
+		Emby: &EmbyConfig{FeatureLibraryImport: true, FeatureNFOWrite: true, FeatureImageWrite: true},
 	}
 	if err := svc.Create(ctx, c2); err != nil {
 		t.Fatal(err)
@@ -421,13 +430,16 @@ func TestCreatePreservesFeatureFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got2.FeatureLibraryImport {
+	if got2.Emby == nil {
+		t.Fatal("Emby connection should have an EmbyConfig populated")
+	}
+	if !got2.Emby.FeatureLibraryImport {
 		t.Error("expected FeatureLibraryImport to be true for Emby")
 	}
-	if !got2.FeatureNFOWrite {
+	if !got2.Emby.FeatureNFOWrite {
 		t.Error("expected FeatureNFOWrite to be true for Emby")
 	}
-	if !got2.FeatureImageWrite {
+	if !got2.Emby.FeatureImageWrite {
 		t.Error("expected FeatureImageWrite to be true for Emby")
 	}
 }
@@ -451,13 +463,13 @@ func TestUpdateFeatures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.FeatureLibraryImport {
+	if !got.GetFeatureLibraryImport() {
 		t.Error("expected FeatureLibraryImport to remain true")
 	}
-	if got.FeatureNFOWrite {
+	if got.GetFeatureNFOWrite() {
 		t.Error("expected FeatureNFOWrite to be false")
 	}
-	if !got.FeatureImageWrite {
+	if !got.GetFeatureImageWrite() {
 		t.Error("expected FeatureImageWrite to remain true")
 	}
 }
@@ -488,8 +500,8 @@ func TestUpdatePlatformUserID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.PlatformUserID != "user-001" {
-		t.Errorf("PlatformUserID = %q, want user-001", got.PlatformUserID)
+	if got.GetPlatformUserID() != "user-001" {
+		t.Errorf("PlatformUserID = %q, want user-001", got.GetPlatformUserID())
 	}
 
 	// Not-found path.
@@ -528,8 +540,8 @@ func TestUpdate_PreservesPlatformUserID(t *testing.T) {
 	if after.Name != "PreserveUpdated" {
 		t.Errorf("Name = %q, want PreserveUpdated", after.Name)
 	}
-	if after.PlatformUserID != "user-preserve" {
-		t.Errorf("PlatformUserID = %q, want user-preserve (must be preserved by Update)", after.PlatformUserID)
+	if after.GetPlatformUserID() != "user-preserve" {
+		t.Errorf("PlatformUserID = %q, want user-preserve (must be preserved by Update)", after.GetPlatformUserID())
 	}
 }
 
@@ -573,10 +585,10 @@ func TestNewFeatureFlags_DefaultFalse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.FeatureMetadataPush {
+	if got.GetFeatureMetadataPush() {
 		t.Error("expected FeatureMetadataPush to default to false")
 	}
-	if got.FeatureTriggerRefresh {
+	if got.GetFeatureTriggerRefresh() {
 		t.Error("expected FeatureTriggerRefresh to default to false")
 	}
 }
@@ -600,10 +612,10 @@ func TestUpdateFeatures_NewFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.FeatureMetadataPush {
+	if !got.GetFeatureMetadataPush() {
 		t.Error("expected FeatureMetadataPush to be true")
 	}
-	if got.FeatureTriggerRefresh {
+	if got.GetFeatureTriggerRefresh() {
 		t.Error("expected FeatureTriggerRefresh to be false")
 	}
 }
@@ -615,7 +627,7 @@ func TestUpdate_PreservesNewFeatureFlags(t *testing.T) {
 
 	c := &Connection{
 		Name: "PreserveNew", Type: TypeEmby, URL: "http://on:8096", APIKey: "key", Enabled: true,
-		FeatureMetadataPush: true, FeatureTriggerRefresh: true,
+		Emby: &EmbyConfig{FeatureMetadataPush: true, FeatureTriggerRefresh: true},
 	}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
@@ -634,10 +646,10 @@ func TestUpdate_PreservesNewFeatureFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !after.FeatureMetadataPush {
+	if !after.GetFeatureMetadataPush() {
 		t.Error("expected FeatureMetadataPush to be preserved as true")
 	}
-	if !after.FeatureTriggerRefresh {
+	if !after.GetFeatureTriggerRefresh() {
 		t.Error("expected FeatureTriggerRefresh to be preserved as true")
 	}
 }
@@ -710,11 +722,11 @@ func TestVerifyPathAfterUpdate_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	conn := &Connection{
-		Name:                  "Lidarr verify on",
-		Type:                  TypeLidarr,
-		URL:                   "http://localhost:8686",
-		APIKey:                "key",
-		VerifyPathAfterUpdate: true,
+		Name:   "Lidarr verify on",
+		Type:   TypeLidarr,
+		URL:    "http://localhost:8686",
+		APIKey: "key",
+		Lidarr: &LidarrConfig{VerifyPathAfterUpdate: true},
 	}
 	if err := svc.Create(ctx, conn); err != nil {
 		t.Fatalf("create: %v", err)
@@ -724,7 +736,7 @@ func TestVerifyPathAfterUpdate_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !got.VerifyPathAfterUpdate {
+	if got.Lidarr == nil || !got.Lidarr.VerifyPathAfterUpdate {
 		t.Error("VerifyPathAfterUpdate should be true after round-trip")
 	}
 
@@ -737,7 +749,7 @@ func TestVerifyPathAfterUpdate_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload after update: %v", err)
 	}
-	if !reloaded.VerifyPathAfterUpdate {
+	if reloaded.Lidarr == nil || !reloaded.Lidarr.VerifyPathAfterUpdate {
 		t.Error("VerifyPathAfterUpdate should survive an Update that did not change it")
 	}
 }
@@ -765,7 +777,95 @@ func TestVerifyPathAfterUpdate_DefaultsFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got.VerifyPathAfterUpdate {
+	if got.GetVerifyPathAfterUpdate() {
 		t.Error("VerifyPathAfterUpdate should default to false")
+	}
+}
+
+func TestUpdatePlatformServerID(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "PlatSID", Type: TypeEmby, URL: "http://platsid:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.UpdatePlatformServerID(ctx, c.ID, "srv-001"); err != nil {
+		t.Fatalf("UpdatePlatformServerID: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPlatformServerID() != "srv-001" {
+		t.Errorf("PlatformServerID = %q, want srv-001", got.GetPlatformServerID())
+	}
+
+	// Not-found path.
+	if err := svc.UpdatePlatformServerID(ctx, "nonexistent", "sid"); err == nil {
+		t.Error("expected error updating platform server ID for nonexistent connection")
+	}
+}
+
+func TestUpdate_NotFound(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+
+	c := &Connection{
+		ID:     "ghost-id",
+		Name:   "Ghost",
+		Type:   TypeEmby,
+		URL:    "http://ghost:8096",
+		APIKey: "key",
+	}
+	if err := svc.Update(context.Background(), c); err == nil {
+		t.Error("expected error updating nonexistent connection")
+	}
+}
+
+func TestListByType_SkipsUndecryptableRows(t *testing.T) {
+	t.Parallel()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	svc := NewService(db, enc)
+	ctx := context.Background()
+
+	// Create a valid Emby connection.
+	if err := svc.Create(ctx, &Connection{Name: "Good", Type: TypeEmby, URL: "http://good:8096", APIKey: "key1", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert an Emby row with a garbage encrypted key directly.
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, created_at, updated_at)
+		VALUES ('bad-sid', 'Bad', 'emby', 'http://bad:8096', 'not-valid-ciphertext', 1, 'unknown', '', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')
+	`)
+	if err != nil {
+		t.Fatalf("inserting bad row: %v", err)
+	}
+
+	conns, err := svc.ListByType(ctx, TypeEmby)
+	if err != nil {
+		t.Fatalf("ListByType() should not return error with undecryptable rows: %v", err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("got %d connections, want 1 (should skip undecryptable row)", len(conns))
+	}
+	if conns[0].Name != "Good" {
+		t.Errorf("Name = %q, want Good", conns[0].Name)
 	}
 }

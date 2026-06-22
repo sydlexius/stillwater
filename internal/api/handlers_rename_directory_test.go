@@ -385,7 +385,7 @@ func TestHandleArtistRenameDirectory_PlatformsInResponse(t *testing.T) {
 	// Seed both connections and the platform-id mappings. The connection
 	// service decrypts api_key at read time, so use Create which encrypts.
 	for _, c := range []*connection.Connection{
-		{ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: embySrv.URL, APIKey: "k", Enabled: true, PlatformUserID: "u1"},
+		{ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: embySrv.URL, APIKey: "k", Enabled: true, Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
 		{ID: "c-lid", Name: "lid", Type: connection.TypeLidarr, URL: lidarrSrv.URL, APIKey: "k", Enabled: true},
 	} {
 		if err := r.connectionService.Create(ctx, c); err != nil {
@@ -471,7 +471,7 @@ func TestHandleArtistRenameDirectory_DisabledConnectionOmitsError(t *testing.T) 
 	c := &connection.Connection{
 		ID: "c-off", Name: "off", Type: connection.TypeEmby,
 		URL: "http://disabled.invalid", APIKey: "k",
-		Enabled: false, PlatformUserID: "u1",
+		Enabled: false, Emby: &connection.EmbyConfig{PlatformUserID: "u1"},
 	}
 	if err := r.connectionService.Create(ctx, c); err != nil {
 		t.Fatalf("seed disabled connection: %v", err)

@@ -109,7 +109,7 @@ func (b *Bridge) UploadArtistImage(ctx context.Context, artistID, imageType stri
 			lastErr = connErr
 			continue
 		}
-		if !conn.Enabled || !conn.FeatureImageWrite {
+		if !conn.Enabled || !conn.GetFeatureImageWrite() {
 			continue
 		}
 
@@ -204,10 +204,10 @@ func (b *Bridge) ListArtistImageSlots(ctx context.Context, artistID string) (map
 func (b *Bridge) getArtistDetailFromConnection(ctx context.Context, conn *connection.Connection, platformArtistID string) (*connection.ArtistPlatformState, error) {
 	switch conn.Type {
 	case connection.TypeEmby:
-		c := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		c := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), b.logger)
 		return c.GetArtistDetail(ctx, platformArtistID)
 	case connection.TypeJellyfin:
-		c := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		c := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), b.logger)
 		return c.GetArtistDetail(ctx, platformArtistID)
 	default:
 		return nil, fmt.Errorf("connection type %q does not support artist detail", conn.Type)
@@ -218,10 +218,10 @@ func (b *Bridge) getArtistDetailFromConnection(ctx context.Context, conn *connec
 func (b *Bridge) fetchFromConnection(ctx context.Context, conn *connection.Connection, platformArtistID, imageType string) ([]byte, string, error) {
 	switch conn.Type {
 	case connection.TypeEmby:
-		c := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		c := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), b.logger)
 		return c.GetArtistImage(ctx, platformArtistID, imageType)
 	case connection.TypeJellyfin:
-		c := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		c := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), b.logger)
 		return c.GetArtistImage(ctx, platformArtistID, imageType)
 	default:
 		return nil, "", fmt.Errorf("connection type %q does not support image fetch", conn.Type)
@@ -232,10 +232,10 @@ func (b *Bridge) fetchFromConnection(ctx context.Context, conn *connection.Conne
 func (b *Bridge) uploadToConnection(ctx context.Context, conn *connection.Connection, platformArtistID, imageType string, data []byte, contentType string) error {
 	switch conn.Type {
 	case connection.TypeEmby:
-		c := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		c := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), b.logger)
 		return c.UploadImage(ctx, platformArtistID, imageType, data, contentType)
 	case connection.TypeJellyfin:
-		c := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		c := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), b.logger)
 		return c.UploadImage(ctx, platformArtistID, imageType, data, contentType)
 	default:
 		return fmt.Errorf("connection type %q does not support image upload", conn.Type)

@@ -5678,16 +5678,16 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 					return templ_7745c5c3_Err
 				}
 				if c.Type != "lidarr" {
-					templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, t(ctx, "settings.connections.feature_library_import_tooltip"), "settings-connections-connections-feature-library-import").Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.GetFeatureLibraryImport(), t(ctx, "settings.connections.feature_library_import_tooltip"), "settings-connections-connections-feature-library-import").Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, t(ctx, "settings.connections.feature_nfo_write_tooltip"), "settings-connections-connections-feature-nfo-write").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.GetFeatureNFOWrite(), t(ctx, "settings.connections.feature_nfo_write_tooltip"), "settings-connections-connections-feature-nfo-write").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, t(ctx, "settings.connections.feature_image_write_tooltip"), "settings-connections-connections-feature-image-write").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.GetFeatureImageWrite(), t(ctx, "settings.connections.feature_image_write_tooltip"), "settings-connections-connections-feature-image-write").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

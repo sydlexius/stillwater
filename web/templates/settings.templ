@@ -2100,10 +2100,10 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.connections.sends_heading") }</div>
 							<div class="space-y-2">
 								if c.Type != "lidarr" {
-									@connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, t(ctx, "settings.connections.feature_library_import_tooltip"), "settings-connections-connections-feature-library-import")
+									@connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.GetFeatureLibraryImport(), t(ctx, "settings.connections.feature_library_import_tooltip"), "settings-connections-connections-feature-library-import")
 								}
-								@connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, t(ctx, "settings.connections.feature_nfo_write_tooltip"), "settings-connections-connections-feature-nfo-write")
-								@connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, t(ctx, "settings.connections.feature_image_write_tooltip"), "settings-connections-connections-feature-image-write")
+								@connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.GetFeatureNFOWrite(), t(ctx, "settings.connections.feature_nfo_write_tooltip"), "settings-connections-connections-feature-nfo-write")
+								@connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.GetFeatureImageWrite(), t(ctx, "settings.connections.feature_image_write_tooltip"), "settings-connections-connections-feature-image-write")
 							</div>
 						</div>
 						<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">

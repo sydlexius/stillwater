@@ -25,9 +25,9 @@ func TestBuildPlatformArtistURL_ServerIDPlumbing(t *testing.T) {
 		{
 			name: "emby with server id",
 			conn: &connection.Connection{
-				Type:             connection.TypeEmby,
-				URL:              "https://emby.example.com/",
-				PlatformServerID: "abc123",
+				Type: connection.TypeEmby,
+				URL:  "https://emby.example.com/",
+				Emby: &connection.EmbyConfig{PlatformServerID: "abc123"},
 			},
 			id:      "artist-42",
 			wantSub: []string{"https://emby.example.com/web/index.html#!/item?id=artist-42", "&serverId=abc123"},
@@ -45,9 +45,9 @@ func TestBuildPlatformArtistURL_ServerIDPlumbing(t *testing.T) {
 		{
 			name: "jellyfin with server id",
 			conn: &connection.Connection{
-				Type:             connection.TypeJellyfin,
-				URL:              "https://jf.example.com/",
-				PlatformServerID: "srv-xyz",
+				Type:     connection.TypeJellyfin,
+				URL:      "https://jf.example.com/",
+				Jellyfin: &connection.JellyfinConfig{PlatformServerID: "srv-xyz"},
 			},
 			id:      "a-1",
 			wantSub: []string{"https://jf.example.com/web/index.html#!/details?id=a-1", "&serverId=srv-xyz"},
@@ -65,9 +65,9 @@ func TestBuildPlatformArtistURL_ServerIDPlumbing(t *testing.T) {
 		{
 			name: "emby server id with special chars is query-escaped",
 			conn: &connection.Connection{
-				Type:             connection.TypeEmby,
-				URL:              "https://emby.example.com",
-				PlatformServerID: "id with spaces&+",
+				Type: connection.TypeEmby,
+				URL:  "https://emby.example.com",
+				Emby: &connection.EmbyConfig{PlatformServerID: "id with spaces&+"},
 			},
 			id:      "x",
 			wantSub: []string{"serverId=id+with+spaces%26%2B"},
