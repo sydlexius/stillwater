@@ -656,6 +656,66 @@ func TestLegoManager_Run_FreshCert(t *testing.T) {
 	}
 }
 
+// TestLegoManager_AcquireInitialCert_RetriesBeforeRenewCadence asserts that a
+// failing initial obtain is retried with short backoff (not the 12h renewal
+// cadence) until a certificate is installed. It injects a deterministic obtain
+// hook that fails the first two attempts and installs a cert on the third, and
+// shrinks the backoff to milliseconds so the loop runs without network I/O.
+func TestLegoManager_AcquireInitialCert_RetriesBeforeRenewCadence(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	m.initialBackoff = time.Millisecond
+	m.maxBackoff = 5 * time.Millisecond
+
+	var attempts int
+	m.ensureFn = func(_ context.Context) {
+		attempts++
+		if attempts < 3 {
+			return // simulate a transient obtain failure: no cert installed
+		}
+		cert := selfSignedCert(t, "host.example.com", time.Now().Add(60*24*time.Hour))
+		m.mu.Lock()
+		m.cert = cert
+		m.mu.Unlock()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if ok := m.acquireInitialCert(ctx); !ok {
+		t.Fatal("acquireInitialCert = false; want true once a cert is installed")
+	}
+	if attempts != 3 {
+		t.Errorf("ensureFn attempts = %d; want 3 (two failures then success)", attempts)
+	}
+	if !m.hasCert() {
+		t.Error("hasCert() = false after acquireInitialCert succeeded")
+	}
+}
+
+// TestLegoManager_AcquireInitialCert_CancelStopsRetry asserts the backoff loop
+// is context-cancellable: when obtain never succeeds, a canceled context makes
+// acquireInitialCert return false promptly instead of retrying forever.
+func TestLegoManager_AcquireInitialCert_CancelStopsRetry(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	m.initialBackoff = 10 * time.Millisecond
+	m.maxBackoff = 10 * time.Millisecond
+	m.ensureFn = func(_ context.Context) {} // never installs a cert
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan bool, 1)
+	go func() { done <- m.acquireInitialCert(ctx) }()
+	cancel()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Error("acquireInitialCert = true after cancel; want false (no cert installed)")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("acquireInitialCert did not return after context cancellation")
+	}
+}
+
 // TestEncryptedStore_TamperedCiphertext verifies that a corrupt on-disk blob
 // is rejected, covering the decrypt-error path in load().
 func TestEncryptedStore_TamperedCiphertext(t *testing.T) {

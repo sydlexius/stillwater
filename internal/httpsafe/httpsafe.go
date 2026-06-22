@@ -26,13 +26,25 @@ import (
 //   - 198.18.0.0/15  RFC 2544 benchmark / interconnect range. Reserved for
 //     device-to-device testing and sometimes routed internally; treat as
 //     non-public.
+//   - 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24  IPv4 documentation ranges
+//     (RFC 5737, TEST-NET-1/2/3). Reserved for examples and docs; never
+//     globally routed, so a real outbound request must never target them and a
+//     CA can never validate an ACME order for one.
+//   - 2001:db8::/32  IPv6 documentation range (RFC 3849). Same rationale as the
+//     IPv4 documentation ranges.
 //
 // IPv6 ULA (fc00::/7) and link-local (fe80::/10) are already caught by
 // net.IP.IsPrivate and net.IP.IsLinkLocalUnicast respectively, so they do not
-// appear here -- they are exercised by the test suite for lock-in.
+// appear here -- they are exercised by the test suite for lock-in. General
+// multicast (224.0.0.0/4 and ff00::/8) is caught by net.IP.IsMulticast in
+// isBlocked rather than by a prefix here.
 var extraBlockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("2001:db8::/32"),
 }
 
 // ErrPrivateAddress is returned by SafeTransport's DialContext when a target
@@ -128,14 +140,15 @@ func SafeClient(timeout time.Duration) *http.Client {
 }
 
 // isBlocked returns true for IP addresses that must never be contacted from
-// outbound HTTP requests: loopback, link-local unicast, link-local multicast,
-// RFC 1918 private ranges, the unspecified address, and the extra reserved
-// ranges in extraBlockedPrefixes (CGNAT, RFC 2544).
+// outbound HTTP requests: loopback, link-local unicast, multicast (any --
+// 224.0.0.0/4 and ff00::/8), RFC 1918 private ranges, the unspecified address,
+// and the extra reserved ranges in extraBlockedPrefixes (CGNAT, RFC 2544, and
+// the RFC 5737 / RFC 3849 documentation ranges).
 func isBlocked(ip net.IP) bool {
 	if ip.IsLoopback() ||
 		ip.IsPrivate() ||
 		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() ||
 		ip.IsUnspecified() {
 		return true
 	}
@@ -169,9 +182,10 @@ func isBlocked(ip net.IP) bool {
 // IsPublicIP reports whether ip is a routable, public unicast address that is
 // safe to expose to or request from the public internet. It is the inverse of
 // the internal SSRF blocklist (isBlocked): an address is "public" only when it
-// is NOT loopback, RFC 1918 private, link-local (unicast or multicast),
+// is NOT loopback, RFC 1918 private, link-local unicast, multicast (any),
 // unspecified, nor one of the extra reserved ranges (CGNAT 100.64.0.0/10,
-// RFC 2544 198.18.0.0/15).
+// RFC 2544 198.18.0.0/15, and the RFC 5737 / RFC 3849 documentation ranges
+// 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32).
 //
 // It exists so callers outside this package (notably ACME IP-SAN validation in
 // internal/config) reuse the SAME vetted blocklist rather than re-deriving it,

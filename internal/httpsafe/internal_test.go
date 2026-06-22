@@ -44,6 +44,17 @@ func TestIsPublicIP(t *testing.T) {
 		{"unspecified", "0.0.0.0", false},
 		{"cgnat rfc6598", "100.64.0.1", false},
 		{"rfc2544 benchmark", "198.18.0.1", false},
+		// RFC 5737 IPv4 documentation ranges (TEST-NET-1/2/3): never routable.
+		{"rfc5737 test-net-1", "192.0.2.5", false},
+		{"rfc5737 test-net-2", "198.51.100.1", false},
+		{"rfc5737 test-net-3", "203.0.113.5", false},
+		// RFC 3849 IPv6 documentation range.
+		{"rfc3849 doc ipv6", "2001:db8::1", false},
+		// Multicast: 224.0.0.0/4 (incl. local-control 224.0.0.1 and the
+		// globally-scoped 233.252.0.0/24 doc block) and ff00::/8.
+		{"multicast local-control", "224.0.0.1", false},
+		{"multicast global doc", "233.252.0.1", false},
+		{"multicast ipv6", "ff02::1", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

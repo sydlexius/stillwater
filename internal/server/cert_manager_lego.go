@@ -28,6 +28,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // This file holds the second CertManager implementation, backed by
@@ -76,8 +77,19 @@ const (
 
 	// renewCheckInterval is how often the renewal goroutine wakes to check
 	// certificate expiry. 12h is frequent enough to be self-healing after a
-	// failed attempt without hammering the CA.
+	// failed attempt without hammering the CA. This cadence applies only AFTER
+	// the first certificate is installed; the initial acquisition retries far
+	// sooner via initialObtainBackoff (see acquireInitialCert).
 	renewCheckInterval = 12 * time.Hour
+
+	// initialObtainBackoff / maxObtainBackoff bound the retry cadence for the
+	// FIRST certificate. Until a cert exists every TLS handshake fails, so a
+	// failed initial obtain must be retried far sooner than the 12h renewal
+	// cadence -- otherwise a transient CA outage at boot leaves TLS dead for up
+	// to 12h. The delay starts small and doubles, capped, so a brief outage
+	// recovers in seconds while a prolonged one does not hammer the CA.
+	initialObtainBackoff = 2 * time.Second
+	maxObtainBackoff     = 5 * time.Minute
 
 	// renewThreshold is the remaining-validity window below which a certificate
 	// is renewed. 30 days is the common ACME convention and leaves ample slack
@@ -115,6 +127,16 @@ type legoManager struct {
 	// HTTP handler serving /.well-known/acme-challenge/.
 	chalMu sync.RWMutex
 	tokens map[string]string
+
+	// ensureFn performs one obtain/renew attempt. It is a field (defaulting to
+	// m.ensureCertificate) purely so unit tests can inject a deterministic,
+	// network-free attempt and exercise acquireInitialCert's backoff loop.
+	ensureFn func(context.Context)
+	// initialBackoff / maxBackoff parameterize the initial-acquisition backoff;
+	// zero values fall back to initialObtainBackoff / maxObtainBackoff. Tests
+	// shrink them so the retry loop runs in milliseconds.
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
 }
 
 // Compile-time assertions that legoManager satisfies both the CertManager
@@ -197,6 +219,9 @@ func newLegoManager(cfg *config.Config, logger *slog.Logger, encryptor *encrypti
 		caURL:      caURL,
 		tokens:     make(map[string]string),
 	}
+	// Default the obtain step to the real network-backed implementation. Tests
+	// override this field to inject a deterministic attempt.
+	m.ensureFn = m.ensureCertificate
 
 	// Log only non-sensitive facts. NEVER log EabKeyID/EabMacKey values -- the
 	// MAC key is a secret (mirrors autocert logging only email_configured).
@@ -308,8 +333,16 @@ func (m *legoManager) run(ctx context.Context) {
 		m.logger.Warn("ACME (lego) could not load cached certificate",
 			slog.String("error", err.Error()))
 	}
-	m.ensureCertificate(ctx)
 
+	// Acquire the FIRST certificate with bounded exponential backoff. Until a
+	// cert is installed every TLS handshake fails, so a failed initial obtain
+	// must not wait the full 12h renewal cadence before retrying. Returns false
+	// only when ctx is canceled before a cert is installed.
+	if !m.acquireInitialCert(ctx) {
+		return
+	}
+
+	// A cert is now installed; fall back to the steady-state 12h renewal cadence.
 	ticker := time.NewTicker(renewCheckInterval)
 	defer ticker.Stop()
 	for {
@@ -317,7 +350,57 @@ func (m *legoManager) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.ensureCertificate(ctx)
+			m.ensureFn(ctx)
+		}
+	}
+}
+
+// hasCert reports whether a certificate is currently installed.
+func (m *legoManager) hasCert() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cert != nil
+}
+
+// acquireInitialCert drives the first certificate installation with bounded
+// exponential backoff, returning true once a cert is held (a cached cert loaded
+// by run, or a freshly obtained one) and false if ctx is canceled first. The
+// backoff starts at initialBackoff (default initialObtainBackoff) and doubles
+// up to maxBackoff (default maxObtainBackoff), so a transient CA outage at boot
+// is retried in seconds-to-minutes instead of waiting the 12h renewal cadence.
+func (m *legoManager) acquireInitialCert(ctx context.Context) bool {
+	// A valid cached cert may already be installed by loadCachedCert; if so the
+	// first attempt below no-ops and we return immediately.
+	backoff := m.initialBackoff
+	if backoff <= 0 {
+		backoff = initialObtainBackoff
+	}
+	maxBackoff := m.maxBackoff
+	if maxBackoff <= 0 {
+		maxBackoff = maxObtainBackoff
+	}
+	for {
+		if ctx.Err() != nil {
+			return false
+		}
+		m.ensureFn(ctx)
+		if m.hasCert() {
+			return true
+		}
+		m.logger.Warn("ACME (lego) initial certificate not yet available; retrying with backoff",
+			slog.String("identifier", m.identifier),
+			slog.Duration("retry_in", backoff))
+		// Sleep out the backoff but wake immediately on cancellation.
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
 		}
 	}
 }
@@ -588,13 +671,17 @@ func (s *encryptedStore) path(name string) string {
 	return filepath.Join(s.dir, name+".enc")
 }
 
-// save encrypts data and writes it to <dir>/<name>.enc with 0600 perms.
+// save encrypts data and writes it to <dir>/<name>.enc with 0600 perms. The
+// write goes through filesystem.WriteFileAtomic (tmp/bak/rename) so a crash mid-
+// write can never leave a truncated or partially-encrypted blob in place: the
+// previous cached cert/account survives intact until the new one is fully
+// written and atomically renamed over it.
 func (s *encryptedStore) save(name string, data []byte) error {
 	enc, err := s.encryptor.Encrypt(string(data))
 	if err != nil {
 		return fmt.Errorf("encrypt %s: %w", name, err)
 	}
-	if err := os.WriteFile(s.path(name), []byte(enc), 0o600); err != nil {
+	if err := filesystem.WriteFileAtomic(s.path(name), []byte(enc), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", name, err)
 	}
 	return nil

@@ -126,6 +126,20 @@ func TestNewAutocertManager_CustomCA(t *testing.T) {
 	if mgr == nil {
 		t.Fatal("NewAutocertManager returned nil manager")
 	}
+	// Assert the configured CA actually reaches the underlying autocert client's
+	// DirectoryURL, so a regression that silently drops cfg.ACME.CA (leaving the
+	// manager pointed at Let's Encrypt production) fails this test instead of
+	// passing on a bare non-nil check.
+	am, ok := mgr.(*autocertManager)
+	if !ok {
+		t.Fatalf("manager type = %T; want *autocertManager", mgr)
+	}
+	if am.mgr.Client == nil {
+		t.Fatal("autocert.Manager.Client is nil; custom CA was not wired")
+	}
+	if got := am.mgr.Client.DirectoryURL; got != "https://acme.example.com/dir" {
+		t.Errorf("autocert client DirectoryURL = %q; want %q", got, "https://acme.example.com/dir")
+	}
 }
 
 // TestAutocertManager_TLSConfig asserts the returned tls.Config carries a

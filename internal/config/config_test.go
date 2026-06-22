@@ -823,14 +823,16 @@ func TestLoadFromEnv_ACMEStubs(t *testing.T) {
 // IP is mutually exclusive with Domain, so this config sets IP without Domain.
 func TestLoadFromEnv_ACMEIPSAN(t *testing.T) {
 	clearSWEnv(t)
-	t.Setenv("SW_ACME_IP", "203.0.113.5")
+	// Use a genuinely public IP: the RFC 5737 documentation ranges
+	// (203.0.113.0/24 et al.) are now rejected by validateACMEIP as non-routable.
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
 	t.Setenv("SW_ACME_EMAIL", "admin@example.com")
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.ACME.IP != "203.0.113.5" {
+	if cfg.ACME.IP != "8.8.8.8" {
 		t.Errorf("ACME.IP = %q", cfg.ACME.IP)
 	}
 	if !cfg.ACME.Active() {
@@ -1118,7 +1120,7 @@ func TestValidate_RedirectWithTLSAccepted(t *testing.T) {
 // drifting apart.
 func TestValidateACMEIP(t *testing.T) {
 	t.Parallel()
-	accepted := []string{"", "203.0.113.5", "8.8.8.8", "2606:4700:4700::1111"}
+	accepted := []string{"", "8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"}
 	for _, ip := range accepted {
 		if err := validateACMEIP(ip); err != nil {
 			t.Errorf("validateACMEIP(%q) = %v; want nil", ip, err)
@@ -1135,8 +1137,15 @@ func TestValidateACMEIP(t *testing.T) {
 		"0.0.0.0",      // unspecified
 		"100.64.0.1",   // CGNAT (RFC6598)
 		"198.18.0.1",   // RFC2544 benchmark
+		"192.0.2.1",    // RFC5737 documentation (TEST-NET-1)
+		"198.51.100.1", // RFC5737 documentation (TEST-NET-2)
+		"203.0.113.5",  // RFC5737 documentation (TEST-NET-3)
+		"224.0.0.1",    // multicast (224.0.0.0/4)
+		"233.252.0.1",  // multicast (globally-scoped doc block)
 		"::1",          // loopback IPv6
 		"fe80::1",      // link-local IPv6
+		"2001:db8::1",  // RFC3849 documentation IPv6
+		"ff02::1",      // multicast IPv6
 	}
 	for _, ip := range rejected {
 		if err := validateACMEIP(ip); err == nil {
@@ -1151,9 +1160,15 @@ func TestValidateACMEIP(t *testing.T) {
 func TestValidate_ACMEDomainAndIPMutuallyExclusive(t *testing.T) {
 	clearSWEnv(t)
 	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
-	t.Setenv("SW_ACME_IP", "203.0.113.5")
-	if _, err := Load(""); err == nil {
+	// A genuinely public IP so the per-field IP validator passes and the
+	// cross-field exclusivity rule is the one that fires (asserted below).
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
+	_, err := Load("")
+	if err == nil {
 		t.Fatal("expected error: SW_ACME_DOMAIN and SW_ACME_IP both set")
+	}
+	if want := "SW_ACME_DOMAIN and SW_ACME_IP are mutually exclusive"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q (a wrong rule failing first must be caught)", err, want)
 	}
 }
 
@@ -1169,7 +1184,8 @@ func TestValidate_ACMEDomainAlonePasses(t *testing.T) {
 // TestValidate_ACMEIPAlonePasses confirms an IP-SAN-only ACME config is valid.
 func TestValidate_ACMEIPAlonePasses(t *testing.T) {
 	clearSWEnv(t)
-	t.Setenv("SW_ACME_IP", "203.0.113.5")
+	// Genuinely public IP: the RFC 5737 documentation ranges are now rejected.
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
 	if _, err := Load(""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -1180,8 +1196,12 @@ func TestValidate_ACMEIPAlonePasses(t *testing.T) {
 func TestValidate_ACMEPrivateIPRejected(t *testing.T) {
 	clearSWEnv(t)
 	t.Setenv("SW_ACME_IP", "192.168.1.10")
-	if _, err := Load(""); err == nil {
+	_, err := Load("")
+	if err == nil {
 		t.Fatal("expected error: SW_ACME_IP is a private address")
+	}
+	if want := "must be a publicly routable address"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q", err, want)
 	}
 }
 
@@ -1192,8 +1212,12 @@ func TestValidate_ACMEEabHalfConfigRejected(t *testing.T) {
 	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
 	t.Setenv("SW_ACME_EAB_KEY_ID", "key-id")
 	// SW_ACME_EAB_MAC_KEY deliberately unset.
-	if _, err := Load(""); err == nil {
+	_, err := Load("")
+	if err == nil {
 		t.Fatal("expected error: EAB key id set without EAB mac key")
+	}
+	if want := "SW_ACME_EAB_KEY_ID and SW_ACME_EAB_MAC_KEY must both be set or both be empty"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q", err, want)
 	}
 }
 
@@ -1204,8 +1228,12 @@ func TestValidate_ACMEEabWithoutIdentifierRejected(t *testing.T) {
 	t.Setenv("SW_ACME_EAB_KEY_ID", "key-id")
 	t.Setenv("SW_ACME_EAB_MAC_KEY", "mac-key")
 	// Neither SW_ACME_DOMAIN nor SW_ACME_IP set.
-	if _, err := Load(""); err == nil {
+	_, err := Load("")
+	if err == nil {
 		t.Fatal("expected error: EAB configured without an identifier")
+	}
+	if want := "require an identifier"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q", err, want)
 	}
 }
 
@@ -1213,11 +1241,17 @@ func TestValidate_ACMEEabWithoutIdentifierRejected(t *testing.T) {
 // alongside a BYO TLS cert/key pair.
 func TestValidate_ACMEIPMutuallyExclusiveWithBYO(t *testing.T) {
 	clearSWEnv(t)
-	t.Setenv("SW_ACME_IP", "203.0.113.5")
+	// Public IP so the per-field IP validator passes and the ACME-vs-BYO
+	// cross-field rule is the one that fires (asserted below).
+	t.Setenv("SW_ACME_IP", "8.8.8.8")
 	t.Setenv("SW_TLS_CERT_FILE", "/tmp/c.pem")
 	t.Setenv("SW_TLS_KEY_FILE", "/tmp/k.pem")
-	if _, err := Load(""); err == nil {
+	_, err := Load("")
+	if err == nil {
 		t.Fatal("expected error: SW_ACME_IP set alongside BYO TLS")
+	}
+	if want := "mutually exclusive with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q; want substring %q (a wrong rule failing first must be caught)", err, want)
 	}
 }
 
