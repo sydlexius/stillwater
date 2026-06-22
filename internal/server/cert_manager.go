@@ -1,13 +1,19 @@
 // CertManager abstracts the source of TLS certificates so the listener
 // startup code does not branch on which ACME flavor (or BYO) is configured.
-// The autocert (Let's Encrypt / Buypass) implementation lives in this file;
-// a future ZeroSSL/lego implementation (#1564) will satisfy the same
-// interface without touching listeners.go.
+// Two implementations satisfy it:
 //
-// The split is a textbook strategy pattern: the config layer picks an
-// implementation once at construction, and the listener consumes the
-// interface. A third implementation (DNS-01, mTLS, etc.) drops in without
-// listener edits.
+//   - autocertManager (this file), backed by golang.org/x/crypto/acme/autocert,
+//     handles the Let's Encrypt / Buypass path: a DNS name via HTTP-01 with
+//     lazy, first-handshake acquisition. Selected when SW_ACME_DOMAIN is set
+//     and no EAB credentials are configured.
+//   - legoManager (cert_manager_lego.go), backed by github.com/go-acme/lego/v4,
+//     handles the cases autocert cannot: External Account Binding (ZeroSSL) and
+//     IP-SAN orders (RFC 8738). Selected when EAB credentials are set, or when
+//     SW_ACME_IP is set.
+//
+// buildEntries (listeners.go) picks one implementation once at construction and
+// the listener consumes the interface. A third implementation (DNS-01, mTLS,
+// etc.) drops in without listener edits.
 package server
 
 import (

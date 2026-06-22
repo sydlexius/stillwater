@@ -165,3 +165,21 @@ func isBlocked(ip net.IP) bool {
 	}
 	return false
 }
+
+// IsPublicIP reports whether ip is a routable, public unicast address that is
+// safe to expose to or request from the public internet. It is the inverse of
+// the internal SSRF blocklist (isBlocked): an address is "public" only when it
+// is NOT loopback, RFC 1918 private, link-local (unicast or multicast),
+// unspecified, nor one of the extra reserved ranges (CGNAT 100.64.0.0/10,
+// RFC 2544 198.18.0.0/15).
+//
+// It exists so callers outside this package (notably ACME IP-SAN validation in
+// internal/config) reuse the SAME vetted blocklist rather than re-deriving it,
+// which would drift over time. A nil or zero-length ip returns false (fail
+// closed): an address we cannot classify is never treated as public.
+func IsPublicIP(ip net.IP) bool {
+	if len(ip) == 0 {
+		return false
+	}
+	return !isBlocked(ip)
+}

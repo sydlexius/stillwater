@@ -1,0 +1,421 @@
+package server
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/sydlexius/stillwater/internal/config"
+	"github.com/sydlexius/stillwater/internal/encryption"
+)
+
+// testEncryptor returns an Encryptor backed by a freshly generated key. Key
+// generation is local (crypto/rand), so the tests stay network-free.
+func testEncryptor(t *testing.T) *encryption.Encryptor {
+	t.Helper()
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
+	return enc
+}
+
+// selfSignedCert returns a throwaway tls.Certificate (with Leaf populated) for
+// exercising the served-certificate paths without contacting a CA.
+func selfSignedCert(t *testing.T, notAfter time.Time) *tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test.example.com"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     notAfter,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("CreateCertificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
+}
+
+func TestNewLegoManager_RejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
+	logger := discardLogger()
+	enc := testEncryptor(t)
+	validCfg := &config.Config{
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+	}
+
+	cases := []struct {
+		name string
+		cfg  *config.Config
+		log  any
+		enc  *encryption.Encryptor
+	}{
+		{"nil config", nil, logger, enc},
+		{"nil logger", validCfg, nil, enc},
+		{"nil encryptor", validCfg, logger, nil},
+		{"no identifier", &config.Config{
+			Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+		}, logger, enc},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var lg = logger
+			if tc.log == nil {
+				lg = nil
+			}
+			if _, err := newLegoManager(tc.cfg, lg, tc.enc); err == nil {
+				t.Fatalf("newLegoManager(%s) = nil error; want error", tc.name)
+			}
+		})
+	}
+}
+
+func TestNewLegoManager_DefaultsCacheDir(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(tmp, "stillwater.db")},
+	}
+	m, err := newLegoManager(cfg, discardLogger(), testEncryptor(t))
+	if err != nil {
+		t.Fatalf("newLegoManager: %v", err)
+	}
+	wantDir := filepath.Join(tmp, "acme-cache")
+	if m.store.dir != wantDir {
+		t.Errorf("store.dir = %q; want %q", m.store.dir, wantDir)
+	}
+	if info, err := os.Stat(wantDir); err != nil {
+		t.Fatalf("cache dir not created: %v", err)
+	} else if info.Mode().Perm() != 0o700 {
+		t.Errorf("cache dir perm = %o; want 700", info.Mode().Perm())
+	}
+}
+
+func TestNewLegoManager_CADefaults(t *testing.T) {
+	t.Parallel()
+	base := func() *config.Config {
+		return &config.Config{
+			Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+		}
+	}
+	t.Run("EAB defaults to ZeroSSL", func(t *testing.T) {
+		t.Parallel()
+		cfg := base()
+		cfg.ACME = config.ACMEConfig{Domain: "host.example.com", EabKeyID: "kid", EabMacKey: "mac"}
+		m, err := newLegoManager(cfg, discardLogger(), testEncryptor(t))
+		if err != nil {
+			t.Fatalf("newLegoManager: %v", err)
+		}
+		if m.caURL != zerosslDirectoryURL {
+			t.Errorf("caURL = %q; want ZeroSSL %q", m.caURL, zerosslDirectoryURL)
+		}
+	})
+	t.Run("no EAB defaults to Let's Encrypt", func(t *testing.T) {
+		t.Parallel()
+		cfg := base()
+		cfg.ACME = config.ACMEConfig{IP: "203.0.113.5"}
+		m, err := newLegoManager(cfg, discardLogger(), testEncryptor(t))
+		if err != nil {
+			t.Fatalf("newLegoManager: %v", err)
+		}
+		if !strings.Contains(m.caURL, "letsencrypt.org") {
+			t.Errorf("caURL = %q; want a Let's Encrypt URL", m.caURL)
+		}
+	})
+	t.Run("explicit CA honored", func(t *testing.T) {
+		t.Parallel()
+		cfg := base()
+		cfg.ACME = config.ACMEConfig{Domain: "host.example.com", CA: "https://example.test/dir"}
+		m, err := newLegoManager(cfg, discardLogger(), testEncryptor(t))
+		if err != nil {
+			t.Fatalf("newLegoManager: %v", err)
+		}
+		if m.caURL != "https://example.test/dir" {
+			t.Errorf("caURL = %q; want the explicit URL", m.caURL)
+		}
+	})
+}
+
+func TestLegoManager_TLSConfig(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+	}
+	m, err := newLegoManager(cfg, discardLogger(), testEncryptor(t))
+	if err != nil {
+		t.Fatalf("newLegoManager: %v", err)
+	}
+	tc := m.TLSConfig()
+	if tc.GetCertificate == nil {
+		t.Fatal("TLSConfig().GetCertificate is nil")
+	}
+	// No cert yet -> handshake error.
+	if _, err := tc.GetCertificate(&tls.ClientHelloInfo{}); err == nil {
+		t.Error("GetCertificate before issuance = nil error; want error")
+	}
+	// Install a cert -> served.
+	cert := selfSignedCert(t, time.Now().Add(90*24*time.Hour))
+	m.mu.Lock()
+	m.cert = cert
+	m.mu.Unlock()
+	got, err := tc.GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatalf("GetCertificate after issuance: %v", err)
+	}
+	if got != cert {
+		t.Error("GetCertificate did not return the installed certificate")
+	}
+}
+
+func TestLegoManager_HTTPHandler_ServesChallenge(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	const token = "test-token-abc"
+	const keyAuth = "test-token-abc.keyauthvalue"
+	if err := m.Present("host.example.com", token, keyAuth); err != nil {
+		t.Fatalf("Present: %v", err)
+	}
+
+	h := m.HTTPHandler(nil)
+
+	// Known token -> keyAuth body.
+	req := httptest.NewRequest(http.MethodGet, acmeChallengeURIPrefix+token, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("challenge status = %d; want 200", rec.Code)
+	}
+	if rec.Body.String() != keyAuth {
+		t.Errorf("challenge body = %q; want %q", rec.Body.String(), keyAuth)
+	}
+
+	// Unknown token -> 404.
+	req = httptest.NewRequest(http.MethodGet, acmeChallengeURIPrefix+"unknown", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown-token status = %d; want 404", rec.Code)
+	}
+
+	// After CleanUp the token is gone.
+	if err := m.CleanUp("host.example.com", token, keyAuth); err != nil {
+		t.Fatalf("CleanUp: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodGet, acmeChallengeURIPrefix+token, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("post-cleanup status = %d; want 404", rec.Code)
+	}
+}
+
+func TestLegoManager_HTTPHandler_RedirectsNonChallenge(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	h := m.HTTPHandler(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "http://host.example.com:80/some/path?q=1", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMovedPermanently {
+		t.Fatalf("redirect status = %d; want 301", rec.Code)
+	}
+	loc := rec.Header().Get("Location")
+	if loc != "https://host.example.com/some/path?q=1" {
+		t.Errorf("Location = %q; want https://host.example.com/some/path?q=1", loc)
+	}
+}
+
+func TestLegoManager_HTTPHandler_FallbackPassesThrough(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	called := false
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusTeapot)
+	})
+	h := m.HTTPHandler(fallback)
+
+	req := httptest.NewRequest(http.MethodGet, "http://host.example.com/app", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !called {
+		t.Error("fallback was not invoked for a non-challenge request")
+	}
+	if rec.Code != http.StatusTeapot {
+		t.Errorf("status = %d; want 418 (fallback)", rec.Code)
+	}
+}
+
+func TestEncryptedStore_RoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := &encryptedStore{dir: dir, encryptor: testEncryptor(t)}
+
+	// Absent entry -> found=false, no error.
+	if _, found, err := store.load("missing"); err != nil || found {
+		t.Fatalf("load(missing) = found %v err %v; want false, nil", found, err)
+	}
+
+	payload := []byte(`{"secret":"value","bytes":[1,2,3]}`)
+	if err := store.save("account", payload); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	got, found, err := store.load("account")
+	if err != nil || !found {
+		t.Fatalf("load = found %v err %v; want true, nil", found, err)
+	}
+	if string(got) != string(payload) {
+		t.Errorf("round-trip = %q; want %q", got, payload)
+	}
+
+	// On-disk content must be encrypted, not plaintext.
+	raw, err := os.ReadFile(filepath.Join(dir, "account.enc"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(raw), "secret") || strings.Contains(string(raw), "value") {
+		t.Error("on-disk blob contains plaintext; expected ciphertext")
+	}
+
+	// File perms must be 0600.
+	info, err := os.Stat(filepath.Join(dir, "account.enc"))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("enc file perm = %o; want 600", info.Mode().Perm())
+	}
+}
+
+// TestEncryptedStore_AccountRoundTrip verifies the ACME account survives a
+// save/load through the encrypted store, including the EC key PEM encoding, so a
+// restart reuses the account instead of re-registering.
+func TestEncryptedStore_AccountRoundTrip(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+
+	// Build a fresh (unregistered) user, then persist + reload it.
+	user, err := m.loadOrCreateUser()
+	if err != nil {
+		t.Fatalf("loadOrCreateUser: %v", err)
+	}
+	if user.registration != nil {
+		t.Fatal("new user should be unregistered")
+	}
+	if err := m.saveAccount(user); err != nil {
+		t.Fatalf("saveAccount: %v", err)
+	}
+	reloaded, err := m.loadOrCreateUser()
+	if err != nil {
+		t.Fatalf("reload loadOrCreateUser: %v", err)
+	}
+	if reloaded.email != user.email {
+		t.Errorf("email = %q; want %q", reloaded.email, user.email)
+	}
+	// Keys must encode to the same PEM (same key reused on restart).
+	origPEM, err := encodeECKey(user.key)
+	if err != nil {
+		t.Fatalf("encode orig key: %v", err)
+	}
+	reloadedPEM, err := encodeECKey(reloaded.key)
+	if err != nil {
+		t.Fatalf("encode reloaded key: %v", err)
+	}
+	if string(origPEM) != string(reloadedPEM) {
+		t.Error("reloaded account key differs from the saved key")
+	}
+}
+
+// TestECKeyRoundTrip locks in the EC key PEM encode/decode helpers and the
+// non-EC rejection path.
+func TestECKeyRoundTrip(t *testing.T) {
+	t.Parallel()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	pemBytes, err := encodeECKey(key)
+	if err != nil {
+		t.Fatalf("encodeECKey: %v", err)
+	}
+	if block, _ := pem.Decode(pemBytes); block == nil || block.Type != "EC PRIVATE KEY" {
+		t.Fatalf("encoded PEM is not an EC PRIVATE KEY block")
+	}
+	decoded, err := decodeECKey(pemBytes)
+	if err != nil {
+		t.Fatalf("decodeECKey: %v", err)
+	}
+	if _, ok := decoded.(*ecdsa.PrivateKey); !ok {
+		t.Fatalf("decoded key type = %T; want *ecdsa.PrivateKey", decoded)
+	}
+	// Garbage PEM is rejected.
+	if _, err := decodeECKey([]byte("not a pem")); err == nil {
+		t.Error("decodeECKey(garbage) = nil error; want error")
+	}
+}
+
+// TestNewLegoManager_CancelledContextNoWork verifies the exported constructor
+// returns a usable manager and that, with an already-canceled context, the
+// background goroutine performs no work (the path that keeps the rest of the
+// suite, and CI's bare runner, free of network I/O).
+func TestNewLegoManager_CancelledContextNoWork(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before the goroutine can do anything
+	mgr, err := NewLegoManager(ctx, cfg, discardLogger(), testEncryptor(t))
+	if err != nil {
+		t.Fatalf("NewLegoManager: %v", err)
+	}
+	if mgr == nil {
+		t.Fatal("NewLegoManager returned nil manager")
+	}
+	if mgr.TLSConfig().GetCertificate == nil {
+		t.Error("TLSConfig().GetCertificate is nil")
+	}
+}
+
+// newTestLegoManager builds a network-free legoManager for handler/store tests.
+func newTestLegoManager(t *testing.T) *legoManager {
+	t.Helper()
+	cfg := &config.Config{
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+		Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "stillwater.db")},
+	}
+	m, err := newLegoManager(cfg, discardLogger(), testEncryptor(t))
+	if err != nil {
+		t.Fatalf("newLegoManager: %v", err)
+	}
+	return m
+}

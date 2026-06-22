@@ -266,7 +266,7 @@ how-to/customize-preferences#thumbnail-size
 how-to/customize-preferences#typography
 how-to/direct-tls-setup#acme-and-http-redirect
 how-to/direct-tls-setup#acme-lets-encrypt-experimental
-how-to/direct-tls-setup#acme-zerossl-ip-san-reserved
+how-to/direct-tls-setup#acme-zerossl-eab-and-ip-san
 how-to/direct-tls-setup#configure-stillwater
 how-to/direct-tls-setup#confirm
 how-to/direct-tls-setup#confirm-it-took-effect-settings-general-tls-status

@@ -105,9 +105,34 @@ email     = "admin@example.com"
 
 The domain must resolve to this server and port 80 must be reachable from the public internet so the ACME challenge succeeds. The TLS Status card flags this path as **Experimental** with an amber chip and caveat until it has been validated end-to-end against a real public deployment -- prefer BYO certificates for production until that marker is removed.
 
-### ACME (ZeroSSL, IP-SAN) -- reserved
+### ACME (ZeroSSL EAB and IP-SAN)
 
-The struct fields (`SW_ACME_EAB_KEY_ID`, `SW_ACME_EAB_MAC_KEY`, `SW_ACME_IP`) are stubbed for forward compatibility but the lego-based ZeroSSL / IP-SAN code path is not yet active. Setting these env vars has no effect today. Tracked in issue [#1564](https://github.com/sydlexius/stillwater/issues/1564).
+For CAs that require External Account Binding (notably ZeroSSL) and for ordering a certificate against a public IP address instead of a DNS name, Stillwater uses a second ACME implementation backed by [`go-acme/lego`](https://github.com/go-acme/lego). It is selected automatically at startup based on which variables you set, and satisfies the same HTTP-01 challenge flow as the Let's Encrypt path (port 80 must be reachable).
+
+**ZeroSSL with EAB credentials** (against a DNS name):
+
+```bash
+SW_ACME_DOMAIN=stillwater.example.com
+SW_ACME_EMAIL=admin@example.com
+SW_ACME_EAB_KEY_ID=your-zerossl-eab-key-id
+SW_ACME_EAB_MAC_KEY=your-zerossl-eab-hmac-key
+# SW_ACME_CA defaults to ZeroSSL (https://acme.zerossl.com/v2/DV90) when EAB keys are set.
+```
+
+**IP-SAN order** (a routable public IP, no DNS name):
+
+```bash
+SW_ACME_IP=203.0.113.5
+SW_ACME_EMAIL=admin@example.com
+```
+
+Notes and constraints:
+
+- `SW_ACME_EAB_KEY_ID` and `SW_ACME_EAB_MAC_KEY` must be set together. The HMAC key is a secret; Stillwater encrypts the cached ACME account and certificate at rest (AES-256-GCM) using the application encryption key.
+- `SW_ACME_DOMAIN` and `SW_ACME_IP` are mutually exclusive -- a single order is for a DNS name or an IP, not both.
+- `SW_ACME_IP` must be a publicly routable address. Private (RFC 1918), loopback, link-local, CGNAT, and other reserved ranges are rejected at startup, because a CA cannot validate an IP it cannot reach.
+- The CA must support the requested capability (EAB and/or IP identifiers per RFC 8738). ZeroSSL is the canonical EAB provider.
+- The ACME path remains marked **Experimental** in the TLS Status card pending end-to-end validation against a real public deployment; prefer BYO certificates for production until that marker is removed.
 
 ### HTTP-to-HTTPS redirect listener
 

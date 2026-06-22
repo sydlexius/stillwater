@@ -198,6 +198,16 @@ func TestBuildTLSStatus(t *testing.T) {
 			wantHTTPSPort:  443,
 			wantAcmeDomain: "example.com",
 		},
+		{
+			name: "ACME.IP set reports acme mode and surfaces the IP (lego IP-SAN)",
+			cfg: &config.Config{
+				Server: config.ServerConfig{Port: 1973},
+				ACME:   config.ACMEConfig{IP: "203.0.113.5"},
+			},
+			wantMode:       "acme",
+			wantHTTPSPort:  1973,
+			wantAcmeDomain: "203.0.113.5",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

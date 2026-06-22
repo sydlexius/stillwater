@@ -19,7 +19,7 @@ ACME is the right answer when:
 ACME is the wrong answer when:
 
 - You want HTTPS on a private LAN host with no public DNS or open inbound ports. Use a self-signed certificate via [Direct TLS setup](direct-tls-setup.md) instead.
-- You want a certificate for an IP address rather than a DNS name. That requires ZeroSSL with EAB credentials, tracked in [#1564](https://github.com/sydlexius/stillwater/issues/1564) but not yet active.
+- You want a certificate for an IP address rather than a DNS name, or you need a CA that requires External Account Binding (ZeroSSL). Those use the lego-backed ACME path -- see [ACME (ZeroSSL EAB and IP-SAN)](direct-tls-setup.md#acme-zerossl-eab-and-ip-san) on the Direct TLS page.
 - You already run Caddy, Traefik, or similar in front of Stillwater. Let it handle TLS termination; do not double up.
 
 ## Prerequisites { #acme-overview }
