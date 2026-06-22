@@ -9,6 +9,41 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+// TestIdentifyProvider maps the provider-id field switch in identifyProvider: the
+// three wired match-by-name fields (deezer_id, discogs_id, audiodb_id) each
+// return their endpoint path segment + provider display name and ok=true, while
+// any field without a match-by-name flow returns ok=false with empty strings.
+func TestIdentifyProvider(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		field       string
+		wantSegment string
+		wantDisplay string
+		wantOK      bool
+	}{
+		{"deezer_id", "deezer", provider.NameDeezer.DisplayName(), true},
+		{"discogs_id", "discogs", provider.NameDiscogs.DisplayName(), true},
+		{"audiodb_id", "audiodb", provider.NameAudioDB.DisplayName(), true},
+		{"musicbrainz_id", "", "", false},
+		{"name", "", "", false},
+		{"", "", "", false},
+	}
+
+	for _, tc := range cases {
+		segment, display, ok := identifyProvider(tc.field)
+		if ok != tc.wantOK {
+			t.Errorf("identifyProvider(%q) ok = %v, want %v", tc.field, ok, tc.wantOK)
+		}
+		if segment != tc.wantSegment {
+			t.Errorf("identifyProvider(%q) segment = %q, want %q", tc.field, segment, tc.wantSegment)
+		}
+		if display != tc.wantDisplay {
+			t.Errorf("identifyProvider(%q) display = %q, want %q", tc.field, display, tc.wantDisplay)
+		}
+	}
+}
+
 // TestProviderIdentifyModal_RendersSearchForm pins the next/ identify modal
 // body: a disambiguation search form pre-filled with the artist name that POSTs
 // to the provider search endpoint, plus a field-suffixed results container the
