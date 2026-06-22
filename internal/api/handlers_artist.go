@@ -623,14 +623,14 @@ func buildPlatformArtistURL(conn *connection.Connection, platformArtistID string
 	switch conn.Type {
 	case connection.TypeEmby:
 		u := base + "/web/index.html#!/item?id=" + url.QueryEscape(platformArtistID)
-		if conn.GetPlatformServerID() != "" {
-			u += "&serverId=" + url.QueryEscape(conn.GetPlatformServerID())
+		if serverID := conn.GetPlatformServerID(); serverID != "" {
+			u += "&serverId=" + url.QueryEscape(serverID)
 		}
 		return u
 	case connection.TypeJellyfin:
 		u := base + "/web/index.html#!/details?id=" + url.QueryEscape(platformArtistID)
-		if conn.GetPlatformServerID() != "" {
-			u += "&serverId=" + url.QueryEscape(conn.GetPlatformServerID())
+		if serverID := conn.GetPlatformServerID(); serverID != "" {
+			u += "&serverId=" + url.QueryEscape(serverID)
 		}
 		return u
 	case connection.TypeLidarr:
