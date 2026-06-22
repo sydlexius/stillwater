@@ -38,8 +38,10 @@ func testEncryptor(t *testing.T) *encryption.Encryptor {
 }
 
 // selfSignedCert returns a throwaway tls.Certificate (with Leaf populated) for
-// exercising the served-certificate paths without contacting a CA.
-func selfSignedCert(t *testing.T, notAfter time.Time) *tls.Certificate {
+// exercising the served-certificate paths without contacting a CA. dnsName is
+// added as a DNS SAN so VerifyHostname checks in ensureCertificate/loadCachedCert
+// behave correctly for the configured identifier.
+func selfSignedCert(t *testing.T, dnsName string, notAfter time.Time) *tls.Certificate {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -47,7 +49,8 @@ func selfSignedCert(t *testing.T, notAfter time.Time) *tls.Certificate {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "test.example.com"},
+		Subject:      pkix.Name{CommonName: dnsName},
+		DNSNames:     []string{dnsName},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     notAfter,
 	}
@@ -184,7 +187,7 @@ func TestLegoManager_TLSConfig(t *testing.T) {
 		t.Error("GetCertificate before issuance = nil error; want error")
 	}
 	// Install a cert -> served.
-	cert := selfSignedCert(t, time.Now().Add(90*24*time.Hour))
+	cert := selfSignedCert(t, "host.example.com", time.Now().Add(90*24*time.Hour))
 	m.mu.Lock()
 	m.cert = cert
 	m.mu.Unlock()
@@ -425,9 +428,10 @@ func newTestLegoManager(t *testing.T) *legoManager {
 }
 
 // makeCertPEM returns PEM-encoded certificate and ECDSA private key bytes for
-// a self-signed certificate valid from 1 hour ago until notAfter. Usable as
-// storedCert.Certificate / storedCert.PrivateKey.
-func makeCertPEM(t *testing.T, notAfter time.Time) (certPEM, keyPEM []byte) {
+// a self-signed certificate valid from 1 hour ago until notAfter. dnsName is
+// set as both CommonName and a DNS SAN so VerifyHostname works correctly.
+// Usable as storedCert.Certificate / storedCert.PrivateKey.
+func makeCertPEM(t *testing.T, dnsName string, notAfter time.Time) (certPEM, keyPEM []byte) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -435,7 +439,8 @@ func makeCertPEM(t *testing.T, notAfter time.Time) (certPEM, keyPEM []byte) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "test.example.com"},
+		Subject:      pkix.Name{CommonName: dnsName},
+		DNSNames:     []string{dnsName},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     notAfter,
 	}
@@ -454,7 +459,7 @@ func makeCertPEM(t *testing.T, notAfter time.Time) (certPEM, keyPEM []byte) {
 
 func TestParseKeyPair(t *testing.T) {
 	t.Parallel()
-	certPEM, keyPEM := makeCertPEM(t, time.Now().Add(90*24*time.Hour))
+	certPEM, keyPEM := makeCertPEM(t, "test.example.com", time.Now().Add(90*24*time.Hour))
 
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
@@ -537,7 +542,7 @@ func TestLegoManager_LoadCachedCert(t *testing.T) {
 	t.Run("valid cert is installed", func(t *testing.T) {
 		t.Parallel()
 		m := newTestLegoManager(t)
-		certPEM, keyPEM := makeCertPEM(t, time.Now().Add(90*24*time.Hour))
+		certPEM, keyPEM := makeCertPEM(t, "host.example.com", time.Now().Add(90*24*time.Hour))
 		sc := storedCert{Certificate: certPEM, PrivateKey: keyPEM}
 		data, err := json.Marshal(sc)
 		if err != nil {
@@ -566,7 +571,7 @@ func TestLegoManager_LoadCachedCert(t *testing.T) {
 func TestLegoManager_SaveCert(t *testing.T) {
 	t.Parallel()
 	m := newTestLegoManager(t)
-	certPEM, keyPEM := makeCertPEM(t, time.Now().Add(90*24*time.Hour))
+	certPEM, keyPEM := makeCertPEM(t, "host.example.com", time.Now().Add(90*24*time.Hour))
 
 	res := &certificate.Resource{
 		Domain:      "host.example.com",
@@ -600,8 +605,9 @@ func TestEnsureCertificate_ShortCircuits(t *testing.T) {
 	t.Run("fresh cert skips obtain", func(t *testing.T) {
 		t.Parallel()
 		m := newTestLegoManager(t)
-		// Install a cert well within the 30-day renewal threshold.
-		fresh := selfSignedCert(t, time.Now().Add(60*24*time.Hour))
+		// Cert must match the manager's identifier ("host.example.com") so the
+		// SAN check does not force a re-obtain.
+		fresh := selfSignedCert(t, "host.example.com", time.Now().Add(60*24*time.Hour))
 		m.mu.Lock()
 		m.cert = fresh
 		m.mu.Unlock()
@@ -627,7 +633,7 @@ func TestEnsureCertificate_ShortCircuits(t *testing.T) {
 func TestLegoManager_Run_FreshCert(t *testing.T) {
 	t.Parallel()
 	m := newTestLegoManager(t)
-	fresh := selfSignedCert(t, time.Now().Add(60*24*time.Hour))
+	fresh := selfSignedCert(t, "host.example.com", time.Now().Add(60*24*time.Hour))
 	m.mu.Lock()
 	m.cert = fresh
 	m.mu.Unlock()
@@ -698,23 +704,35 @@ func TestEncodeECKey_NonECType(t *testing.T) {
 	}
 }
 
-// TestLoadOrCreateUser_StorageErrors covers the error paths for a corrupt or
-// partially-written cached account.
+// TestLoadOrCreateUser_StorageErrors verifies that a corrupt cached account
+// self-heals: a fresh unregistered account is returned (no hard error).
 func TestLoadOrCreateUser_StorageErrors(t *testing.T) {
 	t.Parallel()
 
-	t.Run("bad JSON in store", func(t *testing.T) {
+	assertFreshUser := func(t *testing.T, user *legoUser, err error, label string) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("loadOrCreateUser (%s) = error %v; want self-heal (fresh user)", label, err)
+		}
+		if user == nil || user.key == nil {
+			t.Errorf("loadOrCreateUser (%s) should return a fresh user on corrupt cache", label)
+		}
+		if user != nil && user.registration != nil {
+			t.Errorf("loadOrCreateUser (%s) self-healed user should be unregistered", label)
+		}
+	}
+
+	t.Run("bad JSON in store self-heals", func(t *testing.T) {
 		t.Parallel()
 		m := newTestLegoManager(t)
 		if err := m.store.save(accountCacheName, []byte("not-json")); err != nil {
 			t.Fatalf("store.save: %v", err)
 		}
-		if _, err := m.loadOrCreateUser(); err == nil {
-			t.Error("loadOrCreateUser (bad JSON) = nil error; want error")
-		}
+		user, err := m.loadOrCreateUser()
+		assertFreshUser(t, user, err, "bad JSON")
 	})
 
-	t.Run("bad private key PEM in store", func(t *testing.T) {
+	t.Run("bad private key PEM in store self-heals", func(t *testing.T) {
 		t.Parallel()
 		m := newTestLegoManager(t)
 		sa := storedAccount{Email: "ops@example.com", PrivateKey: []byte("garbage-pem")}
@@ -722,9 +740,8 @@ func TestLoadOrCreateUser_StorageErrors(t *testing.T) {
 		if err := m.store.save(accountCacheName, data); err != nil {
 			t.Fatalf("store.save: %v", err)
 		}
-		if _, err := m.loadOrCreateUser(); err == nil {
-			t.Error("loadOrCreateUser (bad PEM) = nil error; want error")
-		}
+		user, err := m.loadOrCreateUser()
+		assertFreshUser(t, user, err, "bad PEM")
 	})
 }
 
@@ -777,31 +794,40 @@ func TestLoadCachedCert_StoreLoadError(t *testing.T) {
 	}
 }
 
-// TestLoadOrCreateUser_StoreLoadError covers the store.load error path in
-// loadOrCreateUser by injecting invalid ciphertext for the account cache entry.
+// TestLoadOrCreateUser_StoreLoadError verifies that a corrupt account ciphertext
+// (decrypt failure) self-heals: a fresh unregistered account is returned, no
+// hard error.
 func TestLoadOrCreateUser_StoreLoadError(t *testing.T) {
 	t.Parallel()
 	m := newTestLegoManager(t)
 	if err := os.WriteFile(m.store.path(accountCacheName), []byte{0xFF, 0xFE, 0xFD}, 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if _, err := m.loadOrCreateUser(); err == nil {
-		t.Error("loadOrCreateUser (store.load error) = nil error; want error")
+	user, err := m.loadOrCreateUser()
+	if err != nil {
+		t.Fatalf("loadOrCreateUser (store.load error) = error %v; want self-heal (fresh user)", err)
+	}
+	if user == nil || user.key == nil {
+		t.Error("loadOrCreateUser (store.load error) should return a fresh user when cache is corrupt")
+	}
+	if user != nil && user.registration != nil {
+		t.Error("self-healed user should be unregistered")
 	}
 }
 
-// TestEnsureCertificate_BuildClientError verifies that when buildClient fails
-// (here: corrupt account cache makes loadOrCreateUser fail before any network
-// I/O), ensureCertificate logs the error and returns cleanly.
+// TestEnsureCertificate_BuildClientError verifies that when buildClient fails,
+// ensureCertificate logs the error and returns cleanly. A corrupt account cache
+// now self-heals (F2), so lego.NewClient is called; the CA URL is set to an
+// unreachable loopback address so the failure happens locally without real
+// network I/O.
 func TestEnsureCertificate_BuildClientError(t *testing.T) {
 	t.Parallel()
 	m := newTestLegoManager(t)
-	// Force loadOrCreateUser to fail so buildClient returns before dialing.
-	if err := os.WriteFile(m.store.path(accountCacheName), []byte{0xFF, 0xFE, 0xFD}, 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	// Use an unreachable local address so lego.NewClient fails immediately on
+	// connection refused without contacting a real ACME CA.
+	m.caURL = "http://127.0.0.1:1/dir"
 	// m.cert is nil and the context is live: ensureCertificate will call
-	// buildClient, which fails at loadOrCreateUser without touching the network.
+	// buildClient, which fails at lego.NewClient (connection refused).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m.ensureCertificate(ctx)
@@ -818,8 +844,8 @@ func TestLegoManager_Run_LoadCachedCertError(t *testing.T) {
 	if err := os.WriteFile(m.store.path(certCacheName), []byte{0xFF, 0xFE, 0xFD}, 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	// Pre-install a fresh cert so ensureCertificate returns without a network call.
-	fresh := selfSignedCert(t, time.Now().Add(60*24*time.Hour))
+	// Pre-install a fresh cert (matching identifier) so ensureCertificate short-circuits.
+	fresh := selfSignedCert(t, "host.example.com", time.Now().Add(60*24*time.Hour))
 	m.mu.Lock()
 	m.cert = fresh
 	m.mu.Unlock()
@@ -856,4 +882,57 @@ func TestEncryptedStore_LoadReadError(t *testing.T) {
 	if _, _, err := store.load("item"); err == nil {
 		t.Error("load(unreadable) = nil error; want error")
 	}
+}
+
+// TestLoadCachedCert_IdentifierMismatch verifies that a cached certificate
+// whose DNS SAN does not match the configured identifier is not installed.
+// loadCachedCert must treat this as a cache miss so ensureCertificate re-issues
+// for the current identifier instead of serving a cert for a stale name.
+func TestLoadCachedCert_IdentifierMismatch(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t) // identifier: "host.example.com"
+
+	// Persist a cert for "other.example.com" — valid but wrong identifier.
+	certPEM, keyPEM := makeCertPEM(t, "other.example.com", time.Now().Add(90*24*time.Hour))
+	sc := storedCert{Certificate: certPEM, PrivateKey: keyPEM}
+	data, err := json.Marshal(sc)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if err := m.store.save(certCacheName, data); err != nil {
+		t.Fatalf("store.save: %v", err)
+	}
+	if err := m.loadCachedCert(); err != nil {
+		t.Fatalf("loadCachedCert: %v", err)
+	}
+	m.mu.RLock()
+	cert := m.cert
+	m.mu.RUnlock()
+	if cert != nil {
+		t.Error("loadCachedCert installed a cert for the wrong identifier; want cache miss (m.cert == nil)")
+	}
+}
+
+// TestEnsureCertificate_IdentifierMismatch verifies that a held certificate
+// whose SAN does not match the configured identifier triggers re-obtain even
+// when the certificate is otherwise fresh (within the renewal threshold).
+// The CA URL is pointed at an unreachable loopback address so buildClient fails
+// locally without any real network I/O.
+func TestEnsureCertificate_IdentifierMismatch(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t) // identifier: "host.example.com"
+	m.caURL = "http://127.0.0.1:1/dir"
+
+	// Fresh cert, but for the wrong identifier.
+	mismatch := selfSignedCert(t, "other.example.com", time.Now().Add(60*24*time.Hour))
+	m.mu.Lock()
+	m.cert = mismatch
+	m.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Must NOT short-circuit on the fresh-cert check because the SAN doesn't
+	// match m.identifier. It will call buildClient (which fails at lego.NewClient
+	// with connection refused) and return cleanly.
+	m.ensureCertificate(ctx)
 }

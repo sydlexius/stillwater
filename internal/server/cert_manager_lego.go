@@ -313,15 +313,17 @@ func (m *legoManager) run(ctx context.Context) {
 	}
 }
 
-// ensureCertificate obtains a certificate if none is held or the current one is
-// within the renewal threshold. It logs and returns on any error so the ticker
-// retries on the next tick (self-healing).
+// ensureCertificate obtains a certificate if none is held, the current one is
+// within the renewal threshold, or the current one does not cover the configured
+// identifier (e.g. the identifier changed since the cert was issued).
 func (m *legoManager) ensureCertificate(ctx context.Context) {
 	m.mu.RLock()
 	cert := m.cert
 	m.mu.RUnlock()
-	if cert != nil && cert.Leaf != nil && time.Until(cert.Leaf.NotAfter) > renewThreshold {
-		return // still fresh
+	if cert != nil && cert.Leaf != nil &&
+		time.Until(cert.Leaf.NotAfter) > renewThreshold &&
+		cert.Leaf.VerifyHostname(m.identifier) == nil {
+		return // still fresh and covers the configured identifier
 	}
 	if ctx.Err() != nil {
 		return
@@ -447,6 +449,14 @@ func (m *legoManager) loadCachedCert() error {
 	if err != nil {
 		return fmt.Errorf("parse cached cert: %w", err)
 	}
+	// coversIdentifier is true when the Leaf is absent (cannot check) OR the
+	// cert's SANs include the configured identifier.
+	coversIdentifier := cert.Leaf == nil || cert.Leaf.VerifyHostname(m.identifier) == nil
+	if !coversIdentifier {
+		m.logger.Info("ACME (lego) cached certificate does not cover configured identifier; will re-issue",
+			slog.String("identifier", m.identifier))
+		return nil
+	}
 	m.mu.Lock()
 	m.cert = cert
 	m.mu.Unlock()
@@ -454,22 +464,26 @@ func (m *legoManager) loadCachedCert() error {
 }
 
 // loadOrCreateUser returns the cached ACME account if one exists, otherwise a
-// fresh account with a newly generated P-256 key (unregistered).
+// fresh account with a newly generated P-256 key (unregistered). A corrupt or
+// unreadable cache (decrypt/unmarshal/decode failure) is treated the same as
+// absent: a loud Warn is emitted and a fresh account is generated so issuance
+// can proceed without operator intervention.
 func (m *legoManager) loadOrCreateUser() (*legoUser, error) {
-	data, found, err := m.store.load(accountCacheName)
-	if err != nil {
-		return nil, err
-	}
-	if found {
+	const corruptMsg = "ACME (lego) existing account cache is unreadable/corrupt - regenerating and re-registering a fresh account"
+
+	// Scope storeErr to the if-chain so it does not outlive the corrupt-cache
+	// handling block and trigger a nilerr lint hit on the fall-through return.
+	if data, found, storeErr := m.store.load(accountCacheName); storeErr != nil {
+		m.logger.Warn(corruptMsg, slog.String("error", storeErr.Error()))
+	} else if found {
 		var sa storedAccount
-		if err := json.Unmarshal(data, &sa); err != nil {
-			return nil, fmt.Errorf("unmarshal cached account: %w", err)
+		if jsonErr := json.Unmarshal(data, &sa); jsonErr != nil {
+			m.logger.Warn(corruptMsg, slog.String("error", jsonErr.Error()))
+		} else if key, keyErr := decodeECKey(sa.PrivateKey); keyErr != nil {
+			m.logger.Warn(corruptMsg, slog.String("error", keyErr.Error()))
+		} else {
+			return &legoUser{email: sa.Email, registration: sa.Registration, key: key}, nil
 		}
-		key, err := decodeECKey(sa.PrivateKey)
-		if err != nil {
-			return nil, fmt.Errorf("decode account key: %w", err)
-		}
-		return &legoUser{email: sa.Email, registration: sa.Registration, key: key}, nil
 	}
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -593,9 +607,11 @@ func parseKeyPair(certPEM, keyPEM []byte) (*tls.Certificate, error) {
 		return nil, err
 	}
 	if len(cert.Certificate) > 0 {
-		if leaf, err := x509.ParseCertificate(cert.Certificate[0]); err == nil {
-			cert.Leaf = leaf
+		leaf, err := x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse certificate leaf: %w", err)
 		}
+		cert.Leaf = leaf
 	}
 	return &cert, nil
 }

@@ -47,7 +47,7 @@
   "internal/rule": 75,
   "internal/scanner": 82,
   "internal/scraper": 79,
-  "internal/server": 91,
+  "internal/server": 84,
   "internal/settingsio": 82,
   "internal/updater": 87,
   "internal/version": 100,
