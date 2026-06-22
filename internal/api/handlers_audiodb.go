@@ -147,6 +147,9 @@ func (r *Router) handleAudioDBLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// The two guards below each return a 409 with a distinct body shape
+	// (a field_locked object vs. the conflict-gate ConflictWriteBlock); the
+	// route's OpenAPI 409 schema is a oneOf of both (see internal/api/openapi.yaml).
 	// Guard 1: respect a user pin on the audiodb_id field. A locked field must
 	// not be overwritten by the identify flow.
 	if r.artistService.IsFieldLocked(a, artist.FieldAudioDBID) {
