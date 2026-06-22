@@ -5,9 +5,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net/http"
@@ -17,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-acme/lego/v4/certificate"
 
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -418,4 +422,323 @@ func newTestLegoManager(t *testing.T) *legoManager {
 		t.Fatalf("newLegoManager: %v", err)
 	}
 	return m
+}
+
+// makeCertPEM returns PEM-encoded certificate and ECDSA private key bytes for
+// a self-signed certificate valid from 1 hour ago until notAfter. Usable as
+// storedCert.Certificate / storedCert.PrivateKey.
+func makeCertPEM(t *testing.T, notAfter time.Time) (certPEM, keyPEM []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test.example.com"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     notAfter,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("CreateCertificate: %v", err)
+	}
+	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("MarshalECPrivateKey: %v", err)
+	}
+	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	return certPEM, keyPEM
+}
+
+func TestParseKeyPair(t *testing.T) {
+	t.Parallel()
+	certPEM, keyPEM := makeCertPEM(t, time.Now().Add(90*24*time.Hour))
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		cert, err := parseKeyPair(certPEM, keyPEM)
+		if err != nil {
+			t.Fatalf("parseKeyPair: %v", err)
+		}
+		if cert.Leaf == nil {
+			t.Error("Leaf should be populated by parseKeyPair")
+		}
+	})
+
+	t.Run("invalid PEM", func(t *testing.T) {
+		t.Parallel()
+		if _, err := parseKeyPair([]byte("not-a-cert"), []byte("not-a-key")); err == nil {
+			t.Error("parseKeyPair(garbage) = nil error; want error")
+		}
+	})
+}
+
+func TestLegoUser_Getters(t *testing.T) {
+	t.Parallel()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	u := &legoUser{email: "ops@example.com", key: key}
+	if got := u.GetEmail(); got != "ops@example.com" {
+		t.Errorf("GetEmail = %q; want ops@example.com", got)
+	}
+	if u.GetRegistration() != nil {
+		t.Error("GetRegistration should be nil for an unregistered user")
+	}
+	if u.GetPrivateKey() != key {
+		t.Error("GetPrivateKey did not return the expected key")
+	}
+}
+
+func TestLegoManager_LoadCachedCert(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cache miss returns nil", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		if err := m.loadCachedCert(); err != nil {
+			t.Fatalf("loadCachedCert (miss) = %v; want nil", err)
+		}
+		m.mu.RLock()
+		cert := m.cert
+		m.mu.RUnlock()
+		if cert != nil {
+			t.Error("m.cert should remain nil after a cache miss")
+		}
+	})
+
+	t.Run("bad JSON returns error", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		if err := m.store.save(certCacheName, []byte("not-json")); err != nil {
+			t.Fatalf("store.save: %v", err)
+		}
+		if err := m.loadCachedCert(); err == nil {
+			t.Error("loadCachedCert (bad JSON) = nil error; want error")
+		}
+	})
+
+	t.Run("bad PEM returns error", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		sc := storedCert{Certificate: []byte("garbage-cert"), PrivateKey: []byte("garbage-key")}
+		data, _ := json.Marshal(sc)
+		if err := m.store.save(certCacheName, data); err != nil {
+			t.Fatalf("store.save: %v", err)
+		}
+		if err := m.loadCachedCert(); err == nil {
+			t.Error("loadCachedCert (bad PEM) = nil error; want error")
+		}
+	})
+
+	t.Run("valid cert is installed", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		certPEM, keyPEM := makeCertPEM(t, time.Now().Add(90*24*time.Hour))
+		sc := storedCert{Certificate: certPEM, PrivateKey: keyPEM}
+		data, err := json.Marshal(sc)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+		if err := m.store.save(certCacheName, data); err != nil {
+			t.Fatalf("store.save: %v", err)
+		}
+		if err := m.loadCachedCert(); err != nil {
+			t.Fatalf("loadCachedCert (valid): %v", err)
+		}
+		m.mu.RLock()
+		cert := m.cert
+		m.mu.RUnlock()
+		if cert == nil {
+			t.Fatal("m.cert should be non-nil after loading a valid cached cert")
+		}
+		if cert.Leaf == nil {
+			t.Error("cert.Leaf should be populated")
+		}
+	})
+}
+
+// TestLegoManager_SaveCert verifies that saveCert persists the certificate and
+// that loadCachedCert can reload it (end-to-end round-trip).
+func TestLegoManager_SaveCert(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	certPEM, keyPEM := makeCertPEM(t, time.Now().Add(90*24*time.Hour))
+
+	res := &certificate.Resource{
+		Domain:      "host.example.com",
+		Certificate: certPEM,
+		PrivateKey:  keyPEM,
+	}
+	if err := m.saveCert(res); err != nil {
+		t.Fatalf("saveCert: %v", err)
+	}
+
+	// Clear the in-memory cert and reload from store to verify persistence.
+	m.mu.Lock()
+	m.cert = nil
+	m.mu.Unlock()
+	if err := m.loadCachedCert(); err != nil {
+		t.Fatalf("loadCachedCert after saveCert: %v", err)
+	}
+	m.mu.RLock()
+	cert := m.cert
+	m.mu.RUnlock()
+	if cert == nil {
+		t.Error("cert not loaded after saveCert round-trip")
+	}
+}
+
+// TestEnsureCertificate_ShortCircuits verifies the two early-return paths in
+// ensureCertificate that avoid all network I/O.
+func TestEnsureCertificate_ShortCircuits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("fresh cert skips obtain", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		// Install a cert well within the 30-day renewal threshold.
+		fresh := selfSignedCert(t, time.Now().Add(60*24*time.Hour))
+		m.mu.Lock()
+		m.cert = fresh
+		m.mu.Unlock()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		// Must return without calling buildClient (which would dial the network).
+		m.ensureCertificate(ctx)
+	})
+
+	t.Run("canceled context skips obtain", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		// No cert and an already-canceled context: should return at the ctx.Err() check.
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		m.ensureCertificate(ctx)
+	})
+}
+
+// TestLegoManager_Run_FreshCert exercises the run() ticker loop with a
+// pre-installed valid certificate, so ensureCertificate short-circuits without
+// making any network calls.
+func TestLegoManager_Run_FreshCert(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	fresh := selfSignedCert(t, time.Now().Add(60*24*time.Hour))
+	m.mu.Lock()
+	m.cert = fresh
+	m.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.run(ctx)
+	}()
+	// Give the goroutine time to pass loadCachedCert and enter the ticker loop
+	// before canceling; loadCachedCert + ensureCertificate(fresh) are both
+	// sub-millisecond, so 50ms is generous even on slow CI machines.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not exit after context cancellation")
+	}
+}
+
+// TestEncryptedStore_TamperedCiphertext verifies that a corrupt on-disk blob
+// is rejected, covering the decrypt-error path in load().
+func TestEncryptedStore_TamperedCiphertext(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := &encryptedStore{dir: dir, encryptor: testEncryptor(t)}
+
+	if err := store.save("item", []byte(`{"key":"value"}`)); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Overwrite the file with bytes that are not a valid AES-GCM ciphertext.
+	path := filepath.Join(dir, "item.enc")
+	if err := os.WriteFile(path, []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, _, err := store.load("item"); err == nil {
+		t.Error("load(tampered) = nil error; want decrypt error")
+	}
+}
+
+// TestEncryptedStore_SaveWriteError covers the os.WriteFile error path in save()
+// by using a read-only cache directory.
+func TestEncryptedStore_SaveWriteError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Skip("cannot make dir read-only:", err)
+	}
+	defer os.Chmod(dir, 0o700) // restore so t.TempDir cleanup can remove it
+	store := &encryptedStore{dir: dir, encryptor: testEncryptor(t)}
+	if err := store.save("item", []byte("data")); err == nil {
+		t.Error("save to read-only dir = nil error; want write error")
+	}
+}
+
+// TestEncodeECKey_NonECType covers the type-assertion failure branch in encodeECKey.
+func TestEncodeECKey_NonECType(t *testing.T) {
+	t.Parallel()
+	rsakey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+	if _, err := encodeECKey(rsakey); err == nil {
+		t.Error("encodeECKey(RSA key) = nil error; want type-assertion error")
+	}
+}
+
+// TestLoadOrCreateUser_StorageErrors covers the error paths for a corrupt or
+// partially-written cached account.
+func TestLoadOrCreateUser_StorageErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("bad JSON in store", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		if err := m.store.save(accountCacheName, []byte("not-json")); err != nil {
+			t.Fatalf("store.save: %v", err)
+		}
+		if _, err := m.loadOrCreateUser(); err == nil {
+			t.Error("loadOrCreateUser (bad JSON) = nil error; want error")
+		}
+	})
+
+	t.Run("bad private key PEM in store", func(t *testing.T) {
+		t.Parallel()
+		m := newTestLegoManager(t)
+		sa := storedAccount{Email: "ops@example.com", PrivateKey: []byte("garbage-pem")}
+		data, _ := json.Marshal(sa)
+		if err := m.store.save(accountCacheName, data); err != nil {
+			t.Fatalf("store.save: %v", err)
+		}
+		if _, err := m.loadOrCreateUser(); err == nil {
+			t.Error("loadOrCreateUser (bad PEM) = nil error; want error")
+		}
+	})
+}
+
+// TestSaveAccount_NonECKey covers the encodeECKey error path in saveAccount
+// when the account key is not an ECDSA key.
+func TestSaveAccount_NonECKey(t *testing.T) {
+	t.Parallel()
+	m := newTestLegoManager(t)
+	rsakey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+	u := &legoUser{email: "ops@example.com", key: rsakey}
+	if err := m.saveAccount(u); err == nil {
+		t.Error("saveAccount(RSA key) = nil error; want error from encodeECKey")
+	}
 }
