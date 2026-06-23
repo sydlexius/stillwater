@@ -1,0 +1,522 @@
+package next
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// ReportsPageData is the view model for the next/ reports two-pane workspace
+// (M55 #1337). ActiveReport identifies which built-in report is selected (e.g.
+// "compliance"). The matching data field is populated for each live report
+// ("compliance", "health", "metadata-completeness", "rule-pass-rates");
+// unrecognized or deferred report names render a placeholder pane.
+type ReportsPageData struct {
+	ActiveReport   string
+	ComplianceData templates.ComplianceData
+	// HealthData is populated when ActiveReport=="health".
+	HealthData templates.HealthSummaryData
+	// MetadataReport is populated when ActiveReport=="metadata-completeness".
+	MetadataReport *artist.MetadataCompletenessReport
+	// RulePassRates is populated when ActiveReport=="rule-pass-rates".
+	RulePassRates []templates.RulePassRateData
+}
+
+// nextBuiltinReport is a single entry in the reports rail.
+type nextBuiltinReport struct {
+	ID       string
+	LabelKey string
+	DescKey  string
+}
+
+// nextBuiltinReports is the ordered list of built-in reports shown in the rail.
+// IDs match the {name} path segment in /next/reports/{name}. The first four
+// entries have live right-panes; the remaining six render a placeholder.
+var nextBuiltinReports = []nextBuiltinReport{
+	{"compliance", "reports.compliance.label", "reports.compliance.desc"},
+	{"health", "reports.health_report.label", "reports.health_report.desc"},
+	{"metadata-completeness", "reports.metadata_completeness.label", "reports.metadata_completeness.desc"},
+	{"rule-pass-rates", "reports.rule_pass_rates.label", "reports.rule_pass_rates.desc"},
+	{"underrated-artists", "reports.underrated.label", "reports.underrated.desc"},
+	{"image-coverage", "reports.image_coverage.label", "reports.image_coverage.desc"},
+	{"connection-sync", "reports.connection.label", "reports.connection.desc"},
+	{"id-metadata-coverage", "reports.id_metadata.label", "reports.id_metadata.desc"},
+	{"state-records", "reports.state_records.label", "reports.state_records.desc"},
+	{"weekly-review-queue", "reports.weekly_review.label", "reports.weekly_review.desc"},
+}
+
+// repFilterCount returns the number of active filters on the compliance data,
+// used to badge the Filters trigger button (mirrors complianceActiveFilterCount
+// in compliance.templ which is unexported and cannot be called from this package).
+func repFilterCount(data templates.ComplianceData) int {
+	n := 0
+	if data.Search != "" {
+		n++
+	}
+	if data.Status != "" && data.Status != "all" {
+		n++
+	}
+	if data.Filter != "" {
+		n++
+	}
+	if data.LibraryID != "" {
+		n++
+	}
+	if data.HealthScoreMin > 0 || data.HealthScoreMax > 0 {
+		n++
+	}
+	return n
+}
+
+// ReportsPageNext renders the next/ reports two-pane workspace (M55 #1337).
+// The left rail (260 px) lists built-in reports; clicking one navigates to
+// /next/reports/{name}. The right pane renders the active report content.
+// Logged-out visitors reach this page via wrapOptionalAuth; the handler calls
+// requireAuth internally and redirects to login if the session is absent.
+templ ReportsPageNext(assets templates.AssetPaths, data ReportsPageData) {
+	@LayoutNext(t(ctx, "reports.page_title"), assets) {
+		<script src={ assets.ChartJS }></script>
+		<div class="sw-next-reports">
+			<div class="sw-rep-workspace sw-card">
+				<!-- Left rail: 260px -->
+				<nav class="sw-rep-rail" aria-label={ t(ctx, "reports.page_title") }>
+					<div class="sw-rep-rail-search">
+						<svg class="sw-rep-rail-search-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+							<path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd"></path>
+						</svg>
+						<input
+							type="search"
+							id="rep-rail-filter"
+							placeholder={ t(ctx, "reports.rail_filter_placeholder") }
+							class="sw-rep-rail-filter-input"
+							oninput="swRepRailFilter(this.value)"
+							autocomplete="off"
+						/>
+					</div>
+					<div class="sw-rep-list-wrap">
+						<p class="sw-rep-list-label" aria-hidden="true">{ t(ctx, "reports.section_builtin") }</p>
+						<ul role="list" class="sw-rep-list" id="sw-rep-list">
+							for _, r := range nextBuiltinReports {
+								<li class="sw-rep-list-item" data-rep-label={ t(ctx, r.LabelKey) }>
+									<a
+										href={ templ.SafeURL(assets.BasePath + "/next/reports/" + r.ID) }
+										class={ "sw-rep-item", templ.KV("is-active", data.ActiveReport == r.ID) }
+										if data.ActiveReport == r.ID {
+											aria-current="page"
+										}
+									>
+										<div class="sw-rep-item-body">
+											<span class="sw-rep-item-label">{ t(ctx, r.LabelKey) }</span>
+											<span class="sw-rep-item-desc">{ t(ctx, r.DescKey) }</span>
+										</div>
+									</a>
+								</li>
+							}
+						</ul>
+					</div>
+				</nav>
+				<!-- Right pane -->
+				<div class="sw-rep-pane" id="sw-rep-pane">
+					if data.ActiveReport == "compliance" {
+						@repPaneCompliance(assets, data.ComplianceData)
+					} else if data.ActiveReport == "health" {
+						@repPaneHealth(data.HealthData)
+					} else if data.ActiveReport == "metadata-completeness" {
+						@repPaneMetadataCompleteness(data.MetadataReport)
+					} else if data.ActiveReport == "rule-pass-rates" {
+						@repPaneRulePassRates(data.RulePassRates)
+					} else {
+						@repPanePlaceholder(ctx, data.ActiveReport)
+					}
+				</div>
+			</div>
+		</div>
+		@repRailFilterScript()
+	}
+}
+
+// repPaneCompliance renders the right pane for the Compliance overview report.
+// It reuses templates.ComplianceResults (including ComplianceTable, pagination,
+// and active filter chips) and templates.ComplianceFilterFlyout without
+// forking them. The toolbar, summary band, and bulk action bar are inline since
+// they require the next/ scope and the compliance.templ script components are
+// unexported.
+templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceData) {
+	<!-- Pane header -->
+	<div class="sw-rep-pane-header">
+		<div class="sw-rep-pane-title-block">
+			<p class="sw-rep-pane-title">{ t(ctx, "reports.compliance.label") }</p>
+			<p class="sw-rep-pane-desc">{ t(ctx, "reports.compliance.desc") }</p>
+		</div>
+		<div class="sw-rep-pane-actions">
+			<button
+				type="button"
+				class="sw-rep-run-btn"
+				hx-get="/reports/compliance"
+				hx-target="#compliance-results"
+				hx-swap="outerHTML"
+				hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
+			>
+				<svg class="sw-rep-run-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clip-rule="evenodd"></path>
+				</svg>
+				{ t(ctx, "reports.run") }
+			</button>
+		</div>
+	</div>
+	<!-- Summary band (lazy-loaded from /api/v1/reports/health/by-library) -->
+	<div
+		id="compliance-summary"
+		class="sw-rep-summary"
+		hx-get="/api/v1/reports/health/by-library"
+		hx-trigger="load"
+		hx-swap="innerHTML"
+	>
+		<div class="sw-rep-summary-loading">
+			<svg class="animate-spin sw-rep-spin-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+				<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+			</svg>
+		</div>
+	</div>
+	<!-- Toolbar: search + filter trigger + column toggle + export -->
+	<div class="sw-rep-toolbar">
+		<div class="sw-rep-toolbar-search">
+			<input
+				type="search"
+				name="search"
+				value={ data.Search }
+				placeholder={ t(ctx, "common.search_artists") }
+				hx-get="/reports/compliance"
+				hx-trigger="keyup changed delay:300ms"
+				hx-target="#compliance-results"
+				hx-swap="outerHTML"
+				hx-include="[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
+				class="sw-rep-search-input"
+			/>
+		</div>
+		<div class="sw-rep-toolbar-actions">
+			<button
+				id="compliance-filter-trigger"
+				type="button"
+				class={ "sw-rep-filter-btn", templ.KV("is-active", repFilterCount(data) > 0) }
+				data-active-classes="is-active"
+				data-badge-classes="sw-filter-trigger-badge"
+				aria-label={ t(ctx, "common.open_filter_panel") }
+				aria-expanded="false"
+				aria-controls="compliance-filter-flyout"
+				onclick={ components.OpenFilterFlyout("compliance-filter-flyout") }
+			>
+				<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+				</svg>
+				<span>{ t(ctx, "common.filters") }</span>
+				if repFilterCount(data) > 0 {
+					<span class="sw-filter-trigger-badge">{ fmt.Sprintf("%d", repFilterCount(data)) }</span>
+				}
+			</button>
+			@components.ColumnToggle("compliance", "compliance-tbl", t(ctx, "common.columns"), false, []components.ColumnDef{
+				{Key: "artist", Label: t(ctx, "reports.column_artist"), Required: true},
+				{Key: "score", Label: t(ctx, "reports.column_score")},
+				{Key: "metadata", Label: t(ctx, "reports.column_metadata")},
+				{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
+				{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
+				{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
+				{Key: "mbid", Label: t(ctx, "reports.column_mbid")},
+			})
+			<a
+				id="compliance-export-link"
+				href={ templ.SafeURL(data.BasePath + "/api/v1/reports/compliance/export") }
+				data-export-base={ data.BasePath + "/api/v1/reports/compliance/export" }
+				onclick="rewriteComplianceExport(this)"
+				class="sw-rep-export-btn"
+			>
+				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+				</svg>
+				{ t(ctx, "common.export_csv") }
+			</a>
+		</div>
+	</div>
+	<!-- Results | Matrix tab bar -->
+	<div class="sw-rep-tabbar" role="tablist" aria-label={ t(ctx, "reports.tab_view_label") } id="sw-rep-tabbar">
+		<button
+			role="tab"
+			aria-selected="true"
+			aria-controls="sw-rep-tab-results"
+			id="sw-rep-tab-btn-results"
+			class="sw-rep-tab is-active"
+			onclick="swRepTabSwitch('results')"
+		>{ t(ctx, "reports.tab_results") }</button>
+		<button
+			role="tab"
+			aria-selected="false"
+			aria-controls="sw-rep-tab-matrix"
+			id="sw-rep-tab-btn-matrix"
+			class="sw-rep-tab"
+			onclick="swRepTabSwitch('matrix')"
+		>{ t(ctx, "reports.tab_matrix") }</button>
+	</div>
+	<!-- Tab panels: shared compliance data, same table, different scroll scope -->
+	<div class="sw-rep-tab-panels" id="sw-rep-tab-panels">
+		<div
+			id="sw-rep-tab-results"
+			role="tabpanel"
+			aria-labelledby="sw-rep-tab-btn-results"
+			class="sw-rep-tab-panel"
+		>
+			@templates.ComplianceResults(data)
+		</div>
+		<div
+			id="sw-rep-tab-matrix"
+			role="tabpanel"
+			aria-labelledby="sw-rep-tab-btn-matrix"
+			class="sw-rep-tab-panel hidden"
+		>
+			<div class="sw-rep-matrix-scroll">
+				@templates.ComplianceTable(data)
+			</div>
+		</div>
+	</div>
+	<!-- Filter flyout (reused from stable compliance page) -->
+	@templates.ComplianceFilterFlyout(data)
+	<!-- Bulk action bar -->
+	<div
+		id="bulk-action-bar"
+		data-label-n-selected={ t(ctx, "report.n_selected") }
+		class="fixed bottom-0 left-0 right-0 z-30 hidden bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
+	>
+		<div class="max-w-7xl mx-auto flex items-center justify-between">
+			<span
+				id="bulk-count"
+				class="text-sm text-white"
+				data-zero-text={ t(ctx, "report.zero_selected") }
+				data-one-text={ t(ctx, "report.one_selected") }
+				data-many-template={ t(ctx, "report.n_selected") }
+			>{ t(ctx, "report.zero_selected") }</span>
+			<div class="flex items-center gap-3">
+				<button
+					type="button"
+					onclick="bulkAction('fetch-metadata')"
+					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+				>{ t(ctx, "report.fetch_metadata") }</button>
+				<button
+					type="button"
+					onclick="bulkAction('fetch-images')"
+					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+				>{ t(ctx, "report.fetch_images") }</button>
+				<button
+					type="button"
+					onclick="clearBulkSelection()"
+					class="inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-600"
+				>{ t(ctx, "common.cancel") }</button>
+			</div>
+		</div>
+	</div>
+	@repComplianceScript()
+}
+
+// repPanePlaceholder renders the right pane for reports that are not yet
+// implemented. A placeholder empty state is shown with the report name.
+templ repPanePlaceholder(ctx context.Context, reportID string) {
+	<div class="sw-rep-placeholder">
+		<svg class="sw-rep-placeholder-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"></path>
+		</svg>
+		<p class="sw-rep-placeholder-title">{ t(ctx, "reports.placeholder_title") }</p>
+		<p class="sw-rep-placeholder-desc">{ t(ctx, "reports.placeholder_desc") }</p>
+	</div>
+}
+
+// repPaneHealth renders the right pane for the Library health report. It
+// embeds the existing HealthSummaryFragment (compliance score card + top
+// failing rules + per-rule pass rates) used on the dashboard, so the next/
+// workspace and the dashboard stay visually consistent without forking.
+templ repPaneHealth(data templates.HealthSummaryData) {
+	<div class="sw-rep-pane-header">
+		<div class="sw-rep-pane-title-block">
+			<p class="sw-rep-pane-title">{ t(ctx, "reports.health_report.label") }</p>
+			<p class="sw-rep-pane-desc">{ t(ctx, "reports.health_report.desc") }</p>
+		</div>
+	</div>
+	<div class="sw-rep-simple-pane">
+		@templates.HealthSummaryFragment(data)
+	</div>
+}
+
+// repPaneMetadataCompleteness renders the right pane for the Metadata
+// completeness report by embedding the existing MetadataCompletenessFragment
+// (field-coverage summary + lowest-completeness artist table).
+templ repPaneMetadataCompleteness(report *artist.MetadataCompletenessReport) {
+	<div class="sw-rep-pane-header">
+		<div class="sw-rep-pane-title-block">
+			<p class="sw-rep-pane-title">{ t(ctx, "reports.metadata_completeness.label") }</p>
+			<p class="sw-rep-pane-desc">{ t(ctx, "reports.metadata_completeness.desc") }</p>
+		</div>
+	</div>
+	<div class="sw-rep-simple-pane">
+		@templates.MetadataCompletenessFragment(report)
+	</div>
+}
+
+// repPaneRulePassRates renders the right pane for the Rule pass-rates report.
+// The /api/v1/reports/rule-pass-rates endpoint is JSON-only, so this pane
+// renders an inline list directly from the loaded data. PassRate is a 0.0-1.0
+// fraction (see rule.GetRulePassRates); it is shown as a whole percentage.
+templ repPaneRulePassRates(rates []templates.RulePassRateData) {
+	<div class="sw-rep-pane-header">
+		<div class="sw-rep-pane-title-block">
+			<p class="sw-rep-pane-title">{ t(ctx, "reports.rule_pass_rates.label") }</p>
+			<p class="sw-rep-pane-desc">{ t(ctx, "reports.rule_pass_rates.desc") }</p>
+		</div>
+	</div>
+	<div class="sw-rep-simple-pane">
+		if len(rates) == 0 {
+			<p class="sw-rep-rate-empty">{ t(ctx, "reports.rule_pass_rates.empty") }</p>
+		} else {
+			<ul role="list" class="sw-rep-rate-list">
+				for _, rt := range rates {
+					<li class="sw-rep-rate-item">
+						<span class="sw-rep-rate-name">{ rt.RuleName }</span>
+						<span class="sw-rep-rate-counts">{ fmt.Sprintf("%d/%d", rt.Passed, rt.Evaluated) }</span>
+						<span
+							class={ "sw-rep-rate-pct",
+								templ.KV("is-good", rt.PassRate >= 0.8),
+								templ.KV("is-warn", rt.PassRate >= 0.5 && rt.PassRate < 0.8),
+								templ.KV("is-bad", rt.PassRate < 0.5) }
+						>{ fmt.Sprintf("%.0f%%", rt.PassRate*100) }</span>
+					</li>
+				}
+			</ul>
+		}
+	</div>
+}
+
+// repComplianceScript renders the JS for the compliance workspace pane.
+// Mirrors the unexported complianceScript() in compliance.templ so these
+// functions are available when ComplianceTable is embedded in the next/ reports
+// workspace. The run-rules flow is intentionally absent (the workspace "Run"
+// button is a simple HTMX re-fetch, not the full confirmAndRunRules flow).
+templ repComplianceScript() {
+	<script>
+		// Tab switching: toggle aria-selected + hidden on the tab panels.
+		function swRepTabSwitch(name) {
+			document.getElementById('sw-rep-tabbar').querySelectorAll('[role="tab"]').forEach(function(btn) {
+				btn.setAttribute('aria-selected', btn.id === 'sw-rep-tab-btn-' + name ? 'true' : 'false');
+				btn.classList.toggle('is-active', btn.id === 'sw-rep-tab-btn-' + name);
+			});
+			['results', 'matrix'].forEach(function(tab) {
+				var panel = document.getElementById('sw-rep-tab-' + tab);
+				if (panel) panel.classList.toggle('hidden', tab !== name);
+			});
+		}
+
+		// Column sort: swap sort/order hidden inputs and re-trigger HTMX search.
+		function sortBy(col) {
+			var sortInput = document.getElementById('compliance-sort');
+			var orderInput = document.getElementById('compliance-order');
+			if (!sortInput || !orderInput) return;
+			var curSort = sortInput.value;
+			var curOrder = orderInput.value;
+			orderInput.value = (curSort === col && curOrder === 'asc') ? 'desc' : 'asc';
+			sortInput.value = col;
+			var searchInput = document.querySelector('[name="search"]');
+			if (searchInput) htmx.trigger(searchInput, 'keyup');
+		}
+
+		// Bulk selection helpers.
+		function toggleSelectAll(checkbox) {
+			document.querySelectorAll('.bulk-select').forEach(function(cb) { cb.checked = checkbox.checked; });
+			updateBulkBar();
+		}
+
+		function updateBulkBar() {
+			var selected = document.querySelectorAll('.bulk-select:checked');
+			var bar = document.getElementById('bulk-action-bar');
+			var count = document.getElementById('bulk-count');
+			if (!bar) return;
+			if (selected.length > 0) {
+				bar.classList.remove('hidden');
+				if (count) {
+					count.textContent = selected.length === 1
+						? (count.dataset.oneText || '1 selected')
+						: (count.dataset.manyTemplate || '{count} selected').replace('{count}', String(selected.length));
+				}
+			} else {
+				bar.classList.add('hidden');
+				if (count) count.textContent = count.dataset.zeroText || '';
+			}
+		}
+
+		function clearBulkSelection() {
+			document.querySelectorAll('.bulk-select').forEach(function(cb) { cb.checked = false; });
+			var sa = document.getElementById('select-all');
+			if (sa) sa.checked = false;
+			updateBulkBar();
+		}
+
+		function bulkAction(action) {
+			var ids = [];
+			document.querySelectorAll('.bulk-select:checked').forEach(function(cb) { ids.push(cb.value); });
+			if (!ids.length) return;
+			var bp = (function() { var el = document.querySelector('meta[name="htmx-base-path"]'); return el ? el.content : ''; })();
+			var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
+			fetch(bp + '/api/v1/bulk/' + action, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+				body: JSON.stringify({ mode: 'prompt_no_match', artist_ids: ids })
+			}).then(function(resp) {
+				if (resp.ok) clearBulkSelection();
+			}).catch(function() {});
+		}
+
+		// Re-sync bulk bar after HTMX swaps reload the table rows.
+		document.body.addEventListener('htmx:afterSettle', function() { updateBulkBar(); });
+
+		// Filter flyout applies filters: dispatch sw:filter-applied on #compliance-results.
+		document.body.addEventListener('sw:filter-applied', function(evt) {
+			if (!evt.target || evt.target.id !== 'compliance-results') return;
+			htmx.ajax('GET', '/reports/compliance' + window.location.search, { target: '#compliance-results', swap: 'outerHTML' });
+		});
+
+		// Hydrate filter flyout from URL on first paint.
+		document.addEventListener('DOMContentLoaded', function() {
+			if (window.swFilterFlyout) swFilterFlyout.initFromURL('compliance-filter-flyout');
+		});
+
+		// rewriteComplianceExport copies the current search params onto the
+		// export link so the CSV download reflects the active filters.
+		function rewriteComplianceExport(link) {
+			var base = link.dataset.exportBase || link.href;
+			var params = new URLSearchParams(window.location.search);
+			// Keep only canonical compliance filter params.
+			var keep = ['search', 'status', 'filter', 'library_id', 'sort', 'order', 'health_min', 'health_max'];
+			var out = new URLSearchParams();
+			keep.forEach(function(k) {
+				var field = document.querySelector('[name="' + k + '"]');
+				var value = field ? field.value : params.get(k);
+				if (value !== null && value !== '') out.set(k, value);
+			});
+			var qs = out.toString();
+			link.href = qs ? base + '?' + qs : base;
+		}
+	</script>
+}
+
+// repRailFilterScript renders the JS for the rail filter input.
+// Matching is case-insensitive against data-rep-label on each list item.
+templ repRailFilterScript() {
+	<script>
+		function swRepRailFilter(query) {
+			var q = query.toLowerCase();
+			document.querySelectorAll('#sw-rep-list .sw-rep-list-item').forEach(function(li) {
+				var label = (li.dataset.repLabel || '').toLowerCase();
+				li.hidden = q.length > 0 && !label.includes(q);
+			});
+		}
+	</script>
+}

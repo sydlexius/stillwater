@@ -436,6 +436,16 @@ how-to/self-update#update-stillwater
 how-to/self-update#updates-settings-auto-save
 how-to/self-update#verifying-releases
 how-to/self-update#what-an-update-changes
+how-to/view-reports#additional-reports
+how-to/view-reports#background-appearance
+how-to/view-reports#compliance-overview
+how-to/view-reports#library-health
+how-to/view-reports#live-reports
+how-to/view-reports#metadata-completeness
+how-to/view-reports#open-the-reports-workspace
+how-to/view-reports#rule-pass-rates
+how-to/view-reports#the-reports-rail
+how-to/view-reports#view-reports
 index#built-to-run-on-your-hardware
 index#get-started
 index#mainstream-artists-are-the-easy-part

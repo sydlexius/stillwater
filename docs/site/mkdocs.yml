@@ -119,6 +119,7 @@ nav:
   - How-to:
       - how-to/index.md
       - Run scans: how-to/run-scans.md
+      - View reports: how-to/view-reports.md
       - Edit an artist: how-to/edit-artist.md
       - Filter the artists list: how-to/filter-artists.md
       - Find a setting: how-to/find-a-setting.md
