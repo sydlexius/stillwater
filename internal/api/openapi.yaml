@@ -10047,6 +10047,12 @@ paths:
           description: Case-insensitive substring search on the log message.
           schema:
             type: string
+        - name: last_event_id
+          in: query
+          description: RFC3339Nano resume cursor fallback for non-browser clients that cannot send the Last-Event-ID header. Mirrors the Last-Event-ID header; header takes precedence.
+          schema:
+            type: string
+            format: date-time
         - name: Last-Event-ID
           in: header
           description: |

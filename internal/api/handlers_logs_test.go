@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -730,6 +731,8 @@ func TestHandleLogsStream_LastEventIDCursor(t *testing.T) {
 func TestHandleLogsStream_MalformedCursor(t *testing.T) {
 	t.Parallel()
 	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+	var logBuf bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	base := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
 	rb.Write(logging.LogEntry{Time: base, Level: "info", Message: "entry-one"})
@@ -763,6 +766,9 @@ func TestHandleLogsStream_MalformedCursor(t *testing.T) {
 	}
 	if !strings.Contains(frames[0], `"replayed":2`) {
 		t.Errorf("connected frame should report replayed:2 (full replay), got: %q", frames[0])
+	}
+	if got := logBuf.String(); !strings.Contains(got, "unparsable Last-Event-ID cursor") {
+		t.Errorf("expected malformed cursor Warn to be logged, got: %q", got)
 	}
 }
 
@@ -856,10 +862,62 @@ func TestHandleLogsStream_ScopeFilter(t *testing.T) {
 	}
 }
 
-// TestStreamLogLines_Throttle verifies that when the subscriber buffer overflows
-// (more records published than the channel can hold), streamLogLines emits a
-// logs.throttled SSE frame with a non-zero dropped count.
-func TestStreamLogLines_Throttle(t *testing.T) {
+// TestHandleLogsStream_LiveFilter verifies that the level filter applies on the
+// live-tail path (records arriving via the LogBroadcaster after connect), not
+// only during backfill. The ring buffer starts empty so all frames come from live.
+func TestHandleLogsStream_LiveFilter(t *testing.T) {
+	t.Parallel()
+	r, _, logger := newTestRouterWithLogsAndLogger(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"?level=error", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+
+	// Wait for "connected" frame -- confirms the subscription with level=error is active.
+	connected := collectSSEFrames(scanner, 1)
+	if len(connected) < 1 || !strings.Contains(connected[0], "event: connected") {
+		t.Fatalf("expected connected frame, got: %v", connected)
+	}
+
+	// Publish one non-matching (info) and one matching (error) record.
+	logger.Info("should-be-filtered")
+	logger.Error("should-arrive")
+
+	// Collect one logs.line frame; the filter must suppress the info record.
+	frames := collectSSEFrames(scanner, 1)
+	cancel()
+
+	if len(frames) < 1 {
+		t.Fatal("expected a logs.line frame but got none")
+	}
+	if strings.Contains(frames[0], "should-be-filtered") {
+		t.Errorf("info record leaked through level=error filter: %q", frames[0])
+	}
+	if !strings.Contains(frames[0], "should-arrive") {
+		t.Errorf("error record not delivered through live filter: %q", frames[0])
+	}
+}
+
+// TestHandleLogsStream_Throttle verifies that when the subscriber buffer
+// overflows, streamLogLines emits a logs.throttled SSE frame with a non-zero
+// dropped count. Pre-overflows the channel so the throttle signal is present
+// before streamLogLines starts; uses an io.Pipe so the scanner blocks
+// deterministically instead of sleeping.
+func TestHandleLogsStream_Throttle(t *testing.T) {
 	t.Parallel()
 	r, _, logger := newTestRouterWithLogsAndLogger(t)
 
@@ -867,82 +925,114 @@ func TestStreamLogLines_Throttle(t *testing.T) {
 	sub := lb.Subscribe(logging.LogFilter{})
 	defer sub.Close()
 
-	// Publish enough records to overflow the subscriber's default 256-entry buffer.
-	// The broadcaster fans out non-blocking: once s.lines is full, dropped++ and
-	// the throttle signal fires. Publishing 300 guarantees overflow.
+	// Publish enough records to overflow the subscriber's default 256-entry
+	// buffer before streamLogLines starts. The broadcaster fans out
+	// non-blocking: once s.lines is full, dropped++ and the throttle signal
+	// fires. Publishing 300 guarantees overflow.
 	for i := 0; i < 300; i++ {
 		logger.Info("flood", slog.Int("i", i))
 	}
 
-	// Give the broadcaster goroutines time to fan out all records before reading.
-	// (Publishes happen synchronously in Handle(), so no sleep needed here, but
-	// runtime scheduling may delay the channel sends slightly.)
-	// The subscription now has >=256 entries in Lines and 1 signal in Throttle.
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	pr, pw := io.Pipe()
+	rw := &pipeResponseWriter{pw: pw, header: make(http.Header)}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil).WithContext(ctx)
-	w := httptest.NewRecorder()
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// newestTS=zero so no backfill suppression; call streamLogLines directly.
-		r.streamLogLines(w, w, req, sub, time.Time{})
+		defer pw.Close()
+		r.streamLogLines(rw, rw, req, sub, time.Time{})
 	}()
 
-	// Give the handler time to drain Lines and process the Throttle signal.
-	// With 256+ entries in a bytes.Buffer (no IO), this should be near-instant.
-	time.Sleep(200 * time.Millisecond)
+	// Scanner blocks on the pipe until streamLogLines writes a frame -- no
+	// sleep needed. Scan until the throttled frame is found.
+	scanner := bufio.NewScanner(pr)
+	var foundThrottle string
+	for foundThrottle == "" {
+		frames := collectSSEFrames(scanner, 1)
+		if len(frames) == 0 {
+			break // pipe closed (context done)
+		}
+		if strings.Contains(frames[0], "event: logs.throttled") {
+			foundThrottle = frames[0]
+		}
+	}
 	cancel()
+	io.Copy(io.Discard, pr) // drain so the goroutine can finish writing
 	<-done
 
-	body := w.Body.String()
-	if !strings.Contains(body, "event: logs.throttled") {
-		t.Errorf("expected logs.throttled SSE event in stream output, got:\n%s", body)
+	if foundThrottle == "" {
+		t.Error("expected logs.throttled event but none found within timeout")
 	}
-	if !strings.Contains(body, `"dropped"`) {
-		t.Errorf("throttled event should include dropped count, got:\n%s", body)
+	if !strings.Contains(foundThrottle, `"dropped"`) {
+		t.Errorf("throttled event should include dropped count, got: %q", foundThrottle)
 	}
 }
 
-// TestStreamLogLines_LivePath verifies that a record published via a
-// Subscription is forwarded as a logs.line SSE event by streamLogLines.
-func TestStreamLogLines_LivePath(t *testing.T) {
+// pipeResponseWriter is a minimal http.ResponseWriter + http.Flusher backed by
+// an io.PipeWriter. It lets tests scan SSE frames written by streamLogLines
+// without the fixed sleeps that make httptest.NewRecorder-based tests racy.
+type pipeResponseWriter struct {
+	pw     *io.PipeWriter
+	header http.Header
+}
+
+func (p *pipeResponseWriter) Header() http.Header         { return p.header }
+func (p *pipeResponseWriter) Write(b []byte) (int, error) { return p.pw.Write(b) }
+func (p *pipeResponseWriter) WriteHeader(int)             {}
+func (p *pipeResponseWriter) Flush()                      {}
+
+// TestHandleLogsStream_LivePath verifies that a record published via the
+// broadcaster is forwarded as a logs.line SSE event. Uses httptest.Server +
+// scanner so the connected frame provides a deterministic subscription barrier.
+func TestHandleLogsStream_LivePath(t *testing.T) {
 	t.Parallel()
 	r, _, logger := newTestRouterWithLogsAndLogger(t)
 
-	lb := r.logManager.LogBroadcaster()
-	sub := lb.Subscribe(logging.LogFilter{})
-	defer sub.Close()
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil).WithContext(ctx)
-	w := httptest.NewRecorder()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		r.streamLogLines(w, w, req, sub, time.Time{})
-	}()
+	scanner := bufio.NewScanner(resp.Body)
 
-	// Publish one record after streamLogLines has started.
-	time.Sleep(10 * time.Millisecond) // tiny gap so the goroutine enters select
+	// Wait for "connected" frame -- this is the deterministic signal that
+	// handleLogsStream has subscribed and streamLogLines is in its select loop.
+	connected := collectSSEFrames(scanner, 1)
+	if len(connected) < 1 || !strings.Contains(connected[0], "event: connected") {
+		t.Fatalf("expected connected frame, got: %v", connected)
+	}
+
+	// Publish after receiving the connected frame -- goroutine is definitely
+	// in the select loop at this point (it already wrote and flushed a frame).
 	logger.Info("stream-live-test-marker")
 
-	time.Sleep(50 * time.Millisecond) // let the handler write the SSE frame
+	// Scanner blocks until the logs.line frame arrives -- no sleep needed.
+	frames := collectSSEFrames(scanner, 1)
 	cancel()
-	<-done
 
-	body := w.Body.String()
-	if !strings.Contains(body, "event: logs.line") {
-		t.Errorf("expected logs.line event, got:\n%s", body)
+	if len(frames) < 1 {
+		t.Fatal("expected a logs.line frame but got none")
 	}
-	if !strings.Contains(body, "stream-live-test-marker") {
-		t.Errorf("expected log message in SSE output, got:\n%s", body)
+	if !strings.Contains(frames[0], "event: logs.line") {
+		t.Errorf("expected logs.line event, got: %q", frames[0])
+	}
+	if !strings.Contains(frames[0], "stream-live-test-marker") {
+		t.Errorf("expected log message in SSE output, got: %q", frames[0])
 	}
 }
 

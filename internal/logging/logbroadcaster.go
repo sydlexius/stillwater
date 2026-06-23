@@ -206,6 +206,9 @@ func (b *LogBroadcaster) WithAttrs(attrs []slog.Attr) slog.Handler {
 // WithGroup returns a derived broadcaster with the given group name appended,
 // sharing the parent's subscriber registry.
 func (b *LogBroadcaster) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return b
+	}
 	newGroup := name
 	if b.group != "" {
 		newGroup = b.group + "." + name
