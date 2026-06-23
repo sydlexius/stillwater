@@ -34,9 +34,21 @@ func (h *RingHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 // Handle converts a slog.Record to a LogEntry and writes it to the buffer.
+func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.buffer.Write(recordToEntry(r, h.attrs, h.group, h.addSource))
+	return nil
+}
+
+// recordToEntry converts a slog.Record into a LogEntry, applying the same
+// source-location derivation, component extraction, and RedactingReplaceAttr
+// scrubbing for both the in-memory ring buffer and the live log broadcaster.
+// preAttrs are the handler's accumulated WithAttrs attributes and group is its
+// WithGroup prefix. Sharing this walk keeps the two log sinks byte-for-byte
+// consistent (a divergence would mean the viewer and the live tail show
+// different redaction or component values for the same record).
 //
 //nolint:gocognit // slog.Record attribute walk requires a type switch over every supported slog.Kind (string, int64, uint64, float64, bool, duration, time, group, any) so each kind can be encoded to LogEntry's typed field; this is the slog contract, not application logic, and cannot be flattened.
-func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
+func recordToEntry(r slog.Record, preAttrs []slog.Attr, group string, addSource bool) LogEntry {
 	entry := LogEntry{
 		Time:    r.Time,
 		Level:   FormatLevel(r.Level),
@@ -47,7 +59,7 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 	// caller uses slog.Info/Warn/etc). AddSource in the primary handler
 	// only affects that handler; we replicate the logic here.
 	var pkgName string // derived package name for auto-component
-	if h.addSource && r.PC != 0 {
+	if addSource && r.PC != 0 {
 		fs := runtime.CallersFrames([]uintptr{r.PC})
 		f, _ := fs.Next()
 		if f.File != "" {
@@ -108,12 +120,12 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 		attrs[key] = a.Value.Any()
 	}
 
-	for _, a := range h.attrs {
-		addAttr(h.group, a)
+	for _, a := range preAttrs {
+		addAttr(group, a)
 	}
 
 	r.Attrs(func(a slog.Attr) bool {
-		addAttr(h.group, a)
+		addAttr(group, a)
 		return true
 	})
 
@@ -126,8 +138,7 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 		entry.Attrs = attrs
 	}
 
-	h.buffer.Write(entry)
-	return nil
+	return entry
 }
 
 // WithAttrs returns a new RingHandler with the given attributes pre-stored.

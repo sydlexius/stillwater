@@ -118,12 +118,13 @@ const DefaultRingBufferSize = 2000
 
 // Manager owns the logger lifecycle and supports runtime reconfiguration.
 type Manager struct {
-	levelVar   *slog.LevelVar
-	handler    *SwappableHandler
-	config     Config
-	mu         sync.Mutex
-	closer     io.Closer // lumberjack writer, if any
-	ringBuffer *RingBuffer
+	levelVar    *slog.LevelVar
+	handler     *SwappableHandler
+	config      Config
+	mu          sync.Mutex
+	closer      io.Closer // lumberjack writer, if any
+	ringBuffer  *RingBuffer
+	broadcaster *LogBroadcaster
 }
 
 // NewManager creates a Manager and returns it along with a ready-to-use logger.
@@ -133,17 +134,22 @@ func NewManager(cfg Config) (*Manager, *slog.Logger) {
 	lvl.Set(parseLevel(cfg.Level))
 
 	rb := NewRingBuffer(DefaultRingBufferSize)
+	// The broadcaster captures at the same level as the primary/ring handlers
+	// and persists across Reconfigure so live log-stream subscribers stay
+	// connected when the format or output file changes.
+	lb := NewLogBroadcaster(lvl, true)
 
 	writer, closer := buildWriter(cfg)
-	inner := buildMultiHandler(writer, lvl, cfg.Format, rb)
+	inner := buildMultiHandler(writer, lvl, cfg.Format, rb, lb)
 	handler := NewSwappableHandler(inner)
 
 	m := &Manager{
-		levelVar:   lvl,
-		handler:    handler,
-		config:     cfg,
-		closer:     closer,
-		ringBuffer: rb,
+		levelVar:    lvl,
+		handler:     handler,
+		config:      cfg,
+		closer:      closer,
+		ringBuffer:  rb,
+		broadcaster: lb,
 	}
 
 	logger := slog.New(handler)
@@ -153,6 +159,12 @@ func NewManager(cfg Config) (*Manager, *slog.Logger) {
 // RingBuffer returns the in-memory ring buffer used by the log viewer.
 func (m *Manager) RingBuffer() *RingBuffer {
 	return m.ringBuffer
+}
+
+// LogBroadcaster returns the live log broadcaster used by the log stream
+// endpoint to fan slog records out to connected viewer clients.
+func (m *Manager) LogBroadcaster() *LogBroadcaster {
+	return m.broadcaster
 }
 
 // Reconfigure applies a new configuration at runtime. Level-only changes
@@ -172,7 +184,9 @@ func (m *Manager) Reconfigure(cfg Config) {
 
 	if needSwap {
 		writer, closer := buildWriter(cfg)
-		inner := buildMultiHandler(writer, m.levelVar, cfg.Format, m.ringBuffer)
+		// Reuse the existing ring buffer and broadcaster so the log viewer's
+		// history and any live stream subscribers survive the handler swap.
+		inner := buildMultiHandler(writer, m.levelVar, cfg.Format, m.ringBuffer, m.broadcaster)
 		m.handler.Swap(inner)
 
 		// Close old file writer after swapping to eliminate the race
@@ -342,14 +356,17 @@ func buildHandler(w io.Writer, leveler slog.Leveler, format string) slog.Handler
 }
 
 // buildMultiHandler creates a MultiHandler that fans out to the primary
-// text/JSON handler and a RingHandler for in-memory log capture.
-func buildMultiHandler(w io.Writer, leveler slog.Leveler, format string, rb *RingBuffer) slog.Handler {
+// text/JSON handler, a RingHandler for in-memory log capture, and a
+// LogBroadcaster for the live log stream. The ring buffer and broadcaster are
+// passed in (not constructed here) so they persist across handler swaps in
+// Reconfigure.
+func buildMultiHandler(w io.Writer, leveler slog.Leveler, format string, rb *RingBuffer, lb *LogBroadcaster) slog.Handler {
 	primary := buildHandler(w, leveler, format)
 	// The ring handler captures at the same level as the primary handler so
 	// that logger.Enabled() reflects the configured level accurately.
 	// addSource=true captures caller file:line for the log viewer.
 	ring := NewRingHandler(rb, leveler, true)
-	return NewMultiHandler(primary, ring)
+	return NewMultiHandler(primary, ring, lb)
 }
 
 // ValidLevel returns true if s is a recognized log level.

@@ -25,6 +25,27 @@ type LogFilter struct {
 	Limit     int       // max entries to return (default 100, max 500)
 }
 
+// Matches reports whether entry satisfies the filter. It is the single source
+// of truth for level/component/search/after matching, shared by the ring
+// buffer's Entries scan and the live LogBroadcaster fan-out so the backfill and
+// the live tail never diverge on what a filter selects. Limit is a pagination
+// concern, not a per-entry predicate, so it is not considered here.
+func (f LogFilter) Matches(entry LogEntry) bool {
+	if f.Level != "" && levelSeverity(entry.Level) < levelSeverity(f.Level) {
+		return false
+	}
+	if !f.After.IsZero() && !entry.Time.After(f.After) {
+		return false
+	}
+	if f.Component != "" && entry.Component != f.Component {
+		return false
+	}
+	if f.Search != "" && !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(f.Search)) {
+		return false
+	}
+	return true
+}
+
 // levelSeverity returns a numeric severity for ordering: trace=-1, debug=0, info=1, warn=2, error=3.
 func levelSeverity(level string) int {
 	switch strings.ToLower(level) {
@@ -90,44 +111,21 @@ func (rb *RingBuffer) Entries(filter LogFilter) []LogEntry {
 		limit = 500
 	}
 
-	minSeverity := 0
-	if filter.Level != "" {
-		minSeverity = levelSeverity(filter.Level)
-	}
-
-	searchLower := strings.ToLower(filter.Search)
-
 	// Use a fixed-size initial allocation to satisfy CodeQL's
 	// uncontrolled-allocation-size check. The slice grows dynamically
 	// as needed but the initial capacity is a compile-time constant.
 	const initialCap = 64
 	result := make([]LogEntry, 0, initialCap)
 
-	// Iterate backwards from newest entry.
+	// Iterate backwards from newest entry. Per-entry matching is delegated to
+	// filter.Matches so the ring buffer and the live broadcaster apply
+	// identical level/component/search/after semantics.
 	for i := 0; i < rb.count && len(result) < limit; i++ {
 		idx := (rb.head - 1 - i + rb.size) % rb.size
 		entry := rb.entries[idx]
-
-		// Level filter: skip entries below the minimum severity.
-		if levelSeverity(entry.Level) < minSeverity {
+		if !filter.Matches(entry) {
 			continue
 		}
-
-		// Time filter: skip entries at or before the After timestamp.
-		if !filter.After.IsZero() && !entry.Time.After(filter.After) {
-			continue
-		}
-
-		// Component filter: exact match.
-		if filter.Component != "" && entry.Component != filter.Component {
-			continue
-		}
-
-		// Search filter: case-insensitive substring match on message.
-		if searchLower != "" && !strings.Contains(strings.ToLower(entry.Message), searchLower) {
-			continue
-		}
-
 		result = append(result, entry)
 	}
 

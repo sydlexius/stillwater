@@ -1,14 +1,17 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/logging"
 )
 
@@ -226,6 +229,198 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 	}
 
 	w.Write([]byte(b.String())) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+}
+
+// logStreamBackfillLimit caps how many recent entries the stream replays from
+// the ring buffer on connect (the ring holds up to DefaultRingBufferSize=2000).
+const logStreamBackfillLimit = 500
+
+// handleLogsStream serves the live log stream as Server-Sent Events. On connect
+// it backfills recent ring-buffer entries (filtered, oldest-first, capped at
+// logStreamBackfillLimit) then live-tails new records via the log broadcaster.
+// Filters come from the query string: level (minimum severity), scope
+// (component, exact match), and q (case-insensitive message substring). The
+// browser EventSource's Last-Event-ID header (each frame's id is the entry's
+// RFC3339Nano timestamp) acts as a resume cursor so a reconnect only replays
+// entries newer than the last one seen.
+//
+// GET /api/v1/logs/stream
+func (r *Router) handleLogsStream(w http.ResponseWriter, req *http.Request) {
+	// SSE requires a flushable writer.
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming not supported"})
+		return
+	}
+
+	if r.logManager == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "logging manager not available"})
+		return
+	}
+	rb := r.logManager.RingBuffer()
+	lb := r.logManager.LogBroadcaster()
+	if rb == nil || lb == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "log streaming not available"})
+		return
+	}
+
+	// Parse and validate the filter before writing any stream headers so an
+	// invalid request still gets a clean JSON 400.
+	filter := logging.LogFilter{
+		Search:    req.URL.Query().Get("q"),
+		Component: req.URL.Query().Get("scope"),
+	}
+	if level := req.URL.Query().Get("level"); level != "" {
+		if !logging.ValidLevel(level) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid level: must be one of trace, debug, info, warn, error"})
+			return
+		}
+		filter.Level = level
+	}
+
+	// SSE headers.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
+
+	// Clear the write deadline so this long-lived stream is not killed by the
+	// server-level WriteTimeout.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		r.logger.Error("failed to clear write deadline for logs stream", "err", err)
+	}
+
+	// Subscribe BEFORE snapshotting the ring buffer so no record is lost in the
+	// gap between backfill and live-tail. Records that arrive during backfill
+	// queue on the subscription and are emitted after it; the newestTS cursor
+	// returned below suppresses any that the snapshot already covered.
+	sub := lb.Subscribe(filter)
+	defer sub.Close()
+
+	newestTS, ok := r.emitLogBackfill(w, flusher, req, rb, filter)
+	if !ok {
+		return // client disconnected during backfill
+	}
+	r.streamLogLines(w, flusher, req, sub, newestTS)
+}
+
+// emitLogBackfill writes the initial connection frame and replays recent
+// ring-buffer entries (filtered, oldest-first) as logs.line events. A
+// Last-Event-ID resume cursor narrows the replay to entries after the client's
+// last-seen time. It returns the newest emitted timestamp (used to suppress
+// duplicate live delivery) and false if a write failed (client disconnected).
+func (r *Router) emitLogBackfill(w http.ResponseWriter, flusher http.Flusher, req *http.Request, rb *logging.RingBuffer, filter logging.LogFilter) (time.Time, bool) {
+	backfill := filter
+	backfill.Limit = logStreamBackfillLimit
+	if cursor := lastEventIDFromRequest(req); cursor != "" {
+		if t, err := time.Parse(time.RFC3339Nano, cursor); err == nil {
+			backfill.After = t
+		} else {
+			// A malformed cursor must not silently replay the full window: log a
+			// warning and degrade visibly. Streaming continues with the full
+			// backfill, which is acceptable (the client simply re-sees recent
+			// entries) but should never happen without a signal.
+			r.logger.Warn("logs stream: unparsable Last-Event-ID cursor, replaying full backfill window", "cursor", cursor, "error", err)
+		}
+	}
+	entries := rb.Entries(backfill)
+
+	// Initial connection frame (no id, so it does not advance Last-Event-ID).
+	if err := writeLogSSE(w, "", "connected", map[string]any{"replayed": len(entries)}, r.logger); err != nil {
+		return time.Time{}, false
+	}
+	// Emit backfill oldest-first so the newest entry lands at the bottom, the
+	// natural scroll direction for a log tail.
+	var newestTS time.Time
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if err := writeLogSSE(w, e.Time.Format(time.RFC3339Nano), string(event.LogsLine), e, r.logger); err != nil {
+			return time.Time{}, false
+		}
+		if e.Time.After(newestTS) {
+			newestTS = e.Time
+		}
+	}
+	flusher.Flush()
+	return newestTS, true
+}
+
+// streamLogLines live-tails the subscription, writing each new entry as a
+// logs.line event (suppressing any already covered by the backfill window),
+// reporting buffer overflow as logs.throttled, and sending a heartbeat comment
+// every 30 seconds. It returns when the client disconnects, a write fails, or
+// the broadcaster closes the subscription.
+func (r *Router) streamLogLines(w http.ResponseWriter, flusher http.Flusher, req *http.Request, sub *logging.Subscription, newestTS time.Time) {
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-req.Context().Done():
+			return
+		case <-sub.Throttle():
+			// The subscriber buffer overflowed; report how many lines were shed
+			// so the client can show a throttle banner.
+			dropped := sub.DrainDropped()
+			if dropped > 0 {
+				if err := writeLogSSE(w, "", string(event.LogsThrottled),
+					map[string]any{"dropped": dropped, "window": "live-buffer"}, r.logger); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+		case e, ok := <-sub.Lines():
+			if !ok {
+				return // broadcaster closed the subscription
+			}
+			// Suppress entries already delivered in the backfill window. Because
+			// the cursor is the entry timestamp, two distinct records sharing an
+			// identical timestamp (one in backfill, one live) can suppress the
+			// live one; clock resolution makes this rare and it is the inherent
+			// cost of using the timestamp as the resume cursor.
+			if !newestTS.IsZero() && !e.Time.After(newestTS) {
+				continue
+			}
+			if err := writeLogSSE(w, e.Time.Format(time.RFC3339Nano), string(event.LogsLine), e, r.logger); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-heartbeat.C:
+			if _, err := w.Write([]byte(": heartbeat\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// writeLogSSE writes a single SSE frame for the log stream: an optional id line
+// (omitted when id is empty so transport-only frames do not advance the
+// client's Last-Event-ID), the event name, and a JSON data payload. A write
+// error typically means the client disconnected; the caller returns on error.
+func writeLogSSE(w http.ResponseWriter, id, eventType string, payload any, logger *slog.Logger) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		logger.Warn("logs sse marshal failed", "type", eventType, "error", err)
+		return err
+	}
+	if id != "" {
+		if _, err := w.Write([]byte("id: " + id + "\n")); err != nil {
+			return err
+		}
+	}
+	if _, err := w.Write([]byte("event: " + eventType + "\n")); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte("data: ")); err != nil {
+		return err
+	}
+	if _, err := w.Write(data); err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("\n\n"))
+	return err
 }
 
 // levelBadgeClass returns Tailwind classes for the log level badge.

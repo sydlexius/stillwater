@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -469,6 +471,35 @@ func TestHandleGetLogs_NegativeLimit(t *testing.T) {
 	}
 }
 
+func TestHandleLogsStream_NilManager(t *testing.T) {
+	t.Parallel()
+	r := &Router{
+		logManager: nil,
+		logger:     slog.Default(),
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil)
+	r.handleLogsStream(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestHandleLogsStream_InvalidLevel(t *testing.T) {
+	t.Parallel()
+	r, _ := newTestRouterWithLogs(t)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream?level=verbose", nil)
+	r.handleLogsStream(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
 func TestLevelBadgeClass(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -486,5 +517,585 @@ func TestLevelBadgeClass(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("levelBadgeClass(%q) = %q, want %q", tt.level, got, tt.want)
 		}
+	}
+}
+
+// --- SSE stream handler tests ---
+
+// newTestRouterWithLogsAndLogger extends newTestRouterWithLogs to also return
+// the slog.Logger wired to the broadcaster, so tests can publish live records.
+func newTestRouterWithLogsAndLogger(t *testing.T) (*Router, *logging.RingBuffer, *slog.Logger) {
+	t.Helper()
+	mgr, logger := logging.NewManager(logging.Config{Level: "debug", Format: "json"})
+	t.Cleanup(func() { mgr.Close() })
+	rb := mgr.RingBuffer()
+	r := &Router{logManager: mgr, logger: slog.Default()}
+	return r, rb, logger
+}
+
+// collectSSEFrames reads up to n blank-line-terminated SSE frames from scanner.
+// Each returned string contains all non-blank lines of one frame joined by "\n".
+// It stops after n frames or when the scanner closes (e.g., context canceled).
+func collectSSEFrames(scanner *bufio.Scanner, n int) []string {
+	var frames []string
+	var cur []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if len(cur) > 0 {
+				frames = append(frames, strings.Join(cur, "\n"))
+				cur = nil
+				if len(frames) >= n {
+					break
+				}
+			}
+		} else {
+			cur = append(cur, line)
+		}
+	}
+	if len(cur) > 0 {
+		frames = append(frames, strings.Join(cur, "\n"))
+	}
+	return frames
+}
+
+// TestHandleLogsStream_ConnectedAndBackfill verifies the stream sends a
+// "connected" event reporting the replayed count, followed by ring-buffer
+// entries replayed oldest-first as logs.line events.
+func TestHandleLogsStream_ConnectedAndBackfill(t *testing.T) {
+	t.Parallel()
+	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+
+	base := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	rb.Write(logging.LogEntry{Time: base, Level: "info", Message: "alpha"})
+	rb.Write(logging.LogEntry{Time: base.Add(time.Second), Level: "warn", Message: "beta"})
+	rb.Write(logging.LogEntry{Time: base.Add(2 * time.Second), Level: "error", Message: "gamma"})
+
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("want text/event-stream, got %q", ct)
+	}
+
+	// connected frame + 3 backfill frames
+	scanner := bufio.NewScanner(resp.Body)
+	frames := collectSSEFrames(scanner, 4)
+	cancel()
+
+	if len(frames) < 4 {
+		t.Fatalf("want 4 SSE frames (connected + 3 backfill), got %d: %v", len(frames), frames)
+	}
+
+	if !strings.Contains(frames[0], "event: connected") {
+		t.Errorf("frame[0] should be connected event, got: %q", frames[0])
+	}
+	if !strings.Contains(frames[0], `"replayed":3`) {
+		t.Errorf("connected frame should report replayed:3, got: %q", frames[0])
+	}
+
+	// emitLogBackfill reverses entries so oldest lands first in the stream.
+	for i, want := range []string{"alpha", "beta", "gamma"} {
+		if !strings.Contains(frames[i+1], "event: logs.line") {
+			t.Errorf("frame[%d] should be logs.line event, got: %q", i+1, frames[i+1])
+		}
+		if !strings.Contains(frames[i+1], want) {
+			t.Errorf("frame[%d] should contain %q, got: %q", i+1, want, frames[i+1])
+		}
+	}
+
+	// id lines should be present (RFC3339Nano timestamps).
+	if !strings.Contains(frames[1], "id: ") {
+		t.Errorf("backfill frame should have id line, got: %q", frames[1])
+	}
+}
+
+// TestHandleLogsStream_LiveRecord verifies a record published to the log
+// broadcaster after connect is delivered as a logs.line SSE event.
+func TestHandleLogsStream_LiveRecord(t *testing.T) {
+	t.Parallel()
+	r, _, logger := newTestRouterWithLogsAndLogger(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+
+	// Read and discard the connected frame (replayed: 0 since ring is empty).
+	connFrames := collectSSEFrames(scanner, 1)
+	if len(connFrames) == 0 || !strings.Contains(connFrames[0], "event: connected") {
+		t.Fatalf("expected connected frame first, got: %v", connFrames)
+	}
+
+	// Publish a live record through the broadcaster.
+	logger.Info("live-record-marker", slog.String("src", "test"))
+
+	// Read the live frame.
+	liveFrames := collectSSEFrames(scanner, 1)
+	cancel()
+
+	if len(liveFrames) == 0 {
+		t.Fatal("expected a live logs.line frame but got none")
+	}
+	if !strings.Contains(liveFrames[0], "event: logs.line") {
+		t.Errorf("live frame should be logs.line, got: %q", liveFrames[0])
+	}
+	if !strings.Contains(liveFrames[0], "live-record-marker") {
+		t.Errorf("live frame should contain the log message, got: %q", liveFrames[0])
+	}
+}
+
+// TestHandleLogsStream_LastEventIDCursor verifies that a reconnect with a
+// valid RFC3339Nano Last-Event-ID cursor replays only entries after the cursor.
+func TestHandleLogsStream_LastEventIDCursor(t *testing.T) {
+	t.Parallel()
+	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+
+	base := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+	rb.Write(logging.LogEntry{Time: base, Level: "info", Message: "old-entry"})
+	rb.Write(logging.LogEntry{Time: base.Add(10 * time.Second), Level: "info", Message: "new-entry"})
+
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
+
+	// Cursor is set to 5s after base, so only "new-entry" should be replayed.
+	cursor := base.Add(5 * time.Second).Format(time.RFC3339Nano)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Last-Event-ID", cursor)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	// connected + 1 backfill (only "new-entry")
+	frames := collectSSEFrames(scanner, 2)
+	cancel()
+
+	if len(frames) < 2 {
+		t.Fatalf("want 2 frames (connected + 1 backfill), got %d: %v", len(frames), frames)
+	}
+	if !strings.Contains(frames[0], `"replayed":1`) {
+		t.Errorf("connected frame should report replayed:1, got: %q", frames[0])
+	}
+	if strings.Contains(frames[1], "old-entry") {
+		t.Errorf("frame[1] should not contain old-entry (before cursor), got: %q", frames[1])
+	}
+	if !strings.Contains(frames[1], "new-entry") {
+		t.Errorf("frame[1] should contain new-entry (after cursor), got: %q", frames[1])
+	}
+}
+
+// TestHandleLogsStream_MalformedCursor verifies that an unparsable
+// Last-Event-ID causes the handler to log a warning and fall back to a full
+// backfill rather than silently dropping entries.
+func TestHandleLogsStream_MalformedCursor(t *testing.T) {
+	t.Parallel()
+	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+
+	base := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+	rb.Write(logging.LogEntry{Time: base, Level: "info", Message: "entry-one"})
+	rb.Write(logging.LogEntry{Time: base.Add(time.Second), Level: "info", Message: "entry-two"})
+
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Last-Event-ID", "not-a-valid-timestamp")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	// Expect full backfill (both entries) despite malformed cursor.
+	frames := collectSSEFrames(scanner, 3) // connected + 2 entries
+	cancel()
+
+	if len(frames) < 3 {
+		t.Fatalf("want 3 frames (connected + 2 full backfill), got %d: %v", len(frames), frames)
+	}
+	if !strings.Contains(frames[0], `"replayed":2`) {
+		t.Errorf("connected frame should report replayed:2 (full replay), got: %q", frames[0])
+	}
+}
+
+// TestHandleLogsStream_LevelFilter verifies the level query param filters both
+// backfill and live log entries so only entries at or above the requested level
+// appear in the stream.
+func TestHandleLogsStream_LevelFilter(t *testing.T) {
+	t.Parallel()
+	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+
+	base := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+	rb.Write(logging.LogEntry{Time: base, Level: "debug", Message: "debug-msg"})
+	rb.Write(logging.LogEntry{Time: base.Add(time.Second), Level: "info", Message: "info-msg"})
+	rb.Write(logging.LogEntry{Time: base.Add(2 * time.Second), Level: "error", Message: "error-msg"})
+
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"?level=error", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	frames := collectSSEFrames(scanner, 2) // connected + 1 error entry
+	cancel()
+
+	if len(frames) < 2 {
+		t.Fatalf("want 2 frames (connected + 1 error), got %d", len(frames))
+	}
+	if !strings.Contains(frames[0], `"replayed":1`) {
+		t.Errorf("connected frame should report replayed:1, got: %q", frames[0])
+	}
+	if strings.Contains(frames[1], "debug-msg") || strings.Contains(frames[1], "info-msg") {
+		t.Errorf("filtered frame should not contain debug or info messages, got: %q", frames[1])
+	}
+	if !strings.Contains(frames[1], "error-msg") {
+		t.Errorf("filtered frame should contain error-msg, got: %q", frames[1])
+	}
+}
+
+// TestHandleLogsStream_ScopeFilter verifies the scope query param filters
+// backfill entries to only those with a matching component.
+func TestHandleLogsStream_ScopeFilter(t *testing.T) {
+	t.Parallel()
+	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+
+	base := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+	rb.Write(logging.LogEntry{Time: base, Level: "info", Message: "scanner-work", Component: "scanner"})
+	rb.Write(logging.LogEntry{Time: base.Add(time.Second), Level: "info", Message: "backup-work", Component: "backup"})
+
+	ts := httptest.NewServer(http.HandlerFunc(r.handleLogsStream))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"?scope=scanner", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	frames := collectSSEFrames(scanner, 2) // connected + 1 scanner entry
+	cancel()
+
+	if len(frames) < 2 {
+		t.Fatalf("want 2 frames (connected + 1 scope match), got %d", len(frames))
+	}
+	if !strings.Contains(frames[0], `"replayed":1`) {
+		t.Errorf("connected frame should report replayed:1 (scope filtered), got: %q", frames[0])
+	}
+	if strings.Contains(frames[1], "backup-work") {
+		t.Errorf("frame[1] should not contain backup-work, got: %q", frames[1])
+	}
+	if !strings.Contains(frames[1], "scanner-work") {
+		t.Errorf("frame[1] should contain scanner-work, got: %q", frames[1])
+	}
+}
+
+// TestStreamLogLines_Throttle verifies that when the subscriber buffer overflows
+// (more records published than the channel can hold), streamLogLines emits a
+// logs.throttled SSE frame with a non-zero dropped count.
+func TestStreamLogLines_Throttle(t *testing.T) {
+	t.Parallel()
+	r, _, logger := newTestRouterWithLogsAndLogger(t)
+
+	lb := r.logManager.LogBroadcaster()
+	sub := lb.Subscribe(logging.LogFilter{})
+	defer sub.Close()
+
+	// Publish enough records to overflow the subscriber's default 256-entry buffer.
+	// The broadcaster fans out non-blocking: once s.lines is full, dropped++ and
+	// the throttle signal fires. Publishing 300 guarantees overflow.
+	for i := 0; i < 300; i++ {
+		logger.Info("flood", slog.Int("i", i))
+	}
+
+	// Give the broadcaster goroutines time to fan out all records before reading.
+	// (Publishes happen synchronously in Handle(), so no sleep needed here, but
+	// runtime scheduling may delay the channel sends slightly.)
+	// The subscription now has >=256 entries in Lines and 1 signal in Throttle.
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// newestTS=zero so no backfill suppression; call streamLogLines directly.
+		r.streamLogLines(w, w, req, sub, time.Time{})
+	}()
+
+	// Give the handler time to drain Lines and process the Throttle signal.
+	// With 256+ entries in a bytes.Buffer (no IO), this should be near-instant.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: logs.throttled") {
+		t.Errorf("expected logs.throttled SSE event in stream output, got:\n%s", body)
+	}
+	if !strings.Contains(body, `"dropped"`) {
+		t.Errorf("throttled event should include dropped count, got:\n%s", body)
+	}
+}
+
+// TestStreamLogLines_LivePath verifies that a record published via a
+// Subscription is forwarded as a logs.line SSE event by streamLogLines.
+func TestStreamLogLines_LivePath(t *testing.T) {
+	t.Parallel()
+	r, _, logger := newTestRouterWithLogsAndLogger(t)
+
+	lb := r.logManager.LogBroadcaster()
+	sub := lb.Subscribe(logging.LogFilter{})
+	defer sub.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.streamLogLines(w, w, req, sub, time.Time{})
+	}()
+
+	// Publish one record after streamLogLines has started.
+	time.Sleep(10 * time.Millisecond) // tiny gap so the goroutine enters select
+	logger.Info("stream-live-test-marker")
+
+	time.Sleep(50 * time.Millisecond) // let the handler write the SSE frame
+	cancel()
+	<-done
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: logs.line") {
+		t.Errorf("expected logs.line event, got:\n%s", body)
+	}
+	if !strings.Contains(body, "stream-live-test-marker") {
+		t.Errorf("expected log message in SSE output, got:\n%s", body)
+	}
+}
+
+// TestEmitLogBackfill_EmptyRing verifies the handler sends a connected frame
+// with replayed:0 when the ring buffer contains no matching entries.
+func TestEmitLogBackfill_EmptyRing(t *testing.T) {
+	t.Parallel()
+	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil)
+	filter := logging.LogFilter{}
+
+	ts, ok := r.emitLogBackfill(w, w, req, rb, filter)
+	if !ok {
+		t.Fatal("emitLogBackfill returned false (client disconnect) unexpectedly")
+	}
+	if !ts.IsZero() {
+		t.Errorf("newestTS should be zero for empty ring, got %v", ts)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: connected") {
+		t.Errorf("expected connected event, got: %q", body)
+	}
+	if !strings.Contains(body, `"replayed":0`) {
+		t.Errorf("expected replayed:0, got: %q", body)
+	}
+}
+
+// TestEmitLogBackfill_WithEntries verifies backfill replay and newestTS return.
+func TestEmitLogBackfill_WithEntries(t *testing.T) {
+	t.Parallel()
+	r, rb, _ := newTestRouterWithLogsAndLogger(t)
+
+	base := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	rb.Write(logging.LogEntry{Time: base, Level: "info", Message: "first"})
+	rb.Write(logging.LogEntry{Time: base.Add(time.Second), Level: "info", Message: "second"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil)
+	filter := logging.LogFilter{}
+
+	ts, ok := r.emitLogBackfill(w, w, req, rb, filter)
+	if !ok {
+		t.Fatal("emitLogBackfill returned false unexpectedly")
+	}
+	if ts.IsZero() {
+		t.Error("newestTS should be non-zero after backfill")
+	}
+	// newestTS should be the second entry (later timestamp).
+	wantTS := base.Add(time.Second)
+	if !ts.Equal(wantTS) {
+		t.Errorf("newestTS = %v, want %v", ts, wantTS)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"replayed":2`) {
+		t.Errorf("expected replayed:2, got: %q", body)
+	}
+	if !strings.Contains(body, "first") || !strings.Contains(body, "second") {
+		t.Errorf("expected both entries in backfill output, got: %q", body)
+	}
+}
+
+// TestWriteLogSSE_Basic verifies the SSE frame format: id line, event line,
+// data line (valid JSON), and terminating blank line.
+func TestWriteLogSSE_Basic(t *testing.T) {
+	t.Parallel()
+	w := httptest.NewRecorder()
+	payload := map[string]any{"msg": "hello", "level": "info"}
+
+	err := writeLogSSE(w, "2025-01-01T12:00:00Z", "logs.line", payload, slog.Default())
+	if err != nil {
+		t.Fatalf("writeLogSSE returned error: %v", err)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "id: 2025-01-01T12:00:00Z\n") {
+		t.Errorf("missing id line, got: %q", body)
+	}
+	if !strings.Contains(body, "event: logs.line\n") {
+		t.Errorf("missing event line, got: %q", body)
+	}
+	if !strings.Contains(body, "data: ") {
+		t.Errorf("missing data line, got: %q", body)
+	}
+	if !strings.HasSuffix(body, "\n\n") {
+		t.Errorf("SSE frame should end with double newline, got: %q", body)
+	}
+
+	// Extract and validate data JSON.
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "data: ") {
+			raw := strings.TrimPrefix(line, "data: ")
+			var got map[string]any
+			if err := json.Unmarshal([]byte(raw), &got); err != nil {
+				t.Errorf("data line is not valid JSON: %v", err)
+			}
+			if got["msg"] != "hello" {
+				t.Errorf("data.msg = %v, want hello", got["msg"])
+			}
+		}
+	}
+}
+
+// TestWriteLogSSE_NoID verifies that when id is empty the id line is omitted
+// (so transport-only frames do not advance the client's Last-Event-ID).
+func TestWriteLogSSE_NoID(t *testing.T) {
+	t.Parallel()
+	w := httptest.NewRecorder()
+
+	err := writeLogSSE(w, "", "connected", map[string]any{"replayed": 0}, slog.Default())
+	if err != nil {
+		t.Fatalf("writeLogSSE returned error: %v", err)
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, "id: ") {
+		t.Errorf("frame with empty id should not contain id line, got: %q", body)
+	}
+	if !strings.Contains(body, "event: connected\n") {
+		t.Errorf("expected event line, got: %q", body)
+	}
+}
+
+// TestHandleLogsStream_RecorderFlusher verifies that the stream handler starts
+// correctly when given an httptest.ResponseRecorder (which implements
+// http.Flusher), setting SSE headers and emitting the connected frame.
+func TestHandleLogsStream_RecorderFlusher(t *testing.T) {
+	t.Parallel()
+	r, _, _ := newTestRouterWithLogsAndLogger(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/stream", nil).WithContext(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.handleLogsStream(w, req)
+	}()
+	<-done
+
+	if w.Code != http.StatusOK {
+		t.Errorf("want 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("want text/event-stream, got %q", ct)
+	}
+	if !strings.Contains(w.Body.String(), "event: connected") {
+		t.Errorf("expected connected frame in body, got: %q", w.Body.String())
 	}
 }

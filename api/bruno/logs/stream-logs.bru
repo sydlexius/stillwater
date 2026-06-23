@@ -1,0 +1,27 @@
+meta {
+  name: Stream Logs (SSE auth gate)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/logs/stream
+  body: none
+  auth: none
+}
+
+docs {
+  GET /api/v1/logs/stream is a long-lived Server-Sent Events endpoint, so a
+  Bruno request cannot assert a 200 body without blocking on the open stream
+  (the same reason GET /api/v1/events/stream is not exercised live). This smoke
+  deliberately sends NO session cookie so it returns immediately, asserting the
+  endpoint exists and is admin-gated (wrapAuth -> 401 when unauthenticated). The
+  streaming, backfill, filter, and throttle behavior is covered by the Go unit
+  and race tests in internal/logging and internal/api.
+}
+
+tests {
+  test("unauthenticated request is rejected (admin-gated)", function() {
+    expect(res.status).to.equal(401);
+  });
+}
