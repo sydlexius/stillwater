@@ -430,7 +430,8 @@ func TestSyncImageToPlatforms_PerConnectionBranches(t *testing.T) {
 		"c-off": {ID: "c-off", Type: connection.TypeEmby, URL: srv.URL, Enabled: false, Status: "ok"},
 		// Non-"ok" status (skipped silently).
 		"c-bad": {ID: "c-bad", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "error"},
-		// Lidarr: GetFeatureImageWrite()=false -> silently skipped before uploader lookup.
+		// Lidarr: user-initiated sync does not gate on FeatureImageWrite, so Lidarr
+		// proceeds to newImageUploader which returns nil -> "unsupported connection type" warning.
 		"c-lid": {ID: "c-lid", Type: connection.TypeLidarr, URL: srv.URL, Enabled: true, Status: "ok"},
 		// Happy path (counts as 1 upload).
 		"c-ok": {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
@@ -443,20 +444,26 @@ func TestSyncImageToPlatforms_PerConnectionBranches(t *testing.T) {
 	})
 	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"}, "thumb")
 
-	// c-lid (Lidarr) is now silently filtered by !GetFeatureImageWrite() before
-	// reaching newImageUploader, so "unsupported connection type" is no longer
-	// emitted. Only c-missing produces a warning (lookup failure).
-	if len(warnings) != 1 {
-		t.Errorf("expected 1 warning (lookup-error only); got %d: %v", len(warnings), warnings)
+	// Two warnings expected: c-missing (lookup failure) + c-lid (unsupported type).
+	// FeatureImageWrite is not consulted for user-initiated pushes; the gate is
+	// reconciler-only, so Lidarr reaches the uploader-nil branch.
+	if len(warnings) != 2 {
+		t.Errorf("expected 2 warnings (lookup-error + unsupported-type); got %d: %v", len(warnings), warnings)
 	}
-	hasLookup := false
+	hasLookup, hasUnsupported := false, false
 	for _, w := range warnings {
 		if strings.Contains(w, "failed to load") {
 			hasLookup = true
 		}
+		if strings.Contains(w, "unsupported connection type") {
+			hasUnsupported = true
+		}
 	}
 	if !hasLookup {
 		t.Errorf("expected lookup-error warning; got %v", warnings)
+	}
+	if !hasUnsupported {
+		t.Errorf("expected unsupported-type warning for Lidarr; got %v", warnings)
 	}
 
 	// Exactly one upload arrived (c-ok).

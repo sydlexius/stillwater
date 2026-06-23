@@ -483,9 +483,10 @@ func TestSetImageWriteGate_Wires(t *testing.T) {
 	nilP.SetImageWriteGate(allowGate{}) // must not panic
 }
 
-// TestSyncImageToPlatforms_FeatureImageWriteOffSkips verifies that a connection
-// with FeatureImageWrite=false receives no upload while a write-enabled one does.
-func TestSyncImageToPlatforms_FeatureImageWriteOffSkips(t *testing.T) {
+// TestSyncImageToPlatforms_IgnoresFeatureImageWrite verifies that user-initiated
+// image sync pushes to ALL enabled connections regardless of FeatureImageWrite.
+// The FeatureImageWrite gate applies only to the background reconciler path.
+func TestSyncImageToPlatforms_IgnoresFeatureImageWrite(t *testing.T) {
 	dir := t.TempDir()
 	seedJPG(t, dir, "folder.jpg")
 
@@ -508,12 +509,12 @@ func TestSyncImageToPlatforms_FeatureImageWriteOffSkips(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings; got %v", warnings)
 	}
-	waitForUploads(t, hits, 1) // only c-on uploaded
+	waitForUploads(t, hits, 2) // both connections receive the user-initiated push
 }
 
-// TestSyncAllFanartToPlatforms_FeatureImageWriteOffSkips mirrors the above for
-// the fanart upload path.
-func TestSyncAllFanartToPlatforms_FeatureImageWriteOffSkips(t *testing.T) {
+// TestSyncAllFanartToPlatforms_IgnoresFeatureImageWrite mirrors the above for
+// the fanart upload path: user-initiated sync pushes to all enabled connections.
+func TestSyncAllFanartToPlatforms_IgnoresFeatureImageWrite(t *testing.T) {
 	dir := t.TempDir()
 	seedJPG(t, dir, "fanart.jpg")
 
@@ -536,5 +537,5 @@ func TestSyncAllFanartToPlatforms_FeatureImageWriteOffSkips(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings; got %v", warnings)
 	}
-	waitForUploads(t, hits, 1) // only c-on uploaded
+	waitForUploads(t, hits, 2) // both connections receive the user-initiated push
 }

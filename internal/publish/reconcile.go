@@ -139,7 +139,7 @@ func (p *Publisher) accumulateNeeds(
 // flagged as needed by detectMissingArtwork.
 func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, needs artworkNeeds) {
 	if needs.fanart {
-		if warnings := p.SyncAllFanartToPlatforms(ctx, a); len(warnings) > 0 {
+		if warnings := p.syncAllFanartToPlatforms(ctx, a, true); len(warnings) > 0 {
 			p.logger.Warn("artwork reconciler: fanart sync warnings",
 				slog.String("artist_id", a.ID),
 				slog.Any("warnings", warnings))
@@ -158,7 +158,7 @@ func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, ne
 		if !needed {
 			continue
 		}
-		if warnings := p.SyncImageToPlatforms(ctx, a, imageType); len(warnings) > 0 {
+		if warnings := p.syncImageToPlatforms(ctx, a, imageType, true); len(warnings) > 0 {
 			p.logger.Warn("artwork reconciler: image sync warnings",
 				slog.String("artist_id", a.ID),
 				slog.String("image_type", imageType),

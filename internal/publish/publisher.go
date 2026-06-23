@@ -522,6 +522,14 @@ func LockSyncClientFactory() connection.LockSyncClientFactory {
 // returned as warning strings so the caller can surface them to the client.
 // The local operation already succeeded, so failures here are non-fatal.
 func (p *Publisher) SyncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string) []string {
+	return p.syncImageToPlatforms(ctx, a, imageType, false)
+}
+
+// syncImageToPlatforms is the internal implementation of SyncImageToPlatforms.
+// When respectWriteGate is true, connections without FeatureImageWrite are skipped;
+// this is used by the background reconciler only. User-initiated callers pass false
+// so all enabled connections receive the push regardless of the per-connection toggle.
+func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string, respectWriteGate bool) []string {
 	if p == nil {
 		return nil
 	}
@@ -570,7 +578,7 @@ func (p *Publisher) SyncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 			p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
 			continue
 		}
-		if !conn.Enabled || conn.Status != "ok" || !conn.GetFeatureImageWrite() {
+		if !conn.Enabled || conn.Status != "ok" || (respectWriteGate && !conn.GetFeatureImageWrite()) {
 			p.logger.Debug("skipping connection for image sync", "connection", conn.Name, "type", imageType, "status", conn.Status)
 			continue
 		}
@@ -596,6 +604,13 @@ func (p *Publisher) SyncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 // syncs the primary image, this discovers all fanart files and uploads each one
 // at the correct backdrop index. Errors are logged and returned as warnings.
 func (p *Publisher) SyncAllFanartToPlatforms(ctx context.Context, a *artist.Artist) []string {
+	return p.syncAllFanartToPlatforms(ctx, a, false)
+}
+
+// syncAllFanartToPlatforms is the internal implementation of SyncAllFanartToPlatforms.
+// When respectWriteGate is true, connections without FeatureImageWrite are skipped;
+// this is used by the background reconciler only.
+func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Artist, respectWriteGate bool) []string {
 	if p == nil {
 		return nil
 	}
@@ -644,7 +659,7 @@ func (p *Publisher) SyncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
 			continue
 		}
-		if !conn.Enabled || conn.Status != "ok" || !conn.GetFeatureImageWrite() {
+		if !conn.Enabled || conn.Status != "ok" || (respectWriteGate && !conn.GetFeatureImageWrite()) {
 			p.logger.Debug("skipping connection for fanart sync",
 				slog.String("connection", conn.Name),
 				slog.String("status", conn.Status))
