@@ -910,6 +910,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// for unauthenticated visitors instead of returning 401 JSON.
 	mux.HandleFunc("GET "+bp+"/next/reports", wrapOptionalAuth(r.handleNextReportsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/reports/{name}", wrapOptionalAuth(r.handleNextReportPage, optAuthMw))
+	// M55 #1772: next/ global activity feed. More specific than the
+	// /next/{path...} fallback so Go's mux prefers it; renders the next template
+	// only when the resolved channel is "next" (otherwise it 404s via
+	// checkNextChannel). It reuses the stable /activity/content endpoint for the
+	// HTMX content fragment, so no /next/activity/content route is registered.
+	mux.HandleFunc("GET "+bp+"/next/activity", wrapOptionalAuth(r.handleNextActivityPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

@@ -3265,7 +3265,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .sw-next-dashboard,
 .sw-next-artist-detail,
 .sw-next-foreign-files,
-.sw-next-artists {
+.sw-next-artists,
+.sw-next-activity {
   /* Light-theme token ramp (default). Shared by the dashboard, the next/
    * artist-detail screen (M55 #1336), the next/ foreign-files screen
    * (M55 #1773), and the next/ artists screen (M55 #1890) so they all consume
@@ -3314,7 +3315,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .dark .sw-next-dashboard,
 .dark .sw-next-artist-detail,
 .dark .sw-next-foreign-files,
-.dark .sw-next-artists {
+.dark .sw-next-artists,
+.dark .sw-next-activity {
   /* Prototype dark token ramp (design/tokens.css verbatim). .sw-next-artists
    * added for #1890 so its glass buttons resolve --swd-line / --swd-ink-2 in
    * dark mode too (see the light-theme block above). */
