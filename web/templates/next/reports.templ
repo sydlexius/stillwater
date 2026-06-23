@@ -12,8 +12,9 @@ import (
 
 // ReportsPageData is the view model for the next/ reports two-pane workspace
 // (M55 #1337). ActiveReport identifies which built-in report is selected (e.g.
-// "compliance"). ComplianceData is populated when ActiveReport=="compliance";
-// other reports show a placeholder pane.
+// "compliance"). The matching data field is populated for each live report
+// ("compliance", "health", "metadata-completeness", "rule-pass-rates");
+// unrecognized or deferred report names render a placeholder pane.
 type ReportsPageData struct {
 	ActiveReport   string
 	ComplianceData templates.ComplianceData
@@ -33,8 +34,8 @@ type nextBuiltinReport struct {
 }
 
 // nextBuiltinReports is the ordered list of built-in reports shown in the rail.
-// IDs match the {name} path segment in /next/reports/{name}. Only "compliance"
-// has a backing handler; the rest show a placeholder pane (coming soon).
+// IDs match the {name} path segment in /next/reports/{name}. The first four
+// entries have live right-panes; the remaining six render a placeholder.
 var nextBuiltinReports = []nextBuiltinReport{
 	{"compliance", "reports.compliance.label", "reports.compliance.desc"},
 	{"health", "reports.health_report.label", "reports.health_report.desc"},
@@ -219,13 +220,13 @@ templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceDa
 				}
 			</button>
 			@components.ColumnToggle("compliance", "compliance-tbl", t(ctx, "common.columns"), false, []components.ColumnDef{
-				{Key: "artist", Label: "Artist", Required: true},
-				{Key: "score", Label: "Score"},
-				{Key: "metadata", Label: "Metadata"},
+				{Key: "artist", Label: t(ctx, "reports.column_artist"), Required: true},
+				{Key: "score", Label: t(ctx, "reports.column_score")},
+				{Key: "metadata", Label: t(ctx, "reports.column_metadata")},
 				{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
 				{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
 				{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
-				{Key: "mbid", Label: "MBID"},
+				{Key: "mbid", Label: t(ctx, "reports.column_mbid")},
 			})
 			<a
 				id="compliance-export-link"
@@ -242,7 +243,7 @@ templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceDa
 		</div>
 	</div>
 	<!-- Results | Matrix tab bar -->
-	<div class="sw-rep-tabbar" role="tablist" aria-label="Report view" id="sw-rep-tabbar">
+	<div class="sw-rep-tabbar" role="tablist" aria-label={ t(ctx, "reports.tab_view_label") } id="sw-rep-tabbar">
 		<button
 			role="tab"
 			aria-selected="true"
@@ -495,7 +496,11 @@ templ repComplianceScript() {
 			// Keep only canonical compliance filter params.
 			var keep = ['search', 'status', 'filter', 'library_id', 'sort', 'order', 'health_min', 'health_max'];
 			var out = new URLSearchParams();
-			keep.forEach(function(k) { if (params.has(k)) out.set(k, params.get(k)); });
+			keep.forEach(function(k) {
+				var field = document.querySelector('[name="' + k + '"]');
+				var value = field ? field.value : params.get(k);
+				if (value !== null && value !== '') out.set(k, value);
+			});
 			var qs = out.toString();
 			link.href = qs ? base + '?' + qs : base;
 		}
