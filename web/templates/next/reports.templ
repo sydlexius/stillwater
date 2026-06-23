@@ -404,7 +404,7 @@ templ repComplianceScript() {
 	<script>
 		// Tab switching: toggle aria-selected + hidden on the tab panels.
 		function swRepTabSwitch(name) {
-			document.querySelectorAll('[role="tab"]', document.getElementById('sw-rep-tabbar')).forEach(function(btn) {
+			document.getElementById('sw-rep-tabbar').querySelectorAll('[role="tab"]').forEach(function(btn) {
 				btn.setAttribute('aria-selected', btn.id === 'sw-rep-tab-btn-' + name ? 'true' : 'false');
 				btn.classList.toggle('is-active', btn.id === 'sw-rep-tab-btn-' + name);
 			});
