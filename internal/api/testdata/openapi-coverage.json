@@ -1603,6 +1603,13 @@
     "covered": true
   },
   {
+    "operationId": "streamLogs",
+    "method": "GET",
+    "path": "/logs/stream",
+    "handler": "handleLogsStream",
+    "covered": true
+  },
+  {
     "operationId": "testConnection",
     "method": "POST",
     "path": "/connections/{id}/test",
