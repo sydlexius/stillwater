@@ -41,6 +41,18 @@ func (f *fakePlatformLister) ListMembersByArtistID(_ context.Context, _ string) 
 	return f.members, nil
 }
 
+func (f *fakePlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([]string, error) {
+	seen := make(map[string]struct{}, len(f.ids))
+	var out []string
+	for _, pid := range f.ids {
+		if _, dup := seen[pid.ArtistID]; !dup {
+			seen[pid.ArtistID] = struct{}{}
+			out = append(out, pid.ArtistID)
+		}
+	}
+	return out, nil
+}
+
 type fakeConnectionGetter struct {
 	conns map[string]*connection.Connection
 	mu    sync.Mutex
@@ -829,7 +841,7 @@ func TestSyncImageToPlatforms_NotifierFiresOnUploadFailure(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
 		Logger:   silentLogger(),
 		Notifier: notifier,

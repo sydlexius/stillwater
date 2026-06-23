@@ -360,6 +360,14 @@ func (r *Router) DrainWebhooks(ctx context.Context) error {
 	}
 }
 
+// ConflictGate returns the conflict gate wired into this Router. The gate
+// implements publish.ImageWriteGate and can be passed to
+// Publisher.SetImageWriteGate so the background artwork reconciler respects
+// the same conflict ledger as the HTTP handlers.
+func (r *Router) ConflictGate() *conflict.Gate {
+	return r.conflictGate
+}
+
 // Handler returns the fully configured HTTP handler with middleware applied.
 // The provided context controls the lifecycle of background goroutines (e.g. rate limiter cleanup).
 func (r *Router) Handler(ctx context.Context) http.Handler {

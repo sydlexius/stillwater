@@ -50,6 +50,7 @@ const (
 // Deps holds all dependencies for a Publisher.
 type Deps struct {
 	ArtistService      artistPlatformLister
+	ArtistGetter       artistGetter
 	ConnectionService  connectionGetter
 	LibraryService     libraryResolver
 	NFOSnapshotService *nfo.SnapshotService
@@ -63,6 +64,10 @@ type Deps struct {
 	// Optional; nil leaves notification disabled and the goroutine logs
 	// the error as before.
 	Notifier Notifier
+	// ImageWriteGate gates artwork writes via the conflict ledger. Optional;
+	// when nil the background reconciler proceeds without conflict checking and
+	// logs a one-time warning. Set via SetImageWriteGate after construction.
+	ImageWriteGate ImageWriteGate
 }
 
 // Notifier reports per-connection push failures from detached goroutines.
@@ -85,6 +90,7 @@ type Notifier interface {
 // since the primary operation (DB update) has already succeeded.
 type Publisher struct {
 	artistService      artistPlatformLister
+	artistGetter       artistGetter
 	connectionService  connectionGetter
 	libraryService     libraryResolver
 	nfoSnapshotService *nfo.SnapshotService
@@ -94,6 +100,7 @@ type Publisher struct {
 	imageCacheDir      string
 	logger             *slog.Logger
 	notifier           Notifier
+	imageWriteGate     ImageWriteGate
 }
 
 // Narrow interfaces keep the publish package decoupled from concrete types.
@@ -101,6 +108,19 @@ type Publisher struct {
 type artistPlatformLister interface {
 	GetPlatformIDs(ctx context.Context, artistID string) ([]artist.PlatformID, error)
 	ListMembersByArtistID(ctx context.Context, artistID string) ([]artist.BandMember, error)
+	ListArtistsWithPlatformMappings(ctx context.Context) ([]string, error)
+}
+
+// artistGetter loads a full artist record by ID for the background reconciler.
+type artistGetter interface {
+	GetByID(ctx context.Context, id string, opts ...artist.HydrateOpts) (*artist.Artist, error)
+}
+
+// ImageWriteGate gates image writes via the conflict ledger. Implemented by
+// *conflict.Gate; kept as a narrow interface so the publish package does not
+// import internal/conflict.
+type ImageWriteGate interface {
+	AllowImageWrite(ctx context.Context) error
 }
 
 type connectionGetter interface {
@@ -129,6 +149,7 @@ type expectedWritesTracker interface {
 func New(d Deps) *Publisher {
 	return &Publisher{
 		artistService:      d.ArtistService,
+		artistGetter:       d.ArtistGetter,
 		connectionService:  d.ConnectionService,
 		libraryService:     d.LibraryService,
 		nfoSnapshotService: d.NFOSnapshotService,
@@ -138,6 +159,16 @@ func New(d Deps) *Publisher {
 		imageCacheDir:      d.ImageCacheDir,
 		logger:             d.Logger,
 		notifier:           d.Notifier,
+		imageWriteGate:     d.ImageWriteGate,
+	}
+}
+
+// SetImageWriteGate wires the conflict gate used by the background artwork
+// reconciler. Call this after construction once the gate is available (the
+// gate is created inside api.NewRouter which runs after publish.New).
+func (p *Publisher) SetImageWriteGate(gate ImageWriteGate) {
+	if p != nil {
+		p.imageWriteGate = gate
 	}
 }
 
@@ -491,6 +522,14 @@ func LockSyncClientFactory() connection.LockSyncClientFactory {
 // returned as warning strings so the caller can surface them to the client.
 // The local operation already succeeded, so failures here are non-fatal.
 func (p *Publisher) SyncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string) []string {
+	return p.syncImageToPlatforms(ctx, a, imageType, false)
+}
+
+// syncImageToPlatforms is the internal implementation of SyncImageToPlatforms.
+// When respectWriteGate is true, connections without FeatureImageWrite are skipped;
+// this is used by the background reconciler only. User-initiated callers pass false
+// so all enabled connections receive the push regardless of the per-connection toggle.
+func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string, respectWriteGate bool) []string {
 	if p == nil {
 		return nil
 	}
@@ -539,7 +578,7 @@ func (p *Publisher) SyncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 			p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
 			continue
 		}
-		if !conn.Enabled || conn.Status != "ok" {
+		if !conn.Enabled || conn.Status != "ok" || (respectWriteGate && !conn.GetFeatureImageWrite()) {
 			p.logger.Debug("skipping connection for image sync", "connection", conn.Name, "type", imageType, "status", conn.Status)
 			continue
 		}
@@ -565,6 +604,13 @@ func (p *Publisher) SyncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 // syncs the primary image, this discovers all fanart files and uploads each one
 // at the correct backdrop index. Errors are logged and returned as warnings.
 func (p *Publisher) SyncAllFanartToPlatforms(ctx context.Context, a *artist.Artist) []string {
+	return p.syncAllFanartToPlatforms(ctx, a, false)
+}
+
+// syncAllFanartToPlatforms is the internal implementation of SyncAllFanartToPlatforms.
+// When respectWriteGate is true, connections without FeatureImageWrite are skipped;
+// this is used by the background reconciler only.
+func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Artist, respectWriteGate bool) []string {
 	if p == nil {
 		return nil
 	}
@@ -613,7 +659,7 @@ func (p *Publisher) SyncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
 			continue
 		}
-		if !conn.Enabled || conn.Status != "ok" {
+		if !conn.Enabled || conn.Status != "ok" || (respectWriteGate && !conn.GetFeatureImageWrite()) {
 			p.logger.Debug("skipping connection for fanart sync",
 				slog.String("connection", conn.Name),
 				slog.String("status", conn.Status))

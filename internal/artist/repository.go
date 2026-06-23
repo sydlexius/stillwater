@@ -249,4 +249,9 @@ type PlatformIDRepository interface {
 	// connection type. Artists with no membership rows are omitted from the
 	// result map; the caller treats a missing entry as no presence.
 	GetPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error)
+
+	// ListArtistsWithPlatformMappings returns distinct artist IDs that have at
+	// least one row in artist_platform_ids. Used by the background artwork
+	// reconciler to determine which artists have connected mirrors to check.
+	ListArtistsWithPlatformMappings(ctx context.Context) ([]string, error)
 }
