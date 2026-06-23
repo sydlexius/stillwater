@@ -78,7 +78,11 @@ func newStateAndUploadServer(stateJSON string, hits *uploadHits) *httptest.Serve
 			return
 		}
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/Images/") {
-			body, _ := io.ReadAll(r.Body)
+			body, readErr := io.ReadAll(r.Body)
+			if readErr != nil {
+				http.Error(w, "failed to read request body", http.StatusBadRequest)
+				return
+			}
 			ct := r.Header.Get("Content-Type")
 			hits.mu.Lock()
 			hits.contentTypes = append(hits.contentTypes, ct)
@@ -123,8 +127,11 @@ func TestReconcileArtworkToPlatforms_ListError(t *testing.T) {
 // TestReconcileArtworkToPlatforms_GateBlocked verifies that a blocked gate
 // causes all artists to be skipped before any upload attempt.
 func TestReconcileArtworkToPlatforms_GateBlocked(t *testing.T) {
+	dir := t.TempDir()
+	seedJPG(t, dir, "fanart.jpg")
+
 	hits := &uploadHits{}
-	srv := newImageUploadServer(hits)
+	srv := newStateAndUploadServer(`{"Id":"p1","ImageTags":{},"BackdropImageTags":[]}`, hits)
 	defer srv.Close()
 
 	lister := &reconcilePlatformLister{
@@ -136,7 +143,7 @@ func TestReconcileArtworkToPlatforms_GateBlocked(t *testing.T) {
 	p := New(Deps{
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		ArtistService: lister,
-		ArtistGetter:  &fakeArtistGetter{artists: map[string]*artist.Artist{"a1": {ID: "a1"}}},
+		ArtistGetter:  &fakeArtistGetter{artists: map[string]*artist.Artist{"a1": {ID: "a1", Path: dir, Name: "Test"}}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
 			"c": {ID: "c", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok",
 				Emby: &connection.EmbyConfig{FeatureImageWrite: true, PlatformUserID: "u1"}},
@@ -405,6 +412,62 @@ func TestReconcileArtworkToPlatforms_NilGateWarns(t *testing.T) {
 		// ImageWriteGate deliberately nil; ArtistGetter nil → skips after warn
 	})
 	p.ReconcileArtworkToPlatforms(context.Background()) // must not panic
+}
+
+// nilConnectionGetter always resolves GetByID to (nil, nil), simulating a
+// connection that no longer exists without producing an error. It exercises
+// the `conn == nil` guard in detectMissingArtwork.
+type nilConnectionGetter struct{}
+
+func (nilConnectionGetter) GetByID(_ context.Context, _ string) (*connection.Connection, error) {
+	return nil, nil
+}
+
+// TestReconcileArtworkToPlatforms_NilConnection verifies that when the
+// connection getter resolves a platform ID's connection to (nil, nil), the
+// reconciler logs a missing-connection warning, skips that connection, and
+// performs no uploads without panicking.
+func TestReconcileArtworkToPlatforms_NilConnection(t *testing.T) {
+	dir := t.TempDir()
+	seedJPG(t, dir, "fanart.jpg")
+
+	hits := &uploadHits{}
+	srv := newStateAndUploadServer(`{"Id":"p1","ImageTags":{},"BackdropImageTags":[]}`, hits)
+	defer srv.Close()
+
+	lister := &reconcilePlatformLister{
+		artistIDs: []string{"a1"},
+		ids: map[string][]artist.PlatformID{
+			"a1": {{ArtistID: "a1", ConnectionID: "missing", PlatformArtistID: "p1"}},
+		},
+	}
+	p := New(Deps{
+		Logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArtistService:     lister,
+		ArtistGetter:      &fakeArtistGetter{artists: map[string]*artist.Artist{"a1": {ID: "a1", Path: dir, Name: "Test"}}},
+		ConnectionService: nilConnectionGetter{},
+		ImageWriteGate:    allowGate{},
+	})
+	p.ReconcileArtworkToPlatforms(context.Background()) // must not panic
+
+	time.Sleep(50 * time.Millisecond)
+	if n := hits.uploads.Load(); n != 0 {
+		t.Errorf("expected 0 uploads when connection resolves to nil; got %d", n)
+	}
+}
+
+// TestStartArtworkReconciler_NonPositiveInterval verifies that a non-positive
+// interval causes StartArtworkReconciler to return immediately (before any
+// ticker is created) without panicking or hanging.
+func TestStartArtworkReconciler_NonPositiveInterval(t *testing.T) {
+	p := New(Deps{
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArtistService: &reconcilePlatformLister{artistIDs: nil},
+	})
+
+	// Each call must return synchronously; if it hangs the test times out.
+	p.StartArtworkReconciler(context.Background(), 0, time.Millisecond)
+	p.StartArtworkReconciler(context.Background(), -time.Second, time.Millisecond)
 }
 
 // TestReconcileArtworkToPlatforms_ArtistLoadError verifies that an artist

@@ -707,17 +707,22 @@ func TestSyncAllFanartToPlatforms_PerConnectionBranches(t *testing.T) {
 	})
 	warnings := p.SyncAllFanartToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"})
 
-	// c-lid (Lidarr) is now silently filtered by !GetFeatureImageWrite() before
-	// reaching newIndexedImageUploader, so "unsupported connection type" is no
-	// longer emitted. Only c-missing produces a warning (lookup failure).
-	hasLookup := false
+	// The public SyncAllFanartToPlatforms path delegates with respectWriteGate=false,
+	// so FeatureImageWrite is NOT checked here. c-lid (Lidarr) therefore passes the
+	// enabled/status check and, having no indexed-image uploader, emits an
+	// "unsupported connection type" warning. c-missing fails connection lookup and
+	// emits a "failed to load" warning. Exactly those two warnings are expected.
+	var hasLookup, hasUnsupported bool
 	for _, w := range warnings {
 		if strings.Contains(w, "failed to load") {
 			hasLookup = true
 		}
+		if strings.Contains(w, "unsupported connection type") {
+			hasUnsupported = true
+		}
 	}
-	if !hasLookup {
-		t.Errorf("expected lookup-error warning; got %v", warnings)
+	if len(warnings) != 2 || !hasLookup || !hasUnsupported {
+		t.Errorf("expected exactly 2 warnings (one \"failed to load\", one \"unsupported connection type\"); got %v", warnings)
 	}
 	// The c-ok connection is the readable/supported path. Assert that the
 	// warning-emitting branches do not short-circuit the entire sync.

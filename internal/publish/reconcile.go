@@ -73,6 +73,12 @@ func (p *Publisher) detectMissingArtwork(
 				slog.Any("error", connErr))
 			continue
 		}
+		if conn == nil {
+			p.logger.Warn("artwork reconciler: missing connection",
+				slog.String("artist_id", artistID),
+				slog.String("connection_id", pid.ConnectionID))
+			continue
+		}
 		if !conn.Enabled || conn.Status != "ok" || !conn.GetFeatureImageWrite() {
 			continue
 		}
@@ -280,6 +286,11 @@ func (p *Publisher) ReconcileArtworkToPlatforms(ctx context.Context) {
 // than waiting the full production delay.
 func (p *Publisher) StartArtworkReconciler(ctx context.Context, interval, startupDelay time.Duration) {
 	if p == nil {
+		return
+	}
+	if interval <= 0 {
+		p.logger.Warn("artwork reconciler: non-positive interval; reconciler not started",
+			slog.String("interval", interval.String()))
 		return
 	}
 	p.logger.Info("artwork reconciler started",
