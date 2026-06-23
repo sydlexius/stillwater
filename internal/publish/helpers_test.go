@@ -404,7 +404,7 @@ func TestSyncImageToPlatforms_HappyPath(t *testing.T) {
 			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
 	})
 	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Name: "X", Path: dir}, "thumb")
@@ -430,10 +430,10 @@ func TestSyncImageToPlatforms_PerConnectionBranches(t *testing.T) {
 		"c-off": {ID: "c-off", Type: connection.TypeEmby, URL: srv.URL, Enabled: false, Status: "ok"},
 		// Non-"ok" status (skipped silently).
 		"c-bad": {ID: "c-bad", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "error"},
-		// Unsupported type (Lidarr -> nil uploader, warning appended).
+		// Lidarr: GetFeatureImageWrite()=false -> silently skipped before uploader lookup.
 		"c-lid": {ID: "c-lid", Type: connection.TypeLidarr, URL: srv.URL, Enabled: true, Status: "ok"},
 		// Happy path (counts as 1 upload).
-		"c-ok": {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+		"c-ok": {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 	}}
 
 	p := New(Deps{
@@ -443,22 +443,20 @@ func TestSyncImageToPlatforms_PerConnectionBranches(t *testing.T) {
 	})
 	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"}, "thumb")
 
-	// Expected warnings: c-missing lookup failure + c-lid unsupported type = 2.
-	if len(warnings) != 2 {
-		t.Errorf("expected 2 warnings (lookup-error + unsupported-type); got %d: %v", len(warnings), warnings)
+	// c-lid (Lidarr) is now silently filtered by !GetFeatureImageWrite() before
+	// reaching newImageUploader, so "unsupported connection type" is no longer
+	// emitted. Only c-missing produces a warning (lookup failure).
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning (lookup-error only); got %d: %v", len(warnings), warnings)
 	}
 	hasLookup := false
-	hasUnsupported := false
 	for _, w := range warnings {
 		if strings.Contains(w, "failed to load") {
 			hasLookup = true
 		}
-		if strings.Contains(w, "unsupported connection type") {
-			hasUnsupported = true
-		}
 	}
-	if !hasLookup || !hasUnsupported {
-		t.Errorf("expected lookup-error and unsupported-type warnings; got %v", warnings)
+	if !hasLookup {
+		t.Errorf("expected lookup-error warning; got %v", warnings)
 	}
 
 	// Exactly one upload arrived (c-ok).
@@ -542,7 +540,7 @@ func TestSyncImageToPlatforms_PNGContentType(t *testing.T) {
 			{ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
 	})
 	warnings := p.SyncImageToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"}, "thumb")
@@ -656,7 +654,7 @@ func TestSyncAllFanartToPlatforms_HappyPath(t *testing.T) {
 			{ConnectionID: "c", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c": {ID: "c", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+			"c": {ID: "c", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
 	})
 	warnings := p.SyncAllFanartToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"})
@@ -686,7 +684,7 @@ func TestSyncAllFanartToPlatforms_PerConnectionBranches(t *testing.T) {
 		"c-off": {ID: "c-off", Type: connection.TypeEmby, URL: srv.URL, Enabled: false, Status: "ok"},
 		"c-bad": {ID: "c-bad", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "error"},
 		"c-lid": {ID: "c-lid", Type: connection.TypeLidarr, URL: srv.URL, Enabled: true, Status: "ok"},
-		"c-ok":  {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+		"c-ok":  {ID: "c-ok", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 	}}
 
 	p := New(Deps{
@@ -702,23 +700,20 @@ func TestSyncAllFanartToPlatforms_PerConnectionBranches(t *testing.T) {
 	})
 	warnings := p.SyncAllFanartToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"})
 
+	// c-lid (Lidarr) is now silently filtered by !GetFeatureImageWrite() before
+	// reaching newIndexedImageUploader, so "unsupported connection type" is no
+	// longer emitted. Only c-missing produces a warning (lookup failure).
 	hasLookup := false
-	hasUnsupported := false
 	for _, w := range warnings {
 		if strings.Contains(w, "failed to load") {
 			hasLookup = true
 		}
-		if strings.Contains(w, "unsupported connection type") {
-			hasUnsupported = true
-		}
 	}
-	if !hasLookup || !hasUnsupported {
-		t.Errorf("expected lookup-error + unsupported-type warnings; got %v", warnings)
+	if !hasLookup {
+		t.Errorf("expected lookup-error warning; got %v", warnings)
 	}
-	// The c-ok connection (last entry above) is the readable/supported
-	// path. Assert that the warning-emitting branches do not short-circuit
-	// the entire sync — a regression that aborts on the first warning
-	// would still satisfy the warning checks above.
+	// The c-ok connection is the readable/supported path. Assert that the
+	// warning-emitting branches do not short-circuit the entire sync.
 	waitForUploads(t, hits, 1)
 }
 
@@ -752,7 +747,7 @@ func TestSyncAllFanartToPlatforms_ReadErrorWarning(t *testing.T) {
 			{ConnectionID: "c-emby", PlatformArtistID: "p1"},
 		}},
 		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
-			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1"}},
+			"c-emby": {ID: "c-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, Status: "ok", Emby: &connection.EmbyConfig{PlatformUserID: "u1", FeatureImageWrite: true}},
 		}},
 	})
 	warnings := p.SyncAllFanartToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"})

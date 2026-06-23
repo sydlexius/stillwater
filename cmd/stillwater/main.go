@@ -509,6 +509,12 @@ func (a *Application) buildServices() error {
 		SessionSecret:      cfg.Auth.SessionSecret,
 	})
 
+	// Wire the conflict gate into the publisher so the background artwork
+	// reconciler respects the same conflict ledger as the HTTP handlers.
+	// NewRouter creates the gate from the same ConnectionService as the
+	// publisher; doing this after NewRouter avoids a two-phase construction.
+	a.publisher.SetImageWriteGate(a.router.ConflictGate())
+
 	// Hand ownership to run(): the caller's deferred Stop now owns the
 	// bus lifecycle. Clearing the flag prevents the deferred Stop above
 	// from firing on the success path. Must be the LAST thing before
@@ -779,6 +785,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	}
 	a.publisher = publish.New(publish.Deps{
 		ArtistService:      a.artistService,
+		ArtistGetter:       a.artistService,
 		ConnectionService:  a.connectionService,
 		LibraryService:     a.libraryService,
 		NFOSnapshotService: a.nfoSnapshotService,
@@ -966,6 +973,15 @@ func (a *Application) startListeners() error {
 			foreignHours = 6
 		}
 		go a.maintenanceService.StartForeignFileScanner(ctx, a.artistService, time.Duration(foreignHours)*time.Hour, 30*time.Second)
+	}
+
+	// Proactive artwork reconciliation to mirror platforms (issue #1869).
+	{
+		reconcileHours := getDBIntSetting(ctx, db, "artwork_reconcile.interval_hours", 6)
+		if reconcileHours <= 0 {
+			reconcileHours = 6
+		}
+		go a.publisher.StartArtworkReconciler(ctx, time.Duration(reconcileHours)*time.Hour, 60*time.Second)
 	}
 
 	// Session cleanup.

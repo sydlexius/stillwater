@@ -1680,6 +1680,12 @@ func (s *Service) GetPlatformPresenceForArtists(ctx context.Context, artistIDs [
 	return s.platformIDs.GetPresenceForArtists(ctx, artistIDs)
 }
 
+// ListArtistsWithPlatformMappings returns distinct artist IDs that have at
+// least one row in artist_platform_ids.
+func (s *Service) ListArtistsWithPlatformMappings(ctx context.Context) ([]string, error) {
+	return s.platformIDs.ListArtistsWithPlatformMappings(ctx)
+}
+
 // hydrateProviderIDs loads provider IDs from the normalized table and applies
 // them to the Artist struct fields.
 func (s *Service) hydrateProviderIDs(ctx context.Context, a *Artist) error {

@@ -119,6 +119,26 @@ func (r *sqlitePlatformIDRepo) DeleteByArtistID(ctx context.Context, artistID st
 	return nil
 }
 
+// ListArtistsWithPlatformMappings returns distinct artist IDs that have at
+// least one row in artist_platform_ids, ordered for deterministic iteration.
+func (r *sqlitePlatformIDRepo) ListArtistsWithPlatformMappings(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT artist_id FROM artist_platform_ids ORDER BY artist_id`)
+	if err != nil {
+		return nil, fmt.Errorf("listing artists with platform mappings: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning artist id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // GetPresenceForArtists returns a map of artist ID to PlatformPresence.
 // presence derives from artist_libraries memberships (the
 // authoritative "currently observed by" record), not from artist_platform_ids
