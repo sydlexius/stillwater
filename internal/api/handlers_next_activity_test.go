@@ -109,6 +109,45 @@ func TestHandleNextActivityPage_UnauthRendersLoginPage(t *testing.T) {
 	}
 }
 
+// TestHandleNextActivityPage_DBError exercises the 500 branch: a closed DB
+// makes historyService.ListGlobal fail inside buildActivityPageData, so the
+// next/ handler must return 500 (and not attempt to render).
+func TestHandleNextActivityPage_DBError(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	ctx := middleware.WithTestUXChannel(adminContext(), middleware.UXNext)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/activity", nil)
+	req = withI18nCtx(t, req)
+	w := httptest.NewRecorder()
+	r.handleNextActivityPage(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("closed-DB should yield 500; got %d", w.Code)
+	}
+}
+
+// TestHandleActivityPage_DBError exercises the same 500 branch on the stable
+// page handler, covering its !ok return path after buildActivityPageData fails.
+func TestHandleActivityPage_DBError(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/activity", nil)
+	w := httptest.NewRecorder()
+	r.handleActivityPage(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("closed-DB should yield 500; got %d", w.Code)
+	}
+}
+
 // TestHandleRevertHistory_NextActivity locks the directive-D revert seam: a
 // revert triggered from /next/activity must render the ACTIVITY revert fragment
 // (shared with stable /activity), not the artist-tab fragment. "/next/activity"
