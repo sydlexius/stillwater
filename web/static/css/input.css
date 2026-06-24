@@ -4417,8 +4417,9 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   margin-top: 10px;
 }
 /* Real glass buttons matching the artist-detail motif. Both share the glass
- * base; Fix is the accent/primary action (ok-tinted fill), Dismiss the subtle
- * secondary (plain glass, err-tinted on hover). */
+ * base (transparent, border --swd-line). Fix carries the shared blue halo to
+ * mark it as the primary action; no colored fill (standing principle). Dismiss
+ * is the plain secondary (err-tinted on hover). */
 .sw-next-artist-detail .sw-ff-pop-btn {
   display: inline-flex;
   align-items: center;
@@ -4442,13 +4443,12 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   cursor: not-allowed;
 }
 .sw-next-artist-detail .sw-ff-pop-fix {
-  color: var(--swd-ok);
-  border-color: color-mix(in srgb, var(--swd-ok) 40%, var(--swd-line));
-  background: var(--swd-ok-soft);
-}
-.sw-next-artist-detail .sw-ff-pop-fix:hover {
-  background: color-mix(in srgb, var(--swd-ok-soft), var(--swd-ok) 18%);
-  border-color: var(--swd-ok);
+  color: var(--swd-ink-2);
+  border-color: var(--swd-line);
+  background: transparent;
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 0 5px rgba(59, 130, 246, 0.22);
 }
 .sw-next-artist-detail .sw-ff-pop-dismiss {
   color: var(--swd-ink-2);
