@@ -54,6 +54,12 @@ const (
 	PrefArtistDetailSectionOrder   = "artist_detail_section_order"
 	PrefArtistDetailHiddenSections = "artist_detail_hidden_sections"
 
+	// PrefShowPlatformDebug is the per-user toggle that enables the Debug tab on
+	// the artist detail page. Migrated from the global "show_platform_debug" app
+	// setting (M55 #2060); existing users were seeded from the global by migration
+	// 016 (016_seed_platform_debug_user_pref.sql) at upgrade time.
+	PrefShowPlatformDebug = "show_platform_debug"
+
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
 	// preferences. Keys have the form "suppress_confirm_{action}" and accept
 	// "true" or "false". These are not listed in preferenceDefaults because they
@@ -92,6 +98,8 @@ var preferenceDefaults = map[string]preferenceDef{
 	PrefMonoFont:                 {defaultValue: "jetbrains", allowedValues: []string{"system", "jetbrains", "cascadia"}},
 	PrefKbdHints:                 {defaultValue: "show", allowedValues: []string{"show", "hide"}},
 	PrefMetadataNameRomanization: {defaultValue: "true", allowedValues: []string{"true", "false"}},
+	// M55 #2060: per-user debug tab toggle migrated from the global app setting.
+	PrefShowPlatformDebug: {defaultValue: "false", allowedValues: []string{"true", "false"}},
 }
 
 func init() {
@@ -937,6 +945,8 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		MonoFont:            pref(PrefMonoFont),
 		KbdHints:            pref(PrefKbdHints),
 		NotificationEnabled: normalizeBoolPref(pref(PrefNotificationEnabled), preferenceDefaults[PrefNotificationEnabled].defaultValue),
+		// M55 #2060: per-user debug tab toggle.
+		ShowPlatformDebug: normalizeBoolPref(pref(PrefShowPlatformDebug), preferenceDefaults[PrefShowPlatformDebug].defaultValue),
 		// Artist detail layout: parse stored JSON arrays (nil = use default order).
 		ArtistDetailSectionOrder:   parseSectionList(stored[PrefArtistDetailSectionOrder]),
 		ArtistDetailHiddenSections: parseSectionList(stored[PrefArtistDetailHiddenSections]),

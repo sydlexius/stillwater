@@ -71,7 +71,6 @@ type SettingsData struct {
 	Connections              []connection.Connection
 	Webhooks                 []webhook.Webhook
 	WebSearchProviders       []provider.WebSearchProviderStatus
-	ShowPlatformDebug        bool
 	Rules                    []rule.Rule
 	HasLocalLibrary          bool
 	BadgeEnabled             bool
@@ -266,8 +265,6 @@ func BuildSettingsSearchIndex(ctx context.Context) []SettingsSearchEntry {
 		{ID: "help-symlinks", Label: t(ctx, "settings.symlinks.title"), HelpText: t(ctx, "settings.symlinks.help"), TabID: TabGeneral},
 		{ID: "help-tls-status", Label: t(ctx, "settings.tls_status.title"), HelpText: t(ctx, "settings.tls_status.help"), TabID: TabGeneral},
 		{ID: "help-base-path", Label: t(ctx, "settings.base_path.title"), HelpText: t(ctx, "settings.base_path.help"), TabID: TabGeneral},
-		{ID: "help-behavior", Label: t(ctx, "settings.behavior.title"), HelpText: t(ctx, "settings.behavior.help"), TabID: TabGeneral},
-		{ID: "help-platform-debug", Label: t(ctx, "settings.platform_debug.title"), HelpText: t(ctx, "settings.platform_debug.help"), TabID: TabGeneral},
 		{ID: "help-image-cache", Label: t(ctx, "settings.image_cache.title"), HelpText: t(ctx, "settings.image_cache.help"), TabID: TabGeneral},
 		{ID: "help-cache-max-size", Label: t(ctx, "settings.image_cache.max_size"), HelpText: t(ctx, "settings.image_cache.max_size.help"), TabID: TabGeneral},
 		{ID: "help-cache-clear", Label: t(ctx, "settings.image_cache.clear"), HelpText: t(ctx, "settings.image_cache.clear.help"), TabID: TabGeneral},
@@ -814,7 +811,6 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 	@Layout("Settings", assets) {
 		<script src={ assets.SettingsResetConfirmPrefsJS }></script>
 		<script src={ assets.SettingsTabsJS }></script>
-		<script src={ assets.SettingsPlatformDebugJS }></script>
 		<script src={ assets.SettingsSymlinkJS }></script>
 		<script src={ assets.SettingsBasePathJS }></script>
 		<script src={ assets.SettingsLibraryJS }></script>
@@ -868,7 +864,6 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				     surface a shared restart-required banner because the HTTP
 				     mux is wired at startup and cannot rebind on the fly. -->
 				@SectionBasePath(data)
-				@SectionBehavior(data)
 				<!-- Image Cache Configuration -->
 				@SectionImageCache(data, assets)
 				<!-- Onboarding section: re-run wizard (#1142) -->

@@ -1805,3 +1805,113 @@ func TestEnsureConnectionsColumn_PropagatesAlterError(t *testing.T) {
 		t.Errorf("error %v does not name the column", err)
 	}
 }
+
+// TestMigration016SeedPlatformDebugUserPref verifies that migration 016 seeds
+// the show_platform_debug per-user preference from the legacy global setting
+// for all existing users, and that it is idempotent (INSERT OR IGNORE never
+// overwrites a user-set value).  This replaces the Go-level
+// TestMigratePlatformDebugPref that tested the now-removed startup migration.
+func TestMigration016SeedPlatformDebugUserPref(t *testing.T) {
+	// openMigratedDB triggers gooseOnce, initializing the goose global state
+	// (embedded FS, dialect, logger) needed for the goose.UpTo calls below.
+	_ = openMigratedDB(t)
+
+	ctx := context.Background()
+
+	// openAt015 opens a fresh in-memory DB migrated only through version 15,
+	// leaving version 16 (this migration) unapplied so we can seed test data
+	// before it runs.
+	openAt015 := func(t *testing.T) *sql.DB {
+		t.Helper()
+		db, err := Open(":memory:")
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		if err := goose.UpTo(db, "migrations", 15); err != nil {
+			t.Fatalf("goose up to v15: %v", err)
+		}
+		return db
+	}
+
+	t.Run("seeds_from_global_setting", func(t *testing.T) {
+		t.Parallel()
+		db := openAt015(t)
+
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO settings (key, value) VALUES ('show_platform_debug', 'true')`); err != nil {
+			t.Fatalf("seed global setting: %v", err)
+		}
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO users (id, username) VALUES ('u-seed-1', 'alice')`); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+
+		if err := goose.UpByOne(db, "migrations"); err != nil {
+			t.Fatalf("migration 016: %v", err)
+		}
+
+		var val string
+		if err := db.QueryRowContext(ctx,
+			`SELECT value FROM user_preferences WHERE user_id = 'u-seed-1' AND key = 'show_platform_debug'`,
+		).Scan(&val); err != nil {
+			t.Fatalf("expected seeded row: %v", err)
+		}
+		if val != "true" {
+			t.Errorf("seeded value = %q, want %q (global=true)", val, "true")
+		}
+	})
+
+	t.Run("defaults_to_false_when_no_global_setting", func(t *testing.T) {
+		t.Parallel()
+		db := openAt015(t)
+
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO users (id, username) VALUES ('u-seed-2', 'bob')`); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+
+		if err := goose.UpByOne(db, "migrations"); err != nil {
+			t.Fatalf("migration 016: %v", err)
+		}
+
+		var val string
+		if err := db.QueryRowContext(ctx,
+			`SELECT value FROM user_preferences WHERE user_id = 'u-seed-2' AND key = 'show_platform_debug'`,
+		).Scan(&val); err != nil {
+			t.Fatalf("expected seeded row (no global -> false): %v", err)
+		}
+		if val != "false" {
+			t.Errorf("seeded value = %q, want %q (no global setting)", val, "false")
+		}
+	})
+
+	t.Run("idempotent_preserves_user_set_value", func(t *testing.T) {
+		t.Parallel()
+		db := openAt015(t)
+
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO users (id, username) VALUES ('u-seed-3', 'carol')`); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+		// Pre-set a user value that the migration must not overwrite.
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO user_preferences (user_id, key, value) VALUES ('u-seed-3', 'show_platform_debug', 'true')`); err != nil {
+			t.Fatalf("pre-set preference: %v", err)
+		}
+
+		if err := goose.UpByOne(db, "migrations"); err != nil {
+			t.Fatalf("migration 016: %v", err)
+		}
+
+		var val string
+		if err := db.QueryRowContext(ctx,
+			`SELECT value FROM user_preferences WHERE user_id = 'u-seed-3' AND key = 'show_platform_debug'`,
+		).Scan(&val); err != nil {
+			t.Fatalf("expected row after migration: %v", err)
+		}
+		if val != "true" {
+			t.Errorf("migration overwrote user-set value: got %q, want %q", val, "true")
+		}
+	})
+}

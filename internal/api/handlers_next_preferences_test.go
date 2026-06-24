@@ -74,8 +74,6 @@ func toggleState(body, id string) string {
 
 // seedNextPref stores a single preference row for the user directly in the DB
 // (same insert the artist-lock page-size tests use).
-//
-//nolint:unparam // the user is part of the helper's contract; current callers happen to share one seeded user
 func seedNextPref(t *testing.T, r *Router, userID, key, value string) {
 	t.Helper()
 	_, err := r.db.ExecContext(context.Background(),
@@ -276,5 +274,41 @@ func TestLoadNextPrefsData_DefaultsWhenUnset(t *testing.T) {
 		if !strings.Contains(body, `data-section-id="`+sec+`"`) {
 			t.Errorf("layout card missing default section %q", sec)
 		}
+	}
+}
+
+// TestLoadNextPrefsData_ShowPlatformDebugDefault verifies the show_platform_debug
+// pref defaults to "false" when no stored row exists: the Behavior group toggle
+// renders with aria-checked="false".
+func TestLoadNextPrefsData_ShowPlatformDebugDefault(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	w := prefsPageRequest(t, r, "prefs-debug-default-user")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if got := toggleState(w.Body.String(), "pref-d-show-platform-debug"); got != "false" {
+		t.Errorf("show_platform_debug default: aria-checked = %q, want false", got)
+	}
+}
+
+// TestLoadNextPrefsData_ShowPlatformDebugStored verifies the stored value wins:
+// seeding show_platform_debug = "true" causes the Behavior group toggle to
+// render with aria-checked="true". This exercises the if v, ok := stored[...]
+// override branch in loadNextPrefsData added by M55 #2060.
+func TestLoadNextPrefsData_ShowPlatformDebugStored(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	const userID = "prefs-debug-stored-user"
+
+	seedNextPref(t, r, userID, "show_platform_debug", "true")
+
+	w := prefsPageRequest(t, r, userID)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if got := toggleState(w.Body.String(), "pref-d-show-platform-debug"); got != "true" {
+		t.Errorf("show_platform_debug stored override: aria-checked = %q, want true", got)
 	}
 }

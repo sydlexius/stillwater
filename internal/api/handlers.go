@@ -78,7 +78,6 @@ func (r *Router) assets() templates.AssetPaths {
 		SettingsLogViewerJS:               r.basePath + r.staticAssets.Path("/js/settings/log-viewer.js"),
 		SettingsMaintenanceJS:             r.basePath + r.staticAssets.Path("/js/settings/maintenance.js"),
 		SettingsExportJS:                  r.basePath + r.staticAssets.Path("/js/settings/settings-export.js"),
-		SettingsPlatformDebugJS:           r.basePath + r.staticAssets.Path("/js/settings/platform-debug.js"),
 		SettingsSymlinkJS:                 r.basePath + r.staticAssets.Path("/js/settings/symlink.js"),
 		SettingsBasePathJS:                r.basePath + r.staticAssets.Path("/js/settings/base-path.js"),
 		SettingsProfileNamingJS:           r.basePath + r.staticAssets.Path("/js/settings/profile-naming.js"),

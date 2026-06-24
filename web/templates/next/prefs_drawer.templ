@@ -200,6 +200,7 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 				@prefsGroup("behavior", t(ctx, "prefs.group.behavior"), false) {
 					@prefsToggleRow("pref-d-auto-fetch", "auto_fetch_images", t(ctx, "prefs.auto_fetch.label"), t(ctx, "prefs.auto_fetch.description"), t(ctx, "prefs.auto_fetch.help"), "true", "false", prefs.AutoFetchImages == "true")
 					@prefsToggleRow("pref-d-notification", "notification_enabled", t(ctx, "prefs.notification_enabled.label"), t(ctx, "prefs.notification_enabled.description"), t(ctx, "prefs.notification_enabled.help"), "true", "false", prefs.NotificationEnabled == "true")
+					@prefsToggleRow("pref-d-show-platform-debug", "show_platform_debug", t(ctx, "prefs.show_platform_debug.label"), t(ctx, "prefs.show_platform_debug.description"), t(ctx, "prefs.show_platform_debug.help"), "true", "false", prefs.ShowPlatformDebug == "true")
 					@prefsLanguageRow(prefs.Language)
 				}
 				<!-- Artist detail layout group -->

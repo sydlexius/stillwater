@@ -120,6 +120,11 @@ func (r *Router) loadNextPrefsData(w http.ResponseWriter, req *http.Request, use
 		notifEnabled = normalizeBoolPref(v, notifEnabled)
 	}
 
+	showPlatformDebug := preferenceDefaults[PrefShowPlatformDebug].defaultValue
+	if v, ok := stored[PrefShowPlatformDebug]; ok {
+		showPlatformDebug = normalizeBoolPref(v, showPlatformDebug)
+	}
+
 	return templates.PreferencesData{
 		Theme:                      pref(PrefTheme),
 		ThumbnailSize:              pref(PrefThumbnailSize),
@@ -138,6 +143,7 @@ func (r *Router) loadNextPrefsData(w http.ResponseWriter, req *http.Request, use
 		MonoFont:                   pref(PrefMonoFont),
 		KbdHints:                   pref(PrefKbdHints),
 		NotificationEnabled:        notifEnabled,
+		ShowPlatformDebug:          showPlatformDebug,
 		ArtistDetailSectionOrder:   parseSectionList(stored[PrefArtistDetailSectionOrder]),
 		ArtistDetailHiddenSections: parseSectionList(stored[PrefArtistDetailHiddenSections]),
 	}, nil

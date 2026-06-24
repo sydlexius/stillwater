@@ -346,66 +346,6 @@ templ SectionBasePath(data SettingsData) {
 	</div>
 }
 
-// SectionBehavior renders the "Behavior" / Platform debug card on the
-// Settings General tab.
-// Exported for future use by the next/ chrome package.
-templ SectionBehavior(data SettingsData) {
-	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.behavior.title") }</h2>
-				@components.ContextHelp("help-behavior", t(ctx, "settings.behavior.title"), t(ctx, "settings.behavior.help"), "settings-general-behavior")
-			</div>
-			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-				{ t(ctx, "settings.behavior.description") }
-			</p>
-		</div>
-		<!-- Hidden element carrying translated toast strings for platform-debug.js.
-		     The JS reads these via dataset.* rather than embedding raw English,
-		     mirroring the #base-path-i18n pattern. -->
-		<div
-			id="platform-debug-i18n"
-			class="hidden"
-			data-toast-save-failed={ t(ctx, "settings.platform_debug.toast_save_failed") }
-			data-toast-network={ t(ctx, "settings.platform_debug.toast_network") }
-		></div>
-		<div class="px-6 py-4">
-			<div class="flex items-center justify-between">
-				<div>
-					<div class="flex items-center gap-1">
-						<span id="platform-debug-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.platform_debug.title") }</span>
-						@components.ContextHelp("help-platform-debug", t(ctx, "settings.platform_debug.title"), t(ctx, "settings.platform_debug.help"), "settings-general-platform-debug")
-					</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-						{ t(ctx, "settings.platform_debug.description") }
-					</div>
-				</div>
-				<button
-					type="button"
-					id="platform-debug-toggle"
-					class={
-						"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
-						templ.KV("bg-blue-600", data.ShowPlatformDebug),
-						templ.KV("bg-gray-200 dark:bg-gray-600", !data.ShowPlatformDebug),
-					}
-					role="switch"
-					aria-checked={ boolAttr(data.ShowPlatformDebug) }
-					aria-labelledby="platform-debug-toggle-label"
-					onclick="togglePlatformDebug(this)"
-				>
-					<span
-						class={
-							"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-							templ.KV("translate-x-5", data.ShowPlatformDebug),
-							templ.KV("translate-x-0", !data.ShowPlatformDebug),
-						}
-					></span>
-				</button>
-			</div>
-		</div>
-	</div>
-}
-
 // SectionImageCache renders the "Image Cache Configuration" card on the
 // Settings General tab, including the leading HTML comment and the trailing
 // <script> tag.

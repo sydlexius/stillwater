@@ -18,7 +18,7 @@ package templates
 //
 // NOTE: the extraction itself was byte-identical, but this PR additionally
 // applied a11y and i18n hardening to some touched cards (switch label
-// association via aria-labelledby on SectionActiveProfile/SectionBehavior, and
+// association via aria-labelledby on SectionActiveProfile, and
 // localized Image Cache size labels on SectionImageCache). The committed
 // per-section goldens therefore intentionally differ from main's original
 // inline render for those controls; they capture the hardened output.
@@ -113,7 +113,7 @@ var twoLibraries = []library.Library{
 
 // s1Fixtures returns the full set of SettingsData fixtures exercising every
 // conditional branch in the 7 extracted cards (SectionPlatformProfile,
-// SectionActiveProfile, SectionTLSStatus, SectionBasePath, SectionBehavior,
+// SectionActiveProfile, SectionTLSStatus, SectionBasePath,
 // SectionImageCache, SectionLibraries).
 func s1Fixtures() []struct {
 	name string
@@ -127,8 +127,8 @@ func s1Fixtures() []struct {
 	}{
 		{
 			// Fixture 0: ActiveProfile non-nil + editable + symlinks supported +
-			// UseSymlinks true + TLS byo + BasePath env override + ShowPlatformDebug
-			// true + CacheMaxSizeMB custom + libraries populated.
+			// UseSymlinks true + TLS byo + BasePath env override +
+			// CacheMaxSizeMB custom + libraries populated.
 			name: "active-profile-editable-symlinks-byo-envoverride-debug-custom-cache-libs",
 			data: SettingsData{
 				ActiveTab:     TabGeneral,
@@ -144,7 +144,6 @@ func s1Fixtures() []struct {
 				SymlinkSupported:    true,
 				BasePath:            "/sw",
 				BasePathEnvOverride: true,
-				ShowPlatformDebug:   true,
 				CacheMaxSizeMB:      "777",
 			},
 		},
@@ -161,7 +160,6 @@ func s1Fixtures() []struct {
 				SymlinkSupported:    false,
 				BasePath:            "",
 				BasePathEnvOverride: false,
-				ShowPlatformDebug:   false,
 				CacheMaxSizeMB:      "0",
 			},
 		},
@@ -197,7 +195,6 @@ func s1Fixtures() []struct {
 				SymlinkSupported:    false,
 				BasePath:            "/stillwater",
 				BasePathEnvOverride: false,
-				ShowPlatformDebug:   false,
 				CacheMaxSizeMB:      "1024",
 			},
 		},
@@ -219,7 +216,6 @@ func s1Fixtures() []struct {
 				SymlinkSupported:    true,
 				BasePath:            "/",
 				BasePathEnvOverride: false,
-				ShowPlatformDebug:   true,
 				CacheMaxSizeMB:      "",
 			},
 		},
@@ -518,26 +514,6 @@ func TestSectionBasePath_NoEnvOverride_Golden(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	checkOrUpdateGolden(t, "base_path_no_env_override", buf.String())
-}
-
-func TestSectionBehavior_DebugOn_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	data := SettingsData{ShowPlatformDebug: true}
-	var buf bytes.Buffer
-	if err := SectionBehavior(data).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	checkOrUpdateGolden(t, "behavior_debug_on", buf.String())
-}
-
-func TestSectionBehavior_DebugOff_Golden(t *testing.T) {
-	ctx := testCtx(t)
-	data := SettingsData{ShowPlatformDebug: false}
-	var buf bytes.Buffer
-	if err := SectionBehavior(data).Render(ctx, &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	checkOrUpdateGolden(t, "behavior_debug_off", buf.String())
 }
 
 func TestSectionImageCache_Custom_Golden(t *testing.T) {

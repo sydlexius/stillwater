@@ -1776,3 +1776,43 @@ func TestParseSectionList(t *testing.T) {
 		}
 	}
 }
+
+// TestShowPlatformDebugPref_DefaultAndOverride verifies the preference is
+// recognized, defaults to "false", and can be overridden via PUT.
+func TestShowPlatformDebugPref_DefaultAndOverride(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	ctx := context.Background()
+
+	// The default is "false" whether from a seeded DB row or the zero fallback.
+	got := r.getUserBoolPreference(
+		middleware.WithTestUserID(ctx, userID),
+		PrefShowPlatformDebug,
+		false,
+	)
+	if got {
+		t.Errorf("getUserBoolPreference = true, want false (default)")
+	}
+
+	// PUT "true" and verify it reads back.
+	body := strings.NewReader(`{"value":"true"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefShowPlatformDebug, body)
+	req.Header.Set("Content-Type", "application/json")
+	req = withUserCtx(req, userID)
+	req.SetPathValue("key", PrefShowPlatformDebug)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT preference status = %d: %s", w.Code, w.Body.String())
+	}
+
+	got2 := r.getUserBoolPreference(
+		middleware.WithTestUserID(ctx, userID),
+		PrefShowPlatformDebug,
+		false,
+	)
+	if !got2 {
+		t.Errorf("getUserBoolPreference after PUT true = false, want true")
+	}
+}

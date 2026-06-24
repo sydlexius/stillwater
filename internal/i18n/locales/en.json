@@ -2532,6 +2532,10 @@
   "prefs.notification_enabled.description": "Show in-app toast notifications for rule violations.",
   "prefs.notification_enabled.help": "Affects in-app toasts only - not email or webhook notifications, which are configured in Settings.",
 
+  "prefs.show_platform_debug.label": "Show Platform Debug Tab",
+  "prefs.show_platform_debug.description": "Add a Debug tab to each artist page showing the raw API payload from connected platforms.",
+  "prefs.show_platform_debug.help": "When on, a Debug tab appears on each artist's detail page with the raw API payload received from connected media servers (Emby, Jellyfin). Useful for diagnosing unexpected IDs, image URLs, or library paths.",
+
   "prefs.sidebar_state.help": "Full shows nav icons with labels. Icon-only reclaims horizontal space; Hidden removes the sidebar entirely.",
   "prefs.content_width.help": "Narrow caps line length for comfortable reading. Wide fills the screen to fit more per row.",
   "prefs.thumbnail_size.help": "Size of artist artwork in lists and the action queue. Shown here at the actual pixel sizes.",
