@@ -2926,6 +2926,30 @@ html:not([data-density]) .sw-next-activity #activity-entries > :not(:last-child)
   margin-block-end: var(--sw-density-gap);
 }
 
+/* Duplicates page (M55 #1752) -- group-card stack and member-table row padding
+ * track the density pref, mirroring the artists-list and activity-feed rules:
+ *
+ *   - Row padding: each member-table body cell carries Tailwind py-2 (0,1,0).
+ *     Rebind vertical padding to the density row-py token on compact/spacious
+ *     only; comfortable keeps the native py-2 rhythm (same rationale as
+ *     artists/activity: comfortable is the hand-tuned default, left untouched).
+ *   - Inter-card gap: the group cards sit in #artist-duplicates-table (a
+ *     space-y-4 container). Rebind the margin-block-end to the density gap token
+ *     across ALL densities (comfortable + pre-JS html:not([data-density])
+ *     included, like the dashboard and activity stacks) so the explicit,
+ *     higher-specificity selector overrides the Tailwind space-y utility. */
+html[data-density="compact"] .sw-next-duplicates [data-duplicate-group] tbody td,
+html[data-density="spacious"] .sw-next-duplicates [data-duplicate-group] tbody td {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
+}
+html[data-density="compact"] .sw-next-duplicates #artist-duplicates-table > :not(:last-child),
+html[data-density="comfortable"] .sw-next-duplicates #artist-duplicates-table > :not(:last-child),
+html[data-density="spacious"] .sw-next-duplicates #artist-duplicates-table > :not(:last-child),
+html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:last-child) {
+  margin-block-end: var(--sw-density-gap);
+}
+
 /* Checkbox treatment (M55 #1335; maintainer note 2026-05-30): the prototype's
  * selection checkboxes carry a surface-tinted background instead of the
  * browser-default white box, in BOTH themes. Restyle the reused native
