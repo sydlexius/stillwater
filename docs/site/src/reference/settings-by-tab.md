@@ -63,14 +63,6 @@ Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW
 
 URL path prefix for running Stillwater behind a reverse proxy at a sub-path.
 
-### Behavior  {#settings-general-behavior}
-
-These switches set the defaults Stillwater applies during metadata workflows: whether NFO writes use symlinks for duplicate filenames, and whether opening an artist's image page kicks off a provider search automatically. They affect every artist on this instance, not just the one you are looking at.
-
-### Show platform debug info on artist pages  {#settings-general-platform-debug}
-
-Each artist who came in from a connected media server has a raw payload Stillwater received from the platform's API (the source of truth for IDs, image URLs, and library paths). Turning this on adds a Debug tab to the artist detail page that displays that payload, which is useful when tracing why a field looks wrong.
-
 ### Image Cache  {#settings-general-image-cache}
 
 When an artist comes from a connected media server but Stillwater cannot resolve the artist's folder on disk, downloaded cover art is stored in a local image cache instead so the UI can still render thumbnails. This section shows the cache size, lets you cap how big it can grow, and lets you clear it.

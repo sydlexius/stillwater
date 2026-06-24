@@ -65,12 +65,10 @@ settings-general-active-profile
 settings-general-active-profile-nfo-output
 settings-general-active-profile-save-filenames
 settings-general-base-path
-settings-general-behavior
 settings-general-image-cache
 settings-general-image-cache-clear
 settings-general-image-cache-max-size
 settings-general-image-cache-unlimited
-settings-general-platform-debug
 settings-general-platform-profile
 settings-general-profile-naming
 settings-general-profile-naming-prompt-filename

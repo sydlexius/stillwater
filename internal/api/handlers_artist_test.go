@@ -344,12 +344,14 @@ func TestArtistDetailPage_TabDebugFallback(t *testing.T) {
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Debug Tab Artist")
 
-	// Helper to enable the show_platform_debug setting.
+	// Helper to enable the show_platform_debug per-user preference for "test-user"
+	// (the user ID injected by doRequest via middleware.WithTestUserID).
 	enableDebug := func() {
 		_, err := r.db.ExecContext(context.Background(),
-			`INSERT OR REPLACE INTO settings (key, value) VALUES ('show_platform_debug', 'true')`)
+			`INSERT OR REPLACE INTO user_preferences (user_id, key, value, updated_at)
+			 VALUES ('test-user', 'show_platform_debug', 'true', datetime('now'))`)
 		if err != nil {
-			t.Fatalf("setting show_platform_debug: %v", err)
+			t.Fatalf("setting show_platform_debug preference: %v", err)
 		}
 	}
 
