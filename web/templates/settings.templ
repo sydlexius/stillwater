@@ -1349,7 +1349,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					hx-swap="innerHTML"
 					hx-indicator={ "#test-spinner-" + string(pk.Name) }
 				>
-					Test
+					{ t(ctx, "common.test") }
 					<svg id={ "test-spinner-" + string(pk.Name) } class="htmx-indicator h-3.5 w-3.5 animate-spin" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -1444,14 +1444,14 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 								type="submit"
 								class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
 							>
-								Save
+								{ t(ctx, "common.save") }
 							</button>
 							<button
 								type="button"
 								class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 								onclick={ toggleProviderConfig(string(pk.Name)) }
 							>
-								Cancel
+								{ t(ctx, "common.cancel") }
 							</button>
 						</div>
 					</form>
@@ -1523,7 +1523,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end">
 							<div class="flex-1">
 								<label for={ "custom-base-url-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
-									Base URL
+									{ t(ctx, "settings.provider_config.base_url") }
 								</label>
 								<input
 									id={ "custom-base-url-" + string(pk.Name) }
@@ -1543,7 +1543,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							</div>
 							<div class="w-32">
 								<label for={ "custom-rate-limit-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
-									Rate (req/s)
+									{ t(ctx, "settings.provider_config.rate_limit") }
 								</label>
 								<input
 									id={ "custom-rate-limit-" + string(pk.Name) }
@@ -1570,7 +1570,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						<div class="flex items-center gap-2">
 							<span class="text-xs font-medium text-gray-400 dark:text-gray-500">{ t(ctx, "settings.provider_config.oauth_credentials") }</span>
 							<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-								Coming soon
+								{ t(ctx, "common.coming_soon") }
 							</span>
 						</div>
 						<p class="text-xs text-gray-400 dark:text-gray-500 mt-1 mb-2">
@@ -1605,14 +1605,14 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							class="text-sm px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
 							onclick={ saveProviderConfig(string(pk.Name)) }
 						>
-							Save
+							{ t(ctx, "common.save") }
 						</button>
 						<button
 							type="button"
 							class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 							onclick={ toggleProviderConfig(string(pk.Name)) }
 						>
-							Cancel
+							{ t(ctx, "common.cancel") }
 						</button>
 					</div>
 				</form>
@@ -1871,14 +1871,14 @@ templ providerTestSaveFailureInner(name provider.ProviderName, apiKey string, er
 					type="submit"
 					class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors"
 				>
-					Save anyway
+					{ t(ctx, "actions.save_anyway") }
 				</button>
 				<button
 					type="button"
 					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					onclick="window.location.reload()"
 				>
-					Cancel
+					{ t(ctx, "common.cancel") }
 				</button>
 			</form>
 		</div>
