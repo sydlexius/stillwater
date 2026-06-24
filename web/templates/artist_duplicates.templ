@@ -77,7 +77,7 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 						<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{ group.Key }</span>
 						<button
 							type="button"
-							class="ml-auto inline-flex items-center gap-1 rounded bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
+							class="ml-auto inline-flex items-center gap-1 rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
 							data-merge-open
 							data-group-key={ group.Key }
 						>
@@ -190,7 +190,7 @@ templ ArtistMergeModal() {
 					<button
 						type="button"
 						id="merge-modal-confirm"
-						class="rounded bg-blue-600 hover:bg-blue-700 px-3 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-600"
+						class="rounded bg-red-600 hover:bg-red-700 px-3 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-600"
 						disabled
 					>
 						{ t(ctx, "artist_duplicates.merge_modal.confirm_button") }
