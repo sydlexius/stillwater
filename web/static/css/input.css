@@ -4919,6 +4919,19 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   background: transparent;
   border-bottom: 1px solid var(--swd-line-strong);
 }
+/* M55 #1752: .sw-next-duplicates single-layer opacity model (mirrors the #1773
+ * foreign-files treatment). The page's global .sw-card already carries the
+ * opacity-aware --sw-glass-bg fill; its <table> thead's Tailwind
+ * bg-gray-50/dark:bg-gray-800/30 would block that glass and stack a second
+ * opacity layer, so override the thead to transparent and differentiate it by a
+ * border only. tbody stays background-free (its divide-y borders add no layer). */
+.sw-next-duplicates table > thead {
+  background: transparent;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.16);
+}
+.dark .sw-next-duplicates table > thead {
+  border-bottom-color: rgba(148, 163, 184, 0.28);
+}
 /* M55 #1773 (Task C-rev): action controls on the two foreign-files next/ pages
  * follow the ARTIST-DETAIL button motif (the maintainer's canonical reference),
  * reusing the swd ramp tokens directly -- the ramp's scope lists include
