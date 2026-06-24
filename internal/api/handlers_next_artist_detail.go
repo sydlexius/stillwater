@@ -142,24 +142,45 @@ func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request
 // field(s) each rule inspects (rule.RuleFields), producing the field -> chips
 // map the next/ artist-detail page renders. Image rules and whole-record /
 // cross-field rules carry no field tag and are intentionally omitted here (they
-// surface only in the Open Findings list). Returns nil when the rule service is
-// absent or the artist has no field-tagged violations.
+// surface only in the non-field "Other findings" list). Returns nil when the
+// rule service is absent or the artist has no field-tagged violations.
+//
+// It sources violations via ListViolationsFiltered (not GetViolationsForArtists)
+// because the inline chip's click-popover now offers Fix/Dismiss actions that
+// POST to /notifications/<id>/{fix,dismiss}: GetViolationsForArtists returns a
+// summary projection with no violation ID, whereas ListViolationsFiltered
+// returns the full RuleViolation rows. The "active" status filter matches the
+// "Other findings" list's own query so the two surfaces stay consistent.
 func (r *Router) buildFieldFindings(ctx context.Context, artistID string) map[string][]templates.FieldFinding {
 	if r.ruleService == nil {
 		return nil
 	}
-	byArtist, err := r.ruleService.GetViolationsForArtists(ctx, []string{artistID})
+	violations, err := r.ruleService.ListViolationsFiltered(ctx, rule.ViolationListParams{
+		Status:   "active",
+		ArtistID: artistID,
+	})
 	if err != nil {
 		r.logger.Warn("loading violations for field chips", "artist_id", artistID, "error", err)
 		return nil
 	}
-	violations := byArtist[artistID]
 	if len(violations) == 0 {
 		return nil
 	}
+	// Friendly rule names for the chip popover header. The persisted
+	// RuleViolation row carries only the rule id, so map id -> Name from the
+	// built-in catalogue (DefaultRules is an in-memory slice, no DB round trip).
+	// A custom or unknown rule id simply yields an empty name and the popover
+	// falls back to a generic "Finding" label (fieldFindingTitle).
+	ruleNames := map[string]string{}
+	// Index rather than value-range: rule.Rule is a large struct and copying it
+	// each iteration trips gocritic's rangeValCopy.
+	defRules := rule.DefaultRules()
+	for i := range defRules {
+		ruleNames[defRules[i].ID] = defRules[i].Name
+	}
 	out := map[string][]templates.FieldFinding{}
-	// Index rather than value-range: rule.Violation is a large struct and copying
-	// it each iteration trips gocritic's rangeValCopy.
+	// Index rather than value-range: rule.RuleViolation is a large struct and
+	// copying it each iteration trips gocritic's rangeValCopy.
 	for i := range violations {
 		v := &violations[i]
 		fields := rule.RuleFields(v.RuleID)
@@ -167,8 +188,15 @@ func (r *Router) buildFieldFindings(ctx context.Context, artistID string) map[st
 			continue
 		}
 		chip := templates.FieldFinding{
+			ID:       v.ID,
+			ArtistID: artistID,
+			RuleID:   v.RuleID,
+			Name:     ruleNames[v.RuleID],
 			Severity: v.Severity,
 			Message:  v.Message,
+			// Fixable gates the popover's Fix button: only an open, fixable
+			// violation can be auto-fixed (mirrors artistFindingListItem's gate).
+			Fixable: v.Fixable && v.Status == rule.ViolationStatusOpen,
 		}
 		for _, f := range fields {
 			out[f] = append(out[f], chip)

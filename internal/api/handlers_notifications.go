@@ -519,10 +519,35 @@ func (r *Router) handleArtistViolationsTab(w http.ResponseWriter, req *http.Requ
 // list when the resolved UX channel is "next", else the stable tabbed table.
 // Both share the #violations-content-{id} wrapper + OOB badge so violations-sync
 // refreshes either identically.
+//
+// In the next/ channel the list is the residual "Other findings" card (#1860):
+// findings that map to a metadata field now render as inline chips on that field
+// (with their own Fix/Dismiss popover), so they are filtered out here and only
+// the image + whole-record (structural) findings remain. The stable channel is
+// untouched and keeps the full violation table.
 func (r *Router) renderArtistViolations(w http.ResponseWriter, req *http.Request, data templates.ArtistViolationsTabData) {
 	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+		data.Violations = nonFieldViolations(data.Violations)
 		_ = templates.ArtistFindingsList(data).Render(req.Context(), w)
 		return
 	}
 	_ = templates.ArtistViolationsTab(data).Render(req.Context(), w)
+}
+
+// nonFieldViolations returns the subset of violations whose rule does NOT map to
+// a single metadata field (rule.RuleFields is empty) -- i.e. the image and
+// whole-record/structural findings. Field-mapped findings are excluded because
+// the next/ artist-detail page renders them as inline chips on their field
+// (#1860), so listing them again in the "Other findings" card would duplicate
+// them. Keying off RuleFields (not a hardcoded id list) keeps this in lock-step
+// with the rule catalogue's Fields tags. Returns a non-nil empty slice when
+// nothing remains so the template's empty-state branch renders.
+func nonFieldViolations(violations []rule.RuleViolation) []rule.RuleViolation {
+	out := make([]rule.RuleViolation, 0, len(violations))
+	for i := range violations {
+		if len(rule.RuleFields(violations[i].RuleID)) == 0 {
+			out = append(out, violations[i])
+		}
+	}
+	return out
 }

@@ -904,13 +904,39 @@ func artistTypeRowValue(ctx context.Context, rawType string) string {
 
 // FieldFinding is one active rule violation surfaced as an inline chip on the
 // metadata field it touches. It is a presentation-only projection of a
-// rule.Violation (kept here so the templates package does not import the rule
-// engine): Severity drives the chip color AND its label (the severity word,
-// matching the Open Findings list's severity badge), and Message is the hover
-// tooltip carrying the specific problem.
+// rule.RuleViolation (kept here so the templates package does not import the
+// rule engine): Severity drives the chip color AND its label (the severity
+// word), and Message is the popover body carrying the specific problem.
+//
+// ID/ArtistID/RuleID/Fixable were added in #1860 so the chip's click-popover
+// can offer the same Fix/Dismiss actions the (now non-field-only) "Other
+// findings" list does, reusing artistViolationFix/artistViolationDismiss: ID is
+// the violation id the notifications endpoints take, RuleID drives the Fix
+// button's localized label, and Fixable gates whether the Fix button renders
+// (an open, fixable violation only).
 type FieldFinding struct {
+	ID       string
+	ArtistID string
+	RuleID   string
+	// Name is the rule's friendly display name (rule.RuleViolation.RuleName),
+	// shown as the popover header label so a field finding reads with the same
+	// human-legible title the catalogue gives it; it falls back to a generic
+	// "Finding" label (fieldFindingTitle) when a violation carries no name.
+	Name     string
 	Severity string
 	Message  string
+	Fixable  bool
+}
+
+// fieldFindingTitle returns the popover header label for a finding: the rule's
+// friendly name when present, else a localized generic "Finding" label. Keeping
+// the fallback here (not in the template) lets both the desktop and any future
+// surface share one rule.
+func fieldFindingTitle(ctx context.Context, f FieldFinding) string {
+	if strings.TrimSpace(f.Name) != "" {
+		return f.Name
+	}
+	return t(ctx, "artist.finding_label")
 }
 
 // fieldFindingsKeyType is the unexported context key under which the

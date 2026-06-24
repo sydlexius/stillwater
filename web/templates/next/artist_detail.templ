@@ -722,12 +722,17 @@ templ artistAliasAddForm(artistID string) {
 	</form>
 }
 
-// artistFindingsSection is the dedicated "Open findings" section. It lazy-loads
-// the existing violations-tab fragment so violations-sync.js refreshes it on
-// fix/dismiss/refresh/SSE. id="next-findings" is the hero's scroll target and
-// id="artist-violations-tab-{id}" is the sync module's fallback swap target.
+// artistFindingsSection is the "Other findings" section: the residual home for
+// findings that do NOT map to a single metadata field (#1860). Field-mapped rules
+// now render as inline chips on their field (with their own Fix/Dismiss popover),
+// and the next/ violations fragment filters them out server-side
+// (renderArtistViolations), so this card lists only the image + whole-record
+// (structural) findings. It lazy-loads that fragment so violations-sync.js
+// refreshes it on fix/dismiss/refresh/SSE. id="next-findings" is the hero's
+// scroll target and id="artist-violations-tab-{id}" is the sync module's fallback
+// swap target.
 templ artistFindingsSection(data *templates.ArtistDetailData) {
-	<section id="next-findings" class="sw-dash-card" data-sw-section="findings" data-sw-section-label={ t(ctx, "artist.tab_violations") } aria-labelledby="next-findings-heading">
+	<section id="next-findings" class="sw-dash-card" data-sw-section="findings" data-sw-section-label={ t(ctx, "artist.other_findings") } aria-labelledby="next-findings-heading">
 		// OOB landing pad: the reused violations-tab fragment emits an
 		// hx-swap-oob targeting #violations-tab-badge (the stable tab pill). The
 		// next/ page has no tab bar, so this catches the swap to prevent
@@ -735,7 +740,7 @@ templ artistFindingsSection(data *templates.ArtistDetailData) {
 		// (dropping its class), so the badge is kept hidden by the OUTER wrapper
 		// (otherwise the swapped-in count, e.g. "2", leaks into the card corner).
 		<span class="hidden" aria-hidden="true"><span id="violations-tab-badge"></span></span>
-		<div class="head"><h2 id="next-findings-heading">{ t(ctx, "artist.open_findings") }</h2></div>
+		<div class="head"><h2 id="next-findings-heading">{ t(ctx, "artist.other_findings") }</h2></div>
 		<div class="body">
 			<div
 				id={ "artist-violations-tab-" + data.Artist.ID }
@@ -1212,6 +1217,18 @@ templ artistDetailPageScript() {
 					// updates the H1 and type pill in place (#1850).
 					refreshEditableSections().then(refreshHero).then(rebindHero);
 				}
+			});
+
+			// Inline finding chips (#1860): a Fix/Dismiss from a field chip's popover
+			// resolves the violation and dispatches dashboard:action-resolved (the same
+			// event violations-sync.js uses to refresh the "Other findings" card). The
+			// chip lives in the metadata/identifiers sections, NOT that card, so refresh
+			// those sections in place too -- otherwise the resolved chip lingers until a
+			// reload. Skipped while editing so an open editor's unsaved input is never
+			// clobbered (the chip then clears on the next non-edit refresh / Done).
+			document.body.addEventListener('dashboard:action-resolved', function () {
+				if (editing) return;
+				refreshEditableSections();
 			});
 
 			// Sticky mini-header: initial bind (runs once at page load). After a

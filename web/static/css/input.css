@@ -4312,6 +4312,14 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   line-height: 1.6;
   white-space: nowrap;
   text-decoration: none;
+  /* The chip is a <button> (it opens a Fix/Dismiss popover, #1860); reset the
+     native button chrome so it stays a flat pill. The per-severity rules below
+     supply the background/color. */
+  appearance: none;
+  border: 0;
+  margin: 0;
+  font-family: inherit;
+  cursor: pointer;
 }
 .sw-next-artist-detail .sw-field-chip:hover {
   text-decoration: underline;
@@ -4333,6 +4341,123 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 .sw-next-artist-detail .sw-field-chip[data-severity="info"] {
   color: var(--swd-info);
   background: var(--swd-info-soft);
+}
+
+/* Field-finding popover (#1860 polish): the click-popover behind each field
+ * chip, brought up to the "Other findings" row richness while the trigger pill
+ * stays compact. A header (severity dot + rule name + severity word), a readable
+ * message, and real glass Fix/Dismiss buttons -- all sourced from the shared
+ * --swd-* tokens so it speaks the same visual language as the findings list and
+ * the artist-detail glass buttons (no hand-rolled colors). The .ctx-desktop-panel
+ * class still drives the show/hide + positioning via ContextMenuGlobalJS. */
+.sw-next-artist-detail .sw-ff-pop {
+  width: 17rem;
+  max-width: 22rem;
+  padding: 10px;
+  border-radius: var(--swd-r-2, 10px);
+  border: 1px solid var(--swd-line);
+  background: var(--swd-bg-raised);
+  box-shadow: var(--swd-shadow-2);
+  color: var(--swd-ink);
+  /* Reset the pill's uppercase/letter-spacing inheritance so the popover body
+     reads as normal-case prose. */
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.sw-next-artist-detail .sw-ff-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.sw-next-artist-detail .sw-ff-pop-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex: none;
+  background: var(--swd-ink-3);
+}
+.sw-next-artist-detail .sw-ff-pop-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--swd-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sw-next-artist-detail .sw-ff-pop-sev {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--swd-ink-3);
+}
+/* Per-severity color drives the header dot + severity word, mirroring the
+ * .sw-next-finding rows exactly. */
+.sw-next-artist-detail .sw-ff-pop[data-severity="error"] .sw-ff-pop-dot { background: var(--swd-err); }
+.sw-next-artist-detail .sw-ff-pop[data-severity="error"] .sw-ff-pop-sev { color: var(--swd-err); }
+.sw-next-artist-detail .sw-ff-pop[data-severity="warning"] .sw-ff-pop-dot { background: var(--swd-warn); }
+.sw-next-artist-detail .sw-ff-pop[data-severity="warning"] .sw-ff-pop-sev { color: var(--swd-warn); }
+.sw-next-artist-detail .sw-ff-pop[data-severity="info"] .sw-ff-pop-dot { background: var(--swd-info); }
+.sw-next-artist-detail .sw-ff-pop[data-severity="info"] .sw-ff-pop-sev { color: var(--swd-info); }
+.sw-next-artist-detail .sw-ff-pop-msg {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--swd-ink-2);
+  white-space: pre-line;
+}
+.sw-next-artist-detail .sw-ff-pop-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* Real glass buttons matching the artist-detail motif. Both share the glass
+ * base (transparent, border --swd-line). Fix carries the shared blue halo to
+ * mark it as the primary action; no colored fill (standing principle). Dismiss
+ * is the plain secondary (err-tinted on hover). */
+.sw-next-artist-detail .sw-ff-pop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  border-radius: var(--swd-r-2, 10px);
+  border: 1px solid var(--swd-line);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.sw-next-artist-detail .sw-ff-pop-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--swd-blue-ink);
+}
+.sw-next-artist-detail .sw-ff-pop-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.sw-next-artist-detail .sw-ff-pop-fix {
+  color: var(--swd-ink-2);
+  border-color: var(--swd-line);
+  background: transparent;
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 0 5px rgba(59, 130, 246, 0.22);
+}
+.sw-next-artist-detail .sw-ff-pop-dismiss {
+  color: var(--swd-ink-2);
+  background: transparent;
+}
+.sw-next-artist-detail .sw-ff-pop-dismiss:hover {
+  color: var(--swd-err);
+  border-color: color-mix(in srgb, var(--swd-err) 40%, var(--swd-line));
+  background: var(--swd-err-soft);
 }
 
 /* Typography parity (item 8 extension): the Open Findings section reuses

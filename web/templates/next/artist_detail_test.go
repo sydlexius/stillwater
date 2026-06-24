@@ -75,6 +75,46 @@ func TestArtistDetailPage_RendersHeroAndSections(t *testing.T) {
 	}
 }
 
+// TestArtistDetailPage_ChipRefreshOnActionResolved pins the inline-chip live
+// refresh (#1860): when a field chip's Fix/Dismiss popover resolves a violation
+// it dispatches dashboard:action-resolved, and the page script must refresh the
+// editable (metadata/identifiers) sections so the resolved chip disappears
+// without a reload. The wiring lives in the inline artistDetailPageScript, so we
+// assert the rendered page subscribes that event to refreshEditableSections.
+func TestArtistDetailPage_ChipRefreshOnActionResolved(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	if err := ArtistDetailPage(templates.AssetPaths{}, detailPageData(nil, nil)).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "dashboard:action-resolved") {
+		t.Fatalf("page script must subscribe to dashboard:action-resolved for chip refresh")
+	}
+	// The handler body must call refreshEditableSections so the metadata/identifiers
+	// chips re-render. Assert the listener registration and the refresh call both
+	// appear (proximity check: the listener line names the event + the refresh fn).
+	idx := strings.Index(out, "addEventListener('dashboard:action-resolved'")
+	if idx < 0 {
+		t.Fatalf("expected an addEventListener('dashboard:action-resolved', ...) registration in the page script")
+	}
+	// Within the handler that follows, refreshEditableSections() must be invoked.
+	window := out[idx:]
+	if end := strings.Index(window, "});"); end > 0 {
+		window = window[:end]
+	}
+	if !strings.Contains(window, "refreshEditableSections()") {
+		t.Errorf("dashboard:action-resolved handler must call refreshEditableSections() to clear resolved chips; handler:\n%s", window)
+	}
+	// The handler must guard against re-entrant calls while the user is editing
+	// a field (editing flag set by the edit-all toggle). Without the guard a
+	// resolved action would swap out a section the user is actively editing.
+	if !strings.Contains(window, "if (editing) return") {
+		t.Errorf("dashboard:action-resolved handler must guard with 'if (editing) return' to avoid clobbering active edits; handler:\n%s", window)
+	}
+}
+
 // TestArtistDetailPage_PrototypeChrome pins the prototype-fidelity rework
 // (M55 #1336, 4A UAT): the page adopts the dark sw-dash-card system, the hero is
 // the restrained portrait|meta|actions layout with a compliance summary bar (no
