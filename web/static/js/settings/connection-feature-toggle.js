@@ -96,6 +96,13 @@
   // adjacent inline error span using the localized data-sw-error text. Bound via
   // hx-on:htmx:after-request="swVerifyPathAfterUpdateAfterRequest(this, event)".
   window.swVerifyPathAfterUpdateAfterRequest = function (triggerEl, event) {
+    // Declarations hoisted to the function top (Biome noInnerDeclarations). `var`
+    // is function-scoped, so this is behaviorally identical to declaring inline.
+    var errEl;
+    var resp;
+    var enabled;
+    var knob;
+    var msg;
     var connID = triggerEl && triggerEl.dataset ? triggerEl.dataset.connId : '';
     // Fail loudly on a missing data-conn-id rather than silently no-op'ing:
     // without it we cannot resolve the inline error span or re-sync the button,
@@ -104,17 +111,17 @@
       console.error('swVerifyPathAfterUpdateAfterRequest: missing data-conn-id on toggle; cannot sync state', triggerEl);
       return;
     }
-    var errEl = document.getElementById('verify-path-error-' + connID);
+    errEl = document.getElementById('verify-path-error-' + connID);
     if (event.detail.successful) {
       if (errEl) {
         errEl.textContent = '';
         errEl.classList.add('hidden');
       }
       try {
-        var resp = JSON.parse(event.detail.xhr.responseText || '{}');
+        resp = JSON.parse(event.detail.xhr.responseText || '{}');
         if (typeof resp.verify_path_after_update === 'boolean') {
-          var enabled = resp.verify_path_after_update;
-          var knob = triggerEl.querySelector('span');
+          enabled = resp.verify_path_after_update;
+          knob = triggerEl.querySelector('span');
           triggerEl.setAttribute('aria-checked', String(enabled));
           triggerEl.setAttribute('class', enabled ? triggerEl.dataset.swBtnOn : triggerEl.dataset.swBtnOff);
           triggerEl.setAttribute('hx-vals', JSON.stringify({ enabled: !enabled }));
@@ -127,7 +134,7 @@
         // load to re-sync from the server-rendered state.
       }
     } else {
-      var msg =
+      msg =
         (triggerEl && triggerEl.dataset && triggerEl.dataset.swError) ||
         'Could not update the verify-path setting. Try again or reload the page.';
       if (errEl) {

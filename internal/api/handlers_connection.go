@@ -779,6 +779,16 @@ func (r *Router) handleSetVerifyPathAfterUpdate(w http.ResponseWriter, req *http
 		return
 	}
 
+	// Re-check the type under the lock. The pre-lock gate only guards the fast
+	// path; the mutex serializes verify-path writes but does NOT serialize a
+	// concurrent connection-type change. Without this re-check a connection that
+	// flipped away from lidarr between the gate and the lock would slip through to
+	// an errant write / 500 instead of the documented 400.
+	if existing.Type != connection.TypeLidarr {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "verify-path-after-update is only valid for lidarr connections"})
+		return
+	}
+
 	setVerifyPathAfterUpdate(existing, enabled)
 
 	if err := r.connectionService.Update(req.Context(), existing); err != nil {

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -124,6 +126,80 @@ func TestHandleSetVerifyPathAfterUpdate_RejectsNonLidarr(t *testing.T) {
 	w := postVerifyPath(t, r, id, []byte(`{"enabled":true}`))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleSetVerifyPathAfterUpdate_RejectsTypeChangeUnderLock pins the
+// under-lock type re-check. The pre-lock gate only guards the fast path; the
+// per-connection mutex serializes verify-path writes but does NOT serialize a
+// concurrent connection-type change. This test forces that exact interleaving:
+// it pre-acquires the SAME per-id mutex the handler uses, so the handler runs
+// its pre-lock gate (still lidarr -> passes) and then parks before the
+// under-lock fetch. While the handler is parked the connection is flipped to
+// emby, then the lock is released. The handler's under-lock fetch must observe
+// the non-lidarr type and return 400. WITHOUT the re-check the handler would
+// call setVerifyPathAfterUpdate on the emby row, whose Update fails
+// normalizeConfig validation ("emby must not carry lidarr config"), surfacing as
+// a 500 plus an errant write attempt.
+//
+// The assertion is interleaving-independent: even if the flip lands before the
+// pre-lock gate read, that gate also returns 400, so the test never flakes. The
+// held mutex merely biases execution toward exercising the under-lock branch.
+func TestHandleSetVerifyPathAfterUpdate_RejectsTypeChangeUnderLock(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+	id := seedLidarrConn(t, r)
+
+	// Pre-acquire the same per-id mutex the handler will LoadOrStore-and-Lock, so
+	// the handler blocks after its pre-lock gate and before the under-lock fetch.
+	muIface, _ := r.verifyPathAfterUpdateMu.LoadOrStore(id, &sync.Mutex{})
+	mu := muIface.(*sync.Mutex)
+	mu.Lock()
+
+	codeCh := make(chan int, 1)
+	go func() {
+		w := postVerifyPath(t, r, id, []byte(`{"enabled":true}`))
+		codeCh <- w.Code
+	}()
+
+	// Let the handler reach the held mutex. It cannot proceed past the lock until
+	// we release it, so yielding only biases toward the under-lock branch.
+	for i := 0; i < 100; i++ {
+		runtime.Gosched()
+	}
+
+	// Flip the connection to emby while the handler is parked. normalizeConfig
+	// requires clearing the lidarr sub-config when changing platform.
+	conn, err := r.connectionService.GetByID(context.Background(), id)
+	if err != nil {
+		mu.Unlock()
+		t.Fatalf("re-read for flip: %v", err)
+	}
+	conn.Type = connection.TypeEmby
+	conn.Lidarr = nil
+	if updErr := r.connectionService.Update(context.Background(), conn); updErr != nil {
+		mu.Unlock()
+		t.Fatalf("flip to emby: %v", updErr)
+	}
+
+	// Release the lock; the handler's under-lock fetch now observes emby.
+	mu.Unlock()
+
+	if code := <-codeCh; code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (under-lock type re-check must reject the now-non-lidarr connection)", code)
+	}
+
+	// No errant write: the row stays emby with verify-path off (the getter
+	// returns false for an absent lidarr sub-config).
+	got, err := r.connectionService.GetByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("final re-read: %v", err)
+	}
+	if got.Type != connection.TypeEmby {
+		t.Errorf("type = %q, want emby (handler must not have rewritten the row)", got.Type)
+	}
+	if got.GetVerifyPathAfterUpdate() {
+		t.Error("VerifyPathAfterUpdate = true on emby connection; an errant write slipped past the under-lock guard")
 	}
 }
 
