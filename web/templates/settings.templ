@@ -1482,7 +1482,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 									onchange={ handleServerSelection(string(pk.Name)) }
 								/>
 								<span>{ t(ctx, "settings.provider_config.official") }</span>
-								<span class="text-xs text-gray-400 dark:text-gray-500">musicbrainz.org (1 req/s)</span>
+								<span class="text-xs text-gray-400 dark:text-gray-500">{ tf(ctx, "settings.provider_config.official_hint", "musicbrainz.org") }</span>
 							</label>
 							<label class="flex items-center gap-2 text-sm cursor-pointer">
 								<input
@@ -1496,7 +1496,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 									onchange={ handleServerSelection(string(pk.Name)) }
 								/>
 								<span>{ t(ctx, "settings.provider_config.beta") }</span>
-								<span class="text-xs text-gray-400 dark:text-gray-500">beta.musicbrainz.org (same data, 1 req/s)</span>
+								<span class="text-xs text-gray-400 dark:text-gray-500">{ tf(ctx, "settings.provider_config.beta_hint", "beta.musicbrainz.org") }</span>
 							</label>
 							<label class="flex items-center gap-2 text-sm cursor-pointer">
 								<input
