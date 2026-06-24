@@ -1568,6 +1568,7 @@
   "reports.image_coverage.label": "Image coverage",
   "reports.metadata_completeness.desc": "Field coverage and lowest-scoring artists",
   "reports.metadata_completeness.label": "Metadata completeness",
+  "reports.open_rail": "Open reports menu",
   "reports.page_title": "Reports",
   "reports.placeholder_desc": "This report is coming soon.",
   "reports.placeholder_title": "Report not available",

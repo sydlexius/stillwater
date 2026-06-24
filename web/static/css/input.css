@@ -5774,12 +5774,118 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   outline-offset: 2px;
 }
 
-/* Mobile: collapse to single-column, hide rail */
+/* Mobile rail drawer toggle: ghost/outline icon button (next/ motif -- never a
+   solid fill). Hidden on desktop; shown only inside the <=768px media query so
+   the rail's slide-over has an opener. */
+.sw-rep-rail-toggle {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 12px 14px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--sw-glass-border);
+  border-radius: var(--sw-radius-sm);
+  background: transparent;
+  color: var(--sw-content-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.sw-rep-rail-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--sw-content-text-secondary);
+}
+.sw-rep-rail-toggle:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--sw-accent-primary);
+}
+.sw-rep-rail-toggle-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* Mobile rail drawer scrim: hidden on desktop, revealed inside the media query.
+   Absolute (not fixed) so it tracks the workspace card -- whose backdrop-filter
+   would otherwise become the containing block for a fixed overlay anyway. */
+.sw-rep-rail-scrim {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 49;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.sw-rep-rail-scrim--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Mobile (<=768px): collapse to a single column and turn the rail into a
+   slide-over drawer. The drawer is positioned ABSOLUTE within the workspace
+   card (not fixed): .sw-card paints a backdrop-filter, which makes it the
+   containing block for any descendant fixed element, so absolute keeps the
+   geometry explicit and the off-screen drawer clipped by the card's
+   overflow:hidden. */
 @media (max-width: 768px) {
   .sw-rep-workspace {
     grid-template-columns: 1fr;
+    position: relative;
   }
   .sw-rep-rail {
-    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    width: 280px;
+    max-width: 85vw;
+    /* As a floating drawer the rail needs its own surface (it paints
+       transparent on desktop because it sits ON the glass card). */
+    background: var(--sw-glass-bg);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    border-right: 1px solid var(--sw-glass-border);
+    border-radius: 0 var(--sw-radius-lg) var(--sw-radius-lg) 0;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.25s ease, visibility 0s linear 0.25s;
   }
+  .sw-rep-rail.sw-rep-rail--open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.25s ease, visibility 0s linear 0s;
+  }
+  .sw-rep-rail-scrim {
+    display: block;
+  }
+  .sw-rep-rail-toggle {
+    display: inline-flex;
+  }
+}
+
+/* Reduced motion / lite mode: snap the drawer + scrim instantly (mirrors the
+   prefs-drawer precedent). */
+@media (prefers-reduced-motion: reduce) {
+  .sw-rep-rail,
+  .sw-rep-rail-scrim {
+    transition: none;
+  }
+}
+[data-motion="on"] .sw-rep-rail,
+[data-motion="on"] .sw-rep-rail-scrim,
+[data-lite="on"] .sw-rep-rail,
+[data-lite="on"] .sw-rep-rail-scrim {
+  transition: none;
+}
+/* Lite mode: drop the blur so the drawer stays cheap; --sw-glass-bg is the
+   globally-floored (>=85% opaque) surface, so it stays legible without it. */
+[data-lite="on"] .sw-rep-rail {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
