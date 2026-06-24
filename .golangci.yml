@@ -139,6 +139,14 @@ linters:
       tls-signature-scheme: true
       constant-kind: true
   exclusions:
+    paths:
+      # Generated templ output is excluded by the generated-file header in a
+      # normal golangci run, but the pre-push gate's `--new-from-rev` mode
+      # bypasses that exclusion -- so regenerating a _templ.go surfaces its
+      # pre-existing codegen artifacts (e.g. wastedassign on templ.NopComponent
+      # vars) as "new" issues. Exclude by path so generated code is never linted
+      # in any mode.
+      - _templ\.go$
     rules:
       - path: _test\.go
         linters:
