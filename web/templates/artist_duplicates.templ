@@ -226,6 +226,11 @@ templ ArtistMergeModal() {
 		// re-render that would replace the radio nodes and break radio-group
 		// arrow-key navigation.
 		var rowControls = [];
+		// dryRunSeq is incremented on every new dry-run invocation and on
+		// closeModal. Async continuations compare their captured seq against
+		// the current value so a stale response from a superseded dry-run
+		// cannot set dryRunOK or enable Confirm.
+		var dryRunSeq = 0;
 		// lastFocused tracks the element that had focus when the modal opened
 		// so closeModal can restore keyboard focus to the triggering control
 		// (the Merge button or whatever the user tabbed to next). Mirrors the
@@ -279,6 +284,7 @@ templ ArtistMergeModal() {
 		}
 
 		function closeModal() {
+			dryRunSeq++;
 			modal.classList.add('hidden');
 			optionsRoot.innerHTML = '';
 			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
@@ -343,8 +349,9 @@ templ ArtistMergeModal() {
 				var include = document.createElement('input');
 				include.type = 'checkbox';
 				include.className = 'mt-1 shrink-0';
-				include.setAttribute('aria-label', tx('exclude_label'));
-				include.title = tx('exclude_label');
+				var includeLabel = tx('exclude_label') + ': ' + (m.name || m.id);
+				include.setAttribute('aria-label', includeLabel);
+				include.title = includeLabel;
 				include.addEventListener('change', function() {
 					if (include.checked) {
 						excludedIds.delete(m.id);
@@ -401,6 +408,9 @@ templ ArtistMergeModal() {
 		}
 
 		function runDryRun() {
+			// Capture the sequence counter before any async work so stale
+			// responses from a superseded invocation are silently discarded.
+			var seq = ++dryRunSeq;
 			// All non-survivor members excluded (#1714): nothing to merge. Skip
 			// the network round-trip, surface a hint, and keep Confirm disabled
 			// until the user re-includes at least one source.
@@ -413,6 +423,7 @@ templ ArtistMergeModal() {
 			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
 			confirmBtn.disabled = true;
 			postMerge(true).then(function(out) {
+				if (seq !== dryRunSeq) return;
 				if (out.kind === 'success') {
 					renderPreview(out.body);
 					current.dryRunOK = true;
@@ -427,6 +438,7 @@ templ ArtistMergeModal() {
 					confirmBtn.disabled = true;
 				}
 			}).catch(function() {
+				if (seq !== dryRunSeq) return;
 				renderError({ message: tx('preview_network_error') });
 			});
 		}
