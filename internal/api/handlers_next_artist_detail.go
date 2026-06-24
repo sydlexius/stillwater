@@ -166,6 +166,18 @@ func (r *Router) buildFieldFindings(ctx context.Context, artistID string) map[st
 	if len(violations) == 0 {
 		return nil
 	}
+	// Friendly rule names for the chip popover header. The persisted
+	// RuleViolation row carries only the rule id, so map id -> Name from the
+	// built-in catalogue (DefaultRules is an in-memory slice, no DB round trip).
+	// A custom or unknown rule id simply yields an empty name and the popover
+	// falls back to a generic "Finding" label (fieldFindingTitle).
+	ruleNames := map[string]string{}
+	// Index rather than value-range: rule.Rule is a large struct and copying it
+	// each iteration trips gocritic's rangeValCopy.
+	defRules := rule.DefaultRules()
+	for i := range defRules {
+		ruleNames[defRules[i].ID] = defRules[i].Name
+	}
 	out := map[string][]templates.FieldFinding{}
 	// Index rather than value-range: rule.RuleViolation is a large struct and
 	// copying it each iteration trips gocritic's rangeValCopy.
@@ -179,6 +191,7 @@ func (r *Router) buildFieldFindings(ctx context.Context, artistID string) map[st
 			ID:       v.ID,
 			ArtistID: artistID,
 			RuleID:   v.RuleID,
+			Name:     ruleNames[v.RuleID],
 			Severity: v.Severity,
 			Message:  v.Message,
 			// Fixable gates the popover's Fix button: only an open, fixable

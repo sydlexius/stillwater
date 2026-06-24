@@ -98,10 +98,75 @@ func TestFieldFindingChip_Popover(t *testing.T) {
 		t.Errorf("chip should no longer link to the removed section anchor:\n%s", got)
 	}
 
+	// Real glass action buttons (the #1860 polish): Fix carries the accent class,
+	// Dismiss the subtle one -- both share the glass base.
+	if !strings.Contains(got, "sw-ff-pop-fix") {
+		t.Errorf("fixable finding: missing the accent Fix button class sw-ff-pop-fix:\n%s", got)
+	}
+	if !strings.Contains(got, "sw-ff-pop-dismiss") {
+		t.Errorf("missing the subtle Dismiss button class sw-ff-pop-dismiss:\n%s", got)
+	}
+	if c := strings.Count(got, "sw-ff-pop-btn"); c != 2 {
+		t.Errorf("expected 2 glass action buttons (sw-ff-pop-btn), got %d:\n%s", c, got)
+	}
+
 	// Non-fixable: Dismiss only (one action button), no Fix.
 	nonFixable := FieldFinding{ID: "viol-7", ArtistID: "ar-7", RuleID: "origin_missing", Severity: "info", Message: "fyi", Fixable: false}
 	got2 := render(t, nonFixable)
 	if c := strings.Count(got2, `data-violation-id="viol-7"`); c != 1 {
 		t.Errorf("non-fixable finding: expected exactly 1 action button (Dismiss only), got %d:\n%s", c, got2)
+	}
+	if strings.Contains(got2, "sw-ff-pop-fix") {
+		t.Errorf("non-fixable finding leaked the Fix button:\n%s", got2)
+	}
+}
+
+// TestFieldFindingChip_PillTooltip pins the compact pill's hover/SR affordances
+// (#1860 polish): a native title tooltip carrying the message, and an aria-label
+// of "severity: message" so the chip is informative without a click and has a
+// distinguishable accessible name.
+func TestFieldFindingChip_PillTooltip(t *testing.T) {
+	const msg = "Origin is empty"
+	ctx := WithFieldFindings(testCtx(t), map[string][]FieldFinding{
+		"origin": {{ID: "v1", ArtistID: "ar-1", RuleID: "origin_missing", Severity: "warning", Message: msg, Fixable: true}},
+	})
+	a := &artist.Artist{ID: "ar-1", Name: "Chip Artist", Type: "person", Origin: "Berlin"}
+	got := renderField(t, ctx, a, "origin", false)
+
+	if !strings.Contains(got, `title="`+msg+`"`) {
+		t.Errorf("pill missing native title tooltip with the message:\n%s", got)
+	}
+	if !strings.Contains(got, `aria-label="warning: `+msg+`"`) {
+		t.Errorf("pill missing the severity+message aria-label:\n%s", got)
+	}
+}
+
+// TestFieldFindingChip_PopoverHeader pins the popover header (#1860 polish): a
+// severity-tagged header carrying the rule's friendly name when present, and a
+// generic "Finding" fallback when the finding has no name.
+func TestFieldFindingChip_PopoverHeader(t *testing.T) {
+	render := func(t *testing.T, f FieldFinding) string {
+		t.Helper()
+		ctx := WithFieldFindings(testCtx(t), map[string][]FieldFinding{"origin": {f}})
+		a := &artist.Artist{ID: f.ArtistID, Name: "Chip Artist", Type: "person", Origin: "Berlin"}
+		return renderField(t, ctx, a, "origin", false)
+	}
+
+	// Named: the header shows the rule's friendly name.
+	named := render(t, FieldFinding{ID: "v1", ArtistID: "ar-1", RuleID: "origin_missing", Name: "Origin is populated", Severity: "warning", Message: "m", Fixable: true})
+	if !strings.Contains(named, "sw-ff-pop-head") {
+		t.Errorf("popover missing the header element sw-ff-pop-head:\n%s", named)
+	}
+	if !strings.Contains(named, "sw-ff-pop-dot") {
+		t.Errorf("popover header missing the severity dot:\n%s", named)
+	}
+	if !strings.Contains(named, "Origin is populated") {
+		t.Errorf("popover header missing the rule's friendly name:\n%s", named)
+	}
+
+	// Unnamed: the header falls back to the generic "Finding" label.
+	unnamed := render(t, FieldFinding{ID: "v2", ArtistID: "ar-2", RuleID: "origin_missing", Severity: "info", Message: "m", Fixable: false})
+	if !strings.Contains(unnamed, "Finding") {
+		t.Errorf("popover header missing the generic Finding fallback:\n%s", unnamed)
 	}
 }

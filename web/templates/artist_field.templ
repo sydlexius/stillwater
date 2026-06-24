@@ -357,42 +357,58 @@ templ fieldFindingChip(field string, f FieldFinding) {
 		</button>
 		<div
 			id={ "ctx-panel-" + menuID }
-			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] max-w-[20rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg ctx-desktop-panel"
+			class="hidden absolute right-0 top-full z-40 mt-1 ctx-desktop-panel sw-ff-pop"
+			data-severity={ f.Severity }
 			role="menu"
 		>
-			<p class="px-3 py-2 text-xs text-gray-600 dark:text-gray-300 whitespace-pre-line">{ f.Message }</p>
-			<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+			// Header: a severity-colored dot (same per-severity --swd-* treatment the
+			// "Other findings" rows use -- the dot reads as the severity icon, no new
+			// icon set invented) + the rule's friendly name (fieldFindingTitle falls
+			// back to a localized "Finding") + the severity word, so the popover names
+			// the problem the way the catalogue does.
+			<div class="sw-ff-pop-head">
+				<span class="sw-ff-pop-dot" aria-hidden="true"></span>
+				<span class="sw-ff-pop-title">{ fieldFindingTitle(ctx, f) }</span>
+				<span class="sw-ff-pop-sev">{ f.Severity }</span>
+			</div>
+			<p class="sw-ff-pop-msg">{ f.Message }</p>
 			// Fix/Dismiss reuse artistViolationFix/artistViolationDismiss (same POST
 			// endpoints + dashboard:action-resolved refresh as the "Other findings"
-			// list). The dismiss confirm prompt is sourced from data-confirm (the
-			// script reads it via a global querySelector); the scripts' failure-toast
-			// strings come from a #artist-violation-<id> row, which the chip path does
-			// not render (it would duplicate ids for multi-field rules), so a failed
-			// fix/dismiss surfaces the script's English fallback toast.
-			if f.Fixable {
+			// list). Fix is the accent/primary action (only when fixable); Dismiss is
+			// the subtle/secondary one -- both real glass buttons sourced from the
+			// --swd-* tokens (sw-ff-pop-fix / sw-ff-pop-dismiss), matching the
+			// artist-detail button motif rather than the old bare text rows. The
+			// dismiss confirm prompt is sourced from data-confirm (the script reads it
+			// via a global querySelector); the scripts' failure-toast strings come from
+			// a #artist-violation-<id> row, which the chip path does not render (it
+			// would duplicate ids for multi-field rules), so a failed fix/dismiss
+			// surfaces the script's English fallback toast.
+			<div class="sw-ff-pop-actions">
+				if f.Fixable {
+					<button
+						type="button"
+						role="menuitem"
+						data-violation-id={ f.ID }
+						data-artist-id={ f.ArtistID }
+						onclick={ artistViolationFix(f.ID, f.ArtistID) }
+						aria-label={ fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(ctx, f.RuleID)) }
+						class="sw-ff-pop-btn sw-ff-pop-fix"
+					>
+						{ fixButtonLabel(ctx, f.RuleID) }
+					</button>
+				}
 				<button
 					type="button"
 					role="menuitem"
 					data-violation-id={ f.ID }
 					data-artist-id={ f.ArtistID }
-					onclick={ artistViolationFix(f.ID, f.ArtistID) }
-					aria-label={ fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(ctx, f.RuleID)) }
-					class="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-green-600 dark:text-green-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+					data-confirm={ t(ctx, "notifications.dismiss_confirm") }
+					onclick={ artistViolationDismiss(f.ID, f.ArtistID) }
+					class="sw-ff-pop-btn sw-ff-pop-dismiss"
 				>
-					{ fixButtonLabel(ctx, f.RuleID) }
+					{ t(ctx, "common.dismiss") }
 				</button>
-			}
-			<button
-				type="button"
-				role="menuitem"
-				data-violation-id={ f.ID }
-				data-artist-id={ f.ArtistID }
-				data-confirm={ t(ctx, "notifications.dismiss_confirm") }
-				onclick={ artistViolationDismiss(f.ID, f.ArtistID) }
-				class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-			>
-				{ t(ctx, "common.dismiss") }
-			</button>
+			</div>
 		</div>
 	</span>
 }

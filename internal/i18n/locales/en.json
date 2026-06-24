@@ -107,6 +107,7 @@
   "artist.fieldlock.lock": "Lock field",
   "artist.fieldlock.server_error": "A server error prevented saving; your change was not saved. Try again shortly.",
   "artist.fieldlock.unlock": "Unlock field",
+  "artist.finding_label": "Finding",
   "artist.fix_action_aria": "%s for this artist",
   "artist.formed_premiere_date": "Formed/PremiereDate",
   "artist.genres": "Genres",

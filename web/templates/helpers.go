@@ -918,9 +918,25 @@ type FieldFinding struct {
 	ID       string
 	ArtistID string
 	RuleID   string
+	// Name is the rule's friendly display name (rule.RuleViolation.RuleName),
+	// shown as the popover header label so a field finding reads with the same
+	// human-legible title the catalogue gives it; it falls back to a generic
+	// "Finding" label (fieldFindingTitle) when a violation carries no name.
+	Name     string
 	Severity string
 	Message  string
 	Fixable  bool
+}
+
+// fieldFindingTitle returns the popover header label for a finding: the rule's
+// friendly name when present, else a localized generic "Finding" label. Keeping
+// the fallback here (not in the template) lets both the desktop and any future
+// surface share one rule.
+func fieldFindingTitle(ctx context.Context, f FieldFinding) string {
+	if strings.TrimSpace(f.Name) != "" {
+		return f.Name
+	}
+	return t(ctx, "artist.finding_label")
 }
 
 // fieldFindingsKeyType is the unexported context key under which the
