@@ -188,6 +188,8 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-feature-image-write }
 - **Let Stillwater manage images and NFO files on this server**
 {: #settings-connections-connections-manage-title }
+- **Verify path after rename (Lidarr only)**
+{: #settings-connections-connections-verify-path-title }
 - **Not configured**
 {: #settings-connections-connections-not-configured }
 - **Server name**

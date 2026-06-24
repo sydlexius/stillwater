@@ -3,8 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	neturl "net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -33,6 +36,11 @@ type connectionResponse struct {
 	FeatureImageWrite     bool    `json:"feature_image_write"`
 	FeatureMetadataPush   bool    `json:"feature_metadata_push"`
 	FeatureTriggerRefresh bool    `json:"feature_trigger_refresh"`
+	// VerifyPathAfterUpdate is the Lidarr-only opt-in that issues a follow-up
+	// GET after the rename PUT to confirm Lidarr did not coerce the path. False
+	// for non-Lidarr connections (the nil-safe getter returns false). See
+	// connection.LidarrConfig.VerifyPathAfterUpdate (#1685/#1640).
+	VerifyPathAfterUpdate bool `json:"verify_path_after_update"`
 }
 
 func toConnectionResponse(c connection.Connection) connectionResponse {
@@ -53,6 +61,7 @@ func toConnectionResponse(c connection.Connection) connectionResponse {
 		FeatureImageWrite:     c.GetFeatureImageWrite(),
 		FeatureMetadataPush:   c.GetFeatureMetadataPush(),
 		FeatureTriggerRefresh: c.GetFeatureTriggerRefresh(),
+		VerifyPathAfterUpdate: c.GetVerifyPathAfterUpdate(),
 	}
 	if c.LastCheckedAt != nil {
 		s := c.LastCheckedAt.UTC().Format(time.RFC3339)
@@ -637,6 +646,171 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// parseEnabledStrict reads a strict {"enabled": bool} payload from a JSON body
+// ({"enabled":true}), a form body (enabled=true), or an ?enabled= query param,
+// mirroring handleSetStillwaterManaged's boundary policy. A missing or
+// unparsable "enabled" key returns (false, false) after writing a 400 -- it is
+// NEVER coerced to false, because a dropped HTMX body or a typo must not
+// silently flip a safety toggle. The query param wins over a body value when
+// both are present, matching the stillwater-managed precedence.
+//
+// On any failure it writes the 400 response itself and returns ok=false; the
+// caller just returns. On success it returns (value, true).
+func parseEnabledStrict(w http.ResponseWriter, req *http.Request) (bool, bool) {
+	var enabled bool
+	var seen bool
+
+	raw, err := io.ReadAll(io.LimitReader(req.Body, 1<<12))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reading body"})
+		return false, false
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	switch {
+	case trimmed == "":
+		// No body; rely on the query-param branch below.
+	case strings.HasPrefix(trimmed, "{"):
+		// Decode into a raw map first so a missing "enabled" key is
+		// distinguishable from an explicit false (unmarshalling straight into
+		// a bool silently zero-values it).
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return false, false
+		}
+		if v, ok := payload["enabled"]; ok {
+			if err := json.Unmarshal(v, &enabled); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid enabled value"})
+				return false, false
+			}
+			seen = true
+		}
+	default:
+		// Treat as application/x-www-form-urlencoded.
+		values, perr := neturl.ParseQuery(trimmed)
+		if perr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form body"})
+			return false, false
+		}
+		if v := values.Get("enabled"); v != "" {
+			parsed, ok := parseBoolStrict(v)
+			if !ok {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid enabled value"})
+				return false, false
+			}
+			enabled, seen = parsed, true
+		}
+	}
+	// Query-string override (URL > body), matching handleSetStillwaterManaged.
+	if q := req.URL.Query().Get("enabled"); q != "" {
+		parsed, ok := parseBoolStrict(q)
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid enabled query param"})
+			return false, false
+		}
+		enabled, seen = parsed, true
+	}
+	if !seen {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing enabled"})
+		return false, false
+	}
+	return enabled, true
+}
+
+// handleSetVerifyPathAfterUpdate flips the Lidarr-only "Verify path after
+// rename" toggle (connection.Lidarr.VerifyPathAfterUpdate). When on, the
+// rename publisher issues a follow-up GET after the UpdateArtistPath PUT to
+// confirm Lidarr did not coerce the submitted path against its Root Folder
+// list (#1640 backend; this is the #1685 UI/API half).
+//
+// POST /api/v1/connections/{id}/verify-path-after-update
+// Body: {"enabled": true|false}
+//
+// The handler rejects non-Lidarr connections (400): the field is
+// unrepresentable on Emby/Jellyfin sub-configs, so accepting the write would
+// be a no-op the caller could mistake for success. A per-connection mutex
+// (verifyPathAfterUpdateMu) serializes the read-modify-write so two concurrent
+// toggles cannot both observe the stale value and clobber one another.
+//
+// The connection existence + type gate runs BEFORE the per-id mutex
+// LoadOrStore, mirroring handleSetStillwaterManaged: otherwise a stream of
+// requests carrying unknown (or wrong-type) ids would each LoadOrStore a fresh
+// *sync.Mutex and grow verifyPathAfterUpdateMu without bound. Gating first keeps
+// the map's cardinality bounded by the Lidarr connections the process has
+// actually served.
+func (r *Router) handleSetVerifyPathAfterUpdate(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing connection id"})
+		return
+	}
+
+	enabled, ok := parseEnabledStrict(w, req)
+	if !ok {
+		return
+	}
+
+	// Existence + type gate BEFORE allocating per-id serialization state, so an
+	// unknown or non-Lidarr id returns without ever touching the mutex map. The
+	// resolved connection is discarded here on purpose -- the canonical
+	// snapshot is re-fetched below under the lock.
+	if gate, err := r.connectionService.GetByID(req.Context(), id); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	} else if gate.Type != connection.TypeLidarr {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "verify-path-after-update is only valid for lidarr connections"})
+		return
+	}
+
+	// Serialize per-connection read-modify-write. LoadOrStore guarantees a
+	// single *sync.Mutex per connection ID for the process lifetime; entries
+	// accumulate but cardinality is bounded by real connection IDs because the
+	// existence gate above rejects unknown ids before we reach this point.
+	muIface, _ := r.verifyPathAfterUpdateMu.LoadOrStore(id, &sync.Mutex{})
+	connMu := muIface.(*sync.Mutex)
+	connMu.Lock()
+	defer connMu.Unlock()
+
+	existing, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
+	// Re-check the type under the lock. The pre-lock gate only guards the fast
+	// path; the mutex serializes verify-path writes but does NOT serialize a
+	// concurrent connection-type change. Without this re-check a connection that
+	// flipped away from lidarr between the gate and the lock would slip through to
+	// an errant write / 500 instead of the documented 400.
+	if existing.Type != connection.TypeLidarr {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "verify-path-after-update is only valid for lidarr connections"})
+		return
+	}
+
+	setVerifyPathAfterUpdate(existing, enabled)
+
+	if err := r.connectionService.Update(req.Context(), existing); err != nil {
+		r.logger.Error("updating verify-path-after-update toggle failed", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toConnectionResponse(*existing))
+}
+
+// setVerifyPathAfterUpdate sets the Lidarr verify-after-PUT flag on c,
+// allocating the Lidarr sub-config first if a legacy row left it nil (there is
+// no Set* helper for this field on the Connection model). Extracted as a pure
+// mutation (no I/O) so the nil-allocation branch is unit-testable without a DB
+// -- scanConnection always allocates Lidarr for a lidarr row, so that branch is
+// otherwise unreachable through the real service.
+func setVerifyPathAfterUpdate(c *connection.Connection, enabled bool) {
+	if c.Lidarr == nil {
+		c.Lidarr = &connection.LidarrConfig{}
+	}
+	c.Lidarr.VerifyPathAfterUpdate = enabled
 }
 
 // handleGetPlatformSettings returns the fetcher/saver/downloader configuration for all

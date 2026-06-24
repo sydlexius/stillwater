@@ -1554,6 +1554,13 @@
     "covered": true
   },
   {
+    "operationId": "setVerifyPathAfterUpdate",
+    "method": "POST",
+    "path": "/connections/{id}/verify-path-after-update",
+    "handler": "handleSetVerifyPathAfterUpdate",
+    "covered": true
+  },
+  {
     "operationId": "setWebSearchEnabled",
     "method": "PUT",
     "path": "/providers/websearch/{name}/toggle",

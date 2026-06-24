@@ -60,6 +60,7 @@ settings-connections-connections-manage-title
 settings-connections-connections-not-configured
 settings-connections-connections-sends-heading
 settings-connections-connections-server-name
+settings-connections-connections-verify-path-title
 settings-general-active-profile
 settings-general-active-profile-nfo-output
 settings-general-active-profile-save-filenames
