@@ -56,8 +56,8 @@ const (
 
 	// PrefShowPlatformDebug is the per-user toggle that enables the Debug tab on
 	// the artist detail page. Migrated from the global "show_platform_debug" app
-	// setting (M55 #2060); the global setting remains readable as the seed value
-	// during the one-time startup migration.
+	// setting (M55 #2060); existing users were seeded from the global by migration
+	// 016 (016_seed_platform_debug_user_pref.sql) at upgrade time.
 	PrefShowPlatformDebug = "show_platform_debug"
 
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression

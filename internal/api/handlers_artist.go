@@ -502,11 +502,12 @@ func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request)
 		}
 	}
 
-	// M55 #2060: per-user preference, falling back to the global setting so that
-	// existing deployments that had the global flag enabled preserve that behavior
-	// for users who have not yet set their own preference.
-	showPlatformDebug := r.getUserBoolPreference(req.Context(), PrefShowPlatformDebug,
-		r.getBoolSetting(req.Context(), "show_platform_debug", false))
+	// M55 #2060: per-user preference. Existing-user behavior is preserved by the
+	// one-time goose migration 016, which seeds each existing user's row from the
+	// legacy global setting. Users without a preference row (created after 016)
+	// default to false -- the #2060 per-user default. The stale global is no
+	// longer read at request time.
+	showPlatformDebug := r.getUserBoolPreference(req.Context(), PrefShowPlatformDebug, false)
 
 	// Read the active tab from query params, defaulting to "overview".
 	activeTab := req.URL.Query().Get("tab")
