@@ -308,8 +308,9 @@ templ fieldHistoryMenu(a *artist.Artist, field string, history []artist.Metadata
 // carrying the violation message as its tooltip. It renders nothing when the
 // field has no findings -- which is always the case in the stable channel,
 // because only the next/ artist-detail handler injects the findings map into the
-// context (see WithFieldFindings). The chips live in the read view alongside the
-// value; the edit form replaces the row, so they do not show while editing.
+// context (see WithFieldFindings). The chips render in BOTH the read view (next
+// to the value) and the edit view (next to the field label), so a live violation
+// stays visible while editing the field it touches (#1860).
 templ fieldFindingChips(findings []FieldFinding) {
 	if len(findings) > 0 {
 		<span class="sw-field-chips">
@@ -471,6 +472,7 @@ templ biographyEdit(a *artist.Artist, providers []string, history []artist.Metad
 			<h2 class="text-lg font-semibold inline-flex items-center gap-2">
 				{ t(ctx, "artist.biography") }
 				@fieldEditActions(a, "biography", providers, a.Biography != "", history)
+				@fieldFindingChips(fieldFindingsFor(ctx, "biography"))
 			</h2>
 		</div>
 		<form
@@ -521,6 +523,7 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, provide
 		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
 			@fieldEditActions(a, field, providers, len(tags) > 0, history)
+			@fieldFindingChips(fieldFindingsFor(ctx, field))
 		</h3>
 		<form
 			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
@@ -634,7 +637,10 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []
 			hx-swap-oob="outerHTML"
 		}
 	>
-		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
+		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+			<span>{ label }</span>
+			@fieldFindingChips(fieldFindingsFor(ctx, field))
+		</dt>
 		<dd>
 			<form
 				class="flex items-center gap-1 mt-0.5"
@@ -890,7 +896,10 @@ templ selectFieldEdit(a *artist.Artist, field, label, value string, options []Se
 			hx-swap-oob="outerHTML"
 		}
 	>
-		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
+		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+			<span>{ label }</span>
+			@fieldFindingChips(fieldFindingsFor(ctx, field))
+		</dt>
 		<dd>
 			<form
 				class="flex items-center gap-1 mt-0.5"
