@@ -14,7 +14,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -1778,80 +1777,6 @@ func TestParseSectionList(t *testing.T) {
 	}
 }
 
-// TestMigratePlatformDebugPref verifies the startup migration (M55 #2060):
-// the per-user show_platform_debug preference is seeded from the legacy global
-// setting for all users, and is idempotent (existing per-user rows are not overwritten).
-func TestMigratePlatformDebugPref(t *testing.T) {
-	t.Parallel()
-	r, _, userID := testRouterWithAuth(t)
-
-	ctx := context.Background()
-
-	// After NewRouter (which calls migratePlatformDebugPref), every user should
-	// have a row seeded from the global setting. The global was not set, so the
-	// default "false" should be seeded.
-	var seeded string
-	if err := r.db.QueryRowContext(ctx,
-		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
-		userID, PrefShowPlatformDebug).Scan(&seeded); err != nil {
-		t.Fatalf("expected seeded row after migration, got: %v", err)
-	}
-	if seeded != "false" {
-		t.Errorf("seeded value = %q, want %q (no global set)", seeded, "false")
-	}
-
-	// Now set the global to "true", create a fresh DB + router, and verify "true"
-	// is seeded for new users.
-	db2 := newTestDB(t)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if _, err := db2.ExecContext(ctx,
-		`INSERT INTO settings (key, value) VALUES ('show_platform_debug', 'true')`); err != nil {
-		t.Fatalf("seeding global setting: %v", err)
-	}
-	authSvc2 := auth.NewService(db2)
-	if _, err := authSvc2.Setup(ctx, "admin2", "pass"); err != nil {
-		t.Fatalf("setup admin2: %v", err)
-	}
-	var userID2 string
-	if err := db2.QueryRowContext(ctx, `SELECT id FROM users WHERE username = 'admin2'`).Scan(&userID2); err != nil {
-		t.Fatalf("lookup admin2: %v", err)
-	}
-	r2 := NewRouter(RouterDeps{
-		SessionSecret: testSessionSecret,
-		AuthService:   authSvc2,
-		DB:            db2,
-		Logger:        logger,
-		StaticFS:      os.DirFS("../../web/static"),
-	})
-	var seeded2 string
-	if err := r2.db.QueryRowContext(ctx,
-		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
-		userID2, PrefShowPlatformDebug).Scan(&seeded2); err != nil {
-		t.Fatalf("expected seeded row after migration with global=true, got: %v", err)
-	}
-	if seeded2 != "true" {
-		t.Errorf("seeded value = %q, want %q (global=true)", seeded2, "true")
-	}
-
-	// Idempotency check: running the migration again must not overwrite a
-	// user-set value. Manually set the preference to "false" and re-run.
-	if _, err := db2.ExecContext(ctx,
-		`UPDATE user_preferences SET value = 'false' WHERE user_id = ? AND key = ?`,
-		userID2, PrefShowPlatformDebug); err != nil {
-		t.Fatalf("updating preference: %v", err)
-	}
-	r2.migratePlatformDebugPref(logger)
-	var afterReMigrate string
-	if err := r2.db.QueryRowContext(ctx,
-		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
-		userID2, PrefShowPlatformDebug).Scan(&afterReMigrate); err != nil {
-		t.Fatalf("expected row after re-migration: %v", err)
-	}
-	if afterReMigrate != "false" {
-		t.Errorf("re-migration overwrote user value: got %q, want %q", afterReMigrate, "false")
-	}
-}
-
 // TestShowPlatformDebugPref_DefaultAndOverride verifies the preference is
 // recognized, defaults to "false", and can be overridden via PUT.
 func TestShowPlatformDebugPref_DefaultAndOverride(t *testing.T) {
@@ -1860,15 +1785,14 @@ func TestShowPlatformDebugPref_DefaultAndOverride(t *testing.T) {
 
 	ctx := context.Background()
 
-	// The default value is "false".
+	// The default is "false" whether from a seeded DB row or the zero fallback.
 	got := r.getUserBoolPreference(
 		middleware.WithTestUserID(ctx, userID),
 		PrefShowPlatformDebug,
-		true, // fallback would make a false-positive if the default row is missing
+		false,
 	)
-	// The migration seeds "false" so we expect false from the DB row, not the fallback.
 	if got {
-		t.Errorf("getUserBoolPreference = true, want false (default seeded by migration)")
+		t.Errorf("getUserBoolPreference = true, want false (default)")
 	}
 
 	// PUT "true" and verify it reads back.

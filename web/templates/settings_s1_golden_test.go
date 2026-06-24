@@ -18,7 +18,7 @@ package templates
 //
 // NOTE: the extraction itself was byte-identical, but this PR additionally
 // applied a11y and i18n hardening to some touched cards (switch label
-// association via aria-labelledby on SectionActiveProfile/SectionBehavior, and
+// association via aria-labelledby on SectionActiveProfile, and
 // localized Image Cache size labels on SectionImageCache). The committed
 // per-section goldens therefore intentionally differ from main's original
 // inline render for those controls; they capture the hardened output.
