@@ -1219,6 +1219,18 @@ templ artistDetailPageScript() {
 				}
 			});
 
+			// Inline finding chips (#1860): a Fix/Dismiss from a field chip's popover
+			// resolves the violation and dispatches dashboard:action-resolved (the same
+			// event violations-sync.js uses to refresh the "Other findings" card). The
+			// chip lives in the metadata/identifiers sections, NOT that card, so refresh
+			// those sections in place too -- otherwise the resolved chip lingers until a
+			// reload. Skipped while editing so an open editor's unsaved input is never
+			// clobbered (the chip then clears on the next non-edit refresh / Done).
+			document.body.addEventListener('dashboard:action-resolved', function () {
+				if (editing) return;
+				refreshEditableSections();
+			});
+
 			// Sticky mini-header: initial bind (runs once at page load). After a
 			// hero DOM swap the revert handler calls rebindHero() to re-attach
 			// the observer and edit-all listener on the fresh node (#1850).
