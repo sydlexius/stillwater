@@ -544,6 +544,14 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 
 	// Determine whether the undo was triggered from the activity page or the
 	// artist history tab, then delegate to the appropriate render helper.
+	//
+	// This Contains check intentionally matches BOTH the stable "/activity" page
+	// and the next/ "/next/activity" page (M55 #1772): both render the identical
+	// shared activity surface (templates.ActivityBody / ActivityRevertFragment),
+	// so the activity revert fragment is correct for either channel and no
+	// channel-specific branch is needed. The next/ artist-detail page
+	// (/next/artists/{id}) does NOT contain "/activity", so it correctly falls to
+	// the artist-tab branch below. Locked by TestHandleRevertHistory_NextActivity.
 	fromActivity := strings.Contains(req.Header.Get("HX-Current-URL"), "/activity")
 	if revertChange != nil {
 		if fromActivity {
@@ -631,15 +639,12 @@ func rebuildSourceFilters(filter artist.GlobalHistoryFilter) []string {
 	return all
 }
 
-// handleActivityPage renders the global activity page.
-// GET /activity
-func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		r.renderLoginPage(w, req)
-		return
-	}
-
+// buildActivityPageData loads the global activity feed at offset 0 and assembles
+// the templates.ActivityPageData view model shared by both the stable
+// (handleActivityPage) and next/ (handleNextActivityPage) page handlers. It
+// returns ok==false only after it has already written an error response, so the
+// caller must return immediately without rendering when ok is false.
+func (r *Router) buildActivityPageData(w http.ResponseWriter, req *http.Request, userID string) (templates.ActivityPageData, bool) {
 	filter := buildGlobalFilter(req, r.getUserPageSize(req.Context(), userID, 0))
 	filter.Offset = 0 // activity page always starts at offset 0
 
@@ -651,14 +656,14 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			r.logger.Error("loading activity page", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+			return templates.ActivityPageData{}, false
 		}
 	}
 	if changes == nil {
 		changes = []artist.MetadataChangeWithArtist{}
 	}
 
-	data := templates.ActivityPageData{
+	return templates.ActivityPageData{
 		Changes:        changes,
 		Total:          total,
 		Limit:          filter.Limit,
@@ -669,6 +674,21 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		FilterSources:  rebuildSourceFilters(filter),
 		FilterFrom:     filter.From,
 		FilterTo:       filter.To,
+	}, true
+}
+
+// handleActivityPage renders the global activity page.
+// GET /activity
+func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		r.renderLoginPage(w, req)
+		return
+	}
+
+	data, ok := r.buildActivityPageData(w, req, userID)
+	if !ok {
+		return
 	}
 	renderTempl(w, req, templates.ActivityPage(r.assetsFor(req), data))
 }

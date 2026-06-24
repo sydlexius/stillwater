@@ -2899,6 +2899,33 @@ html:not([data-density]) .sw-next-dashboard > :not(:last-child) {
   margin-block-end: var(--sw-density-gap);
 }
 
+/* Activity feed (M55 #1772) -- the global activity feed (ported to next/) is a
+ * vertical list of per-entry change "cards". It tracks the density pref like the
+ * other next/ list surfaces:
+ *
+ *   - Row padding: each change row is `#activity-entries > [id^="activity-change-"]`
+ *     (the activityRow .sw-card), carrying Tailwind p-4. Rebind its vertical
+ *     padding to the density row-py token on compact/spacious only; comfortable
+ *     keeps the native p-4 rhythm (mirrors the artists table, where comfortable
+ *     is the hand-tuned default).
+ *   - Inter-row gap: the rows sit in the `#activity-entries` space-y-2 container,
+ *     which Tailwind v4 emits as margin-block-end on every `> :not(:last-child)`.
+ *     Rebind that to the density gap token across ALL densities (comfortable +
+ *     the pre-JS html:not([data-density]) default included, like the dashboard
+ *     stack) so the explicit, higher-specificity selector overrides the utility
+ *     cleanly with no margin collapse. */
+html[data-density="compact"] .sw-next-activity #activity-entries > [id^="activity-change-"],
+html[data-density="spacious"] .sw-next-activity #activity-entries > [id^="activity-change-"] {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
+}
+html[data-density="compact"] .sw-next-activity #activity-entries > :not(:last-child),
+html[data-density="comfortable"] .sw-next-activity #activity-entries > :not(:last-child),
+html[data-density="spacious"] .sw-next-activity #activity-entries > :not(:last-child),
+html:not([data-density]) .sw-next-activity #activity-entries > :not(:last-child) {
+  margin-block-end: var(--sw-density-gap);
+}
+
 /* Checkbox treatment (M55 #1335; maintainer note 2026-05-30): the prototype's
  * selection checkboxes carry a surface-tinted background instead of the
  * browser-default white box, in BOTH themes. Restyle the reused native
@@ -3265,7 +3292,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .sw-next-dashboard,
 .sw-next-artist-detail,
 .sw-next-foreign-files,
-.sw-next-artists {
+.sw-next-artists,
+.sw-next-activity {
   /* Light-theme token ramp (default). Shared by the dashboard, the next/
    * artist-detail screen (M55 #1336), the next/ foreign-files screen
    * (M55 #1773), and the next/ artists screen (M55 #1890) so they all consume
@@ -3314,7 +3342,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .dark .sw-next-dashboard,
 .dark .sw-next-artist-detail,
 .dark .sw-next-foreign-files,
-.dark .sw-next-artists {
+.dark .sw-next-artists,
+.dark .sw-next-activity {
   /* Prototype dark token ramp (design/tokens.css verbatim). .sw-next-artists
    * added for #1890 so its glass buttons resolve --swd-line / --swd-ink-2 in
    * dark mode too (see the light-theme block above). */

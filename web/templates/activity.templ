@@ -44,117 +44,128 @@ func activityFilterCount(data ActivityPageData) int {
 // ActivityPage renders the global activity page at /activity.
 templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 	@Layout(t(ctx, "activity.title"), assets) {
-		<div class="space-y-6">
-			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<div>
-					<h1 class="text-2xl font-bold">{ t(ctx, "activity.title") }</h1>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						{ t(ctx, "activity.subtitle") }
-					</p>
-				</div>
-				<button
-					id="activity-filter-trigger"
-					type="button"
-					class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activityFilterCount(data) > 0), templ.KV(filterTriggerNeutral, activityFilterCount(data) == 0) }
-					data-active-classes={ filterTriggerActive }
-					data-neutral-classes={ filterTriggerNeutral }
-					data-badge-classes={ filterTriggerBadge }
-					aria-label={ t(ctx, "common.open_filter_panel") }
-					aria-expanded="false"
-					aria-controls="activity-filters-flyout"
-					onclick={ components.OpenFilterFlyout("activity-filters-flyout") }
-				>
-					<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-						<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
-					</svg>
-					<span>{ t(ctx, "common.filters") }</span>
-					if activityFilterCount(data) > 0 {
-						<span class={ filterTriggerBadge } aria-label={ func() string { n := activityFilterCount(data); if n == 1 { return t(ctx, "common.active_filter_one") }; return fmt.Sprintf(t(ctx, "common.active_filter_other"), n) }() }>
-							{ fmt.Sprintf("%d", activityFilterCount(data)) }
-						</span>
-					}
-				</button>
+		@ActivityBody(data)
+	}
+}
+
+// ActivityBody renders the shared activity surface: the filter trigger, the
+// date-range bar, the content region (#activity-content), the filter flyout, and
+// the inline filter/date scripts. It is extracted from ActivityPage so the
+// next/ channel page (next.ActivityPageNext) can wrap this identical chrome in
+// LayoutNext without forking any markup or hook ids -- both channels emit
+// byte-for-byte the same body. All hook ids and script targets live here, once.
+templ ActivityBody(data ActivityPageData) {
+	<div class="space-y-6">
+		<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+			<div>
+				<h1 class="text-2xl font-bold">{ t(ctx, "activity.title") }</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					{ t(ctx, "activity.subtitle") }
+				</p>
 			</div>
-			<div class="sw-card rounded-lg px-6 py-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
-				<div class="flex-1">
-					<label for="activity-date-from" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-						{ t(ctx, "activity.date_from") }
-					</label>
-					<input
-						type="date"
-						id="activity-date-from"
-						name="from"
-						value={ formatDateInputValue(data.FilterFrom) }
-						aria-label={ t(ctx, "activity.date_from") }
-						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
-				<div class="flex-1">
-					<label for="activity-date-to" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-						{ t(ctx, "activity.date_to") }
-					</label>
-					<input
-						type="date"
-						id="activity-date-to"
-						name="to"
-						value={ formatDateInputValue(data.FilterTo) }
-						aria-label={ t(ctx, "activity.date_to") }
-						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
-				<button
-					type="button"
-					id="activity-date-apply"
-					aria-label={ t(ctx, "activity.apply_date_filter") }
-					class="px-4 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500"
-				>
-					{ t(ctx, "common.apply") }
-				</button>
-				// Always render the Clear button; hide it via CSS when no date filter is active.
-				// JS shows/hides it based on input values so it becomes visible after Apply
-				// without a full page reload (HTMX only swaps #activity-content, not this bar).
-				<button
-					type="button"
-					id="activity-date-clear"
-					aria-label={ t(ctx, "activity.clear_date_filter") }
-					class={ "px-4 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV("hidden", data.FilterFrom.IsZero() && data.FilterTo.IsZero()) }
-				>
-					{ t(ctx, "common.clear") }
-				</button>
-			</div>
-			<div id="activity-content">
-				@ActivityContent(data)
-			</div>
+			<button
+				id="activity-filter-trigger"
+				type="button"
+				class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activityFilterCount(data) > 0), templ.KV(filterTriggerNeutral, activityFilterCount(data) == 0) }
+				data-active-classes={ filterTriggerActive }
+				data-neutral-classes={ filterTriggerNeutral }
+				data-badge-classes={ filterTriggerBadge }
+				aria-label={ t(ctx, "common.open_filter_panel") }
+				aria-expanded="false"
+				aria-controls="activity-filters-flyout"
+				onclick={ components.OpenFilterFlyout("activity-filters-flyout") }
+			>
+				<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+				</svg>
+				<span>{ t(ctx, "common.filters") }</span>
+				if activityFilterCount(data) > 0 {
+					<span class={ filterTriggerBadge } aria-label={ func() string { n := activityFilterCount(data); if n == 1 { return t(ctx, "common.active_filter_one") }; return fmt.Sprintf(t(ctx, "common.active_filter_other"), n) }() }>
+						{ fmt.Sprintf("%d", activityFilterCount(data)) }
+					</span>
+				}
+			</button>
 		</div>
-		@components.FilterFlyout("activity-filters-flyout", t(ctx, "activity.filters_title"), "activity-filter-trigger", activityFilterCount(data), "#activity-content", nil) {
-			@components.FilterSection(t(ctx, "activity.filter_section.change_type")) {
-				@components.FilterItem("activity-filters-flyout", "field", "biography", t(ctx, "field.biography"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "genres", t(ctx, "field.genres"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "styles", t(ctx, "field.styles"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "moods", t(ctx, "field.moods"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "formed", t(ctx, "field.formed"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "born", t(ctx, "field.born"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "disbanded", t(ctx, "field.disbanded"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "died", t(ctx, "field.died"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "years_active", t(ctx, "field.years_active"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "type", t(ctx, "field.type"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "gender", t(ctx, "field.gender"), "neutral")
-				// Rule auto-fix entries use the synthetic "rule_fix" field so
-				// the activity feed surfaces filesystem/image/NFO repairs the
-				// engine performed automatically (issue #1106). The same
-				// entries also match the existing "rule:*" source filter.
-				@components.FilterItem("activity-filters-flyout", "field", "rule_fix", t(ctx, "field.rule_fix"), "neutral")
-			}
-			@components.FilterSection(t(ctx, "activity.filter_section.trigger_source")) {
-				@components.FilterItem("activity-filters-flyout", "source", "manual", t(ctx, "history.source.manual"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "scan", t(ctx, "history.source.scan"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "import", t(ctx, "history.source.import"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "revert", t(ctx, "history.source.revert"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "provider:*", t(ctx, "history.source.provider"), "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "rule:*", t(ctx, "history.source.rule"), "neutral")
-			}
+		<div class="sw-card rounded-lg px-6 py-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+			<div class="flex-1">
+				<label for="activity-date-from" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+					{ t(ctx, "activity.date_from") }
+				</label>
+				<input
+					type="date"
+					id="activity-date-from"
+					name="from"
+					value={ formatDateInputValue(data.FilterFrom) }
+					aria-label={ t(ctx, "activity.date_from") }
+					class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</div>
+			<div class="flex-1">
+				<label for="activity-date-to" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+					{ t(ctx, "activity.date_to") }
+				</label>
+				<input
+					type="date"
+					id="activity-date-to"
+					name="to"
+					value={ formatDateInputValue(data.FilterTo) }
+					aria-label={ t(ctx, "activity.date_to") }
+					class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</div>
+			<button
+				type="button"
+				id="activity-date-apply"
+				aria-label={ t(ctx, "activity.apply_date_filter") }
+				class="px-4 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500"
+			>
+				{ t(ctx, "common.apply") }
+			</button>
+			// Always render the Clear button; hide it via CSS when no date filter is active.
+			// JS shows/hides it based on input values so it becomes visible after Apply
+			// without a full page reload (HTMX only swaps #activity-content, not this bar).
+			<button
+				type="button"
+				id="activity-date-clear"
+				aria-label={ t(ctx, "activity.clear_date_filter") }
+				class={ "px-4 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV("hidden", data.FilterFrom.IsZero() && data.FilterTo.IsZero()) }
+			>
+				{ t(ctx, "common.clear") }
+			</button>
+		</div>
+		<div id="activity-content">
+			@ActivityContent(data)
+		</div>
+	</div>
+	@components.FilterFlyout("activity-filters-flyout", t(ctx, "activity.filters_title"), "activity-filter-trigger", activityFilterCount(data), "#activity-content", nil) {
+		@components.FilterSection(t(ctx, "activity.filter_section.change_type")) {
+			@components.FilterItem("activity-filters-flyout", "field", "biography", t(ctx, "field.biography"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "genres", t(ctx, "field.genres"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "styles", t(ctx, "field.styles"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "moods", t(ctx, "field.moods"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "formed", t(ctx, "field.formed"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "born", t(ctx, "field.born"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "disbanded", t(ctx, "field.disbanded"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "died", t(ctx, "field.died"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "years_active", t(ctx, "field.years_active"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "type", t(ctx, "field.type"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "field", "gender", t(ctx, "field.gender"), "neutral")
+			// Rule auto-fix entries use the synthetic "rule_fix" field so
+			// the activity feed surfaces filesystem/image/NFO repairs the
+			// engine performed automatically (issue #1106). The same
+			// entries also match the existing "rule:*" source filter.
+			@components.FilterItem("activity-filters-flyout", "field", "rule_fix", t(ctx, "field.rule_fix"), "neutral")
 		}
-		<script>
+		@components.FilterSection(t(ctx, "activity.filter_section.trigger_source")) {
+			@components.FilterItem("activity-filters-flyout", "source", "manual", t(ctx, "history.source.manual"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "source", "scan", t(ctx, "history.source.scan"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "source", "import", t(ctx, "history.source.import"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "source", "revert", t(ctx, "history.source.revert"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "source", "provider:*", t(ctx, "history.source.provider"), "neutral")
+			@components.FilterItem("activity-filters-flyout", "source", "rule:*", t(ctx, "history.source.rule"), "neutral")
+		}
+	}
+	<script>
 			// Reload activity content when the filter flyout applies filters.
 			// The shared htmx:configRequest hook prepends the base path automatically,
 			// so we use the root-relative path here to avoid double-prefixing.
@@ -240,7 +251,6 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 				}
 			});
 		</script>
-	}
 }
 
 // ActivityContent renders the activity list fragment for HTMX load-more.
