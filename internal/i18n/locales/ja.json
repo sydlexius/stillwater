@@ -1,8 +1,10 @@
 {
+  "artist_duplicates.action_ignore": "無視",
   "artist_duplicates.col_mbid": "MusicBrainz ID",
   "artist_duplicates.col_name": "アーティスト",
   "artist_duplicates.col_path": "ディレクトリ",
   "artist_duplicates.empty_state": "重複が疑われるアーティストは検出されませんでした。",
+  "artist_duplicates.empty_state_dismissed": "重複が疑われるアーティストはすべて無視されました。設定で確認プロンプトをリセットすると再表示できます。",
   "artist_duplicates.no_mbid": "なし",
   "artist_duplicates.page_title": "重複の可能性があるアーティスト",
   "artist_duplicates.reason_mbid": "MBID が一致",

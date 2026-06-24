@@ -62,7 +62,7 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 					class="sw-card rounded-lg overflow-hidden"
 					data-duplicate-group
 					data-group-key={ group.Key }
-					data-members={ duplicateGroupMembersJSON(group.Members) }
+					data-members={ DuplicateGroupMembersJSON(group.Members) }
 				>
 					<div class="px-4 py-3 flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50">
 						if group.Reason == "mbid" {
@@ -103,7 +103,7 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 										if m.Recommended {
 											<span
 												class="ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300"
-												title={ recommendedReasonLabel(ctx, m.RecommendedReason) }
+												title={ RecommendedReasonLabel(ctx, m.RecommendedReason) }
 											>
 												{ t(ctx, "artist_duplicates.recommended_badge") }
 											</span>
@@ -216,6 +216,16 @@ templ ArtistMergeModal() {
 		var confirmBtn = document.getElementById('merge-modal-confirm');
 
 		var current = { members: [], survivorId: null, dryRunOK: false };
+		// excludedIds holds member IDs the user has unchecked in the merge
+		// dialog (#1714): they are neither the survivor nor merged into it, so
+		// they are dropped from loser_ids. Re-checking a box re-includes the
+		// member. Cleared whenever a new group opens or the modal closes.
+		var excludedIds = new Set();
+		// rowControls mirrors the rendered survivor rows so applySurvivorState
+		// can update each row's checkbox + dim state in place, without a full
+		// re-render that would replace the radio nodes and break radio-group
+		// arrow-key navigation.
+		var rowControls = [];
 		// lastFocused tracks the element that had focus when the modal opened
 		// so closeModal can restore keyboard focus to the triggering control
 		// (the Merge button or whatever the user tabbed to next). Mirrors the
@@ -254,6 +264,7 @@ templ ArtistMergeModal() {
 			var rec = members.find(function(m) { return m.recommended; });
 			current.survivorId = rec ? rec.id : members[0].id;
 			current.dryRunOK = false;
+			excludedIds.clear();
 
 			renderSurvivorOptions();
 			modal.classList.remove('hidden');
@@ -273,6 +284,8 @@ templ ArtistMergeModal() {
 			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
 			confirmBtn.disabled = true;
 			current = { members: [], survivorId: null, dryRunOK: false };
+			excludedIds.clear();
+			rowControls = [];
 			// Restore focus to the element that opened the modal so keyboard
 			// users land back where they started (typically the group's
 			// Merge button), not at the top of the document.
@@ -282,9 +295,13 @@ templ ArtistMergeModal() {
 
 		function renderSurvivorOptions() {
 			optionsRoot.innerHTML = '';
+			rowControls = [];
 			current.members.forEach(function(m) {
+				var row = document.createElement('div');
+				row.className = 'flex items-start gap-3 rounded p-2 hover:bg-gray-50 dark:hover:bg-white/5 transition-opacity';
+
 				var label = document.createElement('label');
-				label.className = 'flex items-start gap-3 rounded p-2 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer';
+				label.className = 'flex items-start gap-3 flex-1 min-w-0 cursor-pointer';
 				var radio = document.createElement('input');
 				radio.type = 'radio';
 				radio.name = 'merge-survivor';
@@ -295,6 +312,7 @@ templ ArtistMergeModal() {
 					current.survivorId = m.id;
 					current.dryRunOK = false;
 					confirmBtn.disabled = true;
+					applySurvivorState();
 					runDryRun();
 				});
 				var body = document.createElement('div');
@@ -316,7 +334,54 @@ templ ArtistMergeModal() {
 				body.appendChild(path);
 				label.appendChild(radio);
 				label.appendChild(body);
-				optionsRoot.appendChild(label);
+
+				// Include-in-merge checkbox (#1714). Checked = this member is a
+				// loser that will be merged into the survivor; unchecked =
+				// excluded from the merge entirely. The survivor's own checkbox
+				// is forced checked + disabled (the survivor cannot be dropped);
+				// applySurvivorState keeps that in sync as the radio changes.
+				var include = document.createElement('input');
+				include.type = 'checkbox';
+				include.className = 'mt-1 shrink-0';
+				include.setAttribute('aria-label', tx('exclude_label'));
+				include.title = tx('exclude_label');
+				include.addEventListener('change', function() {
+					if (include.checked) {
+						excludedIds.delete(m.id);
+					} else {
+						excludedIds.add(m.id);
+					}
+					current.dryRunOK = false;
+					confirmBtn.disabled = true;
+					applySurvivorState();
+					runDryRun();
+				});
+
+				row.appendChild(label);
+				row.appendChild(include);
+				optionsRoot.appendChild(row);
+				rowControls.push({ id: m.id, row: row, include: include });
+			});
+			applySurvivorState();
+		}
+
+		// applySurvivorState reconciles each member row with the current
+		// survivor + excludedIds set: the survivor row's include box is forced
+		// checked + disabled (it cannot be dropped); every other row reflects
+		// whether it is currently excluded, and excluded rows are dimmed.
+		function applySurvivorState() {
+			rowControls.forEach(function(rc) {
+				if (rc.id === current.survivorId) {
+					excludedIds.delete(rc.id);
+					rc.include.checked = true;
+					rc.include.disabled = true;
+					rc.row.classList.remove('opacity-50');
+				} else {
+					var excluded = excludedIds.has(rc.id);
+					rc.include.disabled = false;
+					rc.include.checked = !excluded;
+					rc.row.classList.toggle('opacity-50', excluded);
+				}
 			});
 		}
 
@@ -331,11 +396,20 @@ templ ArtistMergeModal() {
 
 		function loserIDs() {
 			return current.members
-				.filter(function(m) { return m.id !== current.survivorId; })
+				.filter(function(m) { return m.id !== current.survivorId && !excludedIds.has(m.id); })
 				.map(function(m) { return m.id; });
 		}
 
 		function runDryRun() {
+			// All non-survivor members excluded (#1714): nothing to merge. Skip
+			// the network round-trip, surface a hint, and keep Confirm disabled
+			// until the user re-includes at least one source.
+			if (loserIDs().length === 0) {
+				previewBody.innerHTML = '<p class="text-sm text-amber-700 dark:text-amber-300">' + escapeHTML(tx('no_sources_selected')) + '</p>';
+				current.dryRunOK = false;
+				confirmBtn.disabled = true;
+				return;
+			}
 			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
 			confirmBtn.disabled = true;
 			postMerge(true).then(function(out) {

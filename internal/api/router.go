@@ -902,6 +902,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// (which is correct for API routes but wrong for browser page requests).
 	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files", wrapOptionalAuth(r.handleNextForeignFilesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files/allowlist", wrapOptionalAuth(r.handleNextForeignAllowlistPage, optAuthMw))
+	// M55 #1752: next/ duplicates detect+merge page. Registered as an exact
+	// path so Go's mux prefers it over the /next/reports/{name} workspace
+	// pattern below (the sidebar duplicates link already targets this exact
+	// path via /api/v1/reports/duplicates/count?ch=next). wrapOptionalAuth so
+	// the in-handler requireForeignAdmin gate renders the login page for
+	// unauthenticated visitors instead of returning 401 JSON.
+	mux.HandleFunc("GET "+bp+"/next/reports/duplicates", wrapOptionalAuth(r.handleNextArtistDuplicatesPage, optAuthMw))
 	// M55 #1337: next/ reports two-pane workspace. /next/reports defaults to the
 	// Compliance overview. /next/reports/{name} selects a built-in report by ID.
 	// These are registered after the more-specific foreign-files routes above so
