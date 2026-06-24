@@ -1343,7 +1343,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				<button
 					type="button"
 					class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"
-					aria-label={ "Test " + pk.DisplayName + " connection" }
+					aria-label={ tf(ctx, "settings.provider_config.test_aria", pk.DisplayName) }
 					hx-post={ "/api/v1/providers/" + string(pk.Name) + "/test" }
 					hx-target={ "#test-result-" + string(pk.Name) }
 					hx-swap="innerHTML"
