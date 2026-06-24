@@ -1,8 +1,10 @@
 {
+  "artist_duplicates.action_ignore": "Ignorer",
   "artist_duplicates.col_mbid": "Identifiant MusicBrainz",
   "artist_duplicates.col_name": "Artiste",
   "artist_duplicates.col_path": "Dossier",
   "artist_duplicates.empty_state": "Aucun doublon probable d'artiste détecté.",
+  "artist_duplicates.empty_state_dismissed": "Tous les doublons probables ont été ignorés. Réinitialisez les confirmations dans les paramètres pour les réafficher.",
   "artist_duplicates.no_mbid": "Aucun",
   "artist_duplicates.page_title": "Artistes probablement en doublon",
   "artist_duplicates.reason_mbid": "MBID partagé",

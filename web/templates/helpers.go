@@ -249,10 +249,11 @@ func membersJSON(members []provider.MemberInfo) string {
 	return string(b)
 }
 
-// recommendedReasonLabel returns the localized tooltip text for the
+// RecommendedReasonLabel returns the localized tooltip text for the
 // "Recommended" badge on the duplicates page. The reason values come from
-// artist.ChooseSurvivor's second return.
-func recommendedReasonLabel(ctx context.Context, reason string) string {
+// artist.ChooseSurvivor's second return. Exported so the next/ duplicates
+// template (package next) can reuse the same mapping without duplicating it.
+func RecommendedReasonLabel(ctx context.Context, reason string) string {
 	switch reason {
 	case "canonical_basename":
 		return t(ctx, "artist_duplicates.recommended_reason.canonical_basename")
@@ -287,6 +288,8 @@ func mergeI18nJSON(ctx context.Context) string {
 		"error_stale_group":         t(ctx, "artist_duplicates.merge_modal.error_stale_group"),
 		"error_survivor_missing":    t(ctx, "artist_duplicates.merge_modal.error_survivor_missing"),
 		"error_unknown":             t(ctx, "artist_duplicates.merge_modal.error_unknown"),
+		"exclude_label":             t(ctx, "artist_duplicates.merge_modal.exclude_label"),
+		"no_sources_selected":       t(ctx, "artist_duplicates.merge_modal.no_sources_selected"),
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -295,7 +298,7 @@ func mergeI18nJSON(ctx context.Context) string {
 	return string(b)
 }
 
-// duplicateGroupMembersJSON serializes a near-duplicate group's members to a
+// DuplicateGroupMembersJSON serializes a near-duplicate group's members to a
 // JSON array for embedding as a data attribute on the group card. The merge
 // modal's JS reads the blob when the user clicks "Merge..." so it can render
 // survivor radios without an extra round-trip to the server.
@@ -303,7 +306,10 @@ func mergeI18nJSON(ctx context.Context) string {
 // Field names are lowercased and match what the JS expects; only the subset
 // the modal needs is serialized (locked state is not surfaced here -- the
 // 423 error response handles that case at submit time).
-func duplicateGroupMembersJSON(members []ArtistDuplicateMember) string {
+//
+// Exported so the next/ duplicates template (package next) can embed the same
+// blob, reusing the shared merge modal byte-for-byte rather than forking it.
+func DuplicateGroupMembersJSON(members []ArtistDuplicateMember) string {
 	type wire struct {
 		ID                string `json:"id"`
 		Name              string `json:"name"`
