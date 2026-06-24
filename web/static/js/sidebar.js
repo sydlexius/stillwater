@@ -330,12 +330,66 @@
     }
   }
 
+  // Foreign Files pill: fire a one-shot pulse when the unmatched-file count
+  // rises, and keep the calm tooltip / aria-label on the visible pill. Wired
+  // from the pill's hx-on::after-swap in next/sidebar.templ, so it runs after
+  // every HTMX refresh of the count.
+  //
+  // The outer #sidebar-foreign-pill span (display:contents) persists across
+  // innerHTML swaps and carries data-prev-count plus the i18n tooltip copy.
+  // The inner .sw-sidebar-count-pill (present only when count > 0) carries the
+  // live data-count. Because the outer span is display:contents it generates no
+  // hover box, so the title/aria-label are mirrored onto the inner pill, which
+  // is the actually-rendered element.
+  function swForeignPillSwap() {
+    var pill = document.getElementById('sidebar-foreign-pill');
+    if (!pill) return;
+
+    var inner = pill.querySelector('.sw-sidebar-count-pill');
+    if (!inner) {
+      // Count is 0: the pill was cleared. Reset the baseline so a later
+      // 0 -> N transition still registers as an increase and pulses.
+      pill.setAttribute('data-prev-count', '0');
+      return;
+    }
+
+    // Mirror the calm tooltip / accessible label onto the rendered pill so the
+    // meaning surfaces on hover and to screen readers (the digits alone are a
+    // motion-independent signal; this adds the words).
+    var tip = pill.getAttribute('title');
+    if (tip) {
+      inner.setAttribute('title', tip);
+      inner.setAttribute('aria-label', tip);
+    }
+
+    var count = parseInt(inner.getAttribute('data-count') || '0', 10);
+    if (isNaN(count)) count = 0;
+    var prev = parseInt(pill.getAttribute('data-prev-count') || '0', 10);
+    if (isNaN(prev)) prev = 0;
+
+    if (count > prev && count > 0) {
+      // Re-arm the single-run animation: remove the class, force a reflow, then
+      // re-add so a repeated increase replays it. animationend also clears the
+      // class as a backstop in case the element is re-rendered mid-animation.
+      inner.classList.remove('sw-ff-pulse');
+      void inner.offsetWidth;
+      inner.classList.add('sw-ff-pulse');
+      inner.addEventListener('animationend', function handler() {
+        inner.classList.remove('sw-ff-pulse');
+        inner.removeEventListener('animationend', handler);
+      });
+    }
+
+    pill.setAttribute('data-prev-count', String(count));
+  }
+
   // Expose public API.
   window.swSidebar = {
     init: init,
     cycle: cycle,
     cycleTheme: cycleTheme,
-    refreshUpdateBadge: refreshUpdateBadge
+    refreshUpdateBadge: refreshUpdateBadge,
+    swForeignPillSwap: swForeignPillSwap
   };
 
   // Refresh the badge when the Updates tab finishes a manual check. The

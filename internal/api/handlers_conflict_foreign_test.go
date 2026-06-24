@@ -82,7 +82,11 @@ func TestHandleGetConflictBanner_NoForeignFilesStateWhenFilesPresent(t *testing.
 	if pillRec.Code != http.StatusOK {
 		t.Fatalf("pill status = %d, want 200", pillRec.Code)
 	}
-	if !strings.Contains(pillRec.Body.String(), `sw-sidebar-count-pill">3<`) {
-		t.Errorf("sidebar pill should show count 3; got %q", pillRec.Body.String())
+	// data-count carries the same value so swForeignPillSwap (sidebar.js) can
+	// detect a count increase across HTMX swaps and fire the one-shot pulse.
+	pillBody := pillRec.Body.String()
+	if !strings.Contains(pillBody, `class="sw-sidebar-count-pill" data-count="3"`) ||
+		!strings.Contains(pillBody, `>3</span>`) {
+		t.Errorf("sidebar pill should show count 3 with data-count; got %q", pillBody)
 	}
 }

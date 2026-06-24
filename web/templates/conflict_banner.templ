@@ -1,11 +1,12 @@
 package templates
 
 // ConflictBannerView is the view model for the conflict gating banner,
-// covering write-back, round-trip overlap, and foreign-file warning states.
-// State is one of "clean", "image_only", "nfo_only", "both", "round_trip",
-// "foreign_files" and maps to the banner variants A/B/C/D plus the new E
-// (slate/blue) variant introduced in #1185. The banner renders above all
-// page content regardless of the viewer's admin role, so the visual
+// covering write-back and round-trip overlap states.
+// State is one of "clean", "image_only", "nfo_only", "both", "round_trip"
+// and maps to the banner variants A/B/C/D. (The former slate/blue
+// "foreign_files" warning state was removed; foreign files now surface only
+// via the ambient sidebar pill, never as a banner.) The banner renders above
+// all page content regardless of the viewer's admin role, so the visual
 // treatment must stand on its own without relying on the sidebar chrome.
 type ConflictBannerView struct {
 	State       string

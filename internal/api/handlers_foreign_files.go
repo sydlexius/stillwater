@@ -58,8 +58,10 @@ func (r *Router) handleForeignFilesCount(w http.ResponseWriter, req *http.Reques
 		// The sidebar entry is static (always visible); only inject the count pill.
 		// Empty response at count==0 clears the pill span without hiding the entry.
 		if count > 0 {
+			// data-count lets swForeignPillSwap (sidebar.js) detect a count
+			// increase across HTMX swaps and fire the one-shot pulse.
 			fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
-				`<span class="sw-sidebar-count-pill">%d</span>`, count)
+				`<span class="sw-sidebar-count-pill" data-count="%d">%d</span>`, count, count)
 		}
 		return
 	}
