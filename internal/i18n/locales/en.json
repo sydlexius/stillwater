@@ -2101,6 +2101,7 @@
   "settings.provider_config.register_placeholder": "Register at musicbrainz.org",
   "settings.provider_config.server": "Server",
   "settings.provider_config.server.description": "Which MusicBrainz endpoint Stillwater queries. Pick a preset or supply a custom mirror URL.",
+  "settings.provider_config.test_aria": "Test %s connection",
   "settings.provider_config.add_key": "Add API key",
   "settings.provider_config.update_key": "Update API key",
   "settings.provider_config.verbosity_biography": "Biography",

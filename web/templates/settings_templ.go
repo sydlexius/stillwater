@@ -3162,9 +3162,9 @@ func ProviderKeyCard(pk provider.ProviderKeyStatus) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var132 string
-			templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.ResolveAttributeValue("Test " + pk.DisplayName + " connection")
+			templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "settings.provider_config.test_aria", pk.DisplayName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1346, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1346, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var132)
 			if templ_7745c5c3_Err != nil {
