@@ -583,6 +583,7 @@ templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colo
 			{ label }
 			@FieldLockToggle(a, field)
 			@fieldActionsFor(a, field, len(tags) > 0, providers)
+			@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 		</h3>
 		if len(tags) > 0 {
 			<div class="flex flex-wrap gap-1">

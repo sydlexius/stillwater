@@ -107,6 +107,12 @@ func TestArtistDetailPage_ChipRefreshOnActionResolved(t *testing.T) {
 	if !strings.Contains(window, "refreshEditableSections()") {
 		t.Errorf("dashboard:action-resolved handler must call refreshEditableSections() to clear resolved chips; handler:\n%s", window)
 	}
+	// The handler must guard against re-entrant calls while the user is editing
+	// a field (editing flag set by the edit-all toggle). Without the guard a
+	// resolved action would swap out a section the user is actively editing.
+	if !strings.Contains(window, "if (editing) return") {
+		t.Errorf("dashboard:action-resolved handler must guard with 'if (editing) return' to avoid clobbering active edits; handler:\n%s", window)
+	}
 }
 
 // TestArtistDetailPage_PrototypeChrome pins the prototype-fidelity rework
