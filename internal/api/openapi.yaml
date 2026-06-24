@@ -624,6 +624,9 @@ components:
         feature_trigger_refresh:
           type: boolean
           description: Whether Stillwater asks the platform to refresh artist metadata after push.
+        verify_path_after_update:
+          type: boolean
+          description: When true, issues a follow-up GET after rename PUT to verify path wasn't coerced. Lidarr only.
         library_count:
           type: integer
           description: Number of libraries associated with this connection. Present in the single-connection detail response only, not in the list response.
@@ -8060,6 +8063,69 @@ paths:
                 $ref: "#/components/schemas/Error"
         "502":
           description: Peer rejected the snapshot or restore
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /connections/{id}/verify-path-after-update:
+    post:
+      tags: [Connections]
+      summary: Toggle "Verify path after rename" (Lidarr only)
+      operationId: setVerifyPathAfterUpdate
+      description: >
+        When true, issues a follow-up GET after rename PUT to verify path
+        wasn't coerced. Lidarr only. Returns 400 for non-Lidarr connections.
+        The HTMX toggle posts form-encoded; API/curl callers can use JSON; an
+        `?enabled=` query param is honored as a last resort. A missing or
+        unparsable `enabled` is rejected with 400, never coerced to false.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Toggle state updated; returns the updated connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionResponse"
+        "400":
+          description: >
+            Invalid request. Returned when the connection id is missing, the
+            body could not be read or parsed, the `enabled` key is missing or
+            unparsable, or the connection is not a Lidarr connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Persisting the toggle failed
           content:
             application/json:
               schema:

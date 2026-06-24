@@ -2139,6 +2139,39 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 								</button>
 							</div>
 						</div>
+						if c.Type == "lidarr" {
+							<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+								<div class="flex items-center justify-between">
+									<div class="min-w-0 pr-3">
+										<span id={ "verify-path-label-" + c.ID } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.verify_path_title") }</span>
+										<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+											{ t(ctx, "settings.connections.verify_path_description") }
+										</div>
+									</div>
+									<button
+										id={ "verify-path-" + c.ID }
+										type="button"
+										class={ ruleToggleBtnClasses(c.GetVerifyPathAfterUpdate()) }
+										role="switch"
+										aria-checked={ boolAttr(c.GetVerifyPathAfterUpdate()) }
+										aria-labelledby={ "verify-path-label-" + c.ID }
+										hx-post={ "/api/v1/connections/" + c.ID + "/verify-path-after-update" }
+										hx-vals={ verifyPathAfterUpdatePayload(!c.GetVerifyPathAfterUpdate()) }
+										hx-swap="none"
+										data-conn-id={ c.ID }
+										data-sw-btn-on={ ruleToggleBtnClasses(true) }
+										data-sw-btn-off={ ruleToggleBtnClasses(false) }
+										data-sw-knob-on={ ruleToggleKnobClasses(true) }
+										data-sw-knob-off={ ruleToggleKnobClasses(false) }
+										data-sw-error={ t(ctx, "settings.connections.verify_path_error") }
+										hx-on:htmx:after-request="swVerifyPathAfterUpdateAfterRequest(this, event)"
+									>
+										<span class={ ruleToggleKnobClasses(c.GetVerifyPathAfterUpdate()) }></span>
+									</button>
+								</div>
+								<span id={ "verify-path-error-" + c.ID } class="hidden text-xs text-red-600 dark:text-red-400 mt-1"></span>
+							</div>
+						}
 						<div
 							id={ "detected-" + c.ID }
 							class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2"
