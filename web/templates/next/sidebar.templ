@@ -142,8 +142,6 @@ templ Sidebar(assets templates.AssetPaths) {
 							<span
 								id="sidebar-foreign-pill"
 								class="contents"
-								title={ t(ctx, "nav.reports.foreign.tooltip") }
-								aria-label={ t(ctx, "nav.reports.foreign.tooltip") }
 								data-prev-count="0"
 								hx-get="/api/v1/foreign-files/count?ch=next"
 								hx-trigger="load, every 60s, swFFCountChanged from:body"

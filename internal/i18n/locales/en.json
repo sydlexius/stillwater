@@ -1282,6 +1282,7 @@
   "nav.reports.duplicates": "Duplicates",
   "nav.reports.foreign": "Unmatched Files",
   "nav.reports.foreign.tooltip": "Unrecognized files in your library, review when you like",
+  "nav.reports.foreign.aria": "%d unrecognized files in your library, review when you like",
   "nav.rules": "Rules",
   "nav.section_main": "Main",
   "nav.settings": "Settings",

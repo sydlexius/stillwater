@@ -331,39 +331,56 @@
   }
 
   // Foreign Files pill: fire a one-shot pulse when the unmatched-file count
-  // rises, and keep the calm tooltip / aria-label on the visible pill. Wired
-  // from the pill's hx-on::after-swap in next/sidebar.templ, so it runs after
-  // every HTMX refresh of the count.
+  // RISES (never on the initial render), and keep the parent nav link's
+  // accessible name in sync with the live count. Wired from the pill's
+  // hx-on::after-swap in next/sidebar.templ, so it runs after every HTMX
+  // refresh of the count.
   //
   // The outer #sidebar-foreign-pill span (display:contents) persists across
-  // innerHTML swaps and carries data-prev-count plus the i18n tooltip copy.
-  // The inner .sw-sidebar-count-pill (present only when count > 0) carries the
-  // live data-count. Because the outer span is display:contents it generates no
-  // hover box, so the title/aria-label are mirrored onto the inner pill, which
-  // is the actually-rendered element.
+  // innerHTML swaps and carries data-prev-count + data-initialized. The inner
+  // .sw-sidebar-count-pill (present only when count > 0) is server-rendered with
+  // data-count, a localized count-bearing data-aria, and a calm title tooltip.
   function swForeignPillSwap() {
     var pill = document.getElementById('sidebar-foreign-pill');
     if (!pill) return;
 
+    // The nav link keeps a static aria-label so it stays named when the visible
+    // label is hidden in the icon-only / hidden sidebar states. Stash that base
+    // name once so we can fold the live count into it and restore it on clear.
+    var link = pill.closest('a');
+    if (link && link.getAttribute('data-aria-base') === null) {
+      link.setAttribute('data-aria-base', link.getAttribute('aria-label') || '');
+    }
+
     var inner = pill.querySelector('.sw-sidebar-count-pill');
     if (!inner) {
-      // Count is 0: the pill was cleared. Reset the baseline so a later
-      // 0 -> N transition still registers as an increase and pulses.
+      // Count is 0: the pill cleared. Restore the link's base name, reset the
+      // baseline, and mark initialized so a later 0 -> N still pulses.
+      if (link) link.setAttribute('aria-label', link.getAttribute('data-aria-base') || '');
       pill.setAttribute('data-prev-count', '0');
+      pill.setAttribute('data-initialized', 'true');
       return;
     }
 
-    // Mirror the calm tooltip / accessible label onto the rendered pill so the
-    // meaning surfaces on hover and to screen readers (the digits alone are a
-    // motion-independent signal; this adds the words).
-    var tip = pill.getAttribute('title');
-    if (tip) {
-      inner.setAttribute('title', tip);
-      inner.setAttribute('aria-label', tip);
-    }
+    // Fold the localized, count-bearing accessible name (rendered server-side on
+    // the swapped pill) onto the nav link so screen-reader users hear the number.
+    // The link's own aria-label otherwise overrides the descendant pill per the
+    // ARIA name-from-content rules, and the pill is display:none when collapsed.
+    var aria = inner.getAttribute('data-aria');
+    if (link && aria) link.setAttribute('aria-label', aria);
 
     var count = parseInt(inner.getAttribute('data-count') || '0', 10);
     if (isNaN(count)) count = 0;
+
+    // First swap (the initial `load` fetch) only establishes the baseline: a
+    // fresh render with existing foreign files must NOT pulse. Pulse only on a
+    // later increase (the 60s poll or a swFFCountChanged refresh).
+    if (pill.getAttribute('data-initialized') !== 'true') {
+      pill.setAttribute('data-initialized', 'true');
+      pill.setAttribute('data-prev-count', String(count));
+      return;
+    }
+
     var prev = parseInt(pill.getAttribute('data-prev-count') || '0', 10);
     if (isNaN(prev)) prev = 0;
 

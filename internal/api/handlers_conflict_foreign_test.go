@@ -89,4 +89,13 @@ func TestHandleGetConflictBanner_NoForeignFilesStateWhenFilesPresent(t *testing.
 		!strings.Contains(pillBody, `>3</span>`) {
 		t.Errorf("sidebar pill should show count 3 with data-count; got %q", pillBody)
 	}
+	// data-aria is the localized, count-bearing accessible name the JS folds onto
+	// the nav link so screen-reader users hear the count (not a count-less label).
+	if !strings.Contains(pillBody, `data-aria="3 unrecognized files`) {
+		t.Errorf("sidebar pill data-aria should carry the count; got %q", pillBody)
+	}
+	// title supplies the calm hover tooltip.
+	if !strings.Contains(pillBody, `title="Unrecognized files`) {
+		t.Errorf("sidebar pill should carry the calm title tooltip; got %q", pillBody)
+	}
 }
