@@ -570,14 +570,15 @@
       thumbnail_size:       'medium',
       reduced_motion:       'system',
       lite_mode:            'off',
-      notification_enabled: 'true',
-      auto_fetch_images:    'false',
-      bg_opacity:           '85',
-      page_size:            '50',
-      density:              'comfortable',
-      mono_font:            'jetbrains',
-      kbd_hints:            'show',
-      language:             'en'
+      notification_enabled:  'true',
+      auto_fetch_images:     'false',
+      show_platform_debug:   'false',
+      bg_opacity:            '85',
+      page_size:             '50',
+      density:               'comfortable',
+      mono_font:             'jetbrains',
+      kbd_hints:             'show',
+      language:              'en'
     };
     var bp = (function () {
       var el = document.querySelector('meta[name="htmx-base-path"]');
@@ -623,6 +624,7 @@
       [
         { key: 'notification_enabled', on: 'true' },
         { key: 'auto_fetch_images',    on: 'true' },
+        { key: 'show_platform_debug',  on: 'true' },
         { key: 'kbd_hints',            on: 'show' }
       ].forEach(function (cfg) {
         var btn = drawer.querySelector('.sw-prefs-toggle[data-pref-key="' + cfg.key + '"]');
@@ -702,6 +704,7 @@
         lite_mode:                      DEFAULTS.lite_mode,
         notification_enabled:           DEFAULTS.notification_enabled,
         auto_fetch_images:              DEFAULTS.auto_fetch_images,
+        show_platform_debug:            DEFAULTS.show_platform_debug,
         bg_opacity:                     DEFAULTS.bg_opacity,
         page_size:                      DEFAULTS.page_size,
         density:                        DEFAULTS.density,

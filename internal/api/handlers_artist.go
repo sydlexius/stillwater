@@ -502,7 +502,11 @@ func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request)
 		}
 	}
 
-	showPlatformDebug := r.getBoolSetting(req.Context(), "show_platform_debug", false)
+	// M55 #2060: per-user preference, falling back to the global setting so that
+	// existing deployments that had the global flag enabled preserve that behavior
+	// for users who have not yet set their own preference.
+	showPlatformDebug := r.getUserBoolPreference(req.Context(), PrefShowPlatformDebug,
+		r.getBoolSetting(req.Context(), "show_platform_debug", false))
 
 	// Read the active tab from query params, defaulting to "overview".
 	activeTab := req.URL.Query().Get("tab")

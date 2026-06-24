@@ -329,11 +329,14 @@ func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 
-	// enableDebug toggles the setting that drives ShowPlatformDebug.
+	// enableDebug sets the per-user show_platform_debug preference for the test
+	// user (M55 #2060: migrated from global app setting to per-user preference).
+	// The test user ID must match middleware.WithTestUserID's value ("test-user").
 	enableDebug := func() {
 		if _, err := r.db.ExecContext(context.Background(),
-			`INSERT OR REPLACE INTO settings (key, value) VALUES ('show_platform_debug', 'true')`); err != nil {
-			t.Fatalf("enabling show_platform_debug: %v", err)
+			`INSERT OR REPLACE INTO user_preferences (user_id, key, value, updated_at)
+			 VALUES ('test-user', 'show_platform_debug', 'true', datetime('now'))`); err != nil {
+			t.Fatalf("enabling show_platform_debug preference: %v", err)
 		}
 	}
 

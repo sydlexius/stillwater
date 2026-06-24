@@ -381,16 +381,18 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data := templates.SettingsData{
-		ActiveTab:               tab,
-		Libraries:               libs,
-		Profiles:                profiles,
-		ActiveProfile:           active,
-		ProviderKeys:            providerKeys,
-		Priorities:              priorities,
-		Connections:             conns,
-		Webhooks:                webhooks,
-		WebSearchProviders:      webSearchProviders,
-		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
+		ActiveTab:          tab,
+		Libraries:          libs,
+		Profiles:           profiles,
+		ActiveProfile:      active,
+		ProviderKeys:       providerKeys,
+		Priorities:         priorities,
+		Connections:        conns,
+		Webhooks:           webhooks,
+		WebSearchProviders: webSearchProviders,
+		// M55 #2060: per-user preference, falling back to the global setting.
+		ShowPlatformDebug: r.getUserBoolPreference(req.Context(), PrefShowPlatformDebug,
+			r.getBoolSetting(req.Context(), "show_platform_debug", false)),
 		BasePath:                r.basePath,
 		BasePathEnvOverride:     r.basePathFromEnv,
 		TLS:                     r.tlsStatus,

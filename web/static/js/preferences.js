@@ -35,6 +35,8 @@
     language: 'en',
     notification_enabled: 'true',
     auto_fetch_images: 'false',
+    // M55 #2060: per-user debug tab toggle (migrated from global app setting).
+    show_platform_debug: 'false',
     bg_opacity: '85',
     // M55 #1774: preferences flyout drawer defaults.
     density: 'comfortable',

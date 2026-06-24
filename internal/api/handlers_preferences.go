@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -54,6 +55,12 @@ const (
 	PrefArtistDetailSectionOrder   = "artist_detail_section_order"
 	PrefArtistDetailHiddenSections = "artist_detail_hidden_sections"
 
+	// PrefShowPlatformDebug is the per-user toggle that enables the Debug tab on
+	// the artist detail page. Migrated from the global "show_platform_debug" app
+	// setting (M55 #2060); the global setting remains readable as the seed value
+	// during the one-time startup migration.
+	PrefShowPlatformDebug = "show_platform_debug"
+
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
 	// preferences. Keys have the form "suppress_confirm_{action}" and accept
 	// "true" or "false". These are not listed in preferenceDefaults because they
@@ -92,6 +99,8 @@ var preferenceDefaults = map[string]preferenceDef{
 	PrefMonoFont:                 {defaultValue: "jetbrains", allowedValues: []string{"system", "jetbrains", "cascadia"}},
 	PrefKbdHints:                 {defaultValue: "show", allowedValues: []string{"show", "hide"}},
 	PrefMetadataNameRomanization: {defaultValue: "true", allowedValues: []string{"true", "false"}},
+	// M55 #2060: per-user debug tab toggle migrated from the global app setting.
+	PrefShowPlatformDebug: {defaultValue: "false", allowedValues: []string{"true", "false"}},
 }
 
 func init() {
@@ -937,6 +946,8 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		MonoFont:            pref(PrefMonoFont),
 		KbdHints:            pref(PrefKbdHints),
 		NotificationEnabled: normalizeBoolPref(pref(PrefNotificationEnabled), preferenceDefaults[PrefNotificationEnabled].defaultValue),
+		// M55 #2060: per-user debug tab toggle.
+		ShowPlatformDebug: normalizeBoolPref(pref(PrefShowPlatformDebug), preferenceDefaults[PrefShowPlatformDebug].defaultValue),
 		// Artist detail layout: parse stored JSON arrays (nil = use default order).
 		ArtistDetailSectionOrder:   parseSectionList(stored[PrefArtistDetailSectionOrder]),
 		ArtistDetailHiddenSections: parseSectionList(stored[PrefArtistDetailHiddenSections]),
@@ -1059,4 +1070,40 @@ func (r *Router) getUserPageSize(ctx context.Context, userID string, queryParam 
 		return PageSizeDefault
 	}
 	return n
+}
+
+// migratePlatformDebugPref seeds the per-user show_platform_debug preference
+// from the legacy global app setting for any user who has not yet set it.
+// This is called once at startup (M55 #2060) and is idempotent: INSERT OR IGNORE
+// ensures that existing per-user rows are never overwritten, and a missing global
+// setting (the common case -- default is false) results in "false" being seeded,
+// matching the compiled default.
+//
+// The migration is best-effort: a failure is logged but does not prevent the
+// server from starting. On the first request after a failed migration the read
+// path falls back to the global setting via getBoolSetting (the getUserBoolPreference
+// fallback in buildArtistDetailData), so the visible behavior is correct either way.
+func (r *Router) migratePlatformDebugPref(logger *slog.Logger) {
+	ctx := context.Background()
+
+	// Read the global setting; default to "false" if absent.
+	var globalVal string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'show_platform_debug'`).Scan(&globalVal)
+	if err != nil {
+		// Not found (ErrNoRows) means the global was never set -> use the default.
+		globalVal = "false"
+	}
+	// Normalize to a valid boolean string.
+	globalVal = normalizeBoolPref(globalVal, "false")
+
+	// Seed the per-user preference for every user, skipping any who already have a row.
+	_, execErr := r.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO user_preferences (user_id, key, value, updated_at)
+		 SELECT id, ?, ?, datetime('now') FROM users`,
+		PrefShowPlatformDebug, globalVal)
+	if execErr != nil {
+		logger.Warn("migrating show_platform_debug global setting to per-user preference",
+			"error", execErr)
+	}
 }

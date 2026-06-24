@@ -337,6 +337,15 @@ func NewRouter(deps RouterDeps) *Router {
 	// so that sub-path deployments produce correct URLs.
 	templates.SetBasePath(deps.BasePath)
 
+	// M55 #2060: one-time startup migration -- seed the per-user
+	// show_platform_debug preference from the legacy global app setting so
+	// existing deployments that had the global flag enabled preserve that
+	// behavior. INSERT OR IGNORE ensures users who have already set their own
+	// preference are never overwritten.
+	if deps.DB != nil {
+		r.migratePlatformDebugPref(deps.Logger)
+	}
+
 	return r
 }
 
