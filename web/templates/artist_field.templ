@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -303,28 +304,97 @@ templ fieldHistoryMenu(a *artist.Artist, field string, history []artist.Metadata
 }
 
 // fieldFindingChips renders the inline finding chip(s) for a metadata field
-// (M55 #1336, field-tag-on-rule): one severity-colored pill per active rule
-// violation tagged to this field, each linking to the Open Findings section and
-// carrying the violation message as its tooltip. It renders nothing when the
-// field has no findings -- which is always the case in the stable channel,
-// because only the next/ artist-detail handler injects the findings map into the
-// context (see WithFieldFindings). The chips render in BOTH the read view (next
-// to the value) and the edit view (next to the field label), so a live violation
-// stays visible while editing the field it touches (#1860).
-templ fieldFindingChips(findings []FieldFinding) {
+// (M55 #1336 field-tag-on-rule; #1860 self-service popover): one severity-colored
+// pill per active rule violation tagged to this field. Clicking a chip opens a
+// small popover carrying the violation message and the same Fix/Dismiss actions
+// the non-field "Other findings" list offers (reusing artistViolationFix/
+// artistViolationDismiss), so a field finding is fully actionable inline -- the
+// dedicated findings section no longer lists field-mapped rules (#1860).
+//
+// It renders nothing when the field has no findings -- which is always the case
+// in the stable channel, because only the next/ artist-detail handler injects the
+// findings map into the context (see WithFieldFindings). The chips render in BOTH
+// the read view (next to the value) and the edit view (next to the field label),
+// so a live violation stays visible and fixable while editing the field it
+// touches. The field arg makes each chip's popover menu id unique even when one
+// violation maps to multiple fields (e.g. name_language_pref -> name + sort_name).
+templ fieldFindingChips(field string, findings []FieldFinding) {
 	if len(findings) > 0 {
 		<span class="sw-field-chips">
 			for _, f := range findings {
-				// aria-label carries severity + message so each chip has a
-				// distinguishable accessible name; without it screen readers
-				// announce every chip as just the bare severity word.
-				<a href="#next-findings" class="sw-field-chip" data-severity={ f.Severity } title={ f.Message } aria-label={ f.Severity + ": " + f.Message }>
-					<span class="sw-field-chip-dot" aria-hidden="true"></span>
-					{ f.Severity }
-				</a>
+				@fieldFindingChip(field, f)
 			}
 		</span>
 	}
+}
+
+// fieldFindingChip renders one finding pill as a popover trigger. The popover
+// (toggled by the shared ContextMenuGlobalJS via data-context-menu) holds the
+// message plus Fix (when fixable) and Dismiss, both wired to the existing
+// artistViolationFix/artistViolationDismiss scripts that POST to the
+// notifications endpoints and dispatch dashboard:action-resolved (which
+// violations-sync.js listens for to refresh the findings list). The trigger is a
+// <button> (not a link) because it now opens a menu rather than navigating.
+templ fieldFindingChip(field string, f FieldFinding) {
+	{{ menuID := "ff-" + field + "-" + f.ID }}
+	<span class="relative inline-flex" data-context-menu={ menuID }>
+		// aria-label carries severity + message so each chip has a distinguishable
+		// accessible name; without it screen readers announce every chip as just
+		// the bare severity word.
+		<button
+			type="button"
+			class="sw-field-chip"
+			data-severity={ f.Severity }
+			title={ f.Message }
+			aria-label={ f.Severity + ": " + f.Message }
+			aria-haspopup="menu"
+			aria-expanded="false"
+			aria-controls={ "ctx-panel-" + menuID }
+			onclick={ components.ToggleContextMenu(menuID) }
+		>
+			<span class="sw-field-chip-dot" aria-hidden="true"></span>
+			{ f.Severity }
+		</button>
+		<div
+			id={ "ctx-panel-" + menuID }
+			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] max-w-[20rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg ctx-desktop-panel"
+			role="menu"
+		>
+			<p class="px-3 py-2 text-xs text-gray-600 dark:text-gray-300 whitespace-pre-line">{ f.Message }</p>
+			<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+			// Fix/Dismiss reuse artistViolationFix/artistViolationDismiss (same POST
+			// endpoints + dashboard:action-resolved refresh as the "Other findings"
+			// list). The dismiss confirm prompt is sourced from data-confirm (the
+			// script reads it via a global querySelector); the scripts' failure-toast
+			// strings come from a #artist-violation-<id> row, which the chip path does
+			// not render (it would duplicate ids for multi-field rules), so a failed
+			// fix/dismiss surfaces the script's English fallback toast.
+			if f.Fixable {
+				<button
+					type="button"
+					role="menuitem"
+					data-violation-id={ f.ID }
+					data-artist-id={ f.ArtistID }
+					onclick={ artistViolationFix(f.ID, f.ArtistID) }
+					aria-label={ fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(ctx, f.RuleID)) }
+					class="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-green-600 dark:text-green-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+				>
+					{ fixButtonLabel(ctx, f.RuleID) }
+				</button>
+			}
+			<button
+				type="button"
+				role="menuitem"
+				data-violation-id={ f.ID }
+				data-artist-id={ f.ArtistID }
+				data-confirm={ t(ctx, "notifications.dismiss_confirm") }
+				onclick={ artistViolationDismiss(f.ID, f.ArtistID) }
+				class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+			>
+				{ t(ctx, "common.dismiss") }
+			</button>
+		</div>
+	</span>
 }
 
 // ProviderLogoStack renders a "Fetch" button with overlapping provider logos.
@@ -448,7 +518,7 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 			<h2 class="text-lg font-semibold inline-flex items-center gap-2">
 				{ t(ctx, "artist.biography") }
 				@FieldLockToggle(a, "biography")
-				@fieldFindingChips(fieldFindingsFor(ctx, "biography"))
+				@fieldFindingChips("biography", fieldFindingsFor(ctx, "biography"))
 			</h2>
 			@fieldActionsFor(a, "biography", a.Biography != "", providers)
 		</div>
@@ -472,7 +542,7 @@ templ biographyEdit(a *artist.Artist, providers []string, history []artist.Metad
 			<h2 class="text-lg font-semibold inline-flex items-center gap-2">
 				{ t(ctx, "artist.biography") }
 				@fieldEditActions(a, "biography", providers, a.Biography != "", history)
-				@fieldFindingChips(fieldFindingsFor(ctx, "biography"))
+				@fieldFindingChips("biography", fieldFindingsFor(ctx, "biography"))
 			</h2>
 		</div>
 		<form
@@ -523,7 +593,7 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, provide
 		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
 			@fieldEditActions(a, field, providers, len(tags) > 0, history)
-			@fieldFindingChips(fieldFindingsFor(ctx, field))
+			@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 		</h3>
 		<form
 			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
@@ -557,13 +627,13 @@ templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers
 			<dd class="font-medium flex items-center gap-1.5">
 				@FieldLockToggle(a, field)
 				<span>{ value }</span>
-				@fieldFindingChips(fieldFindingsFor(ctx, field))
+				@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 			</dd>
 		} else {
 			<dd class="text-gray-500 dark:text-gray-400 italic text-xs flex items-center gap-1.5">
 				@FieldLockToggle(a, field)
 				<span>{ t(ctx, "common.not_set") }</span>
-				@fieldFindingChips(fieldFindingsFor(ctx, field))
+				@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 			</dd>
 		}
 	</div>
@@ -639,7 +709,7 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []
 	>
 		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
 			<span>{ label }</span>
-			@fieldFindingChips(fieldFindingsFor(ctx, field))
+			@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 		</dt>
 		<dd>
 			<form
@@ -695,18 +765,18 @@ templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, provi
 						rel="noopener noreferrer"
 						class="text-blue-600 dark:text-blue-400 hover:underline"
 					>{ value }</a>
-					@fieldFindingChips(fieldFindingsFor(ctx, field))
+					@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 				</dd>
 			} else {
 				<dd class="font-medium font-mono text-xs break-all">
 					{ value }
-					@fieldFindingChips(fieldFindingsFor(ctx, field))
+					@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 				</dd>
 			}
 		} else {
 			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">
 				{ t(ctx, "common.not_set") }
-				@fieldFindingChips(fieldFindingsFor(ctx, field))
+				@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 			</dd>
 		}
 	</div>
@@ -898,7 +968,7 @@ templ selectFieldEdit(a *artist.Artist, field, label, value string, options []Se
 	>
 		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
 			<span>{ label }</span>
-			@fieldFindingChips(fieldFindingsFor(ctx, field))
+			@fieldFindingChips(field, fieldFindingsFor(ctx, field))
 		</dt>
 		<dd>
 			<form

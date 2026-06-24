@@ -4312,6 +4312,14 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   line-height: 1.6;
   white-space: nowrap;
   text-decoration: none;
+  /* The chip is a <button> (it opens a Fix/Dismiss popover, #1860); reset the
+     native button chrome so it stays a flat pill. The per-severity rules below
+     supply the background/color. */
+  appearance: none;
+  border: 0;
+  margin: 0;
+  font-family: inherit;
+  cursor: pointer;
 }
 .sw-next-artist-detail .sw-field-chip:hover {
   text-decoration: underline;
