@@ -7140,8 +7140,13 @@ paths:
                 kbd_hints: { type: string, enum: [show, hide] }
                 saved_views:
                   type: array
+                  maxItems: 20
                   items:
                     type: object
+                    properties:
+                      name: { type: string, maxLength: 50 }
+                      params: { type: string, maxLength: 2000 }
+                      created_at: { type: string }
               patternProperties:
                 "^suppress_confirm_":
                   type: string

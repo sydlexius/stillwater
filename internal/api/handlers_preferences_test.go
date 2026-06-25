@@ -144,6 +144,7 @@ func TestValidateSavedViews(t *testing.T) {
 		{"empty array", `[]`, `[]`, true},
 		{"view with empty params", `[{"name":"No filters","params":"","created_at":""}]`, `[{"name":"No filters","params":"","created_at":""}]`, true},
 		{"empty name rejected", `[{"name":"","params":"sort=name","created_at":""}]`, "", false},
+		{"whitespace-only name rejected", `[{"name":"   ","params":"sort=name","created_at":""}]`, "", false},
 		{"name too long", `[{"name":"` + longName + `","params":"","created_at":""}]`, "", false},
 		{"params too long", `[{"name":"v","params":"` + longParams + `","created_at":""}]`, "", false},
 		{"too many views", `[` + strings.TrimSuffix(strings.Repeat(`{"name":"v","params":"","created_at":""},`, 21), ",") + `]`, "", false},

@@ -199,7 +199,7 @@ func validateSavedViews(value string) (string, bool) {
 		return "", false
 	}
 	for _, v := range views {
-		if v.Name == "" || len(v.Name) > savedViewsMaxNameLen {
+		if strings.TrimSpace(v.Name) == "" || len(v.Name) > savedViewsMaxNameLen {
 			return "", false
 		}
 		if len(v.Params) > savedViewsMaxParamsLen {
