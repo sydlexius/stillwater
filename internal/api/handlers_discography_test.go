@@ -1164,5 +1164,43 @@ func TestHandleArtistDiscographyTab_SortYear_EmptyYearSortsLast(t *testing.T) {
 	}
 }
 
+func TestHandleArtistDiscographyTab_SortYear_EmptyYearSortsLast_Desc(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+
+	// Same NFO as the ASC variant; sort=year&order=desc -> dated entries
+	// first (descending by year), undated entries still last -- not floated
+	// to the top by the old 9999 sentinel inversion.
+	nfo := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Test</name>
+  <album><title>Undated</title></album>
+  <album><title>Dated</title><year>2000</year></album>
+</artist>
+`
+	dir := writeArtistNFO(t, nfo)
+	a := &artist.Artist{Name: "Test", Path: dir, NFOExists: true}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "sort=year&order=desc"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	idxDated := strings.Index(body, "Dated")
+	idxUndated := strings.Index(body, "Undated")
+	if idxDated < 0 || idxUndated < 0 {
+		t.Fatalf("album titles missing from body:\n%s", body)
+	}
+	// Undated should remain LAST even in descending order; a 9999 sentinel
+	// would have inverted and placed it first.
+	if idxUndated < idxDated {
+		t.Errorf("empty year should sort after dated entries in desc order: Dated@%d Undated@%d", idxDated, idxUndated)
+	}
+}
+
 // Silence unused import for errors package (used in tests that may be added).
 var _ = errors.New

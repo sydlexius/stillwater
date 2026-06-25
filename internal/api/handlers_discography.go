@@ -101,15 +101,22 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 			return c
 		})
 	case "year":
-		// Empty year strings sort after all real years.
-		yearKey := func(y string) string {
-			if y == "" {
-				return "9999"
-			}
-			return y
-		}
+		// Empty year strings sort after all real years regardless of direction.
+		// Using a sentinel ("9999") breaks under desc because negating the
+		// comparison flips undated albums to the top.  Instead, handle the
+		// empty case explicitly so undated entries always land last.
 		slices.SortStableFunc(albums, func(a, b artist.DiscographyAlbum) int {
-			c := cmp.Compare(yearKey(a.Year), yearKey(b.Year))
+			aEmpty := a.Year == ""
+			bEmpty := b.Year == ""
+			switch {
+			case aEmpty && bEmpty:
+				return 0
+			case aEmpty:
+				return 1 // undated always after dated
+			case bEmpty:
+				return -1 // dated always before undated
+			}
+			c := cmp.Compare(a.Year, b.Year)
 			if order == "desc" {
 				return -c
 			}
