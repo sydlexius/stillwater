@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 )
 
@@ -68,6 +69,28 @@ var ErrPrivateAddress = errors.New("address is private or reserved")
 // the SSRF guard. Operators who need an egress proxy must wire one after
 // constructing SafeTransport.
 func SafeTransport() *http.Transport {
+	return SafeTransportWithAllowedHosts()
+}
+
+// SafeTransportWithAllowedHosts is SafeTransport with a trusted-host exemption.
+// Each host in allowedHosts (matched case-insensitively against the literal dial
+// host, before DNS resolution) bypasses the entire isBlocked check, so a
+// configured host that resolves to a loopback/private/link-local address can be
+// reached. The connection is still resolved and dialed normally; only the
+// private-address rejection is skipped. With no allowedHosts the behavior is
+// byte-for-byte identical to the default guarded transport, so SafeTransport is
+// just the zero-allowlist case.
+//
+// SECURITY -- DNS-rebinding: for an allowlisted host the resolved-IP recheck is
+// deliberately skipped. That is the point: the operator's own hostname is
+// expected to resolve to a private/LAN IP (e.g. a self-hosted MusicBrainz
+// mirror at 192.168.x.x). This is safe ONLY because the allow-set is populated
+// exclusively from trusted operator configuration (an admin-typed provider base
+// URL), never from request input or any untrusted source. A host name that
+// reaches this transport from request input must NEVER be added to the allow-set
+// -- doing so would reopen the SSRF/DNS-rebinding vector the guard exists to
+// close. Non-allowlisted hosts retain the full all-resolved-IPs rebinding check.
+func SafeTransportWithAllowedHosts(allowedHosts ...string) *http.Transport {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		base = &http.Transport{}
@@ -89,11 +112,35 @@ func SafeTransport() *http.Transport {
 	t.MaxIdleConnsPerHost = 32
 	t.IdleConnTimeout = 90 * time.Second
 
+	// Build the allow-set once at construction, lowercased, so the per-dial
+	// lookup is a constant-time map check. Empty hosts are ignored so a stray
+	// "" can never match an empty SplitHostPort result.
+	allowed := make(map[string]struct{}, len(allowedHosts))
+	for _, h := range allowedHosts {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			allowed[h] = struct{}{}
+		}
+	}
+
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			return nil, fmt.Errorf("split host/port %q: %w", addr, err)
+		}
+
+		// Trusted-host exemption: when the literal dial host (pre-resolution)
+		// is in the operator-configured allow-set, skip the private-address
+		// guard entirely and dial it as-is. See the SECURITY note on
+		// SafeTransportWithAllowedHosts for why skipping the resolved-IP
+		// recheck is safe here (allow-set is trusted config, never request
+		// input).
+		if _, ok := allowed[strings.ToLower(host)]; ok {
+			conn, dialErr := dialer.DialContext(ctx, network, addr)
+			if dialErr != nil {
+				return nil, fmt.Errorf("dial allowlisted host %s: %w", host, dialErr)
+			}
+			return conn, nil
 		}
 
 		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
@@ -133,9 +180,17 @@ func SafeTransport() *http.Transport {
 // SafeClient returns an *http.Client using SafeTransport with the given request
 // timeout. It is a convenience constructor for callers that need a one-liner.
 func SafeClient(timeout time.Duration) *http.Client {
+	return SafeClientWithAllowedHosts(timeout)
+}
+
+// SafeClientWithAllowedHosts is SafeClient with the trusted-host exemption of
+// SafeTransportWithAllowedHosts. See that function's SECURITY note: allowedHosts
+// must come only from trusted operator config, never request input. With no
+// allowedHosts it is identical to SafeClient.
+func SafeClientWithAllowedHosts(timeout time.Duration, allowedHosts ...string) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: SafeTransport(),
+		Transport: SafeTransportWithAllowedHosts(allowedHosts...),
 	}
 }
 
