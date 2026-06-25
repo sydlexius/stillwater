@@ -186,14 +186,14 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-manage-title }
 - **Verify path after rename (Lidarr only)**
 {: #settings-connections-connections-verify-path-title }
-- **Not configured**
-{: #settings-connections-connections-not-configured }
 - **Server name**
 {: #settings-connections-connections-server-name }
 - **Server URL**
 {: #settings-connections-connections-base-url }
 - **API Key**
 {: #settings-connections-connections-api-key }
+- **Not configured**
+{: #settings-connections-connections-not-configured }
 
 ## Libraries  {#tab-libraries}
 
