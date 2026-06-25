@@ -196,20 +196,22 @@ func TestSafeTransportWithAllowedHosts_CaseInsensitive(t *testing.T) {
 	defer srv.Close()
 
 	addr := strings.TrimPrefix(srv.URL, "http://")
-	host, _, err := net.SplitHostPort(addr)
+	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		t.Fatalf("SplitHostPort(%q): %v", addr, err)
 	}
 
-	// Allowlist an upper-cased variant; the dial host (127.0.0.1) is numeric so
-	// also allowlist a mixed-case label to exercise the ToLower path explicitly.
-	transport := httpsafe.SafeTransportWithAllowedHosts(strings.ToUpper(host))
+	// Dial a CASED hostname ("LOCALHOST") while allowlisting the lowercase form
+	// ("localhost"). A numeric dial host (127.0.0.1) has no case, so it would not
+	// exercise the ToLower allowlist-matching path; a cased label does.
+	addr = net.JoinHostPort("LOCALHOST", port)
+	transport := httpsafe.SafeTransportWithAllowedHosts("localhost")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	conn, err := transport.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		t.Fatalf("DialContext(%q) with upper-cased allowlist: err = %v; want nil", addr, err)
+		t.Fatalf("DialContext(%q) with differently-cased allowlist: err = %v; want nil", addr, err)
 	}
 	conn.Close()
 }

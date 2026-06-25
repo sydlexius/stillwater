@@ -2489,6 +2489,7 @@ func TestMirrorAllowedHost(t *testing.T) {
 	}{
 		{"default endpoint", defaultBaseURL, ""},
 		{"default with trailing slash", defaultBaseURL + "/", ""},
+		{"unparsable URL", "http://[::1", ""},
 		{"private mirror", "http://192.168.1.126:5000/ws/2", "192.168.1.126"},
 		{"loopback mirror", "http://127.0.0.1:5000", "127.0.0.1"},
 		{"uppercase host lowercased", "http://Mirror.LAN:5000/ws/2", "mirror.lan"},
