@@ -161,11 +161,13 @@ func isArtistDetailLayoutKey(key string) bool {
 	return key == PrefArtistDetailSectionOrder || key == PrefArtistDetailHiddenSections
 }
 
-// savedViewsMaxEntries and savedViewsMaxNameLen bound the saved_views preference
-// so a single preference row can never hold an unbounded blob.
+// savedViewsMaxEntries, savedViewsMaxNameLen, and savedViewsMaxParamsLen bound
+// the saved_views preference so a single preference row can never hold an
+// unbounded blob.
 const (
-	savedViewsMaxEntries = 20
-	savedViewsMaxNameLen = 50
+	savedViewsMaxEntries   = 20
+	savedViewsMaxNameLen   = 50
+	savedViewsMaxParamsLen = 2000
 )
 
 // isSavedViewsKey reports whether key is the saved_views preference key.
@@ -198,6 +200,9 @@ func validateSavedViews(value string) (string, bool) {
 	}
 	for _, v := range views {
 		if v.Name == "" || len(v.Name) > savedViewsMaxNameLen {
+			return "", false
+		}
+		if len(v.Params) > savedViewsMaxParamsLen {
 			return "", false
 		}
 		// params may be empty (e.g. a "no filters" saved view); only name is

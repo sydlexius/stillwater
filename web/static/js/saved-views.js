@@ -15,6 +15,19 @@
   var PREF_URL = '/api/v1/preferences/' + PREF_KEY;
   var CONTENT_TARGET = '#artist-content';
 
+  // saveViewOpener remembers the element that had focus when the save-view
+  // modal opened, so focus can be restored to it when the modal closes (a11y:
+  // focus must not be lost to <body> on Escape/backdrop/Cancel/Save close).
+  var saveViewOpener = null;
+
+  // fmtLabel substitutes the first "%s" verb in a localized template string
+  // with value. Used to localize the per-chip apply/delete labels that the
+  // server exposes (with a "%s" placeholder) via data-* attributes on the row.
+  function fmtLabel(tmpl, value) {
+    if (!tmpl) return value;
+    return tmpl.indexOf('%s') >= 0 ? tmpl.replace('%s', value) : tmpl + value;
+  }
+
   // basePath reads the deployment base path from the <meta> tag injected by
   // the layout, matching the pattern used by ArtistsPageScripts.
   function basePath() {
@@ -113,6 +126,14 @@
     }
     row.classList.remove('hidden');
 
+    // Localized label templates exposed by the server on the row element (each
+    // carries a "%s" placeholder for the view name). Falls back to the raw name
+    // when an attribute is absent (e.g. older cached markup).
+    var applyTitleTmpl = row.getAttribute('data-label-apply-title');
+    var applyAriaTmpl = row.getAttribute('data-label-apply-aria');
+    var deleteTitleTmpl = row.getAttribute('data-label-delete-title');
+    var deleteAriaTmpl = row.getAttribute('data-label-delete-aria');
+
     var svgNS = 'http://www.w3.org/2000/svg';
     var xPath = 'M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z';
 
@@ -123,8 +144,8 @@
 
       var applyBtn = document.createElement('button');
       applyBtn.type = 'button';
-      applyBtn.title = 'Apply view: ' + sv.name;
-      applyBtn.setAttribute('aria-label', 'Apply saved view: ' + sv.name);
+      applyBtn.title = fmtLabel(applyTitleTmpl, sv.name);
+      applyBtn.setAttribute('aria-label', fmtLabel(applyAriaTmpl, sv.name));
       applyBtn.className = 'inline-flex items-center gap-1 rounded-l-full rounded-r-none border border-[var(--swd-line)] bg-white/5 px-3 py-1 text-xs text-[var(--swd-ink-2)] hover:bg-white/10 transition-colors';
       applyBtn.textContent = sv.name;
       applyBtn.onclick = function() {
@@ -133,8 +154,8 @@
 
       var delBtn = document.createElement('button');
       delBtn.type = 'button';
-      delBtn.title = 'Delete view: ' + sv.name;
-      delBtn.setAttribute('aria-label', 'Delete saved view: ' + sv.name);
+      delBtn.title = fmtLabel(deleteTitleTmpl, sv.name);
+      delBtn.setAttribute('aria-label', fmtLabel(deleteAriaTmpl, sv.name));
       delBtn.className = 'inline-flex items-center rounded-l-none rounded-r-full border border-l-0 border-[var(--swd-line)] bg-white/5 px-1.5 py-1 text-xs text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100';
       delBtn.onclick = function() {
         if (window.swSavedViews) window.swSavedViews.deleteSavedView(sv.name);
@@ -212,6 +233,9 @@
       console.error('[saved-views] #save-view-modal not found in DOM');
       return;
     }
+    // Remember the element that opened the modal so focus can be restored to it
+    // on close (a11y). Captured before any focus move into the modal input.
+    saveViewOpener = document.activeElement;
     if (err) err.textContent = '';
     if (input) {
       input.value = '';
@@ -223,10 +247,18 @@
     }
   }
 
-  // closeSaveViewModal hides the save-view modal without saving.
+  // closeSaveViewModal hides the save-view modal without saving and restores
+  // focus to the element that opened it (a11y). Routes for Escape, backdrop
+  // click, and the Cancel/Save buttons all funnel through here.
   function closeSaveViewModal() {
     var modal = document.getElementById('save-view-modal');
     if (modal) modal.classList.add('hidden');
+    // Restore focus to the opener if it is still in the DOM and focusable.
+    if (saveViewOpener && typeof saveViewOpener.focus === 'function' &&
+        document.contains(saveViewOpener)) {
+      saveViewOpener.focus();
+    }
+    saveViewOpener = null;
   }
 
   // saveCurrentView reads the current URL state, appends a new view with the

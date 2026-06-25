@@ -132,7 +132,8 @@ func TestUpdatePreference_ThenGet(t *testing.T) {
 
 func TestValidateSavedViews(t *testing.T) {
 	t.Parallel()
-	longName := strings.Repeat("a", 51) // > savedViewsMaxNameLen
+	longName := strings.Repeat("a", 51)     // > savedViewsMaxNameLen
+	longParams := strings.Repeat("a", 2001) // > savedViewsMaxParamsLen
 	tests := []struct {
 		name   string
 		in     string
@@ -144,6 +145,7 @@ func TestValidateSavedViews(t *testing.T) {
 		{"view with empty params", `[{"name":"No filters","params":"","created_at":""}]`, `[{"name":"No filters","params":"","created_at":""}]`, true},
 		{"empty name rejected", `[{"name":"","params":"sort=name","created_at":""}]`, "", false},
 		{"name too long", `[{"name":"` + longName + `","params":"","created_at":""}]`, "", false},
+		{"params too long", `[{"name":"v","params":"` + longParams + `","created_at":""}]`, "", false},
 		{"too many views", `[` + strings.TrimSuffix(strings.Repeat(`{"name":"v","params":"","created_at":""},`, 21), ",") + `]`, "", false},
 		{"not an array", `{"name":"x"}`, "", false},
 		{"malformed json", `[`, "", false},

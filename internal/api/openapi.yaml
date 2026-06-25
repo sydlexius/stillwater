@@ -7138,6 +7138,10 @@ paths:
                 density: { type: string, enum: [compact, comfortable, spacious] }
                 mono_font: { type: string, enum: [system, jetbrains, cascadia] }
                 kbd_hints: { type: string, enum: [show, hide] }
+                saved_views:
+                  type: array
+                  items:
+                    type: object
               patternProperties:
                 "^suppress_confirm_":
                   type: string

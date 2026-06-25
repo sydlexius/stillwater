@@ -205,15 +205,15 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 				     as a view too. -->
 				<button
 					type="button"
-					title="Save current view"
-					aria-label="Save current view"
+					title={ t(ctx, "artists.saved_views.save_button_aria") }
+					aria-label={ t(ctx, "artists.saved_views.save_button_aria") }
 					onclick="if(window.swSavedViews)swSavedViews.openSaveViewModal()"
 					class={ "inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton }
 				>
 					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z"></path>
 					</svg>
-					<span class="hidden sm:inline">Save view</span>
+					<span class="hidden sm:inline">{ t(ctx, "artists.saved_views.save_button") }</span>
 				</button>
 			</div>
 			<!-- Saved view chips row (M55 #1777): always in the DOM so JS can update
@@ -223,14 +223,18 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 			<div
 				id="saved-views-row"
 				class={ "flex flex-wrap items-center gap-2 px-1 py-1", templ.KV("hidden", len(data.SavedViews) == 0) }
+				data-label-apply-title={ t(ctx, "artists.saved_views.apply_title") }
+				data-label-apply-aria={ t(ctx, "artists.saved_views.apply_aria") }
+				data-label-delete-title={ t(ctx, "artists.saved_views.delete_title") }
+				data-label-delete-aria={ t(ctx, "artists.saved_views.delete_aria") }
 			>
-				<span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">Saved:</span>
+				<span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{ t(ctx, "artists.saved_views.saved_label") }</span>
 				for _, sv := range data.SavedViews {
 					<span class="group relative inline-flex items-center">
 						<button
 							type="button"
-							title={ "Apply view: " + sv.Name }
-							aria-label={ "Apply saved view: " + sv.Name }
+							title={ tf(ctx, "artists.saved_views.apply_title", sv.Name) }
+							aria-label={ tf(ctx, "artists.saved_views.apply_aria", sv.Name) }
 							onclick={ templ.JSFuncCall("swSavedViews.applySavedView", sv.Params) }
 							class="inline-flex items-center gap-1 rounded-l-full rounded-r-none border border-[var(--swd-line)] bg-white/5 px-3 py-1 text-xs text-[var(--swd-ink-2)] hover:bg-white/10 transition-colors"
 						>
@@ -238,8 +242,8 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 						</button>
 						<button
 							type="button"
-							title={ "Delete view: " + sv.Name }
-							aria-label={ "Delete saved view: " + sv.Name }
+							title={ tf(ctx, "artists.saved_views.delete_title", sv.Name) }
+							aria-label={ tf(ctx, "artists.saved_views.delete_aria", sv.Name) }
 							onclick={ templ.JSFuncCall("swSavedViews.deleteSavedView", sv.Name) }
 							class="inline-flex items-center rounded-l-none rounded-r-full border border-l-0 border-[var(--swd-line)] bg-white/5 px-1.5 py-1 text-xs text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
 						>
