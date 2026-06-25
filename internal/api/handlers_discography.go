@@ -1,11 +1,14 @@
 package api
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -65,10 +68,69 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 		}
 	}
 
+	// Parse search/sort/order query params for client-side filtering.
+	// Defaults: no search, no sort (NFO order), ascending.
+	search := req.URL.Query().Get("search")
+	sortBy := req.URL.Query().Get("sort") // "title" or "year"; empty = NFO order
+	order := req.URL.Query().Get("order") // "asc" or "desc"; default "asc"
+	if order != "desc" {
+		order = "asc"
+	}
+
+	// Apply case-insensitive title filter.
+	if search != "" {
+		lower := strings.ToLower(search)
+		filtered := make([]artist.DiscographyAlbum, 0, len(albums))
+		for _, alb := range albums {
+			if strings.Contains(strings.ToLower(alb.Title), lower) {
+				filtered = append(filtered, alb)
+			}
+		}
+		albums = filtered
+	}
+
+	// Apply sort when a sort field is requested. Stable sort preserves NFO
+	// order as a secondary key so entries with identical values stay consistent.
+	switch sortBy {
+	case "title":
+		slices.SortStableFunc(albums, func(a, b artist.DiscographyAlbum) int {
+			c := cmp.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
+			if order == "desc" {
+				return -c
+			}
+			return c
+		})
+	case "year":
+		// Empty year strings sort after all real years regardless of direction.
+		// Using a sentinel ("9999") breaks under desc because negating the
+		// comparison flips undated albums to the top.  Instead, handle the
+		// empty case explicitly so undated entries always land last.
+		slices.SortStableFunc(albums, func(a, b artist.DiscographyAlbum) int {
+			aEmpty := a.Year == ""
+			bEmpty := b.Year == ""
+			switch {
+			case aEmpty && bEmpty:
+				return 0
+			case aEmpty:
+				return 1 // undated always after dated
+			case bEmpty:
+				return -1 // dated always before undated
+			}
+			c := cmp.Compare(a.Year, b.Year)
+			if order == "desc" {
+				return -c
+			}
+			return c
+		})
+	}
+
 	renderTempl(w, req, templates.ArtistDiscographyTab(templates.DiscographyTabData{
 		ArtistID:      artistID,
 		MusicBrainzID: a.MusicBrainzID,
 		Albums:        albums,
+		Search:        search,
+		Sort:          sortBy,
+		Order:         order,
 	}))
 }
 

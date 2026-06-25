@@ -50,9 +50,11 @@ templ SectionProviders(data ArtistDetailPageData) {
 
 // SectionDiscography renders the Discography section for the next/ artist-detail
 // page (4C, M55 #1336). The album list is lazy-loaded on intersection via the
-// unchanged GET /artists/{id}/discography/tab endpoint, which returns the stable
-// ArtistDiscographyTab fragment (album list, admin Fetch button gated on MBID,
-// MusicBrainz release-group links, count summary).
+// GET /artists/{id}/discography/tab endpoint, which accepts optional search/sort/
+// order query params for server-side filtering and sorting. A toolbar with a
+// search input and sort dropdown sits above the lazy-loaded content; the hidden
+// sort/order state inputs are kept outside the HTMX swap target so they persist
+// across requests.
 templ SectionDiscography(data ArtistDetailPageData) {
 	{{ d := &data.Detail }}
 	<section
@@ -65,7 +67,55 @@ templ SectionDiscography(data ArtistDetailPageData) {
 		<div class="head">
 			<h2 id="next-discography-heading">{ t(ctx, "artist.tab_discography") }</h2>
 		</div>
-		<div class="body">
+		<div class="body space-y-3">
+			<!-- Toolbar: search + sort. Kept outside the HTMX swap target so it
+			     persists across search/sort requests. Hidden sort/order inputs
+			     carry state for hx-include on the search input. -->
+			<div class="flex items-center gap-2">
+				<!-- Persistent sort/order state inputs referenced by hx-include -->
+				<input type="hidden" name="sort" id={ "discography-sort-" + d.Artist.ID } value=""/>
+				<input type="hidden" name="order" id={ "discography-order-" + d.Artist.ID } value="asc"/>
+				<div class="relative min-w-0 flex-1">
+					<!-- All classes use swd-* CSS tokens so the sw-dash-card glass
+					     surface adapts automatically to both light and dark themes. -->
+					<input
+						id={ "discography-search-" + d.Artist.ID }
+						type="search"
+						name="search"
+						placeholder={ t(ctx, "common.search") }
+						aria-label={ t(ctx, "common.search") }
+						hx-get={ "/artists/" + d.Artist.ID + "/discography/tab" }
+						hx-trigger="keyup changed delay:300ms"
+						hx-target={ "#artist-discography-tab-" + d.Artist.ID }
+						hx-swap="innerHTML"
+						hx-include={ "#discography-sort-" + d.Artist.ID + ",#discography-order-" + d.Artist.ID }
+						class="block w-full rounded-md border border-[var(--swd-line)] bg-[var(--swd-surface)] px-3 py-1.5 text-sm text-[var(--swd-ink)] placeholder-[var(--swd-ink-3)] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<!-- Sort dropdown. Uses swd-* CSS tokens; no hardcoded opaque fills. -->
+				<details id={ "discography-sort-dd-" + d.Artist.ID } class="relative">
+					<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-[var(--swd-line)] text-[var(--swd-ink-2)] hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-blue-500" title={ t(ctx, "common.sort") }>
+						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"></path>
+						</svg>
+						<span class="hidden sm:inline text-xs">{ t(ctx, "common.sort") }</span>
+					</summary>
+					<div class="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-[var(--swd-line)] bg-[var(--swd-surface-elev)] shadow-lg py-1">
+						<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--swd-ink-3)]">{ t(ctx, "artists.sort_by") }</div>
+						<!-- i18n: "Title" and "Year" literals used; keys discography.sort_title and
+						     discography.sort_year need adding to en.json (frozen per #2064 constraint). -->
+						<button type="button" onclick={ discographySetSort(d.Artist.ID, "title") } class="w-full text-left px-3 py-1.5 text-sm text-[var(--swd-ink-2)] hover:bg-black/5">Title</button>
+						<button type="button" onclick={ discographySetSort(d.Artist.ID, "year") } class="w-full text-left px-3 py-1.5 text-sm text-[var(--swd-ink-2)] hover:bg-black/5">Year</button>
+						<div class="my-1 border-t border-[var(--swd-line)]"></div>
+						<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--swd-ink-3)]">{ t(ctx, "artists.direction") }</div>
+						<button type="button" onclick={ discographySetOrder(d.Artist.ID, "asc") } class="w-full text-left px-3 py-1.5 text-sm text-[var(--swd-ink-2)] hover:bg-black/5">{ t(ctx, "artists.sort.ascending") }</button>
+						<button type="button" onclick={ discographySetOrder(d.Artist.ID, "desc") } class="w-full text-left px-3 py-1.5 text-sm text-[var(--swd-ink-2)] hover:bg-black/5">{ t(ctx, "artists.sort.descending") }</button>
+					</div>
+				</details>
+			</div>
+			<!-- Lazy-loaded album list. innerHTML-swapped on intersect and on each
+			     search/sort request. The toolbar lives outside this div so it
+			     survives every swap. -->
 			<div
 				id={ "artist-discography-tab-" + d.Artist.ID }
 				hx-get={ "/artists/" + d.Artist.ID + "/discography/tab" }
@@ -76,6 +126,52 @@ templ SectionDiscography(data ArtistDetailPageData) {
 			</div>
 		</div>
 	</section>
+}
+
+// discographySetSort updates the sort hidden input and triggers a new HTMX
+// fetch for the discography tab. Defined as a templ.ComponentScript to scope
+// the helper per-section and avoid polluting the global namespace.
+script discographySetSort(artistID string, field string) {
+	var sortInput = document.getElementById('discography-sort-' + artistID);
+	var orderInput = document.getElementById('discography-order-' + artistID);
+	var dd = document.getElementById('discography-sort-dd-' + artistID);
+	if (!sortInput || !orderInput) return;
+	if (sortInput.value === field) {
+		orderInput.value = (orderInput.value === 'asc') ? 'desc' : 'asc';
+	} else {
+		sortInput.value = field;
+		orderInput.value = 'asc';
+	}
+	if (dd) dd.removeAttribute('open');
+	htmx.ajax('GET', '/artists/' + artistID + '/discography/tab', {
+		target: '#artist-discography-tab-' + artistID,
+		swap: 'innerHTML',
+		values: {
+			search: (document.getElementById('discography-search-' + artistID) || {value: ''}).value,
+			sort: sortInput.value,
+			order: orderInput.value
+		}
+	});
+}
+
+// discographySetOrder updates the order hidden input and triggers a new HTMX
+// fetch for the discography tab.
+script discographySetOrder(artistID string, dir string) {
+	var sortInput = document.getElementById('discography-sort-' + artistID);
+	var orderInput = document.getElementById('discography-order-' + artistID);
+	var dd = document.getElementById('discography-sort-dd-' + artistID);
+	if (!orderInput) return;
+	orderInput.value = dir;
+	if (dd) dd.removeAttribute('open');
+	htmx.ajax('GET', '/artists/' + artistID + '/discography/tab', {
+		target: '#artist-discography-tab-' + artistID,
+		swap: 'innerHTML',
+		values: {
+			search: (document.getElementById('discography-search-' + artistID) || {value: ''}).value,
+			sort: sortInput ? sortInput.value : '',
+			order: dir
+		}
+	});
 }
 
 // SectionDebug renders the Debug section for the next/ artist-detail page (4C,

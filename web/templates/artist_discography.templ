@@ -12,6 +12,12 @@ type DiscographyTabData struct {
 	// the count summary into #discography-fetch-msg. Both zero means no message.
 	FetchAdded int
 	FetchTotal int
+	// Search, Sort, Order carry the active filter/sort state so the fragment
+	// can reflect current params back into the hidden inputs used by the
+	// toolbar's hx-include on subsequent requests.
+	Search string
+	Sort   string
+	Order  string
 }
 
 // ArtistDiscographyTab renders the discography list for the artist detail page.
