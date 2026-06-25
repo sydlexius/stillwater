@@ -58,8 +58,22 @@ func (r *Router) handleForeignFilesCount(w http.ResponseWriter, req *http.Reques
 		// The sidebar entry is static (always visible); only inject the count pill.
 		// Empty response at count==0 clears the pill span without hiding the entry.
 		if count > 0 {
+			tr := i18n.TFromCtx(req.Context())
+			// Localized, count-bearing accessible name (fmt-style %d key, mirroring
+			// the tf() interpolation convention). swForeignPillSwap folds this onto
+			// the parent nav link's aria-label so screen-reader users hear the
+			// number; the link keeps a static aria-label for the collapsed sidebar
+			// states, which per ARIA would otherwise override a descendant pill name.
+			ariaTmpl := tr.T("nav.reports.foreign.aria")
+			aria := ariaTmpl
+			if ariaTmpl != "nav.reports.foreign.aria" { // guard a missing key
+				aria = fmt.Sprintf(ariaTmpl, count)
+			}
+			// data-count drives the pulse-on-increase detection; data-aria is the
+			// accessible name; title is the calm hover tooltip.
 			fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
-				`<span class="sw-sidebar-count-pill">%d</span>`, count)
+				`<span class="sw-sidebar-count-pill" data-count="%d" data-aria="%s" title="%s">%d</span>`,
+				count, html.EscapeString(aria), html.EscapeString(tr.T("nav.reports.foreign.tooltip")), count)
 		}
 		return
 	}

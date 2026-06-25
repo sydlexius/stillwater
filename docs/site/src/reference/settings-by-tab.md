@@ -157,6 +157,10 @@ Filter genre, style, and mood tags written to artist metadata. Exclude patterns 
 {: #settings-providers-provider-config-beta }
 - **Custom mirror** -- Point Stillwater at a self-hosted MusicBrainz mirror. Requests bypass the public rate limit so you can raise throughput, subject to whatever your mirror can sustain. If the mirror returns an invalid response (for example an HTML error page instead of JSON), Stillwater logs a warning and automatically retries that request against the official MusicBrainz API, so a misconfigured mirror degrades gracefully instead of silently losing metadata.
 {: #settings-providers-provider-config-custom-mirror }
+- **Base URL**
+{: #settings-providers-provider-config-base-url }
+- **Rate (req/s)**
+{: #settings-providers-provider-config-rate-limit }
 - **OAuth Credentials** -- Sub-section for OAuth application credentials used when a provider requires authenticated access. Fill in the Client ID and Client Secret issued by the provider.
 {: #settings-providers-provider-config-oauth-credentials }
 - **Field verbosity** -- Controls the level of detail fetched from the provider for specific metadata fields.
