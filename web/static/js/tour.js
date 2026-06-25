@@ -5,7 +5,8 @@
 //   window.startGuidedTour()  -- full OOBE flow (navigates to entry screen first)
 //
 // Auto-start fires when the OOBE wizard finishes (TOUR_PENDING_KEY set) and
-// the user lands on the vNext Dashboard or the stable Artists page.
+// the user lands on the vNext Dashboard. The OOBE chain runs:
+//   dashboard (5 steps) -> artists (6 steps) -> artistDetail (3 steps) = 14 total.
 (function() {
     'use strict';
 
@@ -15,14 +16,21 @@
     // OOBE chain. Set after a screen's group completes; cleared when the chain
     // exhausts or the user dismisses mid-way.
     var TOUR_CHAIN_KEY = 'tour.chain';
+    // TOUR_CHAIN_ARTIST_URL_KEY stores the artist-detail URL chosen at the end
+    // of the artists chain step. Required because the artistDetail URL is
+    // dynamic (depends on which artist exists), so it cannot be a static entry
+    // in CHAIN_URLS. Cleared alongside TOUR_CHAIN_KEY on completion/dismissal.
+    var TOUR_CHAIN_ARTIST_URL_KEY = 'tour.chain.artistUrl';
 
     // OOBE_CHAIN defines the ordered sequence of screens shown at the end of
-    // first-run onboarding. artistDetail is excluded: the chain cannot
-    // auto-navigate to a specific artist, so that screen is manual-only.
-    var OOBE_CHAIN = ['dashboard', 'artists'];
+    // first-run onboarding. dashboard -> artists -> artistDetail.
+    // artistDetail navigation is dynamic: the artists step picks the first
+    // artist link from the DOM and stores it in TOUR_CHAIN_ARTIST_URL_KEY.
+    var OOBE_CHAIN = ['dashboard', 'artists', 'artistDetail'];
 
     // CHAIN_URLS maps a chain screen name to the vNext URL to navigate to when
-    // advancing the chain.
+    // advancing the chain. artistDetail is absent: its URL is dynamic and is
+    // stored separately in TOUR_CHAIN_ARTIST_URL_KEY.
     var CHAIN_URLS = {
         dashboard: '/next/',
         artists: '/next/artists'
@@ -40,15 +48,21 @@
     function setChainNext(screen) { localStorage.setItem(TOUR_CHAIN_KEY, screen); }
     function clearChain() { localStorage.removeItem(TOUR_CHAIN_KEY); }
 
+    function getChainArtistUrl() { return localStorage.getItem(TOUR_CHAIN_ARTIST_URL_KEY); }
+    function setChainArtistUrl(url) { localStorage.setItem(TOUR_CHAIN_ARTIST_URL_KEY, url); }
+    function clearChainArtistUrl() { localStorage.removeItem(TOUR_CHAIN_ARTIST_URL_KEY); }
+
     // --- Chain-mode helpers (OOBE chained tour only) ---
 
     // getChainedSteps returns the step list for screenName as it appears in the
-    // OOBE chain at chainIdx. The leading Navigation step is omitted from every
-    // screen except the first (chainIdx === 0) to eliminate the duplicate the
-    // user would otherwise see on every screen transition.
+    // OOBE chain at chainIdx. The leading Navigation step (#sw-sidebar) is
+    // omitted from every chain screen except the first (chainIdx === 0) to
+    // eliminate the duplicate the user would otherwise see on screen transitions.
+    // IMPORTANT: only the Navigation step is dropped -- a non-Navigation first
+    // step (e.g. artistDetail's "Artist Header" at #next-hero-name) is kept.
     function getChainedSteps(screenName, chainIdx) {
         var steps = SCREEN_STEPS[screenName] ? SCREEN_STEPS[screenName]() : [];
-        if (chainIdx > 0 && steps.length > 0) {
+        if (chainIdx > 0 && steps.length > 0 && steps[0].element === '#sw-sidebar') {
             steps = steps.slice(1);
         }
         return steps;
@@ -164,6 +178,20 @@
     function markComplete() {
         localStorage.removeItem(TOUR_PENDING_KEY);
         localStorage.setItem(TOUR_COMPLETED_KEY, 'true');
+    }
+
+    // pickFirstArtistUrl scans the current page for the first artist-detail
+    // link (href matching /next/artists/<single-segment>) and returns the href,
+    // or null when no artists are present (empty library guard).
+    function pickFirstArtistUrl() {
+        var links = document.querySelectorAll('a[href]');
+        for (var i = 0; i < links.length; i++) {
+            var href = links[i].getAttribute('href');
+            if (/\/next\/artists\/[^/]+$/.test(href)) {
+                return href;
+            }
+        }
+        return null;
     }
 
     // SCREEN_STEPS is a registry of per-screen step group factories.
@@ -283,8 +311,8 @@
         },
 
         // Artist detail steps: target vNext artist-detail element IDs.
-        // Highlights non-obvious features; available via startScreenTour() only
-        // (the OOBE flow does not auto-navigate to a specific artist).
+        // Highlights non-obvious features. Used both in the OOBE chain (last
+        // screen, navigated to via the first artist link) and via startScreenTour().
         artistDetail: function() {
             return [
                 {
@@ -461,8 +489,9 @@
     // navigation. Runs the current screen's step group, then either advances
     // to the next chain screen or marks onboarding complete.
     //
-    // Chain order: dashboard -> artists (artistDetail excluded -- the chain
-    // cannot auto-navigate to a specific artist record).
+    // Chain order: dashboard -> artists -> artistDetail (14 total steps after
+    // nav-dedup). artistDetail navigation is dynamic: the artists step picks
+    // the first artist link from the DOM and stores it in localStorage.
     //
     // Completion vs. dismissal: onDestroy receives a boolean that is true when
     // the driver was on its final step at teardown. Dismissed mid-chain ->
@@ -500,11 +529,26 @@
                         console.warn('tour: first target absent after wait, skipping screen: ' + autoScreen);
                         var skipNext = nextChainScreen(autoScreen);
                         if (skipNext) {
-                            setChainNext(skipNext);
-                            window.location.href = basePath() + CHAIN_URLS[skipNext];
+                            if (skipNext === 'artistDetail') {
+                                var skipArtistUrl = pickFirstArtistUrl();
+                                if (!skipArtistUrl) {
+                                    // No artists -- end chain gracefully.
+                                    markComplete();
+                                    clearChain();
+                                    clearChainArtistUrl();
+                                    return;
+                                }
+                                setChainArtistUrl(skipArtistUrl);
+                                setChainNext(skipNext);
+                                window.location.href = skipArtistUrl;
+                            } else {
+                                setChainNext(skipNext);
+                                window.location.href = basePath() + CHAIN_URLS[skipNext];
+                            }
                         } else {
                             markComplete();
                             clearChain();
+                            clearChainArtistUrl();
                         }
                         return;
                     }
@@ -527,17 +571,36 @@
                             // User dismissed mid-chain -- end onboarding immediately.
                             markComplete();
                             clearChain();
+                            clearChainArtistUrl();
                             return;
                         }
                         // Group completed. Advance to the next chain screen or finish.
                         var chainNext = nextChainScreen(autoScreen);
                         if (chainNext) {
-                            setChainNext(chainNext);
-                            window.location.href = basePath() + CHAIN_URLS[chainNext];
+                            if (chainNext === 'artistDetail') {
+                                // artistDetail URL is dynamic: pick the first artist
+                                // link from the current page (artists list).
+                                var artistUrl = pickFirstArtistUrl();
+                                if (!artistUrl) {
+                                    // Empty library -- finish the chain gracefully
+                                    // rather than navigating to a broken URL.
+                                    markComplete();
+                                    clearChain();
+                                    clearChainArtistUrl();
+                                    return;
+                                }
+                                setChainArtistUrl(artistUrl);
+                                setChainNext(chainNext);
+                                window.location.href = artistUrl;
+                            } else {
+                                setChainNext(chainNext);
+                                window.location.href = basePath() + CHAIN_URLS[chainNext];
+                            }
                         } else {
                             // Chain exhausted -- onboarding complete.
                             markComplete();
                             clearChain();
+                            clearChainArtistUrl();
                         }
                     }, chainOpts);
                     autoTour.drive();
