@@ -40,6 +40,66 @@
     function setChainNext(screen) { localStorage.setItem(TOUR_CHAIN_KEY, screen); }
     function clearChain() { localStorage.removeItem(TOUR_CHAIN_KEY); }
 
+    // --- Chain-mode helpers (OOBE chained tour only) ---
+
+    // getChainedSteps returns the step list for screenName as it appears in the
+    // OOBE chain at chainIdx. The leading Navigation step is omitted from every
+    // screen except the first (chainIdx === 0) to eliminate the duplicate the
+    // user would otherwise see on every screen transition.
+    function getChainedSteps(screenName, chainIdx) {
+        var steps = SCREEN_STEPS[screenName] ? SCREEN_STEPS[screenName]() : [];
+        if (chainIdx > 0 && steps.length > 0) {
+            steps = steps.slice(1);
+        }
+        return steps;
+    }
+
+    // computeChainTotal returns the total number of steps across all OOBE_CHAIN
+    // screens after nav-dedup is applied. Dynamically computed from SCREEN_STEPS
+    // so it stays correct if step lists change.
+    function computeChainTotal() {
+        var total = 0;
+        for (var i = 0; i < OOBE_CHAIN.length; i++) {
+            total += getChainedSteps(OOBE_CHAIN[i], i).length;
+        }
+        return total;
+    }
+
+    // computeChainOffset returns the cumulative step count for all chain screens
+    // before upToIdx, so that step 1 of screen N has global position (offset + 1).
+    function computeChainOffset(upToIdx) {
+        var offset = 0;
+        for (var i = 0; i < upToIdx; i++) {
+            offset += getChainedSteps(OOBE_CHAIN[i], i).length;
+        }
+        return offset;
+    }
+
+    // decorateChainProgress clones each step, injecting a per-step
+    // popover.progressText with the global chain position ("N of M") so
+    // Driver.js displays the cumulative counter rather than the per-instance one.
+    function decorateChainProgress(steps, offset, total) {
+        var result = [];
+        for (var i = 0; i < steps.length; i++) {
+            var step = steps[i];
+            var k;
+            // Shallow-clone the popover so we do not mutate SCREEN_STEPS data.
+            var popover = {};
+            for (k in step.popover) {
+                if (step.popover.hasOwnProperty(k)) { popover[k] = step.popover[k]; }
+            }
+            popover.progressText = (offset + i + 1) + ' of ' + total;
+            // Shallow-clone the step itself.
+            var decorated = {};
+            for (k in step) {
+                if (step.hasOwnProperty(k)) { decorated[k] = step[k]; }
+            }
+            decorated.popover = popover;
+            result.push(decorated);
+        }
+        return result;
+    }
+
     // Read translated tour strings from the JSON data island rendered by
     // layout.templ. Falls back to an empty object when the element is absent
     // (e.g. on cached pages), so each step provides its own English default.
@@ -260,9 +320,15 @@
     // closed or completed (before Driver.js tears down its overlay).
     // completed is true when the user was on the final step at destroy time
     // (clicked Done or X on the last step); false when dismissed early.
-    function createTour(steps, onDestroy) {
+    //
+    // The optional chainOpts object activates chain-mode overrides:
+    //   chainOpts.isLastScreen {boolean} -- when false, the Done button is
+    //   relabeled "Next ->" so the user understands the button advances to the
+    //   next chain screen rather than finishing. Steps should already carry
+    //   per-step popover.progressText from decorateChainProgress().
+    function createTour(steps, onDestroy, chainOpts) {
         var driverConstructor = window.driver.js.driver;
-        return driverConstructor({
+        var config = {
             popoverClass: 'sw-tour-popover',
             showProgress: true,
             progressText: '{{current}} / {{total}}',
@@ -284,7 +350,19 @@
                     opts.driver.destroy();
                 }
             }
-        });
+        };
+        if (chainOpts) {
+            // Chain-scoped counter: per-step popover.progressText carries the
+            // "N of M" string; set a matching format string so the fallback is
+            // coherent if a step lacks its override.
+            config.progressText = '{{current}} of {{total}}';
+            // On non-final chain screens, the Done button advances to the next
+            // screen -- relabel it so the intent is visible to the user.
+            if (!chainOpts.isLastScreen) {
+                config.doneBtnText = 'Next →';
+            }
+        }
+        return driverConstructor(config);
     }
 
     // waitForTourTargets waits for the given CSS selector to appear in the DOM
@@ -397,7 +475,22 @@
             markComplete();
             clearChain();
         } else {
-            var autoSteps = SCREEN_STEPS[autoScreen]();
+            // Determine whether this auto-start is part of the OOBE chain.
+            // The chain begins at OOBE_CHAIN[0] (dashboard) on first-run and
+            // advances via TOUR_CHAIN_KEY. A standalone artists auto-start on
+            // the stable channel (TOUR_PENDING_KEY set, no chain key) is NOT a
+            // chain run even though 'artists' appears in OOBE_CHAIN.
+            var autoChainIdx = OOBE_CHAIN.indexOf(autoScreen);
+            var isChainRun = autoChainIdx !== -1 &&
+                (autoChainIdx === 0 || getChainNext() === autoScreen);
+
+            // In chain mode: drop the duplicate Navigation step from every
+            // screen except the first so the user sees it only once (fix #3).
+            // In standalone mode: use the full step list as-is.
+            var autoSteps = isChainRun
+                ? getChainedSteps(autoScreen, autoChainIdx)
+                : SCREEN_STEPS[autoScreen]();
+
             var autoFirstSelector = autoSteps[0].element;
             waitForTourTargets(autoFirstSelector, 3000).then(function() {
                 setTimeout(function() {
@@ -416,7 +509,20 @@
                         return;
                     }
 
-                    var autoTour = createTour(autoSteps, function(completed) {
+                    // Chain-mode: decorate each step with the cumulative "N of M"
+                    // progress label (fix #1) and configure the Done-button label
+                    // (fix #2). Standalone mode: pass steps unmodified.
+                    var stepsToRun = autoSteps;
+                    var chainOpts = null;
+                    if (isChainRun) {
+                        var chainTotal = computeChainTotal();
+                        var chainOffset = computeChainOffset(autoChainIdx);
+                        var isLastChainScreen = nextChainScreen(autoScreen) === null;
+                        stepsToRun = decorateChainProgress(autoSteps, chainOffset, chainTotal);
+                        chainOpts = { isLastScreen: isLastChainScreen };
+                    }
+
+                    var autoTour = createTour(stepsToRun, function(completed) {
                         if (!completed) {
                             // User dismissed mid-chain -- end onboarding immediately.
                             markComplete();
@@ -433,7 +539,7 @@
                             markComplete();
                             clearChain();
                         }
-                    });
+                    }, chainOpts);
                     autoTour.drive();
                 }, 500);
             });
