@@ -60,6 +60,12 @@ const (
 	// 016 (016_seed_platform_debug_user_pref.sql) at upgrade time.
 	PrefShowPlatformDebug = "show_platform_debug"
 
+	// PrefSavedViews is the per-user saved filter views preference (M55 #1777).
+	// Stores a JSON array of SavedView objects (name, params, created_at). Not in
+	// preferenceDefaults because its value is a free-form JSON array with structural
+	// validation rather than a fixed set of strings.
+	PrefSavedViews = "saved_views"
+
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
 	// preferences. Keys have the form "suppress_confirm_{action}" and accept
 	// "true" or "false". These are not listed in preferenceDefaults because they
@@ -155,6 +161,89 @@ func isArtistDetailLayoutKey(key string) bool {
 	return key == PrefArtistDetailSectionOrder || key == PrefArtistDetailHiddenSections
 }
 
+// savedViewsMaxEntries, savedViewsMaxNameLen, and savedViewsMaxParamsLen bound
+// the saved_views preference so a single preference row can never hold an
+// unbounded blob.
+const (
+	savedViewsMaxEntries   = 20
+	savedViewsMaxNameLen   = 50
+	savedViewsMaxParamsLen = 2000
+)
+
+// isSavedViewsKey reports whether key is the saved_views preference key.
+// saved_views stores a JSON array of named filter snapshots and is not in
+// preferenceDefaults because its value is structural rather than a fixed enum.
+func isSavedViewsKey(key string) bool {
+	return key == PrefSavedViews
+}
+
+// savedViewEntry is the Go representation of a single saved view JSON object.
+// Mirrors templates.SavedView; duplicated here to avoid a templates import
+// cycle and to keep validation self-contained in the api package.
+type savedViewEntry struct {
+	Name      string `json:"name"`
+	Params    string `json:"params"`
+	CreatedAt string `json:"created_at"`
+}
+
+// validateSavedViews parses value as a JSON array of saved view objects,
+// validates each entry (name non-empty and <= savedViewsMaxNameLen, params
+// present, max savedViewsMaxEntries views), and returns canonical JSON. ok is
+// false for malformed or out-of-bound input.
+func validateSavedViews(value string) (string, bool) {
+	var views []savedViewEntry
+	if err := json.Unmarshal([]byte(value), &views); err != nil {
+		return "", false
+	}
+	if len(views) > savedViewsMaxEntries {
+		return "", false
+	}
+	for _, v := range views {
+		if strings.TrimSpace(v.Name) == "" || len(v.Name) > savedViewsMaxNameLen {
+			return "", false
+		}
+		if len(v.Params) > savedViewsMaxParamsLen {
+			return "", false
+		}
+		// params may be empty (e.g. a "no filters" saved view); only name is
+		// required. created_at is informational and not validated beyond being
+		// present in the JSON object (a missing field defaults to "").
+	}
+	if views == nil {
+		views = []savedViewEntry{}
+	}
+	b, err := json.Marshal(views)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// parseSavedViews parses a stored saved_views JSON string into a slice of
+// templates.SavedView. Returns nil on empty or invalid input.
+func parseSavedViews(raw string) []templates.SavedView {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
+		return nil
+	}
+	var entries []savedViewEntry
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]templates.SavedView, len(entries))
+	for i, e := range entries {
+		out[i] = templates.SavedView{
+			Name:      e.Name,
+			Params:    e.Params,
+			CreatedAt: e.CreatedAt,
+		}
+	}
+	return out
+}
+
 // validateSectionList parses value as a JSON array of non-empty section
 // identifiers and returns its canonical compact JSON form (a JSON null or
 // missing array normalizes to "[]"). It enforces upper bounds on the count and
@@ -241,6 +330,9 @@ func (r *Router) canonicalLayoutValue(userID, key, value string) string {
 func normalizePatchPref(key string, raw json.RawMessage) (string, bool) {
 	if isArtistDetailLayoutKey(key) {
 		return validateSectionList(string(raw))
+	}
+	if isSavedViewsKey(key) {
+		return validateSavedViews(string(raw))
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
@@ -450,7 +542,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
 	layoutKey := isArtistDetailLayoutKey(key)
-	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey && !layoutKey {
+	savedViewsKey := isSavedViewsKey(key)
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey && !layoutKey && !savedViewsKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -477,6 +570,9 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 		case layoutKey:
 			// No stored row: an empty array means "use the renderer's default
 			// section order / nothing hidden".
+			value = "[]"
+		case savedViewsKey:
+			// No stored row: an empty array means "no saved views".
 			value = "[]"
 		case key == PrefAutoFetchImages:
 			// Fall back to the app-level setting so the API reflects the same
@@ -555,14 +651,16 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Start with defaults (fixed keys + page_size + bg_opacity + metadata_languages).
-	prefs := make(map[string]string, len(preferenceDefaults)+3)
+	// Start with defaults (fixed keys + page_size + bg_opacity + metadata_languages + saved_views).
+	prefs := make(map[string]string, len(preferenceDefaults)+4)
 	for k, def := range preferenceDefaults {
 		prefs[k] = def.defaultValue
 	}
 	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
 	prefs[PrefBgOpacity] = strconv.Itoa(BgOpacityDefault)
 	prefs[PrefMetadataLanguages] = MetadataLanguagesDefault
+	// saved_views default is an empty array: no saved views until the user creates one.
+	prefs[PrefSavedViews] = "[]"
 	// Use the app-level setting as the default for auto_fetch_images so the
 	// preference page reflects the effective behavior when no per-user row exists.
 	prefs[PrefAutoFetchImages] = strconv.FormatBool(r.getBoolSetting(req.Context(), "auto_fetch_images", false))
@@ -635,6 +733,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 				r.logger.Warn("stored artist-detail layout preference malformed; omitting on read",
 					"user_id", userID, "key", k, "raw_value", v)
 			}
+		} else if isSavedViewsKey(k) {
+			if canonical, ok := validateSavedViews(v); ok {
+				prefs[k] = canonical
+			} else {
+				r.logger.Warn("stored saved_views preference malformed; omitting on read",
+					"user_id", userID, "key", k, "raw_value", v)
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -648,6 +753,8 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 
 // handleUpdatePreference upserts a single preference for the authenticated user.
 // PUT /api/v1/preferences/{key}
+//
+//nolint:gocognit // Same dispatch pattern as handleGetPreferences: per-key switch with structural validators for page_size, bg_opacity, metadata_languages, artist_detail layout, and saved_views; each guard is independent and extracting them would require threading more context through.
 func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
@@ -666,7 +773,8 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
 	layoutKey := isArtistDetailLayoutKey(key)
-	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey && !layoutKey {
+	savedViewsKey2 := isSavedViewsKey(key)
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey && !layoutKey && !savedViewsKey2 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -683,6 +791,7 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	// page_size must be an integer in [PageSizeMin, PageSizeMax].
 	// bg_opacity must be an integer in [BgOpacityMin, BgOpacityMax].
 	// metadata_languages must be a JSON array of valid language tags.
+	// saved_views must be a JSON array of named filter snapshot objects.
 	var valid bool
 	switch {
 	case suppressKey:
@@ -699,6 +808,12 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 		valid = err == nil && n >= BgOpacityMin && n <= BgOpacityMax
 		if valid {
 			body.Value = strconv.Itoa(n)
+		}
+	case savedViewsKey2:
+		canonical, ok := validateSavedViews(body.Value)
+		valid = ok
+		if valid {
+			body.Value = canonical
 		}
 	case metaLangKey:
 		// An empty array is the explicit "reset to default" signal from

@@ -70,12 +70,20 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefMetadataNameRomanization, "true", got)
 	}
 
-	// Verify the wire contract returns every default key plus the three
-	// non-default keys (page_size, bg_opacity, metadata_languages). Derived
-	// from preferenceDefaults so adding a new default key does not break this.
-	expected := len(preferenceDefaults) + 3
+	// Verify the wire contract returns every default key plus the four
+	// non-default keys (page_size, bg_opacity, metadata_languages, saved_views).
+	// Derived from preferenceDefaults so adding a new default key does not break
+	// this.
+	expected := len(preferenceDefaults) + 4
 	if len(prefs) != expected {
 		t.Errorf("expected %d keys, got %d", expected, len(prefs))
+	}
+
+	// Verify saved_views is present with its default empty-array value.
+	if got, ok := prefs[PrefSavedViews]; !ok {
+		t.Error("missing default key \"saved_views\"")
+	} else if got != "[]" {
+		t.Errorf("key %q: expected default %q, got %q", PrefSavedViews, "[]", got)
 	}
 }
 
@@ -119,6 +127,50 @@ func TestUpdatePreference_ThenGet(t *testing.T) {
 	// Other defaults should still be present.
 	if prefs["sidebar_state"] != "full" {
 		t.Errorf("expected sidebar_state=full, got %q", prefs["sidebar_state"])
+	}
+}
+
+func TestValidateSavedViews(t *testing.T) {
+	t.Parallel()
+	longName := strings.Repeat("a", 51)     // > savedViewsMaxNameLen
+	longParams := strings.Repeat("a", 2001) // > savedViewsMaxParamsLen
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{"valid single view", `[{"name":"My view","params":"sort=name","created_at":"2024-01-01T00:00:00Z"}]`, `[{"name":"My view","params":"sort=name","created_at":"2024-01-01T00:00:00Z"}]`, true},
+		{"empty array", `[]`, `[]`, true},
+		{"view with empty params", `[{"name":"No filters","params":"","created_at":""}]`, `[{"name":"No filters","params":"","created_at":""}]`, true},
+		{"empty name rejected", `[{"name":"","params":"sort=name","created_at":""}]`, "", false},
+		{"whitespace-only name rejected", `[{"name":"   ","params":"sort=name","created_at":""}]`, "", false},
+		{"name too long", `[{"name":"` + longName + `","params":"","created_at":""}]`, "", false},
+		{"params too long", `[{"name":"v","params":"` + longParams + `","created_at":""}]`, "", false},
+		{"too many views", `[` + strings.TrimSuffix(strings.Repeat(`{"name":"v","params":"","created_at":""},`, 21), ",") + `]`, "", false},
+		{"not an array", `{"name":"x"}`, "", false},
+		{"malformed json", `[`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := validateSavedViews(tt.in)
+			if ok != tt.wantOK {
+				t.Errorf("validateSavedViews(%q): ok=%v, want %v", tt.in, ok, tt.wantOK)
+			}
+			if ok && got != tt.want {
+				t.Errorf("validateSavedViews(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSavedViewsKey(t *testing.T) {
+	t.Parallel()
+	if !isSavedViewsKey(PrefSavedViews) {
+		t.Errorf("isSavedViewsKey(%q) = false, want true", PrefSavedViews)
+	}
+	if isSavedViewsKey("saved_views_other") {
+		t.Error("isSavedViewsKey(\"saved_views_other\") = true, want false")
 	}
 }
 
@@ -1774,6 +1826,223 @@ func TestParseSectionList(t *testing.T) {
 				t.Errorf("parseSectionList(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
 			}
 		}
+	}
+}
+
+// -- saved_views preference tests --
+
+// TestParseSavedViews verifies that parseSavedViews converts a stored JSON
+// string to a slice of templates.SavedView and returns nil for empty/invalid input.
+func TestParseSavedViews(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in       string
+		wantNil  bool
+		wantLen  int
+		wantName string
+	}{
+		{"", true, 0, ""},
+		{"[]", true, 0, ""},
+		{"  []  ", true, 0, ""},
+		{"garbage", true, 0, ""},
+		{`{"not":"array"}`, true, 0, ""},
+		{`[{"name":"My View","params":"sort=name","created_at":"2024-01-01T00:00:00Z"}]`, false, 1, "My View"},
+		{`[{"name":"A","params":"","created_at":""},{"name":"B","params":"q=x","created_at":""}]`, false, 2, "A"},
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			got := parseSavedViews(c.in)
+			if c.wantNil {
+				if got != nil {
+					t.Errorf("parseSavedViews(%q) = %v, want nil", c.in, got)
+				}
+				return
+			}
+			if len(got) != c.wantLen {
+				t.Errorf("parseSavedViews(%q) len = %d, want %d", c.in, len(got), c.wantLen)
+				return
+			}
+			if got[0].Name != c.wantName {
+				t.Errorf("parseSavedViews(%q)[0].Name = %q, want %q", c.in, got[0].Name, c.wantName)
+			}
+		})
+	}
+}
+
+// TestSavedViewsPref_DefaultReturned verifies GET /api/v1/preferences/saved_views
+// returns "[]" when no row is stored.
+func TestSavedViewsPref_DefaultReturned(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+PrefSavedViews, nil)
+	req.SetPathValue("key", PrefSavedViews)
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "[]" {
+		t.Errorf("expected value=[] (default), got %q", resp["value"])
+	}
+}
+
+// TestSavedViewsPref_PutRoundTrip verifies PUT saved_views with a valid JSON array
+// stores and retrieves the canonical form; an invalid value is rejected.
+func TestSavedViewsPref_PutRoundTrip(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	validPayload := `[{"name":"My View","params":"sort=name&order=asc","created_at":"2024-01-01T00:00:00Z"}]`
+
+	// PUT a valid saved_views value.
+	body := `{"value":` + "`" + validPayload + "`" + `}`
+	// Use raw string quoting compatible with json: value is a string containing the JSON array.
+	putBody := strings.NewReader(`{"value":"` + strings.ReplaceAll(validPayload, `"`, `\"`) + `"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefSavedViews, putBody)
+	req.SetPathValue("key", PrefSavedViews)
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	_ = body // suppress unused warning
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT valid saved_views: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET single key and verify it reflects the stored value.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+PrefSavedViews, nil)
+	req.SetPathValue("key", PrefSavedViews)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET after PUT: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding GET response: %v", err)
+	}
+	// The stored value should be the canonical JSON (round-tripped through validateSavedViews).
+	if resp["value"] == "" || resp["value"] == "[]" {
+		t.Errorf("GET after PUT: expected non-empty saved_views, got %q", resp["value"])
+	}
+	// Verify it parses back to the saved view.
+	views := parseSavedViews(resp["value"])
+	if len(views) != 1 {
+		t.Fatalf("parseSavedViews from GET: got %d views, want 1", len(views))
+	}
+	if views[0].Name != "My View" {
+		t.Errorf("views[0].Name = %q, want %q", views[0].Name, "My View")
+	}
+}
+
+// TestSavedViewsPref_PutRejectsInvalid verifies PUT saved_views rejects
+// non-array JSON, malformed input, and objects with empty names.
+func TestSavedViewsPref_PutRejectsInvalid(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	cases := []struct{ name, value string }{
+		{"not an array", `{"name":"x"}`},
+		{"malformed json", `[`},
+		{"empty name", `[{"name":"","params":"","created_at":""}]`},
+		{"name too long", `[{"name":"` + strings.Repeat("a", 51) + `","params":"","created_at":""}]`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			encoded := strings.ReplaceAll(tc.value, `"`, `\"`)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefSavedViews,
+				strings.NewReader(`{"value":"`+encoded+`"}`))
+			req.SetPathValue("key", PrefSavedViews)
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("PUT %q: expected 400, got %d: %s", tc.name, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestSavedViewsPref_PatchStoresAndGetAllReturns verifies that PATCH accepts
+// saved_views (a JSON array, not a string) and that GET /api/v1/preferences
+// returns the stored value in the aggregate map.
+func TestSavedViewsPref_PatchStoresAndGetAllReturns(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	// PATCH with saved_views as a raw JSON array (not string-encoded).
+	patchBody := `{"saved_views":[{"name":"Faves","params":"filter=complete","created_at":"2024-06-01T00:00:00Z"}]}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/preferences", strings.NewReader(patchBody))
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handlePatchPreferences(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PATCH saved_views: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET /api/v1/preferences and verify saved_views is the stored value.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences", nil)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreferences(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET preferences: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var prefs map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&prefs); err != nil {
+		t.Fatalf("decoding preferences: %v", err)
+	}
+	got := prefs[PrefSavedViews]
+	if got == "[]" || got == "" {
+		t.Errorf("GET preferences saved_views = %q, want stored non-empty value", got)
+	}
+	views := parseSavedViews(got)
+	if len(views) != 1 || views[0].Name != "Faves" {
+		t.Errorf("stored saved_views did not round-trip: got %v", views)
+	}
+}
+
+// TestSavedViewsPref_GetAllMalformedStoredOmitted verifies that a malformed
+// saved_views row is omitted on GetAll (falls back to the "[]" default) rather
+// than propagating garbage to the client.
+func TestSavedViewsPref_GetAllMalformedStoredOmitted(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	// Inject a malformed row directly into the DB, bypassing the handler's
+	// validation so we can exercise the read-path normalization branch.
+	if _, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+		userID, PrefSavedViews, `[{garbage`); err != nil {
+		t.Fatalf("seeding malformed row: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences", nil)
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleGetPreferences(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET preferences: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var prefs map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&prefs); err != nil {
+		t.Fatalf("decoding preferences: %v", err)
+	}
+	// A malformed saved_views row must be omitted on GetAll; the default "[]" is kept.
+	if got := prefs[PrefSavedViews]; got != "[]" {
+		t.Errorf("malformed saved_views: expected [] (default omission), got %q", got)
 	}
 }
 

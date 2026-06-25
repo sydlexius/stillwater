@@ -5919,3 +5919,37 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
+/* -- Save-view modal primary action button (M55 #1777) --------------------- */
+/* Ghost button with blue-halo focus ring. No solid blue fill -- blue appears
+ * only on keyboard focus as the shared next/ active-toggle halo motif. Works on
+ * both the light (bg-white) and dark (dark:bg-gray-800) modal surface. The
+ * transparent outline provides a forced-colors / High Contrast fallback. */
+.sw-save-modal-btn-primary {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  background: transparent;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.dark .sw-save-modal-btn-primary {
+  color: #e5e7eb;
+  border-color: #4b5563;
+}
+.sw-save-modal-btn-primary:hover {
+  background: #f3f4f6;
+}
+.dark .sw-save-modal-btn-primary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.sw-save-modal-btn-primary:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 0 5px rgba(59, 130, 246, 0.22);
+}

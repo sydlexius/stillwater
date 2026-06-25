@@ -7047,6 +7047,13 @@ paths:
                       Keyboard shortcut hint visibility (M55 #1774). Controls
                       whether keyboard hints render via data-kbd on the page
                       root.
+                  saved_views:
+                    type: string
+                    description: >
+                      Saved filter views (M55 #1777). JSON array of
+                      {name, params, created_at} objects (max 20 entries).
+                      Defaults to "[]".
+                    example: "[]"
                 required:
                   - theme
                   - sidebar_state
@@ -7067,6 +7074,7 @@ paths:
                   - density
                   - mono_font
                   - kbd_hints
+                  - saved_views
         "401":
           description: Not authenticated
           content:
@@ -7130,6 +7138,15 @@ paths:
                 density: { type: string, enum: [compact, comfortable, spacious] }
                 mono_font: { type: string, enum: [system, jetbrains, cascadia] }
                 kbd_hints: { type: string, enum: [show, hide] }
+                saved_views:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string, maxLength: 50 }
+                      params: { type: string, maxLength: 2000 }
+                      created_at: { type: string }
               patternProperties:
                 "^suppress_confirm_":
                   type: string

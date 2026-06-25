@@ -92,9 +92,11 @@ func (r *Router) assets() templates.AssetPaths {
 		// DriverJS, DriverCSS, and TourJS are intentionally omitted here.
 		// They are conditionally set in assetsFor() based on the request path
 		// so pages that do not use the guided tour avoid the extra JS/CSS.
-		SSEJS:    r.basePath + r.staticAssets.Path("/js/sse.js"),
-		LoginBG:  r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
-		BasePath: r.basePath,
+		// SavedViewsJS is included via the next/ artists page template only.
+		SavedViewsJS: r.basePath + r.staticAssets.Path("/js/saved-views.js"),
+		SSEJS:        r.basePath + r.staticAssets.Path("/js/sse.js"),
+		LoginBG:      r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
+		BasePath:     r.basePath,
 	}
 }
 

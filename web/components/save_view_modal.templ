@@ -1,0 +1,79 @@
+package components
+
+// SaveViewModal renders the dialog for naming and saving the current filter
+// state as a new saved view (M55 #1777). Included once in the next/ artists
+// page; shown/hidden by window.swSavedViews.openSaveViewModal().
+//
+// The form submits via the JS handler (no HTMX); the controller fetches the
+// existing saved views, appends the new entry, PUTs the updated array, then
+// closes this modal and refreshes the chips row.
+templ SaveViewModal() {
+	<div
+		id="save-view-modal"
+		class="fixed inset-0 z-50 hidden"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="save-view-modal-title"
+	>
+		<!-- Backdrop -->
+		<div
+			class="fixed inset-0 bg-black/50 transition-opacity"
+			data-save-view-backdrop
+		></div>
+		<div class="fixed inset-0 flex items-center justify-center p-4">
+			<div class="relative w-full max-w-sm rounded-xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700">
+				<div class="p-6">
+					<h3
+						id="save-view-modal-title"
+						class="text-base font-semibold text-gray-900 dark:text-gray-100"
+					>
+						{ t(ctx, "artists.saved_views.modal.title") }
+					</h3>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						{ t(ctx, "artists.saved_views.modal.description") }
+					</p>
+					<form onsubmit="return false;" class="mt-4 space-y-3">
+						<div>
+							<label
+								for="save-view-name-input"
+								class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+							>
+								{ t(ctx, "artists.saved_views.modal.name_label") }
+							</label>
+							<input
+								id="save-view-name-input"
+								type="text"
+								name="name"
+								maxlength="50"
+								placeholder={ t(ctx, "artists.saved_views.modal.name_placeholder") }
+								autocomplete="off"
+								class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							/>
+						</div>
+						<p
+							id="save-view-error"
+							class="text-sm text-red-600 dark:text-red-400"
+							aria-live="polite"
+						></p>
+					</form>
+				</div>
+				<div class="flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3">
+					<button
+						type="button"
+						onclick="if(window.swSavedViews)swSavedViews.closeSaveViewModal()"
+						class="rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+					>
+						{ t(ctx, "artists.saved_views.modal.cancel") }
+					</button>
+					<button
+						type="button"
+						onclick="if(window.swSavedViews){var i=document.getElementById('save-view-name-input');swSavedViews.saveCurrentView(i?i.value.trim():'')}"
+						class="sw-save-modal-btn-primary"
+					>
+						{ t(ctx, "artists.saved_views.modal.save") }
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+}

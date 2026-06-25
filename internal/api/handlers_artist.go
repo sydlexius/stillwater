@@ -313,6 +313,15 @@ func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (
 		}
 	}
 
+	// Load saved filter views for the next/ channel only (M55 #1777). The
+	// stable channel never renders saved-view chips so we skip the DB query.
+	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
+		raw := r.getUserStringPreference(req.Context(), PrefSavedViews, "")
+		if raw != "" {
+			data.SavedViews = parseSavedViews(raw)
+		}
+	}
+
 	return data, true
 }
 
