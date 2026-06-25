@@ -407,6 +407,52 @@ func TestHandleUpdateConnection_BadJSON(t *testing.T) {
 	}
 }
 
+// TestHandleUpdateConnection_HTMXTriggersRefresh covers the HTMX branch of
+// handleUpdateConnection (lines 407-412): an HX-Request header causes the
+// handler to set HX-Refresh: true, HX-Reswap: none and return 204 instead of
+// the normal 200 JSON response.
+func TestHandleUpdateConnection_HTMXTriggersRefresh(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+
+	c := &connection.Connection{
+		Name: "HTMXUpdate", Type: connection.TypeEmby,
+		URL: "http://emby.local:8096", APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	body, _ := json.Marshal(map[string]any{"name": "HTMXUpdated"})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("id", c.ID)
+
+	// NOT wrapped with serveValidated: the HTMX success path returns 204 which
+	// is not declared in the openapi spec for updateConnection (the spec covers
+	// the non-HTMX JSON response); the validator would reject an undeclared
+	// status code.
+	w := httptest.NewRecorder()
+	r.handleUpdateConnection(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("HX-Refresh"); got != "true" {
+		t.Errorf("HX-Refresh = %q, want true", got)
+	}
+	if got := w.Header().Get("HX-Reswap"); got != "none" {
+		t.Errorf("HX-Reswap = %q, want none", got)
+	}
+	// The update must still be persisted before the early return.
+	got, err := r.connectionService.GetByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Name != "HTMXUpdated" {
+		t.Errorf("Name = %q, want HTMXUpdated", got.Name)
+	}
+}
+
 // --- handleDeleteConnection ---------------------------------------------------
 
 func TestHandleDeleteConnection_DefaultClearsLibraryRefs(t *testing.T) {
