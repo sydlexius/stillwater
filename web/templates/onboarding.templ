@@ -949,6 +949,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						if (!resp.ok) throw new Error('HTTP ' + resp.status);
 						if (typeof window.markTourPending === 'function') {
 							window.markTourPending();
+						} else {
+							// onboarding.templ does not load tour.js, so
+							// markTourPending is undefined here -- write the same
+							// keys it would so the tour auto-starts post-OOBE.
+							localStorage.removeItem('tour.completed');
+							localStorage.setItem('tour.pending', 'true');
 						}
 						// Redirect to the vNext Dashboard -- the guided tour
 						// auto-starts there from the SCREEN_STEPS.dashboard group.

@@ -468,11 +468,11 @@
                 window.location.href = bp + '/next/';
                 return;
             }
-            // Already on the Dashboard -- start immediately.
-            localStorage.removeItem(TOUR_COMPLETED_KEY);
-            var dashSteps = SCREEN_STEPS.dashboard();
-            var dashTour = createTour(dashSteps, markComplete);
-            dashTour.drive();
+            // Already on the Dashboard -- reload so shouldAutoStart() re-enters
+            // the chain runner and drives the full dashboard->artists->
+            // artistDetail sequence (a standalone start here would skip it).
+            window.markTourPending();
+            window.location.href = bp + '/next/';
             return;
         }
 
@@ -573,6 +573,13 @@
                     var autoTour = createTour(stepsToRun, function(completed) {
                         if (!completed) {
                             // User dismissed mid-chain -- end onboarding immediately.
+                            markComplete();
+                            clearChain();
+                            clearChainArtistUrl();
+                            return;
+                        }
+                        if (!isChainRun) {
+                            // Standalone pending run -- don't leak into the OOBE chain.
                             markComplete();
                             clearChain();
                             clearChainArtistUrl();
