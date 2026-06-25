@@ -377,8 +377,6 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 								return 'border-l-4 border-l-emerald-500 text-emerald-800 dark:text-emerald-200';
 							case 'undo':
 								return 'border-l-4 border-l-blue-500 text-blue-800 dark:text-blue-200';
-							case 'info':
-								return 'border-l-4 border-l-sky-400 text-sky-800 dark:text-sky-200';
 							default:
 								return 'border-l-4 border-l-red-500 text-red-800 dark:text-red-200';
 						}
@@ -441,11 +439,8 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					}
 
 					// -- Public API (backwards compatible) --
-					// showToast accepts an optional second arg (type) so callers that
-					// know the severity (e.g. saved-views.js) can pass 'success' or
-					// 'info'. Single-arg callers continue to get red 'error' toasts.
-					window.showToast = function(msg, type) {
-						enqueueToast(type || 'error', msg, 5000);
+					window.showToast = function(msg) {
+						enqueueToast('error', msg, 5000);
 					};
 					window.showSuccessToast = function(msg) {
 						enqueueToast('success', msg, 5000);

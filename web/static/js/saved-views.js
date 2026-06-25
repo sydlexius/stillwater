@@ -282,8 +282,8 @@
         }
         closeSaveViewModal();
         renderChipsRow(views);
-        if (window.showToast) {
-          showToast('View "' + name + '" saved.', 'success');
+        if (window.showSuccessToast) {
+          showSuccessToast('View "' + name + '" saved.');
         }
       });
     });
@@ -297,12 +297,12 @@
       var updated = views.filter(function (v) { return v.name !== name; });
       putSavedViews(updated, function (ok) {
         if (!ok) {
-          if (window.showToast) showToast('Could not delete view.', 'error');
+          if (window.showToast) showToast('Could not delete view.');
           return;
         }
         renderChipsRow(updated);
-        if (window.showToast) {
-          showToast('View "' + name + '" deleted.', 'info');
+        if (window.showSuccessToast) {
+          showSuccessToast('View "' + name + '" deleted.');
         }
       });
     });
