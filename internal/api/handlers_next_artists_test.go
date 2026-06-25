@@ -9,6 +9,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/auth"
 )
 
 // TestHandleNextArtistsPage_RendersNextWhenChannelNext verifies that when the
@@ -188,6 +189,105 @@ func TestHandleNextArtistsPage_HTMXFragmentDispatch(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestBuildArtistListData_LoadsSavedViewsForNextChannel verifies that when the
+// UX channel is UXNext and a saved_views preference is stored for the user,
+// buildArtistListData loads the views and the rendered page includes the
+// saved-views row (M55 #1777). This exercises the `if
+// middleware.UXChannelFromContext == UXNext` branch in buildArtistListData and
+// the parseSavedViews call on the stored preference string.
+func TestBuildArtistListData_LoadsSavedViewsForNextChannel(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithLibrary(t)
+	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Test Artist"}); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Create a real user to satisfy the FK constraint on user_preferences.
+	authSvc := auth.NewService(r.db)
+	if _, err := authSvc.Setup(context.Background(), "viewuser", "testpassword"); err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	var userID string
+	if err := r.db.QueryRowContext(context.Background(),
+		`SELECT id FROM users WHERE username = 'viewuser'`).Scan(&userID); err != nil {
+		t.Fatalf("looking up user id: %v", err)
+	}
+
+	// Seed a valid saved_views preference row directly so the handler's read
+	// path has data to load.
+	savedViewsJSON := `[{"name":"My Saved View","params":"filter=complete","created_at":"2024-01-01T00:00:00Z"}]`
+	if _, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+		userID, PrefSavedViews, savedViewsJSON); err != nil {
+		t.Fatalf("seeding saved_views preference: %v", err)
+	}
+
+	// Request via UXNext channel.
+	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextArtistsPage))
+	ctx := middleware.WithTestUserID(context.Background(), userID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	// The template renders #saved-views-row only when len(data.SavedViews) > 0.
+	if !strings.Contains(body, `saved-views-row`) {
+		t.Errorf("saved-views-row not rendered; saved_views preference was not loaded for next/ channel")
+	}
+	if !strings.Contains(body, "My Saved View") {
+		t.Errorf("saved view name %q not found in rendered output", "My Saved View")
+	}
+}
+
+// TestBuildArtistListData_SkipsSavedViewsForStableChannel verifies that the
+// stable channel does NOT load saved views, keeping the DB query conditional.
+func TestBuildArtistListData_SkipsSavedViewsForStableChannel(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithLibrary(t)
+	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Test Artist"}); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Create a real user to satisfy the FK constraint on user_preferences.
+	authSvc := auth.NewService(r.db)
+	if _, err := authSvc.Setup(context.Background(), "stableuser", "testpassword"); err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	var userID string
+	if err := r.db.QueryRowContext(context.Background(),
+		`SELECT id FROM users WHERE username = 'stableuser'`).Scan(&userID); err != nil {
+		t.Fatalf("looking up user id: %v", err)
+	}
+
+	// Seed a saved_views preference for the user.
+	savedViewsJSON := `[{"name":"Stable View","params":"filter=complete","created_at":"2024-01-01T00:00:00Z"}]`
+	if _, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+		userID, PrefSavedViews, savedViewsJSON); err != nil {
+		t.Fatalf("seeding saved_views preference: %v", err)
+	}
+
+	// Request via stable channel: saved views must NOT appear.
+	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
+	ctx = middleware.WithTestUserID(ctx, userID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "Stable View") {
+		t.Errorf("saved view name appeared in stable channel response (should be skipped)")
 	}
 }
 
