@@ -22,4 +22,20 @@ tests {
   test("response is an object", function() {
     expect(res.body).to.be.an("object");
   });
+
+  test("overall_score is a number", function() {
+    expect(res.body.overall_score).to.be.a("number");
+  });
+
+  test("total_artists is a number", function() {
+    expect(res.body.total_artists).to.be.a("number");
+  });
+
+  test("field_coverage is an array", function() {
+    expect(res.body.field_coverage).to.be.an("array");
+  });
+
+  test("lowest_completeness is an array", function() {
+    expect(res.body.lowest_completeness).to.be.an("array");
+  });
 }

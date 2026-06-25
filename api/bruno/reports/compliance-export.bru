@@ -25,4 +25,8 @@ tests {
   test("returns 200", function() {
     expect(res.status).to.equal(200);
   });
+
+  test("Content-Disposition is a CSV attachment", function() {
+    expect(res.headers['content-disposition']).to.equal('attachment; filename="compliance-report.csv"');
+  });
 }
