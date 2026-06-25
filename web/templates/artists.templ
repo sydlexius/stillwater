@@ -28,6 +28,17 @@ type LibrarySourceInfo struct {
 	ConnectionName string // human-readable connection name
 }
 
+// SavedView is a named snapshot of the artists filter URL params (M55 #1777).
+// Stored as a JSON array under the "saved_views" user preference key.
+type SavedView struct {
+	// Name is the user-supplied label for this view (max 50 chars).
+	Name string `json:"name"`
+	// Params is the URL query string snapshot, e.g. "filter_type=+person&sort=name".
+	Params string `json:"params"`
+	// CreatedAt is the ISO 8601 timestamp when the view was saved.
+	CreatedAt string `json:"created_at"`
+}
+
 // ArtistListData holds the data for the artist list page.
 type ArtistListData struct {
 	Artists          []artist.Artist
@@ -54,6 +65,10 @@ type ArtistListData struct {
 	// preserved across pagination so paging through a large selection
 	// (>1 page) keeps the filter active.
 	IDs []string
+	// SavedViews is the user's saved filter snapshots (M55 #1777). Loaded
+	// from the "saved_views" user preference on the next/ artists page only;
+	// empty for the stable channel.
+	SavedViews []SavedView
 }
 
 // complianceDotClass returns the Tailwind background class for a compliance indicator dot.

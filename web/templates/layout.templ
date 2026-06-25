@@ -65,8 +65,11 @@ type AssetPaths struct {
 	DriverJS                          string
 	DriverCSS                         string
 	TourJS                            string
-	SSEJS                             string
-	LoginBG                           string
+	SSEJS      string
+	LoginBG    string
+	// SavedViewsJS is the saved filter views controller (M55 #1777).
+	// Loaded on the next/ artists page to apply/save/delete named filter snapshots.
+	SavedViewsJS string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
 	// when the app is deployed at the root. Never has a trailing slash.
 	BasePath string

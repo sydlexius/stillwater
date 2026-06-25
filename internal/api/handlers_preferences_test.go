@@ -70,12 +70,20 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefMetadataNameRomanization, "true", got)
 	}
 
-	// Verify the wire contract returns every default key plus the three
-	// non-default keys (page_size, bg_opacity, metadata_languages). Derived
-	// from preferenceDefaults so adding a new default key does not break this.
-	expected := len(preferenceDefaults) + 3
+	// Verify the wire contract returns every default key plus the four
+	// non-default keys (page_size, bg_opacity, metadata_languages, saved_views).
+	// Derived from preferenceDefaults so adding a new default key does not break
+	// this.
+	expected := len(preferenceDefaults) + 4
 	if len(prefs) != expected {
 		t.Errorf("expected %d keys, got %d", expected, len(prefs))
+	}
+
+	// Verify saved_views is present with its default empty-array value.
+	if got, ok := prefs[PrefSavedViews]; !ok {
+		t.Error("missing default key \"saved_views\"")
+	} else if got != "[]" {
+		t.Errorf("key %q: expected default %q, got %q", PrefSavedViews, "[]", got)
 	}
 }
 
@@ -119,6 +127,47 @@ func TestUpdatePreference_ThenGet(t *testing.T) {
 	// Other defaults should still be present.
 	if prefs["sidebar_state"] != "full" {
 		t.Errorf("expected sidebar_state=full, got %q", prefs["sidebar_state"])
+	}
+}
+
+func TestValidateSavedViews(t *testing.T) {
+	t.Parallel()
+	longName := strings.Repeat("a", 51) // > savedViewsMaxNameLen
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{"valid single view", `[{"name":"My view","params":"sort=name","created_at":"2024-01-01T00:00:00Z"}]`, `[{"name":"My view","params":"sort=name","created_at":"2024-01-01T00:00:00Z"}]`, true},
+		{"empty array", `[]`, `[]`, true},
+		{"view with empty params", `[{"name":"No filters","params":"","created_at":""}]`, `[{"name":"No filters","params":"","created_at":""}]`, true},
+		{"empty name rejected", `[{"name":"","params":"sort=name","created_at":""}]`, "", false},
+		{"name too long", `[{"name":"` + longName + `","params":"","created_at":""}]`, "", false},
+		{"too many views", `[` + strings.TrimSuffix(strings.Repeat(`{"name":"v","params":"","created_at":""},`, 21), ",") + `]`, "", false},
+		{"not an array", `{"name":"x"}`, "", false},
+		{"malformed json", `[`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := validateSavedViews(tt.in)
+			if ok != tt.wantOK {
+				t.Errorf("validateSavedViews(%q): ok=%v, want %v", tt.in, ok, tt.wantOK)
+			}
+			if ok && got != tt.want {
+				t.Errorf("validateSavedViews(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSavedViewsKey(t *testing.T) {
+	t.Parallel()
+	if !isSavedViewsKey(PrefSavedViews) {
+		t.Errorf("isSavedViewsKey(%q) = false, want true", PrefSavedViews)
+	}
+	if isSavedViewsKey("saved_views_other") {
+		t.Error("isSavedViewsKey(\"saved_views_other\") = true, want false")
 	}
 }
 

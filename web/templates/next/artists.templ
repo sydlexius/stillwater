@@ -200,7 +200,55 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 					</span>
 					<span id="scan-label">{ t(ctx, "artists.scan_library") }</span>
 				</button>
+				<!-- Save view button (M55 #1777): saves the current search + filter
+				     state as a named chip. Always visible so users can save "no filters"
+				     as a view too. -->
+				<button
+					type="button"
+					title="Save current view"
+					aria-label="Save current view"
+					onclick="if(window.swSavedViews)swSavedViews.openSaveViewModal()"
+					class={ "inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton }
+				>
+					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z"></path>
+					</svg>
+					<span class="hidden sm:inline">Save view</span>
+				</button>
 			</div>
+			<!-- Saved view chips row (M55 #1777): shown only when the user has at
+			     least one saved view. Each chip applies the saved filter state by
+			     updating the URL and triggering an HTMX content swap. A hover-reveal
+			     delete button removes the chip and re-saves the preference. -->
+			if len(data.SavedViews) > 0 {
+				<div id="saved-views-row" class="flex flex-wrap items-center gap-2 px-1 py-1">
+					<span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">Saved:</span>
+					for _, sv := range data.SavedViews {
+						<span class="group relative inline-flex items-center">
+							<button
+								type="button"
+								title={ "Apply view: " + sv.Name }
+								aria-label={ "Apply saved view: " + sv.Name }
+								onclick={ templ.JSFuncCall("swSavedViews.applySavedView", sv.Params) }
+								class="inline-flex items-center gap-1 rounded-l-full rounded-r-none border border-[var(--swd-line)] bg-white/5 px-3 py-1 text-xs text-[var(--swd-ink-2)] hover:bg-white/10 transition-colors"
+							>
+								{ sv.Name }
+							</button>
+							<button
+								type="button"
+								title={ "Delete view: " + sv.Name }
+								aria-label={ "Delete saved view: " + sv.Name }
+								onclick={ templ.JSFuncCall("swSavedViews.deleteSavedView", sv.Name) }
+								class="inline-flex items-center rounded-l-none rounded-r-full border border-l-0 border-[var(--swd-line)] bg-white/5 px-1.5 py-1 text-xs text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+							>
+								<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+									<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
+								</svg>
+							</button>
+						</span>
+					}
+				</div>
+			}
 			@templates.ArtistFilterFlyout(data)
 			if data.View == "grid" {
 				@ArtistsGrid(data)
@@ -236,6 +284,11 @@ templ ArtistsPage(assets templates.AssetPaths, data templates.ArtistListData) {
 		@templates.BulkProgressPill()
 		@templates.ArtistsPageScripts()
 		@components.ContextHelpScript()
+		<!-- Save view modal (M55 #1777): opened by the "Save view" toolbar button. -->
+		@components.SaveViewModal()
+		if assets.SavedViewsJS != "" {
+			<script src={ assets.SavedViewsJS }></script>
+		}
 		<!-- Density auto-flip REMOVED (M55 #1335, maintainer 2026-05-30): the list
 		     previously flipped data-density comfy->compact while a selection was active,
 		     which shrank row height on checkbox select. That "compactify on selection"
