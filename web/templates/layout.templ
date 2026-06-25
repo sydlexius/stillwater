@@ -364,6 +364,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 
 					function colorClasses(type) {
 						switch (type) {
+							case 'auth-error':
 							case 'error':
 								return 'border-l-4 border-l-red-500 text-red-800 dark:text-red-200';
 							case 'warning':
@@ -629,7 +630,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 
 						var entry = {
 							el: toast,
-							type: 'error',
+							type: 'auth-error',
 							msg: msg,
 							count: 1,
 							countEl: null,
@@ -656,7 +657,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						if (visible.length >= MAX_VISIBLE) {
 							var idx = -1;
 							for (var i = 0; i < visible.length; i++) {
-								if (visible[i].type !== 'error') {
+								if (visible[i].type !== 'auth-error') {
 									idx = i;
 									break;
 								}

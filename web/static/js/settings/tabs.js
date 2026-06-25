@@ -46,6 +46,12 @@
         console.error('[tabs.js] openConnectionEditPanel: #edit-api-key-' + editId + ' not found');
       }
     }
+    // Deep-link params are single-use: strip edit=/focus= from the URL after
+    // applying so a later reload (e.g. post-save HX-Refresh) settles on the
+    // read-only row instead of replaying the editor open.
+    var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+    var bp = bpMeta ? bpMeta.content : '';
+    history.replaceState(null, '', bp + '/settings?tab=connections');
   }
 
   function switchSettingsTab(event, el) {
@@ -72,12 +78,9 @@
     el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
     var settingsTabMeta = document.querySelector('meta[name="htmx-base-path"]');
     var settingsTabBp = settingsTabMeta ? settingsTabMeta.content : '';
-    // Build URL: preserve edit=/focus= only when staying on connections tab.
+    // edit=/focus= are single-use deep-link params consumed (and stripped) by
+    // openConnectionEditPanel, so the tab URL never re-appends them here.
     var qs = '?tab=' + encodeURIComponent(tabId);
-    if (tabId === 'connections' && editId) {
-      qs += '&edit=' + encodeURIComponent(editId);
-      if (focusField) qs += '&focus=' + encodeURIComponent(focusField);
-    }
     history.pushState(null, '', settingsTabBp + '/settings' + qs);
     // Refresh cache stats when switching to the General tab.
     if (tabId === 'general' && typeof loadCacheStats === 'function') {

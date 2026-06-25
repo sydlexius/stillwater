@@ -463,6 +463,9 @@ func TestPushLocks_NotifierFiresOnSyncFailure(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
 	}
+	if got[0].connectionID != "c-emby" {
+		t.Errorf("connectionID = %q, want %q", got[0].connectionID, "c-emby")
+	}
 	if got[0].connection != "my-emby" {
 		t.Errorf("connection = %q, want %q", got[0].connection, "my-emby")
 	}
