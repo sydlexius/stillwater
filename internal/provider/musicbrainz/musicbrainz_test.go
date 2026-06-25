@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -2473,4 +2474,139 @@ func TestMapArtist_YearsActive_PersonBornAndDied(t *testing.T) {
 	if !meta.MembersAuthoritative {
 		t.Error("Person type must set MembersAuthoritative=true")
 	}
+}
+
+// --- SSRF mirror-allowlist wiring (#2090) ---
+
+// TestMirrorAllowedHost verifies host extraction for the SSRF exemption: the
+// default endpoint and unparsable URLs return "" (stay guarded), while a custom
+// mirror returns its lowercased hostname (the single exempted host).
+func TestMirrorAllowedHost(t *testing.T) {
+	cases := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"default endpoint", defaultBaseURL, ""},
+		{"default with trailing slash", defaultBaseURL + "/", ""},
+		{"unparsable URL", "http://[::1", ""},
+		{"private mirror", "http://192.168.1.126:5000/ws/2", "192.168.1.126"},
+		{"loopback mirror", "http://127.0.0.1:5000", "127.0.0.1"},
+		{"uppercase host lowercased", "http://Mirror.LAN:5000/ws/2", "mirror.lan"},
+		{"public custom mirror", "https://mb.example.com/ws/2", "mb.example.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mirrorAllowedHost(tc.baseURL); got != tc.want {
+				t.Errorf("mirrorAllowedHost(%q) = %q, want %q", tc.baseURL, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDefaultConstructorGuardsPrivateTargets confirms a default-constructed
+// adapter wires the plain SSRF-guarded client: it rejects a loopback target
+// with ErrPrivateAddress, exactly as before this change. The default endpoint
+// host is never in any allow-set.
+func TestDefaultConstructorGuardsPrivateTargets(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, logger)
+
+	// Drive the adapter's own guarded client against the loopback fixture; the
+	// SSRF guard must reject it. (We bypass doRequest's baseURL so the test does
+	// not depend on reaching the real musicbrainz.org.)
+	resp, err := a.client.Get(srv.URL)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("default adapter client reached loopback; want ErrPrivateAddress (guarded)")
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("default adapter client.Get(loopback): err = %v; want ErrPrivateAddress (guarded)", err)
+	}
+}
+
+// TestCustomMirrorConstructorReachesLoopback confirms the headline fix: an
+// adapter constructed with a custom (loopback) mirror base URL reaches that
+// mirror through its allowlisted httpsafe client -- WITHOUT the test overriding
+// a.client. TestConnection performs a real request end-to-end.
+func TestCustomMirrorConstructorReachesLoopback(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	limiter.SetLimit(provider.NameMusicBrainz, 1000)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, logger, srv.URL)
+
+	if err := a.TestConnection(context.Background()); err != nil {
+		t.Fatalf("custom-mirror TestConnection against loopback: err = %v; want success (host allowlisted)", err)
+	}
+}
+
+// TestSetBaseURLRebuildsClient verifies SetBaseURL swaps the client to match the
+// new base: switching to a custom loopback mirror makes it reachable, and
+// reverting to the default re-installs the guarded client that re-blocks the
+// same loopback target.
+func TestSetBaseURLRebuildsClient(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	limiter.SetLimit(provider.NameMusicBrainz, 1000)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Start at the default (guarded), then point at the loopback mirror.
+	a := New(limiter, logger)
+	a.SetBaseURL(srv.URL)
+	if err := a.TestConnection(context.Background()); err != nil {
+		t.Fatalf("after SetBaseURL(loopback mirror): TestConnection err = %v; want success", err)
+	}
+
+	// Revert to default: the client must be guarded again and re-block loopback.
+	a.SetBaseURL(a.DefaultBaseURL())
+	resp, err := a.client.Get(srv.URL)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("after revert-to-default: client reached loopback; want ErrPrivateAddress (re-guarded)")
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("after revert-to-default: client.Get(loopback) err = %v; want ErrPrivateAddress (re-guarded)", err)
+	}
+}
+
+// TestSetBaseURLClientReadRaceSafe exercises the concurrency contract: SetBaseURL
+// reassigns a.client under a.mu while doRequest reads it under a.mu.RLock.
+// Running both concurrently under -race must stay clean. Each request targets
+// the loopback fixture via an allowlisted mirror URL, so the read path executes
+// fully rather than short-circuiting on a guard rejection.
+func TestSetBaseURLClientReadRaceSafe(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	limiter.SetLimit(provider.NameMusicBrainz, 100000)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, logger, srv.URL)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			a.SetBaseURL(srv.URL)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			// Ignore the result; we only care that the concurrent a.client read
+			// inside doRequest is race-clean.
+			_, _ = a.SearchArtist(context.Background(), "radiohead")
+		}
+	}()
+	wg.Wait()
 }

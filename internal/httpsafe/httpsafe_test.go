@@ -151,6 +151,210 @@ func TestSafeTransport_PreservesDefaultTransportSettings(t *testing.T) {
 	}
 }
 
+// TestSafeTransportWithAllowedHosts_AllowsPrivateHost verifies the trusted-host
+// exemption: an allowlisted host that resolves to loopback (127.0.0.1, normally
+// blocked) is reached, not rejected. We stand up a real httptest server on
+// loopback, allowlist its host, and confirm DialContext returns a live conn
+// rather than ErrPrivateAddress. This is the self-hosted-mirror use case.
+func TestSafeTransportWithAllowedHosts_AllowsPrivateHost(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("SplitHostPort(%q): %v", addr, err)
+	}
+
+	transport := httpsafe.SafeTransportWithAllowedHosts(host)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	conn, err := transport.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		t.Fatalf("DialContext(%q) with %q allowlisted: err = %v; want nil (host exempt from SSRF guard)", addr, host, err)
+	}
+	if conn == nil {
+		t.Fatalf("DialContext(%q): conn is nil with no error", addr)
+	}
+	conn.Close()
+}
+
+// TestSafeTransportWithAllowedHosts_CaseInsensitive confirms the allow-set
+// match is case-insensitive on the dial host, matching how operators may type
+// a mirror hostname in any case.
+func TestSafeTransportWithAllowedHosts_CaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("SplitHostPort(%q): %v", addr, err)
+	}
+
+	// Dial a CASED hostname ("LOCALHOST") while allowlisting the lowercase form
+	// ("localhost"). A numeric dial host (127.0.0.1) has no case, so it would not
+	// exercise the ToLower allowlist-matching path; a cased label does.
+	addr = net.JoinHostPort("LOCALHOST", port)
+	transport := httpsafe.SafeTransportWithAllowedHosts("localhost")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	conn, err := transport.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		t.Fatalf("DialContext(%q) with differently-cased allowlist: err = %v; want nil", addr, err)
+	}
+	conn.Close()
+}
+
+// TestSafeTransportWithAllowedHosts_NonAllowlistedStillBlocked verifies the
+// exemption is scoped: a private host that is NOT in the allow-set still hits
+// ErrPrivateAddress. A non-matching entry in the allow-set must not relax the
+// guard for any other host.
+func TestSafeTransportWithAllowedHosts_NonAllowlistedStillBlocked(t *testing.T) {
+	t.Parallel()
+
+	transport := httpsafe.SafeTransportWithAllowedHosts("mirror.example.test")
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	conn, err := transport.DialContext(ctx, "tcp", "10.0.0.1:80")
+	if conn != nil {
+		conn.Close()
+		t.Fatal("DialContext(10.0.0.1:80): opened a socket; non-allowlisted private host must stay blocked")
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("DialContext(10.0.0.1:80): err = %v; want ErrPrivateAddress (host not in allow-set)", err)
+	}
+}
+
+// TestSafeTransportWithAllowedHosts_ZeroAllowlistMatchesSafeTransport confirms
+// the no-args case is byte-for-byte the default guarded behavior: a private
+// host is still rejected exactly as SafeTransport rejects it.
+func TestSafeTransportWithAllowedHosts_ZeroAllowlistMatchesSafeTransport(t *testing.T) {
+	t.Parallel()
+
+	transport := httpsafe.SafeTransportWithAllowedHosts()
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	conn, err := transport.DialContext(ctx, "tcp", "192.168.0.1:80")
+	if conn != nil {
+		conn.Close()
+		t.Fatal("DialContext(192.168.0.1:80): opened a socket; zero-allowlist must behave like SafeTransport")
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("DialContext(192.168.0.1:80): err = %v; want ErrPrivateAddress (empty allow-set)", err)
+	}
+}
+
+// TestSafeClientWithAllowedHosts_ReachesLoopbackServer is the end-to-end
+// client-level proof: a SafeClientWithAllowedHosts whose allow-set contains the
+// loopback host completes a real GET against an httptest server, where a plain
+// SafeClient would fail with ErrPrivateAddress.
+func TestSafeClientWithAllowedHosts_ReachesLoopbackServer(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	host, _, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+
+	client := httpsafe.SafeClientWithAllowedHosts(2*time.Second, host)
+	req, err := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do: err = %v; want success against allowlisted loopback mirror", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+
+	// Negative control: the plain guarded client must reject the same server.
+	guarded := httpsafe.SafeClient(2 * time.Second)
+	greq, _ := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
+	gresp, gerr := guarded.Do(greq)
+	if gerr == nil {
+		gresp.Body.Close()
+		t.Fatal("plain SafeClient reached loopback; want ErrPrivateAddress")
+	}
+	if !errors.Is(gerr, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("plain SafeClient against loopback: err = %v; want ErrPrivateAddress", gerr)
+	}
+}
+
+// TestSafeClientWithAllowedHosts_RedirectToNonAllowlistedPrivateBlocked locks
+// the single most security-load-bearing property of the mirror-allowlist
+// feature: the exemption is per-dial-host, so an allowlisted host that issues a
+// 3xx redirect to a DIFFERENT, non-allowlisted private host must STILL be
+// blocked on the followed hop. http.Client re-enters DialContext for each
+// redirect, so the new host literal ("10.0.0.1") -- absent from the allow-set --
+// gets the full SSRF guard and is rejected with ErrPrivateAddress.
+//
+// Determinism: the allowlisted hop is a real loopback httptest server (reached
+// because its 127.0.0.1 host is allowlisted -- that is also the positive
+// control: if the exemption failed, the FIRST hop would be blocked instead).
+// The redirect target is a hardcoded RFC 1918 literal, so the block fires at the
+// guard before any I/O and needs no name resolution or second listener.
+func TestSafeClientWithAllowedHosts_RedirectToNonAllowlistedPrivateBlocked(t *testing.T) {
+	t.Parallel()
+
+	// privateTarget is a fixed RFC 1918 address that is NOT allowlisted. The
+	// guard must reject the redirect that points here.
+	const privateTarget = "http://10.0.0.1/internal-secret"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, privateTarget, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	host, _, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+
+	// Allowlist ONLY the first hop's host (loopback). The redirect target host
+	// (10.0.0.1) is deliberately absent from the allow-set.
+	client := httpsafe.SafeClientWithAllowedHosts(2*time.Second, host)
+	req, err := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("redirect to non-allowlisted private host was followed; want ErrPrivateAddress")
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("redirect to 10.0.0.1: err = %v; want ErrPrivateAddress (per-hop guard, only first host allowlisted)", err)
+	}
+	// The block must be on the redirect target, not the allowlisted first hop --
+	// proves the first (allowlisted) hop was actually reached and the guard fired
+	// on the SECOND, non-allowlisted host.
+	if !strings.Contains(err.Error(), "10.0.0.1") {
+		t.Fatalf("err = %v; want the block to name the redirect target 10.0.0.1 (first hop must have succeeded)", err)
+	}
+}
+
 // TestSafeTransport_DNSRebinding verifies protection against the DNS-rebinding
 // attack where a hostname resolves to a safe address during a pre-check but to a
 // private address when the actual connection is made.

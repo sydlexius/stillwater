@@ -24,6 +24,36 @@ import (
 
 const defaultBaseURL = "https://musicbrainz.org/ws/2"
 
+// mirrorAllowedHost returns the lowercased hostname of baseURL when it is a
+// custom mirror (its trimmed form differs from defaultBaseURL), and "" for the
+// public default or an unparsable URL. A non-empty result is the single
+// operator-configured host that newMirrorClient exempts from the SSRF guard, so
+// a self-hosted mirror on a LAN/loopback address is reachable. The default
+// endpoint and the auto-fallback host (always defaultBaseURL) therefore stay
+// fully guarded -- they never match this branch.
+func mirrorAllowedHost(baseURL string) string {
+	if strings.TrimRight(baseURL, "/") == defaultBaseURL {
+		return ""
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+// newMirrorClient builds the adapter's HTTP client for baseURL. A custom mirror
+// gets a client that allowlists the mirror's host so its private/LAN address is
+// reachable (the admin-typed base URL is itself the opt-in); the public default
+// and the auto-fallback target get the plain SSRF-guarded client. The 10s
+// timeout matches the original construction.
+func newMirrorClient(baseURL string) *http.Client {
+	if host := mirrorAllowedHost(baseURL); host != "" {
+		return httpsafe.SafeClientWithAllowedHosts(10*time.Second, host)
+	}
+	return httpsafe.SafeClient(10 * time.Second)
+}
+
 // Adapter implements the provider.Provider interface for MusicBrainz.
 type Adapter struct {
 	client  *http.Client
@@ -45,7 +75,7 @@ func New(limiter *provider.RateLimiterMap, logger *slog.Logger) *Adapter {
 // NewWithBaseURL creates a MusicBrainz adapter with a custom base URL (for testing).
 func NewWithBaseURL(limiter *provider.RateLimiterMap, logger *slog.Logger, baseURL string) *Adapter {
 	return &Adapter{
-		client:      httpsafe.SafeClient(10 * time.Second),
+		client:      newMirrorClient(baseURL),
 		limiter:     limiter,
 		logger:      logger.With(slog.String("provider", "musicbrainz")),
 		baseURL:     strings.TrimRight(baseURL, "/"),
@@ -534,11 +564,18 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// SetBaseURL updates the adapter's base URL for mirror support.
+// SetBaseURL updates the adapter's base URL for mirror support and rebuilds the
+// HTTP client to match: switching to a custom mirror installs a client that
+// exempts the mirror's host from the SSRF guard (a LAN/loopback mirror becomes
+// reachable), while reverting to the default re-installs the plain guarded
+// client. Client reassignment happens under the same a.mu lock that guards
+// baseURL, so doRequest (which captures both under its RLock) never observes a
+// torn baseURL/client pair.
 func (a *Adapter) SetBaseURL(rawURL string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.baseURL = strings.TrimRight(rawURL, "/")
+	a.client = newMirrorClient(a.baseURL)
 }
 
 // BaseURL returns the current base URL.
@@ -560,11 +597,12 @@ func (a *Adapter) DefaultBaseURL() string {
 // SafeClient automatically.
 //
 // Callers must call this before initiating requests, not concurrently
-// with them. doRequest reads a.client without a lock; matching that
-// here would add ceremony without benefit because the only legitimate
-// caller is single-threaded test setup. Panics on nil to surface the
-// misconfiguration at the wiring site rather than as a confusing nil
-// dereference deep inside doRequest.
+// with them. The write is deliberately lock-free: doRequest captures
+// a.client under a.mu.RLock, but the only legitimate caller of this
+// method is single-threaded test setup that runs before any request, so
+// taking the lock here would add ceremony without benefit. Panics on nil
+// to surface the misconfiguration at the wiring site rather than as a
+// confusing nil dereference deep inside doRequest.
 func (a *Adapter) SetHTTPClient(c *http.Client) {
 	if c == nil {
 		panic("musicbrainz.SetHTTPClient: client must not be nil")
@@ -670,6 +708,14 @@ func (a *Adapter) unmarshalWithFallback(ctx context.Context, base, pathAndQuery 
 // backing off and retrying on a rate-limited (429) or unavailable (503)
 // response via provider.DoWithRetry.
 func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) {
+	// Capture the client under the same RLock that guards baseURL elsewhere.
+	// SetBaseURL reassigns a.client under a.mu.Lock(), so this read must be
+	// synchronized to stay -race clean; capturing once also pins a single
+	// client for all retries of this request even if SetBaseURL runs midway.
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+
 	// do performs one HTTP attempt. The limiter wait lives inside it so that
 	// every retry triggered by DoWithRetry still respects the per-provider
 	// request budget.
@@ -689,7 +735,7 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 		req.Header.Set("Accept", "application/json")
 
 		a.logger.Debug("requesting", slog.String("url", reqURL))
-		return a.client.Do(req)
+		return client.Do(req)
 	}
 
 	// DoWithRetry honors a 429 Retry-After (and backs off conservatively on a
