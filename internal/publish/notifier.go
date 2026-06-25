@@ -29,12 +29,18 @@ func NewBusNotifier(bus *event.Bus) Notifier {
 // invoking the notifier; the toast only sees connection + error class +
 // artist context.
 //
+// connectionID is the raw connection UUID threaded through from the publisher
+// so the frontend can construct a deep-link to the connection edit panel
+// (e.g. /settings?tab=connections&edit=<id>&focus=api_key). It is omitted
+// from the payload when empty (connection lookup failures fall back to a
+// short-label name only).
+//
 // artistID / artistName / operation are optional context: PushLocks fans
 // out one goroutine per platform mapping, so a single artist failing
 // across N platforms otherwise produces N anonymous toasts. operation is
 // a short slug ("lock_toggle") so the UI can disambiguate the originating
 // action when more push surfaces gain notifier coverage (PR follow-up).
-func (n *busNotifier) NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation string, err error) {
+func (n *busNotifier) NotifyConnectionPushFailed(connectionID, connectionName, errorClass, artistID, artistName, operation string, err error) {
 	if n == nil || n.bus == nil {
 		return
 	}
@@ -45,6 +51,9 @@ func (n *busNotifier) NotifyConnectionPushFailed(connectionName, errorClass, art
 	data := map[string]any{
 		"connection":  connectionName,
 		"error_class": errorClass,
+	}
+	if connectionID != "" {
+		data["connection_id"] = connectionID
 	}
 	if artistID != "" {
 		data["artist_id"] = artistID

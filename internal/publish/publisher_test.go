@@ -372,23 +372,25 @@ type recordingNotifier struct {
 }
 
 type notifyCall struct {
-	connection string
-	errorClass string
-	artistID   string
-	artistName string
-	operation  string
-	err        error
+	connectionID string
+	connection   string
+	errorClass   string
+	artistID     string
+	artistName   string
+	operation    string
+	err          error
 }
 
-func (r *recordingNotifier) NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation string, err error) {
+func (r *recordingNotifier) NotifyConnectionPushFailed(connectionID, connectionName, errorClass, artistID, artistName, operation string, err error) {
 	r.mu.Lock()
 	r.calls = append(r.calls, notifyCall{
-		connection: connectionName,
-		errorClass: errorClass,
-		artistID:   artistID,
-		artistName: artistName,
-		operation:  operation,
-		err:        err,
+		connectionID: connectionID,
+		connection:   connectionName,
+		errorClass:   errorClass,
+		artistID:     artistID,
+		artistName:   artistName,
+		operation:    operation,
+		err:          err,
 	})
 	ch := r.done
 	r.mu.Unlock()
@@ -460,6 +462,9 @@ func TestPushLocks_NotifierFiresOnSyncFailure(t *testing.T) {
 	got := notifier.snapshot()
 	if len(got) != 1 {
 		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	if got[0].connectionID != "c-emby" {
+		t.Errorf("connectionID = %q, want %q", got[0].connectionID, "c-emby")
 	}
 	if got[0].connection != "my-emby" {
 		t.Errorf("connection = %q, want %q", got[0].connection, "my-emby")

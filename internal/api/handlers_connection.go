@@ -332,7 +332,7 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	}
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		writeFormError(w, req, http.StatusNotFound, "connection not found")
 		return
 	}
 
@@ -398,7 +398,16 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 
 	if err := r.connectionService.Update(req.Context(), existing); err != nil {
 		r.logger.Error("updating connection", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		writeFormError(w, req, http.StatusInternalServerError, "internal error")
+		return
+	}
+	// HTMX form submission from the settings page edit panel: trigger a full
+	// page refresh so the updated connection values appear in the read-only
+	// row, matching the handleCreateConnectionSuccess pattern.
+	if isHTMXRequest(req) {
+		w.Header().Set("HX-Refresh", "true")
+		w.Header().Set("HX-Reswap", "none")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	writeJSON(w, http.StatusOK, toConnectionResponse(*existing))

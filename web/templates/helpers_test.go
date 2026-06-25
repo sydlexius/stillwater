@@ -340,6 +340,7 @@ func TestLayoutI18nJSON(t *testing.T) {
 		"undo_fix_aria", "close_aria", "undoing", "http_status",
 		"fix_reverted", "undo_failed", "request_failed",
 		"request_timeout", "unknown", "confirm",
+		"reauth", "reauth_aria",
 	}
 	for _, k := range wantKeys {
 		v, ok := m[k]

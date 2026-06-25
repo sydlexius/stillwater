@@ -40,7 +40,7 @@ func TestBusNotifier_PublishesConnectionPushFailed(t *testing.T) {
 	n := NewBusNotifier(bus)
 	// The raw err (which may carry a URL like "Post http://emby.lan/..."
 	// or a 5xx response body) must NOT appear on the published event.
-	n.NotifyConnectionPushFailed("my-emby", "auth_failed", "a1", "Test Artist", "lock_toggle",
+	n.NotifyConnectionPushFailed("conn-uuid-1", "my-emby", "auth_failed", "a1", "Test Artist", "lock_toggle",
 		errors.New("Post \"http://emby.internal.lan:8096/Items/p1\": HTTP 401 Unauthorized"))
 
 	// Wait briefly for the event to drain through the bus's worker.
@@ -79,6 +79,10 @@ func TestBusNotifier_PublishesConnectionPushFailed(t *testing.T) {
 	if e.Data["operation"] != "lock_toggle" {
 		t.Errorf("operation = %v, want lock_toggle", e.Data["operation"])
 	}
+	// connection_id must be present so the frontend can deep-link to the edit panel.
+	if e.Data["connection_id"] != "conn-uuid-1" {
+		t.Errorf("connection_id = %v, want conn-uuid-1", e.Data["connection_id"])
+	}
 	// The raw error -- which can leak internal hostnames + tokens -- must
 	// NOT be on the event Data. The SSE hub broadcasts Data to every
 	// connected client, so any DevTools observer would see it. The
@@ -96,7 +100,7 @@ func TestBusNotifier_NilBusIsNoOp(t *testing.T) {
 	t.Parallel()
 	n := NewBusNotifier(nil)
 	// Must not panic.
-	n.NotifyConnectionPushFailed("conn", "class", "a1", "Test", "lock_toggle", errors.New("boom"))
+	n.NotifyConnectionPushFailed("", "conn", "class", "a1", "Test", "lock_toggle", errors.New("boom"))
 }
 
 // TestBusNotifier_OmitsEmptyContextFields verifies that the optional
@@ -121,7 +125,7 @@ func TestBusNotifier_OmitsEmptyContextFields(t *testing.T) {
 	defer bus.Stop()
 
 	n := NewBusNotifier(bus)
-	n.NotifyConnectionPushFailed("my-emby", "auth_failed", "", "", "", nil)
+	n.NotifyConnectionPushFailed("conn-uuid-2", "my-emby", "auth_failed", "", "", "", nil)
 
 	deadline := time.Now().Add(1 * time.Second)
 	for time.Now().Before(deadline) {
@@ -139,9 +143,57 @@ func TestBusNotifier_OmitsEmptyContextFields(t *testing.T) {
 	if len(received) != 1 {
 		t.Fatalf("received = %d, want 1", len(received))
 	}
+	// connection_id is present when non-empty (conn-uuid-2 was passed).
+	if received[0].Data["connection_id"] != "conn-uuid-2" {
+		t.Errorf("connection_id = %v, want conn-uuid-2", received[0].Data["connection_id"])
+	}
 	for _, k := range []string{"artist_id", "artist_name", "operation"} {
 		if _, present := received[0].Data[k]; present {
 			t.Errorf("optional field %q should be omitted when empty, got %v", k, received[0].Data[k])
 		}
+	}
+}
+
+// TestBusNotifier_OmitsEmptyConnectionID verifies that the connection_id field
+// is omitted from the event payload when the caller passes an empty string,
+// matching the behavior of the other optional fields.
+func TestBusNotifier_OmitsEmptyConnectionID(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bus := event.NewBus(logger, 8)
+
+	var (
+		mu       sync.Mutex
+		received []event.Event
+	)
+	bus.Subscribe(event.ConnectionPushFailed, func(e event.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		received = append(received, e)
+	})
+	go bus.Start()
+	defer bus.Stop()
+
+	n := NewBusNotifier(bus)
+	n.NotifyConnectionPushFailed("", "my-emby", "auth_failed", "", "", "", nil)
+
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		count := len(received)
+		mu.Unlock()
+		if count > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != 1 {
+		t.Fatalf("received = %d, want 1", len(received))
+	}
+	if _, present := received[0].Data["connection_id"]; present {
+		t.Errorf("connection_id should be omitted when empty, got %v", received[0].Data["connection_id"])
 	}
 }

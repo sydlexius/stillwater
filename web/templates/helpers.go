@@ -350,6 +350,8 @@ func layoutI18nJSON(ctx context.Context) string {
 		"request_timeout": t(ctx, "errors.request_timeout"),
 		"unknown":         t(ctx, "errors.unknown"),
 		"confirm":         t(ctx, "common.confirm"),
+		"reauth":          t(ctx, "notifications.reauth"),
+		"reauth_aria":     t(ctx, "notifications.reauth_aria"),
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
