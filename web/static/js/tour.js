@@ -324,11 +324,15 @@
                     }
                 },
                 {
-                    element: '#refresh-panel',
+                    // #next-hero-refresh-btn is the stable ID on the visible
+                    // Refresh button in the hero toolbar. The old #refresh-panel
+                    // target starts empty (height 0) so the popover had no
+                    // anchor; the button itself is always visible with real height.
+                    element: '#next-hero-refresh-btn',
                     popover: {
                         title: i18n.detail_refresh_title || 'Refresh Metadata',
                         description: i18n.detail_refresh_desc || 'Pull fresh metadata from your configured providers. You can choose which fields to update before confirming.',
-                        side: 'top'
+                        side: 'bottom'
                     }
                 },
                 {
