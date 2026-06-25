@@ -60,11 +60,12 @@
   // putSavedViews replaces the entire saved_views preference with views (array).
   // Calls callback(ok) when the write settles.
   function putSavedViews(views, callback) {
+    var csrf = typeof window.swCsrfToken === 'function' ? window.swCsrfToken() : '';
     var body = JSON.stringify({ value: JSON.stringify(views) });
     fetch(prefURL(), {
       method: 'PUT',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       body: body,
     })
       .then(function (resp) {
