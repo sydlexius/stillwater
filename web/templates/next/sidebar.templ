@@ -142,9 +142,11 @@ templ Sidebar(assets templates.AssetPaths) {
 							<span
 								id="sidebar-foreign-pill"
 								class="contents"
+								data-prev-count="0"
 								hx-get="/api/v1/foreign-files/count?ch=next"
 								hx-trigger="load, every 60s, swFFCountChanged from:body"
 								hx-swap="innerHTML"
+								hx-on::after-swap="swSidebar.swForeignPillSwap()"
 							></span>
 						</a>
 					</li>

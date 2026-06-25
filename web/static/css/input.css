@@ -439,6 +439,36 @@
 #sw-sidebar[data-sidebar-state="hidden"] .sw-sidebar-count-pill {
   display: none;
 }
+/* Foreign Files pill: a single-run, decorative nudge when the unmatched-file
+   count rises (toggled by swForeignPillSwap in sidebar.js, cleared on
+   animationend). Purely ambient - the count digits + tooltip + aria-label
+   carry the meaning, so the motion is safe to suppress. The soft halo uses the
+   count pill's own border hue (not the active-toggle blue-halo) so it reads as
+   part of this pill rather than a selection state. Triple-gated off under OS
+   prefers-reduced-motion, the reduced_motion pref (data-motion=on), and Lite
+   Mode (data-lite=on), matching the .sw-spin / .sw-skeleton house pattern. */
+@keyframes sw-ff-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--sw-sidebar-count-pill-border, #93c5fd);
+  }
+  45% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 3px rgba(147, 197, 253, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(147, 197, 253, 0);
+  }
+}
+.sw-ff-pulse {
+  animation: sw-ff-pulse 0.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sw-ff-pulse { animation: none; }
+}
+[data-motion="on"] .sw-ff-pulse { animation: none; }
+[data-lite="on"] .sw-ff-pulse { animation: none; }
 /* Narrow rail: center the avatar (name/role hiding is already in the global
    icon-only/hidden rule block above). */
 #sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-user,
