@@ -25,4 +25,10 @@ tests {
   test("returns 200", function() {
     expect(res.status).to.equal(200);
   });
+
+  test("content-type is text/html when body non-empty", function() {
+    if (res.body && res.body.length > 0) {
+      expect(res.headers['content-type']).to.include('text/html');
+    }
+  });
 }

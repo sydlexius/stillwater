@@ -19,6 +19,10 @@ tests {
     expect(res.status).to.equal(200);
   });
 
+  test("content-type is application/json", function() {
+    expect(res.headers['content-type']).to.include('application/json');
+  });
+
   test("response is an object with libraries and overall keys", function() {
     expect(res.body).to.be.an("object");
     expect(res.body.libraries).to.be.an("array");

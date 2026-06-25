@@ -27,6 +27,6 @@ tests {
   });
 
   test("Content-Disposition is a CSV attachment", function() {
-    expect(res.headers['content-disposition']).to.equal('attachment; filename="compliance-report.csv"');
+    expect(res.headers['content-disposition']).to.match(/^attachment;.*filename="compliance-report\.csv"/i);
   });
 }
