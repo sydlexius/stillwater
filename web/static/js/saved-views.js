@@ -82,15 +82,78 @@
       });
   }
 
-  // refreshChipsRow triggers an HTMX reload of the artist-content region so
-  // the server re-renders the saved view chips based on the updated preference.
-  // The chips row is inside #artist-content (rendered as part of the table or
-  // grid) so a content swap picks it up without a full page navigation.
+  // refreshChipsRow triggers an HTMX reload of #artist-content. Used by
+  // applySavedView to reload the filtered artist list after a view is applied.
+  // Save/delete operations call renderChipsRow directly because #saved-views-row
+  // lives OUTSIDE #artist-content and is not reached by a content swap.
   function refreshChipsRow() {
     var target = document.querySelector(CONTENT_TARGET);
     if (target && window.htmx) {
       htmx.trigger(target, 'sw:filter-applied');
     }
+  }
+
+  // renderChipsRow rebuilds #saved-views-row client-side from a views array
+  // ({name, params, created_at}[]). Shows the row when views is non-empty,
+  // hides it when empty. Called after a successful save or delete so the chip
+  // appears / disappears without waiting for a full page reload.
+  function renderChipsRow(views) {
+    var row = document.getElementById('saved-views-row');
+    if (!row) return;
+
+    // Remove existing chip spans (keep the static "Saved:" label span).
+    var chips = row.querySelectorAll('span.group');
+    for (var i = 0; i < chips.length; i++) {
+      row.removeChild(chips[i]);
+    }
+
+    if (!views || views.length === 0) {
+      row.classList.add('hidden');
+      return;
+    }
+    row.classList.remove('hidden');
+
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var xPath = 'M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z';
+
+    views.forEach(function(sv) {
+      // Closure captures sv so event handlers don't need inline JS strings.
+      var group = document.createElement('span');
+      group.className = 'group relative inline-flex items-center';
+
+      var applyBtn = document.createElement('button');
+      applyBtn.type = 'button';
+      applyBtn.title = 'Apply view: ' + sv.name;
+      applyBtn.setAttribute('aria-label', 'Apply saved view: ' + sv.name);
+      applyBtn.className = 'inline-flex items-center gap-1 rounded-l-full rounded-r-none border border-[var(--swd-line)] bg-white/5 px-3 py-1 text-xs text-[var(--swd-ink-2)] hover:bg-white/10 transition-colors';
+      applyBtn.textContent = sv.name;
+      applyBtn.onclick = function() {
+        if (window.swSavedViews) window.swSavedViews.applySavedView(sv.params);
+      };
+
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.title = 'Delete view: ' + sv.name;
+      delBtn.setAttribute('aria-label', 'Delete saved view: ' + sv.name);
+      delBtn.className = 'inline-flex items-center rounded-l-none rounded-r-full border border-l-0 border-[var(--swd-line)] bg-white/5 px-1.5 py-1 text-xs text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100';
+      delBtn.onclick = function() {
+        if (window.swSavedViews) window.swSavedViews.deleteSavedView(sv.name);
+      };
+
+      var svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('class', 'h-3 w-3');
+      svg.setAttribute('viewBox', '0 0 20 20');
+      svg.setAttribute('fill', 'currentColor');
+      svg.setAttribute('aria-hidden', 'true');
+      var path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('d', xPath);
+      svg.appendChild(path);
+      delBtn.appendChild(svg);
+
+      group.appendChild(applyBtn);
+      group.appendChild(delBtn);
+      row.appendChild(group);
+    });
   }
 
   // applySavedView parses params (a query string such as
@@ -218,7 +281,7 @@
           return;
         }
         closeSaveViewModal();
-        refreshChipsRow();
+        renderChipsRow(views);
         if (window.showToast) {
           showToast('View "' + name + '" saved.', 'success');
         }
@@ -237,7 +300,7 @@
           if (window.showToast) showToast('Could not delete view.', 'error');
           return;
         }
-        refreshChipsRow();
+        renderChipsRow(updated);
         if (window.showToast) {
           showToast('View "' + name + '" deleted.', 'info');
         }
