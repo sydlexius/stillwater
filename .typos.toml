@@ -40,6 +40,15 @@ limite = "limite"
 # capped message ("{count} artistes sur {total} chargés"). typos flags it
 # as a misspelling of English "sure".
 sur = "sur"
+# French words used in the artist_duplicates merge modal translations.
+# Each is a correct French word flagged by the English-oriented spell checker:
+# "conflit" (= conflict), "groupe" (= group), "cours" (= in progress, as in
+# "en cours"), "termine" (= finishes/ends), "contient" (= contains).
+conflit = "conflit"
+groupe = "groupe"
+cours = "cours"
+termine = "termine"
+contient = "contient"
 # AIMD (Additive Increase / Multiplicative Decrease) is a network-congestion
 # control algorithm; its abbreviation is not a misspelling of "aimed".
 AIMD = "AIMD"
