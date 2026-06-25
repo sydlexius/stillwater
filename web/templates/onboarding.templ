@@ -953,8 +953,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							// onboarding.templ does not load tour.js, so
 							// markTourPending is undefined here -- write the same
 							// keys it would so the tour auto-starts post-OOBE.
-							localStorage.removeItem('tour.completed');
-							localStorage.setItem('tour.pending', 'true');
+							// Key names mirror tour.js TOUR_COMPLETED_KEY / TOUR_PENDING_KEY.
+							try {
+								localStorage.removeItem('tour.completed');
+								localStorage.setItem('tour.pending', 'true');
+							} catch (e) {
+								console.error('[onboarding] tour-pending fallback: localStorage unavailable', e);
+							}
 						}
 						// Redirect to the vNext Dashboard -- the guided tour
 						// auto-starts there from the SCREEN_STEPS.dashboard group.
