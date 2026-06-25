@@ -1,6 +1,11 @@
 // Guided Tour -- Driver.js step definitions and trigger logic.
-// Loaded globally via layout.templ. Only executes on the Artists page
-// (auto-start) or when manually invoked via startGuidedTour().
+// Loaded globally via layout.templ. Implements a per-screen SCREEN_STEPS
+// registry (dashboard, artists, artistDetail) and dual launcher APIs:
+//   window.startScreenTour()  -- run steps for the current screen only
+//   window.startGuidedTour()  -- full OOBE flow (navigates to entry screen first)
+//
+// Auto-start fires when the OOBE wizard finishes (TOUR_PENDING_KEY set) and
+// the user lands on the vNext Dashboard or the stable Artists page.
 (function() {
     'use strict';
 
@@ -22,16 +27,44 @@
         return el ? el.content : '';
     }
 
-    function isArtistsPage() {
+    // getCurrentScreen inspects window.location.pathname and returns a screen
+    // identifier for the SCREEN_STEPS registry, or null for unrecognized paths.
+    //   'dashboard'   -- /next or /next/
+    //   'artists'     -- /next/artists or /artists (both channels)
+    //   'artistDetail'-- /next/artists/{id}
+    //   null          -- any other path
+    function getCurrentScreen() {
         var bp = basePath();
         var path = window.location.pathname;
-        return path === bp + '/artists' || path === bp + '/artists/';
+        // Strip deployment base-path prefix so comparisons work in sub-path deploys.
+        if (bp && path.indexOf(bp) === 0) {
+            path = path.slice(bp.length) || '/';
+        }
+        if (path === '/next' || path === '/next/') { return 'dashboard'; }
+        // Artist detail must be checked before the artists list pattern.
+        if (/^\/next\/artists\/[^/]+/.test(path)) { return 'artistDetail'; }
+        if (path === '/next/artists' || path === '/next/artists/') { return 'artists'; }
+        if (path === '/artists' || path === '/artists/') { return 'artists'; }
+        return null;
+    }
+
+    // isArtistsPage returns true when the current path is the stable or vNext
+    // artists list page. Kept for internal use and backward compatibility.
+    function isArtistsPage() {
+        return getCurrentScreen() === 'artists';
+    }
+
+    function isDashboardPage() {
+        return getCurrentScreen() === 'dashboard';
     }
 
     function shouldAutoStart() {
-        return localStorage.getItem(TOUR_PENDING_KEY) === 'true' &&
-               !localStorage.getItem(TOUR_COMPLETED_KEY) &&
-               isArtistsPage();
+        if (localStorage.getItem(TOUR_PENDING_KEY) !== 'true') { return false; }
+        if (localStorage.getItem(TOUR_COMPLETED_KEY)) { return false; }
+        var screen = getCurrentScreen();
+        // Auto-start on the vNext Dashboard (new OOBE entry point) or the
+        // stable Artists page (legacy entry point for the guided tour).
+        return screen === 'dashboard' || screen === 'artists';
     }
 
     function markComplete() {
@@ -39,19 +72,62 @@
         localStorage.setItem(TOUR_COMPLETED_KEY, 'true');
     }
 
-    function createTour() {
-        var driverConstructor = window.driver.js.driver;
-        return driverConstructor({
-            popoverClass: 'sw-tour-popover',
-            showProgress: true,
-            progressText: '{{current}} / {{total}}',
-            allowClose: true,
-            overlayOpacity: 0.5,
-            stagePadding: 8,
-            stageRadius: 8,
-            animate: true,
-            smoothScroll: true,
-            steps: [
+    // SCREEN_STEPS is a registry of per-screen step group factories.
+    // Each key maps to a function returning the step array for that screen.
+    // Using functions allows lazy i18n lookup -- i18n is populated at module
+    // init time so the values are available when these are called.
+    var SCREEN_STEPS = {
+        // Dashboard steps: target vNext Dashboard element IDs.
+        dashboard: function() {
+            return [
+                {
+                    element: '#sw-sidebar',
+                    popover: {
+                        title: i18n.nav_title || 'Navigation',
+                        description: i18n.nav_desc || 'Use the sidebar to switch between Dashboard, Artists, Reports, and Settings. Collapse it with the arrow at the top for more space.',
+                        side: 'right',
+                        align: 'start'
+                    }
+                },
+                {
+                    element: '#dashboard-search',
+                    popover: {
+                        title: i18n.dash_search_title || 'Search the Queue',
+                        description: i18n.dash_search_desc || 'Filter the action queue by artist name to quickly find items that need attention.',
+                        side: 'bottom'
+                    }
+                },
+                {
+                    element: '#dashboard-run-rules-btn',
+                    popover: {
+                        title: i18n.dash_run_rules_title || 'Run All Rules',
+                        description: i18n.dash_run_rules_desc || 'Evaluate every rule against every artist in one pass. Issues that can be auto-fixed are resolved immediately; others are queued below for review.',
+                        side: 'bottom'
+                    }
+                },
+                {
+                    element: '#action-queue',
+                    popover: {
+                        title: i18n.dash_queue_title || 'Action Queue',
+                        description: i18n.dash_queue_desc || 'Artists with rule violations or metadata gaps appear here. Click an item to jump to that artist and fix the issue.',
+                        side: 'top'
+                    }
+                },
+                {
+                    element: '#next-dash-activity-feed',
+                    popover: {
+                        title: i18n.dash_activity_title || 'Activity Feed',
+                        description: i18n.dash_activity_desc || 'Recent Stillwater activity -- scans, metadata fetches, and publishes -- streams here in real time.',
+                        side: 'left',
+                        align: 'start'
+                    }
+                }
+            ];
+        },
+
+        // Artists steps: target IDs shared between stable and vNext artists pages.
+        artists: function() {
+            return [
                 {
                     element: '#sw-sidebar',
                     popover: {
@@ -109,11 +185,62 @@
                         side: 'top'
                     }
                 }
-            ],
+            ];
+        },
+
+        // Artist detail steps: target vNext artist-detail element IDs.
+        // Highlights non-obvious features; available via startScreenTour() only
+        // (the OOBE flow does not auto-navigate to a specific artist).
+        artistDetail: function() {
+            return [
+                {
+                    element: '#next-hero-name',
+                    popover: {
+                        title: i18n.detail_hero_title || 'Artist Header',
+                        description: i18n.detail_hero_desc || 'The artist name, type, and primary artwork are shown here. Click the artwork to open the image manager.',
+                        side: 'bottom'
+                    }
+                },
+                {
+                    element: '#refresh-panel',
+                    popover: {
+                        title: i18n.detail_refresh_title || 'Refresh Metadata',
+                        description: i18n.detail_refresh_desc || 'Pull fresh metadata from your configured providers. You can choose which fields to update before confirming.',
+                        side: 'top'
+                    }
+                },
+                {
+                    element: '#next-findings',
+                    popover: {
+                        title: i18n.detail_findings_title || 'Rule Findings',
+                        description: i18n.detail_findings_desc || 'Rule violations specific to this artist appear here. Fix or dismiss each finding individually, or run all rules at once.',
+                        side: 'top'
+                    }
+                }
+            ];
+        }
+    };
+
+    // createTour builds a Driver.js tour instance with the given steps.
+    // The optional onDestroy callback is invoked when the tour is closed or
+    // completed (before Driver.js tears down its overlay).
+    function createTour(steps, onDestroy) {
+        var driverConstructor = window.driver.js.driver;
+        return driverConstructor({
+            popoverClass: 'sw-tour-popover',
+            showProgress: true,
+            progressText: '{{current}} / {{total}}',
+            allowClose: true,
+            overlayOpacity: 0.5,
+            stagePadding: 8,
+            stageRadius: 8,
+            animate: true,
+            smoothScroll: true,
+            steps: steps,
             onDestroyStarted: function(_, __, opts) {
-                // Called when user clicks X, overlay, or Done on last step.
-                // Driver.js does not bind `this`, so use opts.driver.
-                markComplete();
+                // Called when the user clicks X, the overlay, or Done on the
+                // last step. Driver.js does not bind `this`, so use opts.driver.
+                if (typeof onDestroy === 'function') { onDestroy(); }
                 if (opts && opts.driver && typeof opts.driver.destroy === 'function') {
                     opts.driver.destroy();
                 }
@@ -121,19 +248,18 @@
         });
     }
 
-    // waitForTourTargets waits for the first tour step's target element to
-    // exist in the DOM before resolving. Uses a MutationObserver with a
-    // fallback timeout so the tour never hangs indefinitely.
-    function waitForTourTargets(timeoutMs) {
-        var TARGET_SELECTOR = '#sw-sidebar';
+    // waitForTourTargets waits for the given CSS selector to appear in the DOM
+    // before resolving. Uses a MutationObserver with a fallback timeout so the
+    // tour never hangs indefinitely when a target is absent.
+    function waitForTourTargets(selector, timeoutMs) {
         return new Promise(function(resolve) {
-            if (document.querySelector(TARGET_SELECTOR)) {
+            if (document.querySelector(selector)) {
                 resolve();
                 return;
             }
             var resolved = false;
             var observer = new MutationObserver(function() {
-                if (!resolved && document.querySelector(TARGET_SELECTOR)) {
+                if (!resolved && document.querySelector(selector)) {
                     resolved = true;
                     observer.disconnect();
                     resolve();
@@ -150,7 +276,7 @@
         });
     }
 
-    // Mark the tour as pending so it auto-starts on the next Artists page load.
+    // Mark the tour as pending so it auto-starts on the next page load.
     // Centralizes localStorage key management so other templates (e.g. onboarding)
     // do not need to reference key names directly.
     window.markTourPending = function() {
@@ -158,28 +284,74 @@
         localStorage.setItem(TOUR_PENDING_KEY, 'true');
     };
 
-    // Public API for manual restart from guide page or help overlay.
-    window.startGuidedTour = function() {
-        var bp = basePath();
-        var artistsPath = bp + '/artists';
-        // If not on the Artists page, navigate there first.
-        if (!isArtistsPage()) {
-            window.markTourPending();
-            window.location.href = artistsPath;
+    // startScreenTour runs the tour for the current page only. Use this for
+    // "take a tour" buttons on individual screens. Logs an error when no
+    // SCREEN_STEPS group is registered for the current path (fail loudly).
+    window.startScreenTour = function() {
+        var screen = getCurrentScreen();
+        if (!screen || !SCREEN_STEPS[screen]) {
+            console.error('tour: no tour defined for screen: ' + (screen || window.location.pathname));
             return;
         }
-        // Already on Artists page -- start immediately.
-        localStorage.removeItem(TOUR_COMPLETED_KEY);
-        var tour = createTour();
-        tour.drive();
+        var steps = SCREEN_STEPS[screen]();
+        if (!steps || steps.length === 0) {
+            console.error('tour: empty step list for screen: ' + screen);
+            return;
+        }
+        var firstSelector = steps[0].element;
+        waitForTourTargets(firstSelector, 3000).then(function() {
+            var tour = createTour(steps, markComplete);
+            tour.drive();
+        });
     };
 
-    // Auto-start: wait for tour target elements to appear, then allow a brief
-    // grace period for HTMX to hydrate/bind event handlers before driving.
+    // startGuidedTour is the public API for the full OOBE / manual restart
+    // flow. On vNext pages it navigates to the Dashboard first; on the stable
+    // channel it navigates to /artists as before.
+    window.startGuidedTour = function() {
+        var bp = basePath();
+        var screen = getCurrentScreen();
+
+        // vNext path: navigate to Dashboard if not already there.
+        if (screen !== null && window.location.pathname.indexOf(bp + '/next') === 0) {
+            if (!isDashboardPage()) {
+                window.markTourPending();
+                window.location.href = bp + '/next/';
+                return;
+            }
+            // Already on the Dashboard -- start immediately.
+            localStorage.removeItem(TOUR_COMPLETED_KEY);
+            var dashSteps = SCREEN_STEPS.dashboard();
+            var dashTour = createTour(dashSteps, markComplete);
+            dashTour.drive();
+            return;
+        }
+
+        // Stable channel path: navigate to /artists if not already there.
+        if (!isArtistsPage()) {
+            window.markTourPending();
+            window.location.href = bp + '/artists';
+            return;
+        }
+        // Already on the stable Artists page -- start immediately.
+        localStorage.removeItem(TOUR_COMPLETED_KEY);
+        var artistSteps = SCREEN_STEPS.artists();
+        var artistTour = createTour(artistSteps, markComplete);
+        artistTour.drive();
+    };
+
+    // Auto-start: triggered by the OOBE wizard redirect. Waits for the first
+    // step's target element to appear (HTMX may still be hydrating), then
+    // allows a brief grace period before driving.
     if (shouldAutoStart()) {
-        waitForTourTargets(3000).then(function() {
+        var screen = getCurrentScreen();
+        var autoSteps = (screen === 'dashboard')
+            ? SCREEN_STEPS.dashboard()
+            : SCREEN_STEPS.artists();
+        var firstSelector = autoSteps[0].element;
+        waitForTourTargets(firstSelector, 3000).then(function() {
             setTimeout(function() {
-                var tour = createTour();
+                var tour = createTour(autoSteps, markComplete);
                 tour.drive();
             }, 500);
         });

@@ -950,7 +950,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						if (typeof window.markTourPending === 'function') {
 							window.markTourPending();
 						}
-						window.location.href = basePath + '/artists';
+						// Redirect to the vNext Dashboard -- the guided tour
+						// auto-starts there from the SCREEN_STEPS.dashboard group.
+						window.location.href = basePath + '/next/';
 					}).catch(function() {
 						alert('Failed to complete setup. Please try again.');
 					});

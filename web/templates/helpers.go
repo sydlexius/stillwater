@@ -363,10 +363,18 @@ func layoutI18nJSON(ctx context.Context) string {
 // tourStepsJSON builds a JSON object of translated tour step titles and
 // descriptions. Called by tourI18nJSON in layout.templ so tour.js can
 // display localized popover text.
+//
+// Keys are grouped by screen:
+//   - nav_*        shared navigation step (sidebar)
+//   - scan_*/search_*/filter_*/sort_*/view_*/artist_list_* -- Artists page
+//   - dash_*       vNext Dashboard page
+//   - detail_*     vNext Artist Detail page
 func tourStepsJSON(ctx context.Context) string {
 	m := map[string]string{
-		"nav_title":         t(ctx, "guide.tour_step_nav_title"),
-		"nav_desc":          t(ctx, "guide.tour_step_nav_desc"),
+		// Shared -- sidebar navigation (used on both dashboard and artists tours).
+		"nav_title": t(ctx, "guide.tour_step_nav_title"),
+		"nav_desc":  t(ctx, "guide.tour_step_nav_desc"),
+		// Artists page steps (stable + vNext).
 		"scan_title":        t(ctx, "guide.tour_step_scan_title"),
 		"scan_desc":         t(ctx, "guide.tour_step_scan_desc"),
 		"search_title":      t(ctx, "guide.tour_step_search_title"),
@@ -379,6 +387,22 @@ func tourStepsJSON(ctx context.Context) string {
 		"view_desc":         t(ctx, "guide.tour_step_view_desc"),
 		"artist_list_title": t(ctx, "guide.tour_step_artist_list_title"),
 		"artist_list_desc":  t(ctx, "guide.tour_step_artist_list_desc"),
+		// vNext Dashboard steps.
+		"dash_search_title":    t(ctx, "guide.tour_step_dash_search_title"),
+		"dash_search_desc":     t(ctx, "guide.tour_step_dash_search_desc"),
+		"dash_run_rules_title": t(ctx, "guide.tour_step_dash_run_rules_title"),
+		"dash_run_rules_desc":  t(ctx, "guide.tour_step_dash_run_rules_desc"),
+		"dash_queue_title":     t(ctx, "guide.tour_step_dash_queue_title"),
+		"dash_queue_desc":      t(ctx, "guide.tour_step_dash_queue_desc"),
+		"dash_activity_title":  t(ctx, "guide.tour_step_dash_activity_title"),
+		"dash_activity_desc":   t(ctx, "guide.tour_step_dash_activity_desc"),
+		// vNext Artist Detail steps.
+		"detail_hero_title":     t(ctx, "guide.tour_step_detail_hero_title"),
+		"detail_hero_desc":      t(ctx, "guide.tour_step_detail_hero_desc"),
+		"detail_refresh_title":  t(ctx, "guide.tour_step_detail_refresh_title"),
+		"detail_refresh_desc":   t(ctx, "guide.tour_step_detail_refresh_desc"),
+		"detail_findings_title": t(ctx, "guide.tour_step_detail_findings_title"),
+		"detail_findings_desc":  t(ctx, "guide.tour_step_detail_findings_desc"),
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
