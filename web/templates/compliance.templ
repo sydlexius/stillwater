@@ -953,16 +953,26 @@ templ complianceScript() {
 		});
 
 		// rewriteComplianceExport rewrites the export link's href just before
-		// navigation so the CSV download uses the current URL's filter +
-		// sort params. The link element sits outside #compliance-results so
-		// it does not refresh on HTMX swap; copying window.location.search
-		// onto the link at click time gives the same effect without paying
-		// for an extra out-of-band swap on every chip dismiss.
+		// navigation so the CSV download reflects the ACTIVE filter + sort
+		// state. The link sits outside #compliance-results so it does not
+		// refresh on HTMX swap. Reading window.location.search alone lost any
+		// filter applied via an in-page HTMX swap (search/sort/filter never
+		// touch the URL), so the export silently dropped those filters
+		// (#2079). Build the query from the live hidden inputs instead, with
+		// the URL as a fallback for params without a matching input.
 		window.rewriteComplianceExport = function(el) {
 			if (!el) return;
 			var base = el.getAttribute('data-export-base') || el.href;
-			var qs = window.location.search || '';
-			el.setAttribute('href', base + qs);
+			var keep = ['search', 'status', 'filter', 'library_id', 'sort', 'order', 'health_min', 'health_max'];
+			var params = new URLSearchParams(window.location.search);
+			var out = new URLSearchParams();
+			keep.forEach(function(k) {
+				var field = document.querySelector('[name="' + k + '"]');
+				var value = field ? field.value : params.get(k);
+				if (value !== null && value !== '') out.set(k, value);
+			});
+			var qs = out.toString();
+			el.setAttribute('href', qs ? base + '?' + qs : base);
 		};
 	</script>
 }

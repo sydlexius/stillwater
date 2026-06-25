@@ -82,8 +82,8 @@ templ ReportsPageNext(assets templates.AssetPaths, data ReportsPageData) {
 		<script src={ assets.ChartJS }></script>
 		<div class="sw-next-reports">
 			<div class="sw-rep-workspace sw-card">
-				<!-- Left rail: 260px -->
-				<nav class="sw-rep-rail" aria-label={ t(ctx, "reports.page_title") }>
+				<!-- Left rail: 260px on desktop; a slide-over drawer at <=768px -->
+				<nav class="sw-rep-rail" id="sw-rep-rail" aria-label={ t(ctx, "reports.page_title") }>
 					<div class="sw-rep-rail-search">
 						<svg class="sw-rep-rail-search-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
 							<path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd"></path>
@@ -121,6 +121,20 @@ templ ReportsPageNext(assets templates.AssetPaths, data ReportsPageData) {
 				</nav>
 				<!-- Right pane -->
 				<div class="sw-rep-pane" id="sw-rep-pane">
+					<!-- Mobile-only (<=768px) drawer toggle; ghost/outline icon button. -->
+					<button
+						type="button"
+						class="sw-rep-rail-toggle"
+						aria-label={ t(ctx, "reports.open_rail") }
+						aria-controls="sw-rep-rail"
+						aria-expanded="false"
+						onclick="swReportsRailDrawer.toggle()"
+					>
+						<svg class="sw-rep-rail-toggle-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+							<path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 5A.75.75 0 0 1 2.75 9h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 9.75Zm0 5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd"></path>
+						</svg>
+						<span>{ t(ctx, "reports.page_title") }</span>
+					</button>
 					if data.ActiveReport == "compliance" {
 						@repPaneCompliance(assets, data.ComplianceData)
 					} else if data.ActiveReport == "health" {
@@ -133,9 +147,14 @@ templ ReportsPageNext(assets templates.AssetPaths, data ReportsPageData) {
 						@repPanePlaceholder(ctx, data.ActiveReport)
 					}
 				</div>
+				<!-- Scrim for the mobile rail drawer (tap to close). Sits inside the
+				     workspace card so it overlays the reports surface; the drawer
+				     (z 50) stacks above it (z 49). Hidden entirely on desktop. -->
+				<div class="sw-rep-rail-scrim" id="sw-rep-rail-scrim" onclick="swReportsRailDrawer.close()" aria-hidden="true"></div>
 			</div>
 		</div>
 		@repRailFilterScript()
+		@repRailDrawerScript()
 	}
 }
 
@@ -261,7 +280,12 @@ templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceDa
 			onclick="swRepTabSwitch('matrix')"
 		>{ t(ctx, "reports.tab_matrix") }</button>
 	</div>
-	<!-- Tab panels: shared compliance data, same table, different scroll scope -->
+	<!-- Tab panels: a SINGLE shared ComplianceResults shell (one #compliance-tbl /
+	     #select-all in the DOM). swRepTabSwitch re-parents the shell between the
+	     Results panel and the Matrix mount per active tab, so both tabs show the
+	     same table and every HTMX refresh (which targets #compliance-results)
+	     updates it regardless of which tab is active, removing the duplicate
+	     IDs and the stale-data drift the second matrix render caused (#2079). -->
 	<div class="sw-rep-tab-panels" id="sw-rep-tab-panels">
 		<div
 			id="sw-rep-tab-results"
@@ -277,9 +301,8 @@ templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceDa
 			aria-labelledby="sw-rep-tab-btn-matrix"
 			class="sw-rep-tab-panel hidden"
 		>
-			<div class="sw-rep-matrix-scroll">
-				@templates.ComplianceTable(data)
-			</div>
+			<!-- Mount point; swRepTabSwitch('matrix') moves #compliance-results here. -->
+			<div class="sw-rep-matrix-scroll" id="sw-rep-matrix-mount"></div>
 		</div>
 	</div>
 	<!-- Filter flyout (reused from stable compliance page) -->
@@ -409,6 +432,19 @@ templ repComplianceScript() {
 				btn.setAttribute('aria-selected', btn.id === 'sw-rep-tab-btn-' + name ? 'true' : 'false');
 				btn.classList.toggle('is-active', btn.id === 'sw-rep-tab-btn-' + name);
 			});
+			// Move the one #compliance-results shell into the active tab so a single
+			// #compliance-tbl / #select-all ever exists (#2079). The shell is the HTMX
+			// swap target, so outerHTML refreshes replace it in place wherever it
+			// currently lives -- keeping both tabs in sync with no duplicate render.
+			var results = document.getElementById('compliance-results');
+			if (results) {
+				var target = name === 'matrix'
+					? document.getElementById('sw-rep-matrix-mount')
+					: document.getElementById('sw-rep-tab-results');
+				if (target && results.parentElement !== target) {
+					target.appendChild(results);
+				}
+			}
 			['results', 'matrix'].forEach(function(tab) {
 				var panel = document.getElementById('sw-rep-tab-' + tab);
 				if (panel) panel.classList.toggle('hidden', tab !== name);
@@ -518,5 +554,100 @@ templ repRailFilterScript() {
 				li.hidden = q.length > 0 && !label.includes(q);
 			});
 		}
+	</script>
+}
+
+// repRailDrawerScript renders the controller for the mobile (<=768px) rail
+// drawer. The rail (<nav id="sw-rep-rail">) doubles as a slide-over at narrow
+// widths; this toggles the --open class + scrim, closes on Esc/scrim tap, and
+// moves focus into the rail on open / back to the toggle on close. On desktop
+// the rail is an in-grid column and the toggle button is display:none, so none
+// of this fires. Focus removal while closed is handled by CSS visibility:hidden
+// (viewport-aware via the media query), so no inert/aria-hidden juggling is
+// needed on the dual-purpose element.
+templ repRailDrawerScript() {
+	<script>
+		window.swReportsRailDrawer = (function() {
+			var RAIL_ID = 'sw-rep-rail';
+			var SCRIM_ID = 'sw-rep-rail-scrim';
+			// Focusable selector for the focus-trap (mirrors prefs-drawer.js).
+			var FOCUSABLE = [
+				'a[href]',
+				'button:not([disabled])',
+				'input:not([disabled])',
+				'select:not([disabled])',
+				'textarea:not([disabled])',
+				'[tabindex]:not([tabindex="-1"])'
+			].join(',');
+			var _opener = null;
+
+			function rail()  { return document.getElementById(RAIL_ID); }
+			function scrim() { return document.getElementById(SCRIM_ID); }
+			function isOpen() {
+				var r = rail();
+				return r ? r.classList.contains('sw-rep-rail--open') : false;
+			}
+			function triggers() {
+				return Array.prototype.slice.call(document.querySelectorAll('.sw-rep-rail-toggle'));
+			}
+
+			function open() {
+				var r = rail();
+				if (!r || isOpen()) return;
+				_opener = document.activeElement;
+				r.classList.add('sw-rep-rail--open');
+				var s = scrim();
+				if (s) s.classList.add('sw-rep-rail-scrim--visible');
+				triggers().forEach(function(t) { t.setAttribute('aria-expanded', 'true'); });
+				// Move focus into the drawer (the rail search input is the first
+				// focusable child) so the trap has a real anchor.
+				var focusable = r.querySelectorAll(FOCUSABLE);
+				if (focusable.length) focusable[0].focus();
+				// Scope the trap to the drawer element (prefs-drawer.js pattern): it
+				// only fires while focus is inside, and is removed symmetrically on
+				// close so it never persists while the drawer is shut.
+				r.addEventListener('keydown', onKeydown);
+			}
+
+			function close() {
+				var r = rail();
+				if (!r || !isOpen()) return;
+				r.classList.remove('sw-rep-rail--open');
+				var s = scrim();
+				if (s) s.classList.remove('sw-rep-rail-scrim--visible');
+				triggers().forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
+				r.removeEventListener('keydown', onKeydown);
+				if (_opener && typeof _opener.focus === 'function') { _opener.focus(); }
+				_opener = null;
+			}
+
+			function toggle() { if (isOpen()) { close(); } else { open(); } }
+
+			// Esc closes; Tab / Shift+Tab wrap focus within the open drawer so it
+			// cannot walk out into the pane controls obscured behind the scrim.
+			function onKeydown(ev) {
+				if (ev.key === 'Escape') { ev.preventDefault(); close(); return; }
+				if (ev.key !== 'Tab') return;
+				var r = rail();
+				if (!r) return;
+				var focusable = Array.prototype.slice.call(r.querySelectorAll(FOCUSABLE));
+				if (!focusable.length) { ev.preventDefault(); return; }
+				var first = focusable[0];
+				var last = focusable[focusable.length - 1];
+				if (ev.shiftKey) {
+					if (document.activeElement === first || !r.contains(document.activeElement)) {
+						ev.preventDefault();
+						last.focus();
+					}
+				} else {
+					if (document.activeElement === last || !r.contains(document.activeElement)) {
+						ev.preventDefault();
+						first.focus();
+					}
+				}
+			}
+
+			return { open: open, close: close, toggle: toggle };
+		})();
 	</script>
 }
