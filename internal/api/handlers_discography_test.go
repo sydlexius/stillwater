@@ -876,5 +876,293 @@ func TestHandleFetchDiscography_SlotReleasedAfterFetch(t *testing.T) {
 	}
 }
 
+// --- handleArtistDiscographyTab search/sort/order tests ---
+
+// multiAlbumNFO has three albums in NFO order: Nevermind (1991), In Utero (1993), Bleach (1989).
+// Chosen so title order (Bleach < In Utero < Nevermind) and year order (Bleach < Nevermind < In Utero)
+// both differ from NFO order, making sort-direction assertions unambiguous.
+const multiAlbumNFO = `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Nirvana</name>
+  <album>
+    <title>Nevermind</title>
+    <year>1991</year>
+  </album>
+  <album>
+    <title>In Utero</title>
+    <year>1993</year>
+  </album>
+  <album>
+    <title>Bleach</title>
+    <year>1989</year>
+  </album>
+</artist>
+`
+
+// discographyTabReq builds a GET request for the discography tab with optional query params.
+func discographyTabReq(t *testing.T, artistID, query string) *http.Request {
+	t.Helper()
+	url := "/artists/" + artistID + "/discography/tab"
+	if query != "" {
+		url += "?" + query
+	}
+	ctx := testI18nCtx(t, context.Background())
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req.SetPathValue("id", artistID)
+	return req
+}
+
+// setupMultiAlbumArtist creates an artist with multiAlbumNFO and returns it.
+func setupMultiAlbumArtist(t *testing.T, artistSvc *artist.Service) *artist.Artist {
+	t.Helper()
+	dir := writeArtistNFO(t, multiAlbumNFO)
+	a := &artist.Artist{Name: "Nirvana", Path: dir, NFOExists: true}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	return a
+}
+
+func TestHandleArtistDiscographyTab_Search_CaseInsensitiveMatch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// Lowercase search should match the mixed-case title "Nevermind".
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "search=neverm"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Nevermind") {
+		t.Errorf("body missing matched album Nevermind:\n%s", body)
+	}
+	// Non-matching albums must be absent.
+	if strings.Contains(body, "Bleach") {
+		t.Errorf("body unexpectedly contains Bleach (should be filtered out):\n%s", body)
+	}
+	if strings.Contains(body, "In Utero") {
+		t.Errorf("body unexpectedly contains In Utero (should be filtered out):\n%s", body)
+	}
+}
+
+func TestHandleArtistDiscographyTab_Search_UppercaseMatch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// Uppercase search should also match (case-insensitive).
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "search=BLEACH"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Bleach") {
+		t.Errorf("body missing matched album Bleach:\n%s", body)
+	}
+	if strings.Contains(body, "Nevermind") {
+		t.Errorf("body unexpectedly contains Nevermind:\n%s", body)
+	}
+}
+
+func TestHandleArtistDiscographyTab_Search_NoMatch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// A search term that matches nothing should yield the empty state.
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "search=xyzzy"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "Bleach") || strings.Contains(body, "Nevermind") || strings.Contains(body, "In Utero") {
+		t.Errorf("body should have no album results for non-matching search:\n%s", body)
+	}
+	if !strings.Contains(body, "No discography") {
+		t.Errorf("body missing empty-state text for no-match search:\n%s", body)
+	}
+}
+
+func TestHandleArtistDiscographyTab_SortTitle_Asc(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// sort=title&order=asc -> Bleach, In Utero, Nevermind
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "sort=title&order=asc"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	idxBleach := strings.Index(body, "Bleach")
+	idxInUtero := strings.Index(body, "In Utero")
+	idxNevermind := strings.Index(body, "Nevermind")
+	if idxBleach < 0 || idxInUtero < 0 || idxNevermind < 0 {
+		t.Fatalf("one or more album titles missing from body:\n%s", body)
+	}
+	if idxBleach >= idxInUtero || idxInUtero >= idxNevermind {
+		t.Errorf("title asc order wrong: Bleach@%d InUtero@%d Nevermind@%d", idxBleach, idxInUtero, idxNevermind)
+	}
+}
+
+func TestHandleArtistDiscographyTab_SortTitle_Desc(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// sort=title&order=desc -> Nevermind, In Utero, Bleach
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "sort=title&order=desc"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	idxBleach := strings.Index(body, "Bleach")
+	idxInUtero := strings.Index(body, "In Utero")
+	idxNevermind := strings.Index(body, "Nevermind")
+	if idxBleach < 0 || idxInUtero < 0 || idxNevermind < 0 {
+		t.Fatalf("one or more album titles missing from body:\n%s", body)
+	}
+	if idxNevermind >= idxInUtero || idxInUtero >= idxBleach {
+		t.Errorf("title desc order wrong: Nevermind@%d InUtero@%d Bleach@%d", idxNevermind, idxInUtero, idxBleach)
+	}
+}
+
+func TestHandleArtistDiscographyTab_SortYear_Asc(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// sort=year&order=asc -> Bleach(1989), Nevermind(1991), In Utero(1993)
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "sort=year&order=asc"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	idxBleach := strings.Index(body, "Bleach")
+	idxNevermind := strings.Index(body, "Nevermind")
+	idxInUtero := strings.Index(body, "In Utero")
+	if idxBleach < 0 || idxNevermind < 0 || idxInUtero < 0 {
+		t.Fatalf("one or more album titles missing from body:\n%s", body)
+	}
+	if idxBleach >= idxNevermind || idxNevermind >= idxInUtero {
+		t.Errorf("year asc order wrong: Bleach@%d Nevermind@%d InUtero@%d", idxBleach, idxNevermind, idxInUtero)
+	}
+}
+
+func TestHandleArtistDiscographyTab_SortYear_Desc(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// sort=year&order=desc -> In Utero(1993), Nevermind(1991), Bleach(1989)
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "sort=year&order=desc"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	idxBleach := strings.Index(body, "Bleach")
+	idxNevermind := strings.Index(body, "Nevermind")
+	idxInUtero := strings.Index(body, "In Utero")
+	if idxBleach < 0 || idxNevermind < 0 || idxInUtero < 0 {
+		t.Fatalf("one or more album titles missing from body:\n%s", body)
+	}
+	if idxInUtero >= idxNevermind || idxNevermind >= idxBleach {
+		t.Errorf("year desc order wrong: InUtero@%d Nevermind@%d Bleach@%d", idxInUtero, idxNevermind, idxBleach)
+	}
+}
+
+func TestHandleArtistDiscographyTab_DefaultParams(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// No query params: NFO order should be preserved (Nevermind, In Utero, Bleach).
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	// All three albums must be present.
+	for _, title := range []string{"Nevermind", "In Utero", "Bleach"} {
+		if !strings.Contains(body, title) {
+			t.Errorf("body missing album %q:\n%s", title, body)
+		}
+	}
+	// NFO order: Nevermind first, then In Utero, then Bleach.
+	idxNevermind := strings.Index(body, "Nevermind")
+	idxInUtero := strings.Index(body, "In Utero")
+	idxBleach := strings.Index(body, "Bleach")
+	if idxNevermind >= idxInUtero || idxInUtero >= idxBleach {
+		t.Errorf("default (NFO) order wrong: Nevermind@%d InUtero@%d Bleach@%d", idxNevermind, idxInUtero, idxBleach)
+	}
+}
+
+func TestHandleArtistDiscographyTab_UnknownOrderDefaultsAsc(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	a := setupMultiAlbumArtist(t, artistSvc)
+
+	// order=bogus should default to "asc" behavior for sort=title.
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "sort=title&order=bogus"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	idxBleach := strings.Index(body, "Bleach")
+	idxNevermind := strings.Index(body, "Nevermind")
+	if idxBleach < 0 || idxNevermind < 0 {
+		t.Fatalf("album titles missing from body:\n%s", body)
+	}
+	// With asc (the default fallback), Bleach < Nevermind alphabetically.
+	if idxBleach > idxNevermind {
+		t.Errorf("unknown order should default to asc; Bleach@%d Nevermind@%d", idxBleach, idxNevermind)
+	}
+}
+
+func TestHandleArtistDiscographyTab_SortYear_EmptyYearSortsLast(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+
+	// NFO with one album missing its year; sort=year&order=asc -> dated entries first.
+	nfo := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Test</name>
+  <album><title>Undated</title></album>
+  <album><title>Dated</title><year>2000</year></album>
+</artist>
+`
+	dir := writeArtistNFO(t, nfo)
+	a := &artist.Artist{Name: "Test", Path: dir, NFOExists: true}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r.handleArtistDiscographyTab(w, discographyTabReq(t, a.ID, "sort=year&order=asc"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	idxDated := strings.Index(body, "Dated")
+	idxUndated := strings.Index(body, "Undated")
+	if idxDated < 0 || idxUndated < 0 {
+		t.Fatalf("album titles missing from body:\n%s", body)
+	}
+	// Dated (year=2000, key "2000") should appear before Undated (key "9999").
+	if idxDated > idxUndated {
+		t.Errorf("empty year should sort after dated entries: Dated@%d Undated@%d", idxDated, idxUndated)
+	}
+}
+
 // Silence unused import for errors package (used in tests that may be added).
 var _ = errors.New
