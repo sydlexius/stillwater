@@ -29,7 +29,11 @@
   var COLLAPSED_KEY = "artist_detail_collapsed_sections";
 
   function csrfToken() {
-    return typeof window.swCsrfToken === "function" ? window.swCsrfToken() : "";
+    if (typeof window.swCsrfToken !== "function") {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; preference saves will 403");
+      return "";
+    }
+    return window.swCsrfToken();
   }
 
   function basePath() {

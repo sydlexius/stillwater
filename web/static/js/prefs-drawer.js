@@ -249,7 +249,9 @@
         btn.setAttribute('aria-pressed', wasCollapsed ? 'false' : 'true');
         var cName = row.querySelector('.sw-prefs-layout-name');
         var cSectionName = cName ? cName.textContent.trim() : '';
-        btn.setAttribute('aria-label', wasCollapsed ? ('Collapse ' + cSectionName + ' section') : ('Expand ' + cSectionName + ' section'));
+        btn.setAttribute('aria-label', wasCollapsed
+          ? (btn.getAttribute('data-label-collapse') || ('Collapse ' + cSectionName))
+          : (btn.getAttribute('data-label-expand')   || ('Expand '   + cSectionName)));
         saveSectionOrder();
       }
     });
@@ -549,6 +551,9 @@
         var row = rowMap[id];
         if (!row) { return; }
         row.setAttribute('data-hidden', 'false');
+        row.setAttribute('data-collapsed', 'false');
+        var collapseBtn = row.querySelector('[data-action="toggle-collapsed"]');
+        if (collapseBtn) { collapseBtn.setAttribute('aria-pressed', 'false'); }
         list.appendChild(row);
       });
     }
@@ -558,7 +563,7 @@
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify({ artist_detail_section_order: DEFAULT_ORDER, artist_detail_hidden_sections: [] })
+      body: JSON.stringify({ artist_detail_section_order: DEFAULT_ORDER, artist_detail_hidden_sections: [], artist_detail_collapsed_sections: [] })
     }).then(function (r) {
       if (r.ok && window.showSuccessToast) { showSuccessToast('Layout reset'); }
       else if (!r.ok && window.showToast) { showToast('Failed to reset layout'); }

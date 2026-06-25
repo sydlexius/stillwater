@@ -2586,7 +2586,7 @@
   "prefs.font_size.xx_large": "XX-Large",
   "prefs.letter_spacing.help": "Tracks the whole UI. Extra Wide (0.05em) is a dyslexia-readability aid; Wide is 0.025em.",
   "prefs.language.help": "Sets the interface language. Biography language fallbacks are configured separately in Settings.",
-  "prefs.artist_layout.help": "Drag the handle or use the arrows to reorder; the eye toggles a section's visibility. Hero and action bar are fixed page chrome and are not in the list.",
+  "prefs.artist_layout.help": "Drag the handle or use the arrows to reorder; the eye toggles a section's visibility. Hero and action bar are fixed page chrome and are not in the list. The chevron collapses or expands a section in place.",
 
   "prefs.artist_layout.description": "Drag to reorder sections. Toggle the eye to show or hide.",
   "prefs.artist_layout.list_label": "Artist detail sections",

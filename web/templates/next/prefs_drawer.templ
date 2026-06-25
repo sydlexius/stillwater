@@ -661,6 +661,8 @@ templ prefsLayoutRow(sec layoutSection, hidden, collapsed bool) {
 					aria-label={ t(ctx, "prefs.artist_layout.collapse_section") + " " + t(ctx, sec.Label) }
 				}
 				aria-pressed={ strconv.FormatBool(collapsed) }
+				data-label-collapse={ t(ctx, "prefs.artist_layout.collapse_section") + " " + t(ctx, sec.Label) }
+				data-label-expand={ t(ctx, "prefs.artist_layout.expand_section") + " " + t(ctx, sec.Label) }
 			>
 				<svg class="h-3.5 w-3.5 sw-prefs-layout-chevron-icon" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"></path>
