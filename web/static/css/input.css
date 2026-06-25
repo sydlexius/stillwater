@@ -2678,19 +2678,25 @@ html[data-motion="on"] main {
   color: var(--sw-content-text-secondary) !important;
 }
 
+/* next/ no-solid-blue-fill rule: Next/Done uses the blue-halo motif (the same
+ * persistent ring used on active kind tabs / Edit-Done), never a solid fill.
+ * A ghost surface with the two-ring halo (2px #3b82f6 inner + 5px soft glow)
+ * matches the sanctioned next/ blue-only-as-halo pattern and works on both
+ * light and dark popover backgrounds without a solid color fill. */
 .sw-tour-popover button.driver-popover-next-btn {
-  background: var(--sw-accent-primary) !important;
-  color: #ffffff !important;
-  border: none !important;
+  background: transparent !important;
+  color: var(--sw-content-text) !important;
+  border: 1px solid rgba(0, 0, 0, 0.18) !important;
   border-radius: var(--sw-radius-sm) !important;
   font-size: 14px !important;
   font-weight: 600 !important;
   padding: 6px 16px !important;
   cursor: pointer !important;
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22) !important;
 }
 
 .sw-tour-popover button.driver-popover-next-btn:hover {
-  opacity: 0.9 !important;
+  background: rgba(0, 0, 0, 0.05) !important;
 }
 
 .sw-tour-popover button.driver-popover-prev-btn {
@@ -2718,6 +2724,16 @@ html[data-motion="on"] main {
 .dark .sw-tour-popover {
   background: rgb(30, 41, 59) !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Dark-mode border tint for the halo Next/Done button (light border reads dark
+ * on the dark popover surface; swap to a light-alpha border instead). */
+.dark .sw-tour-popover button.driver-popover-next-btn {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.dark .sw-tour-popover button.driver-popover-next-btn:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
 }
 
 .dark .sw-tour-popover .driver-popover-arrow {

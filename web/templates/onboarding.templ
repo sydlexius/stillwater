@@ -949,8 +949,21 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						if (!resp.ok) throw new Error('HTTP ' + resp.status);
 						if (typeof window.markTourPending === 'function') {
 							window.markTourPending();
+						} else {
+							// onboarding.templ does not load tour.js, so
+							// markTourPending is undefined here -- write the same
+							// keys it would so the tour auto-starts post-OOBE.
+							// Key names mirror tour.js TOUR_COMPLETED_KEY / TOUR_PENDING_KEY.
+							try {
+								localStorage.removeItem('tour.completed');
+								localStorage.setItem('tour.pending', 'true');
+							} catch (e) {
+								console.error('[onboarding] tour-pending fallback: localStorage unavailable', e);
+							}
 						}
-						window.location.href = basePath + '/artists';
+						// Redirect to the vNext Dashboard -- the guided tour
+						// auto-starts there from the SCREEN_STEPS.dashboard group.
+						window.location.href = basePath + '/next/';
 					}).catch(function() {
 						alert('Failed to complete setup. Please try again.');
 					});

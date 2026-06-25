@@ -357,6 +357,55 @@ func TestLayoutI18nJSON(t *testing.T) {
 	}
 }
 
+// TestTourStepsJSON verifies the tour steps i18n blob is valid JSON carrying
+// all expected step keys -- including the vNext Dashboard (dash_*) and
+// Artist Detail (detail_*) keys added in #1794.
+func TestTourStepsJSON(t *testing.T) {
+	ctx := testCtx(t)
+
+	raw := tourStepsJSON(ctx)
+	var m map[string]string
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("tourStepsJSON did not produce valid JSON: %v", err)
+	}
+
+	wantKeys := []string{
+		// Shared sidebar step.
+		"nav_title", "nav_desc",
+		// Artists page steps.
+		"scan_title", "scan_desc",
+		"search_title", "search_desc",
+		"filter_title", "filter_desc",
+		"sort_title", "sort_desc",
+		"view_title", "view_desc",
+		"artist_list_title", "artist_list_desc",
+		// vNext Dashboard steps (added in #1794).
+		"dash_search_title", "dash_search_desc",
+		"dash_run_rules_title", "dash_run_rules_desc",
+		"dash_queue_title", "dash_queue_desc",
+		"dash_activity_title", "dash_activity_desc",
+		// vNext Artist Detail steps (added in #1794).
+		"detail_hero_title", "detail_hero_desc",
+		"detail_refresh_title", "detail_refresh_desc",
+		"detail_findings_title", "detail_findings_desc",
+	}
+	for _, k := range wantKeys {
+		v, ok := m[k]
+		if !ok {
+			t.Errorf("tourStepsJSON missing key %q", k)
+			continue
+		}
+		// t() returns the raw key when no translation is found, so any
+		// non-empty value here means the map entry was populated.
+		if strings.TrimSpace(v) == "" {
+			t.Errorf("tourStepsJSON key %q has an empty value", k)
+		}
+	}
+	if len(m) != len(wantKeys) {
+		t.Errorf("tourStepsJSON has %d keys, want %d", len(m), len(wantKeys))
+	}
+}
+
 // TestRoundTripOverlapHTML verifies the round-trip overlap sentence embeds
 // the styled name/path spans and HTML-escapes user-supplied values so they
 // cannot inject markup.

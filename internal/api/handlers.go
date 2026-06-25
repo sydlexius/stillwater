@@ -139,9 +139,12 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 
 	// Include Driver.js tour assets only on pages where the guided tour
 	// may auto-start, be manually triggered, or set a pending flag.
+	// The /next/* prefix covers the Dashboard, Artists, and Artist Detail
+	// screens which all have SCREEN_STEPS groups in tour.js.
 	switch {
 	case path == "/artists" || path == "/artists/",
 		strings.HasPrefix(path, "/guide"),
+		strings.HasPrefix(path, "/next"),
 		strings.HasPrefix(path, "/onboarding"),
 		strings.HasPrefix(path, "/setup/wizard"):
 		a.DriverJS = r.basePath + r.staticAssets.Path("/js/driver.min.js")
