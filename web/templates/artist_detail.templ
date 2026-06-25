@@ -1200,8 +1200,26 @@ templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, s
 
 // platformStateHeaderBadges renders the connection name, type badge, and lock
 // badge shared by both PlatformStateCard and PlatformStateCardReadOnly.
+// The platform SVG logo is rendered before the connection name; emby uses a
+// PNG variant with srcset for multi-DPI displays.
 templ platformStateHeaderBadges(conn *connection.Connection, state *connection.ArtistPlatformState) {
 	<div class="flex items-center gap-2">
+		if logoSrcSet(conn.Type) != "" {
+			<img
+				src={ logoSrc(conn.Type) }
+				srcset={ logoSrcSet(conn.Type) }
+				alt=""
+				aria-hidden="true"
+				class="h-5 w-5 shrink-0"
+			/>
+		} else {
+			<img
+				src={ logoSrc(conn.Type) }
+				alt=""
+				aria-hidden="true"
+				class="h-5 w-5 shrink-0"
+			/>
+		}
 		<span class="font-medium text-sm">{ conn.Name }</span>
 		<span
 			class={
