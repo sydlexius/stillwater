@@ -299,6 +299,60 @@ func TestSafeClientWithAllowedHosts_ReachesLoopbackServer(t *testing.T) {
 	}
 }
 
+// TestSafeClientWithAllowedHosts_RedirectToNonAllowlistedPrivateBlocked locks
+// the single most security-load-bearing property of the mirror-allowlist
+// feature: the exemption is per-dial-host, so an allowlisted host that issues a
+// 3xx redirect to a DIFFERENT, non-allowlisted private host must STILL be
+// blocked on the followed hop. http.Client re-enters DialContext for each
+// redirect, so the new host literal ("10.0.0.1") -- absent from the allow-set --
+// gets the full SSRF guard and is rejected with ErrPrivateAddress.
+//
+// Determinism: the allowlisted hop is a real loopback httptest server (reached
+// because its 127.0.0.1 host is allowlisted -- that is also the positive
+// control: if the exemption failed, the FIRST hop would be blocked instead).
+// The redirect target is a hardcoded RFC 1918 literal, so the block fires at the
+// guard before any I/O and needs no name resolution or second listener.
+func TestSafeClientWithAllowedHosts_RedirectToNonAllowlistedPrivateBlocked(t *testing.T) {
+	t.Parallel()
+
+	// privateTarget is a fixed RFC 1918 address that is NOT allowlisted. The
+	// guard must reject the redirect that points here.
+	const privateTarget = "http://10.0.0.1/internal-secret"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, privateTarget, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	host, _, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+
+	// Allowlist ONLY the first hop's host (loopback). The redirect target host
+	// (10.0.0.1) is deliberately absent from the allow-set.
+	client := httpsafe.SafeClientWithAllowedHosts(2*time.Second, host)
+	req, err := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("redirect to non-allowlisted private host was followed; want ErrPrivateAddress")
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("redirect to 10.0.0.1: err = %v; want ErrPrivateAddress (per-hop guard, only first host allowlisted)", err)
+	}
+	// The block must be on the redirect target, not the allowlisted first hop --
+	// proves the first (allowlisted) hop was actually reached and the guard fired
+	// on the SECOND, non-allowlisted host.
+	if !strings.Contains(err.Error(), "10.0.0.1") {
+		t.Fatalf("err = %v; want the block to name the redirect target 10.0.0.1 (first hop must have succeeded)", err)
+	}
+}
+
 // TestSafeTransport_DNSRebinding verifies protection against the DNS-rebinding
 // attack where a hostname resolves to a safe address during a pre-check but to a
 // private address when the actual connection is made.
