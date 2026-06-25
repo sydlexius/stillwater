@@ -11,6 +11,34 @@
 
     var TOUR_COMPLETED_KEY = 'tour.completed';
     var TOUR_PENDING_KEY = 'tour.pending';
+    // TOUR_CHAIN_KEY stores the next screen name to run during an in-progress
+    // OOBE chain. Set after a screen's group completes; cleared when the chain
+    // exhausts or the user dismisses mid-way.
+    var TOUR_CHAIN_KEY = 'tour.chain';
+
+    // OOBE_CHAIN defines the ordered sequence of screens shown at the end of
+    // first-run onboarding. artistDetail is excluded: the chain cannot
+    // auto-navigate to a specific artist, so that screen is manual-only.
+    var OOBE_CHAIN = ['dashboard', 'artists'];
+
+    // CHAIN_URLS maps a chain screen name to the vNext URL to navigate to when
+    // advancing the chain.
+    var CHAIN_URLS = {
+        dashboard: '/next/',
+        artists: '/next/artists'
+    };
+
+    // nextChainScreen returns the screen name that follows currentScreen in
+    // OOBE_CHAIN, or null when currentScreen is the last entry.
+    function nextChainScreen(currentScreen) {
+        var idx = OOBE_CHAIN.indexOf(currentScreen);
+        if (idx === -1 || idx === OOBE_CHAIN.length - 1) { return null; }
+        return OOBE_CHAIN[idx + 1];
+    }
+
+    function getChainNext() { return localStorage.getItem(TOUR_CHAIN_KEY); }
+    function setChainNext(screen) { localStorage.setItem(TOUR_CHAIN_KEY, screen); }
+    function clearChain() { localStorage.removeItem(TOUR_CHAIN_KEY); }
 
     // Read translated tour strings from the JSON data island rendered by
     // layout.templ. Falls back to an empty object when the element is absent
@@ -59,9 +87,15 @@
     }
 
     function shouldAutoStart() {
-        if (localStorage.getItem(TOUR_PENDING_KEY) !== 'true') { return false; }
+        // Never fire once onboarding is marked done.
         if (localStorage.getItem(TOUR_COMPLETED_KEY)) { return false; }
         var screen = getCurrentScreen();
+        // Chain-in-progress: a prior chain step navigated here. The pending
+        // key may already be gone (cleared by markComplete); rely on the chain
+        // key alone as the authority for subsequent chain screens.
+        if (getChainNext() === screen) { return true; }
+        // OOBE initial trigger: pending marker set, on a chain-eligible screen.
+        if (localStorage.getItem(TOUR_PENDING_KEY) !== 'true') { return false; }
         // Auto-start on the vNext Dashboard (new OOBE entry point) or the
         // stable Artists page (legacy entry point for the guided tour).
         return screen === 'dashboard' || screen === 'artists';
@@ -222,8 +256,10 @@
     };
 
     // createTour builds a Driver.js tour instance with the given steps.
-    // The optional onDestroy callback is invoked when the tour is closed or
-    // completed (before Driver.js tears down its overlay).
+    // The optional onDestroy(completed) callback is invoked when the tour is
+    // closed or completed (before Driver.js tears down its overlay).
+    // completed is true when the user was on the final step at destroy time
+    // (clicked Done or X on the last step); false when dismissed early.
     function createTour(steps, onDestroy) {
         var driverConstructor = window.driver.js.driver;
         return driverConstructor({
@@ -240,7 +276,10 @@
             onDestroyStarted: function(_, __, opts) {
                 // Called when the user clicks X, the overlay, or Done on the
                 // last step. Driver.js does not bind `this`, so use opts.driver.
-                if (typeof onDestroy === 'function') { onDestroy(); }
+                // hasNextStep() is false only when the active step is the last one
+                // (user finished or closed on the final step -- treat as complete).
+                var completed = !!(opts && opts.driver && !opts.driver.hasNextStep());
+                if (typeof onDestroy === 'function') { onDestroy(completed); }
                 if (opts && opts.driver && typeof opts.driver.destroy === 'function') {
                     opts.driver.destroy();
                 }
@@ -340,20 +379,64 @@
         artistTour.drive();
     };
 
-    // Auto-start: triggered by the OOBE wizard redirect. Waits for the first
-    // step's target element to appear (HTMX may still be hydrating), then
-    // allows a brief grace period before driving.
+    // Auto-start: triggered by the OOBE wizard redirect or an in-progress chain
+    // navigation. Runs the current screen's step group, then either advances
+    // to the next chain screen or marks onboarding complete.
+    //
+    // Chain order: dashboard -> artists (artistDetail excluded -- the chain
+    // cannot auto-navigate to a specific artist record).
+    //
+    // Completion vs. dismissal: onDestroy receives a boolean that is true when
+    // the driver was on its final step at teardown. Dismissed mid-chain ->
+    // end onboarding immediately (markComplete + clearChain, no navigation).
     if (shouldAutoStart()) {
-        var screen = getCurrentScreen();
-        var autoSteps = (screen === 'dashboard')
-            ? SCREEN_STEPS.dashboard()
-            : SCREEN_STEPS.artists();
-        var firstSelector = autoSteps[0].element;
-        waitForTourTargets(firstSelector, 3000).then(function() {
-            setTimeout(function() {
-                var tour = createTour(autoSteps, markComplete);
-                tour.drive();
-            }, 500);
-        });
+        var autoScreen = getCurrentScreen();
+        if (!SCREEN_STEPS[autoScreen]) {
+            // Unrecognised screen -- end onboarding gracefully rather than hanging.
+            console.error('tour: auto-start on unrecognised screen: ' + autoScreen);
+            markComplete();
+            clearChain();
+        } else {
+            var autoSteps = SCREEN_STEPS[autoScreen]();
+            var autoFirstSelector = autoSteps[0].element;
+            waitForTourTargets(autoFirstSelector, 3000).then(function() {
+                setTimeout(function() {
+                    // Guard: if the first target never appeared (timeout elapsed),
+                    // skip this chain entry rather than driving a broken tour.
+                    if (!document.querySelector(autoFirstSelector)) {
+                        console.warn('tour: first target absent after wait, skipping screen: ' + autoScreen);
+                        var skipNext = nextChainScreen(autoScreen);
+                        if (skipNext) {
+                            setChainNext(skipNext);
+                            window.location.href = basePath() + CHAIN_URLS[skipNext];
+                        } else {
+                            markComplete();
+                            clearChain();
+                        }
+                        return;
+                    }
+
+                    var autoTour = createTour(autoSteps, function(completed) {
+                        if (!completed) {
+                            // User dismissed mid-chain -- end onboarding immediately.
+                            markComplete();
+                            clearChain();
+                            return;
+                        }
+                        // Group completed. Advance to the next chain screen or finish.
+                        var chainNext = nextChainScreen(autoScreen);
+                        if (chainNext) {
+                            setChainNext(chainNext);
+                            window.location.href = basePath() + CHAIN_URLS[chainNext];
+                        } else {
+                            // Chain exhausted -- onboarding complete.
+                            markComplete();
+                            clearChain();
+                        }
+                    });
+                    autoTour.drive();
+                }, 500);
+            });
+        }
     }
 })();
