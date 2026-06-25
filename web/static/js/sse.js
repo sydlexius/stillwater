@@ -231,10 +231,14 @@
     // write actually failed. The connection name + error class come from
     // the publish.busNotifier event data; an optional artist context lets
     // the message disambiguate when N platforms failed for the same item.
-    if (eventType === "connection.push_failed" && !isReplayDuplicate && typeof window.showToast === "function") {
+    // When error_class is "auth_failed" and a connection_id is present, a
+    // Re-authenticate button deep-links the operator to the connection edit
+    // panel so they can update the API key without navigating manually.
+    if (eventType === "connection.push_failed" && !isReplayDuplicate) {
       var conn = (data && data.connection) || "";
       var errClass = (data && data.error_class) || "push failed";
       var artist = (data && data.artist_name) || "";
+      var connId = (data && data.connection_id) || "";
       var message;
       if (conn && artist) {
         message = conn + ": " + errClass + " (artist: " + artist + ")";
@@ -243,10 +247,15 @@
       } else {
         message = errClass;
       }
-      // window.showToast is the error-level toast (red); see layout.templ
-      // (enqueueToast('error', ...)) -- it is the right surface for a
-      // failed platform write.
-      window.showToast(message);
+      if (errClass === "auth_failed" && connId && typeof window.showAuthFailedToast === "function") {
+        // Auth failure: actionable toast with Re-authenticate deep-link.
+        window.showAuthFailedToast(message, connId);
+      } else if (typeof window.showToast === "function") {
+        // window.showToast is the error-level toast (red); see layout.templ
+        // (enqueueToast('error', ...)) -- it is the right surface for a
+        // failed platform write.
+        window.showToast(message);
+      }
     }
 
     // Always dispatch the CustomEvent so the ProgressPill (and any

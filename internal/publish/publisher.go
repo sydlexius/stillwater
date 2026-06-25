@@ -80,8 +80,12 @@ type Deps struct {
 // produce N failures for the same artist if N platforms reject the
 // write); operation is a stable slug ("lock_toggle" today) so future push
 // surfaces can be filtered without churning the interface.
+//
+// connectionID is the connection UUID included in the SSE payload so the
+// frontend can deep-link to the edit panel for that specific connection
+// (e.g. /settings?tab=connections&edit=<id>&focus=api_key for auth failures).
 type Notifier interface {
-	NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation string, err error)
+	NotifyConnectionPushFailed(connectionID, connectionName, errorClass, artistID, artistName, operation string, err error)
 }
 
 // Publisher coordinates writing artist metadata and images to local files
@@ -176,11 +180,14 @@ func (p *Publisher) SetImageWriteGate(gate ImageWriteGate) {
 // configured Notifier when one is wired up. Safe to call with a nil
 // publisher field; tests that omit Notifier still exercise the error
 // path through the logger without panicking on the nil check.
-func (p *Publisher) notifyPushFailure(connectionName, errorClass, artistID, artistName, operation string, err error) {
+// connectionID is the raw UUID for the deep-link affordance; it may be ""
+// when the connection record could not be loaded (the toast falls back to
+// name-only display in that case).
+func (p *Publisher) notifyPushFailure(connectionID, connectionName, errorClass, artistID, artistName, operation string, err error) {
 	if p == nil || p.notifier == nil {
 		return
 	}
-	p.notifier.NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation, err)
+	p.notifier.NotifyConnectionPushFailed(connectionID, connectionName, errorClass, artistID, artistName, operation, err)
 }
 
 // ResolveLockNFO returns the effective <lockdata> value for the artist: the
@@ -349,7 +356,7 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 				// translates the lookup failure into a stable category;
 				// connErr is always non-nil in this branch so the empty
 				// return from classifyPushErr is unreachable here.
-				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
+				p.notifyPushFailure(pid.ConnectionID, shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
 				return
 			}
 			if !conn.Enabled {
@@ -371,7 +378,7 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 				// the raw transport / status error into the stable taxonomy
 				// (auth_failed, timeout, server_error, ...) so the toast
 				// tells the operator what kind of intervention is needed.
-				p.notifyPushFailure(conn.Name, classifyPushErr(pushErr), a.ID, artistDisplayName(a), pushOpMetadataPush, pushErr)
+				p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(pushErr), a.ID, artistDisplayName(a), pushOpMetadataPush, pushErr)
 			} else {
 				p.logger.Info("auto-push: metadata pushed",
 					slog.String("artist_id", a.ID),
@@ -443,7 +450,7 @@ func (p *Publisher) PushLocks(ctx context.Context, a *artist.Artist) {
 				if class == "" {
 					class = "rejected"
 				}
-				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), class, a.ID, artistDisplayName(a), pushOpLockToggle, connErr)
+				p.notifyPushFailure(pid.ConnectionID, shortConnLabel(pid.ConnectionID), class, a.ID, artistDisplayName(a), pushOpLockToggle, connErr)
 				return
 			}
 			if !conn.Enabled {
@@ -471,7 +478,7 @@ func (p *Publisher) PushLocks(ctx context.Context, a *artist.Artist) {
 				// unreachable, ...) so the toast tells the operator what
 				// kind of intervention is needed instead of collapsing
 				// every failure to "lock sync failed".
-				p.notifyPushFailure(conn.Name, classifyPushErr(err), a.ID, artistDisplayName(a), pushOpLockToggle, err)
+				p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(err), a.ID, artistDisplayName(a), pushOpLockToggle, err)
 			} else {
 				p.logger.Info("lock-push: locks synchronized",
 					slog.String("artist_id", a.ID),
@@ -575,7 +582,7 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		if connErr != nil {
 			p.logger.Error("getting connection for image sync", "connection_id", pid.ConnectionID, "error", connErr)
 			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
-			p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
+			p.notifyPushFailure(pid.ConnectionID, shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
 			continue
 		}
 		if !conn.Enabled || conn.Status != "ok" || (respectWriteGate && !conn.GetFeatureImageWrite()) {
@@ -593,7 +600,7 @@ func (p *Publisher) syncImageToPlatforms(ctx context.Context, a *artist.Artist, 
 		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
 			p.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
 			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type)))
-			p.notifyPushFailure(conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
 		}
 	}
 	return warnings
@@ -656,7 +663,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 				slog.String("connection_id", pid.ConnectionID),
 				slog.String("error", connErr.Error()))
 			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
-			p.notifyPushFailure(shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
+			p.notifyPushFailure(pid.ConnectionID, shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpImageUpload, connErr)
 			continue
 		}
 		if !conn.Enabled || conn.Status != "ok" || (respectWriteGate && !conn.GetFeatureImageWrite()) {
@@ -696,7 +703,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 					slog.Int("index", i),
 					slog.String("error", uploadErr.Error()))
 				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", conn.Name, conn.Type, i)))
-				p.notifyPushFailure(conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
+				p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(uploadErr), a.ID, artistDisplayName(a), pushOpImageUpload, uploadErr)
 			}
 		}
 	}

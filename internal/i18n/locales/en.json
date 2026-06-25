@@ -1344,6 +1344,8 @@
   "notifications.grouped_aria": "Grouped notification count",
   "notifications.repeated_aria": "Notification repeated %d times",
   "notifications.title": "Rule Violation Notifications",
+  "notifications.reauth": "Re-authenticate",
+  "notifications.reauth_aria": "Update API key for this connection",
   "notifications.undo_failed": "Undo failed: %s",
   "notifications.undo_fix_aria": "Undo applied fix",
   "onboarding.add_library": "Add Library",

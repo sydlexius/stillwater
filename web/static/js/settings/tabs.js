@@ -25,9 +25,35 @@
   // bottom) doubles as the "already loaded" flag.
   if (window.swSettingsTabs) return;
 
+  // openConnectionEditPanel opens the edit panel for a connection and optionally
+  // focuses the API key field. Called after switching to the connections tab when
+  // edit= and/or focus= URL params are present (e.g. from the Re-authenticate toast).
+  function openConnectionEditPanel(editId, focusField) {
+    var panel = document.getElementById('edit-panel-' + editId);
+    if (panel) {
+      panel.classList.remove('hidden');
+      var btn = document.querySelector('[aria-controls="edit-panel-' + editId + '"]');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+    }
+    var row = document.getElementById('connection-' + editId);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (focusField === 'api_key') {
+      var keyInput = document.getElementById('edit-api-key-' + editId);
+      if (keyInput) {
+        // Defer focus until paint so the panel is visible before focus fires.
+        setTimeout(function() { keyInput.focus(); }, 50);
+      } else {
+        console.error('[tabs.js] openConnectionEditPanel: #edit-api-key-' + editId + ' not found');
+      }
+    }
+  }
+
   function switchSettingsTab(event, el) {
     event.preventDefault();
     var tabId = el.dataset.tab;
+    var params = new URLSearchParams(window.location.search);
+    var editId = params.get('edit');
+    var focusField = params.get('focus');
     document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
       p.classList.add('hidden');
     });
@@ -46,10 +72,20 @@
     el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
     var settingsTabMeta = document.querySelector('meta[name="htmx-base-path"]');
     var settingsTabBp = settingsTabMeta ? settingsTabMeta.content : '';
-    history.pushState(null, '', settingsTabBp + '/settings?tab=' + encodeURIComponent(tabId));
+    // Build URL: preserve edit=/focus= only when staying on connections tab.
+    var qs = '?tab=' + encodeURIComponent(tabId);
+    if (tabId === 'connections' && editId) {
+      qs += '&edit=' + encodeURIComponent(editId);
+      if (focusField) qs += '&focus=' + encodeURIComponent(focusField);
+    }
+    history.pushState(null, '', settingsTabBp + '/settings' + qs);
     // Refresh cache stats when switching to the General tab.
     if (tabId === 'general' && typeof loadCacheStats === 'function') {
       loadCacheStats();
+    }
+    // Open connection edit panel when deep-link params are present.
+    if (tabId === 'connections' && editId) {
+      openConnectionEditPanel(editId, focusField);
     }
     // Pause log polling when leaving Logs tab, resume when entering.
     var logViewer = document.getElementById('log-viewer');
@@ -111,6 +147,12 @@
     if (tabId === 'general' && typeof loadCacheStats === 'function') {
       loadCacheStats();
     }
+    // Open connection edit panel when deep-link params are present.
+    var editId = params.get('edit');
+    var focusField = params.get('focus');
+    if (tabId === 'connections' && editId) {
+      openConnectionEditPanel(editId, focusField);
+    }
     var logViewer = document.getElementById('log-viewer');
     if (logViewer && typeof logViewerState !== 'undefined') {
       if (tabId === 'logs') {
@@ -128,6 +170,20 @@
           if (typeof htmx !== 'undefined') htmx.process(logViewer);
         }
       }
+    }
+  });
+
+  // On initial page load, open the edit panel if edit= param is present and
+  // the connections tab is the active tab (server-rendered visible). This
+  // handles the deep-link from the Re-authenticate toast navigating to
+  // /settings?tab=connections&edit=<id>&focus=api_key.
+  document.addEventListener('DOMContentLoaded', function() {
+    var params = new URLSearchParams(window.location.search);
+    var tabId = params.get('tab');
+    var editId = params.get('edit');
+    var focusField = params.get('focus');
+    if (tabId === 'connections' && editId) {
+      openConnectionEditPanel(editId, focusField);
     }
   });
 

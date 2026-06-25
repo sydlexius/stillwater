@@ -274,6 +274,8 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					i18n.request_timeout = i18n.request_timeout || 'Request timed out. Please try again.';
 					i18n.unknown         = i18n.unknown         || 'Unknown error';
 					i18n.confirm         = i18n.confirm         || 'Confirm';
+					i18n.reauth          = i18n.reauth          || 'Re-authenticate';
+					i18n.reauth_aria     = i18n.reauth_aria     || 'Update API key for this connection';
 					var MAX_VISIBLE = 3;
 					var GROUP_WINDOW_MS = 2000;
 
@@ -592,6 +594,79 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						}
 						visible.push(entry);
 						container.appendChild(toast);
+					};
+					// showAuthFailedToast: error-level toast with a Re-authenticate button
+					// that deep-links the operator to the connection edit panel for the
+					// specific failing connection. Mirrors showUndoToast in structure.
+					// Used by sse.js when connection.push_failed arrives with
+					// error_class=auth_failed and a connection_id is present.
+					window.showAuthFailedToast = function(msg, connectionId) {
+						var container = getContainer();
+						if (!container) return;
+
+						var toast = document.createElement('div');
+						toast.className = 'bg-white dark:bg-gray-800 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border-l-4 border-l-red-500 text-red-800 dark:text-red-200 transition-opacity duration-300';
+
+						var msgSpan = document.createElement('span');
+						msgSpan.className = 'flex-1';
+						msgSpan.textContent = msg;
+
+						var reauthBtn = document.createElement('button');
+						reauthBtn.type = 'button';
+						reauthBtn.className = 'ml-auto rounded border border-red-400/50 px-2 py-0.5 text-xs font-semibold hover:bg-white/10 transition-colors';
+						reauthBtn.textContent = i18n.reauth;
+						reauthBtn.setAttribute('aria-label', i18n.reauth_aria);
+
+						var closeBtn = document.createElement('button');
+						closeBtn.type = 'button';
+						closeBtn.className = 'font-bold opacity-70 hover:opacity-100 shrink-0';
+						closeBtn.textContent = '×';
+						closeBtn.setAttribute('aria-label', i18n.close_aria);
+
+						toast.appendChild(msgSpan);
+						toast.appendChild(reauthBtn);
+						toast.appendChild(closeBtn);
+
+						var entry = {
+							el: toast,
+							type: 'error',
+							msg: msg,
+							count: 1,
+							countEl: null,
+							dismissTimer: null,
+							ticker: null,
+							removeTimeout: null,
+							createdAt: Date.now(),
+							autoDismissMs: 8000
+						};
+
+						reauthBtn.onclick = function() {
+							var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+							var bp = bpEl ? bpEl.content : '';
+							window.location.href = bp + '/settings?tab=connections&edit=' + encodeURIComponent(connectionId) + '&focus=api_key';
+						};
+
+						function dismissNow() {
+							dismissToast(entry);
+						}
+						closeBtn.onclick = dismissNow;
+
+						// Auth-failed toasts are time-sensitive; bump oldest non-auth toast
+						// if at capacity to ensure the operator sees it.
+						if (visible.length >= MAX_VISIBLE) {
+							var idx = -1;
+							for (var i = 0; i < visible.length; i++) {
+								if (visible[i].type !== 'error') {
+									idx = i;
+									break;
+								}
+							}
+							if (idx === -1) idx = 0;
+							dismissToast(visible[idx]);
+						}
+						visible.push(entry);
+						container.appendChild(toast);
+						entry.dismissTimer = setTimeout(dismissNow, 8000);
 					};
 					// Expose the i18n map so other inline scripts (htmx event
 					// listeners, confirm modal) can reuse the same translations
