@@ -21,10 +21,8 @@ templ SectionProviders(data ArtistDetailPageData) {
 		data-sw-section-label={ t(ctx, "artist.platform_state") }
 		aria-labelledby="next-providers-heading"
 	>
-		<div class="head">
-			<h2 id="next-providers-heading">{ t(ctx, "artist.platform_state") }</h2>
-		</div>
-		<div class="body">
+		@sectionHead("next-providers-heading", "next-providers-body", "", t(ctx, "artist.platform_state"), isCollapsed("providers", data.Collapsed))
+		<div id="next-providers-body" class="body" hidden?={ isCollapsed("providers", data.Collapsed) }>
 			if len(d.Connections) > 0 {
 				<div class="space-y-4">
 					for _, conn := range d.Connections {
@@ -64,10 +62,8 @@ templ SectionDiscography(data ArtistDetailPageData) {
 		data-sw-section-label={ t(ctx, "artist.tab_discography") }
 		aria-labelledby="next-discography-heading"
 	>
-		<div class="head">
-			<h2 id="next-discography-heading">{ t(ctx, "artist.tab_discography") }</h2>
-		</div>
-		<div class="body space-y-3">
+		@sectionHead("next-discography-heading", "next-discography-body", "", t(ctx, "artist.tab_discography"), isCollapsed("discography", data.Collapsed))
+		<div id="next-discography-body" class="body space-y-3" hidden?={ isCollapsed("discography", data.Collapsed) }>
 			<!-- Toolbar: search + sort. Kept outside the HTMX swap target so it
 			     persists across search/sort requests. Hidden sort/order inputs
 			     carry state for hx-include on the search input. -->
@@ -190,10 +186,8 @@ templ SectionDebug(data ArtistDetailPageData) {
 		data-sw-section-label={ t(ctx, "artist.tab_debug") }
 		aria-labelledby="next-debug-heading"
 	>
-		<div class="head">
-			<h2 id="next-debug-heading">{ t(ctx, "artist.tab_debug") }</h2>
-		</div>
-		<div class="body space-y-4">
+		@sectionHead("next-debug-heading", "next-debug-body", "", t(ctx, "artist.tab_debug"), isCollapsed("debug", data.Collapsed))
+		<div id="next-debug-body" class="body space-y-4" hidden?={ isCollapsed("debug", data.Collapsed) }>
 			for _, conn := range d.Connections {
 				if conn.Type == "emby" || conn.Type == "jellyfin" {
 					<div

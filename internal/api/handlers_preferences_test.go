@@ -363,6 +363,91 @@ func TestPreferenceLayoutKey_GetOneAndPutOne(t *testing.T) {
 	}
 }
 
+// TestIsArtistDetailLayoutKey verifies the new collapsed-sections key joins the
+// existing order/hidden keys as a recognized layout key (so it is validated via
+// validateSectionList) and that unrelated keys are not misclassified.
+func TestIsArtistDetailLayoutKey(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{
+		PrefArtistDetailSectionOrder,
+		PrefArtistDetailHiddenSections,
+		PrefArtistDetailCollapsedSections,
+	} {
+		if !isArtistDetailLayoutKey(key) {
+			t.Errorf("isArtistDetailLayoutKey(%q) = false, want true", key)
+		}
+	}
+	for _, key := range []string{PrefTheme, PrefPageSize, "artist_detail_collapsed", ""} {
+		if isArtistDetailLayoutKey(key) {
+			t.Errorf("isArtistDetailLayoutKey(%q) = true, want false", key)
+		}
+	}
+}
+
+// TestPreferenceCollapsedSections_RoundTrip exercises the new
+// artist_detail_collapsed_sections key end to end: default empty array, a valid
+// PUT canonicalized on read, a rejected non-array value, and a PATCH that merges
+// it alongside the order key without disturbing it.
+func TestPreferenceCollapsedSections_RoundTrip(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	getOne := func(key string) (int, string) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+key, nil)
+		req.SetPathValue("key", key)
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handleGetPreference(w, req)
+		var resp map[string]string
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		return w.Code, resp["value"]
+	}
+	putOne := func(key, value string) int {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+key, strings.NewReader(`{"value":`+value+`}`))
+		req.SetPathValue("key", key)
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handleUpdatePreference(w, req)
+		return w.Code
+	}
+
+	// No stored row -> default empty array.
+	if code, val := getOne(PrefArtistDetailCollapsedSections); code != http.StatusOK || val != "[]" {
+		t.Errorf("GET-one no-row = (%d,%q), want (200,\"[]\")", code, val)
+	}
+
+	// PUT a valid array, then GET reflects canonical form.
+	if code := putOne(PrefArtistDetailCollapsedSections, `"[\"debug\",\"identifiers\"]"`); code != http.StatusOK {
+		t.Fatalf("PUT valid collapsed array expected 200, got %d", code)
+	}
+	if code, val := getOne(PrefArtistDetailCollapsedSections); code != http.StatusOK || val != `["debug","identifiers"]` {
+		t.Errorf("GET-one stored = (%d,%q), want (200,[\"debug\",\"identifiers\"])", code, val)
+	}
+
+	// Non-array value -> 400.
+	if code := putOne(PrefArtistDetailCollapsedSections, `"notanarray"`); code != http.StatusBadRequest {
+		t.Errorf("PUT invalid collapsed value expected 400, got %d", code)
+	}
+
+	// PATCH merges collapsed alongside order without disturbing the order key.
+	patch := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/preferences", strings.NewReader(body))
+		req = withUserCtx(req, userID)
+		w := httptest.NewRecorder()
+		r.handlePatchPreferences(w, req)
+		return w
+	}
+	if w := patch(`{"artist_detail_section_order":["metadata","artwork"],"artist_detail_collapsed_sections":["artwork"]}`); w.Code != http.StatusOK {
+		t.Fatalf("PATCH expected 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if _, val := getOne(PrefArtistDetailSectionOrder); val != `["metadata","artwork"]` {
+		t.Errorf("order after PATCH = %q, want [\"metadata\",\"artwork\"]", val)
+	}
+	if _, val := getOne(PrefArtistDetailCollapsedSections); val != `["artwork"]` {
+		t.Errorf("collapsed after PATCH = %q, want [\"artwork\"]", val)
+	}
+}
+
 func TestPatchPreferences_MergesAndValidates(t *testing.T) {
 	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)

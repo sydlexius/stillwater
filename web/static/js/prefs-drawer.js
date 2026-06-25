@@ -165,6 +165,8 @@
     var order  = rows.map(function (r) { return r.getAttribute('data-section-id'); });
     var hidden = rows.filter(function (r) { return r.getAttribute('data-hidden') === 'true'; })
                      .map(function (r) { return r.getAttribute('data-section-id'); });
+    var collapsed = rows.filter(function (r) { return r.getAttribute('data-collapsed') === 'true'; })
+                        .map(function (r) { return r.getAttribute('data-section-id'); });
 
     var bp = (function () {
       var el = document.querySelector('meta[name="htmx-base-path"]');
@@ -177,8 +179,9 @@
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       body: JSON.stringify({
-        artist_detail_section_order:   order,
-        artist_detail_hidden_sections: hidden
+        artist_detail_section_order:      order,
+        artist_detail_hidden_sections:    hidden,
+        artist_detail_collapsed_sections: collapsed
       })
     }).then(function (r) {
       if (!r.ok && window.console) {
@@ -239,6 +242,14 @@
         if (icon) {
           icon.removeAttribute('aria-label');
         }
+        saveSectionOrder();
+      } else if (action === 'toggle-collapsed') {
+        var wasCollapsed = row.getAttribute('data-collapsed') === 'true';
+        row.setAttribute('data-collapsed', wasCollapsed ? 'false' : 'true');
+        btn.setAttribute('aria-pressed', wasCollapsed ? 'false' : 'true');
+        var cName = row.querySelector('.sw-prefs-layout-name');
+        var cSectionName = cName ? cName.textContent.trim() : '';
+        btn.setAttribute('aria-label', wasCollapsed ? ('Collapse ' + cSectionName + ' section') : ('Expand ' + cSectionName + ' section'));
         saveSectionOrder();
       }
     });

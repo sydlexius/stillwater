@@ -2593,6 +2593,8 @@
   "prefs.artist_layout.reset": "Reset layout",
   "prefs.artist_layout.hide_section": "Hide",
   "prefs.artist_layout.show_section": "Show",
+  "prefs.artist_layout.collapse_section": "Collapse",
+  "prefs.artist_layout.expand_section": "Expand",
   "prefs.artist_layout.move_up_aria": "Move %s up",
   "prefs.artist_layout.move_down_aria": "Move %s down",
 

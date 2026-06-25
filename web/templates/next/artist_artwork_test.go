@@ -14,7 +14,7 @@ import (
 func renderArtworkSection(t *testing.T, data *templates.ArtistDetailData) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := ArtworkSection(data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtworkSection(data, false).Render(nextTestCtx(t), &buf); err != nil {
 		t.Fatalf("render artwork section: %v", err)
 	}
 	return buf.String()

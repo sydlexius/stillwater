@@ -32,6 +32,7 @@ type AssetPaths struct {
 	ArtistViolationsSyncJS  string
 	ArtistMembersApplyJS    string
 	ArtistFieldLockSaveJS   string
+	ArtistSectionLayoutJS   string
 	// Artist-detail artwork modules (M55 #1336, 4B). Extracted from the inline
 	// lightbox / fanart-manage scripts; ArtworkModalJS drives the next/
 	// Manage-artwork modal.
@@ -220,6 +221,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	<script src={ assets.ArtistViolationsSyncJS }></script>
 	<script src={ assets.ArtistMembersApplyJS }></script>
 	<script src={ assets.ArtistFieldLockSaveJS }></script>
+	<script src={ assets.ArtistSectionLayoutJS }></script>
 	<script src={ assets.ArtistLightboxJS }></script>
 	<script src={ assets.ArtistFanartManageJS }></script>
 	<script src={ assets.ArtistArtworkModalJS }></script>

@@ -62,6 +62,8 @@ func (r *Router) assets() templates.AssetPaths {
 		ArtistViolationsSyncJS:  r.basePath + r.staticAssets.Path("/js/artist-detail/violations-sync.js"),
 		ArtistMembersApplyJS:    r.basePath + r.staticAssets.Path("/js/artist-detail/members-apply.js"),
 		ArtistFieldLockSaveJS:   r.basePath + r.staticAssets.Path("/js/artist-detail/field-lock-save.js"),
+		// Artist-detail collapsible/sortable sections (M55 #2065).
+		ArtistSectionLayoutJS: r.basePath + r.staticAssets.Path("/js/artist-detail/section-layout.js"),
 		// Artist-detail artwork modules (M55 #1336, 4B).
 		ArtistLightboxJS:     r.basePath + r.staticAssets.Path("/js/artist-detail/lightbox.js"),
 		ArtistFanartManageJS: r.basePath + r.staticAssets.Path("/js/artist-detail/fanart-manage.js"),

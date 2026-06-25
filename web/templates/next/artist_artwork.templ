@@ -20,7 +20,7 @@ import (
 // carry data-sw-artwork-open + data-artwork-kind; artwork-modal.js (Part 3)
 // binds them via delegation, so this section renders and tests independently of
 // the modal JS.
-templ ArtworkSection(data *templates.ArtistDetailData) {
+templ ArtworkSection(data *templates.ArtistDetailData, collapsed bool) {
 	{{ a := &data.Artist }}
 	<section
 		id={ "next-artwork-" + a.ID }
@@ -29,8 +29,7 @@ templ ArtworkSection(data *templates.ArtistDetailData) {
 		data-sw-section-label={ t(ctx, "artist.section_artwork") }
 		aria-labelledby="next-artwork-heading"
 	>
-		<div class="head">
-			<h2 id="next-artwork-heading">{ t(ctx, "artist.section_artwork") }</h2>
+		@sectionHead("next-artwork-heading", "next-artwork-body", "", t(ctx, "artist.section_artwork"), collapsed) {
 			<div class="meta">
 				// Single "Manage artwork" trigger (maintainer: one lane, not per-tile).
 				// Styled to match the hero Refresh / Edit / Actions toolbar buttons.
@@ -45,8 +44,8 @@ templ ArtworkSection(data *templates.ArtistDetailData) {
 					{ t(ctx, "artist.artwork.manage") }
 				</button>
 			</div>
-		</div>
-		<div class="body space-y-5">
+		}
+		<div id="next-artwork-body" class="body space-y-5" hidden?={ collapsed }>
 			// Identity images: each on its OWN ROW, shown at native aspect ratio
 			// (height-normalized; no forced crop/squash/letterbox) -- maintainer.
 			<div class="space-y-4">
