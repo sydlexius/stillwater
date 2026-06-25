@@ -1,0 +1,25 @@
+meta {
+  name: Metadata Completeness Report
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{apiBase}}/reports/metadata-completeness
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is an object", function() {
+    expect(res.body).to.be.an("object");
+  });
+}

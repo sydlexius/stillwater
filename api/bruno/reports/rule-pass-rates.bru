@@ -1,0 +1,26 @@
+meta {
+  name: Rule Pass Rates Report
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{apiBase}}/reports/rule-pass-rates
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response has rates array", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.rates).to.be.an("array");
+  });
+}

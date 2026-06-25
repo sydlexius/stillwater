@@ -1,0 +1,29 @@
+meta {
+  name: Dismiss All Foreign Files
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{apiBase}}/foreign-files/dismiss
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Bulk-allowlists all currently-detected foreign files. On an empty CI
+  database the loop processes zero entries and renders an empty table
+  fragment (text/html). Always returns 200; admin role required and the CI
+  session is admin. No JSON body needed -- the endpoint reads the DB, not
+  the request body.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

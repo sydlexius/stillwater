@@ -1,0 +1,28 @@
+meta {
+  name: Duplicates Count Badge
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{apiBase}}/reports/duplicates/count
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Returns an HTML sidebar count pill (text/html). On an empty CI database
+  the response body is empty (count <= 0 produces no output) but the status
+  is always 200. Admin role required; the CI session is authenticated as
+  admin so no 403 is expected.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

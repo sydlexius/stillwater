@@ -1,0 +1,27 @@
+meta {
+  name: List Foreign-File Allowlist
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{apiBase}}/foreign-file-allowlist
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response has items array and count", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.items).to.be.an("array");
+    expect(res.body.count).to.be.a("number");
+  });
+}

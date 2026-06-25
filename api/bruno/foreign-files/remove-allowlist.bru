@@ -1,0 +1,34 @@
+meta {
+  name: Remove Foreign-File Allowlist Entry (Sentinel 404)
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{apiBase}}/foreign-file-allowlist/{{allowlistId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  allowlistId is a sentinel UUID that is guaranteed not to exist in the
+  CI foreign-file allowlist. The handler calls RemoveAllowlist which
+  returns ErrNotFound for a missing entry, yielding a deterministic 404
+  with an error envelope. Exercises the route and its error path without
+  requiring real allowlist data.
+}
+
+tests {
+  test("returns 404 for non-existent sentinel allowlist entry", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope is present", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
+  });
+}

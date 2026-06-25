@@ -1,0 +1,27 @@
+meta {
+  name: Health Report by Library
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{apiBase}}/reports/health/by-library
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is an object with libraries and overall keys", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.libraries).to.be.an("array");
+    expect(res.body.overall).to.be.an("object");
+  });
+}
