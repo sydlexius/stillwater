@@ -1,0 +1,26 @@
+meta {
+  name: Get Platform Summary
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{apiBase}}/connections/{{connectionId}}/platform-summary
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 404 for sentinel connectionId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports connection not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("connection not found");
+  });
+}
