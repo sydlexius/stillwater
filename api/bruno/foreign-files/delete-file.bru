@@ -1,0 +1,34 @@
+meta {
+  name: Delete Foreign File from Disk (Sentinel 404)
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{apiBase}}/foreign-files/{{foreignFileId}}/file
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  foreignFileId is a sentinel UUID that is guaranteed not to exist in the
+  CI foreign-file ledger. The handler calls GetByID before attempting the
+  disk delete, so a missing row yields a deterministic 404 with an error
+  envelope. Exercises the route and its error path without touching the
+  filesystem or requiring real foreign-file data.
+}
+
+tests {
+  test("returns 404 for non-existent sentinel foreign-file row", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope is present", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
+  });
+}

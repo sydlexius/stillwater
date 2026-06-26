@@ -1,0 +1,33 @@
+meta {
+  name: Revert History Entry (Sentinel 404)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/history/{{undoId}}/revert
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  undoId is the sentinel UUID (00000000-...-0006) that is guaranteed not to
+  exist in the CI history ledger. The handler looks up the change record
+  before reverting, so a non-existent change yields a deterministic 404 with
+  an error envelope. Exercises the route without requiring real history data.
+}
+
+tests {
+  test("returns 404 for non-existent sentinel history entry", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope is present", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
+  });
+}

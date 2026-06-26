@@ -1,0 +1,28 @@
+meta {
+  name: Get Conflict Banner
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/config/conflict-banner
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Returns the conflict-banner HTML fragment (text/html). When no conflicts
+  are detected the response body is the empty-state banner; when the
+  conflict detector is not configured the handler emits 204 No Content.
+  Either way the route is reachable and the status is 2xx.
+}
+
+tests {
+  test("returns 2xx", function() {
+    expect(res.status).to.be.oneOf([200, 204]);
+  });
+}

@@ -1,0 +1,33 @@
+meta {
+  name: Artist History (Sentinel 404)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/history
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  artistId is the all-zeros sentinel UUID that is guaranteed not to exist in
+  the CI database. The handler verifies the artist exists before returning
+  history, so a non-existent artist yields a deterministic 404 with an error
+  envelope. This exercises the route without requiring seeded artist data.
+}
+
+tests {
+  test("returns 404 for non-existent sentinel artist", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope is present", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
+  });
+}

@@ -1,0 +1,32 @@
+meta {
+  name: Compliance Report Export (CSV)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{apiBase}}/reports/compliance/export
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Streams a CSV download (Content-Disposition: attachment; filename="compliance-report.csv").
+  On an empty CI database the CSV contains only the header row. The route is
+  reachable and always returns 200; the body is text/csv, not JSON, so no
+  JSON shape assertions are made.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("Content-Disposition is a CSV attachment", function() {
+    expect(res.headers['content-disposition']).to.match(/^attachment;.*filename="compliance-report\.csv"/i);
+  });
+}
