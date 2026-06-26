@@ -43,7 +43,7 @@ type PreferenceDef struct {
 // Intentionally omitted (complex keys that cannot be represented as a flat
 // key/default/allowed-values table):
 //   - metadata_languages: JSON-array of BCP 47 tags, structural validation
-//   - artist_detail_section_order, artist_detail_hidden_sections: free-form JSON arrays
+//   - artist_detail_section_order, artist_detail_hidden_sections, artist_detail_collapsed_sections: free-form JSON arrays
 //   - suppress_confirm_*: dynamically created per-action keys
 func PreferenceRegistry() []PreferenceDef {
 	result := make([]PreferenceDef, 0, len(preferenceDefaults)+2)

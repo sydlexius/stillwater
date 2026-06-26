@@ -3570,6 +3570,104 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
   padding: 12px 16px;
 }
 
+/* ==========================================================================
+ * Collapsible + sortable section chrome (M55 #2065).
+ *
+ * Each reorderable section's .head is a SortableJS drag target: a left grip
+ * (.sw-section-drag-handle, matching prefsLayoutRow) plus a disclosure button
+ * nested in the heading (WAI-ARIA accordion pattern) whose chevron rotates off
+ * aria-expanded to fold the body. Per the next/ UX binding, blue appears ONLY
+ * as the focus halo box-shadow on the toggle, never as a fill.
+ * ========================================================================== */
+.sw-next-artist-detail .sw-section-head > h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  line-height: 1.2;
+}
+.sw-next-artist-detail .sw-section-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--swd-ink-3);
+  cursor: grab;
+  opacity: 0.55;
+  transition: opacity 120ms ease, color 120ms ease;
+  /* Let the pointer drive the drag rather than the browser's native scroll. */
+  touch-action: none;
+}
+.sw-next-artist-detail .sw-section-head:hover .sw-section-drag-handle,
+.sw-next-artist-detail .sw-section-drag-handle:hover {
+  opacity: 1;
+  color: var(--swd-ink-2);
+}
+.sw-next-artist-detail .sw-section-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Disclosure button fills the heading so the whole title row is the click
+ * target. No fill / no border; transparent and inherits the h2 type. */
+.sw-next-artist-detail .sw-section-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.sw-next-artist-detail .sw-section-collapse-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.22);
+}
+.sw-next-artist-detail .sw-section-chevron {
+  flex: 0 0 auto;
+  color: var(--swd-ink-3);
+  transition: transform 160ms ease;
+}
+.sw-next-artist-detail .sw-section-collapse-btn[aria-expanded="false"] .sw-section-chevron {
+  transform: rotate(-90deg);
+}
+.sw-next-artist-detail .sw-section-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* SortableJS drag feedback (ghostClass / chosenClass from section-layout.js). */
+.sw-next-artist-detail .sw-section-ghost {
+  opacity: 0.4;
+}
+.sw-next-artist-detail .sw-section-chosen {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Prefs-drawer collapse toggle chevron mirrors the page chevron rotation. */
+.sw-prefs-layout-collapse-btn .sw-prefs-layout-chevron-icon {
+  transition: transform 160ms ease;
+}
+.sw-prefs-layout-collapse-btn[aria-pressed="true"] .sw-prefs-layout-chevron-icon {
+  transform: rotate(-90deg);
+}
+
+/* Reduced motion: the chevron rotation is the only animated transform; the grip
+ * hover fade is also gated so the affordance is steady. Drag still works (the
+ * handle stays visible) -- only the transitions are removed. */
+@media (prefers-reduced-motion: reduce) {
+  .sw-next-artist-detail .sw-section-drag-handle,
+  .sw-next-artist-detail .sw-section-chevron,
+  .sw-prefs-layout-collapse-btn .sw-prefs-layout-chevron-icon {
+    transition: none;
+  }
+}
+
 /* (2) Hero: restrained dark card, NOT a fanart-dominated band. Three columns:
  * portrait (thumb/logo) | meta (pills, name, summary bar) | actions column. */
 .sw-next-artist-detail .sw-next-hero .body {
@@ -4004,7 +4102,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
  * their own, so they inherit the root letter-spacing the Spacing preference
  * sets. The LOCKED values (prototyped live with the maintainer):
  *   hero name   1.875rem / 700 / sans, tracking -0.01em, line-height 1.15
- *   section h2  0.875rem / 600 / sans
+ *   section h2  1rem / 600 / sans
  *   eyebrow     0.75rem  / 600 / sans, uppercase, tracking 0.07em
  *   field label 0.75rem  / 500 / sans, uppercase, tracking 0.06em
  *   value + bio 0.875rem / 400 / sans, line-height 1.6, muted (mirror)
@@ -4012,7 +4110,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
  * Muted ink mirrors the biography treatment: gray-500 (light) / gray-400 (dark). */
 .sw-next-artist-detail {
   --sw-ad-font-hero: 1.875rem;
-  --sw-ad-font-section: 0.875rem;
+  --sw-ad-font-section: 1rem;
   --sw-ad-font-body: 0.875rem;
   --sw-ad-font-meta: max(0.75rem, 10px);
   --sw-ad-lh-hero: 1.15;
@@ -4027,7 +4125,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 }
 
 /* Section title (the shared next/ chrome .head h2 lands 14px/600 for the
- * dashboard; here it steps to the LOCKED 0.875rem section role and binds to the
+ * dashboard; here it steps to the LOCKED 1rem section role and binds to the
  * sans family). Scoped to next/ so the dashboard's title stays at its own size. */
 .sw-next-artist-detail .sw-dash-card > .head h2 {
   font-family: var(--sw-font-sans);
@@ -4257,10 +4355,6 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   color: var(--swd-ink-2);
 }
 
-/* De-emphasized Identifiers card (design: last + quiet by default). */
-.sw-next-artist-detail .sw-next-identifiers .head h2 {
-  color: var(--swd-ink-3);
-}
 
 /* Read view is clean: label | value | finding-chip ONLY. Every per-field action
  * (edit / lock / fetch / clear) is gated behind Edit mode (UAT 4A). In the read

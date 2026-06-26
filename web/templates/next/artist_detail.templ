@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/web/components"
@@ -13,13 +14,22 @@ import (
 // ArtistDetailPageData is the render input for the next/ artist-detail page
 // (M55 #1336, 4A). Detail carries the shared data both channels render; the
 // neighbor ids drive the hero's h/l prev/next-artist shortcuts; SectionOrder /
-// Hidden drive section reorder/visibility (nil = default order, nothing hidden).
+// Hidden / Collapsed drive section reorder/visibility/collapsed-state (nil =
+// default order, nothing hidden, nothing collapsed) per #1774/#2065.
 type ArtistDetailPageData struct {
 	Detail       templates.ArtistDetailData
 	PrevArtistID string
 	NextArtistID string
 	SectionOrder []string
 	Hidden       []string
+	Collapsed    []string
+}
+
+// isCollapsed reports whether sectionID is in the collapsed list. Mirrors
+// isHiddenSection (prefs_drawer.templ); used to seed the section bodies'
+// initial hidden state and the disclosure button's aria-expanded.
+func isCollapsed(sectionID string, collapsed []string) bool {
+	return slices.Contains(collapsed, sectionID)
 }
 
 // defaultSectionOrder is the design's section taxonomy (section 3). Hero is
@@ -85,31 +95,38 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 		>
 			@artistStickyHeader(assets, data)
 			@artistHero(assets, data)
-			for _, section := range orderedSections(data.SectionOrder, data.Hidden) {
-				switch section {
-					case "metadata":
-						@artistMetadataSection(&data.Detail)
-					case "artwork":
-						@ArtworkSection(&data.Detail)
-					case "findings":
-						@artistFindingsSection(&data.Detail)
-					case "providers":
-						@SectionProviders(data)
-					case "discography":
-						@SectionDiscography(data)
-					case "debug":
-						// Conditional: only render when the debug setting is on AND at least one
-						// Emby/Jellyfin connection exists (mirrors the stable-channel gate:
-						// ShowPlatformDebug && HasDebugConnection). Keeping "debug" in
-						// defaultSectionOrder lets it slot back into the user's chosen position
-						// without reflow when the gate opens.
-						if data.Detail.ShowPlatformDebug && data.Detail.HasDebugConnection {
-							@SectionDebug(data)
-						}
-					case "identifiers":
-						@artistIdentifiersSection(&data.Detail)
+			// Reorderable region (#2065): SortableJS (section-layout.js) mounts on
+			// [data-sw-sortable-section] and drags its direct-child <section>s by the
+			// .sw-section-drag-handle. The hero + sticky header stay outside so they
+			// are never reorderable. space-y-4 keeps the inter-card rhythm the outer
+			// container would otherwise give these as direct children.
+			<div class="space-y-4" data-sw-sortable-section>
+				for _, section := range orderedSections(data.SectionOrder, data.Hidden) {
+					switch section {
+						case "metadata":
+							@artistMetadataSection(&data.Detail, isCollapsed("metadata", data.Collapsed))
+						case "artwork":
+							@ArtworkSection(&data.Detail, isCollapsed("artwork", data.Collapsed))
+						case "findings":
+							@artistFindingsSection(&data.Detail, isCollapsed("findings", data.Collapsed))
+						case "providers":
+							@SectionProviders(data)
+						case "discography":
+							@SectionDiscography(data)
+						case "debug":
+							// Conditional: only render when the debug setting is on AND at least one
+							// Emby/Jellyfin connection exists (mirrors the stable-channel gate:
+							// ShowPlatformDebug && HasDebugConnection). Keeping "debug" in
+							// defaultSectionOrder lets it slot back into the user's chosen position
+							// without reflow when the gate opens.
+							if data.Detail.ShowPlatformDebug && data.Detail.HasDebugConnection {
+								@SectionDebug(data)
+							}
+						case "identifiers":
+							@artistIdentifiersSection(&data.Detail, isCollapsed("identifiers", data.Collapsed))
+					}
 				}
-			}
+			</div>
 			// Keyboard legend: keycap-chip convention matching the dashboard (M55 #1336 UAT).
 			<p class="sw-list-tips" role="note">
 				<span class="font-medium">{ t(ctx, "artist.next.shortcuts.tip_label") }:</span>
@@ -598,17 +615,53 @@ templ artistActionItems(data ArtistDetailPageData, withShortcut bool) {
 	}
 }
 
+// sectionHead renders the shared collapsible/sortable header chrome for a next/
+// artist-detail section (#2065). It is the SortableJS drag target (the left
+// .sw-section-drag-handle grip, matching prefsLayoutRow) plus a disclosure
+// button nested in the heading (WAI-ARIA accordion pattern) that toggles the
+// section body. headingID stays the section's aria-labelledby target; bodyID is
+// the button's aria-controls target and must equal the body div's id. The
+// chevron rotates off aria-expanded (CSS), so the JS only flips that attribute.
+templ sectionHead(headingID, bodyID, headingClass, title string, collapsed bool) {
+	<div class="head sw-section-head">
+		<span class="sw-section-drag-handle" data-sw-section-handle aria-hidden="true">
+			<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+				<circle cx="9" cy="5" r="1.5"></circle><circle cx="15" cy="5" r="1.5"></circle>
+				<circle cx="9" cy="12" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle>
+				<circle cx="9" cy="19" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
+			</svg>
+		</span>
+		<h2 id={ headingID } if headingClass != "" { class={ headingClass } }>
+			<button
+				type="button"
+				class="sw-section-collapse-btn"
+				data-sw-section-toggle
+				aria-expanded={ strconv.FormatBool(!collapsed) }
+				aria-controls={ bodyID }
+			>
+				<svg class="sw-section-chevron h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"></path>
+				</svg>
+				<span class="sw-section-title-text">{ title }</span>
+			</button>
+		</h2>
+		// Trailing head content (e.g. the Artwork "Manage" trigger). Rendered after
+		// the disclosure button so the section's own toolbar keeps its place.
+		{ children... }
+	</div>
+}
+
 // artistMetadataSection is the tool-forward source-of-truth editor: the full v1
 // field set, each row reusing templates.FieldDisplay (per-field lock/edit/fetch/
 // clear visible by default). Gender is conditional on type via the preserved
 // gender-wrap OOB container. Genres/Styles/Moods are kept as distinct slice
 // fields. Aliases (shared list + add form) and Members (groups; shared section)
 // ride as sub-cards. This is a reconciliation EDITOR, not a multi-source picker.
-templ artistMetadataSection(data *templates.ArtistDetailData) {
+templ artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) {
 	{{ a := &data.Artist }}
 	<section id={ "next-metadata-" + a.ID } class="sw-dash-card" data-sw-section="metadata" data-sw-section-label={ t(ctx, "artist.tab_overview") } aria-labelledby="next-metadata-heading">
-		<div class="head"><h2 id="next-metadata-heading">{ t(ctx, "artist.details") }</h2></div>
-		<div class="body sw-next-meta-body">
+		@sectionHead("next-metadata-heading", "next-metadata-body", "", t(ctx, "artist.details"), collapsed)
+		<div id="next-metadata-body" class="body sw-next-meta-body" hidden?={ collapsed }>
 			// Reflowable layout (UAT 4A item 9): on wide cards the Details/Identity
 			// scalars + Members + Aliases + Tags occupy the LEFT column and the
 			// Biography fills the RIGHT column. It collapses to a single-column
@@ -732,7 +785,7 @@ templ artistAliasAddForm(artistID string) {
 // refreshes it on fix/dismiss/refresh/SSE. id="next-findings" is the hero's
 // scroll target and id="artist-violations-tab-{id}" is the sync module's fallback
 // swap target.
-templ artistFindingsSection(data *templates.ArtistDetailData) {
+templ artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) {
 	<section id="next-findings" class="sw-dash-card" data-sw-section="findings" data-sw-section-label={ t(ctx, "artist.other_findings") } aria-labelledby="next-findings-heading">
 		// OOB landing pad: the reused violations-tab fragment emits an
 		// hx-swap-oob targeting #violations-tab-badge (the stable tab pill). The
@@ -741,8 +794,8 @@ templ artistFindingsSection(data *templates.ArtistDetailData) {
 		// (dropping its class), so the badge is kept hidden by the OUTER wrapper
 		// (otherwise the swapped-in count, e.g. "2", leaks into the card corner).
 		<span class="hidden" aria-hidden="true"><span id="violations-tab-badge"></span></span>
-		<div class="head"><h2 id="next-findings-heading">{ t(ctx, "artist.other_findings") }</h2></div>
-		<div class="body">
+		@sectionHead("next-findings-heading", "next-findings-body", "", t(ctx, "artist.other_findings"), collapsed)
+		<div id="next-findings-body" class="body" hidden?={ collapsed }>
 			<div
 				id={ "artist-violations-tab-" + data.Artist.ID }
 				hx-get={ "/artists/" + data.Artist.ID + "/violations/tab" }
@@ -761,11 +814,11 @@ templ artistFindingsSection(data *templates.ArtistDetailData) {
 // routes provider-id fields through external links). MusicBrainz match-by-name
 // stays the existing identify flow in the hero kebab; no per-row match hooks in
 // 4A (section 13 decision).
-templ artistIdentifiersSection(data *templates.ArtistDetailData) {
+templ artistIdentifiersSection(data *templates.ArtistDetailData, collapsed bool) {
 	{{ a := &data.Artist }}
 	<section id={ "next-identifiers-" + a.ID } class="sw-dash-card sw-next-identifiers opacity-90" data-sw-section="identifiers" data-sw-section-label={ t(ctx, "artist.provider_ids") } aria-labelledby="next-ids-heading">
-		<div class="head"><h2 id="next-ids-heading" class="text-base">{ t(ctx, "artist.provider_ids") }</h2></div>
-		<div class="body">
+		@sectionHead("next-ids-heading", "next-ids-body", "", t(ctx, "artist.provider_ids"), collapsed)
+		<div id="next-ids-body" class="body" hidden?={ collapsed }>
 			<dl class="sw-next-fields">
 				@templates.FieldDisplay(a, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
 				@templates.FieldDisplay(a, "audiodb_id", data.FieldProviders["audiodb_id"])

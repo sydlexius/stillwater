@@ -372,3 +372,67 @@ func TestOrderedSections(t *testing.T) {
 		t.Errorf("hidden removal = %v, want %v", got, want)
 	}
 }
+
+// TestIsCollapsed verifies the collapsed-membership helper.
+func TestIsCollapsed(t *testing.T) {
+	t.Parallel()
+	collapsed := []string{"artwork", "debug"}
+	if !isCollapsed("artwork", collapsed) {
+		t.Error("isCollapsed(artwork) = false, want true")
+	}
+	if isCollapsed("metadata", collapsed) {
+		t.Error("isCollapsed(metadata) = true, want false")
+	}
+	if isCollapsed("artwork", nil) {
+		t.Error("isCollapsed with nil list = true, want false")
+	}
+}
+
+// TestArtistDetailPage_CollapsibleSortableChrome verifies the #2065 chrome: the
+// reorderable region wrapper, the per-section drag handle + disclosure button
+// with aria wiring, and that a collapsed section seeds aria-expanded="false" +
+// a hidden body while an expanded one does not.
+func TestArtistDetailPage_CollapsibleSortableChrome(t *testing.T) {
+	t.Parallel()
+	data := detailPageData(nil, nil)
+	// Collapse the metadata section; leave findings expanded.
+	data.Collapsed = []string{"metadata"}
+
+	var buf bytes.Buffer
+	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+
+	// The reorderable region wrapper SortableJS mounts on, plus the shared chrome.
+	for _, want := range []string{
+		`data-sw-sortable-section`,
+		`class="sw-section-drag-handle"`,
+		`data-sw-section-toggle`,
+		`class="sw-section-collapse-btn"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("page missing collapsible/sortable marker %q", want)
+		}
+	}
+
+	// Collapsed metadata section: disclosure collapsed + body hidden + aria-controls
+	// wired to the body id.
+	for _, want := range []string{
+		`aria-controls="next-metadata-body"`,
+		`<div id="next-metadata-body" class="body sw-next-meta-body" hidden`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("collapsed metadata section missing %q", want)
+		}
+	}
+	// The metadata toggle must be the collapsed one (aria-expanded="false"); the
+	// findings body must NOT be hidden (it is expanded).
+	if !strings.Contains(out, `aria-controls="next-metadata-body"`) ||
+		!strings.Contains(out, `aria-expanded="false"`) {
+		t.Error("collapsed metadata toggle should carry aria-expanded=false")
+	}
+	if strings.Contains(out, `<div id="next-findings-body" class="body" hidden`) {
+		t.Error("findings body should not be hidden when not collapsed")
+	}
+}

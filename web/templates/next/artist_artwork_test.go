@@ -2,6 +2,7 @@ package next
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 func renderArtworkSection(t *testing.T, data *templates.ArtistDetailData) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := ArtworkSection(data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtworkSection(data, false).Render(nextTestCtx(t), &buf); err != nil {
 		t.Fatalf("render artwork section: %v", err)
 	}
 	return buf.String()
@@ -232,6 +233,28 @@ func TestArtworkSection_MaintainerFeedback(t *testing.T) {
 	// #14: a populated carousel still exposes a persistent [+] add.
 	if !strings.Contains(out, `data-artwork-kind="backdrops"`) {
 		t.Error("populated Backdrops carousel should still expose a [+] add (data-artwork-kind=backdrops)")
+	}
+}
+
+// TestArtworkSection_CollapsedState verifies that rendering with collapsed=true
+// hides the section body via the HTML hidden attribute.
+func TestArtworkSection_CollapsedState(t *testing.T) {
+	t.Parallel()
+	data := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Collapsed"}}
+	var buf bytes.Buffer
+	if err := ArtworkSection(data, true).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render collapsed artwork section: %v", err)
+	}
+	out := buf.String()
+	// Narrow the assertion to the #next-artwork-body element's own opening tag,
+	// so a stray `hidden` attribute elsewhere in the markup can't produce a
+	// false pass (per CR/Codoki review of #2112).
+	bodyTag := regexp.MustCompile(`<[^>]*id="next-artwork-body"[^>]*>`).FindString(out)
+	if bodyTag == "" {
+		t.Fatal("collapsed section should still render the #next-artwork-body element")
+	}
+	if !strings.Contains(bodyTag, "hidden") {
+		t.Errorf("collapsed section body must carry the hidden attribute; got tag: %s", bodyTag)
 	}
 }
 

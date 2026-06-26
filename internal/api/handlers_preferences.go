@@ -46,13 +46,15 @@ const (
 	PrefMonoFont = "mono_font"
 	PrefKbdHints = "kbd_hints"
 
-	// PrefArtistDetailSectionOrder and PrefArtistDetailHiddenSections are the
-	// per-user artist-detail layout preferences (M55 #1336/#1339). Each stores a
-	// JSON array of section identifiers. They are not in preferenceDefaults
-	// because their value is a free-form ordered/visibility list rather than a
-	// fixed set of strings; validateSectionList enforces their shape.
-	PrefArtistDetailSectionOrder   = "artist_detail_section_order"
-	PrefArtistDetailHiddenSections = "artist_detail_hidden_sections"
+	// PrefArtistDetailSectionOrder, PrefArtistDetailHiddenSections, and
+	// PrefArtistDetailCollapsedSections are the per-user artist-detail layout
+	// preferences (M55 #1336/#1339/#2065). Each stores a JSON array of section
+	// identifiers. They are not in preferenceDefaults because their value is a
+	// free-form ordered/visibility/collapsed list rather than a fixed set of
+	// strings; validateSectionList enforces their shape.
+	PrefArtistDetailSectionOrder      = "artist_detail_section_order"
+	PrefArtistDetailHiddenSections    = "artist_detail_hidden_sections"
+	PrefArtistDetailCollapsedSections = "artist_detail_collapsed_sections"
 
 	// PrefShowPlatformDebug is the per-user toggle that enables the Debug tab on
 	// the artist detail page. Migrated from the global "show_platform_debug" app
@@ -158,7 +160,9 @@ const (
 // isArtistDetailLayoutKey reports whether key is one of the artist-detail layout
 // preferences, which store a JSON array of section identifiers.
 func isArtistDetailLayoutKey(key string) bool {
-	return key == PrefArtistDetailSectionOrder || key == PrefArtistDetailHiddenSections
+	return key == PrefArtistDetailSectionOrder ||
+		key == PrefArtistDetailHiddenSections ||
+		key == PrefArtistDetailCollapsedSections
 }
 
 // savedViewsMaxEntries, savedViewsMaxNameLen, and savedViewsMaxParamsLen bound
@@ -1063,8 +1067,9 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		// M55 #2060: per-user debug tab toggle.
 		ShowPlatformDebug: normalizeBoolPref(pref(PrefShowPlatformDebug), preferenceDefaults[PrefShowPlatformDebug].defaultValue),
 		// Artist detail layout: parse stored JSON arrays (nil = use default order).
-		ArtistDetailSectionOrder:   parseSectionList(stored[PrefArtistDetailSectionOrder]),
-		ArtistDetailHiddenSections: parseSectionList(stored[PrefArtistDetailHiddenSections]),
+		ArtistDetailSectionOrder:      parseSectionList(stored[PrefArtistDetailSectionOrder]),
+		ArtistDetailHiddenSections:    parseSectionList(stored[PrefArtistDetailHiddenSections]),
+		ArtistDetailCollapsedSections: parseSectionList(stored[PrefArtistDetailCollapsedSections]),
 	}
 
 	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))

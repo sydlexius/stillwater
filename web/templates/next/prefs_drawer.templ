@@ -508,7 +508,7 @@ templ prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.Prefere
 	</div>
 	<ul id="sw-prefs-layout-list" class="sw-prefs-layout-list" aria-label={ t(ctx, "prefs.artist_layout.list_label") }>
 		for _, sec := range orderedPrefsLayoutSections(prefs.ArtistDetailSectionOrder) {
-			@prefsLayoutRow(sec, isHiddenSection(sec.ID, prefs.ArtistDetailHiddenSections))
+			@prefsLayoutRow(sec, isHiddenSection(sec.ID, prefs.ArtistDetailHiddenSections), isHiddenSection(sec.ID, prefs.ArtistDetailCollapsedSections))
 		}
 	</ul>
 	<!-- Reset layout button -->
@@ -581,12 +581,15 @@ func isHiddenSection(id string, hidden []string) bool {
 	return false
 }
 
-// prefsLayoutRow renders one reorderable/hideable row in the artist layout card.
-templ prefsLayoutRow(sec layoutSection, hidden bool) {
+// prefsLayoutRow renders one reorderable/hideable/collapsible row in the artist
+// layout card. data-hidden / data-collapsed mirror the eye / chevron toggle
+// state; prefs-drawer.js reads both attributes when persisting the layout.
+templ prefsLayoutRow(sec layoutSection, hidden, collapsed bool) {
 	<li
 		class="sw-prefs-layout-row"
 		data-section-id={ sec.ID }
 		data-hidden={ strconv.FormatBool(hidden) }
+		data-collapsed={ strconv.FormatBool(collapsed) }
 	>
 		<!-- Drag handle -->
 		<span class="sw-prefs-layout-handle" aria-hidden="true">
@@ -644,6 +647,26 @@ templ prefsLayoutRow(sec layoutSection, hidden bool) {
 						<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"></path>
 					</svg>
 				}
+			</button>
+			<!-- Collapse toggle: chevron rotates off aria-pressed (CSS). aria-pressed
+			     true = section starts collapsed. prefs-drawer.js flips the attribute
+			     and the row's data-collapsed, then persists. -->
+			<button
+				type="button"
+				class="sw-prefs-layout-btn sw-prefs-layout-collapse-btn"
+				data-action="toggle-collapsed"
+				if collapsed {
+					aria-label={ t(ctx, "prefs.artist_layout.expand_section") + " " + t(ctx, sec.Label) }
+				} else {
+					aria-label={ t(ctx, "prefs.artist_layout.collapse_section") + " " + t(ctx, sec.Label) }
+				}
+				aria-pressed={ strconv.FormatBool(collapsed) }
+				data-label-collapse={ t(ctx, "prefs.artist_layout.collapse_section") + " " + t(ctx, sec.Label) }
+				data-label-expand={ t(ctx, "prefs.artist_layout.expand_section") + " " + t(ctx, sec.Label) }
+			>
+				<svg class="h-3.5 w-3.5 sw-prefs-layout-chevron-icon" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"></path>
+				</svg>
 			</button>
 		</span>
 	</li>

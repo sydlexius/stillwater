@@ -165,6 +165,8 @@
     var order  = rows.map(function (r) { return r.getAttribute('data-section-id'); });
     var hidden = rows.filter(function (r) { return r.getAttribute('data-hidden') === 'true'; })
                      .map(function (r) { return r.getAttribute('data-section-id'); });
+    var collapsed = rows.filter(function (r) { return r.getAttribute('data-collapsed') === 'true'; })
+                        .map(function (r) { return r.getAttribute('data-section-id'); });
 
     var bp = (function () {
       var el = document.querySelector('meta[name="htmx-base-path"]');
@@ -177,8 +179,9 @@
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       body: JSON.stringify({
-        artist_detail_section_order:   order,
-        artist_detail_hidden_sections: hidden
+        artist_detail_section_order:      order,
+        artist_detail_hidden_sections:    hidden,
+        artist_detail_collapsed_sections: collapsed
       })
     }).then(function (r) {
       if (!r.ok && window.console) {
@@ -239,6 +242,16 @@
         if (icon) {
           icon.removeAttribute('aria-label');
         }
+        saveSectionOrder();
+      } else if (action === 'toggle-collapsed') {
+        var wasCollapsed = row.getAttribute('data-collapsed') === 'true';
+        row.setAttribute('data-collapsed', wasCollapsed ? 'false' : 'true');
+        btn.setAttribute('aria-pressed', wasCollapsed ? 'false' : 'true');
+        var cName = row.querySelector('.sw-prefs-layout-name');
+        var cSectionName = cName ? cName.textContent.trim() : '';
+        btn.setAttribute('aria-label', wasCollapsed
+          ? (btn.getAttribute('data-label-collapse') || ('Collapse ' + cSectionName))
+          : (btn.getAttribute('data-label-expand')   || ('Expand '   + cSectionName)));
         saveSectionOrder();
       }
     });
@@ -538,6 +551,13 @@
         var row = rowMap[id];
         if (!row) { return; }
         row.setAttribute('data-hidden', 'false');
+        row.setAttribute('data-collapsed', 'false');
+        var collapseBtn = row.querySelector('[data-action="toggle-collapsed"]');
+        if (collapseBtn) {
+          collapseBtn.setAttribute('aria-pressed', 'false');
+          var clb = collapseBtn.getAttribute('data-label-collapse');
+          if (clb) { collapseBtn.setAttribute('aria-label', clb); }
+        }
         list.appendChild(row);
       });
     }
@@ -547,7 +567,7 @@
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify({ artist_detail_section_order: DEFAULT_ORDER, artist_detail_hidden_sections: [] })
+      body: JSON.stringify({ artist_detail_section_order: DEFAULT_ORDER, artist_detail_hidden_sections: [], artist_detail_collapsed_sections: [] })
     }).then(function (r) {
       if (r.ok && window.showSuccessToast) { showSuccessToast('Layout reset'); }
       else if (!r.ok && window.showToast) { showToast('Failed to reset layout'); }
@@ -682,6 +702,13 @@
           var row = rowMap[id];
           if (!row) { return; }
           row.setAttribute('data-hidden', 'false');
+          row.setAttribute('data-collapsed', 'false');
+          var collapseBtn = row.querySelector('[data-action="toggle-collapsed"]');
+          if (collapseBtn) {
+            collapseBtn.setAttribute('aria-pressed', 'false');
+            var clb = collapseBtn.getAttribute('data-label-collapse');
+            if (clb) { collapseBtn.setAttribute('aria-label', clb); }
+          }
           list.appendChild(row);
         });
       }
@@ -712,7 +739,8 @@
         kbd_hints:                      DEFAULTS.kbd_hints,
         language:                       DEFAULTS.language,
         artist_detail_section_order:    ['metadata', 'artwork', 'findings', 'providers', 'discography', 'identifiers'],
-        artist_detail_hidden_sections:  []
+        artist_detail_hidden_sections:  [],
+        artist_detail_collapsed_sections: []
       })
     }).then(function (r) {
       if (r.ok) {

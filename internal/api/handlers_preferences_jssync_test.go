@@ -30,10 +30,11 @@ const jsPrefsPath = "../../web/static/js/preferences.js"
 // by client-side default logic) or structurally complex (the romanization flag
 // is stored as a string but managed server-side only).
 //
-// Note: metadata_languages, artist_detail_section_order, and
-// artist_detail_hidden_sections are excluded from PreferenceRegistry() entirely
-// (they cannot be represented as a flat key/default table) and therefore never
-// appear in the registry loop below -- no guard is needed for them here.
+// Note: metadata_languages, artist_detail_section_order,
+// artist_detail_hidden_sections, and artist_detail_collapsed_sections are
+// excluded from PreferenceRegistry() entirely (they cannot be represented as a
+// flat key/default table) and therefore never appear in the registry loop below
+// -- no guard is needed for them here.
 var serverOnlyKeys = map[string]bool{
 	PrefPageSize:                 true,
 	PrefMetadataNameRomanization: true,

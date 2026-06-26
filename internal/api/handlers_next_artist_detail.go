@@ -39,6 +39,7 @@ func (r *Router) handleNextArtistDetailPage(w http.ResponseWriter, req *http.Req
 
 	order := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailSectionOrder, ""))
 	hidden := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailHiddenSections, ""))
+	collapsed := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailCollapsedSections, ""))
 
 	pageData := next.ArtistDetailPageData{
 		Detail:       data,
@@ -46,6 +47,7 @@ func (r *Router) handleNextArtistDetailPage(w http.ResponseWriter, req *http.Req
 		NextArtistID: nextID,
 		SectionOrder: order,
 		Hidden:       hidden,
+		Collapsed:    collapsed,
 	}
 
 	// Inject the field -> finding chips map so the metadata rows render an inline
