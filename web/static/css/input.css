@@ -3582,6 +3582,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .sw-next-artist-detail .sw-section-head > h2 {
   flex: 1 1 auto;
   min-width: 0;
+  margin: 0;
+  line-height: 1.2;
 }
 .sw-next-artist-detail .sw-section-drag-handle {
   display: inline-flex;
@@ -4108,7 +4110,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
  * Muted ink mirrors the biography treatment: gray-500 (light) / gray-400 (dark). */
 .sw-next-artist-detail {
   --sw-ad-font-hero: 1.875rem;
-  --sw-ad-font-section: 0.875rem;
+  --sw-ad-font-section: 1rem;
   --sw-ad-font-body: 0.875rem;
   --sw-ad-font-meta: max(0.75rem, 10px);
   --sw-ad-lh-hero: 1.15;
