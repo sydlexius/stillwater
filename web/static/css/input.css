@@ -4102,7 +4102,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
  * their own, so they inherit the root letter-spacing the Spacing preference
  * sets. The LOCKED values (prototyped live with the maintainer):
  *   hero name   1.875rem / 700 / sans, tracking -0.01em, line-height 1.15
- *   section h2  0.875rem / 600 / sans
+ *   section h2  1rem / 600 / sans
  *   eyebrow     0.75rem  / 600 / sans, uppercase, tracking 0.07em
  *   field label 0.75rem  / 500 / sans, uppercase, tracking 0.06em
  *   value + bio 0.875rem / 400 / sans, line-height 1.6, muted (mirror)
@@ -4125,7 +4125,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 }
 
 /* Section title (the shared next/ chrome .head h2 lands 14px/600 for the
- * dashboard; here it steps to the LOCKED 0.875rem section role and binds to the
+ * dashboard; here it steps to the LOCKED 1rem section role and binds to the
  * sans family). Scoped to next/ so the dashboard's title stays at its own size. */
 .sw-next-artist-detail .sw-dash-card > .head h2 {
   font-family: var(--sw-font-sans);

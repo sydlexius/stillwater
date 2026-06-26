@@ -698,6 +698,9 @@
           var row = rowMap[id];
           if (!row) { return; }
           row.setAttribute('data-hidden', 'false');
+          row.setAttribute('data-collapsed', 'false');
+          var collapseBtn = row.querySelector('[data-action="toggle-collapsed"]');
+          if (collapseBtn) { collapseBtn.setAttribute('aria-pressed', 'false'); }
           list.appendChild(row);
         });
       }
@@ -728,7 +731,8 @@
         kbd_hints:                      DEFAULTS.kbd_hints,
         language:                       DEFAULTS.language,
         artist_detail_section_order:    ['metadata', 'artwork', 'findings', 'providers', 'discography', 'identifiers'],
-        artist_detail_hidden_sections:  []
+        artist_detail_hidden_sections:  [],
+        artist_detail_collapsed_sections: []
       })
     }).then(function (r) {
       if (r.ok) {
