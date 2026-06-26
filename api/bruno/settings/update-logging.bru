@@ -1,0 +1,37 @@
+meta {
+  name: Update Logging Config
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{apiBase}}/settings/logging
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "level": "info",
+    "format": "text"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return updated config", function() {
+    expect(res.body.level).to.be.a("string");
+    expect(res.body.format).to.be.a("string");
+  });
+}

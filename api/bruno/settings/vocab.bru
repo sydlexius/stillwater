@@ -1,0 +1,30 @@
+meta {
+  name: Get Vocab Config
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{apiBase}}/settings/vocab
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return vocab config", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.exclude).to.be.an("array");
+  });
+}

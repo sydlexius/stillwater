@@ -1,0 +1,30 @@
+meta {
+  name: Cache Clear
+  type: http
+  seq: 17
+}
+
+delete {
+  url: {{apiBase}}/settings/cache
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return deletion summary", function() {
+    expect(res.body.files_deleted).to.be.a("number");
+    expect(res.body.bytes_freed).to.be.a("number");
+  });
+}

@@ -1,0 +1,36 @@
+meta {
+  name: Maintenance Schedule
+  type: http
+  seq: 12
+}
+
+put {
+  url: {{apiBase}}/settings/maintenance/schedule
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "enabled": false,
+    "interval_hours": 24
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return updated status", function() {
+    expect(res.body.status).to.equal("updated");
+  });
+}

@@ -1,0 +1,38 @@
+meta {
+  name: Update Vocab Config
+  type: http
+  seq: 16
+}
+
+put {
+  url: {{apiBase}}/settings/vocab
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "exclude": [],
+    "max_genres": 0,
+    "max_styles": 0,
+    "max_moods": 0
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return updated status", function() {
+    expect(res.body.status).to.equal("updated");
+  });
+}

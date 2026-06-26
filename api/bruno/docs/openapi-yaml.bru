@@ -1,0 +1,21 @@
+meta {
+  name: OpenAPI Spec
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/docs/openapi.yaml
+  body: none
+  auth: none
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is YAML", function() {
+    expect(res.headers["content-type"]).to.include("application/yaml");
+  });
+}
