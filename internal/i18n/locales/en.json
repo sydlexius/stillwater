@@ -1308,6 +1308,7 @@
   "logs.connecting": "Connecting",
   "logs.connected": "Live",
   "logs.reconnecting": "Reconnecting",
+  "logs.disconnected": "Disconnected - click to reconnect",
   "logs.shortcuts.tip_label": "Shortcuts",
   "logs.shortcuts.search": "Search",
   "logs.shortcuts.filters": "Filters",

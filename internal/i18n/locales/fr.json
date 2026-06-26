@@ -133,6 +133,7 @@
   "logs.connecting": "Connexion",
   "logs.connected": "En direct",
   "logs.reconnecting": "Reconnexion",
+  "logs.disconnected": "Déconnecté - cliquez pour vous reconnecter",
   "logs.shortcuts.tip_label": "Raccourcis",
   "logs.shortcuts.search": "Rechercher",
   "logs.shortcuts.filters": "Filtres",

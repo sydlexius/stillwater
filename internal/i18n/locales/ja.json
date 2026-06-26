@@ -133,6 +133,7 @@
   "logs.connecting": "接続中",
   "logs.connected": "ライブ",
   "logs.reconnecting": "再接続中",
+  "logs.disconnected": "切断されました - クリックして再接続",
   "logs.shortcuts.tip_label": "ショートカット",
   "logs.shortcuts.search": "検索",
   "logs.shortcuts.filters": "フィルター",

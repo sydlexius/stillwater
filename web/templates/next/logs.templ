@@ -49,6 +49,7 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 			data-label-connecting={ t(ctx, "logs.connecting") }
 			data-label-connected={ t(ctx, "logs.connected") }
 			data-label-reconnecting={ t(ctx, "logs.reconnecting") }
+			data-label-disconnected={ t(ctx, "logs.disconnected") }
 			data-label-empty={ t(ctx, "logs.empty_state") }
 			data-label-throttled={ t(ctx, "logs.throttled_banner") }
 			data-label-pause={ t(ctx, "logs.pause") }
@@ -251,6 +252,7 @@ templ LogsViewerScript() {
 
 			var viewer = document.getElementById('log-viewer');
 			var emptyEl = document.getElementById('sw-logs-empty');
+			var statusEl = document.getElementById('sw-logs-status');
 			var statusDot = document.getElementById('sw-logs-status-dot');
 			var statusText = document.getElementById('sw-logs-status-text');
 			var jumpBtn = document.getElementById('sw-logs-jump');
@@ -273,6 +275,12 @@ templ LogsViewerScript() {
 
 			var SEVERITY = { trace: -1, debug: 0, info: 1, warn: 2, error: 3 };
 			var MAX_LINES = 500;
+			// While the user holds position (paused or scrolled up reading older
+			// lines), the top-prune is suspended so the very lines being read are not
+			// removed from under them during a burst. PAUSED_CEILING bounds DOM growth
+			// in that window so a long burst cannot grow the window without limit; the
+			// window prunes back to MAX_LINES once the user returns to the bottom.
+			var PAUSED_CEILING = 5000;
 			var EXPORT_ERRORS = 50; // bug-report export: last N error lines
 
 			var state = {
@@ -393,13 +401,21 @@ templ LogsViewerScript() {
 			function hideEmpty() { if (emptyEl) emptyEl.classList.add('hidden'); }
 			function showEmpty() { if (emptyEl) emptyEl.classList.remove('hidden'); }
 
+			function pruneTo(cap) {
+				while (viewer.childElementCount > cap) {
+					viewer.removeChild(viewer.firstElementChild);
+				}
+			}
+
 			function appendEntry(e) {
 				if (!entryMatchesClientFilters(e)) return;
 				var atBottom = isAtBottom();
+				// "holding" = the user is reading older lines (paused or scrolled up).
+				// Suspend the top-prune so those lines are not removed from under them;
+				// a higher paused ceiling still bounds DOM growth during a long burst.
+				var holding = state.paused || !atBottom;
 				viewer.appendChild(buildLine(e));
-				while (viewer.childElementCount > MAX_LINES) {
-					viewer.removeChild(viewer.firstElementChild);
-				}
+				pruneTo(holding ? PAUSED_CEILING : MAX_LINES);
 				hideEmpty();
 				if (!state.paused && atBottom) {
 					scrollToBottom();
@@ -411,21 +427,47 @@ templ LogsViewerScript() {
 			}
 
 			viewer.addEventListener('scroll', function () {
-				if (isAtBottom()) { state.buffered = 0; }
+				if (isAtBottom()) {
+					state.buffered = 0;
+					// Returned to the bottom: drop the suspended-prune surplus back to
+					// the normal window (unless still explicitly paused).
+					if (!state.paused) pruneTo(MAX_LINES);
+				}
 				updateJump();
 			});
 
 			// -- connection status ----------------------------------------------
+			var statusKind = '';
 			function setStatus(kind) {
+				statusKind = kind;
 				var label, dot;
 				if (kind === 'connected') { label = L('labelConnected'); dot = 'bg-green-500'; }
 				else if (kind === 'reconnecting') { label = L('labelReconnecting'); dot = 'bg-amber-500'; }
+				else if (kind === 'disconnected') { label = L('labelDisconnected'); dot = 'bg-red-500'; }
 				else if (kind === 'error') { label = L('labelReconnecting'); dot = 'bg-red-500'; }
 				else { label = L('labelConnecting'); dot = 'bg-gray-400'; }
 				if (statusText) statusText.textContent = label;
 				if (statusDot) statusDot.className = 'inline-block h-2 w-2 rounded-full ' + dot;
+				// A dead stream is the only clickable state: clicking re-opens it.
+				if (statusEl) {
+					statusEl.classList.toggle('cursor-pointer', kind === 'disconnected');
+					statusEl.classList.toggle('underline', kind === 'disconnected');
+					statusEl.setAttribute('role', kind === 'disconnected' ? 'button' : 'status');
+				}
 			}
+			// Manual reconnect for the dead-stream state (session expiry, etc.):
+			// EventSource will not auto-retry after a CLOSED, so the user needs a way
+			// back without a full page reload.
+			if (statusEl) statusEl.addEventListener('click', function () {
+				if (statusKind === 'disconnected') connect();
+			});
 
+			var THROTTLE_HIDE_MS = 6000;
+			var throttleTimer = null;
+			function hideThrottle() {
+				if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null; }
+				if (throttleEl) { throttleEl.classList.add('hidden'); throttleEl.classList.remove('flex'); }
+			}
 			function showThrottle(dropped) {
 				if (!throttleEl) return;
 				if (throttleText) {
@@ -434,6 +476,10 @@ templ LogsViewerScript() {
 				}
 				throttleEl.classList.remove('hidden');
 				throttleEl.classList.add('flex');
+				// Auto-clear so a transient throttle does not leave a stale alert: each
+				// fresh throttle resets the timer; quiet for the window -> banner hides.
+				if (throttleTimer) clearTimeout(throttleTimer);
+				throttleTimer = setTimeout(hideThrottle, THROTTLE_HIDE_MS);
 			}
 
 			// -- SSE stream -----------------------------------------------------
@@ -466,9 +512,19 @@ templ LogsViewerScript() {
 					try { d = JSON.parse(ev.data); } catch (err) { return; }
 					showThrottle(d && d.dropped ? d.dropped : 0);
 				});
-				// EventSource auto-reconnects (replaying via Last-Event-ID); surface
-				// the gap so the indicator never falsely reads live.
-				es.onerror = function () { setStatus('reconnecting'); };
+				es.onerror = function () {
+					// readyState distinguishes a transient drop (CONNECTING -- the
+					// browser is auto-retrying, replaying via Last-Event-ID) from a
+					// terminal close (CLOSED -- e.g. the session expired and the stream
+					// returned 401/403; EventSource will NOT retry). Surfacing both as
+					// "reconnecting" would leave a silently-dead tail reading live, so a
+					// CLOSED stream gets an honest, clickable "disconnected" state.
+					if (es && es.readyState === EventSource.CLOSED) {
+						setStatus('disconnected');
+					} else {
+						setStatus('reconnecting');
+					}
+				};
 			}
 
 			// reload clears the view and reconnects with the current filters. The
@@ -478,7 +534,7 @@ templ LogsViewerScript() {
 				showEmpty();
 				state.buffered = 0;
 				updateJump();
-				if (throttleEl) { throttleEl.classList.add('hidden'); throttleEl.classList.remove('flex'); }
+				hideThrottle();
 				syncURL();
 				connect();
 			}
@@ -590,7 +646,9 @@ templ LogsViewerScript() {
 				state.paused = !state.paused;
 				pauseBtn.textContent = state.paused ? L('labelResume') : L('labelPause');
 				pauseBtn.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
-				if (!state.paused && isAtBottom()) { scrollToBottom(); }
+				// Resuming at the bottom drops any suspended-prune surplus back to the
+				// normal window and snaps to the newest line.
+				if (!state.paused && isAtBottom()) { pruneTo(MAX_LINES); scrollToBottom(); }
 			});
 
 			// -- wrap toggle ----------------------------------------------------
@@ -622,6 +680,9 @@ templ LogsViewerScript() {
 			if (jumpBtn) jumpBtn.addEventListener('click', function () {
 				state.paused = false;
 				if (pauseBtn) { pauseBtn.textContent = L('labelPause'); pauseBtn.setAttribute('aria-pressed', 'false'); }
+				// Back to the live tail: drop the suspended-prune surplus to the normal
+				// window before snapping to the bottom.
+				pruneTo(MAX_LINES);
 				scrollToBottom();
 				state.buffered = 0;
 				updateJump();
@@ -731,8 +792,12 @@ templ LogsViewerScript() {
 				var tag = (ev.target && ev.target.tagName) || '';
 				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target && ev.target.isContentEditable)) return;
 				if (drawer && !drawer.classList.contains('hidden') && ev.key === 'Escape') { closeDrawer(); return; }
-				if (ev.key === 'j' || ev.key === 'J') { ev.preventDefault(); viewer.scrollTop += 40; state.paused = true; updateJump(); }
-				else if (ev.key === 'k' || ev.key === 'K') { ev.preventDefault(); viewer.scrollTop -= 40; }
+				// j/k just scroll; auto-follow is governed by isAtBottom() (the scroll
+				// handler), so neither key touches state.paused -- pressing j and
+				// returning to the bottom resumes the live tail without an explicit
+				// resume, and j/k stay symmetric.
+				if (ev.key === 'j' || ev.key === 'J') { ev.preventDefault(); viewer.scrollTop += 40; updateJump(); }
+				else if (ev.key === 'k' || ev.key === 'K') { ev.preventDefault(); viewer.scrollTop -= 40; updateJump(); }
 			});
 			// g l (go to logs) is owned by the shared g-leader nav registry (PR #1775);
 			// this page only advertises it for the cheat sheet. j/k are page-local.
