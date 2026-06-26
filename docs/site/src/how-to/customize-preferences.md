@@ -181,7 +181,7 @@ Sets the interface language. Only English ships today; additional languages appe
 
 ## Artist Detail Layout
 
-Reorder and show or hide the sections on every artist's detail page. The sections available are:
+Reorder, show or hide, and collapse the sections on every artist's detail page. The sections available are:
 
 | Section | Contents |
 |---|---|
@@ -203,9 +203,15 @@ To hide a section:
 2. The section disappears from artist pages immediately.
 3. Click the eye again to restore it.
 
+To collapse a section in place:
+
+1. Click the **chevron** button next to the section's heading. The section body hides and the chevron rotates; the header stays visible so you can still reorder or expand the section.
+2. The collapsed state saves automatically and persists across reloads and across every artist page.
+3. Click the chevron again to expand the section.
+
 The hero image, artist name, and action bar at the top of each artist page are fixed chrome and are not reorderable.
 
-Click **Reset layout** to restore the default section order and visibility.
+Click **Reset layout** to restore the default section order, visibility, and expanded state (it also expands any sections you had collapsed).
 
 ## Reset all preferences
 

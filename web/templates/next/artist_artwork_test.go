@@ -235,6 +235,24 @@ func TestArtworkSection_MaintainerFeedback(t *testing.T) {
 	}
 }
 
+// TestArtworkSection_CollapsedState verifies that rendering with collapsed=true
+// hides the section body via the HTML hidden attribute.
+func TestArtworkSection_CollapsedState(t *testing.T) {
+	t.Parallel()
+	data := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Collapsed"}}
+	var buf bytes.Buffer
+	if err := ArtworkSection(data, true).Render(nextTestCtx(t), &buf); err != nil {
+		t.Fatalf("render collapsed artwork section: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `id="next-artwork-body"`) {
+		t.Error("collapsed section should still render the body element")
+	}
+	if !strings.Contains(out, ` hidden`) {
+		t.Error("collapsed section body must carry the hidden attribute")
+	}
+}
+
 // renderArtworkModal renders ArtworkModal and returns the HTML.
 func renderArtworkModal(t *testing.T, data *templates.ArtistDetailData) string {
 	t.Helper()

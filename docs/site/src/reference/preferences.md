@@ -11,7 +11,7 @@ The table is generated from the Go preference registry (`internal/api.Preference
 **Keys not in this table** (complex types documented by prose only):
 
 - `metadata_languages` - JSON array of BCP 47 language tags; see the Language section in Settings.
-- `artist_detail_section_order`, `artist_detail_hidden_sections` - JSON arrays of section identifiers; managed by the drag-reorder UI.
+- `artist_detail_section_order`, `artist_detail_hidden_sections`, `artist_detail_collapsed_sections` - JSON arrays of section identifiers; managed by the Artist Detail Layout controls in the preferences drawer (drag to reorder, eye to hide, chevron to collapse).
 - `suppress_confirm_{action}` - dynamic per-action confirm-dialog suppression keys; `"true"` or `"false"`.
 
 <!-- BEGIN GENERATED: prefs-reference -->

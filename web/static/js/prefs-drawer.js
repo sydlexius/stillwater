@@ -553,7 +553,11 @@
         row.setAttribute('data-hidden', 'false');
         row.setAttribute('data-collapsed', 'false');
         var collapseBtn = row.querySelector('[data-action="toggle-collapsed"]');
-        if (collapseBtn) { collapseBtn.setAttribute('aria-pressed', 'false'); }
+        if (collapseBtn) {
+          collapseBtn.setAttribute('aria-pressed', 'false');
+          var clb = collapseBtn.getAttribute('data-label-collapse');
+          if (clb) { collapseBtn.setAttribute('aria-label', clb); }
+        }
         list.appendChild(row);
       });
     }
@@ -700,7 +704,11 @@
           row.setAttribute('data-hidden', 'false');
           row.setAttribute('data-collapsed', 'false');
           var collapseBtn = row.querySelector('[data-action="toggle-collapsed"]');
-          if (collapseBtn) { collapseBtn.setAttribute('aria-pressed', 'false'); }
+          if (collapseBtn) {
+            collapseBtn.setAttribute('aria-pressed', 'false');
+            var clb = collapseBtn.getAttribute('data-label-collapse');
+            if (clb) { collapseBtn.setAttribute('aria-label', clb); }
+          }
           list.appendChild(row);
         });
       }
