@@ -817,7 +817,7 @@ templ artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) {
 templ artistIdentifiersSection(data *templates.ArtistDetailData, collapsed bool) {
 	{{ a := &data.Artist }}
 	<section id={ "next-identifiers-" + a.ID } class="sw-dash-card sw-next-identifiers opacity-90" data-sw-section="identifiers" data-sw-section-label={ t(ctx, "artist.provider_ids") } aria-labelledby="next-ids-heading">
-		@sectionHead("next-ids-heading", "next-ids-body", "text-base", t(ctx, "artist.provider_ids"), collapsed)
+		@sectionHead("next-ids-heading", "next-ids-body", "", t(ctx, "artist.provider_ids"), collapsed)
 		<div id="next-ids-body" class="body" hidden?={ collapsed }>
 			<dl class="sw-next-fields">
 				@templates.FieldDisplay(a, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
