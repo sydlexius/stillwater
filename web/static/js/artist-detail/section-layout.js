@@ -152,7 +152,8 @@
     document.addEventListener("click", function (ev) {
       var btn = ev.target.closest ? ev.target.closest("[data-sw-section-toggle]") : null;
       if (!btn) return;
-      if (!container().contains(btn)) return; // only our sections
+      var root = container();
+      if (!root || !root.contains(btn)) return; // only our sections
       ev.preventDefault();
       toggleCollapse(btn);
     });
