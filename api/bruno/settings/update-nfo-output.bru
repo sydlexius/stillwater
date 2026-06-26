@@ -1,0 +1,38 @@
+meta {
+  name: Update NFO Output Settings
+  type: http
+  seq: 14
+}
+
+put {
+  url: {{apiBase}}/settings/nfo-output
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "default_behavior": true,
+    "moods_as_styles": false,
+    "genre_sources": ["genres"]
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return updated field map", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.genre_sources).to.be.an("array");
+  });
+}

@@ -1,0 +1,31 @@
+meta {
+  name: Cache Stats
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{apiBase}}/settings/cache/stats
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return cache size metrics", function() {
+    expect(res.body.size_bytes).to.be.a("number");
+    expect(res.body.file_count).to.be.a("number");
+    expect(res.body.artist_count).to.be.a("number");
+  });
+}

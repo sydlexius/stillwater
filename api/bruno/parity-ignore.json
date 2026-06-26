@@ -56,10 +56,6 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
-    "route": "DELETE /api/v1/settings/cache",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
     "route": "DELETE /api/v1/updates/skips/{}",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
@@ -176,14 +172,6 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
-    "route": "GET /api/v1/docs",
-    "reason": "Static API-docs/OpenAPI-spec endpoint; documentation surface, not part of the JSON API contract under smoke test."
-  },
-  {
-    "route": "GET /api/v1/docs/openapi.yaml",
-    "reason": "Static API-docs/OpenAPI-spec endpoint; documentation surface, not part of the JSON API contract under smoke test."
-  },
-  {
     "route": "GET /api/v1/events/stream",
     "reason": "Server-Sent Events stream: a long-lived push connection, not a JSON request/response contract Bruno can assert."
   },
@@ -205,10 +193,6 @@
   },
   {
     "route": "GET /api/v1/logs/files",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/notifications/badge",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
@@ -241,26 +225,6 @@
   },
   {
     "route": "GET /api/v1/scraper/providers",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/settings/cache/stats",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/settings/logging",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/settings/maintenance/status",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/settings/nfo-output",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/settings/vocab",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
@@ -456,14 +420,6 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
-    "route": "POST /api/v1/settings/maintenance/optimize",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "POST /api/v1/settings/maintenance/vacuum",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
     "route": "POST /api/v1/setup/restore",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
@@ -521,22 +477,6 @@
   },
   {
     "route": "PUT /api/v1/scraper/config/connections/{}",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "PUT /api/v1/settings/logging",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "PUT /api/v1/settings/maintenance/schedule",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "PUT /api/v1/settings/nfo-output",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "PUT /api/v1/settings/vocab",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {

@@ -1,0 +1,21 @@
+meta {
+  name: API Docs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/docs
+  body: none
+  auth: none
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is HTML", function() {
+    expect(res.headers["content-type"]).to.include("text/html");
+  });
+}

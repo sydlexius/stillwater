@@ -1,0 +1,30 @@
+meta {
+  name: Maintenance Status
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{apiBase}}/settings/maintenance/status
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return db size metrics", function() {
+    expect(res.body.db_file_size).to.be.a("number");
+    expect(res.body.page_count).to.be.a("number");
+  });
+}

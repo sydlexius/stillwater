@@ -1,0 +1,31 @@
+meta {
+  name: Get NFO Output Settings
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{apiBase}}/settings/nfo-output
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is JSON", function() {
+    expect(res.headers["content-type"]).to.include("application/json");
+  });
+
+  test("should return NFO field map", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body).to.have.property("default_behavior");
+    expect(res.body.genre_sources).to.be.an("array");
+  });
+}
