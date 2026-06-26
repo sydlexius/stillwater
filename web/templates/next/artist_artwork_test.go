@@ -2,6 +2,7 @@ package next
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -245,11 +246,15 @@ func TestArtworkSection_CollapsedState(t *testing.T) {
 		t.Fatalf("render collapsed artwork section: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, `id="next-artwork-body"`) {
-		t.Error("collapsed section should still render the body element")
+	// Narrow the assertion to the #next-artwork-body element's own opening tag,
+	// so a stray `hidden` attribute elsewhere in the markup can't produce a
+	// false pass (per CR/Codoki review of #2112).
+	bodyTag := regexp.MustCompile(`<[^>]*id="next-artwork-body"[^>]*>`).FindString(out)
+	if bodyTag == "" {
+		t.Fatal("collapsed section should still render the #next-artwork-body element")
 	}
-	if !strings.Contains(out, ` hidden`) {
-		t.Error("collapsed section body must carry the hidden attribute")
+	if !strings.Contains(bodyTag, "hidden") {
+		t.Errorf("collapsed section body must carry the hidden attribute; got tag: %s", bodyTag)
 	}
 }
 
