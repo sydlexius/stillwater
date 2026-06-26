@@ -2892,7 +2892,15 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   backdrop-filter: blur(8px);
 }
 .sw-next-logs .sw-log-viewer {
-  background: var(--sw-glass-bg);
+  /* Legibility floor (F6). A console / log surface prioritizes readable text
+   * over backdrop translucency: it sits on a near-opaque RAISED surface rather
+   * than the user's global --sw-glass-bg, which can dial down to ~50% alpha and
+   * let the bright artist-image backdrop bleed through, dropping timestamp
+   * contrast below the AA 4.5 floor. The 88% raised mix guarantees a high
+   * effective alpha at every Background Opacity setting (raised is opaque), in
+   * both themes (raised = #fff light / #111a2e dark), while keeping a faint hint
+   * of the theme glass. */
+  background: color-mix(in srgb, var(--swd-bg-raised) 88%, var(--sw-glass-bg));
 }
 .sw-next-logs .sw-log-line:hover {
   background: rgba(127, 127, 127, 0.08);

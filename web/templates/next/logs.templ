@@ -352,7 +352,9 @@ templ LogsViewerScript() {
 				try { row.dataset.entry = JSON.stringify(e); } catch (err) { /* non-fatal */ }
 
 				var html = '';
-				html += '<time class="shrink-0 tabular-nums text-[var(--swd-ink-3)]" datetime="' + esc(e.time || '') + '">' + esc(fmtTime(e.time)) + '</time>';
+				// Timestamp uses --swd-ink-2 (not the dimmer --swd-ink-3) so it clears
+				// the AA 4.5 contrast floor over the log-viewer surface (F6).
+				html += '<time class="shrink-0 tabular-nums text-[var(--swd-ink-2)]" datetime="' + esc(e.time || '') + '">' + esc(fmtTime(e.time)) + '</time>';
 				html += '<span class="shrink-0 rounded px-1.5 text-[10px] font-bold uppercase ' + levelPillClass(lvl) + '">' + esc(lvl || '?') + '</span>';
 				if (e.component) {
 					html += '<span class="shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-2)] dark:bg-white/10">' + esc(e.component) + '</span>';
