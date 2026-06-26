@@ -1,0 +1,25 @@
+meta {
+  name: Get Web Search Providers
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{apiBase}}/providers/websearch
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return providers array", function() {
+    expect(res.body.providers).to.be.an("array");
+  });
+}

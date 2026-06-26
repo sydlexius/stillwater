@@ -1,0 +1,25 @@
+meta {
+  name: Populate In-Flight
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{apiBase}}/connections/populate/in-flight
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return operations array", function() {
+    expect(res.body.operations).to.be.an("array");
+  });
+}

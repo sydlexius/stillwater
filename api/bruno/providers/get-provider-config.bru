@@ -1,0 +1,27 @@
+meta {
+  name: Get Provider Config
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{apiBase}}/providers/wikipedia/config
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return provider config envelope", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.provider).to.equal("wikipedia");
+    expect(res.body.verbosity).to.be.an("object");
+  });
+}

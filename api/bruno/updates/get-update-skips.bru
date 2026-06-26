@@ -1,0 +1,25 @@
+meta {
+  name: Get Update Skips
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/updates/skips
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return skipped_versions array", function() {
+    expect(res.body.skipped_versions).to.be.an("array");
+  });
+}
