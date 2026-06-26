@@ -180,8 +180,6 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_down") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_up") }</span></span>
-				<span aria-hidden="true">·</span>
-				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">g l</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.go_to_logs") }</span></span>
 			</p>
 			<!-- Filter flyout (component / artist / rule). Legibility floor via
 			     opaque-ish background so it stays readable at low global opacity. -->
@@ -347,7 +345,11 @@ templ LogsViewerScript() {
 			function buildLine(e) {
 				var lvl = (e.level || '').toLowerCase();
 				var row = document.createElement('div');
-				row.className = 'sw-log-line group flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5 hover:bg-white/5';
+				// No hardcoded py-* here (U2): vertical padding is the density "row"
+				// token, applied via the .sw-next-logs .sw-log-line CSS rule so
+				// data-density actually drives line height. A hardcoded Tailwind py-*
+				// would sit on top of the token; the CSS rule owns vertical padding.
+				row.className = 'sw-log-line group flex cursor-pointer items-baseline gap-2 rounded px-1 hover:bg-white/5';
 				row.setAttribute('role', 'listitem');
 				try { row.dataset.entry = JSON.stringify(e); } catch (err) { /* non-fatal */ }
 

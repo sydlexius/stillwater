@@ -2999,6 +2999,34 @@ html:not([data-density]) .sw-next-activity #activity-entries > :not(:last-child)
   margin-block-end: var(--sw-density-gap);
 }
 
+/* Logs viewer (M55 #1338) -- the next/ live log viewer tracks the density pref
+ * like the other next/ list surfaces:
+ *
+ *   - Outer stack gap: the page root `.sw-next-logs` lays its sections out with
+ *     Tailwind space-y-3 (a :where() utility setting margin-block-end on every
+ *     non-last child). Rebind that to the density gap token across ALL densities
+ *     (comfortable + the pre-JS html:not([data-density]) default included, like
+ *     the dashboard stack) so the explicit, higher-specificity selector overrides
+ *     the utility cleanly.
+ *   - Row padding: each `.sw-log-line` is the dense "row" surface (one per log
+ *     record). Its vertical padding binds to the density row-py token. Unlike
+ *     the artists table (whose cells keep a native Tailwind padding at
+ *     comfortable and only override on compact/spacious), the JS-built log line
+ *     has NO other padding source, so the token is applied across ALL densities
+ *     (the token's :root default is the comfortable 0.5rem) -- otherwise
+ *     comfortable/default would collapse to zero padding. The JS line builder no
+ *     longer hardcodes py-* so this token alone drives the line height. */
+html[data-density="compact"] .sw-next-logs > :not(:last-child),
+html[data-density="comfortable"] .sw-next-logs > :not(:last-child),
+html[data-density="spacious"] .sw-next-logs > :not(:last-child),
+html:not([data-density]) .sw-next-logs > :not(:last-child) {
+  margin-block-end: var(--sw-density-gap);
+}
+.sw-next-logs .sw-log-line {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
+}
+
 /* Duplicates page (M55 #1752) -- group-card stack and member-table row padding
  * track the density pref, mirroring the artists-list and activity-feed rules:
  *
@@ -3120,7 +3148,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-artists .sw-kbd,
 .sw-next-dashboard .sw-kbd,
 .sw-next-artist-detail .sw-kbd,
-.sw-next-foreign-files .sw-kbd {
+.sw-next-foreign-files .sw-kbd,
+.sw-next-logs .sw-kbd {
   position: relative;
   isolation: isolate;
   /* Route the keycap glyph through the mono Font Family pref seam (matches the
@@ -3153,7 +3182,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-artists .sw-kbd::before,
 .sw-next-dashboard .sw-kbd::before,
 .sw-next-artist-detail .sw-kbd::before,
-.sw-next-foreign-files .sw-kbd::before {
+.sw-next-foreign-files .sw-kbd::before,
+.sw-next-logs .sw-kbd::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -3166,13 +3196,15 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-artists .sw-kbd,
 .dark .sw-next-dashboard .sw-kbd,
 .dark .sw-next-artist-detail .sw-kbd,
-.dark .sw-next-foreign-files .sw-kbd {
+.dark .sw-next-foreign-files .sw-kbd,
+.dark .sw-next-logs .sw-kbd {
   color: #94a3b8;
 }
 .dark .sw-next-artists .sw-kbd::before,
 .dark .sw-next-dashboard .sw-kbd::before,
 .dark .sw-next-artist-detail .sw-kbd::before,
-.dark .sw-next-foreign-files .sw-kbd::before {
+.dark .sw-next-foreign-files .sw-kbd::before,
+.dark .sw-next-logs .sw-kbd::before {
   background: var(--sw-glass-bg, #0f172a);
 }
 /* Keyboard-shortcut footer (.sw-list-tips) -- ONE shared treatment across every
@@ -3187,7 +3219,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-artists .sw-list-tips,
 .sw-next-dashboard .sw-list-tips,
 .sw-next-artist-detail .sw-list-tips,
-.sw-next-foreign-files .sw-list-tips {
+.sw-next-foreign-files .sw-list-tips,
+.sw-next-logs .sw-list-tips {
   margin-top: 0.75rem;
   display: flex;
   flex-wrap: wrap;
@@ -3222,7 +3255,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-artists .sw-list-tips,
 .dark .sw-next-dashboard .sw-list-tips,
 .dark .sw-next-artist-detail .sw-list-tips,
-.dark .sw-next-foreign-files .sw-list-tips {
+.dark .sw-next-foreign-files .sw-list-tips,
+.dark .sw-next-logs .sw-list-tips {
   color: #94a3b8;
   border-color: var(--swd-line, rgba(148, 163, 184, 0.14));
 }
@@ -3997,6 +4031,16 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
   font-family: var(--sw-font-mono);
   font-size: var(--sw-ad-font-meta);
   font-weight: 400;
+}
+
+/* Logs viewer (M55 #1338) mono role: the log lines and the full-entry drawer are
+ * monospace, but Tailwind's .font-mono hardcodes its own stack and ignores the
+ * user's Mono Font preference. Route both through --sw-font-mono (the same
+ * pickable-fonts seam the artist-detail screen uses) so the pref drives them;
+ * they stay monospace. */
+.sw-next-logs .sw-log-viewer,
+.sw-next-logs #sw-logs-drawer-body {
+  font-family: var(--sw-font-mono);
 }
 
 /* Edit-mode carry-over (M55 #1853): a field must read identically whether it is
