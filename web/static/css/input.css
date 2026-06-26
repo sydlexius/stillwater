@@ -2879,6 +2879,25 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
+/* M55 #1338: the next/ logs viewer sticky toolbar and viewer surface. The
+ * toolbar is position:sticky, so it needs an opaque-enough background to stay
+ * legible as log lines scroll beneath it -- it sources from the shared
+ * --sw-glass-bg token (Background Opacity preference) with a small raised mix so
+ * it never drops below a readable floor at low global opacity. The viewer panel
+ * uses the same translucent surface so the photo backdrop bleeds through at low
+ * opacity exactly like the dashboard cards. */
+.sw-next-logs .sw-next-toolbar {
+  background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 35%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(8px);
+}
+.sw-next-logs .sw-log-viewer {
+  background: var(--sw-glass-bg);
+}
+.sw-next-logs .sw-log-line:hover {
+  background: rgba(127, 127, 127, 0.08);
+}
+
 /* Density model (M55 #1335). "comfy" is the native row rhythm, so it needs no
  * overrides; "compact" -- set on the root by the density script while a
  * selection is active -- tightens the table's vertical padding and type so more
@@ -3363,7 +3382,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .sw-next-artist-detail,
 .sw-next-foreign-files,
 .sw-next-artists,
-.sw-next-activity {
+.sw-next-activity,
+.sw-next-logs {
   /* Light-theme token ramp (default). Shared by the dashboard, the next/
    * artist-detail screen (M55 #1336), the next/ foreign-files screen
    * (M55 #1773), and the next/ artists screen (M55 #1890) so they all consume
@@ -3413,7 +3433,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .dark .sw-next-artist-detail,
 .dark .sw-next-foreign-files,
 .dark .sw-next-artists,
-.dark .sw-next-activity {
+.dark .sw-next-activity,
+.dark .sw-next-logs {
   /* Prototype dark token ramp (design/tokens.css verbatim). .sw-next-artists
    * added for #1890 so its glass buttons resolve --swd-line / --swd-ink-2 in
    * dark mode too (see the light-theme block above). */

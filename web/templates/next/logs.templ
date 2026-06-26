@@ -1,0 +1,757 @@
+package next
+
+import (
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// LogsFilterState is the initial, server-parsed filter selection for the next/
+// log viewer, seeded from the request URL so a deep-link such as
+// /next/logs?level=error&artist_id=1234 opens pre-filtered. Level/Component/
+// Search are wired to the server-side SSE stream filter (level/scope/q); ArtistID
+// and Rule are applied client-side against each entry's structured attrs (the
+// stream predicate covers only level/scope/search).
+type LogsFilterState struct {
+	Level     string
+	Component string
+	Search    string
+	ArtistID  string
+	Rule      string
+}
+
+// logLevels is the severity ladder shown as filter buttons, lowest-first. The
+// labels are localized at render time; the data-log-level value is the wire
+// token the stream's level= param and the client severity map both use.
+var logLevels = []string{"trace", "debug", "info", "warn", "error"}
+
+// logLevelLabelKey maps a level token to its i18n key.
+func logLevelLabelKey(level string) string { return "logs.level." + level }
+
+// LogsPage renders the next/ live log viewer (M55 #1338, PR 5B). It renders only
+// the chrome -- toolbar, empty viewer container, throttle banner, filter flyout,
+// keyboard tips, and the line side-drawer. The log lines (ring-buffer backfill
+// and live tail) arrive over the GET /api/v1/logs/stream SSE endpoint, which
+// self-backfills on connect, and are built in the inline controller script
+// below. Surfaces source their background from --sw-glass-bg so the Background
+// Opacity preference governs translucency (M55 opacity compliance); the flyout
+// and drawer apply a legibility floor so they stay readable at low opacity.
+templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
+	@LayoutNext(t(ctx, "logs.title"), assets) {
+		<div
+			id="sw-logs-root"
+			class="sw-next-logs space-y-3"
+			data-init-level={ filter.Level }
+			data-init-component={ filter.Component }
+			data-init-search={ filter.Search }
+			data-init-artist-id={ filter.ArtistID }
+			data-init-rule={ filter.Rule }
+			data-base-artists={ assets.BasePath + "/next/artists/" }
+			data-label-connecting={ t(ctx, "logs.connecting") }
+			data-label-connected={ t(ctx, "logs.connected") }
+			data-label-reconnecting={ t(ctx, "logs.reconnecting") }
+			data-label-empty={ t(ctx, "logs.empty_state") }
+			data-label-throttled={ t(ctx, "logs.throttled_banner") }
+			data-label-pause={ t(ctx, "logs.pause") }
+			data-label-resume={ t(ctx, "logs.resume") }
+			data-label-export-ok={ t(ctx, "logs.export_ok") }
+			data-label-export-fail={ t(ctx, "logs.export_fail") }
+			data-label-copy-ok={ t(ctx, "logs.copy_ok") }
+		>
+			<!-- Header -->
+			<div class="flex items-center justify-between gap-3">
+				<h1 class="text-lg font-semibold text-[var(--swd-ink)]">{ t(ctx, "logs.title") }</h1>
+				<!-- Live connection status indicator -->
+				<span
+					id="sw-logs-status"
+					class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--swd-ink-3)]"
+					role="status"
+					aria-live="polite"
+				>
+					<span id="sw-logs-status-dot" class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
+					<span id="sw-logs-status-text">{ t(ctx, "logs.connecting") }</span>
+				</span>
+			</div>
+			<!-- Sticky toolbar -->
+			<div class="sw-next-toolbar sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-[var(--swd-line)] px-3 py-2">
+				<!-- Search -->
+				<div class="relative">
+					<input
+						id="sw-logs-search"
+						type="search"
+						data-sw-shortcut="/"
+						data-sw-shortcut-label={ t(ctx, "logs.shortcuts.search") }
+						value={ filter.Search }
+						placeholder={ t(ctx, "logs.search_placeholder") }
+						class="w-44 rounded-md border border-[var(--swd-line)] bg-transparent px-2.5 py-1 text-sm text-[var(--swd-ink)] placeholder:text-[var(--swd-ink-3)] focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-56"
+						aria-label={ t(ctx, "logs.search_placeholder") }
+					/>
+				</div>
+				<!-- Level filter buttons -->
+				<div class="inline-flex items-center gap-1" role="group" aria-label={ t(ctx, "logs.level_filter") }>
+					for _, lvl := range logLevels {
+						<button
+							type="button"
+							class={ glassButton, "sw-logs-level-btn px-2 py-1 text-xs font-medium" }
+							data-log-level={ lvl }
+							aria-pressed="false"
+						>
+							{ t(ctx, logLevelLabelKey(lvl)) }
+						</button>
+					}
+				</div>
+				<!-- Filter flyout trigger -->
+				<button
+					type="button"
+					id="sw-logs-filter-trigger"
+					data-sw-shortcut="f"
+					data-sw-shortcut-label={ t(ctx, "logs.shortcuts.filters") }
+					class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" }
+					aria-expanded="false"
+					aria-controls="sw-logs-flyout"
+				>
+					@components.IconAdjustmentsHorizontal("h-3.5 w-3.5")
+					{ t(ctx, "logs.filters") }
+					<span id="sw-logs-filter-badge" class="hidden ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900">0</span>
+				</button>
+				<div class="flex-1"></div>
+				<!-- Pause / resume -->
+				<button type="button" id="sw-logs-pause" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" } aria-pressed="false">
+					{ t(ctx, "logs.pause") }
+				</button>
+				<!-- Wrap toggle -->
+				<button type="button" id="sw-logs-wrap" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" } aria-pressed="false">
+					{ t(ctx, "logs.wrap_toggle") }
+				</button>
+				<!-- Export for bug report -->
+				<button type="button" id="sw-logs-export" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" }>
+					{ t(ctx, "logs.export") }
+				</button>
+				<!-- Clear -->
+				<button type="button" id="sw-logs-clear" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" }>
+					{ t(ctx, "logs.clear") }
+				</button>
+			</div>
+			<!-- Throttle banner (hidden until logs.throttled arrives) -->
+			<div
+				id="sw-logs-throttle"
+				class="hidden items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+				role="alert"
+			>
+				<svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"></path>
+				</svg>
+				<span id="sw-logs-throttle-text"></span>
+			</div>
+			<!-- Log viewer container + jump-to-bottom button -->
+			<div class="relative">
+				<div
+					id="log-viewer"
+					class="sw-log-viewer h-[60vh] overflow-y-auto rounded-md border border-[var(--swd-line)] p-2 font-mono text-xs leading-relaxed"
+					tabindex="0"
+					aria-label={ t(ctx, "logs.title") }
+					aria-live="off"
+				></div>
+				<!-- Empty state -->
+				<div id="sw-logs-empty" class="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-[var(--swd-ink-3)]">
+					{ t(ctx, "logs.empty_state") }
+				</div>
+				<!-- Jump to bottom (hidden when at bottom) -->
+				<button
+					type="button"
+					id="sw-logs-jump"
+					class="hidden absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--swd-line)] px-3 py-1.5 text-xs font-medium text-[var(--swd-ink)] shadow-[var(--swd-shadow-2)]"
+					style="background: var(--sw-glass-bg)"
+				>
+					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3"></path>
+					</svg>
+					<span>{ t(ctx, "logs.jump_to_bottom") }</span>
+					<span id="sw-logs-jump-count" class="hidden ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900">0</span>
+				</button>
+			</div>
+			<!-- Keyboard tips -->
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "logs.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">/</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.search") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.filters") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_down") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_up") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">g l</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.go_to_logs") }</span></span>
+			</p>
+			<!-- Filter flyout (component / artist / rule). Legibility floor via
+			     opaque-ish background so it stays readable at low global opacity. -->
+			<div
+				id="sw-logs-flyout"
+				class="hidden fixed right-4 top-28 z-30 w-72 rounded-lg border border-[var(--swd-line)] p-4 shadow-[var(--swd-shadow-2)]"
+				style="background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 60%)"
+				role="dialog"
+				aria-label={ t(ctx, "logs.filters") }
+			>
+				<div class="space-y-3">
+					<label class="block">
+						<span class="mb-1 block text-xs font-medium text-[var(--swd-ink-2)]">{ t(ctx, "logs.filter_component") }</span>
+						<input id="sw-logs-f-component" type="text" value={ filter.Component } class="w-full rounded-md border border-[var(--swd-line)] bg-transparent px-2 py-1 text-sm text-[var(--swd-ink)] focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+					</label>
+					<label class="block">
+						<span class="mb-1 block text-xs font-medium text-[var(--swd-ink-2)]">{ t(ctx, "logs.filter_artist_id") }</span>
+						<input id="sw-logs-f-artist" type="text" inputmode="numeric" value={ filter.ArtistID } class="w-full rounded-md border border-[var(--swd-line)] bg-transparent px-2 py-1 text-sm text-[var(--swd-ink)] focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+					</label>
+					<label class="block">
+						<span class="mb-1 block text-xs font-medium text-[var(--swd-ink-2)]">{ t(ctx, "logs.filter_rule") }</span>
+						<input id="sw-logs-f-rule" type="text" value={ filter.Rule } class="w-full rounded-md border border-[var(--swd-line)] bg-transparent px-2 py-1 text-sm text-[var(--swd-ink)] focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+					</label>
+					<div class="flex items-center justify-between gap-2 pt-1">
+						<button type="button" id="sw-logs-f-clear" class={ glassButton, "px-2.5 py-1 text-xs font-medium" }>{ t(ctx, "logs.filter_clear") }</button>
+						<button type="button" id="sw-logs-f-apply" class={ glassButton, "px-2.5 py-1 text-xs font-medium" }>{ t(ctx, "logs.filter_apply") }</button>
+					</div>
+				</div>
+			</div>
+			<!-- Line side-drawer (full entry view) -->
+			<div id="sw-logs-drawer-scrim" class="hidden fixed inset-0 z-40 bg-black/40"></div>
+			<aside
+				id="sw-logs-drawer"
+				class="hidden fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-[var(--swd-line)] p-4 shadow-[var(--swd-shadow-2)]"
+				style="background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 65%)"
+				role="dialog"
+				aria-label={ t(ctx, "logs.drawer_title") }
+				aria-modal="true"
+			>
+				<div class="flex items-center justify-between gap-2">
+					<h2 class="text-sm font-semibold text-[var(--swd-ink)]">{ t(ctx, "logs.drawer_title") }</h2>
+					<div class="flex items-center gap-2">
+						<button type="button" id="sw-logs-drawer-copy" class={ glassButton, "px-2 py-1 text-xs font-medium" }>{ t(ctx, "logs.copy_json") }</button>
+						<button type="button" id="sw-logs-drawer-close" class={ glassButton, "px-2 py-1 text-xs font-medium" } aria-label={ t(ctx, "logs.drawer_close") }>✕</button>
+					</div>
+				</div>
+				<pre id="sw-logs-drawer-body" class="mt-3 whitespace-pre-wrap break-words rounded-md border border-[var(--swd-line)] bg-black/20 p-2 font-mono text-[11px] leading-relaxed text-[var(--swd-ink)]"></pre>
+			</aside>
+		</div>
+		@LogsViewerScript()
+	}
+}
+
+// LogsViewerScript is the inline controller for the next/ log viewer. It opens an
+// EventSource to GET /api/v1/logs/stream (which self-backfills the ring buffer on
+// connect, then live-tails), builds structured log-line DOM, manages auto-follow
+// with pause-on-scroll-up, syncs filters between the toolbar/flyout/URL/stream,
+// and drives the side drawer, wrap toggle, clear, and bug-report export. It ports
+// the severity map and level-button visuals from web/static/js/settings/
+// log-viewer.js (the stable HTMX-polling viewer), swapping the transport for SSE.
+templ LogsViewerScript() {
+	<script>
+		(function () {
+			'use strict';
+			var root = document.getElementById('sw-logs-root');
+			if (!root || root.dataset.swLogsInit) return;
+			root.dataset.swLogsInit = '1';
+
+			var viewer = document.getElementById('log-viewer');
+			var emptyEl = document.getElementById('sw-logs-empty');
+			var statusDot = document.getElementById('sw-logs-status-dot');
+			var statusText = document.getElementById('sw-logs-status-text');
+			var jumpBtn = document.getElementById('sw-logs-jump');
+			var jumpCount = document.getElementById('sw-logs-jump-count');
+			var throttleEl = document.getElementById('sw-logs-throttle');
+			var throttleText = document.getElementById('sw-logs-throttle-text');
+			if (!viewer) return;
+
+			var bp = (function () {
+				var m = document.querySelector('meta[name="htmx-base-path"]');
+				return (m && m.content) || '';
+			})();
+
+			function esc(s) {
+				return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+					return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+				});
+			}
+			function L(name) { return root.dataset[name] || ''; }
+
+			var SEVERITY = { trace: -1, debug: 0, info: 1, warn: 2, error: 3 };
+			var MAX_LINES = 500;
+			var EXPORT_ERRORS = 50; // bug-report export: last N error lines
+
+			var state = {
+				level: root.dataset.initLevel || '',
+				component: root.dataset.initComponent || '',
+				search: root.dataset.initSearch || '',
+				artistId: root.dataset.initArtistId || '',
+				rule: root.dataset.initRule || '',
+				paused: false,
+				wrap: false,
+				buffered: 0
+			};
+
+			var es = null;
+
+			// -- presentation helpers (ported from log-viewer.js) ---------------
+			function levelRingClass(level) {
+				switch (level) {
+					case 'trace': return 'ring-purple-500/50';
+					case 'debug': return 'ring-gray-500/50';
+					case 'info':  return 'ring-blue-500/50';
+					case 'warn':  return 'ring-amber-500/50';
+					case 'error': return 'ring-red-500/50';
+					default:      return 'ring-gray-500/50';
+				}
+			}
+			// Severity PILLS are tinted badges, not buttons: the next/ "no solid-blue
+			// buttons" rule constrains buttons only, so a blue-tinted info pill is fine.
+			function levelPillClass(level) {
+				switch (level) {
+					case 'trace': return 'bg-purple-500/20 text-purple-700 dark:text-purple-300';
+					case 'debug': return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';
+					case 'info':  return 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
+					case 'warn':  return 'bg-amber-500/20 text-amber-700 dark:text-amber-300';
+					case 'error': return 'bg-red-500/20 text-red-700 dark:text-red-300';
+					default:      return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';
+				}
+			}
+
+			function fmtTime(iso) {
+				var d = new Date(iso);
+				if (isNaN(d.getTime())) return '';
+				function p(n, w) { var s = String(n); while (s.length < w) s = '0' + s; return s; }
+				return p(d.getHours(), 2) + ':' + p(d.getMinutes(), 2) + ':' + p(d.getSeconds(), 2) + '.' + p(d.getMilliseconds(), 3);
+			}
+
+			// Client-side AND filters the stream predicate does not cover.
+			function entryMatchesClientFilters(e) {
+				var attrs = e.attrs || {};
+				if (state.artistId) {
+					var a = attrs.artist_id != null ? String(attrs.artist_id) : '';
+					if (a !== state.artistId) return false;
+				}
+				if (state.rule) {
+					var rl = attrs.rule != null ? String(attrs.rule) : '';
+					if (rl !== state.rule) return false;
+				}
+				return true;
+			}
+
+			// Pinned attribute chips, in display order. artist_id navigates to the
+			// next/ artist-detail; rule chips filter the view by that rule.
+			var PINNED = ['artist_id', 'request_id', 'provider', 'rule', 'error'];
+			function buildLine(e) {
+				var lvl = (e.level || '').toLowerCase();
+				var row = document.createElement('div');
+				row.className = 'sw-log-line group flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5 hover:bg-white/5';
+				row.setAttribute('role', 'listitem');
+				try { row.dataset.entry = JSON.stringify(e); } catch (err) { /* non-fatal */ }
+
+				var html = '';
+				html += '<time class="shrink-0 tabular-nums text-[var(--swd-ink-3)]" datetime="' + esc(e.time || '') + '">' + esc(fmtTime(e.time)) + '</time>';
+				html += '<span class="shrink-0 rounded px-1.5 text-[10px] font-bold uppercase ' + levelPillClass(lvl) + '">' + esc(lvl || '?') + '</span>';
+				if (e.component) {
+					html += '<span class="shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-2)] dark:bg-white/10">' + esc(e.component) + '</span>';
+				}
+				html += '<span class="min-w-0 flex-1 break-words text-[var(--swd-ink)]">' + esc(e.message || '') + '</span>';
+
+				var attrs = e.attrs || {};
+				var chips = '';
+				PINNED.forEach(function (k) {
+					if (attrs[k] == null || attrs[k] === '') return;
+					var val = String(attrs[k]);
+					if (k === 'artist_id') {
+						chips += '<a href="' + esc(L('baseArtists') + val) + '" class="sw-log-chip shrink-0 rounded bg-blue-500/15 px-1.5 text-blue-700 hover:underline dark:text-blue-300" data-stop="1">artist:' + esc(val) + '</a>';
+					} else if (k === 'rule') {
+						chips += '<button type="button" class="sw-log-chip sw-log-rule-chip shrink-0 rounded bg-indigo-500/15 px-1.5 text-indigo-700 hover:underline dark:text-indigo-300" data-stop="1" data-rule="' + esc(val) + '">rule:' + esc(val) + '</button>';
+					} else if (k === 'error') {
+						chips += '<span class="sw-log-chip shrink-0 rounded bg-red-500/15 px-1.5 text-red-700 dark:text-red-300">error:' + esc(val) + '</span>';
+					} else {
+						chips += '<span class="sw-log-chip shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-3)] dark:bg-white/10">' + esc(k) + ':' + esc(val) + '</span>';
+					}
+				});
+				if (chips) {
+					html += '<span class="flex shrink-0 items-baseline gap-1 text-[10px]">' + chips + '</span>';
+				}
+				row.innerHTML = html;
+				return row;
+			}
+
+			// -- scroll / auto-follow -------------------------------------------
+			function isAtBottom() {
+				return viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 50;
+			}
+			function scrollToBottom() { viewer.scrollTop = viewer.scrollHeight; }
+			function updateJump() {
+				if (state.buffered > 0 && !isAtBottom()) {
+					jumpBtn.classList.remove('hidden');
+					if (jumpCount) {
+						jumpCount.textContent = String(state.buffered);
+						jumpCount.classList.remove('hidden');
+					}
+				} else {
+					jumpBtn.classList.add('hidden');
+					if (jumpCount) jumpCount.classList.add('hidden');
+				}
+			}
+			function hideEmpty() { if (emptyEl) emptyEl.classList.add('hidden'); }
+			function showEmpty() { if (emptyEl) emptyEl.classList.remove('hidden'); }
+
+			function appendEntry(e) {
+				if (!entryMatchesClientFilters(e)) return;
+				var atBottom = isAtBottom();
+				viewer.appendChild(buildLine(e));
+				while (viewer.childElementCount > MAX_LINES) {
+					viewer.removeChild(viewer.firstElementChild);
+				}
+				hideEmpty();
+				if (!state.paused && atBottom) {
+					scrollToBottom();
+					state.buffered = 0;
+				} else {
+					state.buffered++;
+				}
+				updateJump();
+			}
+
+			viewer.addEventListener('scroll', function () {
+				if (isAtBottom()) { state.buffered = 0; }
+				updateJump();
+			});
+
+			// -- connection status ----------------------------------------------
+			function setStatus(kind) {
+				var label, dot;
+				if (kind === 'connected') { label = L('labelConnected'); dot = 'bg-green-500'; }
+				else if (kind === 'reconnecting') { label = L('labelReconnecting'); dot = 'bg-amber-500'; }
+				else if (kind === 'error') { label = L('labelReconnecting'); dot = 'bg-red-500'; }
+				else { label = L('labelConnecting'); dot = 'bg-gray-400'; }
+				if (statusText) statusText.textContent = label;
+				if (statusDot) statusDot.className = 'inline-block h-2 w-2 rounded-full ' + dot;
+			}
+
+			function showThrottle(dropped) {
+				if (!throttleEl) return;
+				if (throttleText) {
+					var tmpl = L('labelThrottled') || 'Dropped {count} entries';
+					throttleText.textContent = tmpl.replace('{count}', String(dropped));
+				}
+				throttleEl.classList.remove('hidden');
+				throttleEl.classList.add('flex');
+			}
+
+			// -- SSE stream -----------------------------------------------------
+			function streamURL() {
+				var p = [];
+				if (state.level) p.push('level=' + encodeURIComponent(state.level));
+				if (state.component) p.push('scope=' + encodeURIComponent(state.component));
+				if (state.search) p.push('q=' + encodeURIComponent(state.search));
+				return bp + '/api/v1/logs/stream' + (p.length ? '?' + p.join('&') : '');
+			}
+			function disconnect() { if (es) { try { es.close(); } catch (e) { /* ignore */ } es = null; } }
+			function connect() {
+				disconnect();
+				setStatus('connecting');
+				try {
+					es = new EventSource(streamURL());
+				} catch (err) {
+					console.error('logs stream init failed', err);
+					setStatus('error');
+					return;
+				}
+				es.addEventListener('connected', function () { setStatus('connected'); });
+				es.addEventListener('logs.line', function (ev) {
+					var e;
+					try { e = JSON.parse(ev.data); } catch (err) { console.warn('logs.line parse failed', err); return; }
+					appendEntry(e);
+				});
+				es.addEventListener('logs.throttled', function (ev) {
+					var d;
+					try { d = JSON.parse(ev.data); } catch (err) { return; }
+					showThrottle(d && d.dropped ? d.dropped : 0);
+				});
+				// EventSource auto-reconnects (replaying via Last-Event-ID); surface
+				// the gap so the indicator never falsely reads live.
+				es.onerror = function () { setStatus('reconnecting'); };
+			}
+
+			// reload clears the view and reconnects with the current filters. The
+			// stream self-backfills on connect, so no separate /api/v1/logs fetch.
+			function reload() {
+				viewer.innerHTML = '';
+				showEmpty();
+				state.buffered = 0;
+				updateJump();
+				if (throttleEl) { throttleEl.classList.add('hidden'); throttleEl.classList.remove('flex'); }
+				syncURL();
+				connect();
+			}
+
+			// -- URL sync -------------------------------------------------------
+			function syncURL() {
+				var p = new URLSearchParams();
+				if (state.level) p.set('level', state.level);
+				if (state.component) p.set('component', state.component);
+				if (state.search) p.set('q', state.search);
+				if (state.artistId) p.set('artist_id', state.artistId);
+				if (state.rule) p.set('rule', state.rule);
+				var qs = p.toString();
+				try {
+					history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+				} catch (e) { /* replaceState can throw in sandboxed contexts */ }
+			}
+
+			// -- level filter buttons (ported visuals) --------------------------
+			var levelBtns = root.querySelectorAll('.sw-logs-level-btn');
+			function paintLevels() {
+				var selected = (state.level in SEVERITY) ? SEVERITY[state.level] : -2;
+				levelBtns.forEach(function (btn) {
+					var btnLevel = btn.getAttribute('data-log-level');
+					var btnSev = (btnLevel in SEVERITY) ? SEVERITY[btnLevel] : 0;
+					btn.className = btn.className.replace(/ ring-1/g, '').replace(/ ring-\S+\/50/g, '').replace(/ opacity-50/g, '');
+					if (state.level && btnSev >= selected) {
+						btn.classList.add('ring-1');
+						btn.classList.add(levelRingClass(btnLevel));
+					} else if (state.level) {
+						btn.classList.add('opacity-50');
+					}
+					btn.setAttribute('aria-pressed', btnLevel === state.level ? 'true' : 'false');
+				});
+			}
+			levelBtns.forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					var lvl = btn.getAttribute('data-log-level');
+					// Toggle off when re-clicking the active minimum level.
+					state.level = (state.level === lvl) ? '' : lvl;
+					paintLevels();
+					reload();
+				});
+			});
+
+			// -- search ---------------------------------------------------------
+			var searchEl = document.getElementById('sw-logs-search');
+			var searchTimer = null;
+			if (searchEl) {
+				searchEl.addEventListener('input', function () {
+					if (searchTimer) clearTimeout(searchTimer);
+					searchTimer = setTimeout(function () {
+						state.search = searchEl.value || '';
+						reload();
+					}, 300);
+				});
+			}
+
+			// -- filter flyout --------------------------------------------------
+			var flyout = document.getElementById('sw-logs-flyout');
+			var filterTrigger = document.getElementById('sw-logs-filter-trigger');
+			var filterBadge = document.getElementById('sw-logs-filter-badge');
+			function activeFilterCount() {
+				var n = 0;
+				if (state.component) n++;
+				if (state.artistId) n++;
+				if (state.rule) n++;
+				return n;
+			}
+			function paintFilterBadge() {
+				if (!filterBadge) return;
+				var n = activeFilterCount();
+				if (n > 0) { filterBadge.textContent = String(n); filterBadge.classList.remove('hidden'); }
+				else { filterBadge.classList.add('hidden'); }
+			}
+			function toggleFlyout(force) {
+				if (!flyout) return;
+				var open = force != null ? force : flyout.classList.contains('hidden');
+				flyout.classList.toggle('hidden', !open);
+				if (filterTrigger) filterTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+			}
+			if (filterTrigger) filterTrigger.addEventListener('click', function () { toggleFlyout(); });
+			var fComp = document.getElementById('sw-logs-f-component');
+			var fArtist = document.getElementById('sw-logs-f-artist');
+			var fRule = document.getElementById('sw-logs-f-rule');
+			var fApply = document.getElementById('sw-logs-f-apply');
+			var fClear = document.getElementById('sw-logs-f-clear');
+			if (fApply) fApply.addEventListener('click', function () {
+				state.component = fComp ? fComp.value.trim() : '';
+				state.artistId = fArtist ? fArtist.value.trim() : '';
+				state.rule = fRule ? fRule.value.trim() : '';
+				paintFilterBadge();
+				toggleFlyout(false);
+				reload();
+			});
+			if (fClear) fClear.addEventListener('click', function () {
+				if (fComp) fComp.value = '';
+				if (fArtist) fArtist.value = '';
+				if (fRule) fRule.value = '';
+				state.component = ''; state.artistId = ''; state.rule = '';
+				paintFilterBadge();
+				toggleFlyout(false);
+				reload();
+			});
+
+			// -- pause / resume -------------------------------------------------
+			var pauseBtn = document.getElementById('sw-logs-pause');
+			if (pauseBtn) pauseBtn.addEventListener('click', function () {
+				state.paused = !state.paused;
+				pauseBtn.textContent = state.paused ? L('labelResume') : L('labelPause');
+				pauseBtn.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
+				if (!state.paused && isAtBottom()) { scrollToBottom(); }
+			});
+
+			// -- wrap toggle ----------------------------------------------------
+			var wrapBtn = document.getElementById('sw-logs-wrap');
+			function applyWrap() {
+				viewer.classList.toggle('whitespace-nowrap', !state.wrap);
+				viewer.classList.toggle('whitespace-pre-wrap', state.wrap);
+				if (wrapBtn) wrapBtn.setAttribute('aria-pressed', state.wrap ? 'true' : 'false');
+			}
+			if (wrapBtn) wrapBtn.addEventListener('click', function () {
+				state.wrap = !state.wrap;
+				applyWrap();
+				if (window.swPreferences && typeof window.swPreferences.set === 'function') {
+					try { window.swPreferences.set('log_wrap', state.wrap ? '1' : '0'); } catch (e) { /* best-effort */ }
+				}
+			});
+
+			// -- clear ----------------------------------------------------------
+			var clearBtn = document.getElementById('sw-logs-clear');
+			if (clearBtn) clearBtn.addEventListener('click', function () {
+				var csrf = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+				fetch(bp + '/api/v1/logs', { method: 'DELETE', headers: { 'X-CSRF-Token': csrf } })
+					.then(function (r) { if (!r.ok) throw new Error('clear failed'); })
+					.then(function () { viewer.innerHTML = ''; showEmpty(); state.buffered = 0; updateJump(); })
+					.catch(function () { if (typeof showToast === 'function') showToast('Failed to clear logs.'); });
+			});
+
+			// -- jump to bottom -------------------------------------------------
+			if (jumpBtn) jumpBtn.addEventListener('click', function () {
+				state.paused = false;
+				if (pauseBtn) { pauseBtn.textContent = L('labelPause'); pauseBtn.setAttribute('aria-pressed', 'false'); }
+				scrollToBottom();
+				state.buffered = 0;
+				updateJump();
+			});
+
+			// -- side drawer ----------------------------------------------------
+			var drawer = document.getElementById('sw-logs-drawer');
+			var drawerScrim = document.getElementById('sw-logs-drawer-scrim');
+			var drawerBody = document.getElementById('sw-logs-drawer-body');
+			var drawerCopy = document.getElementById('sw-logs-drawer-copy');
+			var drawerClose = document.getElementById('sw-logs-drawer-close');
+			var drawerEntry = null;
+			function openDrawer(entry) {
+				drawerEntry = entry;
+				if (drawerBody) {
+					try { drawerBody.textContent = JSON.stringify(entry, null, 2); }
+					catch (e) { drawerBody.textContent = String(entry); }
+				}
+				if (drawer) drawer.classList.remove('hidden');
+				if (drawerScrim) drawerScrim.classList.remove('hidden');
+			}
+			function closeDrawer() {
+				if (drawer) drawer.classList.add('hidden');
+				if (drawerScrim) drawerScrim.classList.add('hidden');
+				drawerEntry = null;
+			}
+			if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+			if (drawerScrim) drawerScrim.addEventListener('click', closeDrawer);
+			if (drawerCopy) drawerCopy.addEventListener('click', function () {
+				if (!drawerEntry) return;
+				copyText(JSON.stringify(drawerEntry, null, 2), L('labelCopyOk'));
+			});
+
+			// Line click: rule chip filters; artist link navigates (default); a
+			// bare click anywhere else opens the drawer.
+			viewer.addEventListener('click', function (ev) {
+				var ruleChip = ev.target.closest && ev.target.closest('.sw-log-rule-chip');
+				if (ruleChip) {
+					ev.preventDefault();
+					state.rule = ruleChip.getAttribute('data-rule') || '';
+					if (fRule) fRule.value = state.rule;
+					paintFilterBadge();
+					reload();
+					return;
+				}
+				if (ev.target.closest && ev.target.closest('[data-stop]')) return; // artist link: let it navigate
+				var line = ev.target.closest && ev.target.closest('.sw-log-line');
+				if (!line || !line.dataset.entry) return;
+				try { openDrawer(JSON.parse(line.dataset.entry)); } catch (e) { /* ignore */ }
+			});
+
+			// -- bug-report export ----------------------------------------------
+			function copyText(text, okMsg) {
+				function fallback() {
+					try {
+						var ta = document.createElement('textarea');
+						ta.value = text;
+						ta.style.position = 'fixed';
+						ta.style.opacity = '0';
+						document.body.appendChild(ta);
+						ta.select();
+						document.execCommand('copy');
+						document.body.removeChild(ta);
+						if (typeof showToast === 'function') showToast(okMsg);
+					} catch (e) {
+						if (typeof showToast === 'function') showToast(L('labelExportFail'));
+					}
+				}
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					navigator.clipboard.writeText(text).then(function () {
+						if (typeof showToast === 'function') showToast(okMsg);
+					}, fallback);
+				} else {
+					fallback();
+				}
+			}
+			var exportBtn = document.getElementById('sw-logs-export');
+			if (exportBtn) exportBtn.addEventListener('click', function () {
+				// Collect the last N error lines currently in the DOM.
+				var errs = [];
+				var lines = viewer.querySelectorAll('.sw-log-line');
+				for (var i = lines.length - 1; i >= 0 && errs.length < EXPORT_ERRORS; i--) {
+					var e;
+					try { e = JSON.parse(lines[i].dataset.entry); } catch (er) { continue; }
+					if ((e.level || '').toLowerCase() === 'error') {
+						errs.unshift('- `' + (e.time || '') + '` [' + (e.component || '') + '] ' + (e.message || ''));
+					}
+				}
+				var filters = [];
+				if (state.level) filters.push('level=' + state.level);
+				if (state.component) filters.push('component=' + state.component);
+				if (state.search) filters.push('q=' + state.search);
+				if (state.artistId) filters.push('artist_id=' + state.artistId);
+				if (state.rule) filters.push('rule=' + state.rule);
+				var md = '## Bug report\n\n' +
+					'### Recent errors\n\n' + (errs.length ? errs.join('\n') : '_none in current view_') + '\n\n' +
+					'### Context\n\n' +
+					'- Active filters: ' + (filters.length ? filters.join(', ') : 'none') + '\n' +
+					'- Page: ' + window.location.href + '\n' +
+					'- User agent: ' + navigator.userAgent + '\n';
+				copyText(md, L('labelExportOk'));
+			});
+
+			// -- keyboard: j/k scroll the viewer; register cheat-sheet entries ---
+			document.addEventListener('keydown', function (ev) {
+				if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+				var tag = (ev.target && ev.target.tagName) || '';
+				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target && ev.target.isContentEditable)) return;
+				if (drawer && !drawer.classList.contains('hidden') && ev.key === 'Escape') { closeDrawer(); return; }
+				if (ev.key === 'j' || ev.key === 'J') { ev.preventDefault(); viewer.scrollTop += 40; state.paused = true; updateJump(); }
+				else if (ev.key === 'k' || ev.key === 'K') { ev.preventDefault(); viewer.scrollTop -= 40; }
+			});
+			// g l (go to logs) is owned by the shared g-leader nav registry (PR #1775);
+			// this page only advertises it for the cheat sheet. j/k are page-local.
+			// TODO(#1775): once the shared registry exposes a g-leader registration
+			// API, bind 'g l' -> /next/logs here instead of relying on #1775's map.
+			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
+				window.swKeyboardShortcuts.register('logs', [
+					{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },
+					{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },
+					{ key: 'k', label: L('labelScrollUp') || 'Scroll up' }
+				]);
+			}
+
+			// -- boot -----------------------------------------------------------
+			paintLevels();
+			paintFilterBadge();
+			applyWrap();
+			if (pauseBtn) pauseBtn.textContent = L('labelPause');
+			connect();
+		})();
+	</script>
+}
