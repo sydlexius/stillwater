@@ -29,6 +29,81 @@ func newTestRouterWithLogs(t *testing.T) (*Router, *logging.RingBuffer) {
 	return r, rb
 }
 
+func TestHandleLogsComponents(t *testing.T) {
+	t.Parallel()
+	r, rb := newTestRouterWithLogs(t)
+
+	now := time.Now()
+	rb.Write(logging.LogEntry{Time: now, Level: "info", Message: "a", Component: "scanner"})
+	rb.Write(logging.LogEntry{Time: now.Add(time.Second), Level: "warn", Message: "b", Component: "api"})
+	rb.Write(logging.LogEntry{Time: now.Add(2 * time.Second), Level: "info", Message: "c", Component: "scanner"})
+	rb.Write(logging.LogEntry{Time: now.Add(3 * time.Second), Level: "info", Message: "d"}) // no component
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/components", nil)
+	rec := httptest.NewRecorder()
+	r.handleLogsComponents(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	if ct := res.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("expected JSON content type, got %q", ct)
+	}
+
+	var payload struct {
+		Components []string `json:"components"`
+	}
+	body, _ := io.ReadAll(res.Body)
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshaling: %v", err)
+	}
+	// Distinct, sorted, empty component omitted.
+	want := []string{"api", "scanner"}
+	if len(payload.Components) != len(want) {
+		t.Fatalf("components = %v, want %v", payload.Components, want)
+	}
+	for i := range want {
+		if payload.Components[i] != want[i] {
+			t.Errorf("components[%d] = %q, want %q (full: %v)", i, payload.Components[i], want[i], payload.Components)
+		}
+	}
+}
+
+func TestHandleLogsComponents_EmptyBufferReturnsArray(t *testing.T) {
+	t.Parallel()
+	r, _ := newTestRouterWithLogs(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/components", nil)
+	rec := httptest.NewRecorder()
+	r.handleLogsComponents(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	body, _ := io.ReadAll(res.Body)
+	// Must serialize as an empty array, never null, so clients can iterate.
+	if !strings.Contains(string(body), `"components":[]`) {
+		t.Errorf("empty buffer should yield an empty array, got %s", string(body))
+	}
+}
+
+func TestHandleLogsComponents_NoManager(t *testing.T) {
+	t.Parallel()
+	r := &Router{logManager: nil, logger: slog.Default()}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/components", nil)
+	rec := httptest.NewRecorder()
+	r.handleLogsComponents(rec, req)
+
+	if rec.Result().StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("nil logManager should yield 503, got %d", rec.Result().StatusCode)
+	}
+}
+
 func TestHandleGetLogs_JSON(t *testing.T) {
 	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)

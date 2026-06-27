@@ -10186,6 +10186,52 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /logs/components:
+    get:
+      tags: [Logs]
+      summary: List distinct log components
+      description: |
+        Returns the distinct component values currently present in the in-memory
+        log ring buffer, sorted alphabetically. Admin only.
+
+        This is the vocabulary the live log viewer renders as Component filter
+        pills: the natural set of components the user can filter the stream on
+        (the `/logs/stream` `scope` parameter is an exact component match).
+        Records with no derived component are omitted; the array is always
+        present (empty when the buffer holds no components).
+      operationId: listLogComponents
+      responses:
+        "200":
+          description: Distinct component values.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [components]
+                properties:
+                  components:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin privileges required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Logging manager or log buffer not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /settings/maintenance/status:
     get:
       tags: [Settings]

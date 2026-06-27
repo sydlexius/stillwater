@@ -67,5 +67,16 @@ func (r *Router) handleNextLogsPage(w http.ResponseWriter, req *http.Request) {
 		Rule:      q.Get("rule"),
 	}
 
-	renderTempl(w, req, next.LogsPage(r.assetsFor(req), filter))
+	// Distinct components currently in the ring buffer become the Component
+	// filter pills (#1338 W1-B). Computed directly from the buffer here (no HTTP
+	// round-trip); the /api/v1/logs/components endpoint exposes the same set for
+	// client refresh. A nil log manager / buffer just yields no component pills.
+	var components []string
+	if r.logManager != nil {
+		if rb := r.logManager.RingBuffer(); rb != nil {
+			components = rb.Components()
+		}
+	}
+
+	renderTempl(w, req, next.LogsPage(r.assetsFor(req), filter, components))
 }

@@ -1,6 +1,8 @@
 package next
 
 import (
+	"strconv"
+
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -19,13 +21,33 @@ type LogsFilterState struct {
 	Rule      string
 }
 
-// logLevels is the severity ladder shown as filter buttons, lowest-first. The
-// labels are localized at render time; the data-log-level value is the wire
-// token the stream's level= param and the client severity map both use.
+// logLevels is the severity ladder shown as single-select Level filter pills,
+// lowest-first. Each value is the wire token the stream's level= param and the
+// client severity map both use; level is a MINIMUM severity, hence single-select.
 var logLevels = []string{"trace", "debug", "info", "warn", "error"}
 
 // logLevelLabelKey maps a level token to its i18n key.
 func logLevelLabelKey(level string) string { return "logs.level." + level }
+
+// logsActiveFilterCount counts the active filter facets for the flyout trigger
+// badge (#1338 W1-B): level + component pills plus the free-text artist_id / rule
+// deep-link facets. Search lives in the toolbar and is not counted here, matching
+// how the other next/ viewers exclude their toolbar search from the flyout badge.
+func logsActiveFilterCount(filter LogsFilterState) int {
+	n := 0
+	for _, v := range []string{filter.Level, filter.Component, filter.ArtistID, filter.Rule} {
+		if v != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// logsFilterCountStr is the decimal string of the active filter count, for the
+// trigger badge text.
+func logsFilterCountStr(filter LogsFilterState) string {
+	return strconv.Itoa(logsActiveFilterCount(filter))
+}
 
 // LogsPage renders the next/ live log viewer (M55 #1338, PR 5B). It renders only
 // the chrome -- toolbar, empty viewer container, throttle banner, filter flyout,
@@ -35,7 +57,7 @@ func logLevelLabelKey(level string) string { return "logs.level." + level }
 // below. Surfaces source their background from --sw-glass-bg so the Background
 // Opacity preference governs translucency (M55 opacity compliance); the flyout
 // and drawer apply a legibility floor so they stay readable at low opacity.
-templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
+templ LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents []string) {
 	@LayoutNext(t(ctx, "logs.title"), assets) {
 		<div
 			id="sw-logs-root"
@@ -46,6 +68,7 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 			data-init-artist-id={ filter.ArtistID }
 			data-init-rule={ filter.Rule }
 			data-base-artists={ assets.BasePath + "/next/artists/" }
+			data-label-remove-filter={ t(ctx, "logs.remove_filter") }
 			data-label-connecting={ t(ctx, "logs.connecting") }
 			data-label-connected={ t(ctx, "logs.connected") }
 			data-label-reconnecting={ t(ctx, "logs.reconnecting") }
@@ -87,36 +110,30 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 						aria-label={ t(ctx, "logs.search_placeholder") }
 					/>
 				</div>
-				<!-- Level filter buttons -->
-				<div class="inline-flex items-center gap-1" role="group" aria-label={ t(ctx, "logs.level_filter") }>
-					for _, lvl := range logLevels {
-						<button
-							type="button"
-							class={ glassButton, "sw-logs-level-btn px-2 py-1 text-xs font-medium" }
-							data-log-level={ lvl }
-							aria-pressed="false"
-						>
-							{ t(ctx, logLevelLabelKey(lvl)) }
-						</button>
-					}
-				</div>
-				<!-- Filter flyout trigger -->
-				<!-- No data-sw-shortcut="f" here: the global keyboard.js would route f
-				     through window.swFilterFlyout (the shared facet-flyout system),
-				     which does not manage this page's custom flyout, so f was a no-op
-				     (V2). The page's own keydown handler owns f -> toggleFlyout, and
-				     advertises it in the cheat-sheet register() below. aria-controls /
-				     aria-expanded are kept for a11y (the click handler maintains them). -->
+				<!-- Filter flyout trigger (shared swFilterFlyout system, #1338 W1-B).
+				     data-sw-shortcut="f" lets the global keyboard.js open it natively
+				     via activateToggle -> swFilterFlyout.open (now that the panel IS a
+				     shared flyout). data-active-classes / data-badge-classes drive the
+				     client-side active-count visual sync (refreshActiveCount). -->
 				<button
 					type="button"
 					id="sw-logs-filter-trigger"
-					class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" }
+					data-sw-shortcut="f"
+					data-sw-shortcut-label={ t(ctx, "logs.shortcuts.filters") }
+					data-active-classes={ glassButtonHalo }
+					data-neutral-classes="hover:bg-white/5"
+					data-badge-classes={ filterTriggerBadge }
+					class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium", templ.KV(glassButtonHalo, logsActiveFilterCount(filter) > 0) }
 					aria-expanded="false"
-					aria-controls="sw-logs-flyout"
+					aria-controls="sw-logs-filter-flyout"
+					aria-label={ t(ctx, "logs.filters") }
+					onclick={ components.OpenFilterFlyout("sw-logs-filter-flyout") }
 				>
 					@components.IconAdjustmentsHorizontal("h-3.5 w-3.5")
 					{ t(ctx, "logs.filters") }
-					<span id="sw-logs-filter-badge" class="hidden ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900">0</span>
+					if logsActiveFilterCount(filter) > 0 {
+						<span class={ filterTriggerBadge }>{ logsFilterCountStr(filter) }</span>
+					}
 				</button>
 				<div class="flex-1"></div>
 				<!-- Pause / resume -->
@@ -136,6 +153,11 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 					{ t(ctx, "logs.clear") }
 				</button>
 			</div>
+			<!-- Active-filter chips (#1338 W1-B). Rendered client-side from the active
+			     filter state; each chip's dismiss clears that facet and reconnects the
+			     SSE stream (the shared htmx-based DismissFilterChip path does not fit
+			     an SSE viewer). Reuses the shared chip visual for consistency. -->
+			<div id="sw-logs-active-chips" class="flex flex-wrap items-center gap-1.5 empty:hidden" aria-label={ t(ctx, "logs.active_filters") }></div>
 			<!-- Throttle banner (hidden until logs.throttled arrives) -->
 			<div
 				id="sw-logs-throttle"
@@ -189,34 +211,34 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Shift G</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.jump_bottom") }</span></span>
 			</p>
-			<!-- Filter flyout (component / artist / rule). Legibility floor via
-			     opaque-ish background so it stays readable at low global opacity. -->
-			<div
-				id="sw-logs-flyout"
-				class="hidden fixed right-4 top-28 z-30 w-72 rounded-lg border border-[var(--swd-line)] p-4 shadow-[var(--swd-shadow-2)]"
-				style="background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 60%)"
-				role="dialog"
-				aria-label={ t(ctx, "logs.filters") }
-			>
-				<div class="space-y-3">
-					<label class="block">
-						<span class="mb-1 block text-xs font-medium text-[var(--swd-ink-2)]">{ t(ctx, "logs.filter_component") }</span>
-						<input id="sw-logs-f-component" type="text" value={ filter.Component } class="w-full rounded-md border border-[var(--swd-line)] bg-transparent px-2 py-1 text-sm text-[var(--swd-ink)] focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-					</label>
-					<label class="block">
-						<span class="mb-1 block text-xs font-medium text-[var(--swd-ink-2)]">{ t(ctx, "logs.filter_artist_id") }</span>
-						<input id="sw-logs-f-artist" type="text" inputmode="numeric" value={ filter.ArtistID } class="w-full rounded-md border border-[var(--swd-line)] bg-transparent px-2 py-1 text-sm text-[var(--swd-ink)] focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-					</label>
-					<label class="block">
-						<span class="mb-1 block text-xs font-medium text-[var(--swd-ink-2)]">{ t(ctx, "logs.filter_rule") }</span>
-						<input id="sw-logs-f-rule" type="text" value={ filter.Rule } class="w-full rounded-md border border-[var(--swd-line)] bg-transparent px-2 py-1 text-sm text-[var(--swd-ink)] focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-					</label>
-					<div class="flex items-center justify-between gap-2 pt-1">
-						<button type="button" id="sw-logs-f-clear" class={ glassButton, "px-2.5 py-1 text-xs font-medium" }>{ t(ctx, "logs.filter_clear") }</button>
-						<button type="button" id="sw-logs-f-apply" class={ glassButton, "px-2.5 py-1 text-xs font-medium" }>{ t(ctx, "logs.filter_apply") }</button>
-					</div>
-				</div>
-			</div>
+			<!-- Filter flyout: shared swFilterFlyout component (#1338 W1-B) so the logs
+			     filter matches the other next/ viewers (pills, active-count badge,
+			     Escape-to-close, focus trap). Level = single-select min-severity pills;
+			     Component = single-select pills from the ring buffer's distinct
+			     components (GET /api/v1/logs/components vocabulary); artist_id / rule =
+			     free-text deep-link facets (arbitrary values, no pill vocabulary).
+			     data-target-sel="#log-viewer": apply() fires sw:filter-applied there,
+			     and the controller script reconnects the SSE stream on that event. -->
+			@components.FilterFlyout("sw-logs-filter-flyout", t(ctx, "logs.filters"), "sw-logs-filter-trigger", logsActiveFilterCount(filter), "#log-viewer", nil) {
+				@components.FilterSection(t(ctx, "logs.level_filter")) {
+					for _, lvl := range logLevels {
+						@components.FilterItemSingle("sw-logs-filter-flyout", "level", lvl, t(ctx, logLevelLabelKey(lvl)), filter.Level == lvl, 0)
+					}
+				}
+				if len(logComponents) > 0 {
+					@components.FilterSection(t(ctx, "logs.filter_component")) {
+						for _, c := range logComponents {
+							@components.FilterItemSingle("sw-logs-filter-flyout", "component", c, c, filter.Component == c, 0)
+						}
+					}
+				}
+				@components.FilterSection(t(ctx, "logs.filter_artist_id")) {
+					<input id="sw-logs-f-artist" type="text" inputmode="numeric" value={ filter.ArtistID } placeholder={ t(ctx, "logs.filter_artist_id") } class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" aria-label={ t(ctx, "logs.filter_artist_id") }/>
+				}
+				@components.FilterSection(t(ctx, "logs.filter_rule")) {
+					<input id="sw-logs-f-rule" type="text" value={ filter.Rule } placeholder={ t(ctx, "logs.filter_rule") } class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" aria-label={ t(ctx, "logs.filter_rule") }/>
+				}
+			}
 			<!-- Line side-drawer (full entry view) -->
 			<div id="sw-logs-drawer-scrim" class="hidden fixed inset-0 z-40 bg-black/40"></div>
 			<aside
@@ -279,7 +301,6 @@ templ LogsViewerScript() {
 			}
 			function L(name) { return root.dataset[name] || ''; }
 
-			var SEVERITY = { trace: -1, debug: 0, info: 1, warn: 2, error: 3 };
 			var MAX_LINES = 500;
 			// While the user holds position (paused or scrolled up reading older
 			// lines), the top-prune is suspended so the very lines being read are not
@@ -303,16 +324,6 @@ templ LogsViewerScript() {
 			var es = null;
 
 			// -- presentation helpers (ported from log-viewer.js) ---------------
-			function levelRingClass(level) {
-				switch (level) {
-					case 'trace': return 'ring-purple-500/50';
-					case 'debug': return 'ring-gray-500/50';
-					case 'info':  return 'ring-blue-500/50';
-					case 'warn':  return 'ring-amber-500/50';
-					case 'error': return 'ring-red-500/50';
-					default:      return 'ring-gray-500/50';
-				}
-			}
 			// Severity PILLS are tinted badges, not buttons: the next/ "no solid-blue
 			// buttons" rule constrains buttons only, so a blue-tinted info pill is fine.
 			function levelPillClass(level) {
@@ -565,34 +576,7 @@ templ LogsViewerScript() {
 				} catch (e) { /* replaceState can throw in sandboxed contexts */ }
 			}
 
-			// -- level filter buttons (ported visuals) --------------------------
-			var levelBtns = root.querySelectorAll('.sw-logs-level-btn');
-			function paintLevels() {
-				var selected = (state.level in SEVERITY) ? SEVERITY[state.level] : -2;
-				levelBtns.forEach(function (btn) {
-					var btnLevel = btn.getAttribute('data-log-level');
-					var btnSev = (btnLevel in SEVERITY) ? SEVERITY[btnLevel] : 0;
-					btn.className = btn.className.replace(/ ring-1/g, '').replace(/ ring-\S+\/50/g, '').replace(/ opacity-50/g, '');
-					if (state.level && btnSev >= selected) {
-						btn.classList.add('ring-1');
-						btn.classList.add(levelRingClass(btnLevel));
-					} else if (state.level) {
-						btn.classList.add('opacity-50');
-					}
-					btn.setAttribute('aria-pressed', btnLevel === state.level ? 'true' : 'false');
-				});
-			}
-			levelBtns.forEach(function (btn) {
-				btn.addEventListener('click', function () {
-					var lvl = btn.getAttribute('data-log-level');
-					// Toggle off when re-clicking the active minimum level.
-					state.level = (state.level === lvl) ? '' : lvl;
-					paintLevels();
-					reload();
-				});
-			});
-
-			// -- search ---------------------------------------------------------
+			// -- search (toolbar) -----------------------------------------------
 			var searchEl = document.getElementById('sw-logs-search');
 			var searchTimer = null;
 			if (searchEl) {
@@ -601,56 +585,118 @@ templ LogsViewerScript() {
 					searchTimer = setTimeout(function () {
 						state.search = searchEl.value || '';
 						reload();
+						renderActiveChips();
 					}, 300);
 				});
 			}
 
-			// -- filter flyout --------------------------------------------------
-			var flyout = document.getElementById('sw-logs-flyout');
-			var filterTrigger = document.getElementById('sw-logs-filter-trigger');
-			var filterBadge = document.getElementById('sw-logs-filter-badge');
-			function activeFilterCount() {
-				var n = 0;
-				if (state.component) n++;
-				if (state.artistId) n++;
-				if (state.rule) n++;
-				return n;
-			}
-			function paintFilterBadge() {
-				if (!filterBadge) return;
-				var n = activeFilterCount();
-				if (n > 0) { filterBadge.textContent = String(n); filterBadge.classList.remove('hidden'); }
-				else { filterBadge.classList.add('hidden'); }
-			}
-			function toggleFlyout(force) {
-				if (!flyout) return;
-				var open = force != null ? force : flyout.classList.contains('hidden');
-				flyout.classList.toggle('hidden', !open);
-				if (filterTrigger) filterTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
-			}
-			if (filterTrigger) filterTrigger.addEventListener('click', function () { toggleFlyout(); });
-			var fComp = document.getElementById('sw-logs-f-component');
+			// -- shared filter flyout (swFilterFlyout, #1338 W1-B) --------------
+			// Level + Component PILLS are owned by the shared swFilterFlyout system:
+			// apply() writes ?level / ?component to the URL and fires sw:filter-applied
+			// on #log-viewer. The free-text artist_id / rule inputs live in the same
+			// flyout but are not pills, so they are read here on apply. ESC-to-close
+			// and native `f`-to-open come from the shared system (no custom handlers).
 			var fArtist = document.getElementById('sw-logs-f-artist');
 			var fRule = document.getElementById('sw-logs-f-rule');
-			var fApply = document.getElementById('sw-logs-f-apply');
-			var fClear = document.getElementById('sw-logs-f-clear');
-			if (fApply) fApply.addEventListener('click', function () {
-				state.component = fComp ? fComp.value.trim() : '';
+
+			function syncFlyoutFreeText() {
 				state.artistId = fArtist ? fArtist.value.trim() : '';
 				state.rule = fRule ? fRule.value.trim() : '';
-				paintFilterBadge();
-				toggleFlyout(false);
+			}
+
+			// On Apply the shared flyout has already written ?level / ?component to the
+			// URL; pull those plus the free-text facets, then reconnect the SSE stream.
+			document.body.addEventListener('sw:filter-applied', function (evt) {
+				if (!evt.target || evt.target.id !== 'log-viewer') return;
+				var url = new URL(window.location.href);
+				state.level = url.searchParams.get('level') || '';
+				state.component = url.searchParams.get('component') || '';
+				syncFlyoutFreeText();
 				reload();
+				renderActiveChips();
 			});
-			if (fClear) fClear.addEventListener('click', function () {
-				if (fComp) fComp.value = '';
+
+			// Clear All resets the pills + URL via the shared system; also wipe the
+			// free-text inputs (the shared clearAll does not know about them). The
+			// shared handler fires sw:filter-applied afterwards, which reloads.
+			var clearAllBtn = document.querySelector('#sw-logs-filter-flyout .sw-filter-btn-ghost');
+			if (clearAllBtn) clearAllBtn.addEventListener('click', function () {
 				if (fArtist) fArtist.value = '';
 				if (fRule) fRule.value = '';
-				state.component = ''; state.artistId = ''; state.rule = '';
-				paintFilterBadge();
-				toggleFlyout(false);
-				reload();
 			});
+
+			// Enter in a free-text facet applies immediately (mirrors Apply for pills).
+			function applyFreeTextOnEnter(el) {
+				if (!el) return;
+				el.addEventListener('keydown', function (ev) {
+					if (ev.key === 'Enter') {
+						ev.preventDefault();
+						syncFlyoutFreeText();
+						reload();
+						renderActiveChips();
+						if (window.swFilterFlyout) swFilterFlyout.close('sw-logs-filter-flyout');
+					}
+				});
+			}
+			applyFreeTextOnEnter(fArtist);
+			applyFreeTextOnEnter(fRule);
+
+			// -- active-filter chips --------------------------------------------
+			// Rendered client-side from the active state; dismiss clears the facet and
+			// reconnects the SSE stream (the shared htmx DismissFilterChip path does
+			// not fit an SSE viewer). Reuses the shared chip visual for consistency.
+			var activeChipsEl = document.getElementById('sw-logs-active-chips');
+			// Literal, compact prefixes matching the in-line artist:/rule: chip style
+			// (these short technical tokens are intentionally not translated, like the
+			// log-line attribute chips); the dismiss aria-label is translated.
+			function chipText(key, value) {
+				switch (key) {
+					case 'level': return 'level: ' + value;
+					case 'component': return 'component: ' + value;
+					case 'artist_id': return 'artist: ' + value;
+					case 'rule': return 'rule: ' + value;
+					case 'q': return 'search: ' + value;
+					default: return key + ': ' + value;
+				}
+			}
+			function clearFacet(key) {
+				if (key === 'level') state.level = '';
+				else if (key === 'component') state.component = '';
+				else if (key === 'artist_id') { state.artistId = ''; if (fArtist) fArtist.value = ''; }
+				else if (key === 'rule') { state.rule = ''; if (fRule) fRule.value = ''; }
+				else if (key === 'q') { state.search = ''; if (searchEl) searchEl.value = ''; }
+				reload();
+				// Re-sync the flyout pills from the now-rewritten URL so a dismissed
+				// level/component chip also de-selects its pill.
+				if (window.swFilterFlyout) swFilterFlyout.initFromURL('sw-logs-filter-flyout');
+				renderActiveChips();
+			}
+			function renderActiveChips() {
+				if (!activeChipsEl) return;
+				activeChipsEl.innerHTML = '';
+				[
+					{ key: 'level', value: state.level },
+					{ key: 'component', value: state.component },
+					{ key: 'artist_id', value: state.artistId },
+					{ key: 'rule', value: state.rule },
+					{ key: 'q', value: state.search }
+				].forEach(function (f) {
+					if (!f.value) return;
+					var chip = document.createElement('span');
+					chip.className = 'inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300';
+					var text = document.createElement('span');
+					text.textContent = chipText(f.key, f.value);
+					chip.appendChild(text);
+					var btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-500';
+					btn.setAttribute('aria-label', (L('labelRemoveFilter') || 'Remove filter') + ': ' + chipText(f.key, f.value));
+					btn.textContent = '×';
+					btn.addEventListener('click', function () { clearFacet(f.key); });
+					chip.appendChild(btn);
+					activeChipsEl.appendChild(chip);
+				});
+			}
 
 			// -- pause / resume -------------------------------------------------
 			var pauseBtn = document.getElementById('sw-logs-pause');
@@ -737,8 +783,8 @@ templ LogsViewerScript() {
 					ev.preventDefault();
 					state.rule = ruleChip.getAttribute('data-rule') || '';
 					if (fRule) fRule.value = state.rule;
-					paintFilterBadge();
 					reload();
+					renderActiveChips();
 					return;
 				}
 				if (ev.target.closest && ev.target.closest('[data-stop]')) return; // artist link: let it navigate
@@ -805,9 +851,9 @@ templ LogsViewerScript() {
 				var tag = (ev.target && ev.target.tagName) || '';
 				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target && ev.target.isContentEditable)) return;
 				if (drawer && !drawer.classList.contains('hidden') && ev.key === 'Escape') { closeDrawer(); return; }
-				// f toggles the Filters flyout (V2). Owned here, not via the global
-				// data-sw-shortcut path (which wrongly routes to swFilterFlyout).
-				if (ev.key === 'f' || ev.key === 'F') { ev.preventDefault(); toggleFlyout(); return; }
+				// f (open Filters) is handled by the global keyboard.js via the
+				// trigger's data-sw-shortcut="f" -> swFilterFlyout.open (W1-B); no local
+				// binding here. Escape-to-close is handled by the shared flyout system.
 				// j/k just scroll; auto-follow is governed by isAtBottom() (the scroll
 				// handler), so neither key touches state.paused -- pressing j and
 				// returning to the bottom resumes the live tail without an explicit
@@ -826,10 +872,11 @@ templ LogsViewerScript() {
 			// TODO(#1775): once the shared registry exposes a g-leader registration
 			// API, bind 'g l' -> /next/logs here instead of relying on #1775's map.
 			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
+				// `/` (search) and `f` (filters) auto-register from their
+				// data-sw-shortcut attributes; only the inline-handled keys are added
+				// manually here.
 				window.swKeyboardShortcuts.register('logs', [
 					{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },
-					{ key: '/', label: L('labelSearch') || 'Search' },
-					{ key: 'f', label: L('labelFilters') || 'Filters' },
 					{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },
 					{ key: 'k', label: L('labelScrollUp') || 'Scroll up' },
 					{ key: 'PgUp / PgDn', label: L('labelPage') || 'Page up / down' },
@@ -838,8 +885,12 @@ templ LogsViewerScript() {
 			}
 
 			// -- boot -----------------------------------------------------------
-			paintLevels();
-			paintFilterBadge();
+			// Hydrate the shared flyout pills (level/component) from the URL, then
+			// render the active-filter chips from the seeded state.
+			if (window.swFilterFlyout && typeof swFilterFlyout.initFromURL === 'function') {
+				swFilterFlyout.initFromURL('sw-logs-filter-flyout');
+			}
+			renderActiveChips();
 			applyWrap();
 			if (pauseBtn) pauseBtn.textContent = L('labelPause');
 			connect();

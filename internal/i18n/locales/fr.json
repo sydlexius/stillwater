@@ -111,6 +111,8 @@
   "logs.search_placeholder": "Rechercher dans les messages",
   "logs.level_filter": "Filtrer par niveau",
   "logs.filters": "Filtres",
+  "logs.active_filters": "Filtres actifs",
+  "logs.remove_filter": "Retirer le filtre",
   "logs.filter_component": "Composant",
   "logs.filter_artist_id": "ID d'artiste",
   "logs.filter_rule": "Règle",

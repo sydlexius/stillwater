@@ -1286,6 +1286,8 @@
   "logs.search_placeholder": "Search messages",
   "logs.level_filter": "Filter by level",
   "logs.filters": "Filters",
+  "logs.active_filters": "Active filters",
+  "logs.remove_filter": "Remove filter",
   "logs.filter_component": "Component",
   "logs.filter_artist_id": "Artist ID",
   "logs.filter_rule": "Rule",

@@ -37,7 +37,7 @@ func TestHandleNextLogsPage_RendersNextWhenChannelNext(t *testing.T) {
 		`id="sw-logs-root"`,
 		`id="log-viewer"`,
 		`id="sw-logs-throttle"`,
-		`id="sw-logs-flyout"`,
+		`id="sw-logs-filter-flyout"`,
 		`id="sw-logs-jump"`,
 	} {
 		if !strings.Contains(body, id) {
