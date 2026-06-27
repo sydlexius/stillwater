@@ -95,6 +95,29 @@ func (r *Router) handleGetLogs(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, entries)
 }
 
+// handleLogsComponents returns the distinct component values currently present
+// in the in-memory log ring buffer, sorted alphabetically. This is the
+// vocabulary the next/ logs viewer renders as Component filter pills (#1338):
+// the natural set of components the user can filter the live stream on (the
+// stream's `scope` predicate is an exact component match). Administrator-gated
+// at the route (mirroring /api/v1/logs/stream).
+//
+// GET /api/v1/logs/components -> {"components": ["api", "scanner", ...]}
+func (r *Router) handleLogsComponents(w http.ResponseWriter, _ *http.Request) {
+	if r.logManager == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "logging manager not available"})
+		return
+	}
+	rb := r.logManager.RingBuffer()
+	if rb == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "log buffer not available"})
+		return
+	}
+	// RingBuffer.Components always returns a non-nil slice (empty when the buffer
+	// holds no components), so this serializes as a JSON array, never null.
+	writeJSON(w, http.StatusOK, map[string][]string{"components": rb.Components()})
+}
+
 // handleListLogFiles returns the log files available for browsing.
 // GET /api/v1/logs/files
 func (r *Router) handleListLogFiles(w http.ResponseWriter, req *http.Request) {

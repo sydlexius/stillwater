@@ -6,6 +6,57 @@ import (
 	"time"
 )
 
+func TestRingBuffer_Components(t *testing.T) {
+	rb := NewRingBuffer(10)
+	now := time.Now()
+	// Duplicates, an empty component, and out-of-order insertion to prove
+	// distinct + sorted + empty-omitted.
+	rb.Write(LogEntry{Time: now, Level: "info", Message: "1", Component: "scanner"})
+	rb.Write(LogEntry{Time: now.Add(time.Second), Level: "info", Message: "2", Component: "api"})
+	rb.Write(LogEntry{Time: now.Add(2 * time.Second), Level: "info", Message: "3", Component: "scanner"})
+	rb.Write(LogEntry{Time: now.Add(3 * time.Second), Level: "info", Message: "4"}) // no component
+	rb.Write(LogEntry{Time: now.Add(4 * time.Second), Level: "info", Message: "5", Component: "provider"})
+
+	got := rb.Components()
+	want := []string{"api", "provider", "scanner"}
+	if len(got) != len(want) {
+		t.Fatalf("Components() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Components()[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestRingBuffer_ComponentsEmpty(t *testing.T) {
+	rb := NewRingBuffer(5)
+	if got := rb.Components(); len(got) != 0 {
+		t.Errorf("empty buffer Components() = %v, want empty", got)
+	}
+}
+
+func TestRingBuffer_ComponentsEviction(t *testing.T) {
+	// Overfill a size-3 buffer so the oldest entry (component "alpha") is evicted
+	// by wraparound; Components() must reflect only the retained entries, sorted.
+	rb := NewRingBuffer(3)
+	now := time.Now()
+	for i, comp := range []string{"alpha", "beta", "gamma", "delta"} {
+		rb.Write(LogEntry{Time: now.Add(time.Duration(i) * time.Second), Level: "info", Message: "m", Component: comp})
+	}
+
+	got := rb.Components()
+	want := []string{"beta", "delta", "gamma"} // sorted; "alpha" evicted
+	if len(got) != len(want) {
+		t.Fatalf("Components() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Components()[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestRingBuffer_WriteAndRead(t *testing.T) {
 	rb := NewRingBuffer(5)
 

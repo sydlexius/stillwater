@@ -117,7 +117,16 @@ func recordToEntry(r slog.Record, preAttrs []slog.Attr, group string, addSource 
 			entry.Component = a.Value.String()
 			return
 		}
-		attrs[key] = a.Value.Any()
+		// Serialize error values to their message string. A bare error marshals
+		// to an empty JSON object ("{}") because it has no exported fields, which
+		// loses the message and renders as "error:[object Object]" in the viewer
+		// (#1338 X3). err.Error() preserves the human-readable message.
+		v := a.Value.Any()
+		if err, ok := v.(error); ok {
+			attrs[key] = err.Error()
+		} else {
+			attrs[key] = v
+		}
 	}
 
 	for _, a := range preAttrs {

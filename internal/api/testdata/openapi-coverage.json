@@ -1092,6 +1092,13 @@
     "covered": true
   },
   {
+    "operationId": "listLogComponents",
+    "method": "GET",
+    "path": "/logs/components",
+    "handler": "handleLogsComponents",
+    "covered": true
+  },
+  {
     "operationId": "listLogFiles",
     "method": "GET",
     "path": "/logs/files",

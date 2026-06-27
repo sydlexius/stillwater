@@ -1,0 +1,27 @@
+meta {
+  name: List Log Components (auth gate)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/logs/components
+  body: none
+  auth: none
+}
+
+docs {
+  GET /api/v1/logs/components returns the distinct component values currently in
+  the in-memory log ring buffer (the vocabulary the next/ logs viewer renders as
+  Component filter pills, #1338). It is admin-gated (wrapAuth -> RequireAdmin),
+  so this smoke deliberately sends NO session cookie and asserts a 401, proving
+  the endpoint exists and is gated. The 200 response shape ({"components":[...]})
+  and the distinct/sorted semantics are covered by the Go unit tests in
+  internal/api (handleLogsComponents) and internal/logging (RingBuffer.Components).
+}
+
+tests {
+  test("unauthenticated request is rejected (admin-gated)", function() {
+    expect(res.status).to.equal(401);
+  });
+}

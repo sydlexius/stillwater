@@ -53,3 +53,8 @@ contient = "contient"
 # control algorithm; its abbreviation is not a misspelling of "aimed".
 AIMD = "AIMD"
 aimd = "aimd"
+# French words in the fr.json next/ logs viewer strings (M55 #1338), correct
+# French flagged by the English-oriented checker: "Composant" (= Component) and
+# "presse" (as in "presse-papiers" = clipboard).
+Composant = "Composant"
+presse = "presse"

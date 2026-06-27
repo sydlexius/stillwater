@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -130,6 +131,31 @@ func (rb *RingBuffer) Entries(filter LogFilter) []LogEntry {
 	}
 
 	return result
+}
+
+// Components returns the distinct, non-empty component values currently present
+// in the buffer, sorted alphabetically. This is the vocabulary the next/ logs
+// viewer renders as Component filter pills (the natural set the user would
+// actually filter on, #1338). Records with no derived component are omitted.
+func (rb *RingBuffer) Components() []string {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+
+	seen := make(map[string]struct{})
+	for i := 0; i < rb.count; i++ {
+		idx := (rb.head - 1 - i + rb.size) % rb.size
+		c := rb.entries[idx].Component
+		if c == "" {
+			continue
+		}
+		seen[c] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for c := range seen {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Len returns the number of entries currently stored.

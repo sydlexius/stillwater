@@ -1592,20 +1592,30 @@ input:-webkit-autofill:focus {
   flex-shrink: 0;
 }
 
+/* Primary (Apply) action: a blue-tinted GLASS emphasis, not a solid-blue fill.
+ * The previous solid --sw-accent-primary + white text failed AA (3.68:1, #1338
+ * X2) and violated the next/ no-solid-blue-button rule. This mirrors the
+ * include-pill palette (blue-700 ink on a translucent blue tint, blue-300 in
+ * dark) which clears AA with margin, while the heavier weight + border keep it
+ * visually distinct from the ghost "Clear All". Shared across every flyout. */
 .sw-filter-btn-primary {
   padding: 6px 14px;
   border-radius: var(--sw-radius-sm);
   font-size: 13px;
-  font-weight: 500;
-  background: var(--sw-accent-primary);
-  color: #fff;
-  border: none;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.16);
+  color: #1d4ed8; /* blue-700, AA on the light flyout surface */
+  border: 1px solid rgba(59, 130, 246, 0.5);
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+:where(.dark, .dark *) .sw-filter-btn-primary {
+  color: #93c5fd; /* blue-300 for dark mode */
 }
 
 .sw-filter-btn-primary:hover {
-  opacity: 0.88;
+  background: rgba(59, 130, 246, 0.26);
 }
 
 .sw-filter-btn-ghost {
@@ -1677,18 +1687,26 @@ input:-webkit-autofill:focus {
   color: var(--sw-content-text);
 }
 
-/* include state: blue filled */
-.sw-filter-item[data-filter-state="include"] {
+/* include state: blue filled. Keyed on BOTH the tri-state data-filter-state
+ * (FilterItem) AND the single-select `.include` class (FilterItemSingle, set by
+ * swFilterFlyout.selectSingle): single-select chips never set data-filter-state,
+ * so without the .include selector a selected Level/Component pill rendered
+ * identical to neutral (#1338 X1). The translucent-blue halo + blue-ink text is
+ * AA-compliant and not a solid fill. */
+.sw-filter-item[data-filter-state="include"],
+.sw-filter-item.include {
   background: rgba(59, 130, 246, 0.22);
   color: #1d4ed8; /* blue-700 for light mode */
   border-color: rgba(59, 130, 246, 0.45);
 }
 
-:where(.dark, .dark *) .sw-filter-item[data-filter-state="include"] {
+:where(.dark, .dark *) .sw-filter-item[data-filter-state="include"],
+:where(.dark, .dark *) .sw-filter-item.include {
   color: #93c5fd; /* blue-300 for dark mode */
 }
 
-.sw-filter-item[data-filter-state="include"]:hover {
+.sw-filter-item[data-filter-state="include"]:hover,
+.sw-filter-item.include:hover {
   background: rgba(59, 130, 246, 0.32);
 }
 
@@ -2879,6 +2897,33 @@ body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-c
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
+/* M55 #1338: the next/ logs viewer sticky toolbar and viewer surface. The
+ * toolbar is position:sticky, so it needs an opaque-enough background to stay
+ * legible as log lines scroll beneath it -- it sources from the shared
+ * --sw-glass-bg token (Background Opacity preference) with a small raised mix so
+ * it never drops below a readable floor at low global opacity. The viewer panel
+ * uses the same translucent surface so the photo backdrop bleeds through at low
+ * opacity exactly like the dashboard cards. */
+.sw-next-logs .sw-next-toolbar {
+  background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 35%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(8px);
+}
+.sw-next-logs .sw-log-viewer {
+  /* The viewer surface FOLLOWS the user's Background Opacity preference via the
+   * shared --sw-glass-bg token, exactly like every other next/ glass surface
+   * (V1: an earlier near-opaque floor hardcoded the panel ~98% opaque and broke
+   * the opacity control on this screen). AA legibility at the default opacity is
+   * handled pref-independently by brightening the timestamp ink to --swd-ink-2
+   * (see buildLine); at low opacity the reduced contrast is the user's
+   * deliberate glass tradeoff, consistent with all other surfaces, and is not
+   * force-overridden here. */
+  background: var(--sw-glass-bg);
+}
+.sw-next-logs .sw-log-line:hover {
+  background: rgba(127, 127, 127, 0.08);
+}
+
 /* Density model (M55 #1335). "comfy" is the native row rhythm, so it needs no
  * overrides; "compact" -- set on the root by the density script while a
  * selection is active -- tightens the table's vertical padding and type so more
@@ -2970,6 +3015,34 @@ html[data-density="comfortable"] .sw-next-activity #activity-entries > :not(:las
 html[data-density="spacious"] .sw-next-activity #activity-entries > :not(:last-child),
 html:not([data-density]) .sw-next-activity #activity-entries > :not(:last-child) {
   margin-block-end: var(--sw-density-gap);
+}
+
+/* Logs viewer (M55 #1338) -- the next/ live log viewer tracks the density pref
+ * like the other next/ list surfaces:
+ *
+ *   - Outer stack gap: the page root `.sw-next-logs` lays its sections out with
+ *     Tailwind space-y-3 (a :where() utility setting margin-block-end on every
+ *     non-last child). Rebind that to the density gap token across ALL densities
+ *     (comfortable + the pre-JS html:not([data-density]) default included, like
+ *     the dashboard stack) so the explicit, higher-specificity selector overrides
+ *     the utility cleanly.
+ *   - Row padding: each `.sw-log-line` is the dense "row" surface (one per log
+ *     record). Its vertical padding binds to the density row-py token. Unlike
+ *     the artists table (whose cells keep a native Tailwind padding at
+ *     comfortable and only override on compact/spacious), the JS-built log line
+ *     has NO other padding source, so the token is applied across ALL densities
+ *     (the token's :root default is the comfortable 0.5rem) -- otherwise
+ *     comfortable/default would collapse to zero padding. The JS line builder no
+ *     longer hardcodes py-* so this token alone drives the line height. */
+html[data-density="compact"] .sw-next-logs > :not(:last-child),
+html[data-density="comfortable"] .sw-next-logs > :not(:last-child),
+html[data-density="spacious"] .sw-next-logs > :not(:last-child),
+html:not([data-density]) .sw-next-logs > :not(:last-child) {
+  margin-block-end: var(--sw-density-gap);
+}
+.sw-next-logs .sw-log-line {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
 }
 
 /* Duplicates page (M55 #1752) -- group-card stack and member-table row padding
@@ -3093,7 +3166,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-artists .sw-kbd,
 .sw-next-dashboard .sw-kbd,
 .sw-next-artist-detail .sw-kbd,
-.sw-next-foreign-files .sw-kbd {
+.sw-next-foreign-files .sw-kbd,
+.sw-next-logs .sw-kbd {
   position: relative;
   isolation: isolate;
   /* Route the keycap glyph through the mono Font Family pref seam (matches the
@@ -3126,7 +3200,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-artists .sw-kbd::before,
 .sw-next-dashboard .sw-kbd::before,
 .sw-next-artist-detail .sw-kbd::before,
-.sw-next-foreign-files .sw-kbd::before {
+.sw-next-foreign-files .sw-kbd::before,
+.sw-next-logs .sw-kbd::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -3139,13 +3214,15 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-artists .sw-kbd,
 .dark .sw-next-dashboard .sw-kbd,
 .dark .sw-next-artist-detail .sw-kbd,
-.dark .sw-next-foreign-files .sw-kbd {
+.dark .sw-next-foreign-files .sw-kbd,
+.dark .sw-next-logs .sw-kbd {
   color: #94a3b8;
 }
 .dark .sw-next-artists .sw-kbd::before,
 .dark .sw-next-dashboard .sw-kbd::before,
 .dark .sw-next-artist-detail .sw-kbd::before,
-.dark .sw-next-foreign-files .sw-kbd::before {
+.dark .sw-next-foreign-files .sw-kbd::before,
+.dark .sw-next-logs .sw-kbd::before {
   background: var(--sw-glass-bg, #0f172a);
 }
 /* Keyboard-shortcut footer (.sw-list-tips) -- ONE shared treatment across every
@@ -3160,7 +3237,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-artists .sw-list-tips,
 .sw-next-dashboard .sw-list-tips,
 .sw-next-artist-detail .sw-list-tips,
-.sw-next-foreign-files .sw-list-tips {
+.sw-next-foreign-files .sw-list-tips,
+.sw-next-logs .sw-list-tips {
   margin-top: 0.75rem;
   display: flex;
   flex-wrap: wrap;
@@ -3195,7 +3273,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-artists .sw-list-tips,
 .dark .sw-next-dashboard .sw-list-tips,
 .dark .sw-next-artist-detail .sw-list-tips,
-.dark .sw-next-foreign-files .sw-list-tips {
+.dark .sw-next-foreign-files .sw-list-tips,
+.dark .sw-next-logs .sw-list-tips {
   color: #94a3b8;
   border-color: var(--swd-line, rgba(148, 163, 184, 0.14));
 }
@@ -3363,7 +3442,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .sw-next-artist-detail,
 .sw-next-foreign-files,
 .sw-next-artists,
-.sw-next-activity {
+.sw-next-activity,
+.sw-next-logs {
   /* Light-theme token ramp (default). Shared by the dashboard, the next/
    * artist-detail screen (M55 #1336), the next/ foreign-files screen
    * (M55 #1773), and the next/ artists screen (M55 #1890) so they all consume
@@ -3413,7 +3493,8 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
 .dark .sw-next-artist-detail,
 .dark .sw-next-foreign-files,
 .dark .sw-next-artists,
-.dark .sw-next-activity {
+.dark .sw-next-activity,
+.dark .sw-next-logs {
   /* Prototype dark token ramp (design/tokens.css verbatim). .sw-next-artists
    * added for #1890 so its glass buttons resolve --swd-line / --swd-ink-2 in
    * dark mode too (see the light-theme block above). */
@@ -3968,6 +4049,16 @@ html[data-kbd="hide"] .sw-kbd { display: none; }          /* any standalone keyc
   font-family: var(--sw-font-mono);
   font-size: var(--sw-ad-font-meta);
   font-weight: 400;
+}
+
+/* Logs viewer (M55 #1338) mono role: the log lines and the full-entry drawer are
+ * monospace, but Tailwind's .font-mono hardcodes its own stack and ignores the
+ * user's Mono Font preference. Route both through --sw-font-mono (the same
+ * pickable-fonts seam the artist-detail screen uses) so the pref drives them;
+ * they stay monospace. */
+.sw-next-logs .sw-log-viewer,
+.sw-next-logs #sw-logs-drawer-body {
+  font-family: var(--sw-font-mono);
 }
 
 /* Edit-mode carry-over (M55 #1853): a field must read identically whether it is

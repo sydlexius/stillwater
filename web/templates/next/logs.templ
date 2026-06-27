@@ -1,0 +1,982 @@
+package next
+
+import (
+	"strconv"
+
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// LogsFilterState is the initial, server-parsed filter selection for the next/
+// log viewer, seeded from the request URL so a deep-link such as
+// /next/logs?level=error&artist_id=1234 opens pre-filtered. Level/Component/
+// Search are wired to the server-side SSE stream filter (level/scope/q); ArtistID
+// and Rule are applied client-side against each entry's structured attrs (the
+// stream predicate covers only level/scope/search).
+type LogsFilterState struct {
+	Level     string
+	Component string
+	Search    string
+	ArtistID  string
+	Rule      string
+}
+
+// logLevels is the severity ladder shown as single-select Level filter pills,
+// lowest-first. Each value is the wire token the stream's level= param and the
+// client severity map both use; level is a MINIMUM severity, hence single-select.
+var logLevels = []string{"trace", "debug", "info", "warn", "error"}
+
+// logLevelLabelKey maps a level token to its i18n key.
+func logLevelLabelKey(level string) string { return "logs.level." + level }
+
+// logsActiveFilterCount counts the active filter facets for the flyout trigger
+// badge (#1338 W1-B): level + component pills plus the free-text artist_id / rule
+// deep-link facets. Search lives in the toolbar and is not counted here, matching
+// how the other next/ viewers exclude their toolbar search from the flyout badge.
+func logsActiveFilterCount(filter LogsFilterState) int {
+	n := 0
+	for _, v := range []string{filter.Level, filter.Component, filter.ArtistID, filter.Rule} {
+		if v != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// logsFilterCountStr is the decimal string of the active filter count, for the
+// trigger badge text.
+func logsFilterCountStr(filter LogsFilterState) string {
+	return strconv.Itoa(logsActiveFilterCount(filter))
+}
+
+// LogsPage renders the next/ live log viewer (M55 #1338, PR 5B). It renders only
+// the chrome -- toolbar, empty viewer container, throttle banner, filter flyout,
+// keyboard tips, and the line side-drawer. The log lines (ring-buffer backfill
+// and live tail) arrive over the GET /api/v1/logs/stream SSE endpoint, which
+// self-backfills on connect, and are built in the inline controller script
+// below. Surfaces source their background from --sw-glass-bg so the Background
+// Opacity preference governs translucency (M55 opacity compliance); the flyout
+// and drawer apply a legibility floor so they stay readable at low opacity.
+templ LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents []string) {
+	@LayoutNext(t(ctx, "logs.title"), assets) {
+		<div
+			id="sw-logs-root"
+			class="sw-next-logs space-y-3"
+			data-init-level={ filter.Level }
+			data-init-component={ filter.Component }
+			data-init-search={ filter.Search }
+			data-init-artist-id={ filter.ArtistID }
+			data-init-rule={ filter.Rule }
+			data-base-artists={ assets.BasePath + "/next/artists/" }
+			data-label-remove-filter={ t(ctx, "logs.remove_filter") }
+			data-label-connecting={ t(ctx, "logs.connecting") }
+			data-label-connected={ t(ctx, "logs.connected") }
+			data-label-reconnecting={ t(ctx, "logs.reconnecting") }
+			data-label-disconnected={ t(ctx, "logs.disconnected") }
+			data-label-clear-fail={ t(ctx, "logs.clear_fail") }
+			data-label-go-to-logs={ t(ctx, "logs.shortcuts.go_to_logs") }
+			data-label-scroll-down={ t(ctx, "logs.shortcuts.scroll_down") }
+			data-label-scroll-up={ t(ctx, "logs.shortcuts.scroll_up") }
+			data-label-page={ t(ctx, "logs.shortcuts.page") }
+			data-label-jump-bottom={ t(ctx, "logs.shortcuts.jump_bottom") }
+			data-label-empty={ t(ctx, "logs.empty_state") }
+			data-label-throttled={ t(ctx, "logs.throttled_banner") }
+			data-label-pause={ t(ctx, "logs.pause") }
+			data-label-resume={ t(ctx, "logs.resume") }
+			data-label-export-ok={ t(ctx, "logs.export_ok") }
+			data-label-export-fail={ t(ctx, "logs.export_fail") }
+			data-label-copy-ok={ t(ctx, "logs.copy_ok") }
+		>
+			<!-- Header -->
+			<div class="flex items-center justify-between gap-3">
+				<h1 class="text-lg font-semibold text-[var(--swd-ink)]">{ t(ctx, "logs.title") }</h1>
+				<!-- Live connection status indicator -->
+				<span
+					id="sw-logs-status"
+					class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--swd-ink-3)]"
+					role="status"
+					aria-live="polite"
+				>
+					<span id="sw-logs-status-dot" class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
+					<span id="sw-logs-status-text">{ t(ctx, "logs.connecting") }</span>
+				</span>
+			</div>
+			<!-- Sticky toolbar -->
+			<div class="sw-next-toolbar sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-[var(--swd-line)] px-3 py-2">
+				<!-- Search -->
+				<div class="relative">
+					<input
+						id="sw-logs-search"
+						type="search"
+						data-sw-shortcut="/"
+						data-sw-shortcut-label={ t(ctx, "logs.shortcuts.search") }
+						value={ filter.Search }
+						placeholder={ t(ctx, "logs.search_placeholder") }
+						class="w-44 rounded-md border border-[var(--swd-line)] bg-transparent px-2.5 py-1 text-sm text-[var(--swd-ink)] placeholder:text-[var(--swd-ink-3)] focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-56"
+						aria-label={ t(ctx, "logs.search_placeholder") }
+					/>
+				</div>
+				<!-- Filter flyout trigger (shared swFilterFlyout system, #1338 W1-B).
+				     data-sw-shortcut="f" lets the global keyboard.js open it natively
+				     via activateToggle -> swFilterFlyout.open (now that the panel IS a
+				     shared flyout). data-active-classes / data-badge-classes drive the
+				     client-side active-count visual sync (refreshActiveCount). -->
+				<button
+					type="button"
+					id="sw-logs-filter-trigger"
+					data-sw-shortcut="f"
+					data-sw-shortcut-label={ t(ctx, "logs.shortcuts.filters") }
+					data-active-classes={ glassButtonHalo }
+					data-neutral-classes="hover:bg-white/5"
+					data-badge-classes={ filterTriggerBadge }
+					class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium", templ.KV(glassButtonHalo, logsActiveFilterCount(filter) > 0) }
+					aria-expanded="false"
+					aria-controls="sw-logs-filter-flyout"
+					aria-label={ t(ctx, "logs.filters") }
+					onclick={ components.OpenFilterFlyout("sw-logs-filter-flyout") }
+				>
+					@components.IconAdjustmentsHorizontal("h-3.5 w-3.5")
+					{ t(ctx, "logs.filters") }
+					if logsActiveFilterCount(filter) > 0 {
+						<span class={ filterTriggerBadge }>{ logsFilterCountStr(filter) }</span>
+					}
+				</button>
+				<div class="flex-1"></div>
+				<!-- Pause / resume -->
+				<button type="button" id="sw-logs-pause" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" } aria-pressed="false">
+					{ t(ctx, "logs.pause") }
+				</button>
+				<!-- Wrap toggle -->
+				<button type="button" id="sw-logs-wrap" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" } aria-pressed="false">
+					{ t(ctx, "logs.wrap_toggle") }
+				</button>
+				<!-- Export for bug report -->
+				<button type="button" id="sw-logs-export" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" }>
+					{ t(ctx, "logs.export") }
+				</button>
+				<!-- Clear -->
+				<button type="button" id="sw-logs-clear" class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" }>
+					{ t(ctx, "logs.clear") }
+				</button>
+			</div>
+			<!-- Active-filter chips (#1338 W1-B). Rendered client-side from the active
+			     filter state; each chip's dismiss clears that facet and reconnects the
+			     SSE stream (the shared htmx-based DismissFilterChip path does not fit
+			     an SSE viewer). Reuses the shared chip visual for consistency. -->
+			<div id="sw-logs-active-chips" class="flex flex-wrap items-center gap-1.5 empty:hidden" aria-label={ t(ctx, "logs.active_filters") }></div>
+			<!-- Throttle banner (hidden until logs.throttled arrives) -->
+			<div
+				id="sw-logs-throttle"
+				class="hidden items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+				role="alert"
+			>
+				<svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"></path>
+				</svg>
+				<span id="sw-logs-throttle-text"></span>
+			</div>
+			<!-- Log viewer container + jump-to-bottom button -->
+			<div class="relative">
+				<div
+					id="log-viewer"
+					class="sw-log-viewer h-[60vh] overflow-y-auto rounded-md border border-[var(--swd-line)] p-2 font-mono text-xs leading-relaxed"
+					tabindex="0"
+					aria-label={ t(ctx, "logs.title") }
+					aria-live="off"
+				></div>
+				<!-- Empty state -->
+				<div id="sw-logs-empty" class="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-[var(--swd-ink-3)]">
+					{ t(ctx, "logs.empty_state") }
+				</div>
+				<!-- Jump to bottom (hidden when at bottom) -->
+				<button
+					type="button"
+					id="sw-logs-jump"
+					class="hidden absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--swd-line)] px-3 py-1.5 text-xs font-medium text-[var(--swd-ink)] shadow-[var(--swd-shadow-2)]"
+					style="background: var(--sw-glass-bg)"
+				>
+					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3"></path>
+					</svg>
+					<span>{ t(ctx, "logs.jump_to_bottom") }</span>
+					<span id="sw-logs-jump-count" class="hidden ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900">0</span>
+				</button>
+			</div>
+			<!-- Keyboard tips -->
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "logs.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">/</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.search") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.filters") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_down") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_up") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">PgUp</kbd><kbd class="sw-kbd inline-flex ml-0.5">PgDn</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.page") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Shift G</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.jump_bottom") }</span></span>
+			</p>
+			<!-- Filter flyout: shared swFilterFlyout component (#1338 W1-B) so the logs
+			     filter matches the other next/ viewers (pills, active-count badge,
+			     Escape-to-close, focus trap). Level = single-select min-severity pills;
+			     Component = single-select pills from the ring buffer's distinct
+			     components (GET /api/v1/logs/components vocabulary); artist_id / rule =
+			     free-text deep-link facets (arbitrary values, no pill vocabulary).
+			     data-target-sel="#log-viewer": apply() fires sw:filter-applied there,
+			     and the controller script reconnects the SSE stream on that event. -->
+			@components.FilterFlyout("sw-logs-filter-flyout", t(ctx, "logs.filters"), "sw-logs-filter-trigger", logsActiveFilterCount(filter), "#log-viewer", nil) {
+				@components.FilterSection(t(ctx, "logs.level_filter")) {
+					for _, lvl := range logLevels {
+						@components.FilterItemSingle("sw-logs-filter-flyout", "level", lvl, t(ctx, logLevelLabelKey(lvl)), filter.Level == lvl, 0)
+					}
+				}
+				if len(logComponents) > 0 {
+					@components.FilterSection(t(ctx, "logs.filter_component")) {
+						for _, c := range logComponents {
+							@components.FilterItemSingle("sw-logs-filter-flyout", "component", c, c, filter.Component == c, 0)
+						}
+					}
+				}
+				@components.FilterSection(t(ctx, "logs.filter_artist_id")) {
+					<input id="sw-logs-f-artist" type="text" inputmode="numeric" value={ filter.ArtistID } placeholder={ t(ctx, "logs.filter_artist_id") } class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" aria-label={ t(ctx, "logs.filter_artist_id") }/>
+				}
+				@components.FilterSection(t(ctx, "logs.filter_rule")) {
+					<input id="sw-logs-f-rule" type="text" value={ filter.Rule } placeholder={ t(ctx, "logs.filter_rule") } class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" aria-label={ t(ctx, "logs.filter_rule") }/>
+				}
+			}
+			<!-- Line side-drawer (full entry view) -->
+			<div id="sw-logs-drawer-scrim" class="hidden fixed inset-0 z-40 bg-black/40"></div>
+			<aside
+				id="sw-logs-drawer"
+				class="hidden fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-[var(--swd-line)] p-4 shadow-[var(--swd-shadow-2)]"
+				style="background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 65%)"
+				role="dialog"
+				aria-label={ t(ctx, "logs.drawer_title") }
+				aria-modal="true"
+			>
+				<div class="flex items-center justify-between gap-2">
+					<h2 class="text-sm font-semibold text-[var(--swd-ink)]">{ t(ctx, "logs.drawer_title") }</h2>
+					<div class="flex items-center gap-2">
+						<button type="button" id="sw-logs-drawer-copy" class={ glassButton, "px-2 py-1 text-xs font-medium" }>{ t(ctx, "logs.copy_json") }</button>
+						<button type="button" id="sw-logs-drawer-close" class={ glassButton, "px-2 py-1 text-xs font-medium" } aria-label={ t(ctx, "logs.drawer_close") }>✕</button>
+					</div>
+				</div>
+				<pre id="sw-logs-drawer-body" class="mt-3 whitespace-pre-wrap break-words rounded-md border border-[var(--swd-line)] bg-black/20 p-2 font-mono text-[11px] leading-relaxed text-[var(--swd-ink)]"></pre>
+			</aside>
+		</div>
+		@LogsViewerScript()
+	}
+}
+
+// LogsViewerScript is the inline controller for the next/ log viewer. It opens an
+// EventSource to GET /api/v1/logs/stream (which self-backfills the ring buffer on
+// connect, then live-tails), builds structured log-line DOM, manages auto-follow
+// with pause-on-scroll-up, syncs filters between the toolbar/flyout/URL/stream,
+// and drives the side drawer, wrap toggle, clear, and bug-report export. It ports
+// the severity map and level-button visuals from web/static/js/settings/
+// log-viewer.js (the stable HTMX-polling viewer), swapping the transport for SSE.
+templ LogsViewerScript() {
+	<script>
+		(function () {
+			'use strict';
+			var root = document.getElementById('sw-logs-root');
+			if (!root || root.dataset.swLogsInit) return;
+			root.dataset.swLogsInit = '1';
+
+			var viewer = document.getElementById('log-viewer');
+			var emptyEl = document.getElementById('sw-logs-empty');
+			var statusEl = document.getElementById('sw-logs-status');
+			var statusDot = document.getElementById('sw-logs-status-dot');
+			var statusText = document.getElementById('sw-logs-status-text');
+			var jumpBtn = document.getElementById('sw-logs-jump');
+			var jumpCount = document.getElementById('sw-logs-jump-count');
+			var throttleEl = document.getElementById('sw-logs-throttle');
+			var throttleText = document.getElementById('sw-logs-throttle-text');
+			if (!viewer) return;
+
+			var bp = (function () {
+				var m = document.querySelector('meta[name="htmx-base-path"]');
+				return (m && m.content) || '';
+			})();
+
+			function esc(s) {
+				return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+					return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+				});
+			}
+			function L(name) { return root.dataset[name] || ''; }
+
+			var MAX_LINES = 500;
+			// While the user holds position (paused or scrolled up reading older
+			// lines), the top-prune is suspended so the very lines being read are not
+			// removed from under them during a burst. PAUSED_CEILING bounds DOM growth
+			// in that window so a long burst cannot grow the window without limit; the
+			// window prunes back to MAX_LINES once the user returns to the bottom.
+			var PAUSED_CEILING = 5000;
+			var EXPORT_ERRORS = 50; // bug-report export: last N error lines
+
+			var state = {
+				level: root.dataset.initLevel || '',
+				component: root.dataset.initComponent || '',
+				search: root.dataset.initSearch || '',
+				artistId: root.dataset.initArtistId || '',
+				rule: root.dataset.initRule || '',
+				paused: false,
+				wrap: false,
+				buffered: 0
+			};
+
+			var es = null;
+
+			// -- presentation helpers (ported from log-viewer.js) ---------------
+			// Severity PILLS are tinted badges, not buttons: the next/ "no solid-blue
+			// buttons" rule constrains buttons only, so a blue-tinted info pill is fine.
+			function levelPillClass(level) {
+				switch (level) {
+					case 'trace': return 'bg-purple-500/20 text-purple-700 dark:text-purple-300';
+					case 'debug': return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';
+					case 'info':  return 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
+					case 'warn':  return 'bg-amber-500/20 text-amber-700 dark:text-amber-300';
+					case 'error': return 'bg-red-500/20 text-red-700 dark:text-red-300';
+					default:      return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';
+				}
+			}
+
+			function fmtTime(iso) {
+				var d = new Date(iso);
+				if (isNaN(d.getTime())) return '';
+				function p(n, w) { var s = String(n); while (s.length < w) s = '0' + s; return s; }
+				return p(d.getHours(), 2) + ':' + p(d.getMinutes(), 2) + ':' + p(d.getSeconds(), 2) + '.' + p(d.getMilliseconds(), 3);
+			}
+
+			// Client-side AND filters the stream predicate does not cover.
+			function entryMatchesClientFilters(e) {
+				var attrs = e.attrs || {};
+				if (state.artistId) {
+					var a = attrs.artist_id != null ? String(attrs.artist_id) : '';
+					if (a !== state.artistId) return false;
+				}
+				if (state.rule) {
+					var rl = attrs.rule != null ? String(attrs.rule) : '';
+					if (rl !== state.rule) return false;
+				}
+				return true;
+			}
+
+			// Pinned attribute chips, in display order. artist_id navigates to the
+			// next/ artist-detail; rule chips filter the view by that rule.
+			var PINNED = ['artist_id', 'request_id', 'provider', 'rule', 'error'];
+			function buildLine(e) {
+				var lvl = (e.level || '').toLowerCase();
+				var row = document.createElement('div');
+				// No hardcoded py-* here (U2): vertical padding is the density "row"
+				// token, applied via the .sw-next-logs .sw-log-line CSS rule so
+				// data-density actually drives line height. A hardcoded Tailwind py-*
+				// would sit on top of the token; the CSS rule owns vertical padding.
+				row.className = 'sw-log-line group flex cursor-pointer items-baseline gap-2 rounded px-1 hover:bg-white/5';
+				row.setAttribute('role', 'listitem');
+				// Keyboard parity (#1338): the row opens the detail drawer on click, so
+				// make it a tab stop and let Enter/Space activate it (handled by the
+				// delegated keydown listener on the viewer, alongside the click handler).
+				row.setAttribute('tabindex', '0');
+				try { row.dataset.entry = JSON.stringify(e); } catch (err) { /* non-fatal */ }
+
+				var html = '';
+				// Timestamp uses --swd-ink-2 (not the dimmer --swd-ink-3) so it clears
+				// the AA 4.5 contrast floor over the log-viewer surface (F6).
+				html += '<time class="shrink-0 tabular-nums text-[var(--swd-ink-2)]" datetime="' + esc(e.time || '') + '">' + esc(fmtTime(e.time)) + '</time>';
+				html += '<span class="shrink-0 rounded px-1.5 text-[10px] font-bold uppercase ' + levelPillClass(lvl) + '">' + esc(lvl || '?') + '</span>';
+				if (e.component) {
+					html += '<span class="shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-2)] dark:bg-white/10">' + esc(e.component) + '</span>';
+				}
+				html += '<span class="min-w-0 flex-1 break-words text-[var(--swd-ink)]">' + esc(e.message || '') + '</span>';
+
+				var attrs = e.attrs || {};
+				var chips = '';
+				PINNED.forEach(function (k) {
+					if (attrs[k] == null || attrs[k] === '') return;
+					// Stringify object/array attr values via JSON so they don't coerce
+					// to "[object Object]" (#1338 X3); primitives use String() as before.
+					var raw = attrs[k];
+					var val = (typeof raw === 'object') ? JSON.stringify(raw) : String(raw);
+					if (k === 'artist_id') {
+						chips += '<a href="' + esc(L('baseArtists') + val) + '" class="sw-log-chip shrink-0 rounded bg-blue-500/15 px-1.5 text-blue-700 hover:underline dark:text-blue-300" data-stop="1">artist:' + esc(val) + '</a>';
+					} else if (k === 'rule') {
+						chips += '<button type="button" class="sw-log-chip sw-log-rule-chip shrink-0 rounded bg-indigo-500/15 px-1.5 text-indigo-700 hover:underline dark:text-indigo-300" data-stop="1" data-rule="' + esc(val) + '">rule:' + esc(val) + '</button>';
+					} else if (k === 'error') {
+						chips += '<span class="sw-log-chip shrink-0 rounded bg-red-500/15 px-1.5 text-red-700 dark:text-red-300">error:' + esc(val) + '</span>';
+					} else {
+						chips += '<span class="sw-log-chip shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-3)] dark:bg-white/10">' + esc(k) + ':' + esc(val) + '</span>';
+					}
+				});
+				if (chips) {
+					html += '<span class="flex shrink-0 items-baseline gap-1 text-[10px]">' + chips + '</span>';
+				}
+				row.innerHTML = html;
+				return row;
+			}
+
+			// -- scroll / auto-follow -------------------------------------------
+			function isAtBottom() {
+				return viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 50;
+			}
+			function scrollToBottom() { viewer.scrollTop = viewer.scrollHeight; }
+			function updateJump() {
+				if (state.buffered > 0 && !isAtBottom()) {
+					jumpBtn.classList.remove('hidden');
+					if (jumpCount) {
+						jumpCount.textContent = String(state.buffered);
+						jumpCount.classList.remove('hidden');
+					}
+				} else {
+					jumpBtn.classList.add('hidden');
+					if (jumpCount) jumpCount.classList.add('hidden');
+				}
+			}
+			function hideEmpty() { if (emptyEl) emptyEl.classList.add('hidden'); }
+			function showEmpty() { if (emptyEl) emptyEl.classList.remove('hidden'); }
+
+			function pruneTo(cap) {
+				while (viewer.childElementCount > cap) {
+					viewer.removeChild(viewer.firstElementChild);
+				}
+			}
+
+			function appendEntry(e) {
+				if (!entryMatchesClientFilters(e)) return;
+				var atBottom = isAtBottom();
+				// "holding" = the user is reading older lines (paused or scrolled up).
+				// Suspend the top-prune so those lines are not removed from under them;
+				// a higher paused ceiling still bounds DOM growth during a long burst.
+				var holding = state.paused || !atBottom;
+				viewer.appendChild(buildLine(e));
+				pruneTo(holding ? PAUSED_CEILING : MAX_LINES);
+				hideEmpty();
+				if (!state.paused && atBottom) {
+					scrollToBottom();
+					state.buffered = 0;
+				} else {
+					state.buffered++;
+				}
+				updateJump();
+			}
+
+			viewer.addEventListener('scroll', function () {
+				if (isAtBottom()) {
+					state.buffered = 0;
+					// Returned to the bottom: drop the suspended-prune surplus back to
+					// the normal window (unless still explicitly paused).
+					if (!state.paused) pruneTo(MAX_LINES);
+				}
+				updateJump();
+			});
+
+			// -- connection status ----------------------------------------------
+			var statusKind = '';
+			function setStatus(kind) {
+				statusKind = kind;
+				var label, dot;
+				if (kind === 'connected') { label = L('labelConnected'); dot = 'bg-green-500'; }
+				else if (kind === 'reconnecting') { label = L('labelReconnecting'); dot = 'bg-amber-500'; }
+				else if (kind === 'disconnected') { label = L('labelDisconnected'); dot = 'bg-red-500'; }
+				else if (kind === 'error') { label = L('labelReconnecting'); dot = 'bg-red-500'; }
+				else { label = L('labelConnecting'); dot = 'bg-gray-400'; }
+				if (statusText) statusText.textContent = label;
+				if (statusDot) statusDot.className = 'inline-block h-2 w-2 rounded-full ' + dot;
+				// A dead stream is the only clickable state: clicking re-opens it.
+				if (statusEl) {
+					statusEl.classList.toggle('cursor-pointer', kind === 'disconnected');
+					statusEl.classList.toggle('underline', kind === 'disconnected');
+					statusEl.setAttribute('role', kind === 'disconnected' ? 'button' : 'status');
+					// Only a clickable (dead-stream) status is a tab stop; restore it to
+					// a non-focusable status indicator otherwise so it doesn't add a
+					// dead tab stop when there's nothing to activate (#1338 a11y).
+					if (kind === 'disconnected') statusEl.setAttribute('tabindex', '0');
+					else statusEl.removeAttribute('tabindex');
+				}
+			}
+			// Manual reconnect for the dead-stream state (session expiry, etc.):
+			// EventSource will not auto-retry after a CLOSED, so the user needs a way
+			// back without a full page reload.
+			if (statusEl) statusEl.addEventListener('click', function () {
+				if (statusKind === 'disconnected') connect();
+			});
+			// Keyboard parity for the reconnect control: Enter and Space activate it
+			// just like a native button (preventDefault on Space stops page scroll).
+			if (statusEl) statusEl.addEventListener('keydown', function (ev) {
+				if (statusKind !== 'disconnected') return;
+				if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+					ev.preventDefault();
+					connect();
+				}
+			});
+
+			var THROTTLE_HIDE_MS = 6000;
+			var throttleTimer = null;
+			function hideThrottle() {
+				if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null; }
+				if (throttleEl) { throttleEl.classList.add('hidden'); throttleEl.classList.remove('flex'); }
+			}
+			function showThrottle(dropped) {
+				if (!throttleEl) return;
+				if (throttleText) {
+					var tmpl = L('labelThrottled') || 'Dropped {count} entries';
+					throttleText.textContent = tmpl.replace('{count}', String(dropped));
+				}
+				throttleEl.classList.remove('hidden');
+				throttleEl.classList.add('flex');
+				// Auto-clear so a transient throttle does not leave a stale alert: each
+				// fresh throttle resets the timer; quiet for the window -> banner hides.
+				if (throttleTimer) clearTimeout(throttleTimer);
+				throttleTimer = setTimeout(hideThrottle, THROTTLE_HIDE_MS);
+			}
+
+			// -- SSE stream -----------------------------------------------------
+			function streamURL() {
+				var p = [];
+				if (state.level) p.push('level=' + encodeURIComponent(state.level));
+				if (state.component) p.push('scope=' + encodeURIComponent(state.component));
+				if (state.search) p.push('q=' + encodeURIComponent(state.search));
+				return bp + '/api/v1/logs/stream' + (p.length ? '?' + p.join('&') : '');
+			}
+			function disconnect() { if (es) { try { es.close(); } catch (e) { /* ignore */ } es = null; } }
+			function connect() {
+				disconnect();
+				setStatus('connecting');
+				try {
+					es = new EventSource(streamURL());
+				} catch (err) {
+					console.error('logs stream init failed', err);
+					setStatus('error');
+					return;
+				}
+				es.addEventListener('connected', function () { setStatus('connected'); });
+				es.addEventListener('logs.line', function (ev) {
+					var e;
+					try { e = JSON.parse(ev.data); } catch (err) { console.warn('logs.line parse failed', err); return; }
+					appendEntry(e);
+				});
+				es.addEventListener('logs.throttled', function (ev) {
+					var d;
+					try { d = JSON.parse(ev.data); } catch (err) { return; }
+					showThrottle(d && d.dropped ? d.dropped : 0);
+				});
+				es.onerror = function () {
+					// readyState distinguishes a transient drop (CONNECTING -- the
+					// browser is auto-retrying, replaying via Last-Event-ID) from a
+					// terminal close (CLOSED -- e.g. the session expired and the stream
+					// returned 401/403; EventSource will NOT retry). Surfacing both as
+					// "reconnecting" would leave a silently-dead tail reading live, so a
+					// CLOSED stream gets an honest, clickable "disconnected" state.
+					if (es && es.readyState === EventSource.CLOSED) {
+						setStatus('disconnected');
+					} else {
+						setStatus('reconnecting');
+					}
+				};
+			}
+
+			// reload clears the view and reconnects with the current filters. The
+			// stream self-backfills on connect, so no separate /api/v1/logs fetch.
+			function reload() {
+				viewer.innerHTML = '';
+				showEmpty();
+				state.buffered = 0;
+				updateJump();
+				hideThrottle();
+				syncURL();
+				connect();
+			}
+
+			// -- URL sync -------------------------------------------------------
+			function syncURL() {
+				var p = new URLSearchParams();
+				if (state.level) p.set('level', state.level);
+				if (state.component) p.set('component', state.component);
+				if (state.search) p.set('q', state.search);
+				if (state.artistId) p.set('artist_id', state.artistId);
+				if (state.rule) p.set('rule', state.rule);
+				var qs = p.toString();
+				try {
+					history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+				} catch (e) { /* replaceState can throw in sandboxed contexts */ }
+			}
+
+			// -- search (toolbar) -----------------------------------------------
+			var searchEl = document.getElementById('sw-logs-search');
+			var searchTimer = null;
+			if (searchEl) {
+				searchEl.addEventListener('input', function () {
+					if (searchTimer) clearTimeout(searchTimer);
+					searchTimer = setTimeout(function () {
+						state.search = searchEl.value || '';
+						reload();
+						renderActiveChips();
+					}, 300);
+				});
+			}
+
+			// -- shared filter flyout (swFilterFlyout, #1338 W1-B) --------------
+			// Level + Component PILLS are owned by the shared swFilterFlyout system:
+			// apply() writes ?level / ?component to the URL and fires sw:filter-applied
+			// on #log-viewer. The free-text artist_id / rule inputs live in the same
+			// flyout but are not pills, so they are read here on apply. ESC-to-close
+			// and native `f`-to-open come from the shared system (no custom handlers).
+			var fArtist = document.getElementById('sw-logs-f-artist');
+			var fRule = document.getElementById('sw-logs-f-rule');
+
+			function syncFlyoutFreeText() {
+				state.artistId = fArtist ? fArtist.value.trim() : '';
+				state.rule = fRule ? fRule.value.trim() : '';
+			}
+
+			// On Apply the shared flyout has already written ?level / ?component to the
+			// URL; pull those plus the free-text facets, then reconnect the SSE stream.
+			document.body.addEventListener('sw:filter-applied', function (evt) {
+				if (!evt.target || evt.target.id !== 'log-viewer') return;
+				var url = new URL(window.location.href);
+				state.level = url.searchParams.get('level') || '';
+				state.component = url.searchParams.get('component') || '';
+				syncFlyoutFreeText();
+				reload();
+				renderActiveChips();
+			});
+
+			// Clear All resets the pills + URL via the shared system; also wipe the
+			// free-text inputs (the shared clearAll does not know about them). The
+			// shared handler fires sw:filter-applied afterwards, which reloads.
+			var clearAllBtn = document.querySelector('#sw-logs-filter-flyout .sw-filter-btn-ghost');
+			if (clearAllBtn) clearAllBtn.addEventListener('click', function () {
+				if (fArtist) fArtist.value = '';
+				if (fRule) fRule.value = '';
+			});
+
+			// Enter in a free-text facet applies immediately (mirrors Apply for pills).
+			function applyFreeTextOnEnter(el) {
+				if (!el) return;
+				el.addEventListener('keydown', function (ev) {
+					if (ev.key === 'Enter') {
+						ev.preventDefault();
+						syncFlyoutFreeText();
+						reload();
+						renderActiveChips();
+						if (window.swFilterFlyout) swFilterFlyout.close('sw-logs-filter-flyout');
+					}
+				});
+			}
+			applyFreeTextOnEnter(fArtist);
+			applyFreeTextOnEnter(fRule);
+
+			// -- active-filter chips --------------------------------------------
+			// Rendered client-side from the active state; dismiss clears the facet and
+			// reconnects the SSE stream (the shared htmx DismissFilterChip path does
+			// not fit an SSE viewer). Reuses the shared chip visual for consistency.
+			var activeChipsEl = document.getElementById('sw-logs-active-chips');
+			// Literal, compact prefixes matching the in-line artist:/rule: chip style
+			// (these short technical tokens are intentionally not translated, like the
+			// log-line attribute chips); the dismiss aria-label is translated.
+			function chipText(key, value) {
+				switch (key) {
+					case 'level': return 'level: ' + value;
+					case 'component': return 'component: ' + value;
+					case 'artist_id': return 'artist: ' + value;
+					case 'rule': return 'rule: ' + value;
+					case 'q': return 'search: ' + value;
+					default: return key + ': ' + value;
+				}
+			}
+			function clearFacet(key) {
+				if (key === 'level') state.level = '';
+				else if (key === 'component') state.component = '';
+				else if (key === 'artist_id') { state.artistId = ''; if (fArtist) fArtist.value = ''; }
+				else if (key === 'rule') { state.rule = ''; if (fRule) fRule.value = ''; }
+				else if (key === 'q') { state.search = ''; if (searchEl) searchEl.value = ''; }
+				reload();
+				// Re-sync the flyout pills from the now-rewritten URL so a dismissed
+				// level/component chip also de-selects its pill.
+				if (window.swFilterFlyout) swFilterFlyout.initFromURL('sw-logs-filter-flyout');
+				renderActiveChips();
+			}
+			function renderActiveChips() {
+				if (!activeChipsEl) return;
+				activeChipsEl.innerHTML = '';
+				[
+					{ key: 'level', value: state.level },
+					{ key: 'component', value: state.component },
+					{ key: 'artist_id', value: state.artistId },
+					{ key: 'rule', value: state.rule },
+					{ key: 'q', value: state.search }
+				].forEach(function (f) {
+					if (!f.value) return;
+					var chip = document.createElement('span');
+					chip.className = 'inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300';
+					var text = document.createElement('span');
+					text.textContent = chipText(f.key, f.value);
+					chip.appendChild(text);
+					var btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-500';
+					btn.setAttribute('aria-label', (L('labelRemoveFilter') || 'Remove filter') + ': ' + chipText(f.key, f.value));
+					btn.textContent = '×';
+					btn.addEventListener('click', function () { clearFacet(f.key); });
+					chip.appendChild(btn);
+					activeChipsEl.appendChild(chip);
+				});
+			}
+
+			// -- pause / resume -------------------------------------------------
+			var pauseBtn = document.getElementById('sw-logs-pause');
+			if (pauseBtn) pauseBtn.addEventListener('click', function () {
+				state.paused = !state.paused;
+				pauseBtn.textContent = state.paused ? L('labelResume') : L('labelPause');
+				pauseBtn.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
+				// Resuming at the bottom drops any suspended-prune surplus back to the
+				// normal window and snaps to the newest line.
+				if (!state.paused && isAtBottom()) { pruneTo(MAX_LINES); scrollToBottom(); }
+			});
+
+			// -- wrap toggle ----------------------------------------------------
+			var wrapBtn = document.getElementById('sw-logs-wrap');
+			function applyWrap() {
+				viewer.classList.toggle('whitespace-nowrap', !state.wrap);
+				viewer.classList.toggle('whitespace-pre-wrap', state.wrap);
+				if (wrapBtn) wrapBtn.setAttribute('aria-pressed', state.wrap ? 'true' : 'false');
+			}
+			if (wrapBtn) wrapBtn.addEventListener('click', function () {
+				state.wrap = !state.wrap;
+				applyWrap();
+				if (window.swPreferences && typeof window.swPreferences.set === 'function') {
+					try { window.swPreferences.set('log_wrap', state.wrap ? '1' : '0'); } catch (e) { /* best-effort */ }
+				}
+			});
+
+			// -- clear ----------------------------------------------------------
+			var clearBtn = document.getElementById('sw-logs-clear');
+			if (clearBtn) clearBtn.addEventListener('click', function () {
+				var csrf = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+				fetch(bp + '/api/v1/logs', { method: 'DELETE', headers: { 'X-CSRF-Token': csrf } })
+					.then(function (r) { if (!r.ok) throw new Error('clear failed'); })
+					.then(function () { viewer.innerHTML = ''; showEmpty(); state.buffered = 0; updateJump(); })
+					.catch(function () { if (typeof showToast === 'function') showToast(L('labelClearFail') || 'Failed to clear logs.'); });
+			});
+
+			// -- jump to bottom -------------------------------------------------
+			function jumpToBottom() {
+				state.paused = false;
+				if (pauseBtn) { pauseBtn.textContent = L('labelPause'); pauseBtn.setAttribute('aria-pressed', 'false'); }
+				// Back to the live tail: drop the suspended-prune surplus to the normal
+				// window before snapping to the bottom.
+				pruneTo(MAX_LINES);
+				scrollToBottom();
+				state.buffered = 0;
+				updateJump();
+			}
+			if (jumpBtn) jumpBtn.addEventListener('click', jumpToBottom);
+
+			// -- side drawer ----------------------------------------------------
+			var drawer = document.getElementById('sw-logs-drawer');
+			var drawerScrim = document.getElementById('sw-logs-drawer-scrim');
+			var drawerBody = document.getElementById('sw-logs-drawer-body');
+			var drawerCopy = document.getElementById('sw-logs-drawer-copy');
+			var drawerClose = document.getElementById('sw-logs-drawer-close');
+			var drawerEntry = null;
+			// Modal focus contract (#1338): the drawer is aria-modal, so on open we
+			// move focus inside it and trap Tab; on close we restore focus to the
+			// row/control that opened it. Mirrors web/static/js/prefs-drawer.js.
+			var DRAWER_FOCUSABLE = [
+				'a[href]',
+				'button:not([disabled])',
+				'input:not([disabled])',
+				'select:not([disabled])',
+				'textarea:not([disabled])',
+				'[tabindex]:not([tabindex="-1"])'
+			].join(', ');
+			var drawerLastFocus = null;
+			// Tab-cycle keydown handler kept within the drawer; Escape is handled by
+			// the page-level keydown listener (which already calls closeDrawer).
+			function drawerTrap(ev) {
+				if (ev.key !== 'Tab' || !drawer) return;
+				var focusable = Array.prototype.slice.call(drawer.querySelectorAll(DRAWER_FOCUSABLE));
+				if (!focusable.length) { ev.preventDefault(); return; }
+				var first = focusable[0];
+				var last = focusable[focusable.length - 1];
+				if (ev.shiftKey) {
+					if (document.activeElement === first) { ev.preventDefault(); last.focus(); }
+				} else {
+					if (document.activeElement === last) { ev.preventDefault(); first.focus(); }
+				}
+			}
+			function openDrawer(entry) {
+				drawerEntry = entry;
+				if (drawerBody) {
+					try { drawerBody.textContent = JSON.stringify(entry, null, 2); }
+					catch (e) { drawerBody.textContent = String(entry); }
+				}
+				// Remember the opener before the drawer steals focus, so close() can
+				// restore it.
+				drawerLastFocus = document.activeElement;
+				if (drawer) drawer.classList.remove('hidden');
+				if (drawerScrim) drawerScrim.classList.remove('hidden');
+				// Move focus into the drawer (close button preferred) and arm the trap.
+				if (drawer) drawer.addEventListener('keydown', drawerTrap);
+				if (drawerClose) drawerClose.focus();
+				else if (drawer) {
+					var f = drawer.querySelector(DRAWER_FOCUSABLE);
+					if (f) f.focus();
+				}
+			}
+			function closeDrawer() {
+				if (drawer) {
+					drawer.classList.add('hidden');
+					drawer.removeEventListener('keydown', drawerTrap);
+				}
+				if (drawerScrim) drawerScrim.classList.add('hidden');
+				drawerEntry = null;
+				// Restore focus to the row/control that opened the drawer.
+				if (drawerLastFocus && typeof drawerLastFocus.focus === 'function') {
+					drawerLastFocus.focus();
+				}
+				drawerLastFocus = null;
+			}
+			if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+			if (drawerScrim) drawerScrim.addEventListener('click', closeDrawer);
+			if (drawerCopy) drawerCopy.addEventListener('click', function () {
+				if (!drawerEntry) return;
+				copyText(JSON.stringify(drawerEntry, null, 2), L('labelCopyOk'));
+			});
+
+			// Line click: rule chip filters; artist link navigates (default); a
+			// bare click anywhere else opens the drawer.
+			viewer.addEventListener('click', function (ev) {
+				var ruleChip = ev.target.closest && ev.target.closest('.sw-log-rule-chip');
+				if (ruleChip) {
+					ev.preventDefault();
+					state.rule = ruleChip.getAttribute('data-rule') || '';
+					if (fRule) fRule.value = state.rule;
+					reload();
+					renderActiveChips();
+					return;
+				}
+				if (ev.target.closest && ev.target.closest('[data-stop]')) return; // artist link: let it navigate
+				var line = ev.target.closest && ev.target.closest('.sw-log-line');
+				if (!line || !line.dataset.entry) return;
+				try { openDrawer(JSON.parse(line.dataset.entry)); } catch (e) { /* ignore */ }
+			});
+
+			// Keyboard parity for log rows: Enter/Space on a focused row opens its
+			// detail drawer (#1338). Chips/links inside a row are buttons/anchors that
+			// activate natively, so only act when the row element itself is focused;
+			// preventDefault on Space stops the viewer scrolling.
+			viewer.addEventListener('keydown', function (ev) {
+				if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+				var line = ev.target;
+				if (!line.classList || !line.classList.contains('sw-log-line') || !line.dataset.entry) return;
+				ev.preventDefault();
+				try { openDrawer(JSON.parse(line.dataset.entry)); } catch (e) { /* ignore */ }
+			});
+
+			// -- bug-report export ----------------------------------------------
+			function copyText(text, okMsg) {
+				function fallback() {
+					try {
+						var ta = document.createElement('textarea');
+						ta.value = text;
+						ta.style.position = 'fixed';
+						ta.style.opacity = '0';
+						document.body.appendChild(ta);
+						ta.select();
+						document.execCommand('copy');
+						document.body.removeChild(ta);
+						if (typeof showToast === 'function') showToast(okMsg);
+					} catch (e) {
+						if (typeof showToast === 'function') showToast(L('labelExportFail'));
+					}
+				}
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					navigator.clipboard.writeText(text).then(function () {
+						if (typeof showToast === 'function') showToast(okMsg);
+					}, fallback);
+				} else {
+					fallback();
+				}
+			}
+			var exportBtn = document.getElementById('sw-logs-export');
+			if (exportBtn) exportBtn.addEventListener('click', function () {
+				// Collect the last N error lines currently in the DOM.
+				var errs = [];
+				var lines = viewer.querySelectorAll('.sw-log-line');
+				for (var i = lines.length - 1; i >= 0 && errs.length < EXPORT_ERRORS; i--) {
+					var e;
+					try { e = JSON.parse(lines[i].dataset.entry); } catch (er) { continue; }
+					if ((e.level || '').toLowerCase() === 'error') {
+						errs.unshift('- `' + (e.time || '') + '` [' + (e.component || '') + '] ' + (e.message || ''));
+					}
+				}
+				var filters = [];
+				if (state.level) filters.push('level=' + state.level);
+				if (state.component) filters.push('component=' + state.component);
+				if (state.search) filters.push('q=' + state.search);
+				if (state.artistId) filters.push('artist_id=' + state.artistId);
+				if (state.rule) filters.push('rule=' + state.rule);
+				var md = '## Bug report\n\n' +
+					'### Recent errors\n\n' + (errs.length ? errs.join('\n') : '_none in current view_') + '\n\n' +
+					'### Context\n\n' +
+					'- Active filters: ' + (filters.length ? filters.join(', ') : 'none') + '\n' +
+					'- Page: ' + window.location.href + '\n' +
+					'- User agent: ' + navigator.userAgent + '\n';
+				copyText(md, L('labelExportOk'));
+			});
+
+			// -- keyboard: j/k scroll the viewer; register cheat-sheet entries ---
+			document.addEventListener('keydown', function (ev) {
+				if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+				var tag = (ev.target && ev.target.tagName) || '';
+				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target && ev.target.isContentEditable)) return;
+				if (drawer && !drawer.classList.contains('hidden') && ev.key === 'Escape') { closeDrawer(); return; }
+				// f (open Filters) is handled by the global keyboard.js via the
+				// trigger's data-sw-shortcut="f" -> swFilterFlyout.open (W1-B); no local
+				// binding here. Escape-to-close is handled by the shared flyout system.
+				// j/k just scroll; auto-follow is governed by isAtBottom() (the scroll
+				// handler), so neither key touches state.paused -- pressing j and
+				// returning to the bottom resumes the live tail without an explicit
+				// resume, and j/k stay symmetric.
+				if (ev.key === 'j' || ev.key === 'J') { ev.preventDefault(); viewer.scrollTop += 40; updateJump(); }
+				else if (ev.key === 'k' || ev.key === 'K') { ev.preventDefault(); viewer.scrollTop -= 40; updateJump(); }
+				// V3: Shift+G or End jump to the live tail (reuses the Jump-to-Bottom
+				// action); PageUp/PageDown scroll one viewport. ev.key 'G' is Shift+g,
+				// distinct from the lowercase 'g' nav leader, so no chord conflict.
+				else if (ev.key === 'G' || ev.key === 'End') { ev.preventDefault(); jumpToBottom(); }
+				else if (ev.key === 'PageDown') { ev.preventDefault(); viewer.scrollTop += viewer.clientHeight; updateJump(); }
+				else if (ev.key === 'PageUp') { ev.preventDefault(); viewer.scrollTop -= viewer.clientHeight; updateJump(); }
+			});
+			// g l (go to logs) is owned by the shared g-leader nav registry (PR #1775);
+			// this page only advertises it for the cheat sheet. j/k are page-local.
+			// TODO(#1775): once the shared registry exposes a g-leader registration
+			// API, bind 'g l' -> /next/logs here instead of relying on #1775's map.
+			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
+				// `/` (search) and `f` (filters) auto-register from their
+				// data-sw-shortcut attributes; only the inline-handled keys are added
+				// manually here.
+				window.swKeyboardShortcuts.register('logs', [
+					{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },
+					{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },
+					{ key: 'k', label: L('labelScrollUp') || 'Scroll up' },
+					{ key: 'PgUp / PgDn', label: L('labelPage') || 'Page up / down' },
+					{ key: 'Shift+G / End', label: L('labelJumpBottom') || 'Jump to bottom' }
+				]);
+			}
+
+			// -- boot -----------------------------------------------------------
+			// Hydrate the shared flyout pills (level/component) from the URL, then
+			// render the active-filter chips from the seeded state.
+			if (window.swFilterFlyout && typeof swFilterFlyout.initFromURL === 'function') {
+				swFilterFlyout.initFromURL('sw-logs-filter-flyout');
+			}
+			renderActiveChips();
+			applyWrap();
+			if (pauseBtn) pauseBtn.textContent = L('labelPause');
+			connect();
+		})();
+	</script>
+}
