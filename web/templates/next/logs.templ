@@ -376,6 +376,10 @@ templ LogsViewerScript() {
 				// would sit on top of the token; the CSS rule owns vertical padding.
 				row.className = 'sw-log-line group flex cursor-pointer items-baseline gap-2 rounded px-1 hover:bg-white/5';
 				row.setAttribute('role', 'listitem');
+				// Keyboard parity (#1338): the row opens the detail drawer on click, so
+				// make it a tab stop and let Enter/Space activate it (handled by the
+				// delegated keydown listener on the viewer, alongside the click handler).
+				row.setAttribute('tabindex', '0');
 				try { row.dataset.entry = JSON.stringify(e); } catch (err) { /* non-fatal */ }
 
 				var html = '';
@@ -485,6 +489,11 @@ templ LogsViewerScript() {
 					statusEl.classList.toggle('cursor-pointer', kind === 'disconnected');
 					statusEl.classList.toggle('underline', kind === 'disconnected');
 					statusEl.setAttribute('role', kind === 'disconnected' ? 'button' : 'status');
+					// Only a clickable (dead-stream) status is a tab stop; restore it to
+					// a non-focusable status indicator otherwise so it doesn't add a
+					// dead tab stop when there's nothing to activate (#1338 a11y).
+					if (kind === 'disconnected') statusEl.setAttribute('tabindex', '0');
+					else statusEl.removeAttribute('tabindex');
 				}
 			}
 			// Manual reconnect for the dead-stream state (session expiry, etc.):
@@ -492,6 +501,15 @@ templ LogsViewerScript() {
 			// back without a full page reload.
 			if (statusEl) statusEl.addEventListener('click', function () {
 				if (statusKind === 'disconnected') connect();
+			});
+			// Keyboard parity for the reconnect control: Enter and Space activate it
+			// just like a native button (preventDefault on Space stops page scroll).
+			if (statusEl) statusEl.addEventListener('keydown', function (ev) {
+				if (statusKind !== 'disconnected') return;
+				if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+					ev.preventDefault();
+					connect();
+				}
 			});
 
 			var THROTTLE_HIDE_MS = 6000;
@@ -763,19 +781,63 @@ templ LogsViewerScript() {
 			var drawerCopy = document.getElementById('sw-logs-drawer-copy');
 			var drawerClose = document.getElementById('sw-logs-drawer-close');
 			var drawerEntry = null;
+			// Modal focus contract (#1338): the drawer is aria-modal, so on open we
+			// move focus inside it and trap Tab; on close we restore focus to the
+			// row/control that opened it. Mirrors web/static/js/prefs-drawer.js.
+			var DRAWER_FOCUSABLE = [
+				'a[href]',
+				'button:not([disabled])',
+				'input:not([disabled])',
+				'select:not([disabled])',
+				'textarea:not([disabled])',
+				'[tabindex]:not([tabindex="-1"])'
+			].join(', ');
+			var drawerLastFocus = null;
+			// Tab-cycle keydown handler kept within the drawer; Escape is handled by
+			// the page-level keydown listener (which already calls closeDrawer).
+			function drawerTrap(ev) {
+				if (ev.key !== 'Tab' || !drawer) return;
+				var focusable = Array.prototype.slice.call(drawer.querySelectorAll(DRAWER_FOCUSABLE));
+				if (!focusable.length) { ev.preventDefault(); return; }
+				var first = focusable[0];
+				var last = focusable[focusable.length - 1];
+				if (ev.shiftKey) {
+					if (document.activeElement === first) { ev.preventDefault(); last.focus(); }
+				} else {
+					if (document.activeElement === last) { ev.preventDefault(); first.focus(); }
+				}
+			}
 			function openDrawer(entry) {
 				drawerEntry = entry;
 				if (drawerBody) {
 					try { drawerBody.textContent = JSON.stringify(entry, null, 2); }
 					catch (e) { drawerBody.textContent = String(entry); }
 				}
+				// Remember the opener before the drawer steals focus, so close() can
+				// restore it.
+				drawerLastFocus = document.activeElement;
 				if (drawer) drawer.classList.remove('hidden');
 				if (drawerScrim) drawerScrim.classList.remove('hidden');
+				// Move focus into the drawer (close button preferred) and arm the trap.
+				if (drawer) drawer.addEventListener('keydown', drawerTrap);
+				if (drawerClose) drawerClose.focus();
+				else if (drawer) {
+					var f = drawer.querySelector(DRAWER_FOCUSABLE);
+					if (f) f.focus();
+				}
 			}
 			function closeDrawer() {
-				if (drawer) drawer.classList.add('hidden');
+				if (drawer) {
+					drawer.classList.add('hidden');
+					drawer.removeEventListener('keydown', drawerTrap);
+				}
 				if (drawerScrim) drawerScrim.classList.add('hidden');
 				drawerEntry = null;
+				// Restore focus to the row/control that opened the drawer.
+				if (drawerLastFocus && typeof drawerLastFocus.focus === 'function') {
+					drawerLastFocus.focus();
+				}
+				drawerLastFocus = null;
 			}
 			if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
 			if (drawerScrim) drawerScrim.addEventListener('click', closeDrawer);
@@ -799,6 +861,18 @@ templ LogsViewerScript() {
 				if (ev.target.closest && ev.target.closest('[data-stop]')) return; // artist link: let it navigate
 				var line = ev.target.closest && ev.target.closest('.sw-log-line');
 				if (!line || !line.dataset.entry) return;
+				try { openDrawer(JSON.parse(line.dataset.entry)); } catch (e) { /* ignore */ }
+			});
+
+			// Keyboard parity for log rows: Enter/Space on a focused row opens its
+			// detail drawer (#1338). Chips/links inside a row are buttons/anchors that
+			// activate natively, so only act when the row element itself is focused;
+			// preventDefault on Space stops the viewer scrolling.
+			viewer.addEventListener('keydown', function (ev) {
+				if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+				var line = ev.target;
+				if (!line.classList || !line.classList.contains('sw-log-line') || !line.dataset.entry) return;
+				ev.preventDefault();
 				try { openDrawer(JSON.parse(line.dataset.entry)); } catch (e) { /* ignore */ }
 			});
 
