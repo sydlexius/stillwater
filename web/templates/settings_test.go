@@ -23,7 +23,7 @@ func TestSettingsUpdatesTab_RestartRequiredVisible(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := settingsUpdatesTab(data, "").Render(testCtx(t), &buf); err != nil {
+	if err := SettingsUpdatesTab(data, "").Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	html := buf.String()
@@ -68,7 +68,7 @@ func TestSettingsUpdatesTab_RestartRequiredHidden(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := settingsUpdatesTab(data, "").Render(testCtx(t), &buf); err != nil {
+	if err := SettingsUpdatesTab(data, "").Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	html := buf.String()
@@ -95,7 +95,7 @@ func TestSettingsUpdatesTab_RestartRequiredDocker(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := settingsUpdatesTab(data, "").Render(testCtx(t), &buf); err != nil {
+	if err := SettingsUpdatesTab(data, "").Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	html := buf.String()

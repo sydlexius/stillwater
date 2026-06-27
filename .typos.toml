@@ -58,3 +58,15 @@ aimd = "aimd"
 # "presse" (as in "presse-papiers" = clipboard).
 Composant = "Composant"
 presse = "presse"
+# "Essentiels" (= Essentials) is the fr translation of the next/ settings rail
+# "Essentials" group heading; correct French, flagged as misspelled English.
+Essentiels = "Essentiels"
+# "existantes" (= existing, fem. plural) is correct French in the fr.json
+# settings.behavior.description string; typos reads it as misspelled English.
+existantes = "existantes"
+# "exemple" (= example) is correct French in the fr.json settings.behavior
+# description ("par exemple ..."); typos reads it as misspelled English.
+exemple = "exemple"
+# "authentification" (= authentication) is correct French in the fr.json
+# settings.next.section.auth rail label; typos reads it as misspelled English.
+authentification = "authentification"

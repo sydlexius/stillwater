@@ -63,6 +63,17 @@ type AssetPaths struct {
 	SettingsRuleToggleJS              string
 	SettingsApiTokenJS                string
 	SettingsUpdatesJS                 string
+	// SettingsSectionRefreshJS is the targeted section-refresh helper (M55 #1339
+	// items 1+6): swRefreshSettingsSection() re-fetches the current page and swaps
+	// in just the changed [data-settings-fragment] section, replacing the old
+	// reload-on-save (which lost scroll position and re-rolled the ambient
+	// backdrop on the next/ long-scroll page). Loaded on BOTH settings pages.
+	SettingsSectionRefreshJS          string
+	// SettingsNextJS is the next/ settings rail controller (M55 #1339): keyword
+	// filter (reads window.swSettingsSearchIndex), scroll-spy active-section
+	// tracking, deep-link-on-load, and the settings.changed cross-tab SSE
+	// consumer. Loaded only by the next/ settings page.
+	SettingsNextJS                    string
 	DriverJS                          string
 	DriverCSS                         string
 	TourJS                            string

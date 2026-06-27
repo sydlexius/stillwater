@@ -263,6 +263,11 @@ func BuildSettingsSearchIndex(ctx context.Context) []SettingsSearchEntry {
 		{ID: "help-platform-profile", Label: t(ctx, "settings.platform_profile.title"), HelpText: t(ctx, "settings.platform_profile.help"), TabID: TabGeneral},
 		{ID: "help-active-profile", Label: t(ctx, "settings.active_profile.title"), HelpText: t(ctx, "settings.active_profile.help"), TabID: TabGeneral},
 		{ID: "help-symlinks", Label: t(ctx, "settings.symlinks.title"), HelpText: t(ctx, "settings.symlinks.help"), TabID: TabGeneral},
+		// help-behavior backs the next/ Behavior section (#1339). It is inert on
+		// the stable screen (no element with that id renders there, so search.js's
+		// getElementById skips it); it gives the next/ Behavior section a
+		// searchable entry that exists even for a read-only profile.
+		{ID: "help-behavior", Label: t(ctx, "settings.behavior.title"), HelpText: t(ctx, "settings.behavior.help"), TabID: TabGeneral},
 		{ID: "help-tls-status", Label: t(ctx, "settings.tls_status.title"), HelpText: t(ctx, "settings.tls_status.help"), TabID: TabGeneral},
 		{ID: "help-base-path", Label: t(ctx, "settings.base_path.title"), HelpText: t(ctx, "settings.base_path.help"), TabID: TabGeneral},
 		{ID: "help-image-cache", Label: t(ctx, "settings.image_cache.title"), HelpText: t(ctx, "settings.image_cache.help"), TabID: TabGeneral},
@@ -459,7 +464,8 @@ func scopePillClasses(scope string) string {
 }
 
 // tokenAfterRequest returns an inline JS handler for token lifecycle buttons.
-// Revoke reloads the page so the token moves to the archive section correctly.
+// Revoke refreshes the API Tokens section (swRefreshSettingsSection, M55 #1339)
+// so the token moves to the archive in place without a full-page reload.
 // Delete fades out the row. Errors show a toast.
 // tokenAfterRequest builds the hx-on--after-request handler for the API-token
 // revoke/delete buttons. The user-visible success/failure toast copy is NOT
@@ -472,9 +478,12 @@ func tokenAfterRequest(rowID, action string) string {
 	fail := "{ try { var r=JSON.parse(event.detail.xhr.responseText); " +
 		"showToast(r.error||btn.dataset.toastFail); } catch(e) { showToast(btn.dataset.toastFail); } }"
 	if action == "revoke" {
+		// Refresh just the API Tokens section so the revoked token moves to the
+		// archive in place -- no full-page reload (M55 #1339). The 500ms delay
+		// lets the success toast register before the section swaps.
 		return "var btn=this; if(event.detail.successful) { " +
 			"showSuccessToast(btn.dataset.toastSuccess); " +
-			"setTimeout(function(){ window.location.reload(); }, 500); " +
+			"setTimeout(function(){ swRefreshSettingsSection('tokens'); }, 500); " +
 			"} else " + fail
 	}
 	return "var btn=this; if(event.detail.successful) { " +
@@ -809,6 +818,7 @@ func isWebSearchProvider(name provider.ProviderName) bool {
 
 templ SettingsPage(assets AssetPaths, data SettingsData) {
 	@Layout("Settings", assets) {
+		<script src={ assets.SettingsSectionRefreshJS }></script>
 		<script src={ assets.SettingsResetConfirmPrefsJS }></script>
 		<script src={ assets.SettingsTabsJS }></script>
 		<script src={ assets.SettingsSymlinkJS }></script>
@@ -824,12 +834,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		<script src={ assets.SettingsLogViewerJS }></script>
 		<script src={ assets.SettingsExportJS }></script>
 		<script src={ assets.SettingsProfileNamingJS }></script>
-		@settingsUsersScript()
-		@settingsAuthProvidersScript()
+		@SettingsUsersScript()
+		@SettingsAuthProvidersScript()
 		@components.LanguagePickerScript()
 		<script src={ assets.SettingsRomanizationFallbackJS }></script>
 		@components.ContextHelpScript()
-		@settingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
+		@SettingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
 		<script src={ assets.SettingsSearchJS }></script>
 		<script src={ assets.SortableJS }></script>
 		<script src={ assets.SettingsNotifBadgesJS }></script>
@@ -849,8 +859,17 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != TabGeneral),
 				}
 			>
-				@SectionPlatformProfile(data)
-				@SectionActiveProfile(data)
+				<!-- data-settings-fragment="platform": after activating a profile,
+				     the section-refresh helper (M55 #1339) swaps this wrapper so both
+				     the profile grid highlight AND the Active Profile detail update
+				     without a full-page reload. space-y-6 reproduces the parent's
+				     1.5rem inter-card spacing so the wrapper is layout-neutral. The
+				     next/ page wraps the SAME two cards (with its own active-profile
+				     variant) under the same fragment name. -->
+				<div data-settings-fragment="platform" class="space-y-6">
+					@SectionPlatformProfile(data)
+					@SectionActiveProfile(data)
+				</div>
 				<!-- TLS Status. Read-only summary of the running listener
 				     configuration so an operator can confirm a TLS deploy
 				     took effect without parsing logs. Values come from the
@@ -1052,7 +1071,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != TabUsers),
 				}
 			>
-				@settingsUsersTab(data.Users)
+				@SettingsUsersTab(data.Users)
 			</div>
 			<!-- Auth Providers tab -->
 			<div
@@ -1062,7 +1081,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != TabAuthProviders),
 				}
 			>
-				@settingsAuthProvidersTab(data.AuthProviders)
+				@SettingsAuthProvidersTab(data.AuthProviders)
 			</div>
 			<!-- Maintenance tab -->
 			<div
@@ -1100,7 +1119,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != TabUpdates),
 				}
 			>
-				@settingsUpdatesTab(data.Updates, assets.BasePath)
+				@SettingsUpdatesTab(data.Updates, assets.BasePath)
 			</div>
 		</div>
 		<script src={ assets.SettingsSortableInitJS }></script>
@@ -1138,11 +1157,12 @@ templ settingsTabBar(activeTab SettingsTabID, basePath string) {
 	</div>
 }
 
-// settingsSearchIndexScript emits the search index as a window-global JSON
+// SettingsSearchIndexScript emits the search index as a window-global JSON
 // variable. Using @templ.Raw avoids HTML-attribute escaping that would corrupt
 // the JSON; this is safe because json.Marshal produces only ASCII-safe output
-// with no unescaped angle brackets or ampersands.
-templ settingsSearchIndexScript(index []SettingsSearchEntry) {
+// with no unescaped angle brackets or ampersands. Exported so the next/ settings
+// rail (#1339) emits the same static index the keyword filter reads.
+templ SettingsSearchIndexScript(index []SettingsSearchEntry) {
 	@templ.Raw(`<script>window.swSettingsSearchIndex = ` + jsonSearchIndex(index) + `;</script>`)
 }
 
@@ -1171,6 +1191,7 @@ templ settingsLibraryRow(lib library.Library) {
 				<select
 					class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
 					title={ t(ctx, "settings.libraries.fs_mode_title") }
+					aria-label={ t(ctx, "settings.libraries.fs_mode_title") }
 					onchange={ settingsUpdateFSMode(lib.ID) }
 				>
 					<option value="0" selected?={ lib.FSWatch == 0 }>{ t(ctx, "settings.libraries.fs_off") }</option>
@@ -1187,6 +1208,7 @@ templ settingsLibraryRow(lib library.Library) {
 					<select
 						class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
 						title={ t(ctx, "settings.libraries.poll_interval_title") }
+						aria-label={ t(ctx, "settings.libraries.poll_interval_title") }
 						onchange={ settingsUpdatePollInterval(lib.ID) }
 					>
 						<option value="60" selected?={ lib.FSPollInterval == 60 }>1m</option>
@@ -1876,7 +1898,7 @@ templ providerTestSaveFailureInner(name provider.ProviderName, apiKey string, er
 				<button
 					type="button"
 					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick="window.location.reload()"
+					onclick="swRefreshSettingsSection('provider-keys')"
 				>
 					{ t(ctx, "common.cancel") }
 				</button>
@@ -1892,7 +1914,7 @@ templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeySta
 // PriorityChipRows renders the full set of priority chip rows wrapped in the
 // container element targeted by the "Restore defaults" button (hx-swap=outerHTML).
 templ PriorityChipRows(priorities []provider.FieldPriority, keys []provider.ProviderKeyStatus) {
-	<div id="priority-rows" class="space-y-3">
+	<div id="priority-rows" class="space-y-3" data-settings-fragment="priorities">
 		for _, pri := range priorities {
 			@PriorityChipRow(pri, keys)
 		}
@@ -2065,7 +2087,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 								class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								hx-post={ "/api/v1/connections/" + c.ID + "/test" }
 								hx-swap="none"
-								hx-on::after-request="window.location.reload()"
+								hx-on::after-request="swRefreshSettingsSection('connections')"
 							>
 								Test
 							</button>
@@ -2346,7 +2368,7 @@ templ ConnectionTestSaveFailure(connType string, name string, url string, apiKey
 			<button
 				type="button"
 				class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-				onclick="window.location.reload()"
+				onclick="swRefreshSettingsSection('connections')"
 			>
 				Cancel
 			</button>
@@ -2481,7 +2503,7 @@ templ webhookCard(wh webhook.Webhook) {
 				hx-delete={ "/api/v1/webhooks/" + wh.ID }
 				hx-confirm={ t(ctx, "settings.webhooks.confirm_delete") }
 				hx-swap="none"
-				hx-on::after-request="window.location.reload()"
+				hx-on::after-request="if(event.detail.successful) swRefreshSettingsSection('webhooks')"
 			>
 				Delete
 			</button>
@@ -2489,10 +2511,13 @@ templ webhookCard(wh webhook.Webhook) {
 	</div>
 }
 
-// profileNamingRow renders a single image type row in the active profile details.
+// ProfileNamingRow renders a single image type row in the active profile details.
 // For builtin profiles it shows read-only text; for custom profiles it shows
-// editable chips with add/remove controls.
-templ profileNamingRow(label, imageType string, names []string, readOnly bool) {
+// editable chips with add/remove controls. Exported so the next/ settings rail
+// (#1339) can compose the Active Profile section inline (it authors Active
+// Profile / Behavior locally to re-home the symlink toggle into Behavior). The
+// rendered markup is unchanged; only the symbol is exported.
+templ ProfileNamingRow(label, imageType string, names []string, readOnly bool) {
 	<div>
 		<span class="font-medium text-gray-500 dark:text-gray-400">{ label }</span>
 		if readOnly {
@@ -2533,7 +2558,7 @@ templ profileCard(p platform.Profile) {
 		}
 		hx-post={ "/api/v1/platforms/" + p.ID + "/activate" }
 		hx-swap="none"
-		hx-on::after-request="window.location.reload()"
+		hx-on::after-request="if(event.detail.successful) swRefreshSettingsSection('platform')"
 	>
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-2">
@@ -2553,7 +2578,7 @@ templ profileCard(p platform.Profile) {
 						aria-hidden="true"
 					/>
 				}
-				<h3 class="font-semibold text-sm">{ p.Name }</h3>
+				@components.SettingSubHeading("font-semibold text-sm", p.Name)
 			</div>
 			if p.IsActive {
 				<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
@@ -2961,8 +2986,11 @@ func isKnownInterval(v int) bool {
 	}
 }
 
-// settingsUpdatesTab renders the Updates tab content.
-templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
+// SettingsUpdatesTab renders the Updates tab content. Exported so the next/
+// settings rail (#1339) composes the same content the stable chrome renders.
+// NOTE (#1757): when the stable settings chrome retires, this shared content
+// func must migrate out of the stable layer, not be deleted -- next/ depends on it.
+templ SettingsUpdatesTab(data UpdatesTabData, basePath string) {
 	// Hidden element carrying translated labels for the updater JS.
 	// The JS reads these via dataset.* rather than embedding raw strings.
 	<div
@@ -2988,7 +3016,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold text-gray-900 dark:text-gray-100", t(ctx, "settings.updates.title"))
 				@components.ContextHelp("help-updates", t(ctx, "settings.updates.title"), t(ctx, "settings.updates.help"), "settings-updates-updates")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.description") }</p>
@@ -3128,7 +3156,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.config.label") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold text-gray-900 dark:text-gray-100", t(ctx, "settings.updates.config.label"))
 				@components.ContextHelp("help-updates-config", t(ctx, "settings.updates.config.label"), t(ctx, "settings.updates.config.help"), "settings-updates-updates-config")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.config.description") }</p>
@@ -3345,7 +3373,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	<!-- Actions -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.actions_title") }</h2>
+			@components.SettingCardHeading("text-lg font-semibold text-gray-900 dark:text-gray-100", t(ctx, "settings.updates.actions_title"))
 		</div>
 		<div class="px-6 py-4 flex flex-wrap gap-3">
 			<button

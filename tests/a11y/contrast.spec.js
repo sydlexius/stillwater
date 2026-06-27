@@ -222,6 +222,92 @@ test('prefs drawer passes a11y scan', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// 5. /next/settings (dark mode)
+//
+// Settings is the primary surface for M55 #1339. This test verifies the
+// fully-rendered settings rail + pane in DARK mode. Light-mode contrast
+// regressions are caught by static-analysis snapshots; dark is where the
+// reused stable bodies carry inverted-muted and blue-ink debt fixed in #1339.
+//
+// Dark mode is activated via:
+//   (a) page.emulateMedia({ colorScheme: 'dark' }) -- satisfies the 'system'
+//       theme preference branch in preferences.js (matchMedia check).
+//   (b) page.evaluate classList.add('dark') -- satisfies the hardcoded 'dark'
+//       preference branch and any race where JS runs after emulateMedia fires.
+// ---------------------------------------------------------------------------
+
+test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
+  await page.context().addCookies([{
+    name:   'session',
+    value:  authCookie.replace('session=', ''),
+    domain: '127.0.0.1',
+    path:   '/',
+  }]);
+
+  // Force dark-mode media query so preferences.js resolves 'system' as dark.
+  await page.emulateMedia({ colorScheme: 'dark' });
+
+  await page.goto('/next/settings');
+  await page.waitForSelector('.sw-next-settings-pane', { timeout: 10_000 });
+
+  // Ensure the .dark class is present regardless of stored preference state.
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+
+  const results = await buildAxeBuilder(page).analyze();
+  expect(
+    results.violations,
+    `/next/settings dark-mode a11y violations:\n${formatViolations(results.violations)}`,
+  ).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// 6. /next/settings (light mode)
+//
+// Pairs with the dark spec above and with item 1 (rail glass surface): the
+// light spec only goes green once the rail has a legible frosted surface above
+// the ambient backdrop (WCAG 1.4.3 on the rail group labels / items).
+//
+// Light mode is activated via the real sidebar theme toggle so the full
+// preference path is exercised (swPreferences.set -> applySingle -> classList):
+//   (a) Seed the preference to 'dark' so cycleTheme() deterministically lands
+//       on 'light' (dark -> light is step 1 in the ORDER cycle).
+//   (b) Call window.swSidebar.cycleTheme() -- the same call the sidebar button
+//       uses -- which drives swPreferences.set('theme', 'light') synchronously.
+//   (c) waitForFunction confirms the .dark class is absent before scanning so
+//       there is no axe/DOM race.
+// ---------------------------------------------------------------------------
+
+test('/next/settings passes a11y scan in light mode', async ({ page }) => {
+  await page.context().addCookies([{
+    name:   'session',
+    value:  authCookie.replace('session=', ''),
+    domain: '127.0.0.1',
+    path:   '/',
+  }]);
+
+  await page.goto('/next/settings');
+  await page.waitForSelector('.sw-next-settings-pane', { timeout: 10_000 });
+
+  // Switch to light via the real sidebar theme toggle (not classList forcing).
+  // Seed to 'dark' first so one cycleTheme() call deterministically lands on
+  // 'light' regardless of any prior localStorage state.
+  await page.evaluate(() => {
+    if (window.swPreferences) window.swPreferences.set('theme', 'dark');
+    if (window.swSidebar && window.swSidebar.cycleTheme) window.swSidebar.cycleTheme();
+  });
+  await page.waitForFunction(
+    () => !document.documentElement.classList.contains('dark'),
+    { timeout: 3_000 },
+  );
+
+  const results = await buildAxeBuilder(page).analyze();
+  expect(
+    results.violations,
+    `/next/settings light-mode a11y violations:\n${formatViolations(results.violations)}`,
+  ).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
 // Helper: format violations for assertion messages.
 // ---------------------------------------------------------------------------
 function formatViolations(violations) {

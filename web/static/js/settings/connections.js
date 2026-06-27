@@ -32,7 +32,16 @@
         method: "DELETE",
         headers: {"X-CSRF-Token": csrfToken}
       }).then(function(res) {
-        if (res.ok) { window.location.reload(); return; }
+        // Refresh just the Connections section instead of a full-page reload
+        // (M55 #1339) so the next/ scroll position + ambient backdrop survive.
+        if (res.ok) {
+          if (typeof window.swRefreshSettingsSection === 'function') {
+            window.swRefreshSettingsSection('connections');
+          } else {
+            console.error('connections.js: swRefreshSettingsSection unavailable; section will not refresh after delete');
+          }
+          return;
+        }
         // The error body may be JSON, plain text, or empty; res.json() rejects
         // on non-JSON, so read text first and parse opportunistically rather
         // than leaving the user with no feedback.

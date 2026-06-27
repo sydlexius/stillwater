@@ -933,6 +933,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// unauthenticated visitors instead of returning 401 JSON; logs are
 	// administrator-only.
 	mux.HandleFunc("GET "+bp+"/next/logs", wrapOptionalAuth(r.handleNextLogsPage, optAuthMw))
+	// M55 #1339: next/ settings rail. More specific than the /next/{path...}
+	// fallback so Go's mux prefers it; renders the next template only when the
+	// resolved channel is "next" (otherwise it 404s via checkNextChannel). The
+	// administrator-only gate lives in the handler; wrapOptionalAuth so an
+	// unauthenticated visitor gets the login page, not a 401 JSON body.
+	mux.HandleFunc("GET "+bp+"/next/settings", wrapOptionalAuth(r.handleNextSettingsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

@@ -205,8 +205,6 @@ func normalizeSettingsSection(section string) templates.SettingsTabID {
 
 // handleSettingsPage renders the settings HTML page.
 // GET /settings
-//
-//nolint:gocognit // Top-level settings page aggregator: auth gate, platforms list, providers list, integrations, language prefs, update config, log config; each subsection has its own error branch with a degrade-or-bail decision and merging them would require shared error sentinels that obscure the per-section policy.
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
@@ -221,11 +219,40 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// The stable chrome shows one tab at a time, so it loads the Users section's
+	// (potentially expensive) data only when the Users tab is active. tab also
+	// sets data.ActiveTab so the right panel opens.
+	tab := normalizeSettingsSection(req.URL.Query().Get("tab"))
+	data, ok := r.buildSettingsData(req, userID, tab, tab == templates.TabUsers)
+	if !ok {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
+}
+
+// buildSettingsData aggregates every SettingsData field the settings screen
+// needs. It is shared by the stable handleSettingsPage and the next/
+// handleNextSettingsPage so the data assembly lives in exactly one place (issue
+// #1339 AC: reuse the data aggregation, no duplication). The caller has already
+// verified the request is authenticated with the administrator role.
+//
+// tab sets data.ActiveTab -- the stable tab the page opens on; the next/ chrome
+// ignores it (it renders one long scroll and tracks position via scroll-spy).
+// loadUsers gates the users+invites query: stable passes tab==TabUsers (only the
+// active Users tab needs it), next/ passes true because the Users section is
+// always present on its single-scroll page.
+//
+// It returns ok=false only when the platform list (the one hard dependency)
+// cannot be read; the caller then surfaces a 500. Every other subsection
+// degrades gracefully (logs + renders empty) rather than failing the page.
+//
+//nolint:gocognit // Top-level settings page aggregator: platforms list, providers list, integrations, language prefs, update config; each subsection has its own error branch with a degrade-or-bail decision and merging them would require shared error sentinels that obscure the per-section policy.
+func (r *Router) buildSettingsData(req *http.Request, userID string, tab templates.SettingsTabID, loadUsers bool) (templates.SettingsData, bool) {
 	profiles, err := r.platformService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing platforms for settings page", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return templates.SettingsData{}, false
 	}
 
 	active, err := r.platformService.GetActive(req.Context())
@@ -293,16 +320,15 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	tab := normalizeSettingsSection(req.URL.Query().Get("tab"))
-
 	multiUserEnabled := r.getBoolSetting(req.Context(), "multi_user.enabled", false)
 
-	// Populate users and invites only when the users tab is active to avoid
-	// unnecessary DB queries on every settings page load.
+	// Populate users and invites only when the caller asks for them (stable: the
+	// Users tab is active; next/: always, since the section is always rendered),
+	// to avoid unnecessary DB queries on every settings page load.
 	var usersTabData templates.UsersTabData
 	usersTabData.MultiUserEnabled = multiUserEnabled
 	usersTabData.CallerID = userID
-	if multiUserEnabled && tab == templates.TabUsers {
+	if multiUserEnabled && loadUsers {
 		if users, err := r.authService.ListUsers(req.Context()); err == nil {
 			usersTabData.Users = users
 		} else {
@@ -420,7 +446,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	// gracefully to the no-op default on any error (consistent with how
 	// loadVocabConfig works -- it never returns nil).
 	data.VocabConfig = r.loadVocabConfig(req.Context())
-	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
+	return data, true
 }
 
 // buildUpdatesTabData assembles the UpdatesTabData for the Settings > Updates tab.
