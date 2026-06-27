@@ -386,7 +386,10 @@ templ LogsViewerScript() {
 				var chips = '';
 				PINNED.forEach(function (k) {
 					if (attrs[k] == null || attrs[k] === '') return;
-					var val = String(attrs[k]);
+					// Stringify object/array attr values via JSON so they don't coerce
+					// to "[object Object]" (#1338 X3); primitives use String() as before.
+					var raw = attrs[k];
+					var val = (typeof raw === 'object') ? JSON.stringify(raw) : String(raw);
 					if (k === 'artist_id') {
 						chips += '<a href="' + esc(L('baseArtists') + val) + '" class="sw-log-chip shrink-0 rounded bg-blue-500/15 px-1.5 text-blue-700 hover:underline dark:text-blue-300" data-stop="1">artist:' + esc(val) + '</a>';
 					} else if (k === 'rule') {

@@ -51,6 +51,28 @@ func TestRingHandler_ComponentExtraction(t *testing.T) {
 	}
 }
 
+func TestRingHandler_ErrorAttrSerializedToMessage(t *testing.T) {
+	rb := NewRingBuffer(10)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
+	logger := slog.New(h)
+
+	// A bare error attr would marshal to "{}" (no exported fields); recordToEntry
+	// must store its message string instead so the viewer shows it (#1338 X3).
+	logger.Error("fetch failed", "error", fmt.Errorf("connection refused"))
+
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	v, ok := entries[0].Attrs["error"]
+	if !ok {
+		t.Fatalf("expected error attr, got %v", entries[0].Attrs)
+	}
+	if s, isStr := v.(string); !isStr || s != "connection refused" {
+		t.Errorf("error attr = %#v, want string %q", v, "connection refused")
+	}
+}
+
 func TestRingHandler_LevelFiltering(t *testing.T) {
 	rb := NewRingBuffer(10)
 	// Only capture warn and above.

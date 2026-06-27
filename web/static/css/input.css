@@ -1592,20 +1592,30 @@ input:-webkit-autofill:focus {
   flex-shrink: 0;
 }
 
+/* Primary (Apply) action: a blue-tinted GLASS emphasis, not a solid-blue fill.
+ * The previous solid --sw-accent-primary + white text failed AA (3.68:1, #1338
+ * X2) and violated the next/ no-solid-blue-button rule. This mirrors the
+ * include-pill palette (blue-700 ink on a translucent blue tint, blue-300 in
+ * dark) which clears AA with margin, while the heavier weight + border keep it
+ * visually distinct from the ghost "Clear All". Shared across every flyout. */
 .sw-filter-btn-primary {
   padding: 6px 14px;
   border-radius: var(--sw-radius-sm);
   font-size: 13px;
-  font-weight: 500;
-  background: var(--sw-accent-primary);
-  color: #fff;
-  border: none;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.16);
+  color: #1d4ed8; /* blue-700, AA on the light flyout surface */
+  border: 1px solid rgba(59, 130, 246, 0.5);
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+:where(.dark, .dark *) .sw-filter-btn-primary {
+  color: #93c5fd; /* blue-300 for dark mode */
 }
 
 .sw-filter-btn-primary:hover {
-  opacity: 0.88;
+  background: rgba(59, 130, 246, 0.26);
 }
 
 .sw-filter-btn-ghost {
@@ -1677,18 +1687,26 @@ input:-webkit-autofill:focus {
   color: var(--sw-content-text);
 }
 
-/* include state: blue filled */
-.sw-filter-item[data-filter-state="include"] {
+/* include state: blue filled. Keyed on BOTH the tri-state data-filter-state
+ * (FilterItem) AND the single-select `.include` class (FilterItemSingle, set by
+ * swFilterFlyout.selectSingle): single-select chips never set data-filter-state,
+ * so without the .include selector a selected Level/Component pill rendered
+ * identical to neutral (#1338 X1). The translucent-blue halo + blue-ink text is
+ * AA-compliant and not a solid fill. */
+.sw-filter-item[data-filter-state="include"],
+.sw-filter-item.include {
   background: rgba(59, 130, 246, 0.22);
   color: #1d4ed8; /* blue-700 for light mode */
   border-color: rgba(59, 130, 246, 0.45);
 }
 
-:where(.dark, .dark *) .sw-filter-item[data-filter-state="include"] {
+:where(.dark, .dark *) .sw-filter-item[data-filter-state="include"],
+:where(.dark, .dark *) .sw-filter-item.include {
   color: #93c5fd; /* blue-300 for dark mode */
 }
 
-.sw-filter-item[data-filter-state="include"]:hover {
+.sw-filter-item[data-filter-state="include"]:hover,
+.sw-filter-item.include:hover {
   background: rgba(59, 130, 246, 0.32);
 }
 
