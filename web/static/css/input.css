@@ -3167,7 +3167,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-dashboard .sw-kbd,
 .sw-next-artist-detail .sw-kbd,
 .sw-next-foreign-files .sw-kbd,
-.sw-next-logs .sw-kbd {
+.sw-next-logs .sw-kbd,
+.sw-cheat-sheet-modal .sw-kbd {
   position: relative;
   isolation: isolate;
   /* Route the keycap glyph through the mono Font Family pref seam (matches the
@@ -3201,7 +3202,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-dashboard .sw-kbd::before,
 .sw-next-artist-detail .sw-kbd::before,
 .sw-next-foreign-files .sw-kbd::before,
-.sw-next-logs .sw-kbd::before {
+.sw-next-logs .sw-kbd::before,
+.sw-cheat-sheet-modal .sw-kbd::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -3215,16 +3217,30 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-dashboard .sw-kbd,
 .dark .sw-next-artist-detail .sw-kbd,
 .dark .sw-next-foreign-files .sw-kbd,
-.dark .sw-next-logs .sw-kbd {
+.dark .sw-next-logs .sw-kbd,
+.dark .sw-cheat-sheet-modal .sw-kbd {
   color: #94a3b8;
 }
 .dark .sw-next-artists .sw-kbd::before,
 .dark .sw-next-dashboard .sw-kbd::before,
 .dark .sw-next-artist-detail .sw-kbd::before,
 .dark .sw-next-foreign-files .sw-kbd::before,
-.dark .sw-next-logs .sw-kbd::before {
+.dark .sw-next-logs .sw-kbd::before,
+.dark .sw-cheat-sheet-modal .sw-kbd::before {
   background: var(--sw-glass-bg, #0f172a);
 }
+/* Cheat-sheet modal surface tokens (#1775 ADD-2). The panel uses .sw-glass for
+ * background/blur/border so it tracks --sw-glass-bg (opacity pref), lite mode,
+ * and theme without extra overrides. Font family follows the Font Family user
+ * preference via --sw-font-sans. The divider border tracks --sw-glass-border so
+ * it stays visually coherent with the panel edge on both themes. */
+.sw-cheat-sheet-panel {
+  font-family: var(--sw-font-sans);
+}
+.sw-cheat-sheet-divider {
+  border-color: var(--sw-glass-border);
+}
+
 /* Keyboard-shortcut footer (.sw-list-tips) -- ONE shared treatment across every
  * next/ surface that renders it (artists, dashboard, artist-detail #1939,
  * foreign-files #1939). The dashboard is the maintainer-blessed benchmark; this

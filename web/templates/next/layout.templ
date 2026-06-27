@@ -1,12 +1,17 @@
 package next
 
-import "github.com/sydlexius/stillwater/web/templates"
+import (
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
 
 // LayoutNext is the page shell for the next/ UI channel (M55 #1340). It composes
 // the same shared chrome partials as the stable Layout -- LayoutHead,
 // LayoutBackdrop, and LayoutGlobalChrome (which mounts the ProgressPill status
 // bar, the global modals, the toast manager, and the SSE client) -- so the
-// preview UI never forks that infrastructure. The only channel difference is the
+// preview UI never forks that infrastructure. CheatSheetModal (#1775) is mounted
+// here (after LayoutGlobalChrome) rather than in the shared chrome so it remains
+// absent from stable pages; window.showCheatSheet is only defined on next/. The only channel difference is the
 // next/ Sidebar and BottomTabs, which currently delegate to the stable
 // components and are restyled by later screen issues. CSRF + base-path injection
 // and the cache-busted AssetPaths carry over unchanged via LayoutHead.
@@ -48,6 +53,7 @@ templ LayoutNext(title string, assets templates.AssetPaths) {
 				hx-swap="outerHTML"
 			></div>
 			@templates.LayoutGlobalChrome(assets)
+			@components.CheatSheetModal()
 		</body>
 	</html>
 }

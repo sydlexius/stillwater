@@ -1,0 +1,168 @@
+package components
+
+// CheatSheetModal renders the global keyboard-shortcut reference overlay (#1775).
+// Mounted in LayoutNext only (not in the shared LayoutGlobalChrome), so it is
+// absent from stable pages entirely. window.showCheatSheet is only defined on
+// next/ pages; the stable `?` handler falls back to toggleHelpOverlay().
+//
+// window.showCheatSheet() / window.hideCheatSheet() are the public API.
+// The modal reads window.swKeyboardShortcuts.list() on every open so it always
+// reflects the current page's shortcut set (page-actions + roving + global).
+//
+// Surface: uses .sw-glass (--sw-glass-bg / --sw-glass-blur / --sw-glass-border)
+// so background opacity and lite-mode preferences apply automatically.
+// Font: inherits --sw-font-sans (font family pref) via the .sw-cheat-sheet-panel
+// CSS rule in input.css. Text colors use --sw-content-text tokens for theme
+// parity with the rest of next/.
+//
+// Reduced motion: no CSS animation is used for open/close (instant .hidden
+// toggle). The backdrop transition-opacity is suppressed automatically by the
+// prefers-reduced-motion and data-motion="on" rules in design-tokens.css.
+//
+// A11y: role="dialog" aria-modal="true", full focus trap (Tab/Shift+Tab),
+// focus restored to opener on close, close button has aria-label.
+// Focus ring uses ring+offset so the shape cue is visible regardless of
+// surrounding context color (not color alone).
+templ CheatSheetModal() {
+	<div
+		id="cheat-sheet-modal"
+		class="fixed inset-0 z-50 hidden sw-cheat-sheet-modal"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="cheat-sheet-title"
+	>
+		<div class="fixed inset-0 bg-black/50 transition-opacity" id="cheat-sheet-backdrop"></div>
+		<div class="fixed inset-0 flex items-center justify-center p-4">
+			<div class="sw-glass sw-cheat-sheet-panel relative w-full max-w-md rounded-xl shadow-2xl">
+				<div class="sw-cheat-sheet-divider flex items-center justify-between border-b px-6 py-4">
+					<h2 id="cheat-sheet-title" class="text-base font-semibold text-gray-900 dark:text-gray-100">
+						Keyboard Shortcuts
+					</h2>
+					<button
+						type="button"
+						id="cheat-sheet-close"
+						aria-label="Close keyboard shortcuts"
+						class="rounded p-1 text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 dark:focus:ring-gray-300"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<line x1="18" y1="6" x2="6" y2="18"></line>
+							<line x1="6" y1="6" x2="18" y2="18"></line>
+						</svg>
+					</button>
+				</div>
+				<div id="cheat-sheet-content" class="px-6 py-4 max-h-[70vh] overflow-y-auto space-y-4"></div>
+			</div>
+		</div>
+		<script>
+			(function() {
+				var modal    = document.getElementById('cheat-sheet-modal');
+				var content  = document.getElementById('cheat-sheet-content');
+				var closeBtn = document.getElementById('cheat-sheet-close');
+				var backdrop = document.getElementById('cheat-sheet-backdrop');
+				var _opener  = null;
+
+				// Mirrors the confirm-modal FOCUSABLE selector in layout.templ.
+				var FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+				function getFocusable() {
+					var nodes = modal.querySelectorAll(FOCUSABLE);
+					return Array.prototype.slice.call(nodes).filter(function(el) {
+						return !el.closest('[hidden]') && !el.closest('.hidden') && el.offsetParent !== null;
+					});
+				}
+
+				function trapFocus(e) {
+					var focusable = getFocusable();
+					if (!focusable.length) return;
+					var first = focusable[0];
+					var last  = focusable[focusable.length - 1];
+					if (e.shiftKey) {
+						if (document.activeElement === first) {
+							e.preventDefault();
+							last.focus();
+						}
+					} else {
+						if (document.activeElement === last) {
+							e.preventDefault();
+							first.focus();
+						}
+					}
+				}
+
+				// esc: HTML-escape a string for safe innerHTML insertion.
+				// Prefers window.escapeHTML (from utils.js) with a self-contained fallback
+				// so this modal works even when utils.js is absent.
+				function esc(str) {
+					if (typeof window.escapeHTML === 'function') return window.escapeHTML(str);
+					return String(str)
+						.replace(/&/g, '&amp;')
+						.replace(/</g, '&lt;')
+						.replace(/>/g, '&gt;')
+						.replace(/"/g, '&quot;');
+				}
+
+				// renderContent: read the live registry and render grouped shortcut rows.
+				// Groups: manual -> 'Global', action -> 'Page Actions', roving -> 'List Navigation'.
+				// Inline styles use CSS custom properties (--sw-content-text etc.) so colors
+				// track the active theme without relying on Tailwind class scanning of
+				// JS template literals (which the Tailwind scanner does not process).
+				function renderContent() {
+					if (!window.swKeyboardShortcuts) { content.textContent = ''; return; }
+					var entries = window.swKeyboardShortcuts.list();
+					var groups  = { manual: [], action: [], roving: [] };
+					var labels  = { manual: 'Global', action: 'Page Actions', roving: 'List Navigation' };
+					for (var i = 0; i < entries.length; i++) {
+						var entry = entries[i];
+						if (groups.hasOwnProperty(entry.kind)) groups[entry.kind].push(entry);
+					}
+					var html  = '';
+					var order = ['manual', 'action', 'roving'];
+					for (var g = 0; g < order.length; g++) {
+						var key   = order[g];
+						var group = groups[key];
+						if (!group.length) continue;
+						html += '<div>';
+						html += '<h3 style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--sw-content-text-secondary);margin-bottom:0.5rem">';
+						html += esc(labels[key]) + '</h3>';
+						html += '<dl style="display:flex;flex-direction:column;gap:0.25rem">';
+						for (var j = 0; j < group.length; j++) {
+							var item = group[j];
+							html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">';
+							html += '<dt style="font-size:0.875rem;color:var(--sw-content-text)">' + esc(item.label) + '</dt>';
+							html += '<dd style="margin:0"><kbd class="sw-kbd">' + esc(item.key) + '</kbd></dd>';
+							html += '</div>';
+						}
+						html += '</dl></div>';
+					}
+					content.innerHTML = html; //nolint:trusted-html -- all text runs through esc()
+				}
+
+				window.showCheatSheet = function() {
+					if (!modal.classList.contains('hidden')) return;
+					_opener = document.activeElement;
+					renderContent();
+					modal.classList.remove('hidden');
+					closeBtn.focus();
+				};
+
+				window.hideCheatSheet = function() {
+					modal.classList.add('hidden');
+					if (_opener && typeof _opener.focus === 'function') {
+						_opener.focus();
+					}
+					_opener = null;
+				};
+
+				closeBtn.addEventListener('click', window.hideCheatSheet);
+				backdrop.addEventListener('click', window.hideCheatSheet);
+
+				document.addEventListener('keydown', function(e) {
+					if (modal.classList.contains('hidden')) return;
+					if (e.key === 'Tab') {
+						trapFocus(e);
+					}
+				});
+			})();
+		</script>
+	</div>
+}
