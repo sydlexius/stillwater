@@ -55,7 +55,10 @@ func TestHandleLogsComponents(t *testing.T) {
 	var payload struct {
 		Components []string `json:"components"`
 	}
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("unmarshaling: %v", err)
 	}
@@ -84,7 +87,10 @@ func TestHandleLogsComponents_EmptyBufferReturnsArray(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", res.StatusCode)
 	}
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	// Must serialize as an empty array, never null, so clients can iterate.
 	if !strings.Contains(string(body), `"components":[]`) {
 		t.Errorf("empty buffer should yield an empty array, got %s", string(body))

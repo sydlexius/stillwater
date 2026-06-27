@@ -10211,8 +10211,10 @@ paths:
                 properties:
                   components:
                     type: array
+                    uniqueItems: true
                     items:
                       type: string
+                      minLength: 1
         "401":
           description: Authentication required
           content:

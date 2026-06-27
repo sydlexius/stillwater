@@ -62,9 +62,7 @@ This is back-pressure protection, not a hard 200 lines/s cap.
 ## Controls
 
 - **Search** (`/`) — message substring filter (debounced).
-- **Level buttons** — set the minimum severity; click the active level again to
-  clear it.
-- **Filters** (`f`) — flyout for component, artist ID, and rule.
+- **Filters** (`f`) — flyout for level, component, artist ID, and rule.
 - **Pause / Resume** — stop auto-following the tail; new lines still arrive and
   buffer, with a count shown on the "Jump to Bottom" button.
 - **Wrap** — toggle line wrapping; the preference is persisted via

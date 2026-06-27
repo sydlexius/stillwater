@@ -241,64 +241,64 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-label-empty=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-label-clear-fail=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var14 string
-			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.empty_state"))
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.clear_fail"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 76, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 76, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-label-throttled=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-label-go-to-logs=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var15 string
-			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.throttled_banner"))
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.go_to_logs"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 77, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 77, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" data-label-pause=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" data-label-scroll-down=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var16 string
-			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.pause"))
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.scroll_down"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 78, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 78, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" data-label-resume=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" data-label-scroll-up=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var17 string
-			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.resume"))
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.scroll_up"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 79, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 79, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" data-label-export-ok=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" data-label-page=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var18 string
-			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.export_ok"))
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.page"))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 80, Col: 50}
 			}
@@ -306,116 +306,194 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" data-label-export-fail=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" data-label-jump-bottom=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var19 string
-			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.export_fail"))
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.jump_bottom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 81, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 81, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" data-label-copy-ok=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" data-label-empty=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var20 string
-			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.copy_ok"))
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.empty_state"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 82, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 82, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><!-- Header --><div class=\"flex items-center justify-between gap-3\"><h1 class=\"text-lg font-semibold text-[var(--swd-ink)]\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" data-label-throttled=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var21 string
-			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.title"))
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.throttled_banner"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 86, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 83, Col: 57}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</h1><!-- Live connection status indicator --><span id=\"sw-logs-status\" class=\"inline-flex items-center gap-1.5 text-xs font-medium text-[var(--swd-ink-3)]\" role=\"status\" aria-live=\"polite\"><span id=\"sw-logs-status-dot\" class=\"inline-block h-2 w-2 rounded-full bg-gray-400\"></span> <span id=\"sw-logs-status-text\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" data-label-pause=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var22 string
-			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.connecting"))
+			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.pause"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 95, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 84, Col: 42}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</span></span></div><!-- Sticky toolbar --><div class=\"sw-next-toolbar sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-[var(--swd-line)] px-3 py-2\"><!-- Search --><div class=\"relative\"><input id=\"sw-logs-search\" type=\"search\" data-sw-shortcut=\"/\" data-sw-shortcut-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" data-label-resume=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var23 string
-			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.search"))
+			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.resume"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 106, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 85, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" data-label-export-ok=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var24 string
-			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(filter.Search)
+			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.export_ok"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 107, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 86, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" placeholder=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" data-label-export-fail=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var25 string
-			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.search_placeholder"))
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.export_fail"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 108, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 87, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"w-44 rounded-md border border-[var(--swd-line)] bg-transparent px-2.5 py-1 text-sm text-[var(--swd-ink)] placeholder:text-[var(--swd-ink-3)] focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-56\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" data-label-copy-ok=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var26 string
-			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.search_placeholder"))
+			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.copy_ok"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 110, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 88, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\"></div><!-- Filter flyout trigger (shared swFilterFlyout system, #1338 W1-B).\n\t\t\t\t     data-sw-shortcut=\"f\" lets the global keyboard.js open it natively\n\t\t\t\t     via activateToggle -> swFilterFlyout.open (now that the panel IS a\n\t\t\t\t     shared flyout). data-active-classes / data-badge-classes drive the\n\t\t\t\t     client-side active-count visual sync (refreshActiveCount). -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\"><!-- Header --><div class=\"flex items-center justify-between gap-3\"><h1 class=\"text-lg font-semibold text-[var(--swd-ink)]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var27 = []any{glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium", templ.KV(glassButtonHalo, logsActiveFilterCount(filter) > 0)}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var27...)
+			var templ_7745c5c3_Var27 string
+			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.title"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 92, Col: 82}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</h1><!-- Live connection status indicator --><span id=\"sw-logs-status\" class=\"inline-flex items-center gap-1.5 text-xs font-medium text-[var(--swd-ink-3)]\" role=\"status\" aria-live=\"polite\"><span id=\"sw-logs-status-dot\" class=\"inline-block h-2 w-2 rounded-full bg-gray-400\"></span> <span id=\"sw-logs-status-text\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var28 string
+			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.connecting"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 101, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</span></span></div><!-- Sticky toolbar --><div class=\"sw-next-toolbar sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-[var(--swd-line)] px-3 py-2\"><!-- Search --><div class=\"relative\"><input id=\"sw-logs-search\" type=\"search\" data-sw-shortcut=\"/\" data-sw-shortcut-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var29 string
+			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.search"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 112, Col: 62}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var30 string
+			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(filter.Search)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 113, Col: 27}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" placeholder=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var31 string
+			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.search_placeholder"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 114, Col: 53}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" class=\"w-44 rounded-md border border-[var(--swd-line)] bg-transparent px-2.5 py-1 text-sm text-[var(--swd-ink)] placeholder:text-[var(--swd-ink-3)] focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-56\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var32 string
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.search_placeholder"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 116, Col: 52}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"></div><!-- Filter flyout trigger (shared swFilterFlyout system, #1338 W1-B).\n\t\t\t\t     data-sw-shortcut=\"f\" lets the global keyboard.js open it natively\n\t\t\t\t     via activateToggle -> swFilterFlyout.open (now that the panel IS a\n\t\t\t\t     shared flyout). data-active-classes / data-badge-classes drive the\n\t\t\t\t     client-side active-count visual sync (refreshActiveCount). -->")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var33 = []any{glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium", templ.KV(glassButtonHalo, logsActiveFilterCount(filter) > 0)}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var33...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -423,81 +501,81 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<button type=\"button\" id=\"sw-logs-filter-trigger\" data-sw-shortcut=\"f\" data-sw-shortcut-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<button type=\"button\" id=\"sw-logs-filter-trigger\" data-sw-shortcut=\"f\" data-sw-shortcut-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var28 string
-			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.filters"))
+			var templ_7745c5c3_Var34 string
+			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.shortcuts.filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 122, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 128, Col: 62}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" data-active-classes=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var29 string
-			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(glassButtonHalo)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 123, Col: 42}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" data-active-classes=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-neutral-classes=\"hover:bg-white/5\" data-badge-classes=\"")
+			var templ_7745c5c3_Var35 string
+			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(glassButtonHalo)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 129, Col: 42}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var30 string
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterTriggerBadge)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 125, Col: 44}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" data-neutral-classes=\"hover:bg-white/5\" data-badge-classes=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"")
+			var templ_7745c5c3_Var36 string
+			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterTriggerBadge)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 131, Col: 44}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var31 string
-			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var27).String())
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var37 string
+			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var33).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" aria-expanded=\"false\" aria-controls=\"sw-logs-filter-flyout\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" aria-expanded=\"false\" aria-controls=\"sw-logs-filter-flyout\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var32 string
-			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filters"))
+			var templ_7745c5c3_Var38 string
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 129, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 135, Col: 40}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" onclick=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var33 templ.ComponentScript = components.OpenFilterFlyout("sw-logs-filter-flyout")
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33.Call)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\">")
+			var templ_7745c5c3_Var39 templ.ComponentScript = components.OpenFilterFlyout("sw-logs-filter-flyout")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39.Call)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -505,127 +583,57 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var34 string
-			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.filters"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 133, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, " ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if logsActiveFilterCount(filter) > 0 {
-				var templ_7745c5c3_Var35 = []any{filterTriggerBadge}
-				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var35...)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<span class=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var36 string
-				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var35).String())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var37 string
-				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(logsFilterCountStr(filter))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 135, Col: 69}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</button><div class=\"flex-1\"></div><!-- Pause / resume -->")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var38 = []any{glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium"}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var38...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<button type=\"button\" id=\"sw-logs-pause\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var39 string
-			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var38).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" aria-pressed=\"false\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
 			var templ_7745c5c3_Var40 string
-			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.pause"))
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 141, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 139, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</button><!-- Wrap toggle -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var41 = []any{glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium"}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var41...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if logsActiveFilterCount(filter) > 0 {
+				var templ_7745c5c3_Var41 = []any{filterTriggerBadge}
+				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var41...)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<span class=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var42 string
+				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var41).String())
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var43 string
+				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(logsFilterCountStr(filter))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 141, Col: 69}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<button type=\"button\" id=\"sw-logs-wrap\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var42 string
-			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var41).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" aria-pressed=\"false\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var43 string
-			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.wrap_toggle"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 145, Col: 33}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</button><!-- Export for bug report -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</button><div class=\"flex-1\"></div><!-- Pause / resume -->")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -634,7 +642,7 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<button type=\"button\" id=\"sw-logs-export\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<button type=\"button\" id=\"sw-logs-pause\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -647,20 +655,20 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\" aria-pressed=\"false\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var46 string
-			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.export"))
+			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.pause"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 149, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 147, Col: 27}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</button><!-- Clear -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</button><!-- Wrap toggle -->")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -669,7 +677,7 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<button type=\"button\" id=\"sw-logs-clear\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<button type=\"button\" id=\"sw-logs-wrap\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -682,167 +690,237 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" aria-pressed=\"false\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var49 string
-			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.clear"))
+			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.wrap_toggle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 153, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 151, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</button></div><!-- Active-filter chips (#1338 W1-B). Rendered client-side from the active\n\t\t\t     filter state; each chip's dismiss clears that facet and reconnects the\n\t\t\t     SSE stream (the shared htmx-based DismissFilterChip path does not fit\n\t\t\t     an SSE viewer). Reuses the shared chip visual for consistency. --><div id=\"sw-logs-active-chips\" class=\"flex flex-wrap items-center gap-1.5 empty:hidden\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</button><!-- Export for bug report -->")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var50 string
-			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.active_filters"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 160, Col: 133}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
+			var templ_7745c5c3_Var50 = []any{glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium"}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var50...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"></div><!-- Throttle banner (hidden until logs.throttled arrives) --><div id=\"sw-logs-throttle\" class=\"hidden items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-sm text-amber-700 dark:text-amber-300\" role=\"alert\"><svg class=\"h-4 w-4 shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.8\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z\"></path></svg> <span id=\"sw-logs-throttle-text\"></span></div><!-- Log viewer container + jump-to-bottom button --><div class=\"relative\"><div id=\"log-viewer\" class=\"sw-log-viewer h-[60vh] overflow-y-auto rounded-md border border-[var(--swd-line)] p-2 font-mono text-xs leading-relaxed\" tabindex=\"0\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<button type=\"button\" id=\"sw-logs-export\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var51 string
-			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.title"))
+			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var50).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 178, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" aria-live=\"off\"></div><!-- Empty state --><div id=\"sw-logs-empty\" class=\"pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-[var(--swd-ink-3)]\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var52 string
-			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.empty_state"))
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.export"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 183, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 155, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</div><!-- Jump to bottom (hidden when at bottom) --><button type=\"button\" id=\"sw-logs-jump\" class=\"hidden absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--swd-line)] px-3 py-1.5 text-xs font-medium text-[var(--swd-ink)] shadow-[var(--swd-shadow-2)]\" style=\"background: var(--sw-glass-bg)\"><svg class=\"h-3.5 w-3.5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3\"></path></svg> <span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</button><!-- Clear -->")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var53 string
-			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.jump_to_bottom"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 195, Col: 42}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
+			var templ_7745c5c3_Var53 = []any{glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium"}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var53...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</span> <span id=\"sw-logs-jump-count\" class=\"hidden ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900\">0</span></button></div><!-- Keyboard tips --><p class=\"sw-list-tips\" role=\"note\"><span class=\"font-medium\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<button type=\"button\" id=\"sw-logs-clear\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var54 string
-			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.tip_label"))
+			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var53).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 201, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, ":</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">/</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var55 string
-			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.search"))
+			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.clear"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 202, Col: 134}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 159, Col: 27}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">f</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</button></div><!-- Active-filter chips (#1338 W1-B). Rendered client-side from the active\n\t\t\t     filter state; each chip's dismiss clears that facet and reconnects the\n\t\t\t     SSE stream (the shared htmx-based DismissFilterChip path does not fit\n\t\t\t     an SSE viewer). Reuses the shared chip visual for consistency. --><div id=\"sw-logs-active-chips\" class=\"flex flex-wrap items-center gap-1.5 empty:hidden\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var56 string
-			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.filters"))
+			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.active_filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 204, Col: 135}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 166, Col: 133}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">j</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\"></div><!-- Throttle banner (hidden until logs.throttled arrives) --><div id=\"sw-logs-throttle\" class=\"hidden items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-sm text-amber-700 dark:text-amber-300\" role=\"alert\"><svg class=\"h-4 w-4 shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.8\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z\"></path></svg> <span id=\"sw-logs-throttle-text\"></span></div><!-- Log viewer container + jump-to-bottom button --><div class=\"relative\"><div id=\"log-viewer\" class=\"sw-log-viewer h-[60vh] overflow-y-auto rounded-md border border-[var(--swd-line)] p-2 font-mono text-xs leading-relaxed\" tabindex=\"0\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var57 string
-			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.scroll_down"))
+			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 206, Col: 139}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 184, Col: 38}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">k</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" aria-live=\"off\"></div><!-- Empty state --><div id=\"sw-logs-empty\" class=\"pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-[var(--swd-ink-3)]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var58 string
-			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.scroll_up"))
+			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.empty_state"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 208, Col: 137}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 189, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">PgUp</kbd><kbd class=\"sw-kbd inline-flex ml-0.5\">PgDn</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div><!-- Jump to bottom (hidden when at bottom) --><button type=\"button\" id=\"sw-logs-jump\" class=\"hidden absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--swd-line)] px-3 py-1.5 text-xs font-medium text-[var(--swd-ink)] shadow-[var(--swd-shadow-2)]\" style=\"background: var(--sw-glass-bg)\"><svg class=\"h-3.5 w-3.5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3\"></path></svg> <span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var59 string
-			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.page"))
+			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.jump_to_bottom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 210, Col: 184}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 201, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">Shift G</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</span> <span id=\"sw-logs-jump-count\" class=\"hidden ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900\">0</span></button></div><!-- Keyboard tips --><p class=\"sw-list-tips\" role=\"note\"><span class=\"font-medium\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var60 string
-			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.jump_bottom"))
+			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.tip_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 212, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 207, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</span></span></p><!-- Filter flyout: shared swFilterFlyout component (#1338 W1-B) so the logs\n\t\t\t     filter matches the other next/ viewers (pills, active-count badge,\n\t\t\t     Escape-to-close, focus trap). Level = single-select min-severity pills;\n\t\t\t     Component = single-select pills from the ring buffer's distinct\n\t\t\t     components (GET /api/v1/logs/components vocabulary); artist_id / rule =\n\t\t\t     free-text deep-link facets (arbitrary values, no pill vocabulary).\n\t\t\t     data-target-sel=\"#log-viewer\": apply() fires sw:filter-applied there,\n\t\t\t     and the controller script reconnects the SSE stream on that event. -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, ":</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">/</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var61 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			var templ_7745c5c3_Var61 string
+			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.search"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 208, Col: 134}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">f</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var62 string
+			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.filters"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 210, Col: 135}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">j</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var63 string
+			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.scroll_down"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 212, Col: 139}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">k</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var64 string
+			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.scroll_up"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 214, Col: 137}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">PgUp</kbd><kbd class=\"sw-kbd inline-flex ml-0.5\">PgDn</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var65 string
+			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.page"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 216, Col: 184}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">Shift G</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var66 string
+			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.shortcuts.jump_bottom"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 218, Col: 145}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</span></span></p><!-- Filter flyout: shared swFilterFlyout component (#1338 W1-B) so the logs\n\t\t\t     filter matches the other next/ viewers (pills, active-count badge,\n\t\t\t     Escape-to-close, focus trap). Level = single-select min-severity pills;\n\t\t\t     Component = single-select pills from the ring buffer's distinct\n\t\t\t     components (GET /api/v1/logs/components vocabulary); artist_id / rule =\n\t\t\t     free-text deep-link facets (arbitrary values, no pill vocabulary).\n\t\t\t     data-target-sel=\"#log-viewer\": apply() fires sw:filter-applied there,\n\t\t\t     and the controller script reconnects the SSE stream on that event. -->")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Var67 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -854,7 +932,7 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Var62 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var68 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -874,16 +952,16 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.level_filter")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var62), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.level_filter")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var68), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if len(logComponents) > 0 {
-					templ_7745c5c3_Var63 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_Var69 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -903,16 +981,16 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.filter_component")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var63), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.filter_component")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var69), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Var64 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var70 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -924,223 +1002,223 @@ func LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<input id=\"sw-logs-f-artist\" type=\"text\" inputmode=\"numeric\" value=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var65 string
-					templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue(filter.ArtistID)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 236, Col: 89}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\" placeholder=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var66 string
-					templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_artist_id"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 236, Col: 137}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\" aria-label=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var67 string
-					templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_artist_id"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 236, Col: 405}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var67)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					return nil
-				})
-				templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.filter_artist_id")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var64), templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, " ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Var68 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-					if !templ_7745c5c3_IsBuffer {
-						defer func() {
-							templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-							if templ_7745c5c3_Err == nil {
-								templ_7745c5c3_Err = templ_7745c5c3_BufErr
-							}
-						}()
-					}
-					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<input id=\"sw-logs-f-rule\" type=\"text\" value=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var69 string
-					templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(filter.Rule)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 239, Col: 63}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" placeholder=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var70 string
-					templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_rule"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 239, Col: 106}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\" aria-label=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<input id=\"sw-logs-f-artist\" type=\"text\" inputmode=\"numeric\" value=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var71 string
-					templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_rule"))
+					templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(filter.ArtistID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 239, Col: 369}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 242, Col: 89}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" placeholder=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var72 string
+					templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_artist_id"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 242, Col: 137}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\" aria-label=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var73 string
+					templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_artist_id"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 242, Col: 405}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.filter_rule")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var68), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.filter_artist_id")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var70), templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, " ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Var74 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+					if !templ_7745c5c3_IsBuffer {
+						defer func() {
+							templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+							if templ_7745c5c3_Err == nil {
+								templ_7745c5c3_Err = templ_7745c5c3_BufErr
+							}
+						}()
+					}
+					ctx = templ.InitializeContext(ctx)
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<input id=\"sw-logs-f-rule\" type=\"text\" value=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var75 string
+					templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(filter.Rule)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 245, Col: 63}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" placeholder=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var76 string
+					templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_rule"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 245, Col: 106}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\" aria-label=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var77 string
+					templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.filter_rule"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 245, Col: 369}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					return nil
+				})
+				templ_7745c5c3_Err = components.FilterSection(t(ctx, "logs.filter_rule")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var74), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterFlyout("sw-logs-filter-flyout", t(ctx, "logs.filters"), "sw-logs-filter-trigger", logsActiveFilterCount(filter), "#log-viewer", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var61), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterFlyout("sw-logs-filter-flyout", t(ctx, "logs.filters"), "sw-logs-filter-trigger", logsActiveFilterCount(filter), "#log-viewer", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var67), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<!-- Line side-drawer (full entry view) --><div id=\"sw-logs-drawer-scrim\" class=\"hidden fixed inset-0 z-40 bg-black/40\"></div><aside id=\"sw-logs-drawer\" class=\"hidden fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-[var(--swd-line)] p-4 shadow-[var(--swd-shadow-2)]\" style=\"background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 65%)\" role=\"dialog\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var72 string
-			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.drawer_title"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 249, Col: 44}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\" aria-modal=\"true\"><div class=\"flex items-center justify-between gap-2\"><h2 class=\"text-sm font-semibold text-[var(--swd-ink)]\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var73 string
-			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.drawer_title"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 253, Col: 90}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</h2><div class=\"flex items-center gap-2\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var74 = []any{glassButton, "px-2 py-1 text-xs font-medium"}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var74...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<button type=\"button\" id=\"sw-logs-drawer-copy\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var75 string
-			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var74).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var76 string
-			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.copy_json"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 255, Col: 134}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</button> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var77 = []any{glassButton, "px-2 py-1 text-xs font-medium"}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var77...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<button type=\"button\" id=\"sw-logs-drawer-close\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<!-- Line side-drawer (full entry view) --><div id=\"sw-logs-drawer-scrim\" class=\"hidden fixed inset-0 z-40 bg-black/40\"></div><aside id=\"sw-logs-drawer\" class=\"hidden fixed right-0 top-0 z-50 h-full w-full max-w-md overflow-y-auto border-l border-[var(--swd-line)] p-4 shadow-[var(--swd-shadow-2)]\" style=\"background: color-mix(in srgb, var(--sw-glass-bg), var(--swd-bg-raised) 65%)\" role=\"dialog\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var78 string
-			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var77).String())
+			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.drawer_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 255, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" aria-modal=\"true\"><div class=\"flex items-center justify-between gap-2\"><h2 class=\"text-sm font-semibold text-[var(--swd-ink)]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var79 string
-			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.drawer_close"))
+			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.drawer_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 256, Col: 149}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 259, Col: 90}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\">✕</button></div></div><pre id=\"sw-logs-drawer-body\" class=\"mt-3 whitespace-pre-wrap break-words rounded-md border border-[var(--swd-line)] bg-black/20 p-2 font-mono text-[11px] leading-relaxed text-[var(--swd-ink)]\"></pre></aside></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "</h2><div class=\"flex items-center gap-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var80 = []any{glassButton, "px-2 py-1 text-xs font-medium"}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var80...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<button type=\"button\" id=\"sw-logs-drawer-copy\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var81 string
+			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var80).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var82 string
+			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "logs.copy_json"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 261, Col: 134}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</button> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var83 = []any{glassButton, "px-2 py-1 text-xs font-medium"}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var83...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<button type=\"button\" id=\"sw-logs-drawer-close\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var84 string
+			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var83).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var85 string
+			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "logs.drawer_close"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/logs.templ`, Line: 262, Col: 149}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var85)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\">✕</button></div></div><pre id=\"sw-logs-drawer-body\" class=\"mt-3 whitespace-pre-wrap break-words rounded-md border border-[var(--swd-line)] bg-black/20 p-2 font-mono text-[11px] leading-relaxed text-[var(--swd-ink)]\"></pre></aside></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1181,12 +1259,12 @@ func LogsViewerScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var80 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var80 == nil {
-			templ_7745c5c3_Var80 = templ.NopComponent
+		templ_7745c5c3_Var86 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var86 == nil {
+			templ_7745c5c3_Var86 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<script>\n\t\t(function () {\n\t\t\t'use strict';\n\t\t\tvar root = document.getElementById('sw-logs-root');\n\t\t\tif (!root || root.dataset.swLogsInit) return;\n\t\t\troot.dataset.swLogsInit = '1';\n\n\t\t\tvar viewer = document.getElementById('log-viewer');\n\t\t\tvar emptyEl = document.getElementById('sw-logs-empty');\n\t\t\tvar statusEl = document.getElementById('sw-logs-status');\n\t\t\tvar statusDot = document.getElementById('sw-logs-status-dot');\n\t\t\tvar statusText = document.getElementById('sw-logs-status-text');\n\t\t\tvar jumpBtn = document.getElementById('sw-logs-jump');\n\t\t\tvar jumpCount = document.getElementById('sw-logs-jump-count');\n\t\t\tvar throttleEl = document.getElementById('sw-logs-throttle');\n\t\t\tvar throttleText = document.getElementById('sw-logs-throttle-text');\n\t\t\tif (!viewer) return;\n\n\t\t\tvar bp = (function () {\n\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\treturn (m && m.content) || '';\n\t\t\t})();\n\n\t\t\tfunction esc(s) {\n\t\t\t\treturn String(s == null ? '' : s).replace(/[&<>\"']/g, function (c) {\n\t\t\t\t\treturn { '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c];\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction L(name) { return root.dataset[name] || ''; }\n\n\t\t\tvar MAX_LINES = 500;\n\t\t\t// While the user holds position (paused or scrolled up reading older\n\t\t\t// lines), the top-prune is suspended so the very lines being read are not\n\t\t\t// removed from under them during a burst. PAUSED_CEILING bounds DOM growth\n\t\t\t// in that window so a long burst cannot grow the window without limit; the\n\t\t\t// window prunes back to MAX_LINES once the user returns to the bottom.\n\t\t\tvar PAUSED_CEILING = 5000;\n\t\t\tvar EXPORT_ERRORS = 50; // bug-report export: last N error lines\n\n\t\t\tvar state = {\n\t\t\t\tlevel: root.dataset.initLevel || '',\n\t\t\t\tcomponent: root.dataset.initComponent || '',\n\t\t\t\tsearch: root.dataset.initSearch || '',\n\t\t\t\tartistId: root.dataset.initArtistId || '',\n\t\t\t\trule: root.dataset.initRule || '',\n\t\t\t\tpaused: false,\n\t\t\t\twrap: false,\n\t\t\t\tbuffered: 0\n\t\t\t};\n\n\t\t\tvar es = null;\n\n\t\t\t// -- presentation helpers (ported from log-viewer.js) ---------------\n\t\t\t// Severity PILLS are tinted badges, not buttons: the next/ \"no solid-blue\n\t\t\t// buttons\" rule constrains buttons only, so a blue-tinted info pill is fine.\n\t\t\tfunction levelPillClass(level) {\n\t\t\t\tswitch (level) {\n\t\t\t\t\tcase 'trace': return 'bg-purple-500/20 text-purple-700 dark:text-purple-300';\n\t\t\t\t\tcase 'debug': return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';\n\t\t\t\t\tcase 'info':  return 'bg-blue-500/20 text-blue-700 dark:text-blue-300';\n\t\t\t\t\tcase 'warn':  return 'bg-amber-500/20 text-amber-700 dark:text-amber-300';\n\t\t\t\t\tcase 'error': return 'bg-red-500/20 text-red-700 dark:text-red-300';\n\t\t\t\t\tdefault:      return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction fmtTime(iso) {\n\t\t\t\tvar d = new Date(iso);\n\t\t\t\tif (isNaN(d.getTime())) return '';\n\t\t\t\tfunction p(n, w) { var s = String(n); while (s.length < w) s = '0' + s; return s; }\n\t\t\t\treturn p(d.getHours(), 2) + ':' + p(d.getMinutes(), 2) + ':' + p(d.getSeconds(), 2) + '.' + p(d.getMilliseconds(), 3);\n\t\t\t}\n\n\t\t\t// Client-side AND filters the stream predicate does not cover.\n\t\t\tfunction entryMatchesClientFilters(e) {\n\t\t\t\tvar attrs = e.attrs || {};\n\t\t\t\tif (state.artistId) {\n\t\t\t\t\tvar a = attrs.artist_id != null ? String(attrs.artist_id) : '';\n\t\t\t\t\tif (a !== state.artistId) return false;\n\t\t\t\t}\n\t\t\t\tif (state.rule) {\n\t\t\t\t\tvar rl = attrs.rule != null ? String(attrs.rule) : '';\n\t\t\t\t\tif (rl !== state.rule) return false;\n\t\t\t\t}\n\t\t\t\treturn true;\n\t\t\t}\n\n\t\t\t// Pinned attribute chips, in display order. artist_id navigates to the\n\t\t\t// next/ artist-detail; rule chips filter the view by that rule.\n\t\t\tvar PINNED = ['artist_id', 'request_id', 'provider', 'rule', 'error'];\n\t\t\tfunction buildLine(e) {\n\t\t\t\tvar lvl = (e.level || '').toLowerCase();\n\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t// No hardcoded py-* here (U2): vertical padding is the density \"row\"\n\t\t\t\t// token, applied via the .sw-next-logs .sw-log-line CSS rule so\n\t\t\t\t// data-density actually drives line height. A hardcoded Tailwind py-*\n\t\t\t\t// would sit on top of the token; the CSS rule owns vertical padding.\n\t\t\t\trow.className = 'sw-log-line group flex cursor-pointer items-baseline gap-2 rounded px-1 hover:bg-white/5';\n\t\t\t\trow.setAttribute('role', 'listitem');\n\t\t\t\ttry { row.dataset.entry = JSON.stringify(e); } catch (err) { /* non-fatal */ }\n\n\t\t\t\tvar html = '';\n\t\t\t\t// Timestamp uses --swd-ink-2 (not the dimmer --swd-ink-3) so it clears\n\t\t\t\t// the AA 4.5 contrast floor over the log-viewer surface (F6).\n\t\t\t\thtml += '<time class=\"shrink-0 tabular-nums text-[var(--swd-ink-2)]\" datetime=\"' + esc(e.time || '') + '\">' + esc(fmtTime(e.time)) + '</time>';\n\t\t\t\thtml += '<span class=\"shrink-0 rounded px-1.5 text-[10px] font-bold uppercase ' + levelPillClass(lvl) + '\">' + esc(lvl || '?') + '</span>';\n\t\t\t\tif (e.component) {\n\t\t\t\t\thtml += '<span class=\"shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-2)] dark:bg-white/10\">' + esc(e.component) + '</span>';\n\t\t\t\t}\n\t\t\t\thtml += '<span class=\"min-w-0 flex-1 break-words text-[var(--swd-ink)]\">' + esc(e.message || '') + '</span>';\n\n\t\t\t\tvar attrs = e.attrs || {};\n\t\t\t\tvar chips = '';\n\t\t\t\tPINNED.forEach(function (k) {\n\t\t\t\t\tif (attrs[k] == null || attrs[k] === '') return;\n\t\t\t\t\t// Stringify object/array attr values via JSON so they don't coerce\n\t\t\t\t\t// to \"[object Object]\" (#1338 X3); primitives use String() as before.\n\t\t\t\t\tvar raw = attrs[k];\n\t\t\t\t\tvar val = (typeof raw === 'object') ? JSON.stringify(raw) : String(raw);\n\t\t\t\t\tif (k === 'artist_id') {\n\t\t\t\t\t\tchips += '<a href=\"' + esc(L('baseArtists') + val) + '\" class=\"sw-log-chip shrink-0 rounded bg-blue-500/15 px-1.5 text-blue-700 hover:underline dark:text-blue-300\" data-stop=\"1\">artist:' + esc(val) + '</a>';\n\t\t\t\t\t} else if (k === 'rule') {\n\t\t\t\t\t\tchips += '<button type=\"button\" class=\"sw-log-chip sw-log-rule-chip shrink-0 rounded bg-indigo-500/15 px-1.5 text-indigo-700 hover:underline dark:text-indigo-300\" data-stop=\"1\" data-rule=\"' + esc(val) + '\">rule:' + esc(val) + '</button>';\n\t\t\t\t\t} else if (k === 'error') {\n\t\t\t\t\t\tchips += '<span class=\"sw-log-chip shrink-0 rounded bg-red-500/15 px-1.5 text-red-700 dark:text-red-300\">error:' + esc(val) + '</span>';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tchips += '<span class=\"sw-log-chip shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-3)] dark:bg-white/10\">' + esc(k) + ':' + esc(val) + '</span>';\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tif (chips) {\n\t\t\t\t\thtml += '<span class=\"flex shrink-0 items-baseline gap-1 text-[10px]\">' + chips + '</span>';\n\t\t\t\t}\n\t\t\t\trow.innerHTML = html;\n\t\t\t\treturn row;\n\t\t\t}\n\n\t\t\t// -- scroll / auto-follow -------------------------------------------\n\t\t\tfunction isAtBottom() {\n\t\t\t\treturn viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 50;\n\t\t\t}\n\t\t\tfunction scrollToBottom() { viewer.scrollTop = viewer.scrollHeight; }\n\t\t\tfunction updateJump() {\n\t\t\t\tif (state.buffered > 0 && !isAtBottom()) {\n\t\t\t\t\tjumpBtn.classList.remove('hidden');\n\t\t\t\t\tif (jumpCount) {\n\t\t\t\t\t\tjumpCount.textContent = String(state.buffered);\n\t\t\t\t\t\tjumpCount.classList.remove('hidden');\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\tjumpBtn.classList.add('hidden');\n\t\t\t\t\tif (jumpCount) jumpCount.classList.add('hidden');\n\t\t\t\t}\n\t\t\t}\n\t\t\tfunction hideEmpty() { if (emptyEl) emptyEl.classList.add('hidden'); }\n\t\t\tfunction showEmpty() { if (emptyEl) emptyEl.classList.remove('hidden'); }\n\n\t\t\tfunction pruneTo(cap) {\n\t\t\t\twhile (viewer.childElementCount > cap) {\n\t\t\t\t\tviewer.removeChild(viewer.firstElementChild);\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction appendEntry(e) {\n\t\t\t\tif (!entryMatchesClientFilters(e)) return;\n\t\t\t\tvar atBottom = isAtBottom();\n\t\t\t\t// \"holding\" = the user is reading older lines (paused or scrolled up).\n\t\t\t\t// Suspend the top-prune so those lines are not removed from under them;\n\t\t\t\t// a higher paused ceiling still bounds DOM growth during a long burst.\n\t\t\t\tvar holding = state.paused || !atBottom;\n\t\t\t\tviewer.appendChild(buildLine(e));\n\t\t\t\tpruneTo(holding ? PAUSED_CEILING : MAX_LINES);\n\t\t\t\thideEmpty();\n\t\t\t\tif (!state.paused && atBottom) {\n\t\t\t\t\tscrollToBottom();\n\t\t\t\t\tstate.buffered = 0;\n\t\t\t\t} else {\n\t\t\t\t\tstate.buffered++;\n\t\t\t\t}\n\t\t\t\tupdateJump();\n\t\t\t}\n\n\t\t\tviewer.addEventListener('scroll', function () {\n\t\t\t\tif (isAtBottom()) {\n\t\t\t\t\tstate.buffered = 0;\n\t\t\t\t\t// Returned to the bottom: drop the suspended-prune surplus back to\n\t\t\t\t\t// the normal window (unless still explicitly paused).\n\t\t\t\t\tif (!state.paused) pruneTo(MAX_LINES);\n\t\t\t\t}\n\t\t\t\tupdateJump();\n\t\t\t});\n\n\t\t\t// -- connection status ----------------------------------------------\n\t\t\tvar statusKind = '';\n\t\t\tfunction setStatus(kind) {\n\t\t\t\tstatusKind = kind;\n\t\t\t\tvar label, dot;\n\t\t\t\tif (kind === 'connected') { label = L('labelConnected'); dot = 'bg-green-500'; }\n\t\t\t\telse if (kind === 'reconnecting') { label = L('labelReconnecting'); dot = 'bg-amber-500'; }\n\t\t\t\telse if (kind === 'disconnected') { label = L('labelDisconnected'); dot = 'bg-red-500'; }\n\t\t\t\telse if (kind === 'error') { label = L('labelReconnecting'); dot = 'bg-red-500'; }\n\t\t\t\telse { label = L('labelConnecting'); dot = 'bg-gray-400'; }\n\t\t\t\tif (statusText) statusText.textContent = label;\n\t\t\t\tif (statusDot) statusDot.className = 'inline-block h-2 w-2 rounded-full ' + dot;\n\t\t\t\t// A dead stream is the only clickable state: clicking re-opens it.\n\t\t\t\tif (statusEl) {\n\t\t\t\t\tstatusEl.classList.toggle('cursor-pointer', kind === 'disconnected');\n\t\t\t\t\tstatusEl.classList.toggle('underline', kind === 'disconnected');\n\t\t\t\t\tstatusEl.setAttribute('role', kind === 'disconnected' ? 'button' : 'status');\n\t\t\t\t}\n\t\t\t}\n\t\t\t// Manual reconnect for the dead-stream state (session expiry, etc.):\n\t\t\t// EventSource will not auto-retry after a CLOSED, so the user needs a way\n\t\t\t// back without a full page reload.\n\t\t\tif (statusEl) statusEl.addEventListener('click', function () {\n\t\t\t\tif (statusKind === 'disconnected') connect();\n\t\t\t});\n\n\t\t\tvar THROTTLE_HIDE_MS = 6000;\n\t\t\tvar throttleTimer = null;\n\t\t\tfunction hideThrottle() {\n\t\t\t\tif (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null; }\n\t\t\t\tif (throttleEl) { throttleEl.classList.add('hidden'); throttleEl.classList.remove('flex'); }\n\t\t\t}\n\t\t\tfunction showThrottle(dropped) {\n\t\t\t\tif (!throttleEl) return;\n\t\t\t\tif (throttleText) {\n\t\t\t\t\tvar tmpl = L('labelThrottled') || 'Dropped {count} entries';\n\t\t\t\t\tthrottleText.textContent = tmpl.replace('{count}', String(dropped));\n\t\t\t\t}\n\t\t\t\tthrottleEl.classList.remove('hidden');\n\t\t\t\tthrottleEl.classList.add('flex');\n\t\t\t\t// Auto-clear so a transient throttle does not leave a stale alert: each\n\t\t\t\t// fresh throttle resets the timer; quiet for the window -> banner hides.\n\t\t\t\tif (throttleTimer) clearTimeout(throttleTimer);\n\t\t\t\tthrottleTimer = setTimeout(hideThrottle, THROTTLE_HIDE_MS);\n\t\t\t}\n\n\t\t\t// -- SSE stream -----------------------------------------------------\n\t\t\tfunction streamURL() {\n\t\t\t\tvar p = [];\n\t\t\t\tif (state.level) p.push('level=' + encodeURIComponent(state.level));\n\t\t\t\tif (state.component) p.push('scope=' + encodeURIComponent(state.component));\n\t\t\t\tif (state.search) p.push('q=' + encodeURIComponent(state.search));\n\t\t\t\treturn bp + '/api/v1/logs/stream' + (p.length ? '?' + p.join('&') : '');\n\t\t\t}\n\t\t\tfunction disconnect() { if (es) { try { es.close(); } catch (e) { /* ignore */ } es = null; } }\n\t\t\tfunction connect() {\n\t\t\t\tdisconnect();\n\t\t\t\tsetStatus('connecting');\n\t\t\t\ttry {\n\t\t\t\t\tes = new EventSource(streamURL());\n\t\t\t\t} catch (err) {\n\t\t\t\t\tconsole.error('logs stream init failed', err);\n\t\t\t\t\tsetStatus('error');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tes.addEventListener('connected', function () { setStatus('connected'); });\n\t\t\t\tes.addEventListener('logs.line', function (ev) {\n\t\t\t\t\tvar e;\n\t\t\t\t\ttry { e = JSON.parse(ev.data); } catch (err) { console.warn('logs.line parse failed', err); return; }\n\t\t\t\t\tappendEntry(e);\n\t\t\t\t});\n\t\t\t\tes.addEventListener('logs.throttled', function (ev) {\n\t\t\t\t\tvar d;\n\t\t\t\t\ttry { d = JSON.parse(ev.data); } catch (err) { return; }\n\t\t\t\t\tshowThrottle(d && d.dropped ? d.dropped : 0);\n\t\t\t\t});\n\t\t\t\tes.onerror = function () {\n\t\t\t\t\t// readyState distinguishes a transient drop (CONNECTING -- the\n\t\t\t\t\t// browser is auto-retrying, replaying via Last-Event-ID) from a\n\t\t\t\t\t// terminal close (CLOSED -- e.g. the session expired and the stream\n\t\t\t\t\t// returned 401/403; EventSource will NOT retry). Surfacing both as\n\t\t\t\t\t// \"reconnecting\" would leave a silently-dead tail reading live, so a\n\t\t\t\t\t// CLOSED stream gets an honest, clickable \"disconnected\" state.\n\t\t\t\t\tif (es && es.readyState === EventSource.CLOSED) {\n\t\t\t\t\t\tsetStatus('disconnected');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tsetStatus('reconnecting');\n\t\t\t\t\t}\n\t\t\t\t};\n\t\t\t}\n\n\t\t\t// reload clears the view and reconnects with the current filters. The\n\t\t\t// stream self-backfills on connect, so no separate /api/v1/logs fetch.\n\t\t\tfunction reload() {\n\t\t\t\tviewer.innerHTML = '';\n\t\t\t\tshowEmpty();\n\t\t\t\tstate.buffered = 0;\n\t\t\t\tupdateJump();\n\t\t\t\thideThrottle();\n\t\t\t\tsyncURL();\n\t\t\t\tconnect();\n\t\t\t}\n\n\t\t\t// -- URL sync -------------------------------------------------------\n\t\t\tfunction syncURL() {\n\t\t\t\tvar p = new URLSearchParams();\n\t\t\t\tif (state.level) p.set('level', state.level);\n\t\t\t\tif (state.component) p.set('component', state.component);\n\t\t\t\tif (state.search) p.set('q', state.search);\n\t\t\t\tif (state.artistId) p.set('artist_id', state.artistId);\n\t\t\t\tif (state.rule) p.set('rule', state.rule);\n\t\t\t\tvar qs = p.toString();\n\t\t\t\ttry {\n\t\t\t\t\thistory.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));\n\t\t\t\t} catch (e) { /* replaceState can throw in sandboxed contexts */ }\n\t\t\t}\n\n\t\t\t// -- search (toolbar) -----------------------------------------------\n\t\t\tvar searchEl = document.getElementById('sw-logs-search');\n\t\t\tvar searchTimer = null;\n\t\t\tif (searchEl) {\n\t\t\t\tsearchEl.addEventListener('input', function () {\n\t\t\t\t\tif (searchTimer) clearTimeout(searchTimer);\n\t\t\t\t\tsearchTimer = setTimeout(function () {\n\t\t\t\t\t\tstate.search = searchEl.value || '';\n\t\t\t\t\t\treload();\n\t\t\t\t\t\trenderActiveChips();\n\t\t\t\t\t}, 300);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// -- shared filter flyout (swFilterFlyout, #1338 W1-B) --------------\n\t\t\t// Level + Component PILLS are owned by the shared swFilterFlyout system:\n\t\t\t// apply() writes ?level / ?component to the URL and fires sw:filter-applied\n\t\t\t// on #log-viewer. The free-text artist_id / rule inputs live in the same\n\t\t\t// flyout but are not pills, so they are read here on apply. ESC-to-close\n\t\t\t// and native `f`-to-open come from the shared system (no custom handlers).\n\t\t\tvar fArtist = document.getElementById('sw-logs-f-artist');\n\t\t\tvar fRule = document.getElementById('sw-logs-f-rule');\n\n\t\t\tfunction syncFlyoutFreeText() {\n\t\t\t\tstate.artistId = fArtist ? fArtist.value.trim() : '';\n\t\t\t\tstate.rule = fRule ? fRule.value.trim() : '';\n\t\t\t}\n\n\t\t\t// On Apply the shared flyout has already written ?level / ?component to the\n\t\t\t// URL; pull those plus the free-text facets, then reconnect the SSE stream.\n\t\t\tdocument.body.addEventListener('sw:filter-applied', function (evt) {\n\t\t\t\tif (!evt.target || evt.target.id !== 'log-viewer') return;\n\t\t\t\tvar url = new URL(window.location.href);\n\t\t\t\tstate.level = url.searchParams.get('level') || '';\n\t\t\t\tstate.component = url.searchParams.get('component') || '';\n\t\t\t\tsyncFlyoutFreeText();\n\t\t\t\treload();\n\t\t\t\trenderActiveChips();\n\t\t\t});\n\n\t\t\t// Clear All resets the pills + URL via the shared system; also wipe the\n\t\t\t// free-text inputs (the shared clearAll does not know about them). The\n\t\t\t// shared handler fires sw:filter-applied afterwards, which reloads.\n\t\t\tvar clearAllBtn = document.querySelector('#sw-logs-filter-flyout .sw-filter-btn-ghost');\n\t\t\tif (clearAllBtn) clearAllBtn.addEventListener('click', function () {\n\t\t\t\tif (fArtist) fArtist.value = '';\n\t\t\t\tif (fRule) fRule.value = '';\n\t\t\t});\n\n\t\t\t// Enter in a free-text facet applies immediately (mirrors Apply for pills).\n\t\t\tfunction applyFreeTextOnEnter(el) {\n\t\t\t\tif (!el) return;\n\t\t\t\tel.addEventListener('keydown', function (ev) {\n\t\t\t\t\tif (ev.key === 'Enter') {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tsyncFlyoutFreeText();\n\t\t\t\t\t\treload();\n\t\t\t\t\t\trenderActiveChips();\n\t\t\t\t\t\tif (window.swFilterFlyout) swFilterFlyout.close('sw-logs-filter-flyout');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\t\t\tapplyFreeTextOnEnter(fArtist);\n\t\t\tapplyFreeTextOnEnter(fRule);\n\n\t\t\t// -- active-filter chips --------------------------------------------\n\t\t\t// Rendered client-side from the active state; dismiss clears the facet and\n\t\t\t// reconnects the SSE stream (the shared htmx DismissFilterChip path does\n\t\t\t// not fit an SSE viewer). Reuses the shared chip visual for consistency.\n\t\t\tvar activeChipsEl = document.getElementById('sw-logs-active-chips');\n\t\t\t// Literal, compact prefixes matching the in-line artist:/rule: chip style\n\t\t\t// (these short technical tokens are intentionally not translated, like the\n\t\t\t// log-line attribute chips); the dismiss aria-label is translated.\n\t\t\tfunction chipText(key, value) {\n\t\t\t\tswitch (key) {\n\t\t\t\t\tcase 'level': return 'level: ' + value;\n\t\t\t\t\tcase 'component': return 'component: ' + value;\n\t\t\t\t\tcase 'artist_id': return 'artist: ' + value;\n\t\t\t\t\tcase 'rule': return 'rule: ' + value;\n\t\t\t\t\tcase 'q': return 'search: ' + value;\n\t\t\t\t\tdefault: return key + ': ' + value;\n\t\t\t\t}\n\t\t\t}\n\t\t\tfunction clearFacet(key) {\n\t\t\t\tif (key === 'level') state.level = '';\n\t\t\t\telse if (key === 'component') state.component = '';\n\t\t\t\telse if (key === 'artist_id') { state.artistId = ''; if (fArtist) fArtist.value = ''; }\n\t\t\t\telse if (key === 'rule') { state.rule = ''; if (fRule) fRule.value = ''; }\n\t\t\t\telse if (key === 'q') { state.search = ''; if (searchEl) searchEl.value = ''; }\n\t\t\t\treload();\n\t\t\t\t// Re-sync the flyout pills from the now-rewritten URL so a dismissed\n\t\t\t\t// level/component chip also de-selects its pill.\n\t\t\t\tif (window.swFilterFlyout) swFilterFlyout.initFromURL('sw-logs-filter-flyout');\n\t\t\t\trenderActiveChips();\n\t\t\t}\n\t\t\tfunction renderActiveChips() {\n\t\t\t\tif (!activeChipsEl) return;\n\t\t\t\tactiveChipsEl.innerHTML = '';\n\t\t\t\t[\n\t\t\t\t\t{ key: 'level', value: state.level },\n\t\t\t\t\t{ key: 'component', value: state.component },\n\t\t\t\t\t{ key: 'artist_id', value: state.artistId },\n\t\t\t\t\t{ key: 'rule', value: state.rule },\n\t\t\t\t\t{ key: 'q', value: state.search }\n\t\t\t\t].forEach(function (f) {\n\t\t\t\t\tif (!f.value) return;\n\t\t\t\t\tvar chip = document.createElement('span');\n\t\t\t\t\tchip.className = 'inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300';\n\t\t\t\t\tvar text = document.createElement('span');\n\t\t\t\t\ttext.textContent = chipText(f.key, f.value);\n\t\t\t\t\tchip.appendChild(text);\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-500';\n\t\t\t\t\tbtn.setAttribute('aria-label', (L('labelRemoveFilter') || 'Remove filter') + ': ' + chipText(f.key, f.value));\n\t\t\t\t\tbtn.textContent = '×';\n\t\t\t\t\tbtn.addEventListener('click', function () { clearFacet(f.key); });\n\t\t\t\t\tchip.appendChild(btn);\n\t\t\t\t\tactiveChipsEl.appendChild(chip);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// -- pause / resume -------------------------------------------------\n\t\t\tvar pauseBtn = document.getElementById('sw-logs-pause');\n\t\t\tif (pauseBtn) pauseBtn.addEventListener('click', function () {\n\t\t\t\tstate.paused = !state.paused;\n\t\t\t\tpauseBtn.textContent = state.paused ? L('labelResume') : L('labelPause');\n\t\t\t\tpauseBtn.setAttribute('aria-pressed', state.paused ? 'true' : 'false');\n\t\t\t\t// Resuming at the bottom drops any suspended-prune surplus back to the\n\t\t\t\t// normal window and snaps to the newest line.\n\t\t\t\tif (!state.paused && isAtBottom()) { pruneTo(MAX_LINES); scrollToBottom(); }\n\t\t\t});\n\n\t\t\t// -- wrap toggle ----------------------------------------------------\n\t\t\tvar wrapBtn = document.getElementById('sw-logs-wrap');\n\t\t\tfunction applyWrap() {\n\t\t\t\tviewer.classList.toggle('whitespace-nowrap', !state.wrap);\n\t\t\t\tviewer.classList.toggle('whitespace-pre-wrap', state.wrap);\n\t\t\t\tif (wrapBtn) wrapBtn.setAttribute('aria-pressed', state.wrap ? 'true' : 'false');\n\t\t\t}\n\t\t\tif (wrapBtn) wrapBtn.addEventListener('click', function () {\n\t\t\t\tstate.wrap = !state.wrap;\n\t\t\t\tapplyWrap();\n\t\t\t\tif (window.swPreferences && typeof window.swPreferences.set === 'function') {\n\t\t\t\t\ttry { window.swPreferences.set('log_wrap', state.wrap ? '1' : '0'); } catch (e) { /* best-effort */ }\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// -- clear ----------------------------------------------------------\n\t\t\tvar clearBtn = document.getElementById('sw-logs-clear');\n\t\t\tif (clearBtn) clearBtn.addEventListener('click', function () {\n\t\t\t\tvar csrf = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';\n\t\t\t\tfetch(bp + '/api/v1/logs', { method: 'DELETE', headers: { 'X-CSRF-Token': csrf } })\n\t\t\t\t\t.then(function (r) { if (!r.ok) throw new Error('clear failed'); })\n\t\t\t\t\t.then(function () { viewer.innerHTML = ''; showEmpty(); state.buffered = 0; updateJump(); })\n\t\t\t\t\t.catch(function () { if (typeof showToast === 'function') showToast('Failed to clear logs.'); });\n\t\t\t});\n\n\t\t\t// -- jump to bottom -------------------------------------------------\n\t\t\tfunction jumpToBottom() {\n\t\t\t\tstate.paused = false;\n\t\t\t\tif (pauseBtn) { pauseBtn.textContent = L('labelPause'); pauseBtn.setAttribute('aria-pressed', 'false'); }\n\t\t\t\t// Back to the live tail: drop the suspended-prune surplus to the normal\n\t\t\t\t// window before snapping to the bottom.\n\t\t\t\tpruneTo(MAX_LINES);\n\t\t\t\tscrollToBottom();\n\t\t\t\tstate.buffered = 0;\n\t\t\t\tupdateJump();\n\t\t\t}\n\t\t\tif (jumpBtn) jumpBtn.addEventListener('click', jumpToBottom);\n\n\t\t\t// -- side drawer ----------------------------------------------------\n\t\t\tvar drawer = document.getElementById('sw-logs-drawer');\n\t\t\tvar drawerScrim = document.getElementById('sw-logs-drawer-scrim');\n\t\t\tvar drawerBody = document.getElementById('sw-logs-drawer-body');\n\t\t\tvar drawerCopy = document.getElementById('sw-logs-drawer-copy');\n\t\t\tvar drawerClose = document.getElementById('sw-logs-drawer-close');\n\t\t\tvar drawerEntry = null;\n\t\t\tfunction openDrawer(entry) {\n\t\t\t\tdrawerEntry = entry;\n\t\t\t\tif (drawerBody) {\n\t\t\t\t\ttry { drawerBody.textContent = JSON.stringify(entry, null, 2); }\n\t\t\t\t\tcatch (e) { drawerBody.textContent = String(entry); }\n\t\t\t\t}\n\t\t\t\tif (drawer) drawer.classList.remove('hidden');\n\t\t\t\tif (drawerScrim) drawerScrim.classList.remove('hidden');\n\t\t\t}\n\t\t\tfunction closeDrawer() {\n\t\t\t\tif (drawer) drawer.classList.add('hidden');\n\t\t\t\tif (drawerScrim) drawerScrim.classList.add('hidden');\n\t\t\t\tdrawerEntry = null;\n\t\t\t}\n\t\t\tif (drawerClose) drawerClose.addEventListener('click', closeDrawer);\n\t\t\tif (drawerScrim) drawerScrim.addEventListener('click', closeDrawer);\n\t\t\tif (drawerCopy) drawerCopy.addEventListener('click', function () {\n\t\t\t\tif (!drawerEntry) return;\n\t\t\t\tcopyText(JSON.stringify(drawerEntry, null, 2), L('labelCopyOk'));\n\t\t\t});\n\n\t\t\t// Line click: rule chip filters; artist link navigates (default); a\n\t\t\t// bare click anywhere else opens the drawer.\n\t\t\tviewer.addEventListener('click', function (ev) {\n\t\t\t\tvar ruleChip = ev.target.closest && ev.target.closest('.sw-log-rule-chip');\n\t\t\t\tif (ruleChip) {\n\t\t\t\t\tev.preventDefault();\n\t\t\t\t\tstate.rule = ruleChip.getAttribute('data-rule') || '';\n\t\t\t\t\tif (fRule) fRule.value = state.rule;\n\t\t\t\t\treload();\n\t\t\t\t\trenderActiveChips();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (ev.target.closest && ev.target.closest('[data-stop]')) return; // artist link: let it navigate\n\t\t\t\tvar line = ev.target.closest && ev.target.closest('.sw-log-line');\n\t\t\t\tif (!line || !line.dataset.entry) return;\n\t\t\t\ttry { openDrawer(JSON.parse(line.dataset.entry)); } catch (e) { /* ignore */ }\n\t\t\t});\n\n\t\t\t// -- bug-report export ----------------------------------------------\n\t\t\tfunction copyText(text, okMsg) {\n\t\t\t\tfunction fallback() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar ta = document.createElement('textarea');\n\t\t\t\t\t\tta.value = text;\n\t\t\t\t\t\tta.style.position = 'fixed';\n\t\t\t\t\t\tta.style.opacity = '0';\n\t\t\t\t\t\tdocument.body.appendChild(ta);\n\t\t\t\t\t\tta.select();\n\t\t\t\t\t\tdocument.execCommand('copy');\n\t\t\t\t\t\tdocument.body.removeChild(ta);\n\t\t\t\t\t\tif (typeof showToast === 'function') showToast(okMsg);\n\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\tif (typeof showToast === 'function') showToast(L('labelExportFail'));\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (navigator.clipboard && navigator.clipboard.writeText) {\n\t\t\t\t\tnavigator.clipboard.writeText(text).then(function () {\n\t\t\t\t\t\tif (typeof showToast === 'function') showToast(okMsg);\n\t\t\t\t\t}, fallback);\n\t\t\t\t} else {\n\t\t\t\t\tfallback();\n\t\t\t\t}\n\t\t\t}\n\t\t\tvar exportBtn = document.getElementById('sw-logs-export');\n\t\t\tif (exportBtn) exportBtn.addEventListener('click', function () {\n\t\t\t\t// Collect the last N error lines currently in the DOM.\n\t\t\t\tvar errs = [];\n\t\t\t\tvar lines = viewer.querySelectorAll('.sw-log-line');\n\t\t\t\tfor (var i = lines.length - 1; i >= 0 && errs.length < EXPORT_ERRORS; i--) {\n\t\t\t\t\tvar e;\n\t\t\t\t\ttry { e = JSON.parse(lines[i].dataset.entry); } catch (er) { continue; }\n\t\t\t\t\tif ((e.level || '').toLowerCase() === 'error') {\n\t\t\t\t\t\terrs.unshift('- `' + (e.time || '') + '` [' + (e.component || '') + '] ' + (e.message || ''));\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tvar filters = [];\n\t\t\t\tif (state.level) filters.push('level=' + state.level);\n\t\t\t\tif (state.component) filters.push('component=' + state.component);\n\t\t\t\tif (state.search) filters.push('q=' + state.search);\n\t\t\t\tif (state.artistId) filters.push('artist_id=' + state.artistId);\n\t\t\t\tif (state.rule) filters.push('rule=' + state.rule);\n\t\t\t\tvar md = '## Bug report\\n\\n' +\n\t\t\t\t\t'### Recent errors\\n\\n' + (errs.length ? errs.join('\\n') : '_none in current view_') + '\\n\\n' +\n\t\t\t\t\t'### Context\\n\\n' +\n\t\t\t\t\t'- Active filters: ' + (filters.length ? filters.join(', ') : 'none') + '\\n' +\n\t\t\t\t\t'- Page: ' + window.location.href + '\\n' +\n\t\t\t\t\t'- User agent: ' + navigator.userAgent + '\\n';\n\t\t\t\tcopyText(md, L('labelExportOk'));\n\t\t\t});\n\n\t\t\t// -- keyboard: j/k scroll the viewer; register cheat-sheet entries ---\n\t\t\tdocument.addEventListener('keydown', function (ev) {\n\t\t\t\tif (ev.metaKey || ev.ctrlKey || ev.altKey) return;\n\t\t\t\tvar tag = (ev.target && ev.target.tagName) || '';\n\t\t\t\tif (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target && ev.target.isContentEditable)) return;\n\t\t\t\tif (drawer && !drawer.classList.contains('hidden') && ev.key === 'Escape') { closeDrawer(); return; }\n\t\t\t\t// f (open Filters) is handled by the global keyboard.js via the\n\t\t\t\t// trigger's data-sw-shortcut=\"f\" -> swFilterFlyout.open (W1-B); no local\n\t\t\t\t// binding here. Escape-to-close is handled by the shared flyout system.\n\t\t\t\t// j/k just scroll; auto-follow is governed by isAtBottom() (the scroll\n\t\t\t\t// handler), so neither key touches state.paused -- pressing j and\n\t\t\t\t// returning to the bottom resumes the live tail without an explicit\n\t\t\t\t// resume, and j/k stay symmetric.\n\t\t\t\tif (ev.key === 'j' || ev.key === 'J') { ev.preventDefault(); viewer.scrollTop += 40; updateJump(); }\n\t\t\t\telse if (ev.key === 'k' || ev.key === 'K') { ev.preventDefault(); viewer.scrollTop -= 40; updateJump(); }\n\t\t\t\t// V3: Shift+G or End jump to the live tail (reuses the Jump-to-Bottom\n\t\t\t\t// action); PageUp/PageDown scroll one viewport. ev.key 'G' is Shift+g,\n\t\t\t\t// distinct from the lowercase 'g' nav leader, so no chord conflict.\n\t\t\t\telse if (ev.key === 'G' || ev.key === 'End') { ev.preventDefault(); jumpToBottom(); }\n\t\t\t\telse if (ev.key === 'PageDown') { ev.preventDefault(); viewer.scrollTop += viewer.clientHeight; updateJump(); }\n\t\t\t\telse if (ev.key === 'PageUp') { ev.preventDefault(); viewer.scrollTop -= viewer.clientHeight; updateJump(); }\n\t\t\t});\n\t\t\t// g l (go to logs) is owned by the shared g-leader nav registry (PR #1775);\n\t\t\t// this page only advertises it for the cheat sheet. j/k are page-local.\n\t\t\t// TODO(#1775): once the shared registry exposes a g-leader registration\n\t\t\t// API, bind 'g l' -> /next/logs here instead of relying on #1775's map.\n\t\t\tif (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {\n\t\t\t\t// `/` (search) and `f` (filters) auto-register from their\n\t\t\t\t// data-sw-shortcut attributes; only the inline-handled keys are added\n\t\t\t\t// manually here.\n\t\t\t\twindow.swKeyboardShortcuts.register('logs', [\n\t\t\t\t\t{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },\n\t\t\t\t\t{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },\n\t\t\t\t\t{ key: 'k', label: L('labelScrollUp') || 'Scroll up' },\n\t\t\t\t\t{ key: 'PgUp / PgDn', label: L('labelPage') || 'Page up / down' },\n\t\t\t\t\t{ key: 'Shift+G / End', label: L('labelJumpBottom') || 'Jump to bottom' }\n\t\t\t\t]);\n\t\t\t}\n\n\t\t\t// -- boot -----------------------------------------------------------\n\t\t\t// Hydrate the shared flyout pills (level/component) from the URL, then\n\t\t\t// render the active-filter chips from the seeded state.\n\t\t\tif (window.swFilterFlyout && typeof swFilterFlyout.initFromURL === 'function') {\n\t\t\t\tswFilterFlyout.initFromURL('sw-logs-filter-flyout');\n\t\t\t}\n\t\t\trenderActiveChips();\n\t\t\tapplyWrap();\n\t\t\tif (pauseBtn) pauseBtn.textContent = L('labelPause');\n\t\t\tconnect();\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<script>\n\t\t(function () {\n\t\t\t'use strict';\n\t\t\tvar root = document.getElementById('sw-logs-root');\n\t\t\tif (!root || root.dataset.swLogsInit) return;\n\t\t\troot.dataset.swLogsInit = '1';\n\n\t\t\tvar viewer = document.getElementById('log-viewer');\n\t\t\tvar emptyEl = document.getElementById('sw-logs-empty');\n\t\t\tvar statusEl = document.getElementById('sw-logs-status');\n\t\t\tvar statusDot = document.getElementById('sw-logs-status-dot');\n\t\t\tvar statusText = document.getElementById('sw-logs-status-text');\n\t\t\tvar jumpBtn = document.getElementById('sw-logs-jump');\n\t\t\tvar jumpCount = document.getElementById('sw-logs-jump-count');\n\t\t\tvar throttleEl = document.getElementById('sw-logs-throttle');\n\t\t\tvar throttleText = document.getElementById('sw-logs-throttle-text');\n\t\t\tif (!viewer) return;\n\n\t\t\tvar bp = (function () {\n\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\treturn (m && m.content) || '';\n\t\t\t})();\n\n\t\t\tfunction esc(s) {\n\t\t\t\treturn String(s == null ? '' : s).replace(/[&<>\"']/g, function (c) {\n\t\t\t\t\treturn { '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c];\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction L(name) { return root.dataset[name] || ''; }\n\n\t\t\tvar MAX_LINES = 500;\n\t\t\t// While the user holds position (paused or scrolled up reading older\n\t\t\t// lines), the top-prune is suspended so the very lines being read are not\n\t\t\t// removed from under them during a burst. PAUSED_CEILING bounds DOM growth\n\t\t\t// in that window so a long burst cannot grow the window without limit; the\n\t\t\t// window prunes back to MAX_LINES once the user returns to the bottom.\n\t\t\tvar PAUSED_CEILING = 5000;\n\t\t\tvar EXPORT_ERRORS = 50; // bug-report export: last N error lines\n\n\t\t\tvar state = {\n\t\t\t\tlevel: root.dataset.initLevel || '',\n\t\t\t\tcomponent: root.dataset.initComponent || '',\n\t\t\t\tsearch: root.dataset.initSearch || '',\n\t\t\t\tartistId: root.dataset.initArtistId || '',\n\t\t\t\trule: root.dataset.initRule || '',\n\t\t\t\tpaused: false,\n\t\t\t\twrap: false,\n\t\t\t\tbuffered: 0\n\t\t\t};\n\n\t\t\tvar es = null;\n\n\t\t\t// -- presentation helpers (ported from log-viewer.js) ---------------\n\t\t\t// Severity PILLS are tinted badges, not buttons: the next/ \"no solid-blue\n\t\t\t// buttons\" rule constrains buttons only, so a blue-tinted info pill is fine.\n\t\t\tfunction levelPillClass(level) {\n\t\t\t\tswitch (level) {\n\t\t\t\t\tcase 'trace': return 'bg-purple-500/20 text-purple-700 dark:text-purple-300';\n\t\t\t\t\tcase 'debug': return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';\n\t\t\t\t\tcase 'info':  return 'bg-blue-500/20 text-blue-700 dark:text-blue-300';\n\t\t\t\t\tcase 'warn':  return 'bg-amber-500/20 text-amber-700 dark:text-amber-300';\n\t\t\t\t\tcase 'error': return 'bg-red-500/20 text-red-700 dark:text-red-300';\n\t\t\t\t\tdefault:      return 'bg-gray-500/20 text-gray-700 dark:text-gray-300';\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction fmtTime(iso) {\n\t\t\t\tvar d = new Date(iso);\n\t\t\t\tif (isNaN(d.getTime())) return '';\n\t\t\t\tfunction p(n, w) { var s = String(n); while (s.length < w) s = '0' + s; return s; }\n\t\t\t\treturn p(d.getHours(), 2) + ':' + p(d.getMinutes(), 2) + ':' + p(d.getSeconds(), 2) + '.' + p(d.getMilliseconds(), 3);\n\t\t\t}\n\n\t\t\t// Client-side AND filters the stream predicate does not cover.\n\t\t\tfunction entryMatchesClientFilters(e) {\n\t\t\t\tvar attrs = e.attrs || {};\n\t\t\t\tif (state.artistId) {\n\t\t\t\t\tvar a = attrs.artist_id != null ? String(attrs.artist_id) : '';\n\t\t\t\t\tif (a !== state.artistId) return false;\n\t\t\t\t}\n\t\t\t\tif (state.rule) {\n\t\t\t\t\tvar rl = attrs.rule != null ? String(attrs.rule) : '';\n\t\t\t\t\tif (rl !== state.rule) return false;\n\t\t\t\t}\n\t\t\t\treturn true;\n\t\t\t}\n\n\t\t\t// Pinned attribute chips, in display order. artist_id navigates to the\n\t\t\t// next/ artist-detail; rule chips filter the view by that rule.\n\t\t\tvar PINNED = ['artist_id', 'request_id', 'provider', 'rule', 'error'];\n\t\t\tfunction buildLine(e) {\n\t\t\t\tvar lvl = (e.level || '').toLowerCase();\n\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t// No hardcoded py-* here (U2): vertical padding is the density \"row\"\n\t\t\t\t// token, applied via the .sw-next-logs .sw-log-line CSS rule so\n\t\t\t\t// data-density actually drives line height. A hardcoded Tailwind py-*\n\t\t\t\t// would sit on top of the token; the CSS rule owns vertical padding.\n\t\t\t\trow.className = 'sw-log-line group flex cursor-pointer items-baseline gap-2 rounded px-1 hover:bg-white/5';\n\t\t\t\trow.setAttribute('role', 'listitem');\n\t\t\t\ttry { row.dataset.entry = JSON.stringify(e); } catch (err) { /* non-fatal */ }\n\n\t\t\t\tvar html = '';\n\t\t\t\t// Timestamp uses --swd-ink-2 (not the dimmer --swd-ink-3) so it clears\n\t\t\t\t// the AA 4.5 contrast floor over the log-viewer surface (F6).\n\t\t\t\thtml += '<time class=\"shrink-0 tabular-nums text-[var(--swd-ink-2)]\" datetime=\"' + esc(e.time || '') + '\">' + esc(fmtTime(e.time)) + '</time>';\n\t\t\t\thtml += '<span class=\"shrink-0 rounded px-1.5 text-[10px] font-bold uppercase ' + levelPillClass(lvl) + '\">' + esc(lvl || '?') + '</span>';\n\t\t\t\tif (e.component) {\n\t\t\t\t\thtml += '<span class=\"shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-2)] dark:bg-white/10\">' + esc(e.component) + '</span>';\n\t\t\t\t}\n\t\t\t\thtml += '<span class=\"min-w-0 flex-1 break-words text-[var(--swd-ink)]\">' + esc(e.message || '') + '</span>';\n\n\t\t\t\tvar attrs = e.attrs || {};\n\t\t\t\tvar chips = '';\n\t\t\t\tPINNED.forEach(function (k) {\n\t\t\t\t\tif (attrs[k] == null || attrs[k] === '') return;\n\t\t\t\t\t// Stringify object/array attr values via JSON so they don't coerce\n\t\t\t\t\t// to \"[object Object]\" (#1338 X3); primitives use String() as before.\n\t\t\t\t\tvar raw = attrs[k];\n\t\t\t\t\tvar val = (typeof raw === 'object') ? JSON.stringify(raw) : String(raw);\n\t\t\t\t\tif (k === 'artist_id') {\n\t\t\t\t\t\tchips += '<a href=\"' + esc(L('baseArtists') + val) + '\" class=\"sw-log-chip shrink-0 rounded bg-blue-500/15 px-1.5 text-blue-700 hover:underline dark:text-blue-300\" data-stop=\"1\">artist:' + esc(val) + '</a>';\n\t\t\t\t\t} else if (k === 'rule') {\n\t\t\t\t\t\tchips += '<button type=\"button\" class=\"sw-log-chip sw-log-rule-chip shrink-0 rounded bg-indigo-500/15 px-1.5 text-indigo-700 hover:underline dark:text-indigo-300\" data-stop=\"1\" data-rule=\"' + esc(val) + '\">rule:' + esc(val) + '</button>';\n\t\t\t\t\t} else if (k === 'error') {\n\t\t\t\t\t\tchips += '<span class=\"sw-log-chip shrink-0 rounded bg-red-500/15 px-1.5 text-red-700 dark:text-red-300\">error:' + esc(val) + '</span>';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tchips += '<span class=\"sw-log-chip shrink-0 rounded bg-black/10 px-1.5 text-[var(--swd-ink-3)] dark:bg-white/10\">' + esc(k) + ':' + esc(val) + '</span>';\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tif (chips) {\n\t\t\t\t\thtml += '<span class=\"flex shrink-0 items-baseline gap-1 text-[10px]\">' + chips + '</span>';\n\t\t\t\t}\n\t\t\t\trow.innerHTML = html;\n\t\t\t\treturn row;\n\t\t\t}\n\n\t\t\t// -- scroll / auto-follow -------------------------------------------\n\t\t\tfunction isAtBottom() {\n\t\t\t\treturn viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 50;\n\t\t\t}\n\t\t\tfunction scrollToBottom() { viewer.scrollTop = viewer.scrollHeight; }\n\t\t\tfunction updateJump() {\n\t\t\t\tif (state.buffered > 0 && !isAtBottom()) {\n\t\t\t\t\tjumpBtn.classList.remove('hidden');\n\t\t\t\t\tif (jumpCount) {\n\t\t\t\t\t\tjumpCount.textContent = String(state.buffered);\n\t\t\t\t\t\tjumpCount.classList.remove('hidden');\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\tjumpBtn.classList.add('hidden');\n\t\t\t\t\tif (jumpCount) jumpCount.classList.add('hidden');\n\t\t\t\t}\n\t\t\t}\n\t\t\tfunction hideEmpty() { if (emptyEl) emptyEl.classList.add('hidden'); }\n\t\t\tfunction showEmpty() { if (emptyEl) emptyEl.classList.remove('hidden'); }\n\n\t\t\tfunction pruneTo(cap) {\n\t\t\t\twhile (viewer.childElementCount > cap) {\n\t\t\t\t\tviewer.removeChild(viewer.firstElementChild);\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction appendEntry(e) {\n\t\t\t\tif (!entryMatchesClientFilters(e)) return;\n\t\t\t\tvar atBottom = isAtBottom();\n\t\t\t\t// \"holding\" = the user is reading older lines (paused or scrolled up).\n\t\t\t\t// Suspend the top-prune so those lines are not removed from under them;\n\t\t\t\t// a higher paused ceiling still bounds DOM growth during a long burst.\n\t\t\t\tvar holding = state.paused || !atBottom;\n\t\t\t\tviewer.appendChild(buildLine(e));\n\t\t\t\tpruneTo(holding ? PAUSED_CEILING : MAX_LINES);\n\t\t\t\thideEmpty();\n\t\t\t\tif (!state.paused && atBottom) {\n\t\t\t\t\tscrollToBottom();\n\t\t\t\t\tstate.buffered = 0;\n\t\t\t\t} else {\n\t\t\t\t\tstate.buffered++;\n\t\t\t\t}\n\t\t\t\tupdateJump();\n\t\t\t}\n\n\t\t\tviewer.addEventListener('scroll', function () {\n\t\t\t\tif (isAtBottom()) {\n\t\t\t\t\tstate.buffered = 0;\n\t\t\t\t\t// Returned to the bottom: drop the suspended-prune surplus back to\n\t\t\t\t\t// the normal window (unless still explicitly paused).\n\t\t\t\t\tif (!state.paused) pruneTo(MAX_LINES);\n\t\t\t\t}\n\t\t\t\tupdateJump();\n\t\t\t});\n\n\t\t\t// -- connection status ----------------------------------------------\n\t\t\tvar statusKind = '';\n\t\t\tfunction setStatus(kind) {\n\t\t\t\tstatusKind = kind;\n\t\t\t\tvar label, dot;\n\t\t\t\tif (kind === 'connected') { label = L('labelConnected'); dot = 'bg-green-500'; }\n\t\t\t\telse if (kind === 'reconnecting') { label = L('labelReconnecting'); dot = 'bg-amber-500'; }\n\t\t\t\telse if (kind === 'disconnected') { label = L('labelDisconnected'); dot = 'bg-red-500'; }\n\t\t\t\telse if (kind === 'error') { label = L('labelReconnecting'); dot = 'bg-red-500'; }\n\t\t\t\telse { label = L('labelConnecting'); dot = 'bg-gray-400'; }\n\t\t\t\tif (statusText) statusText.textContent = label;\n\t\t\t\tif (statusDot) statusDot.className = 'inline-block h-2 w-2 rounded-full ' + dot;\n\t\t\t\t// A dead stream is the only clickable state: clicking re-opens it.\n\t\t\t\tif (statusEl) {\n\t\t\t\t\tstatusEl.classList.toggle('cursor-pointer', kind === 'disconnected');\n\t\t\t\t\tstatusEl.classList.toggle('underline', kind === 'disconnected');\n\t\t\t\t\tstatusEl.setAttribute('role', kind === 'disconnected' ? 'button' : 'status');\n\t\t\t\t}\n\t\t\t}\n\t\t\t// Manual reconnect for the dead-stream state (session expiry, etc.):\n\t\t\t// EventSource will not auto-retry after a CLOSED, so the user needs a way\n\t\t\t// back without a full page reload.\n\t\t\tif (statusEl) statusEl.addEventListener('click', function () {\n\t\t\t\tif (statusKind === 'disconnected') connect();\n\t\t\t});\n\n\t\t\tvar THROTTLE_HIDE_MS = 6000;\n\t\t\tvar throttleTimer = null;\n\t\t\tfunction hideThrottle() {\n\t\t\t\tif (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null; }\n\t\t\t\tif (throttleEl) { throttleEl.classList.add('hidden'); throttleEl.classList.remove('flex'); }\n\t\t\t}\n\t\t\tfunction showThrottle(dropped) {\n\t\t\t\tif (!throttleEl) return;\n\t\t\t\tif (throttleText) {\n\t\t\t\t\tvar tmpl = L('labelThrottled') || 'Dropped {count} entries';\n\t\t\t\t\tthrottleText.textContent = tmpl.replace('{count}', String(dropped));\n\t\t\t\t}\n\t\t\t\tthrottleEl.classList.remove('hidden');\n\t\t\t\tthrottleEl.classList.add('flex');\n\t\t\t\t// Auto-clear so a transient throttle does not leave a stale alert: each\n\t\t\t\t// fresh throttle resets the timer; quiet for the window -> banner hides.\n\t\t\t\tif (throttleTimer) clearTimeout(throttleTimer);\n\t\t\t\tthrottleTimer = setTimeout(hideThrottle, THROTTLE_HIDE_MS);\n\t\t\t}\n\n\t\t\t// -- SSE stream -----------------------------------------------------\n\t\t\tfunction streamURL() {\n\t\t\t\tvar p = [];\n\t\t\t\tif (state.level) p.push('level=' + encodeURIComponent(state.level));\n\t\t\t\tif (state.component) p.push('scope=' + encodeURIComponent(state.component));\n\t\t\t\tif (state.search) p.push('q=' + encodeURIComponent(state.search));\n\t\t\t\treturn bp + '/api/v1/logs/stream' + (p.length ? '?' + p.join('&') : '');\n\t\t\t}\n\t\t\tfunction disconnect() { if (es) { try { es.close(); } catch (e) { /* ignore */ } es = null; } }\n\t\t\tfunction connect() {\n\t\t\t\tdisconnect();\n\t\t\t\tsetStatus('connecting');\n\t\t\t\ttry {\n\t\t\t\t\tes = new EventSource(streamURL());\n\t\t\t\t} catch (err) {\n\t\t\t\t\tconsole.error('logs stream init failed', err);\n\t\t\t\t\tsetStatus('error');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tes.addEventListener('connected', function () { setStatus('connected'); });\n\t\t\t\tes.addEventListener('logs.line', function (ev) {\n\t\t\t\t\tvar e;\n\t\t\t\t\ttry { e = JSON.parse(ev.data); } catch (err) { console.warn('logs.line parse failed', err); return; }\n\t\t\t\t\tappendEntry(e);\n\t\t\t\t});\n\t\t\t\tes.addEventListener('logs.throttled', function (ev) {\n\t\t\t\t\tvar d;\n\t\t\t\t\ttry { d = JSON.parse(ev.data); } catch (err) { return; }\n\t\t\t\t\tshowThrottle(d && d.dropped ? d.dropped : 0);\n\t\t\t\t});\n\t\t\t\tes.onerror = function () {\n\t\t\t\t\t// readyState distinguishes a transient drop (CONNECTING -- the\n\t\t\t\t\t// browser is auto-retrying, replaying via Last-Event-ID) from a\n\t\t\t\t\t// terminal close (CLOSED -- e.g. the session expired and the stream\n\t\t\t\t\t// returned 401/403; EventSource will NOT retry). Surfacing both as\n\t\t\t\t\t// \"reconnecting\" would leave a silently-dead tail reading live, so a\n\t\t\t\t\t// CLOSED stream gets an honest, clickable \"disconnected\" state.\n\t\t\t\t\tif (es && es.readyState === EventSource.CLOSED) {\n\t\t\t\t\t\tsetStatus('disconnected');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tsetStatus('reconnecting');\n\t\t\t\t\t}\n\t\t\t\t};\n\t\t\t}\n\n\t\t\t// reload clears the view and reconnects with the current filters. The\n\t\t\t// stream self-backfills on connect, so no separate /api/v1/logs fetch.\n\t\t\tfunction reload() {\n\t\t\t\tviewer.innerHTML = '';\n\t\t\t\tshowEmpty();\n\t\t\t\tstate.buffered = 0;\n\t\t\t\tupdateJump();\n\t\t\t\thideThrottle();\n\t\t\t\tsyncURL();\n\t\t\t\tconnect();\n\t\t\t}\n\n\t\t\t// -- URL sync -------------------------------------------------------\n\t\t\tfunction syncURL() {\n\t\t\t\tvar p = new URLSearchParams();\n\t\t\t\tif (state.level) p.set('level', state.level);\n\t\t\t\tif (state.component) p.set('component', state.component);\n\t\t\t\tif (state.search) p.set('q', state.search);\n\t\t\t\tif (state.artistId) p.set('artist_id', state.artistId);\n\t\t\t\tif (state.rule) p.set('rule', state.rule);\n\t\t\t\tvar qs = p.toString();\n\t\t\t\ttry {\n\t\t\t\t\thistory.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));\n\t\t\t\t} catch (e) { /* replaceState can throw in sandboxed contexts */ }\n\t\t\t}\n\n\t\t\t// -- search (toolbar) -----------------------------------------------\n\t\t\tvar searchEl = document.getElementById('sw-logs-search');\n\t\t\tvar searchTimer = null;\n\t\t\tif (searchEl) {\n\t\t\t\tsearchEl.addEventListener('input', function () {\n\t\t\t\t\tif (searchTimer) clearTimeout(searchTimer);\n\t\t\t\t\tsearchTimer = setTimeout(function () {\n\t\t\t\t\t\tstate.search = searchEl.value || '';\n\t\t\t\t\t\treload();\n\t\t\t\t\t\trenderActiveChips();\n\t\t\t\t\t}, 300);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// -- shared filter flyout (swFilterFlyout, #1338 W1-B) --------------\n\t\t\t// Level + Component PILLS are owned by the shared swFilterFlyout system:\n\t\t\t// apply() writes ?level / ?component to the URL and fires sw:filter-applied\n\t\t\t// on #log-viewer. The free-text artist_id / rule inputs live in the same\n\t\t\t// flyout but are not pills, so they are read here on apply. ESC-to-close\n\t\t\t// and native `f`-to-open come from the shared system (no custom handlers).\n\t\t\tvar fArtist = document.getElementById('sw-logs-f-artist');\n\t\t\tvar fRule = document.getElementById('sw-logs-f-rule');\n\n\t\t\tfunction syncFlyoutFreeText() {\n\t\t\t\tstate.artistId = fArtist ? fArtist.value.trim() : '';\n\t\t\t\tstate.rule = fRule ? fRule.value.trim() : '';\n\t\t\t}\n\n\t\t\t// On Apply the shared flyout has already written ?level / ?component to the\n\t\t\t// URL; pull those plus the free-text facets, then reconnect the SSE stream.\n\t\t\tdocument.body.addEventListener('sw:filter-applied', function (evt) {\n\t\t\t\tif (!evt.target || evt.target.id !== 'log-viewer') return;\n\t\t\t\tvar url = new URL(window.location.href);\n\t\t\t\tstate.level = url.searchParams.get('level') || '';\n\t\t\t\tstate.component = url.searchParams.get('component') || '';\n\t\t\t\tsyncFlyoutFreeText();\n\t\t\t\treload();\n\t\t\t\trenderActiveChips();\n\t\t\t});\n\n\t\t\t// Clear All resets the pills + URL via the shared system; also wipe the\n\t\t\t// free-text inputs (the shared clearAll does not know about them). The\n\t\t\t// shared handler fires sw:filter-applied afterwards, which reloads.\n\t\t\tvar clearAllBtn = document.querySelector('#sw-logs-filter-flyout .sw-filter-btn-ghost');\n\t\t\tif (clearAllBtn) clearAllBtn.addEventListener('click', function () {\n\t\t\t\tif (fArtist) fArtist.value = '';\n\t\t\t\tif (fRule) fRule.value = '';\n\t\t\t});\n\n\t\t\t// Enter in a free-text facet applies immediately (mirrors Apply for pills).\n\t\t\tfunction applyFreeTextOnEnter(el) {\n\t\t\t\tif (!el) return;\n\t\t\t\tel.addEventListener('keydown', function (ev) {\n\t\t\t\t\tif (ev.key === 'Enter') {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\tsyncFlyoutFreeText();\n\t\t\t\t\t\treload();\n\t\t\t\t\t\trenderActiveChips();\n\t\t\t\t\t\tif (window.swFilterFlyout) swFilterFlyout.close('sw-logs-filter-flyout');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\t\t\tapplyFreeTextOnEnter(fArtist);\n\t\t\tapplyFreeTextOnEnter(fRule);\n\n\t\t\t// -- active-filter chips --------------------------------------------\n\t\t\t// Rendered client-side from the active state; dismiss clears the facet and\n\t\t\t// reconnects the SSE stream (the shared htmx DismissFilterChip path does\n\t\t\t// not fit an SSE viewer). Reuses the shared chip visual for consistency.\n\t\t\tvar activeChipsEl = document.getElementById('sw-logs-active-chips');\n\t\t\t// Literal, compact prefixes matching the in-line artist:/rule: chip style\n\t\t\t// (these short technical tokens are intentionally not translated, like the\n\t\t\t// log-line attribute chips); the dismiss aria-label is translated.\n\t\t\tfunction chipText(key, value) {\n\t\t\t\tswitch (key) {\n\t\t\t\t\tcase 'level': return 'level: ' + value;\n\t\t\t\t\tcase 'component': return 'component: ' + value;\n\t\t\t\t\tcase 'artist_id': return 'artist: ' + value;\n\t\t\t\t\tcase 'rule': return 'rule: ' + value;\n\t\t\t\t\tcase 'q': return 'search: ' + value;\n\t\t\t\t\tdefault: return key + ': ' + value;\n\t\t\t\t}\n\t\t\t}\n\t\t\tfunction clearFacet(key) {\n\t\t\t\tif (key === 'level') state.level = '';\n\t\t\t\telse if (key === 'component') state.component = '';\n\t\t\t\telse if (key === 'artist_id') { state.artistId = ''; if (fArtist) fArtist.value = ''; }\n\t\t\t\telse if (key === 'rule') { state.rule = ''; if (fRule) fRule.value = ''; }\n\t\t\t\telse if (key === 'q') { state.search = ''; if (searchEl) searchEl.value = ''; }\n\t\t\t\treload();\n\t\t\t\t// Re-sync the flyout pills from the now-rewritten URL so a dismissed\n\t\t\t\t// level/component chip also de-selects its pill.\n\t\t\t\tif (window.swFilterFlyout) swFilterFlyout.initFromURL('sw-logs-filter-flyout');\n\t\t\t\trenderActiveChips();\n\t\t\t}\n\t\t\tfunction renderActiveChips() {\n\t\t\t\tif (!activeChipsEl) return;\n\t\t\t\tactiveChipsEl.innerHTML = '';\n\t\t\t\t[\n\t\t\t\t\t{ key: 'level', value: state.level },\n\t\t\t\t\t{ key: 'component', value: state.component },\n\t\t\t\t\t{ key: 'artist_id', value: state.artistId },\n\t\t\t\t\t{ key: 'rule', value: state.rule },\n\t\t\t\t\t{ key: 'q', value: state.search }\n\t\t\t\t].forEach(function (f) {\n\t\t\t\t\tif (!f.value) return;\n\t\t\t\t\tvar chip = document.createElement('span');\n\t\t\t\t\tchip.className = 'inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300';\n\t\t\t\t\tvar text = document.createElement('span');\n\t\t\t\t\ttext.textContent = chipText(f.key, f.value);\n\t\t\t\t\tchip.appendChild(text);\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-500';\n\t\t\t\t\tbtn.setAttribute('aria-label', (L('labelRemoveFilter') || 'Remove filter') + ': ' + chipText(f.key, f.value));\n\t\t\t\t\tbtn.textContent = '×';\n\t\t\t\t\tbtn.addEventListener('click', function () { clearFacet(f.key); });\n\t\t\t\t\tchip.appendChild(btn);\n\t\t\t\t\tactiveChipsEl.appendChild(chip);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// -- pause / resume -------------------------------------------------\n\t\t\tvar pauseBtn = document.getElementById('sw-logs-pause');\n\t\t\tif (pauseBtn) pauseBtn.addEventListener('click', function () {\n\t\t\t\tstate.paused = !state.paused;\n\t\t\t\tpauseBtn.textContent = state.paused ? L('labelResume') : L('labelPause');\n\t\t\t\tpauseBtn.setAttribute('aria-pressed', state.paused ? 'true' : 'false');\n\t\t\t\t// Resuming at the bottom drops any suspended-prune surplus back to the\n\t\t\t\t// normal window and snaps to the newest line.\n\t\t\t\tif (!state.paused && isAtBottom()) { pruneTo(MAX_LINES); scrollToBottom(); }\n\t\t\t});\n\n\t\t\t// -- wrap toggle ----------------------------------------------------\n\t\t\tvar wrapBtn = document.getElementById('sw-logs-wrap');\n\t\t\tfunction applyWrap() {\n\t\t\t\tviewer.classList.toggle('whitespace-nowrap', !state.wrap);\n\t\t\t\tviewer.classList.toggle('whitespace-pre-wrap', state.wrap);\n\t\t\t\tif (wrapBtn) wrapBtn.setAttribute('aria-pressed', state.wrap ? 'true' : 'false');\n\t\t\t}\n\t\t\tif (wrapBtn) wrapBtn.addEventListener('click', function () {\n\t\t\t\tstate.wrap = !state.wrap;\n\t\t\t\tapplyWrap();\n\t\t\t\tif (window.swPreferences && typeof window.swPreferences.set === 'function') {\n\t\t\t\t\ttry { window.swPreferences.set('log_wrap', state.wrap ? '1' : '0'); } catch (e) { /* best-effort */ }\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// -- clear ----------------------------------------------------------\n\t\t\tvar clearBtn = document.getElementById('sw-logs-clear');\n\t\t\tif (clearBtn) clearBtn.addEventListener('click', function () {\n\t\t\t\tvar csrf = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';\n\t\t\t\tfetch(bp + '/api/v1/logs', { method: 'DELETE', headers: { 'X-CSRF-Token': csrf } })\n\t\t\t\t\t.then(function (r) { if (!r.ok) throw new Error('clear failed'); })\n\t\t\t\t\t.then(function () { viewer.innerHTML = ''; showEmpty(); state.buffered = 0; updateJump(); })\n\t\t\t\t\t.catch(function () { if (typeof showToast === 'function') showToast(L('labelClearFail') || 'Failed to clear logs.'); });\n\t\t\t});\n\n\t\t\t// -- jump to bottom -------------------------------------------------\n\t\t\tfunction jumpToBottom() {\n\t\t\t\tstate.paused = false;\n\t\t\t\tif (pauseBtn) { pauseBtn.textContent = L('labelPause'); pauseBtn.setAttribute('aria-pressed', 'false'); }\n\t\t\t\t// Back to the live tail: drop the suspended-prune surplus to the normal\n\t\t\t\t// window before snapping to the bottom.\n\t\t\t\tpruneTo(MAX_LINES);\n\t\t\t\tscrollToBottom();\n\t\t\t\tstate.buffered = 0;\n\t\t\t\tupdateJump();\n\t\t\t}\n\t\t\tif (jumpBtn) jumpBtn.addEventListener('click', jumpToBottom);\n\n\t\t\t// -- side drawer ----------------------------------------------------\n\t\t\tvar drawer = document.getElementById('sw-logs-drawer');\n\t\t\tvar drawerScrim = document.getElementById('sw-logs-drawer-scrim');\n\t\t\tvar drawerBody = document.getElementById('sw-logs-drawer-body');\n\t\t\tvar drawerCopy = document.getElementById('sw-logs-drawer-copy');\n\t\t\tvar drawerClose = document.getElementById('sw-logs-drawer-close');\n\t\t\tvar drawerEntry = null;\n\t\t\tfunction openDrawer(entry) {\n\t\t\t\tdrawerEntry = entry;\n\t\t\t\tif (drawerBody) {\n\t\t\t\t\ttry { drawerBody.textContent = JSON.stringify(entry, null, 2); }\n\t\t\t\t\tcatch (e) { drawerBody.textContent = String(entry); }\n\t\t\t\t}\n\t\t\t\tif (drawer) drawer.classList.remove('hidden');\n\t\t\t\tif (drawerScrim) drawerScrim.classList.remove('hidden');\n\t\t\t}\n\t\t\tfunction closeDrawer() {\n\t\t\t\tif (drawer) drawer.classList.add('hidden');\n\t\t\t\tif (drawerScrim) drawerScrim.classList.add('hidden');\n\t\t\t\tdrawerEntry = null;\n\t\t\t}\n\t\t\tif (drawerClose) drawerClose.addEventListener('click', closeDrawer);\n\t\t\tif (drawerScrim) drawerScrim.addEventListener('click', closeDrawer);\n\t\t\tif (drawerCopy) drawerCopy.addEventListener('click', function () {\n\t\t\t\tif (!drawerEntry) return;\n\t\t\t\tcopyText(JSON.stringify(drawerEntry, null, 2), L('labelCopyOk'));\n\t\t\t});\n\n\t\t\t// Line click: rule chip filters; artist link navigates (default); a\n\t\t\t// bare click anywhere else opens the drawer.\n\t\t\tviewer.addEventListener('click', function (ev) {\n\t\t\t\tvar ruleChip = ev.target.closest && ev.target.closest('.sw-log-rule-chip');\n\t\t\t\tif (ruleChip) {\n\t\t\t\t\tev.preventDefault();\n\t\t\t\t\tstate.rule = ruleChip.getAttribute('data-rule') || '';\n\t\t\t\t\tif (fRule) fRule.value = state.rule;\n\t\t\t\t\treload();\n\t\t\t\t\trenderActiveChips();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (ev.target.closest && ev.target.closest('[data-stop]')) return; // artist link: let it navigate\n\t\t\t\tvar line = ev.target.closest && ev.target.closest('.sw-log-line');\n\t\t\t\tif (!line || !line.dataset.entry) return;\n\t\t\t\ttry { openDrawer(JSON.parse(line.dataset.entry)); } catch (e) { /* ignore */ }\n\t\t\t});\n\n\t\t\t// -- bug-report export ----------------------------------------------\n\t\t\tfunction copyText(text, okMsg) {\n\t\t\t\tfunction fallback() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar ta = document.createElement('textarea');\n\t\t\t\t\t\tta.value = text;\n\t\t\t\t\t\tta.style.position = 'fixed';\n\t\t\t\t\t\tta.style.opacity = '0';\n\t\t\t\t\t\tdocument.body.appendChild(ta);\n\t\t\t\t\t\tta.select();\n\t\t\t\t\t\tdocument.execCommand('copy');\n\t\t\t\t\t\tdocument.body.removeChild(ta);\n\t\t\t\t\t\tif (typeof showToast === 'function') showToast(okMsg);\n\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\tif (typeof showToast === 'function') showToast(L('labelExportFail'));\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (navigator.clipboard && navigator.clipboard.writeText) {\n\t\t\t\t\tnavigator.clipboard.writeText(text).then(function () {\n\t\t\t\t\t\tif (typeof showToast === 'function') showToast(okMsg);\n\t\t\t\t\t}, fallback);\n\t\t\t\t} else {\n\t\t\t\t\tfallback();\n\t\t\t\t}\n\t\t\t}\n\t\t\tvar exportBtn = document.getElementById('sw-logs-export');\n\t\t\tif (exportBtn) exportBtn.addEventListener('click', function () {\n\t\t\t\t// Collect the last N error lines currently in the DOM.\n\t\t\t\tvar errs = [];\n\t\t\t\tvar lines = viewer.querySelectorAll('.sw-log-line');\n\t\t\t\tfor (var i = lines.length - 1; i >= 0 && errs.length < EXPORT_ERRORS; i--) {\n\t\t\t\t\tvar e;\n\t\t\t\t\ttry { e = JSON.parse(lines[i].dataset.entry); } catch (er) { continue; }\n\t\t\t\t\tif ((e.level || '').toLowerCase() === 'error') {\n\t\t\t\t\t\terrs.unshift('- `' + (e.time || '') + '` [' + (e.component || '') + '] ' + (e.message || ''));\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tvar filters = [];\n\t\t\t\tif (state.level) filters.push('level=' + state.level);\n\t\t\t\tif (state.component) filters.push('component=' + state.component);\n\t\t\t\tif (state.search) filters.push('q=' + state.search);\n\t\t\t\tif (state.artistId) filters.push('artist_id=' + state.artistId);\n\t\t\t\tif (state.rule) filters.push('rule=' + state.rule);\n\t\t\t\tvar md = '## Bug report\\n\\n' +\n\t\t\t\t\t'### Recent errors\\n\\n' + (errs.length ? errs.join('\\n') : '_none in current view_') + '\\n\\n' +\n\t\t\t\t\t'### Context\\n\\n' +\n\t\t\t\t\t'- Active filters: ' + (filters.length ? filters.join(', ') : 'none') + '\\n' +\n\t\t\t\t\t'- Page: ' + window.location.href + '\\n' +\n\t\t\t\t\t'- User agent: ' + navigator.userAgent + '\\n';\n\t\t\t\tcopyText(md, L('labelExportOk'));\n\t\t\t});\n\n\t\t\t// -- keyboard: j/k scroll the viewer; register cheat-sheet entries ---\n\t\t\tdocument.addEventListener('keydown', function (ev) {\n\t\t\t\tif (ev.metaKey || ev.ctrlKey || ev.altKey) return;\n\t\t\t\tvar tag = (ev.target && ev.target.tagName) || '';\n\t\t\t\tif (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target && ev.target.isContentEditable)) return;\n\t\t\t\tif (drawer && !drawer.classList.contains('hidden') && ev.key === 'Escape') { closeDrawer(); return; }\n\t\t\t\t// f (open Filters) is handled by the global keyboard.js via the\n\t\t\t\t// trigger's data-sw-shortcut=\"f\" -> swFilterFlyout.open (W1-B); no local\n\t\t\t\t// binding here. Escape-to-close is handled by the shared flyout system.\n\t\t\t\t// j/k just scroll; auto-follow is governed by isAtBottom() (the scroll\n\t\t\t\t// handler), so neither key touches state.paused -- pressing j and\n\t\t\t\t// returning to the bottom resumes the live tail without an explicit\n\t\t\t\t// resume, and j/k stay symmetric.\n\t\t\t\tif (ev.key === 'j' || ev.key === 'J') { ev.preventDefault(); viewer.scrollTop += 40; updateJump(); }\n\t\t\t\telse if (ev.key === 'k' || ev.key === 'K') { ev.preventDefault(); viewer.scrollTop -= 40; updateJump(); }\n\t\t\t\t// V3: Shift+G or End jump to the live tail (reuses the Jump-to-Bottom\n\t\t\t\t// action); PageUp/PageDown scroll one viewport. ev.key 'G' is Shift+g,\n\t\t\t\t// distinct from the lowercase 'g' nav leader, so no chord conflict.\n\t\t\t\telse if (ev.key === 'G' || ev.key === 'End') { ev.preventDefault(); jumpToBottom(); }\n\t\t\t\telse if (ev.key === 'PageDown') { ev.preventDefault(); viewer.scrollTop += viewer.clientHeight; updateJump(); }\n\t\t\t\telse if (ev.key === 'PageUp') { ev.preventDefault(); viewer.scrollTop -= viewer.clientHeight; updateJump(); }\n\t\t\t});\n\t\t\t// g l (go to logs) is owned by the shared g-leader nav registry (PR #1775);\n\t\t\t// this page only advertises it for the cheat sheet. j/k are page-local.\n\t\t\t// TODO(#1775): once the shared registry exposes a g-leader registration\n\t\t\t// API, bind 'g l' -> /next/logs here instead of relying on #1775's map.\n\t\t\tif (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {\n\t\t\t\t// `/` (search) and `f` (filters) auto-register from their\n\t\t\t\t// data-sw-shortcut attributes; only the inline-handled keys are added\n\t\t\t\t// manually here.\n\t\t\t\twindow.swKeyboardShortcuts.register('logs', [\n\t\t\t\t\t{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },\n\t\t\t\t\t{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },\n\t\t\t\t\t{ key: 'k', label: L('labelScrollUp') || 'Scroll up' },\n\t\t\t\t\t{ key: 'PgUp / PgDn', label: L('labelPage') || 'Page up / down' },\n\t\t\t\t\t{ key: 'Shift+G / End', label: L('labelJumpBottom') || 'Jump to bottom' }\n\t\t\t\t]);\n\t\t\t}\n\n\t\t\t// -- boot -----------------------------------------------------------\n\t\t\t// Hydrate the shared flyout pills (level/component) from the URL, then\n\t\t\t// render the active-filter chips from the seeded state.\n\t\t\tif (window.swFilterFlyout && typeof swFilterFlyout.initFromURL === 'function') {\n\t\t\t\tswFilterFlyout.initFromURL('sw-logs-filter-flyout');\n\t\t\t}\n\t\t\trenderActiveChips();\n\t\t\tapplyWrap();\n\t\t\tif (pauseBtn) pauseBtn.textContent = L('labelPause');\n\t\t\tconnect();\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

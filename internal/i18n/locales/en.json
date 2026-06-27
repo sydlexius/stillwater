@@ -1294,6 +1294,7 @@
   "logs.filter_apply": "Apply",
   "logs.filter_clear": "Clear",
   "logs.clear": "Clear",
+  "logs.clear_fail": "Failed to clear logs.",
   "logs.pause": "Pause",
   "logs.resume": "Resume",
   "logs.wrap_toggle": "Wrap",

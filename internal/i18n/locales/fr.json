@@ -119,6 +119,7 @@
   "logs.filter_apply": "Appliquer",
   "logs.filter_clear": "Effacer",
   "logs.clear": "Effacer",
+  "logs.clear_fail": "Échec de l'effacement des journaux.",
   "logs.pause": "Pause",
   "logs.resume": "Reprendre",
   "logs.wrap_toggle": "Retour à la ligne",

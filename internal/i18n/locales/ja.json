@@ -119,6 +119,7 @@
   "logs.filter_apply": "適用",
   "logs.filter_clear": "クリア",
   "logs.clear": "クリア",
+  "logs.clear_fail": "ログのクリアに失敗しました。",
   "logs.pause": "一時停止",
   "logs.resume": "再開",
   "logs.wrap_toggle": "折り返し",

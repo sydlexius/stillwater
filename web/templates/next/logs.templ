@@ -73,6 +73,12 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponent
 			data-label-connected={ t(ctx, "logs.connected") }
 			data-label-reconnecting={ t(ctx, "logs.reconnecting") }
 			data-label-disconnected={ t(ctx, "logs.disconnected") }
+			data-label-clear-fail={ t(ctx, "logs.clear_fail") }
+			data-label-go-to-logs={ t(ctx, "logs.shortcuts.go_to_logs") }
+			data-label-scroll-down={ t(ctx, "logs.shortcuts.scroll_down") }
+			data-label-scroll-up={ t(ctx, "logs.shortcuts.scroll_up") }
+			data-label-page={ t(ctx, "logs.shortcuts.page") }
+			data-label-jump-bottom={ t(ctx, "logs.shortcuts.jump_bottom") }
 			data-label-empty={ t(ctx, "logs.empty_state") }
 			data-label-throttled={ t(ctx, "logs.throttled_banner") }
 			data-label-pause={ t(ctx, "logs.pause") }
@@ -734,7 +740,7 @@ templ LogsViewerScript() {
 				fetch(bp + '/api/v1/logs', { method: 'DELETE', headers: { 'X-CSRF-Token': csrf } })
 					.then(function (r) { if (!r.ok) throw new Error('clear failed'); })
 					.then(function () { viewer.innerHTML = ''; showEmpty(); state.buffered = 0; updateJump(); })
-					.catch(function () { if (typeof showToast === 'function') showToast('Failed to clear logs.'); });
+					.catch(function () { if (typeof showToast === 'function') showToast(L('labelClearFail') || 'Failed to clear logs.'); });
 			});
 
 			// -- jump to bottom -------------------------------------------------
