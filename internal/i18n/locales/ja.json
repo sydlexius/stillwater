@@ -140,6 +140,8 @@
   "logs.shortcuts.scroll_down": "下にスクロール",
   "logs.shortcuts.scroll_up": "上にスクロール",
   "logs.shortcuts.go_to_logs": "ログへ移動",
+  "logs.shortcuts.page": "ページ送り（上 / 下）",
+  "logs.shortcuts.jump_bottom": "最下部へ移動",
   "logs.level.trace": "トレース",
   "logs.level.debug": "デバッグ",
   "logs.level.info": "情報",

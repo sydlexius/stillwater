@@ -140,6 +140,8 @@
   "logs.shortcuts.scroll_down": "Défiler vers le bas",
   "logs.shortcuts.scroll_up": "Défiler vers le haut",
   "logs.shortcuts.go_to_logs": "Aller aux journaux",
+  "logs.shortcuts.page": "Page précédente / suivante",
+  "logs.shortcuts.jump_bottom": "Aller en bas",
   "logs.level.trace": "Trace",
   "logs.level.debug": "Débogage",
   "logs.level.info": "Info",

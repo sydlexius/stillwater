@@ -1315,6 +1315,8 @@
   "logs.shortcuts.scroll_down": "Scroll down",
   "logs.shortcuts.scroll_up": "Scroll up",
   "logs.shortcuts.go_to_logs": "Go to logs",
+  "logs.shortcuts.page": "Page up / down",
+  "logs.shortcuts.jump_bottom": "Jump to bottom",
   "logs.level.trace": "Trace",
   "logs.level.debug": "Debug",
   "logs.level.info": "Info",

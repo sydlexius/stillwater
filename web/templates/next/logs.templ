@@ -101,11 +101,15 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 					}
 				</div>
 				<!-- Filter flyout trigger -->
+				<!-- No data-sw-shortcut="f" here: the global keyboard.js would route f
+				     through window.swFilterFlyout (the shared facet-flyout system),
+				     which does not manage this page's custom flyout, so f was a no-op
+				     (V2). The page's own keydown handler owns f -> toggleFlyout, and
+				     advertises it in the cheat-sheet register() below. aria-controls /
+				     aria-expanded are kept for a11y (the click handler maintains them). -->
 				<button
 					type="button"
 					id="sw-logs-filter-trigger"
-					data-sw-shortcut="f"
-					data-sw-shortcut-label={ t(ctx, "logs.shortcuts.filters") }
 					class={ glassButton, "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium" }
 					aria-expanded="false"
 					aria-controls="sw-logs-flyout"
@@ -180,6 +184,10 @@ templ LogsPage(assets templates.AssetPaths, filter LogsFilterState) {
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_down") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.scroll_up") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">PgUp</kbd><kbd class="sw-kbd inline-flex ml-0.5">PgDn</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.page") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Shift G</kbd><span class="ml-1">{ t(ctx, "logs.shortcuts.jump_bottom") }</span></span>
 			</p>
 			<!-- Filter flyout (component / artist / rule). Legibility floor via
 			     opaque-ish background so it stays readable at low global opacity. -->
@@ -681,7 +689,7 @@ templ LogsViewerScript() {
 			});
 
 			// -- jump to bottom -------------------------------------------------
-			if (jumpBtn) jumpBtn.addEventListener('click', function () {
+			function jumpToBottom() {
 				state.paused = false;
 				if (pauseBtn) { pauseBtn.textContent = L('labelPause'); pauseBtn.setAttribute('aria-pressed', 'false'); }
 				// Back to the live tail: drop the suspended-prune surplus to the normal
@@ -690,7 +698,8 @@ templ LogsViewerScript() {
 				scrollToBottom();
 				state.buffered = 0;
 				updateJump();
-			});
+			}
+			if (jumpBtn) jumpBtn.addEventListener('click', jumpToBottom);
 
 			// -- side drawer ----------------------------------------------------
 			var drawer = document.getElementById('sw-logs-drawer');
@@ -796,12 +805,21 @@ templ LogsViewerScript() {
 				var tag = (ev.target && ev.target.tagName) || '';
 				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ev.target && ev.target.isContentEditable)) return;
 				if (drawer && !drawer.classList.contains('hidden') && ev.key === 'Escape') { closeDrawer(); return; }
+				// f toggles the Filters flyout (V2). Owned here, not via the global
+				// data-sw-shortcut path (which wrongly routes to swFilterFlyout).
+				if (ev.key === 'f' || ev.key === 'F') { ev.preventDefault(); toggleFlyout(); return; }
 				// j/k just scroll; auto-follow is governed by isAtBottom() (the scroll
 				// handler), so neither key touches state.paused -- pressing j and
 				// returning to the bottom resumes the live tail without an explicit
 				// resume, and j/k stay symmetric.
 				if (ev.key === 'j' || ev.key === 'J') { ev.preventDefault(); viewer.scrollTop += 40; updateJump(); }
 				else if (ev.key === 'k' || ev.key === 'K') { ev.preventDefault(); viewer.scrollTop -= 40; updateJump(); }
+				// V3: Shift+G or End jump to the live tail (reuses the Jump-to-Bottom
+				// action); PageUp/PageDown scroll one viewport. ev.key 'G' is Shift+g,
+				// distinct from the lowercase 'g' nav leader, so no chord conflict.
+				else if (ev.key === 'G' || ev.key === 'End') { ev.preventDefault(); jumpToBottom(); }
+				else if (ev.key === 'PageDown') { ev.preventDefault(); viewer.scrollTop += viewer.clientHeight; updateJump(); }
+				else if (ev.key === 'PageUp') { ev.preventDefault(); viewer.scrollTop -= viewer.clientHeight; updateJump(); }
 			});
 			// g l (go to logs) is owned by the shared g-leader nav registry (PR #1775);
 			// this page only advertises it for the cheat sheet. j/k are page-local.
@@ -810,8 +828,12 @@ templ LogsViewerScript() {
 			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
 				window.swKeyboardShortcuts.register('logs', [
 					{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },
+					{ key: '/', label: L('labelSearch') || 'Search' },
+					{ key: 'f', label: L('labelFilters') || 'Filters' },
 					{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },
-					{ key: 'k', label: L('labelScrollUp') || 'Scroll up' }
+					{ key: 'k', label: L('labelScrollUp') || 'Scroll up' },
+					{ key: 'PgUp / PgDn', label: L('labelPage') || 'Page up / down' },
+					{ key: 'Shift+G / End', label: L('labelJumpBottom') || 'Jump to bottom' }
 				]);
 			}
 
