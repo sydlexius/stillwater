@@ -56,7 +56,7 @@ function fire(win, key, extra = {}) {
 
 describe('keyboard.js: g-leader navigation (#1775)', () => {
   it('pressing g arms the leader (no navigation yet)', () => {
-    const { win, navigated } = setup();
+    const { win, navigated } = setup('', { leaderTimeout: 1 });
     fire(win, 'g');
     assert.equal(navigated.length, 0, 'g alone must not navigate');
   });

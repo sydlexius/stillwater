@@ -62,8 +62,7 @@ test('cheat-sheet modal passes full-page a11y scan (dark mode)', async ({ page }
   await page.context().addCookies([{
     name:   'session',
     value:  authCookie.replace('session=', ''),
-    domain: '127.0.0.1',
-    path:   '/',
+    url:    BASE_URL,
   }]);
 
   await page.goto('/next/');
