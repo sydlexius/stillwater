@@ -57,6 +57,7 @@
       // Loud failure: a caller asked to refresh a section whose wrapper is not
       // on the page. Never silently no-op.
       console.error('swRefreshSettingsSection: no live [data-settings-fragment="' + name + '"] on the page');
+      window.location.reload();
       return Promise.resolve(false);
     }
 
@@ -83,6 +84,7 @@
       var fresh = doc.querySelector('[data-settings-fragment="' + name + '"]');
       if (!fresh) {
         console.error('swRefreshSettingsSection: [data-settings-fragment="' + name + '"] missing from the refreshed page');
+        window.location.reload();
         return false;
       }
       // Re-check immediately before the swap: a newer refresh may have landed
@@ -110,6 +112,7 @@
       return true;
     }).catch(function (err) {
       console.error('swRefreshSettingsSection: ' + name + ' refresh failed', err);
+      window.location.reload();
       return false;
     });
   }
