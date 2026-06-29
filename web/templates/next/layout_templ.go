@@ -8,13 +8,18 @@ package next
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/sydlexius/stillwater/web/templates"
+import (
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
 
 // LayoutNext is the page shell for the next/ UI channel (M55 #1340). It composes
 // the same shared chrome partials as the stable Layout -- LayoutHead,
 // LayoutBackdrop, and LayoutGlobalChrome (which mounts the ProgressPill status
 // bar, the global modals, the toast manager, and the SSE client) -- so the
-// preview UI never forks that infrastructure. The only channel difference is the
+// preview UI never forks that infrastructure. CheatSheetModal (#1775) is mounted
+// here (after LayoutGlobalChrome) rather than in the shared chrome so it remains
+// absent from stable pages; window.showCheatSheet is only defined on next/. The only channel difference is the
 // next/ Sidebar and BottomTabs, which currently delegate to the stable
 // components and are restyled by later screen issues. CSRF + base-path injection
 // and the cache-busted AssetPaths carry over unchanged via LayoutHead.
@@ -105,7 +110,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/next/preferences-drawer")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 46, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 51, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -116,6 +121,10 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = templates.LayoutGlobalChrome(assets).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.CheatSheetModal().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

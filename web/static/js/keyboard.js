@@ -25,6 +25,46 @@
   var registry = [];
   var manualRegistry = [];
 
+  // g-leader nav state (#1775). leaderActive is set when 'g' is pressed and
+  // cleared after the next key (consumed) or after LEADER_TIMEOUT_MS. The
+  // timeout value is overridable via window.SW_LEADER_TIMEOUT_MS for tests.
+  var leaderActive = false;
+  var leaderTimeout = null;
+  var LEADER_TIMEOUT_MS = (window.SW_LEADER_TIMEOUT_MS || 1500);
+
+  function clearLeader() {
+    leaderActive = false;
+    leaderTimeout = null;
+  }
+
+  // isNextPage: true when the current page is a next/ channel page (#1775).
+  // Gates the g-leader, '?', and Esc-cheat-sheet handlers so they are inert on
+  // stable. Base-path-aware via meta[name="htmx-base-path"] for sub-path deploys.
+  // Tests override via window.SW_IS_NEXT_PAGE (same pattern as SW_LEADER_TIMEOUT_MS).
+  function isNextPage() {
+    if (typeof window.SW_IS_NEXT_PAGE !== 'undefined') return !!window.SW_IS_NEXT_PAGE;
+    var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+    var bp = bpEl ? bpEl.content : '';
+    var p = window.location.pathname;
+    return p === bp + '/next' || p.indexOf(bp + '/next/') === 0;
+  }
+
+  // navigate: prefix path with the htmx base-path from the meta tag, then
+  // assign to window.location.href. Tests may override via window.swNavigate.
+  function navigate(path) {
+    var bp = '';
+    try {
+      var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+      bp = bpEl ? bpEl.content : '';
+    } catch (err) {}
+    var url = bp + path;
+    if (typeof window.swNavigate === 'function') {
+      window.swNavigate(url);
+    } else {
+      window.location.href = url;
+    }
+  }
+
   function list() { return registry.slice().concat(manualRegistry.slice()); }
 
   // rovingActive: index of the currently roving-focused item (-1 when none).
@@ -342,6 +382,20 @@
     // filtered results) are PRESERVED. Returns so Esc here is a dedicated "leave
     // search" action and does not also clear a bulk selection in the same press.
     if (e.key === 'Escape') {
+      // PR2 hook: command palette (existence-guarded no-op until PR2 ships).
+      if (window.swCommandPalette && typeof window.swCommandPalette.hide === 'function') {
+        window.swCommandPalette.hide();
+        return;
+      }
+      // Close the cheat sheet modal when open (#1775). next/ only: the modal
+      // is absent from stable pages (mounted in LayoutNext, not LayoutGlobalChrome).
+      if (isNextPage()) {
+        var cheatModal = document.getElementById('cheat-sheet-modal');
+        if (cheatModal && !cheatModal.classList.contains('hidden')) {
+          if (typeof window.hideCheatSheet === 'function') window.hideCheatSheet();
+          return;
+        }
+      }
       var searchBox = actionTarget('/');
       if (searchBox && document.activeElement === searchBox) {
         e.preventDefault();
@@ -379,6 +433,42 @@
     }
 
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+      // g-leader nav + '?' cheat-sheet: next/ only (#1775). These handlers are
+      // inert on stable (channel-gated so g/? fall through to the existing stable
+      // handlers; the stable '?' keydown listener in LayoutGlobalChrome fires).
+      if (isNextPage()) {
+        if (leaderActive) {
+          leaderActive = false;
+          clearTimeout(leaderTimeout);
+          leaderTimeout = null;
+          var leaderTargets = {
+            d: '/next/', a: '/next/artists', r: '/next/reports',
+            l: '/next/logs', f: '/next/reports', s: '/next/settings'
+          };
+          if (leaderTargets.hasOwnProperty(e.key)) {
+            // M1: suppress nav while the cheat-sheet modal is open.
+            var cheatOpen = document.getElementById('cheat-sheet-modal');
+            if (!cheatOpen || cheatOpen.classList.contains('hidden')) {
+              e.preventDefault();
+              navigate(leaderTargets[e.key]);
+            }
+          }
+          return;
+        }
+        if (e.key === 'g') {
+          e.preventDefault();
+          leaderActive = true;
+          leaderTimeout = setTimeout(clearLeader, LEADER_TIMEOUT_MS);
+          return;
+        }
+        if (e.key === '?') {
+          if (typeof window.showCheatSheet === 'function') {
+            e.preventDefault();
+            window.showCheatSheet();
+          }
+          return;
+        }
+      }
       if (e.key === '/') {
         var search = actionTarget('/');
         if (search) { e.preventDefault(); search.focus(); } else { warnAdvertisedMissing('/'); }
@@ -572,4 +662,20 @@
       }
     }
   };
+
+  // Register global shortcuts (#1775) on next/ only: these shortcuts are
+  // channel-gated and absent on stable, so the cheat sheet (also next/-only)
+  // should not advertise them on stable pages.
+  if (isNextPage()) {
+    window.swKeyboardShortcuts.register('global', [
+      { key: 'g d', label: 'Go to Dashboard' },
+      { key: 'g a', label: 'Go to Artists' },
+      { key: 'g r', label: 'Go to Reports' },
+      { key: 'g l', label: 'Go to Logs' },
+      { key: 'g f', label: 'Go to Findings' },
+      { key: 'g s', label: 'Go to Settings' },
+      { key: '?',   label: 'Show Keyboard Shortcuts' },
+      { key: 'Esc', label: 'Close / clear focus' }
+    ]);
+  }
 })();

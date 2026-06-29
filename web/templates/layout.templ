@@ -1107,7 +1107,13 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 						if (document.activeElement && document.activeElement.isContentEditable) return;
 						e.preventDefault();
-						toggleHelpOverlay();
+						// CheatSheetModal is mounted in LayoutNext only, so window.showCheatSheet
+						// is defined exclusively on next/ pages. On stable the fallback fires.
+						if (typeof window.showCheatSheet === 'function') {
+							window.showCheatSheet();
+						} else {
+							toggleHelpOverlay();
+						}
 					}
 				});
 			</script>
