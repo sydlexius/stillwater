@@ -40,6 +40,13 @@
 
   if (window.swSectionRefresh) return;
 
+  // Per-name request token: a section can be refreshed several times in quick
+  // succession (rapid saves). Each refresh stamps the next token for its name;
+  // a slower OLDER fetch that resolves after a NEWER one must NOT clobber the
+  // newer result (which would revert to stale HTML), so it bails when its token
+  // is no longer the latest.
+  var latestRefreshByName = {};
+
   // refreshSection re-fetches the current page and swaps in the fresh copy of
   // the one [data-settings-fragment="name"] section. Returns a Promise so tests
   // (and callers that want to chain) can await completion; callers in templates
@@ -53,6 +60,8 @@
       return Promise.resolve(false);
     }
 
+    var refreshID = (latestRefreshByName[name] = (latestRefreshByName[name] || 0) + 1);
+
     return fetch(window.location.href, {
       credentials: 'same-origin',
       headers: { 'X-Requested-With': 'fetch' }
@@ -62,12 +71,22 @@
       }
       return resp.text();
     }).then(function (html) {
+      // A newer refresh for this section superseded us while in flight; drop
+      // this stale response before doing any parse/swap work.
+      if (latestRefreshByName[name] !== refreshID) {
+        return false;
+      }
       // Inert parse: images in this document are NOT requested by the browser,
       // so the ambient backdrop is never re-rolled.
       var doc = new DOMParser().parseFromString(html, 'text/html');
       var fresh = doc.querySelector('[data-settings-fragment="' + name + '"]');
       if (!fresh) {
         console.error('swRefreshSettingsSection: [data-settings-fragment="' + name + '"] missing from the refreshed page');
+        return false;
+      }
+      // Re-check immediately before the swap: a newer refresh may have landed
+      // during DOMParser work, and the swap is the destructive step.
+      if (latestRefreshByName[name] !== refreshID) {
         return false;
       }
       // Adopt the node into the live document, then swap it in for the stale one.

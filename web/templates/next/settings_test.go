@@ -323,7 +323,10 @@ func TestSettingsPaneAllSectionsVisible(t *testing.T) {
 		t.Error("pane still carries data-default-section; the all-scrollable model has no single default")
 	}
 
-	root, _ := html.Parse(strings.NewReader(out))
+	root, err := html.Parse(strings.NewReader(out))
+	if err != nil {
+		t.Fatalf("parsing pane HTML: %v", err)
+	}
 	sections := map[string]*html.Node{}
 	findSections(root, sections)
 	if len(sections) == 0 {

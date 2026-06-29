@@ -6521,10 +6521,19 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
  * byte reuse, so the chrome gaps (rail/layout + pane section spacing) are the
  * fixable surface. */
 html[data-density="compact"] .sw-next-settings-layout,
-html[data-density="spacious"] .sw-next-settings-layout,
-html[data-density="compact"] .sw-next-settings-pane,
-html[data-density="spacious"] .sw-next-settings-pane {
+html[data-density="spacious"] .sw-next-settings-layout {
   gap: var(--sw-density-gap);
+}
+/* The pane is NOT a flex/grid container (flex:1 1 auto; min-width:0 only), so a
+ * `gap` on it is inert -- it never changed the inter-section spacing. The real
+ * primitive is .sw-next-pane-section's margin-bottom (native 2.5rem). Bind that
+ * to the density gap token (mirrors the dashboard / activity / logs / duplicates
+ * stacks, which rebind margin-block-end across all four density states) so the
+ * Density pref visibly changes the space BETWEEN settings sections.
+ * :not(:last-child) preserves the last section's zero bottom margin. */
+html[data-density="compact"] .sw-next-pane-section:not(:last-child),
+html[data-density="spacious"] .sw-next-pane-section:not(:last-child) {
+  margin-bottom: var(--sw-density-gap);
 }
 
 /* M55 #1339 C-BLUE-2: residual solid-blue fills in reused section bodies that
@@ -6673,10 +6682,14 @@ html[data-density="spacious"] .sw-next-settings-pane {
  * compact 0.5rem, comfortable 1rem, spacious 1.5rem. Mirrors the dashboard /
  * activity density bridges, which already enumerate all four states. */
 html[data-density="comfortable"] .sw-next-settings-layout,
-html:not([data-density]) .sw-next-settings-layout,
-html[data-density="comfortable"] .sw-next-settings-pane,
-html:not([data-density]) .sw-next-settings-pane {
+html:not([data-density]) .sw-next-settings-layout {
   gap: var(--sw-density-gap);
+}
+/* comfortable + pre-JS default complete the all-four-state coverage for the
+ * real inter-section margin (see the compact/spacious block above). */
+html[data-density="comfortable"] .sw-next-pane-section:not(:last-child),
+html:not([data-density]) .sw-next-pane-section:not(:last-child) {
+  margin-bottom: var(--sw-density-gap);
 }
 
 /* A7 (cont.) -- rail item padding. Items carry a fixed 0.375rem vertical pad;

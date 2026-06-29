@@ -39,6 +39,7 @@
             window.swRefreshSettingsSection('connections');
           } else {
             console.error('connections.js: swRefreshSettingsSection unavailable; section will not refresh after delete');
+            window.location.reload();
           }
           return;
         }

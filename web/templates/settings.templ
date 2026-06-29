@@ -1895,13 +1895,23 @@ templ providerTestSaveFailureInner(name provider.ProviderName, apiKey string, er
 				>
 					{ t(ctx, "actions.save_anyway") }
 				</button>
-				<button
-					type="button"
-					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick="swRefreshSettingsSection('provider-keys')"
-				>
-					{ t(ctx, "common.cancel") }
-				</button>
+				if isOOBE {
+					<button
+						type="button"
+						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						onclick="window.location.reload()"
+					>
+						{ t(ctx, "common.cancel") }
+					</button>
+				} else {
+					<button
+						type="button"
+						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						onclick="swRefreshSettingsSection('provider-keys')"
+					>
+						{ t(ctx, "common.cancel") }
+					</button>
+				}
 			</form>
 		</div>
 	</div>
@@ -2365,13 +2375,23 @@ templ ConnectionTestSaveFailure(connType string, name string, url string, apiKey
 			>
 				Save anyway
 			</button>
-			<button
-				type="button"
-				class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-				onclick="swRefreshSettingsSection('connections')"
-			>
-				Cancel
-			</button>
+			if isOOBE {
+				<button
+					type="button"
+					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="window.location.reload()"
+				>
+					Cancel
+				</button>
+			} else {
+				<button
+					type="button"
+					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="swRefreshSettingsSection('connections')"
+				>
+					Cancel
+				</button>
+			}
 		</form>
 	</div>
 }
@@ -2608,7 +2628,6 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) 
 	<div
 		class={
 			"py-4 space-y-2",
-			templ.KV("opacity-50", fsUnavailable),
 		}
 		if fsUnavailable {
 			title={ t(ctx, "settings.rules.requires_local_tooltip") }

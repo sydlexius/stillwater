@@ -99,7 +99,14 @@ func TestHandleNextSettingsPage_Unauthenticated(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.handleNextSettingsPage(w, req.WithContext(ctx))
 
-	if strings.Contains(w.Body.String(), `id="settings-search-input"`) {
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (login page); body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="login-result"`) {
+		t.Errorf("unauthenticated request must render the login page (missing id=\"login-result\")")
+	}
+	if strings.Contains(body, `id="settings-search-input"`) {
 		t.Error("unauthenticated request must not render the settings rail")
 	}
 }
