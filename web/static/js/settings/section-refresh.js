@@ -60,7 +60,8 @@
       return Promise.resolve(false);
     }
 
-    var refreshID = (latestRefreshByName[name] = (latestRefreshByName[name] || 0) + 1);
+    latestRefreshByName[name] = (latestRefreshByName[name] || 0) + 1;
+    var refreshID = latestRefreshByName[name];
 
     return fetch(window.location.href, {
       credentials: 'same-origin',

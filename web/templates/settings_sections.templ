@@ -1068,7 +1068,7 @@ templ SectionWebhooks(data SettingsData) {
 				<form
 					hx-post="/api/v1/webhooks"
 					hx-swap="none"
-					hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-webhook-form]'); if(b){b.setAttribute('aria-expanded','false');} swRefreshSettingsSection('webhooks'); }"
+					hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-webhook-form]'); if(b){b.setAttribute('aria-expanded','false');b.focus();} swRefreshSettingsSection('webhooks'); }"
 					class="space-y-3"
 				>
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">

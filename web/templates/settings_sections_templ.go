@@ -3397,7 +3397,7 @@ func SectionWebhooks(data SettingsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 275, "</button><div id=\"add-webhook-form\" class=\"hidden mt-4\"><form hx-post=\"/api/v1/webhooks\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-webhook-form]'); if(b){b.setAttribute('aria-expanded','false');} swRefreshSettingsSection('webhooks'); }\" class=\"space-y-3\"><div class=\"grid grid-cols-1 sm:grid-cols-2 gap-3\"><div class=\"flex items-center gap-1\"><label id=\"webhook-name-label\" for=\"webhook-name\" class=\"sr-only\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 275, "</button><div id=\"add-webhook-form\" class=\"hidden mt-4\"><form hx-post=\"/api/v1/webhooks\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-webhook-form]'); if(b){b.setAttribute('aria-expanded','false');b.focus();} swRefreshSettingsSection('webhooks'); }\" class=\"space-y-3\"><div class=\"grid grid-cols-1 sm:grid-cols-2 gap-3\"><div class=\"flex items-center gap-1\"><label id=\"webhook-name-label\" for=\"webhook-name\" class=\"sr-only\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

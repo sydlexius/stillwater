@@ -618,7 +618,7 @@ templ SettingsUsersScript() {
 				}
 				// Refresh just the Users section so the table + invites
 				// appear/disappear in place, no full-page reload (M55 #1339).
-				swRefreshSettingsSection('users');
+				swRefreshSettingsSection('users').then(function(ok){ if (!ok) window.location.reload(); });
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to update multi-user setting');
 			});

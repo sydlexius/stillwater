@@ -36,7 +36,7 @@
         // (M55 #1339) so the next/ scroll position + ambient backdrop survive.
         if (res.ok) {
           if (typeof window.swRefreshSettingsSection === 'function') {
-            window.swRefreshSettingsSection('connections');
+            window.swRefreshSettingsSection('connections').then(function(ok){ if (!ok) window.location.reload(); });
           } else {
             console.error('connections.js: swRefreshSettingsSection unavailable; section will not refresh after delete');
             window.location.reload();

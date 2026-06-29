@@ -592,7 +592,7 @@ templ SettingsAuthProvidersScript() {
 				// Refresh just the Auth Providers section so the expanded
 				// settings panel appears/hides in place, no full-page reload
 				// (M55 #1339).
-				swRefreshSettingsSection('auth');
+				swRefreshSettingsSection('auth').then(function(ok){ if (!ok) window.location.reload(); });
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to update provider setting');
 			});

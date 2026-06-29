@@ -472,6 +472,74 @@ func TestSettingsBehaviorReHomesSymlink(t *testing.T) {
 	}
 }
 
+// TestSettingsSymlinkCardState (#1339 F6): nextLibrariesSymlinkCard drives
+// toggle enabled state and aria-checked from the real SettingsData fields
+// instead of hardcoding disabled/false. When SymlinkSupported=true the button
+// is enabled (no disabled attribute) and aria-checked reflects UseSymlinks;
+// when SymlinkSupported=false the button is disabled and aria-checked=false.
+func TestSettingsSymlinkCardState(t *testing.T) {
+	findToggle := func(root *html.Node) *html.Node {
+		var found *html.Node
+		walk(root, func(e *html.Node) {
+			if e.Data == "button" && attr(e, "id") == "symlink-toggle" {
+				found = e
+			}
+		})
+		return found
+	}
+
+	t.Run("supported_and_enabled", func(t *testing.T) {
+		data := settingsTestData
+		data.SymlinkSupported = true
+		data.ActiveProfile = &platform.Profile{ID: "custom", Name: "Custom", UseSymlinks: true}
+		root := renderSettingsPaneWith(t, data)
+		btn := findToggle(root)
+		if btn == nil {
+			t.Fatal("symlink-toggle button not found")
+		}
+		if hasAttr(btn, "disabled") {
+			t.Error("toggle should NOT be disabled when SymlinkSupported=true")
+		}
+		if got := attr(btn, "aria-checked"); got != "true" {
+			t.Errorf("aria-checked = %q, want \"true\" (UseSymlinks=true)", got)
+		}
+	})
+
+	t.Run("supported_and_disabled_by_profile", func(t *testing.T) {
+		data := settingsTestData
+		data.SymlinkSupported = true
+		data.ActiveProfile = &platform.Profile{ID: "custom", Name: "Custom", UseSymlinks: false}
+		root := renderSettingsPaneWith(t, data)
+		btn := findToggle(root)
+		if btn == nil {
+			t.Fatal("symlink-toggle button not found")
+		}
+		if hasAttr(btn, "disabled") {
+			t.Error("toggle should NOT be disabled when SymlinkSupported=true, even if UseSymlinks=false")
+		}
+		if got := attr(btn, "aria-checked"); got != "false" {
+			t.Errorf("aria-checked = %q, want \"false\" (UseSymlinks=false)", got)
+		}
+	})
+
+	t.Run("unsupported", func(t *testing.T) {
+		data := settingsTestData
+		data.SymlinkSupported = false
+		data.ActiveProfile = &platform.Profile{ID: "custom", Name: "Custom", UseSymlinks: false}
+		root := renderSettingsPaneWith(t, data)
+		btn := findToggle(root)
+		if btn == nil {
+			t.Fatal("symlink-toggle button not found")
+		}
+		if !hasAttr(btn, "disabled") {
+			t.Error("toggle MUST be disabled when SymlinkSupported=false")
+		}
+		if got := attr(btn, "aria-checked"); got != "false" {
+			t.Errorf("aria-checked = %q, want \"false\" when unsupported", got)
+		}
+	})
+}
+
 // countBadgeFor returns the text of the sw-next-rail-count span for a rail item,
 // and whether one was found. Extracted from TestSettingsCountBadges for reuse.
 func countBadgeFor(root *html.Node, id string) (string, bool) {
