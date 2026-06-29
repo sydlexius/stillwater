@@ -32,7 +32,7 @@ templ SettingSection(id, title, help, helpAnchor, desc string) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ title }</h2>
+				@SettingCardHeading("text-lg font-semibold", title)
 				@ContextHelp(id, title, help, helpAnchor)
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">

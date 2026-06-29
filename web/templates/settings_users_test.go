@@ -16,7 +16,7 @@ import (
 // users table or the invites list (both render with hx-trigger="load").
 func TestSettingsUsersScript_NoOneShotLoadTriggers(t *testing.T) {
 	var buf bytes.Buffer
-	if err := settingsUsersScript().Render(testCtx(t), &buf); err != nil {
+	if err := SettingsUsersScript().Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	js := buf.String()

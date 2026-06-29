@@ -122,11 +122,22 @@ type UsersTabData struct {
 	CallerID string
 }
 
-// settingsUsersTab renders the Users settings tab content.
+// SettingsUsersTab renders the Users settings tab content.
 // This tab is only accessible to Administrators; the settings page itself
 // enforces authentication, and the users/invites API routes require admin role.
-templ settingsUsersTab(data UsersTabData) {
-	<!-- Multi-user toggle banner -->
+// Exported so the next/ settings rail (#1339) composes the same content the
+// stable chrome renders. NOTE (#1757): when the stable settings chrome retires,
+// this shared content func must migrate out of the stable layer, not be deleted
+// -- the next/ settings page depends on it.
+templ SettingsUsersTab(data UsersTabData) {
+	<!-- data-settings-fragment="users": the multi-user toggle below flips whether
+	     the users table + invites render; the section-refresh helper (M55 #1339)
+	     swaps this whole wrapper in place of the old full-page reload. space-y-6
+	     reproduces the parent's 1.5rem inter-card spacing (stable tab panel
+	     space-y-6 / next/ pane flex gap) so the wrapper is layout-neutral in both
+	     channels. -->
+	<div data-settings-fragment="users" class="space-y-6">
+		<!-- Multi-user toggle banner -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4">
 			<div class="flex items-center justify-between">
@@ -174,7 +185,7 @@ templ settingsUsersTab(data UsersTabData) {
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
 				<div>
 					<div class="flex items-center gap-2">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.title") }</h2>
+						@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.users.title"))
 						@components.ContextHelp("help-users", t(ctx, "settings.users.title"), t(ctx, "settings.users.help"), "settings-users-users")
 					</div>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -350,7 +361,7 @@ templ settingsUsersTab(data UsersTabData) {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<div class="flex items-center gap-2">
-					<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.pending_invites.label") }</h2>
+					@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.users.pending_invites.label"))
 					@components.ContextHelp("help-pending-invites", t(ctx, "settings.users.pending_invites.label"), t(ctx, "settings.users.pending_invites.help"), "settings-users-users-pending-invites")
 				</div>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -373,6 +384,7 @@ templ settingsUsersTab(data UsersTabData) {
 			</div>
 		</div>
 	}
+	</div>
 }
 
 // userTableRow renders a single row in the users table.
@@ -580,8 +592,9 @@ templ inviteRow(inv auth.Invite) {
 	</div>
 }
 
-// settingsUsersScript renders the inline JS for the users tab.
-templ settingsUsersScript() {
+// SettingsUsersScript renders the inline JS for the users tab. Exported for the
+// next/ settings page (#1339), which emits the same script.
+templ SettingsUsersScript() {
 	<script>
 		var usersBasePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 
@@ -603,8 +616,9 @@ templ settingsUsersScript() {
 				if (!resp.ok) {
 					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });
 				}
-				// Reload to show/hide the users table and invites sections.
-				window.location.reload();
+				// Refresh just the Users section so the table + invites
+				// appear/disappear in place, no full-page reload (M55 #1339).
+				swRefreshSettingsSection('users').then(function(ok){ if (!ok) window.location.reload(); });
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to update multi-user setting');
 			});

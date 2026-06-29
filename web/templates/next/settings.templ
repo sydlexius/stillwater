@@ -1,0 +1,631 @@
+package next
+
+import (
+	"strconv"
+	"strings"
+
+	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/web/components"
+	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// next/ Settings screen (M55 #1339). Firefox/Chrome about:preferences model:
+// this file owns the next/ CHROME only -- the sticky 260px left rail (filter +
+// four groups of curated sections with icon/label/count) and the ALL-SCROLLABLE
+// pane that renders every section in one column. The rail is a SCROLL-SPY: as
+// the user scrolls, the rail item for the section in view is marked active;
+// clicking a rail item smooth-scrolls to that section's #section-<id> anchor
+// (also deep-linkable). On narrow viewports the rail collapses behind a
+// hamburger toggle and the content reflows to a single column.
+//
+// The section CONTENT is the shared, chrome-agnostic templates.Section* funcs
+// (web/templates/settings_sections.templ) plus templates.Settings{Users,Auth
+// Providers,Updates}Tab -- composed here BYTE-FOR-BYTE (Option A), so every
+// control + JS-hook id is preserved. The taxonomy (ids/labels/icons/order/
+// keywords) is the canonical settingsGroups from the prototype source
+// (design/settings.jsx lines 13-53), MINUS `logs` (moved to its own /next/logs
+// screen, #1338) and MINUS `per-user preferences` (descoped to #1774).
+//
+// NOTE (#1757): this page depends on the shared templates.Section* /
+// Settings*Tab funcs. When the stable settings chrome retires, those shared
+// content funcs must MIGRATE OUT of the stable layer, not be deleted.
+
+// profileEditableNext mirrors the stable templates.profileEditable (unexported):
+// builtin profiles are read-only except the seeded "custom" one.
+func profileEditableNext(p *platform.Profile) bool {
+	if p == nil {
+		return false
+	}
+	return !p.IsBuiltin || p.ID == "custom"
+}
+
+// boolAttrNext renders a Go bool as the "true"/"false" string an aria-* boolean
+// attribute expects (mirrors the stable templates.boolAttr helper).
+func boolAttrNext(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// railSection is one curated section in the rail (and one <section> in the
+// pane). ID is the spec section id (anchor is "section-"+ID); LabelKey is the
+// i18n key for the rail label + pane fallbacks; Icon names a railIcon case;
+// Keywords is the content-keyword index (verbatim from settings.jsx) the filter
+// matches against and surfaces as the "↳ <matched-keyword>" line.
+type railSection struct {
+	ID       string
+	LabelKey string
+	Icon     string
+	Keywords []string
+}
+
+// railGroup is one collapsible rail group (Essentials / Data / Integrations /
+// System). Order here drives both the rail and the pane; settings_test.go
+// asserts the rail item set and pane section-id set match.
+type railGroup struct {
+	ID       string
+	LabelKey string
+	Sections []railSection
+}
+
+// nextSettingsGroups is the canonical taxonomy (prototype settingsGroups, jsx
+// lines 13-53), minus logs (#1338) and per-user preferences (#1774). The
+// keyword arrays are copied verbatim from the jsx so the filter's keyword index
+// matches the prototype.
+func nextSettingsGroups() []railGroup {
+	return []railGroup{
+		{
+			ID:       "essentials",
+			LabelKey: "settings.next.group_essentials",
+			Sections: []railSection{
+				{ID: "general", LabelKey: "settings.next.section.general", Icon: "settings",
+					Keywords: []string{"theme", "dark mode", "light mode", "density", "compact", "comfy", "ambient backdrop", "fanart", "lite mode", "blur", "transitions", "appearance", "auto-fetch", "import", "base path", "SW_BASE_PATH", "suggest fixes"}},
+				{ID: "libraries", LabelKey: "settings.next.section.libraries", Icon: "folder",
+					Keywords: []string{"/music", "classical", "regular library", "album-artist", "directory", "path", "file system", "scan", "Emby library", "add library", "remove library"}},
+				{ID: "platform", LabelKey: "settings.next.section.platform", Icon: "shield",
+					Keywords: []string{"NAS", "Synology", "Unraid", "Docker", "container", "permissions", "uid", "gid", "chmod", "filesystem"}},
+			},
+		},
+		{
+			ID:       "data",
+			LabelKey: "settings.next.group_data",
+			Sections: []railSection{
+				{ID: "providers", LabelKey: "settings.next.section.providers", Icon: "key",
+					Keywords: []string{"MusicBrainz", "Fanart.tv", "TheAudioDB", "Discogs", "Last.fm", "Spotify", "Wikipedia", "API key", "OAuth", "rate limit", "biography", "thumb image", "members", "field priority", "tags", "similar artists", "genres"}},
+				{ID: "languages", LabelKey: "settings.next.section.languages", Icon: "tag",
+					Keywords: []string{"locale", "i18n", "translation", "fallback language", "preferred language", "en-US", "biography language"}},
+				{ID: "rules", LabelKey: "settings.next.section.rules", Icon: "shield",
+					Keywords: []string{"thumb minimum resolution", "thumb square", "fanart 1920x1080", "fanart aspect", "logo width", "NFO present", "NFO has MusicBrainz ID", "biography present", "biography minimum length", "extraneous files", "severity", "warn", "error", "info", "image rules", "metadata rules", "filesystem rules", "validation"}},
+				{ID: "schedule", LabelKey: "settings.next.section.schedule", Icon: "clock",
+					Keywords: []string{"cron", "scan schedule", "refresh interval", "nightly", "weekly", "manual", "auto-refresh"}},
+			},
+		},
+		{
+			ID:       "integrations",
+			LabelKey: "settings.next.group_integrations",
+			Sections: []railSection{
+				{ID: "connections", LabelKey: "settings.next.section.connections", Icon: "server",
+					Keywords: []string{"Emby", "Jellyfin", "Lidarr", "NFO write-back", "quality profile", "test connection", "library push", "round-trip"}},
+				{ID: "webhooks", LabelKey: "settings.next.section.webhooks", Icon: "bell",
+					Keywords: []string{"webhook", "Discord", "Slack", "ntfy", "Apprise", "notification", "scan complete", "error alert", "POST URL"}},
+				{ID: "tokens", LabelKey: "settings.next.section.tokens", Icon: "key",
+					Keywords: []string{"personal access token", "PAT", "scope", "read-only", "read-write", "expiry", "revoke", "REST API"}},
+			},
+		},
+		{
+			ID:       "system",
+			LabelKey: "settings.next.group_system",
+			Sections: []railSection{
+				{ID: "users", LabelKey: "settings.next.section.users", Icon: "users",
+					Keywords: []string{"account", "role", "admin", "viewer", "invite", "password", "remove user"}},
+				{ID: "auth", LabelKey: "settings.next.section.auth", Icon: "shield",
+					Keywords: []string{"OIDC", "OpenID Connect", "SAML", "LDAP", "local auth", "SSO", "Authelia", "Authentik", "session timeout", "2FA"}},
+				{ID: "config-file", LabelKey: "settings.next.section.config_file", Icon: "config",
+					Keywords: []string{"TOML", "config.toml", "stillwater.toml", "version control", "git", "Ansible", "infrastructure as code", "IaC", "import config", "export config", "diff", "hand-edit", "watcher"}},
+				{ID: "maintenance", LabelKey: "settings.next.section.maintenance", Icon: "wrench",
+					Keywords: []string{"rebuild index", "vacuum database", "clear cache", "reset thumbnails", "backup", "restore", "export", "DB"}},
+				{ID: "updates", LabelKey: "settings.next.section.updates", Icon: "download",
+					Keywords: []string{"release channel", "stable", "beta", "version", "changelog", "auto-update", "self-host"}},
+			},
+		},
+	}
+}
+
+// sectionCount returns the count-badge number for a section, derived from REAL
+// data. 0 means no badge (no count applies, or the data is empty). Never
+// hardcode the prototype's static numbers (#1339 lead guidance: omit rather
+// than fake).
+func sectionCount(id string, data templates.SettingsData) int {
+	switch id {
+	case "providers":
+		// Count only providers with a configured key (status != "unconfigured").
+		n := 0
+		for _, pk := range data.ProviderKeys {
+			if pk.Status != "unconfigured" {
+				n++
+			}
+		}
+		return n
+	case "libraries":
+		return len(data.Libraries)
+	case "rules":
+		// Count only enabled rules so the badge reflects active checks.
+		n := 0
+		for _, r := range data.Rules {
+			if r.Enabled {
+				n++
+			}
+		}
+		return n
+	case "connections":
+		return len(data.Connections)
+	case "webhooks":
+		return len(data.Webhooks)
+	case "tokens":
+		return len(data.APITokens)
+	case "users":
+		return len(data.Users.Users)
+	default:
+		return 0
+	}
+}
+
+// railIcon renders the section's rail icon by name (reusing existing Icon*
+// components where one exists, plus the rail-specific set in
+// icon_settings_rail.templ).
+templ railIcon(name, cls string) {
+	switch name {
+		case "settings":
+			@components.IconAdjustmentsHorizontal(cls)
+		case "folder":
+			@components.IconFolder(cls)
+		case "shield":
+			@components.IconShieldCheck(cls)
+		case "key":
+			@components.IconKey(cls)
+		case "tag":
+			@components.IconTag(cls)
+		case "clock":
+			@components.IconClock(cls)
+		case "server":
+			@components.IconServerStack(cls)
+		case "bell":
+			@components.IconBell(cls)
+		case "users":
+			@components.IconUserGroup(cls)
+		case "wrench":
+			@components.IconWrenchScrewdriver(cls)
+		case "config":
+			@components.IconDocumentText(cls)
+		case "download":
+			@components.IconArrowDownTray(cls)
+		default:
+			@components.IconAdjustmentsHorizontal(cls)
+	}
+}
+
+// SettingsPageNext is the next/ channel settings page (M55 #1339). It wraps the
+// shared next chrome (LayoutNext) and composes the rail + the single-section
+// pane. Page-level scripts are the SAME first-party settings modules the stable
+// page loads (so the reused sections behave identically), minus the tab bar and
+// Logs modules, plus next-settings.js (rail filter + single-section switching +
+// keyboard + cross-tab SSE refresh).
+templ SettingsPageNext(assets templates.AssetPaths, data templates.SettingsData) {
+	@LayoutNext(t(ctx, "settings.title"), assets) {
+		<script src={ assets.SettingsSectionRefreshJS }></script>
+		<script src={ assets.SettingsResetConfirmPrefsJS }></script>
+		<script src={ assets.SettingsSymlinkJS }></script>
+		<script src={ assets.SettingsBasePathJS }></script>
+		<script src={ assets.SettingsLibraryJS }></script>
+		<script src={ assets.SettingsConnectionJS }></script>
+		<script src={ assets.SettingsConnectionFeatureToggleJS }></script>
+		<script src={ assets.SettingsRuleToggleJS }></script>
+		<script src={ assets.SettingsApiTokenJS }></script>
+		<script src={ assets.SettingsRuleScheduleJS }></script>
+		<script src={ assets.SettingsMaintenanceJS }></script>
+		<script src={ assets.SettingsExportJS }></script>
+		<script src={ assets.SettingsProfileNamingJS }></script>
+		@templates.SettingsUsersScript()
+		@templates.SettingsAuthProvidersScript()
+		@components.LanguagePickerScript()
+		<script src={ assets.SettingsRomanizationFallbackJS }></script>
+		@components.ContextHelpScript()
+		@templates.SettingsSearchIndexScript(templates.BuildSettingsSearchIndex(ctx))
+		<script src={ assets.SortableJS }></script>
+		<script src={ assets.SettingsNotifBadgesJS }></script>
+		<div class="sw-next-settings">
+			<header class="sw-card rounded-lg px-6 py-4 mb-6 sw-next-settings-head">
+				<div class="sw-next-settings-head-row">
+					<h1 class="text-2xl font-bold">{ t(ctx, "settings.title") }</h1>
+				</div>
+				<p class="mt-1 text-sm sw-next-settings-subtitle">
+					{ t(ctx, "settings.next.subtitle") }
+				</p>
+			</header>
+			<div class="sw-next-settings-layout">
+				@settingsRail(data)
+				@settingsPane(data, assets)
+			</div>
+		</div>
+		<script src={ assets.SettingsSortableInitJS }></script>
+		<script src={ assets.SettingsUpdatesJS }></script>
+		<script src={ assets.SettingsNextJS }></script>
+	}
+}
+
+// settingsRail is the sticky 260px left navigation: the keyword filter pinned at
+// the top (placeholder "Filter settings…", `/`-focusable) above four groups of
+// curated section items. Each item carries its data-keywords index for the
+// filter and a real count badge where one applies. The active item is styled via
+// CSS (3px left accent + semibold label, NO background swap). The "↳ matched
+// keyword" line and the empty-state are populated by next-settings.js.
+templ settingsRail(data templates.SettingsData) {
+	<aside class="sw-next-settings-rail" aria-label={ t(ctx, "settings.sections_label") }>
+		<div class="sw-next-settings-filter">
+			<label for="settings-search-input" class="sr-only">{ t(ctx, "settings.filter.placeholder") }</label>
+			<div class="sw-next-settings-filter-wrap">
+				@components.IconMagnifyingGlass("sw-next-settings-filter-icon")
+				<input
+					type="search"
+					id="settings-search-input"
+					placeholder={ t(ctx, "settings.filter.placeholder") }
+					aria-label={ t(ctx, "settings.filter.placeholder") }
+					autocomplete="off"
+					class="sw-next-settings-filter-input"
+				/>
+			</div>
+		</div>
+		<!-- Mobile-only disclosure: collapses the section nav behind a hamburger on
+		     narrow viewports (CSS-hidden on desktop, where the nav is always open).
+		     next-settings.js toggles data-nav-open on the rail + aria-expanded here
+		     and keeps the label in sync with the scroll-spy active section. -->
+		<button
+			type="button"
+			class="sw-next-rail-toggle"
+			data-rail-toggle
+			aria-expanded="false"
+			aria-controls="sw-next-settings-nav"
+		>
+			<span class="sw-next-rail-toggle-label" data-rail-toggle-label>{ t(ctx, "settings.next.browse_sections") }</span>
+			@components.IconChevronDown("sw-next-rail-toggle-icon")
+		</button>
+		<nav class="sw-next-settings-nav" id="sw-next-settings-nav" aria-label={ t(ctx, "settings.sections_label") }>
+			for _, g := range nextSettingsGroups() {
+				<div class="sw-next-rail-group" data-rail-group={ g.ID }>
+					<div class="sw-next-rail-group-label">{ t(ctx, g.LabelKey) }</div>
+					<ul class="sw-next-rail-list">
+						for _, s := range g.Sections {
+							<li>
+								<a
+									href={ templ.SafeURL("#section-" + s.ID) }
+									class="sw-next-rail-item"
+									data-rail-link={ s.ID }
+									data-keywords={ strings.Join(s.Keywords, "|") }
+									data-label={ t(ctx, s.LabelKey) }
+								>
+									@railIcon(s.Icon, "sw-next-rail-icon")
+									<span class="sw-next-rail-item-body">
+										<span class="sw-next-rail-label">{ t(ctx, s.LabelKey) }</span>
+										<span class="sw-next-rail-hit" data-rail-hit hidden></span>
+									</span>
+									if c := sectionCount(s.ID, data); c > 0 {
+										<span class="sw-next-rail-count">{ strconv.Itoa(c) }</span>
+									}
+								</a>
+							</li>
+						}
+					</ul>
+				</div>
+			}
+		</nav>
+		<div class="sw-next-rail-empty" data-rail-empty data-empty-template={ t(ctx, "settings.filter.no_match") } hidden>
+			<span data-rail-empty-text></span>
+			<button type="button" class="sw-next-rail-clear" data-rail-clear>{ t(ctx, "settings.filter.clear") }</button>
+		</div>
+	</aside>
+}
+
+// settingsPane is the all-scrollable content column. EVERY section's reused
+// content renders server-side (Option A byte-for-byte reuse), each wrapped in
+// @nextSettingsSection with a stable #section-<id> anchor (the rail's scroll-spy
+// + click-to-jump target, also #hash deep-linkable). An <h2> group divider opens
+// each group so the heading hierarchy is h1 (page) -> h2 (group) -> h3 (card).
+templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
+	<div class="sw-next-settings-pane" id="sw-next-settings-pane">
+		@settingsGroupHeading("essentials", "settings.next.group_essentials")
+		@nextSettingsSection("general", "essentials") {
+			@nextSectionHeader("settings.next.section.general", "")
+			@templates.SectionBasePath(data)
+			@templates.SectionTLSStatus(data)
+			@templates.SectionConfirmDialogs(data)
+		}
+		@nextSettingsSection("libraries", "essentials") {
+			@nextSectionHeader("settings.next.section.libraries", "settings.libraries.description")
+			@templates.SectionLibraries(data)
+			@nextLibrariesSymlinkCard(data)
+		}
+		@nextSettingsSection("platform", "essentials") {
+			@nextSectionHeader("settings.next.section.platform", "settings.platform_profile.description")
+			<!-- data-settings-fragment="platform": same fragment name as the stable
+			     page so the shared profile-activate control refreshes just this
+			     wrapper (grid + the next/ active-profile variant) without a reload
+			     (M55 #1339). space-y-6 reproduces the pane's 1.5rem gap internally so
+			     the wrapper is layout-neutral as one flex item. -->
+			<div data-settings-fragment="platform" class="space-y-6">
+				@templates.SectionPlatformProfile(data)
+				@nextSectionActiveProfile(data)
+			</div>
+		}
+		@settingsGroupHeading("data", "settings.next.group_data")
+		@nextSettingsSection("providers", "data") {
+			@nextSectionHeader("settings.next.section.providers", "settings.provider_keys.description")
+			@templates.SectionProviderKeys(data)
+			@templates.SectionWebSearch(data)
+			@templates.SectionProviderPriorities(data)
+			@templates.SectionTagSources(data)
+		}
+		@nextSettingsSection("languages", "data") {
+			@nextSectionHeader("settings.next.section.languages", "settings.metadata_languages.description")
+			@templates.SectionMetadataLanguages(data)
+		}
+		@nextSettingsSection("rules", "data") {
+			@nextSectionHeader("settings.next.section.rules", "")
+			@templates.SectionRules(data)
+		}
+		@nextSettingsSection("schedule", "data") {
+			@nextSectionHeader("settings.next.section.schedule", "settings.rule_schedule.description")
+			@templates.SectionRuleSchedule(data)
+		}
+		@settingsGroupHeading("integrations", "settings.next.group_integrations")
+		@nextSettingsSection("connections", "integrations") {
+			@nextSectionHeader("settings.next.section.connections", "settings.connections.description")
+			@templates.SectionServers(data)
+		}
+		@nextSettingsSection("webhooks", "integrations") {
+			@nextSectionHeader("settings.next.section.webhooks", "settings.webhooks.description")
+			@templates.SectionWebhooks(data)
+			@templates.SectionNotificationBadges(data)
+		}
+		@nextSettingsSection("tokens", "integrations") {
+			@nextSectionHeader("settings.next.section.tokens", "settings.api_tokens.description")
+			@templates.SectionAPITokens(data)
+		}
+		@settingsGroupHeading("system", "settings.next.group_system")
+		@nextSettingsSection("users", "system") {
+			@nextSectionHeader("settings.next.section.users", "settings.users.description")
+			@templates.SettingsUsersTab(data.Users)
+		}
+		@nextSettingsSection("auth", "system") {
+			@nextSectionHeader("settings.next.section.auth", "settings.auth.description")
+			@templates.SettingsAuthProvidersTab(data.AuthProviders)
+		}
+		@nextSettingsSection("config-file", "system") {
+			@nextSectionHeader("settings.next.section.config_file", "")
+			@templates.SectionExportImport(data)
+			@templates.SectionAdvanced(data)
+		}
+		@nextSettingsSection("maintenance", "system") {
+			@nextSectionHeader("settings.next.section.maintenance", "")
+			@templates.SectionDatabaseMaintenance(data)
+			@templates.SectionBackup(data)
+			@templates.SectionImageCache(data, assets)
+		}
+		@nextSettingsSection("updates", "system") {
+			@nextSectionHeader("settings.next.section.updates", "settings.updates.description")
+			@templates.SettingsUpdatesTab(data.Updates, assets.BasePath)
+		}
+	</div>
+}
+
+// settingsGroupHeading is the pane's per-group <h2> divider (Essentials / Data /
+// Integrations / System). It is the h2 tier between the page <h1> and the card
+// <h3> titles, so the heading order never skips a level. data-rail-group ties it
+// to its group for any group-scoped chrome.
+templ settingsGroupHeading(group, labelKey string) {
+	<h2 class="sw-next-settings-group-heading" id={ "group-" + group } data-rail-group={ group }>
+		{ t(ctx, labelKey) }
+	</h2>
+}
+
+// sectionLabelKey returns the i18n key for a section's accessible name, resolved
+// from the single-source-of-truth taxonomy (nextSettingsGroups). Used by
+// nextSettingsSection to name each <section> landmark (#1339 A2). Falls back to
+// "" (no landmark) for an id absent from the taxonomy.
+func sectionLabelKey(id string) string {
+	for _, g := range nextSettingsGroups() {
+		for _, s := range g.Sections {
+			if s.ID == id {
+				return s.LabelKey
+			}
+		}
+	}
+	return ""
+}
+
+// tabPanelForSection maps a spec section to the data-tab-panel value its reused
+// module keys initial hydration off (#1339). image-cache.js (composed under
+// "maintenance") gates loadCacheStats() on [data-tab-panel="general"]; updates.js
+// gates fetchAndPopulateUpdateStatus() on [data-tab-panel="updates"]. Both check
+// the .hidden CLASS (never set here -- every section is visible in the scrollable
+// pane), so emitting the marker lets both modules hydrate eagerly on load.
+// Returns "" for sections with no lazy module.
+func tabPanelForSection(id string) string {
+	switch id {
+	case "maintenance":
+		return "general"
+	case "updates":
+		return "updates"
+	default:
+		return ""
+	}
+}
+
+// nextSettingsSection wraps one spec section's reused content in the pane
+// envelope: a stable #section-<id> anchor (the rail's scroll-spy + click-to-jump
+// target, also deep-linkable), a data-rail-section association for the rail
+// filter + scroll-spy, an aria-label naming the region landmark (#1339 A2), and
+// the data-tab-panel marker its reused lazy module keys hydration off. Every
+// section is visible -- the pane scrolls through all of them (no single-section
+// hide); scroll-margin-top (CSS) keeps a jump landing clear of the viewport top.
+templ nextSettingsSection(id, group string) {
+	<section
+		id={ "section-" + id }
+		class="sw-next-pane-section"
+		data-rail-section={ id }
+		data-rail-group={ group }
+		if k := sectionLabelKey(id); k != "" {
+			aria-label={ t(ctx, k) }
+		}
+		if tp := tabPanelForSection(id); tp != "" {
+			data-tab-panel={ tp }
+		}
+	>
+		{ children... }
+	</section>
+}
+
+// nextSectionHeader renders the per-section <h3> title + optional description
+// paragraph at the top of each pane section. Using <h3> keeps the heading chain
+// intact (h1 page -> h2 group dividers -> h3 section headings -> h3 card titles
+// within the same section landmark). descKey="" omits the paragraph.
+templ nextSectionHeader(labelKey, descKey string) {
+	<div class="sw-next-section-intro">
+		<h3 class="sw-next-section-heading">{ t(ctx, labelKey) }</h3>
+		if descKey != "" {
+			<p class="sw-next-section-desc">{ t(ctx, descKey) }</p>
+		}
+	</div>
+}
+
+// nextLibrariesSymlinkCard renders the "Use symlinks for duplicates" toggle
+// inside the Music Libraries section. Toggle state is driven by
+// data.SymlinkSupported and data.ActiveProfile.UseSymlinks, mirroring the
+// stable settings_sections.templ SectionProfileNaming symlink block.
+templ nextLibrariesSymlinkCard(data templates.SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<!-- Hidden element carrying translated strings for symlink.js. -->
+		<div
+			id="symlink-i18n"
+			class="hidden"
+			data-toast-save-failed={ t(ctx, "settings.symlinks.toast_save_failed") }
+			data-toast-network={ t(ctx, "settings.symlinks.toast_network") }
+		></div>
+		<div class="px-6 py-4">
+			<div class="flex items-center justify-between">
+				<div>
+					<div class="flex items-center gap-1">
+						<span id="symlink-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</span>
+						@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-general-symlinks")
+					</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+						if data.SymlinkSupported && data.ActiveProfile != nil {
+							{ tf(ctx, "settings.symlinks.supported_description", img.ImageTermFor("fanart", data.ActiveProfile.Name)) }
+						} else {
+							{ t(ctx, "settings.symlinks.unsupported_description") }
+						}
+					</div>
+				</div>
+				<button
+					type="button"
+					id="symlink-toggle"
+					class={
+						"relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+						templ.KV("cursor-pointer", data.SymlinkSupported && data.ActiveProfile != nil),
+						templ.KV("cursor-not-allowed opacity-50", !data.SymlinkSupported || data.ActiveProfile == nil),
+						templ.KV("bg-blue-600", data.ActiveProfile != nil && data.ActiveProfile.UseSymlinks),
+						templ.KV("bg-gray-200 dark:bg-gray-600", data.ActiveProfile == nil || !data.ActiveProfile.UseSymlinks),
+					}
+					role="switch"
+					aria-checked={ boolAttrNext(data.ActiveProfile != nil && data.ActiveProfile.UseSymlinks) }
+					aria-labelledby="symlink-toggle-label"
+					if data.SymlinkSupported && data.ActiveProfile != nil {
+						onclick="toggleSymlinks(this)"
+					}
+					disabled?={ !data.SymlinkSupported || data.ActiveProfile == nil }
+					if data.ActiveProfile != nil {
+						data-profile-id={ data.ActiveProfile.ID }
+					}
+				>
+					<span
+						class={
+							"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+							templ.KV("translate-x-5", data.ActiveProfile != nil && data.ActiveProfile.UseSymlinks),
+							templ.KV("translate-x-0", data.ActiveProfile == nil || !data.ActiveProfile.UseSymlinks),
+						}
+					></span>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+// nextSectionActiveProfile is the next/-local Active Profile card: a verbatim
+// copy of templates.SectionActiveProfile WITH THE SYMLINK TOGGLE REMOVED (#1339
+// B-KEEP). The symlink default is re-homed to the Music Libraries section.
+templ nextSectionActiveProfile(data templates.SettingsData) {
+	if data.ActiveProfile != nil {
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+				<div class="flex items-center gap-2">
+					@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.active_profile.title"))
+					@components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-general-active-profile")
+				</div>
+				if profileEditableNext(data.ActiveProfile) {
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						{ t(ctx, "settings.active_profile.description") }
+					</p>
+				}
+			</div>
+			<!-- Hidden element carrying translated strings for profile-naming.js. -->
+			<div
+				id="profile-naming-i18n"
+				class="hidden"
+				data-prompt-filename={ t(ctx, "settings.profile_naming.prompt_filename") }
+				data-error-path-separator={ t(ctx, "settings.profile_naming.error_path_separator") }
+				data-error-no-extension={ t(ctx, "settings.profile_naming.error_no_extension") }
+				data-error-invalid-extension={ t(ctx, "settings.profile_naming.error_invalid_extension") }
+				data-error-logo-extension={ t(ctx, "settings.profile_naming.error_logo_extension") }
+				data-error-duplicate={ t(ctx, "settings.profile_naming.error_duplicate") }
+				data-aria-remove={ t(ctx, "settings.profile_naming.aria_remove") }
+				data-status-saving={ t(ctx, "settings.profile_naming.status_saving") }
+				data-status-saved={ t(ctx, "settings.profile_naming.status_saved") }
+				data-status-save-failed={ t(ctx, "settings.profile_naming.status_save_failed") }
+				data-status-network={ t(ctx, "settings.profile_naming.status_network") }
+			></div>
+			<div class="px-6 py-4 space-y-4">
+				<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+					<div>
+						<span class="font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "settings.active_profile.nfo_output") }</span>
+						<p class="mt-1">
+							if data.ActiveProfile.NFOEnabled {
+								{ tf(ctx, "settings.active_profile.nfo_enabled_format", data.ActiveProfile.NFOFormat) }
+							} else {
+								{ t(ctx, "common.disabled") }
+							}
+						</p>
+					</div>
+					@templates.ProfileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditableNext(data.ActiveProfile))
+					@templates.ProfileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditableNext(data.ActiveProfile))
+					@templates.ProfileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditableNext(data.ActiveProfile))
+					@templates.ProfileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditableNext(data.ActiveProfile))
+				</div>
+				if profileEditableNext(data.ActiveProfile) {
+					<div class="pt-2">
+						<button
+							type="button"
+							onclick="saveProfileNaming(this)"
+							data-profile-id={ data.ActiveProfile.ID }
+							class={ "inline-flex items-center px-3 py-2 text-sm font-semibold " + glassButton }
+						>
+							{ t(ctx, "settings.active_profile.save_filenames") }
+						</button>
+						<span id="naming-save-status" class="ml-3 text-sm text-gray-500 dark:text-gray-400"></span>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+

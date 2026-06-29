@@ -109,7 +109,7 @@
               var fsMode = lib.fs_watch || 0;
               var supportsNotify = lib.fs_notify_supported;
               var selClass = 'text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1';
-              modeSelect = '<select class="' + selClass + '" title="' + safeFsModeTitle + '" onchange="updateLibraryFSMode(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
+              modeSelect = '<select class="' + selClass + '" title="' + safeFsModeTitle + '" aria-label="' + safeFsModeTitle + '" onchange="updateLibraryFSMode(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
                 + '<option value="0"' + (fsMode === 0 ? ' selected' : '') + '>Off</option>';
               if (supportsNotify) {
                 modeSelect += '<option value="1"' + (fsMode === 1 ? ' selected' : '') + '>Watch</option>';
@@ -121,7 +121,7 @@
               modeSelect += '</select>';
               if (fsMode === 2 || fsMode === 3) {
                 var pi = lib.fs_poll_interval || 60;
-                modeSelect += ' <select class="' + selClass + '" title="' + safePollIntervalTitle + '" onchange="updateLibraryPollInterval(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
+                modeSelect += ' <select class="' + selClass + '" title="' + safePollIntervalTitle + '" aria-label="' + safePollIntervalTitle + '" onchange="updateLibraryPollInterval(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
                   + '<option value="60"' + (pi === 60 ? ' selected' : '') + '>1m</option>'
                   + '<option value="300"' + (pi === 300 ? ' selected' : '') + '>5m</option>'
                   + '<option value="900"' + (pi === 900 ? ' selected' : '') + '>15m</option>'

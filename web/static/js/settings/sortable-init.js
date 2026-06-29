@@ -86,7 +86,14 @@
             if (typeof showToast === 'function') {
               showToast('Failed to save provider order');
             }
-            window.location.reload();
+            // Restore the server's canonical order after a failed reorder by
+            // refreshing just the priorities section, not the whole page (M55
+            // #1339) -- preserves next/ scroll position + ambient backdrop.
+            if (typeof window.swRefreshSettingsSection === 'function') {
+              window.swRefreshSettingsSection('priorities').then(function(ok){ if (!ok) window.location.reload(); });
+            } else {
+              window.location.reload();
+            }
           });
         }
       });

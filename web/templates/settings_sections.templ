@@ -26,7 +26,7 @@ templ SectionPlatformProfile(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.platform_profile.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.platform_profile.title"))
 				@components.ContextHelp("help-platform-profile", t(ctx, "settings.platform_profile.title"), t(ctx, "settings.platform_profile.help"), "settings-general-platform-profile")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -98,10 +98,10 @@ templ SectionActiveProfile(data SettingsData) {
 							}
 						</p>
 					</div>
-					@profileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
-					@profileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
-					@profileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
-					@profileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
 				</div>
 				if profileEditable(data.ActiveProfile) {
 					<div class="mt-4 flex items-center justify-between">
@@ -174,7 +174,7 @@ templ SectionTLSStatus(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" id="tls-status-card">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.tls_status.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.tls_status.title"))
 				@components.ContextHelp("help-tls-status", t(ctx, "settings.tls_status.title"), t(ctx, "settings.tls_status.help"), "settings-general-tls-status")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -236,7 +236,7 @@ templ SectionBasePath(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.base_path.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.base_path.title"))
 				@components.ContextHelp("help-base-path", t(ctx, "settings.base_path.title"), t(ctx, "settings.base_path.help"), "settings-general-base-path")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -400,7 +400,7 @@ templ SectionLibraries(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.libraries.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.libraries.title"))
 				@components.ContextHelp("help-libraries", t(ctx, "settings.libraries.title"), t(ctx, "settings.libraries.help"), "settings-libraries-libraries")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -500,14 +500,14 @@ templ SectionProviderKeys(data SettingsData) {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<div class="flex items-center gap-2">
-					<h2 class="text-lg font-semibold">{ t(ctx, "settings.provider_keys.title") }</h2>
+					@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.provider_keys.title"))
 					@components.ContextHelp("help-provider-keys", t(ctx, "settings.provider_keys.title"), t(ctx, "settings.provider_keys.help"), "settings-providers-provider-keys")
 				</div>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 					{ t(ctx, "settings.provider_keys.description") }
 				</p>
 			</div>
-			<div class="px-6 py-4 space-y-4">
+			<div class="px-6 py-4 space-y-4" data-settings-fragment="provider-keys">
 				for _, pk := range data.ProviderKeys {
 					<div id={ "provider-card-" + string(pk.Name) }>
 						@ProviderKeyCard(pk)
@@ -528,7 +528,7 @@ templ SectionWebSearch(data SettingsData) {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<div class="flex items-center gap-2">
-					<h2 class="text-lg font-semibold">{ t(ctx, "settings.web_search.title") }</h2>
+					@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.web_search.title"))
 					@components.ContextHelp("help-web-search", t(ctx, "settings.web_search.title"), t(ctx, "settings.web_search.help"), "settings-providers-web-search")
 				</div>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -555,7 +555,7 @@ templ SectionProviderPriorities(data SettingsData) {
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<div class="flex items-center justify-between gap-2">
 					<div class="flex items-center gap-2">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.priorities.title") }</h2>
+						@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.priorities.title"))
 						@components.ContextHelp("help-provider-priorities", t(ctx, "settings.priorities.title"), t(ctx, "settings.priorities.help"), "settings-providers-priorities")
 					</div>
 					<button
@@ -588,7 +588,7 @@ templ SectionMetadataLanguages(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.metadata_languages.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.metadata_languages.title"))
 				@components.ContextHelp("help-metadata-languages", t(ctx, "settings.metadata_languages.title"), t(ctx, "settings.metadata_languages.help"), "settings-providers-metadata-languages")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -662,7 +662,7 @@ templ SectionAdvanced(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.advanced.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.advanced.title"))
 				@components.ContextHelp("help-advanced", t(ctx, "settings.advanced.title"), t(ctx, "settings.advanced.help"), "settings-providers-advanced")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -714,7 +714,7 @@ templ SectionTagSources(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.tag_sources.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.tag_sources.title"))
 				@components.ContextHelp("help-tag-sources", t(ctx, "settings.tag_sources.title"), t(ctx, "settings.tag_sources.help"), "settings-providers-tag-sources")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -860,7 +860,7 @@ templ SectionRules(data SettingsData) {
 				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 					{{ categoryHeading := tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }}
 					<div class="flex items-center gap-2">
-						<h2 class="text-lg font-semibold">{ categoryHeading }</h2>
+						@components.SettingCardHeading("text-lg font-semibold", categoryHeading)
 						// The conflict-gated chip + its help icon share the same
 						// visibility hook (.sw-conflict-gated-chip is toggled by
 						// JS when the active conflict state changes). Keeping the
@@ -900,7 +900,7 @@ templ SectionRules(data SettingsData) {
 						for _, pfx := range imageSubtypePrefixes {
 							{{ sub := rulesForImageSubtype(catRules, pfx) }}
 							if len(sub) > 0 {
-								<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(ctx, sub[0].ID) }</h3>
+								@components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500", imageSubtypeLabel(ctx, sub[0].ID))
 								for _, rl := range sub {
 									{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
 									{{ showFsHelp := isFsUnavail && !fsHelpShown }}
@@ -917,7 +917,7 @@ templ SectionRules(data SettingsData) {
 						}
 						{{ generalRules := rulesForImageSubtypeFallback(catRules) }}
 						if len(generalRules) > 0 {
-							<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(ctx, generalRules[0].ID) }</h3>
+							@components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500", imageSubtypeLabel(ctx, generalRules[0].ID))
 							for _, rl := range generalRules {
 								{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
 								{{ showFsHelp := isFsUnavail && !fsHelpShown }}
@@ -964,7 +964,7 @@ templ SectionRuleSchedule(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.rule_schedule.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.rule_schedule.title"))
 				@components.ContextHelp("help-rule-schedule", t(ctx, "settings.rule_schedule.title"), t(ctx, "settings.rule_schedule.help"), "settings-rules-rule-schedule")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -973,8 +973,9 @@ templ SectionRuleSchedule(data SettingsData) {
 		</div>
 		<div class="px-6 py-4">
 			<div class="flex items-center gap-4">
-				<label class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.rule_schedule.interval_label") }</label>
+				<label for="rule-schedule-interval" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.rule_schedule.interval_label") }</label>
 				<select
+					id="rule-schedule-interval"
 					onchange="updateRuleSchedule(this)"
 					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 				>
@@ -1004,7 +1005,7 @@ templ SectionServers(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.connections.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.connections.title"))
 				@components.ContextHelp("help-connections", t(ctx, "settings.connections.title"), t(ctx, "settings.connections.help"), "settings-connections-connections")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -1016,7 +1017,13 @@ templ SectionServers(data SettingsData) {
 							the global ConflictBanner in the layout. That banner
 							covers every screen, carries per-connection CTAs, and
 							shares its source of truth with the write-gate. -->
-			<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+			<!-- data-settings-fragment="connections": targeted-refresh swap target
+			     (M55 #1339). After a connection Test / Delete / save-cancel, the
+			     section-refresh helper re-fetches the page and swaps just this grid
+			     so the live status dots update without a full-page reload. The
+			     attribute is on the shared grid, so it is present in BOTH the stable
+			     /settings and /next/settings renders of SectionServers. -->
+			<div class="grid grid-cols-1 gap-4 lg:grid-cols-3" data-settings-fragment="connections">
 				@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
 				@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))
 				@serviceConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", connectionsForType(data.Connections, "lidarr"))
@@ -1032,14 +1039,14 @@ templ SectionWebhooks(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.webhooks.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.webhooks.title"))
 				@components.ContextHelp("help-webhooks", t(ctx, "settings.webhooks.title"), t(ctx, "settings.webhooks.help"), "settings-automation-webhooks")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.webhooks.description") }
 			</p>
 		</div>
-		<div id="webhooks-list" class="px-6 py-4 space-y-3">
+		<div id="webhooks-list" class="px-6 py-4 space-y-3" data-settings-fragment="webhooks">
 			if len(data.Webhooks) == 0 {
 				<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.webhooks.empty") }</p>
 			}
@@ -1060,9 +1067,8 @@ templ SectionWebhooks(data SettingsData) {
 			<div id="add-webhook-form" class="hidden mt-4">
 				<form
 					hx-post="/api/v1/webhooks"
-					hx-target="#webhooks-list"
-					hx-swap="innerHTML"
-					hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); window.location.reload(); }"
+					hx-swap="none"
+					hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); var b=document.querySelector('[aria-controls=add-webhook-form]'); if(b){b.setAttribute('aria-expanded','false');b.focus();} swRefreshSettingsSection('webhooks'); }"
 					class="space-y-3"
 				>
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1167,14 +1173,14 @@ templ SectionAPITokens(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.api_tokens.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.api_tokens.title"))
 				@components.ContextHelp("help-api-tokens", t(ctx, "settings.api_tokens.title"), t(ctx, "settings.api_tokens.help"), "settings-automation-api-tokens")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.api_tokens.description") }
 			</p>
 		</div>
-		<div class="px-6 py-4 space-y-3">
+		<div class="px-6 py-4 space-y-3" data-settings-fragment="tokens">
 			if len(data.APITokens) == 0 {
 				<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.api_tokens.empty") }</p>
 			}
@@ -1336,7 +1342,7 @@ templ SectionConfirmDialogs(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.confirm_dialogs.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.confirm_dialogs.title"))
 				@components.ContextHelp("help-confirm-dialogs", t(ctx, "settings.confirm_dialogs.title"), t(ctx, "settings.confirm_dialogs.help"), "settings-maintenance-confirm-dialogs")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -1445,7 +1451,7 @@ templ SectionBackup(data SettingsData) {
 			</span>
 		</div>
 		<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
-			<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{ t(ctx, "settings.backup.retention") }</h3>
+			@components.SettingSubHeading("text-sm font-medium text-gray-700 dark:text-gray-300 mb-2", t(ctx, "settings.backup.retention"))
 			<div class="flex flex-wrap items-center gap-4">
 				<div class="flex items-center gap-2">
 					<label for="backup-retention" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.keep") }</label>
@@ -1502,7 +1508,7 @@ templ SectionExportImport(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.export_import.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.export_import.title"))
 				@components.ContextHelp("help-export-import", t(ctx, "settings.export_import.title"), t(ctx, "settings.export_import.help"), "settings-maintenance-export-import")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">

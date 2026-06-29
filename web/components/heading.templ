@@ -1,0 +1,30 @@
+package components
+
+// SettingCardHeading emits a settings section CARD title at the context-driven
+// level (#1339 A1): <h2> on stable, <h3> on the next/ page. The class is passed
+// through verbatim so the rendered bytes match the previous hand-coded
+// `<h2 class="...">title</h2>` exactly at the default level (golden-locked).
+templ SettingCardHeading(class, title string) {
+	switch SettingCardHeadingLevel(ctx) {
+		case 3:
+			<h3 class={ class }>{ title }</h3>
+		case 4:
+			<h4 class={ class }>{ title }</h4>
+		default:
+			<h2 class={ class }>{ title }</h2>
+	}
+}
+
+// SettingSubHeading emits an in-card SUB-head one level below the card title:
+// <h3> on stable, <h4> on the next/ page (#1339 A1). Same class passthrough /
+// byte-stable contract as SettingCardHeading.
+templ SettingSubHeading(class, title string) {
+	switch SettingSubHeadingLevel(ctx) {
+		case 4:
+			<h4 class={ class }>{ title }</h4>
+		case 5:
+			<h5 class={ class }>{ title }</h5>
+		default:
+			<h3 class={ class }>{ title }</h3>
+	}
+}

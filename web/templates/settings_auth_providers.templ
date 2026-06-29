@@ -44,13 +44,22 @@ func guardRailLabel(v string) string {
 	return "Admins only"
 }
 
-// settingsAuthProvidersTab renders the Auth Providers settings tab content.
+// SettingsAuthProvidersTab renders the Auth Providers settings tab content.
 // Only Administrators can access this tab (settings page is admin-only).
-templ settingsAuthProvidersTab(data AuthProvidersData) {
-	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+// Exported so the next/ settings rail (#1339) composes the same content the
+// stable chrome renders. NOTE (#1757): when the stable settings chrome retires,
+// this shared content func must migrate out of the stable layer, not be deleted
+// -- the next/ settings page depends on it.
+templ SettingsAuthProvidersTab(data AuthProvidersData) {
+	<!-- data-settings-fragment="auth": toggling a provider expands/hides its
+	     settings panel; the section-refresh helper (M55 #1339) swaps this whole
+	     auth card in place instead of reloading the page. Single-root card, so the
+	     attribute lives on the existing element (no layout change); present in both
+	     the stable and next/ renders. -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" data-settings-fragment="auth">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.auth.title") }</h2>
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.auth.title"))
 				@components.ContextHelp("help-auth", t(ctx, "settings.auth.title"), t(ctx, "settings.auth.help"), "settings-auth-providers-auth")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -553,8 +562,9 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 	</div>
 }
 
-// settingsAuthProvidersScript renders the inline JS for the auth providers tab.
-templ settingsAuthProvidersScript() {
+// SettingsAuthProvidersScript renders the inline JS for the auth providers tab.
+// Exported for the next/ settings page (#1339), which emits the same script.
+templ SettingsAuthProvidersScript() {
 	<script>
 		var authProvidersBasePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 
@@ -579,8 +589,10 @@ templ settingsAuthProvidersScript() {
 				if (!resp.ok) {
 					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update provider'); });
 				}
-				// Reload so the expanded settings panel appears or hides.
-				window.location.reload();
+				// Refresh just the Auth Providers section so the expanded
+				// settings panel appears/hides in place, no full-page reload
+				// (M55 #1339).
+				swRefreshSettingsSection('auth').then(function(ok){ if (!ok) window.location.reload(); });
 			}).catch(function(err) {
 				showToast(err.message || 'Failed to update provider setting');
 			});

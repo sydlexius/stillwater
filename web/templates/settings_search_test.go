@@ -144,7 +144,7 @@ func TestSettingsSearchIndexScript_EmitsWindowGlobal(t *testing.T) {
 	index := []SettingsSearchEntry{
 		{ID: "help-x", Label: "X", HelpText: "x help", TabID: TabGeneral},
 	}
-	if err := settingsSearchIndexScript(index).Render(testCtx(t), &buf); err != nil {
+	if err := SettingsSearchIndexScript(index).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()

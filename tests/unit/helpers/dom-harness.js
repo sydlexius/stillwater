@@ -17,6 +17,7 @@ export const MODULE_PATHS = {
   preferences:  join(REPO_ROOT, 'web/static/js/preferences.js'),
   prefsDrawer:  join(REPO_ROOT, 'web/static/js/prefs-drawer.js'),
   notifBadges:  join(REPO_ROOT, 'web/static/js/settings/notif-badges.js'),
+  sectionRefresh: join(REPO_ROOT, 'web/static/js/settings/section-refresh.js'),
 };
 
 /**
