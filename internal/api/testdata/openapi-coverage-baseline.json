@@ -56,7 +56,6 @@
   "resolveViolation",
   "serveFanartByIndex",
   "setPriorities",
-  "setProviderKey",
   "setProviderMirror",
   "setWebSearchEnabled",
   "testProvider",

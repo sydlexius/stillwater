@@ -1537,7 +1537,7 @@
     "method": "PUT",
     "path": "/providers/{name}/key",
     "handler": "handleSetProviderKey",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "setProviderMirror",
