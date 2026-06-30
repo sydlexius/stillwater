@@ -1,0 +1,12 @@
+[
+  "DELETE /api/v1/users/invites/{id}",
+  "DELETE /api/v1/users/{id}",
+  "GET /api/v1/artists/{id}/fields/{field}/history/fragment",
+  "GET /api/v1/connections/{id}/conflict-detail",
+  "GET /api/v1/users",
+  "GET /api/v1/users/invites",
+  "GET /api/v1/users/{id}",
+  "PATCH /api/v1/users/{id}",
+  "POST /api/v1/users/invites",
+  "POST /api/v1/users/register"
+]
