@@ -1,0 +1,6 @@
+# Read by gate-runner.py (cc-orchestrator >= v0.49.0).
+[prep_pr]
+gate = "bash scripts/pre-push-gate.sh"
+
+[merge_pr]
+coverage_advisory = true   # codecov.yml present
