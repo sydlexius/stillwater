@@ -89,6 +89,14 @@ jobs:
         run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
 
       - name: Regenerate doc generators
+        # Must stay in lockstep with scripts/check-generated.sh: that script
+        # (run by the local pre-push hook) regenerates all generators, but CI
+        # only re-ran six, so a contributor without the hook could land stale
+        # gen-cli-reference / gen-envelope-changelog / gen-make-reference /
+        # gen-platform-profiles / gen-prefs-reference output past required
+        # checks (#2009 #3 -- the audit said 3 missing; two more were added to
+        # check-generated.sh since, so it is 5). Keep this list == the
+        # generators in check-generated.sh.
         run: |
           go run ./cmd/gen-provider-matrix
           go run ./cmd/gen-env-reference
@@ -96,6 +104,11 @@ jobs:
           go run ./cmd/gen-settings-reference
           go run ./cmd/gen-doc-anchors
           go run ./cmd/gen-ci-reference
+          go run ./cmd/gen-cli-reference
+          go run ./cmd/gen-envelope-changelog
+          go run ./cmd/gen-make-reference
+          go run ./cmd/gen-platform-profiles
+          go run ./cmd/gen-prefs-reference
 
       - name: Fail on stale generated files
         run: |
@@ -375,6 +388,43 @@ jobs:
               echo '```'
               echo ""
               echo "Drift details:"
+              echo '```'
+              echo "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          echo "$output"
+
+  # ---------------------------------------------------------------------------
+  # Doc-facts drift
+  #
+  # Replicates the '=== Doc facts ===' check in scripts/pre-push-gate.sh, which
+  # the local pre-push hook runs but gate.yml did not -- so a contributor
+  # without the hook could land a stale hand-written doc fact (built-in rule
+  # count, envelope version, dev-setup Go version, SWAG upload limit) past
+  # required checks (#2009 #4). check-doc-facts.sh is a grep-only guard, so no
+  # Go toolchain is needed; always runs and always emits a terminal status.
+  # ---------------------------------------------------------------------------
+  doc-facts:
+    name: Doc Facts Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check hand-written doc facts
+        run: |
+          output=$(bash scripts/check-doc-facts.sh 2>&1) || {
+            echo "$output"
+            {
+              echo "## Doc Facts Drift -- FAILED"
+              echo ""
+              echo "A hand-written doc fact no longer matches its source of truth (built-in rule count, envelope version, dev-setup Go version, or SWAG upload limit). Reconcile the doc with the code, or update the assertion in scripts/check-doc-facts.sh."
+              echo ""
+              echo "Details:"
               echo '```'
               echo "$output"
               echo '```'
