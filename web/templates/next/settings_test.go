@@ -442,10 +442,11 @@ func TestSettingsHydrationTabPanels(t *testing.T) {
 	}
 }
 
-// TestSettingsBehaviorReHomesSymlink (#1339 B-KEEP): the symlink default toggle
-// now lives in the Music Libraries section (moved from the removed Behavior card).
-// Guards the re-home: symlink-toggle must be in "libraries", not "general" or
-// "platform".
+// TestSettingsBehaviorReHomesSymlink (#1339 B-KEEP, re-homed again by #2120):
+// the symlink default toggle started in the removed Behavior card, moved to
+// Music Libraries (#1339), and now lives in the Platform Profile section
+// (Custom profile only). Guards the re-home: symlink-toggle must be in
+// "platform", not "general" or "libraries".
 func TestSettingsBehaviorReHomesSymlink(t *testing.T) {
 	data := settingsTestData
 	data.ActiveProfile = &platform.Profile{ID: "custom", Name: "Custom", UseSymlinks: false}
@@ -461,22 +462,25 @@ func TestSettingsBehaviorReHomesSymlink(t *testing.T) {
 	if librariesSec == nil || generalSec == nil || platformSec == nil {
 		t.Fatal("libraries, general, and platform sections must render")
 	}
-	if !strings.Contains(renderNode(librariesSec), `id="symlink-toggle"`) {
-		t.Error("symlink-toggle should live in the libraries section")
+	if strings.Contains(renderNode(librariesSec), `id="symlink-toggle"`) {
+		t.Error("symlink-toggle must NOT be in the libraries section (#2120 moved it to platform)")
 	}
 	if strings.Contains(renderNode(generalSec), `id="symlink-toggle"`) {
 		t.Error("symlink-toggle must NOT be in the general section (Behavior card removed)")
 	}
-	if strings.Contains(renderNode(platformSec), `id="symlink-toggle"`) {
-		t.Error("symlink-toggle must NOT be in the platform section")
+	if !strings.Contains(renderNode(platformSec), `id="symlink-toggle"`) {
+		t.Error("symlink-toggle should live in the platform section (#2120, Custom profile active)")
 	}
 }
 
-// TestSettingsSymlinkCardState (#1339 F6): nextLibrariesSymlinkCard drives
+// TestSettingsSymlinkCardState (#1339 F6): nextPlatformSymlinkCard drives
 // toggle enabled state and aria-checked from the real SettingsData fields
 // instead of hardcoding disabled/false. When SymlinkSupported=true the button
 // is enabled (no disabled attribute) and aria-checked reflects UseSymlinks;
 // when SymlinkSupported=false the button is disabled and aria-checked=false.
+// Each subtest uses an active "custom" profile so the toggle renders at all
+// (#2120 gates it to the Custom profile; see TestSettingsSymlinkCustomOnly
+// for the gating behavior itself).
 func TestSettingsSymlinkCardState(t *testing.T) {
 	findToggle := func(root *html.Node) *html.Node {
 		var found *html.Node
@@ -536,6 +540,46 @@ func TestSettingsSymlinkCardState(t *testing.T) {
 		}
 		if got := attr(btn, "aria-checked"); got != "false" {
 			t.Errorf("aria-checked = %q, want \"false\" when unsupported", got)
+		}
+	})
+}
+
+// TestSettingsSymlinkCustomOnly (#2120): the symlink toggle renders inside
+// the platform section only when the active profile is the seeded "custom"
+// profile; for any other (builtin) profile it must be absent entirely.
+func TestSettingsSymlinkCustomOnly(t *testing.T) {
+	t.Run("builtin_profile_hides_toggle", func(t *testing.T) {
+		data := settingsTestData
+		data.ActiveProfile = &platform.Profile{ID: "plex", Name: "Plex", IsBuiltin: true}
+		root := renderSettingsPaneWith(t, data)
+		sections := map[string]*html.Node{}
+		findSections(root, sections)
+
+		platformSec := sections["platform"]
+		if platformSec == nil {
+			t.Fatal("platform section must render")
+		}
+		if strings.Contains(renderNode(platformSec), `id="symlink-toggle"`) {
+			t.Error("symlink-toggle must NOT render for a non-custom (builtin) active profile")
+		}
+		if strings.Contains(renderNode(root), `id="symlink-toggle"`) {
+			t.Error("symlink-toggle must NOT render anywhere in the pane for a non-custom active profile")
+		}
+	})
+
+	t.Run("custom_profile_shows_toggle", func(t *testing.T) {
+		data := settingsTestData
+		data.ActiveProfile = &platform.Profile{ID: "custom", Name: "Custom"}
+		root := renderSettingsPaneWith(t, data)
+		sections := map[string]*html.Node{}
+		findSections(root, sections)
+
+		platformSec := sections["platform"]
+		if platformSec == nil {
+			t.Fatal("platform section must render")
+		}
+		if !strings.Contains(renderNode(platformSec), `id="symlink-toggle"`) {
+			t.Error("symlink-toggle should render in the platform section when the active profile is custom")
 		}
 	})
 }

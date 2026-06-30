@@ -40,6 +40,13 @@ func profileEditableNext(p *platform.Profile) bool {
 	return !p.IsBuiltin || p.ID == "custom"
 }
 
+// profileIsCustomNext reports whether the active profile is the seeded
+// "custom" profile, used to gate Custom-only Platform Profile content
+// (e.g. the symlink toggle, #2120).
+func profileIsCustomNext(p *platform.Profile) bool {
+	return p != nil && p.ID == "custom"
+}
+
 // boolAttrNext renders a Go bool as the "true"/"false" string an aria-* boolean
 // attribute expects (mirrors the stable templates.boolAttr helper).
 func boolAttrNext(b bool) string {
@@ -344,7 +351,6 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 		@nextSettingsSection("libraries", "essentials") {
 			@nextSectionHeader("settings.next.section.libraries", "settings.libraries.description")
 			@templates.SectionLibraries(data)
-			@nextLibrariesSymlinkCard(data)
 		}
 		@nextSettingsSection("platform", "essentials") {
 			@nextSectionHeader("settings.next.section.platform", "settings.platform_profile.description")
@@ -356,6 +362,9 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 			<div data-settings-fragment="platform" class="space-y-6">
 				@templates.SectionPlatformProfile(data)
 				@nextSectionActiveProfile(data)
+				if profileIsCustomNext(data.ActiveProfile) {
+					@nextPlatformSymlinkCard(data)
+				}
 			</div>
 		}
 		@settingsGroupHeading("data", "settings.next.group_data")
@@ -499,11 +508,12 @@ templ nextSectionHeader(labelKey, descKey string) {
 	</div>
 }
 
-// nextLibrariesSymlinkCard renders the "Use symlinks for duplicates" toggle
-// inside the Music Libraries section. Toggle state is driven by
+// nextPlatformSymlinkCard renders the "Use symlinks for duplicates" toggle
+// inside the Platform Profile section, shown only when the active profile is
+// the seeded "custom" profile (#2120). Toggle state is driven by
 // data.SymlinkSupported and data.ActiveProfile.UseSymlinks, mirroring the
 // stable settings_sections.templ SectionProfileNaming symlink block.
-templ nextLibrariesSymlinkCard(data templates.SettingsData) {
+templ nextPlatformSymlinkCard(data templates.SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<!-- Hidden element carrying translated strings for symlink.js. -->
 		<div
@@ -563,7 +573,8 @@ templ nextLibrariesSymlinkCard(data templates.SettingsData) {
 
 // nextSectionActiveProfile is the next/-local Active Profile card: a verbatim
 // copy of templates.SectionActiveProfile WITH THE SYMLINK TOGGLE REMOVED (#1339
-// B-KEEP). The symlink default is re-homed to the Music Libraries section.
+// B-KEEP). The symlink default toggle now lives in the Platform Profile
+// section, gated to the Custom profile only (#2120).
 templ nextSectionActiveProfile(data templates.SettingsData) {
 	if data.ActiveProfile != nil {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
