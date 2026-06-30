@@ -33,16 +33,16 @@ templ CheatSheetModal() {
 	>
 		<div class="fixed inset-0 bg-black/50 transition-opacity" id="cheat-sheet-backdrop"></div>
 		<div class="fixed inset-0 flex items-center justify-center p-4">
-			<div class="sw-glass sw-cheat-sheet-panel relative w-full max-w-md rounded-xl shadow-2xl">
+			<div class="sw-glass sw-cheat-sheet-panel relative w-full max-w-md shadow-2xl">
 				<div class="sw-cheat-sheet-divider flex items-center justify-between border-b px-6 py-4">
-					<h2 id="cheat-sheet-title" class="text-base font-semibold text-gray-900 dark:text-gray-100">
+					<h2 id="cheat-sheet-title" class="text-base font-semibold sw-cheat-sheet-title">
 						Keyboard Shortcuts
 					</h2>
 					<button
 						type="button"
 						id="cheat-sheet-close"
 						aria-label="Close keyboard shortcuts"
-						class="rounded p-1 text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 dark:focus:ring-gray-300"
+						class="sw-cheat-sheet-close"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<line x1="18" y1="6" x2="6" y2="18"></line>
@@ -122,13 +122,13 @@ templ CheatSheetModal() {
 						var group = groups[key];
 						if (!group.length) continue;
 						html += '<div>';
-						html += '<h3 style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--sw-content-text-secondary);margin-bottom:0.5rem">';
+						html += '<h3 style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--flyout-ink-2);margin-bottom:0.5rem">';
 						html += esc(labels[key]) + '</h3>';
 						html += '<dl style="display:flex;flex-direction:column;gap:0.25rem">';
 						for (var j = 0; j < group.length; j++) {
 							var item = group[j];
 							html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">';
-							html += '<dt style="font-size:0.875rem;color:var(--sw-content-text)">' + esc(item.label) + '</dt>';
+							html += '<dt style="font-size:0.875rem;color:var(--flyout-ink)">' + esc(item.label) + '</dt>';
 							html += '<dd style="margin:0"><kbd class="sw-kbd">' + esc(item.key) + '</kbd></dd>';
 							html += '</div>';
 						}
