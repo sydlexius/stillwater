@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -316,10 +317,17 @@ func TestProcessCandidate_UpsertFailIsSkipped(t *testing.T) {
 	}
 
 	listing := stubArtistLister{artists: []artist.Artist{{ID: "a1", Path: dir}}}
-	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	var logBuf strings.Builder
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	if err := scanner.Scan(context.Background()); err != nil {
 		t.Fatalf("Scan must not surface per-file errors: %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "upsert foreign-file entry") {
+		t.Errorf("expected warn log %q; got: %s", "upsert foreign-file entry", logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "listing existing entries for reconcile; skipping clear") {
+		t.Errorf("expected warn log %q; got: %s", "listing existing entries for reconcile; skipping clear", logBuf.String())
 	}
 }
 
@@ -378,12 +386,16 @@ func TestScanArtist_DeleteByPathErrorLogged(t *testing.T) {
 	}
 
 	listing := stubArtistLister{artists: []artist.Artist{{ID: "a1", Path: dir}}}
-	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	var logBuf strings.Builder
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	// Scan must survive a DeleteByPath error -- the row is left in place
 	// and the scan continues without returning an error.
 	if err := scanner.Scan(context.Background()); err != nil {
 		t.Fatalf("Scan must not surface reconcile-delete errors: %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "clearing missing-file foreign-file row failed") {
+		t.Errorf("expected warn log %q; got: %s", "clearing missing-file foreign-file row failed", logBuf.String())
 	}
 	// The trigger prevented the delete, so the row must still be present.
 	if _, err := db.Exec(`DROP TRIGGER block_delete`); err != nil {
