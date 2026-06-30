@@ -2,7 +2,6 @@ package scraper
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -344,8 +343,8 @@ type providerResult struct {
 }
 
 // getProviderResult fetches and caches results from a single provider.
-//
-//nolint:gocognit // Same per-provider lookup-precedence ladder and ErrNotFound-vs-transient distinction as provider.Orchestrator.getProviderResult (cog 34 each); kept as a near-duplicate so the scraper-aware path stays decoupled from the legacy orchestrator path during the executor migration. The consolidation belongs with the orchestrator twin; refactor tracked in #1554.
+// Cache check and registry lookup happen here; the per-provider fetch logic
+// is shared with the orchestrator via provider.FetchProviderResult.
 func (e *Executor) getProviderResult(
 	ctx context.Context,
 	name provider.ProviderName,
@@ -370,130 +369,14 @@ func (e *Executor) getProviderResult(
 		return pr
 	}
 
-	pr := &providerResult{}
-
-	// aimdRateLimitErr records the first rate-limit / provider-unavailable error
-	// encountered across both GetArtist and GetImages within this single provider
-	// call. It is used to emit exactly ONE AIMD signal at the end of the function:
-	// RecordFailure if a rate-limit error was seen, RecordSuccess if results were
-	// returned without a rate-limit error. Ordinary errors (ErrNotFound, auth/401,
-	// JSON parse, context cancellation) are not AIMD signals.
-	var aimdRateLimitErr error
-	// aimdGotResult is true when at least one of GetArtist or GetImages returned
-	// a useful (non-error) result. Used to decide whether RecordSuccess is warranted.
-	aimdGotResult := false
-
-	// Lookup precedence: provider-specific ID > MBID > artist name.
-	usedProviderID := false
-	id := mbid
-	if pid, ok := providerIDs[name]; ok && pid != "" {
-		id = pid
-		usedProviderID = true
-	} else if id == "" {
-		id = artistName
+	fetched := provider.FetchProviderResult(ctx, p, name, mbid, artistName, providerIDs, e.logger, e.aimd)
+	pr := &providerResult{
+		meta:            fetched.Meta(),
+		images:          fetched.Images(),
+		err:             fetched.Err(),
+		imageErr:        fetched.ImageErr(),
+		imagesAttempted: fetched.ImagesAttempted(),
 	}
-
-	// queryID tracks the identifier actually passed to the most recent
-	// GetArtist call. It may differ from id after a name-based retry.
-	queryID := id
-
-	if id != "" {
-		meta, err := p.GetArtist(ctx, id)
-		// If we used an MBID (not a provider-specific ID) and the provider
-		// returned not-found, retry with the artist name -- but only for
-		// providers that support name lookups (e.g. Genius, Last.fm).
-		if err != nil && !usedProviderID && mbid != "" && artistName != "" {
-			var notFound *provider.ErrNotFound
-			if errors.As(err, &notFound) {
-				if nlp, ok := p.(provider.NameLookupProvider); ok && nlp.SupportsNameLookup() {
-					e.logger.Debug("retrying with artist name after MBID not-found",
-						slog.String("provider", string(name)),
-						slog.String("name", artistName))
-					queryID = artistName
-					meta, err = p.GetArtist(ctx, artistName)
-				}
-			}
-		}
-		if err != nil {
-			// ErrNotFound means the provider was reached and definitively said
-			// "no data". Treat this as a successful query (no error) so the
-			// field is marked as attempted and stale data can be cleared.
-			// Transient failures (timeouts, 5xx) remain as real errors.
-			var notFound *provider.ErrNotFound
-			if errors.As(err, &notFound) {
-				e.logger.Debug("provider has no data for artist",
-					slog.String("provider", string(name)),
-					slog.String("id", queryID))
-			} else {
-				e.logger.Debug("provider GetArtist failed",
-					slog.String("provider", string(name)),
-					slog.String("error", err.Error()))
-				pr.err = err
-				// Record the first rate-limit error for the composite AIMD signal.
-				if provider.IsRateLimitError(err) && aimdRateLimitErr == nil {
-					aimdRateLimitErr = err
-				}
-			}
-		} else {
-			pr.meta = meta
-			aimdGotResult = true
-		}
-	}
-
-	// Fetch images using the same precedence: provider ID > MBID.
-	imgID := mbid
-	if pid, ok := providerIDs[name]; ok && pid != "" {
-		imgID = pid
-	}
-	if imgID != "" {
-		images, err := p.GetImages(ctx, imgID)
-		// Mark that GetImages was actually invoked regardless of outcome.
-		// This distinguishes "GetImages was called and returned ErrNotFound"
-		// (imagesAttempted=true, imageErr=nil) from "GetImages was never called
-		// because no ID was available" (imagesAttempted=false).
-		pr.imagesAttempted = true
-		if err != nil {
-			var notFound *provider.ErrNotFound
-			if errors.As(err, &notFound) {
-				e.logger.Debug("provider has no images for artist",
-					slog.String("provider", string(name)),
-					slog.String("id", imgID))
-				// ErrNotFound means the provider was reached and definitively said
-				// "no images". Leave imageErr nil so image fields are marked as
-				// attempted and stale image data can be cleared.
-			} else {
-				e.logger.Warn("provider GetImages failed, preserving existing image data",
-					slog.String("provider", string(name)),
-					slog.String("error", provider.ScrubError(err)))
-				// Transient failure: store in imageErr so image fields are NOT
-				// marked as attempted. This prevents clearing existing image data
-				// when the provider was merely unreachable.
-				pr.imageErr = err
-				// Record the first rate-limit error for the composite AIMD signal.
-				if provider.IsRateLimitError(err) && aimdRateLimitErr == nil {
-					aimdRateLimitErr = err
-				}
-			}
-		} else {
-			pr.images = images
-			aimdGotResult = true
-		}
-	}
-
-	// Emit exactly ONE AIMD signal per provider call:
-	//   - RecordFailure when a rate-limit / provider-unavailable error was seen.
-	//   - RecordSuccess when at least one sub-call (GetArtist or GetImages)
-	//     returned a useful result and no rate-limit error was recorded.
-	// Ordinary errors (ErrNotFound, auth, JSON parse, context cancel) are NOT
-	// AIMD signals and neither case fires for them.
-	if e.aimd != nil {
-		if aimdRateLimitErr != nil {
-			e.aimd.RecordFailure(name, provider.RetryAfterDuration(aimdRateLimitErr))
-		} else if aimdGotResult {
-			e.aimd.RecordSuccess(name)
-		}
-	}
-
 	mu.Lock()
 	cache[name] = pr
 	mu.Unlock()

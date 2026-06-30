@@ -183,7 +183,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 
 	// Cache provider results to avoid duplicate calls
 	var mu sync.Mutex
-	cache := make(map[ProviderName]*providerResult)
+	cache := make(map[ProviderName]*ProviderResult)
 
 	for _, pri := range priorities {
 		queried := false
@@ -492,16 +492,10 @@ func (o *Orchestrator) imageProvidersInPriorityOrder(ctx context.Context) ([]Pro
 	return ordered, nil
 }
 
-type providerResult struct {
-	meta            *ArtistMetadata
-	images          []ImageResult
-	err             error
-	imageErr        error // non-nil when GetImages returned a transient error (not ErrNotFound)
-	imagesAttempted bool  // true whenever GetImages was actually invoked, regardless of outcome
-}
-
-//nolint:gocognit // Per-provider cached fetch with lookup-precedence ladder (provider ID > MBID > name), name-based retry only when MBID-not-found AND the provider implements NameLookupProvider, plus ErrNotFound-vs-transient distinction for both GetArtist and GetImages so stale data is cleared on a definitive miss but preserved on a transient failure. Near-identical to scraper.Executor.getProviderResult (cog 34 each); the consolidation is a peripheral concern but worth tracking; refactor tracked in #1554.
-func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName, mbid string, artistName string, providerIDs map[ProviderName]string, cache map[ProviderName]*providerResult, mu *sync.Mutex) *providerResult {
+// getProviderResult fetches and caches results from a single provider.
+// Cache check and registry lookup happen here; the per-provider fetch logic
+// is shared with the scraper executor via FetchProviderResult.
+func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName, mbid string, artistName string, providerIDs map[ProviderName]string, cache map[ProviderName]*ProviderResult, mu *sync.Mutex) *ProviderResult {
 	mu.Lock()
 	if pr, ok := cache[name]; ok {
 		mu.Unlock()
@@ -511,141 +505,14 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 
 	p := o.registry.Get(name)
 	if p == nil {
-		pr := &providerResult{err: fmt.Errorf("provider %s not registered", name)}
+		pr := &ProviderResult{err: fmt.Errorf("provider %s not registered", name)}
 		mu.Lock()
 		cache[name] = pr
 		mu.Unlock()
 		return pr
 	}
 
-	pr := &providerResult{}
-
-	// aimdRateLimitErr records the first rate-limit / provider-unavailable error
-	// encountered across both GetArtist and GetImages within this single provider
-	// call. It is used to emit exactly ONE AIMD signal at the end of the function:
-	// RecordFailure if a rate-limit error was seen, RecordSuccess if results were
-	// returned without a rate-limit error. Ordinary errors (ErrNotFound, auth/401,
-	// JSON parse, context cancellation) are not AIMD signals.
-	var aimdRateLimitErr error
-	// aimdGotResult is true when at least one of GetArtist or GetImages returned
-	// a useful (non-error) result. Used to decide whether RecordSuccess is warranted.
-	aimdGotResult := false
-
-	// Lookup precedence: provider-specific ID > MBID > artist name.
-	// Providers like AudioDB, Discogs, and Deezer have their own numeric IDs
-	// that are more reliable than passing an MBID they may not recognize.
-	usedProviderID := false
-	id := mbid
-	if pid, ok := providerIDs[name]; ok && pid != "" {
-		id = pid
-		usedProviderID = true
-	} else if id == "" {
-		id = artistName
-	}
-
-	// queryID tracks the identifier actually passed to the most recent
-	// GetArtist call. It may differ from id after a name-based retry.
-	queryID := id
-
-	if id != "" {
-		meta, err := p.GetArtist(ctx, id)
-		// If we used an MBID (not a provider-specific ID) and the provider
-		// returned not-found, retry with the artist name -- but only for
-		// providers that support name lookups (e.g. Genius, Last.fm).
-		if err != nil && !usedProviderID && mbid != "" && artistName != "" {
-			var notFound *ErrNotFound
-			if errors.As(err, &notFound) {
-				if nlp, ok := p.(NameLookupProvider); ok && nlp.SupportsNameLookup() {
-					o.logger.Debug("retrying with artist name after MBID not-found",
-						slog.String("provider", string(name)),
-						slog.String("name", artistName))
-					queryID = artistName
-					meta, err = p.GetArtist(ctx, artistName)
-				}
-			}
-		}
-		if err != nil {
-			// ErrNotFound means the provider was reached and definitively said
-			// "no data". Treat this as a successful query (no error) so the
-			// field is marked as attempted and stale data can be cleared.
-			// Transient failures (timeouts, 5xx) remain as real errors.
-			var notFound *ErrNotFound
-			if errors.As(err, &notFound) {
-				o.logger.Debug("provider has no data for artist",
-					slog.String("provider", string(name)),
-					slog.String("id", queryID))
-			} else {
-				o.logger.Debug("provider GetArtist failed",
-					slog.String("provider", string(name)),
-					slog.String("error", ScrubError(err)),
-					retryAfterAttr(err))
-				pr.err = err
-				// Record the first rate-limit error for the composite AIMD signal.
-				if IsRateLimitError(err) && aimdRateLimitErr == nil {
-					aimdRateLimitErr = err
-				}
-			}
-		} else {
-			pr.meta = meta
-			aimdGotResult = true
-		}
-	}
-
-	// Fetch images using the same precedence: provider ID > MBID.
-	imgID := mbid
-	if pid, ok := providerIDs[name]; ok && pid != "" {
-		imgID = pid
-	}
-	if imgID != "" {
-		images, err := p.GetImages(ctx, imgID)
-		// Mark that GetImages was actually invoked regardless of outcome.
-		// This distinguishes "GetImages was called and returned ErrNotFound"
-		// (imagesAttempted=true, imageErr=nil) from "GetImages was never called
-		// because no ID was available" (imagesAttempted=false).
-		pr.imagesAttempted = true
-		if err != nil {
-			var notFound *ErrNotFound
-			if errors.As(err, &notFound) {
-				o.logger.Debug("provider has no images for artist",
-					slog.String("provider", string(name)),
-					slog.String("id", imgID))
-				// ErrNotFound means the provider was reached and definitively said
-				// "no images". Leave imageErr nil so image fields are marked as
-				// attempted and stale image data can be cleared.
-			} else {
-				o.logger.Warn("provider GetImages failed, preserving existing image data",
-					slog.String("provider", string(name)),
-					slog.String("error", ScrubError(err)),
-					retryAfterAttr(err))
-				// Transient failure: store in imageErr so image fields are NOT
-				// marked as attempted. This prevents clearing existing image data
-				// when the provider was merely unreachable.
-				pr.imageErr = err
-				// Record the first rate-limit error for the composite AIMD signal.
-				if IsRateLimitError(err) && aimdRateLimitErr == nil {
-					aimdRateLimitErr = err
-				}
-			}
-		} else {
-			pr.images = images
-			aimdGotResult = true
-		}
-	}
-
-	// Emit exactly ONE AIMD signal per provider call:
-	//   - RecordFailure when a rate-limit / provider-unavailable error was seen.
-	//   - RecordSuccess when at least one sub-call (GetArtist or GetImages)
-	//     returned a useful result and no rate-limit error was recorded.
-	// Ordinary errors (ErrNotFound, auth, JSON parse, context cancel) are NOT
-	// AIMD signals and neither case fires for them.
-	if o.aimd != nil {
-		if aimdRateLimitErr != nil {
-			o.aimd.RecordFailure(name, RetryAfterDuration(aimdRateLimitErr))
-		} else if aimdGotResult {
-			o.aimd.RecordSuccess(name)
-		}
-	}
-
+	pr := FetchProviderResult(ctx, p, name, mbid, artistName, providerIDs, o.logger, o.aimd)
 	mu.Lock()
 	cache[name] = pr
 	mu.Unlock()
@@ -665,7 +532,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 // Each helper below mirrors one arm of the original switch. `matched` follows
 // the original early-return semantics exactly: any case arm that took the
 // `return ...` statement counts as matched.
-type fieldApplier func(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool)
+type fieldApplier func(result *FetchResult, field string, pr *ProviderResult, source ProviderName) (populated, matched bool)
 
 // scalarFieldAccessor describes how to read/write one of the simple scalar
 // "set-if-empty" fields handled by applyField. The pattern is identical for
@@ -712,7 +579,7 @@ var scalarFieldAccessors = map[string]scalarFieldAccessor{
 // when meta has data and result is still empty. matched is true only when the
 // populate condition held, mirroring the original switch arms which only took
 // the early-return when both sides were ready.
-func applyScalarField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func applyScalarField(result *FetchResult, field string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	acc, ok := scalarFieldAccessors[field]
 	if !ok {
 		return false, false
@@ -730,7 +597,7 @@ func applyScalarField(result *FetchResult, field string, pr *providerResult, sou
 // still empty, skipping known junk strings via IsJunkBiography. matched is
 // true only when the populate condition held (matching the original switch
 // arm's early-return semantics).
-func applyBiography(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func applyBiography(result *FetchResult, _ string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	meta := pr.meta
 	if meta.Biography == "" || result.Metadata.Biography != "" || IsJunkBiography(meta.Biography) {
 		return false, false
@@ -780,7 +647,7 @@ var tagSliceFieldAccessors = map[string]tagSliceFieldAccessor{
 // merge in this path. When the config is nil (no setting stored) or the
 // exclude list is empty with no cap, the filter is a no-op and output is
 // identical to the pre-filter result.
-func applyTagSliceField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func applyTagSliceField(result *FetchResult, field string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	acc, ok := tagSliceFieldAccessors[field]
 	if !ok {
 		return false, false
@@ -811,7 +678,7 @@ func applyTagSliceField(result *FetchResult, field string, pr *providerResult, s
 // applyMembers copies the members list from meta when result has none. The
 // members field is first-write-wins (no merge across providers) because each
 // provider returns a complete band roster.
-func applyMembers(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func applyMembers(result *FetchResult, _ string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	meta := pr.meta
 	if len(meta.Members) == 0 || len(result.Metadata.Members) != 0 {
 		return false, false
@@ -825,7 +692,7 @@ func applyMembers(result *FetchResult, _ string, pr *providerResult, source Prov
 // non-individual type (group, orchestra, choir) also clears any previously
 // applied gender value and its provenance, mirroring the scraper-executor
 // normalization path.
-func applyType(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func applyType(result *FetchResult, _ string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	meta := pr.meta
 	if meta.Type == "" || result.Metadata.Type != "" {
 		return false, false
@@ -842,7 +709,7 @@ func applyType(result *FetchResult, _ string, pr *providerResult, source Provide
 // applyGender copies gender from meta when result has none AND the accumulated
 // type either is empty (unknown) or refers to an individual.
 // Group/orchestra/choir types do not carry gender.
-func applyGender(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func applyGender(result *FetchResult, _ string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	meta := pr.meta
 	if meta.Gender == "" || result.Metadata.Gender != "" {
 		return false, false
@@ -860,7 +727,7 @@ func applyGender(result *FetchResult, _ string, pr *providerResult, source Provi
 // the field source is recorded only for the first contributor so
 // MetadataSources reflects the highest-priority provider. matched mirrors the
 // original switch arm: only true when at least one matching image was found.
-func applyImageField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func applyImageField(result *FetchResult, field string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	imgType := fieldToImageType(field)
 	found := false
 	for _, img := range pr.images {
@@ -895,7 +762,7 @@ var fieldAppliers = map[string]fieldApplier{
 // dispatchFieldApplier routes the field to its specific applier or to the
 // scalar / tag-slice generic helpers. Unknown fields return matched=false so
 // the caller falls through to the provider-ID merge tail.
-func dispatchFieldApplier(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+func dispatchFieldApplier(result *FetchResult, field string, pr *ProviderResult, source ProviderName) (populated, matched bool) {
 	if fn, ok := fieldAppliers[field]; ok {
 		return fn(result, field, pr, source)
 	}
@@ -979,7 +846,7 @@ func mergeProviderIDsAndExtras(result *FetchResult, meta *ArtistMetadata) {
 // canonical name, URLs, and aliases from meta into result. This preserves
 // the pre-refactor early-return / fall-through behavior exactly: a
 // successful field-specific apply does NOT trigger the ID/URL/alias merge.
-func applyField(result *FetchResult, field string, pr *providerResult, source ProviderName) bool {
+func applyField(result *FetchResult, field string, pr *ProviderResult, source ProviderName) bool {
 	if pr.meta == nil {
 		return false
 	}
@@ -1042,7 +909,7 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 	}
 
 	var mu sync.Mutex
-	cache := make(map[ProviderName]*providerResult)
+	cache := make(map[ProviderName]*ProviderResult)
 	var results []FieldProviderResult
 
 	for _, provName := range providers {
