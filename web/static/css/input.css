@@ -6240,7 +6240,10 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   max-height: 100vh;
   overflow-y: auto;
   align-self: flex-start;
-  padding-right: 0.25rem;
+  /* Symmetric padding (was right-only): the rail is a scroll container, so this
+   * padding is what keeps the filter input's at-rest 3px halo from being clipped
+   * at the top/left edges (#2121). */
+  padding: 0.25rem;
   background: var(--sw-glass-bg);
   backdrop-filter: var(--sw-glass-blur);
   -webkit-backdrop-filter: var(--sw-glass-blur);
@@ -6281,14 +6284,17 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border: 1px solid var(--sw-glass-border);
   background: var(--sw-glass-bg);
   color: inherit;
+  /* Soft blue halo at rest: spread only, no solid fill (next/ no-solid-blue
+   * rule), #2120 -> #2121. The rail (.sw-next-settings-rail) is a scroll
+   * container, so its padding (set symmetric below) gives this 3px spread
+   * clearance instead of clipping it. */
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+}
+.dark .sw-next-settings-filter-input {
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
 }
 .sw-next-settings-filter-input:focus {
   border-color: var(--sw-accent-primary);
-  /* Soft blue halo: spread only, no solid fill (next/ no-solid-blue rule). */
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
-}
-.dark .sw-next-settings-filter-input:focus {
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
 }
 .sw-next-settings-filter-input:focus-visible {
   outline: 2px solid var(--sw-accent-primary);
