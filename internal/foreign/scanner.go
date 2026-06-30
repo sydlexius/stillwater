@@ -313,13 +313,34 @@ func (s *Scanner) Scan(ctx context.Context) error {
 	return nil
 }
 
+// candidateAction is the outcome of classifying and processing an on-disk
+// foreign-file candidate during the forward scan pass. All errors collapse to
+// candidateSkip, making the skip-don't-clear blast-radius safeguard explicit
+// at the type level.
+type candidateAction int
+
+const (
+	candidateKeep      candidateAction = iota // has Stillwater provenance or is allowlisted; no action
+	candidateSkip                             // ambiguous error; skip-don't-clear policy
+	candidateRecorded                         // upserted to the alert ledger
+	candidateBaselined                        // admitted to allowlist (baseline mode)
+)
+
+// rowAction is the outcome of re-evaluating a ledger row in the reconcile pass.
+// rowSkip preserves the skip-don't-clear policy on any ambiguous error.
+type rowAction int
+
+const (
+	rowKeep  rowAction = iota // valid foreign file; leave in place
+	rowSkip                   // ambiguous error; skip-don't-clear policy
+	rowClear                  // file gone, allowlisted, or re-provenanced; safe to remove
+)
+
 // scanArtist examines a single artist directory and reconciles the ledger
 // with on-disk reality. Returns (recorded, cleared, skipped, baselined)
 // counts so the caller can roll up Scan-level metrics. When runAsBaseline
 // is true, foreign detections are admitted into the global allowlist
 // instead of being upserted into the foreign_files alert ledger.
-//
-//nolint:gocognit // Foreign-file reconciler (cog 50): reconciles on-disk files against the ledger with skip-don't-clear semantics (ambiguous reads -> skipped, not recorded/cleared, per the proactive-cron blast-radius safeguard). The bucket-selection ladder is essential to the safety policy but the per-file classification could split into a typed classifier helper to ease readability. Refactor tracked in #1549.
 func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline bool) (int, int, int, int) {
 	entries, err := os.ReadDir(a.Path)
 	if err != nil {
@@ -337,123 +358,32 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 	// in a second pass, remove ledger rows whose file is gone.
 	onDisk := map[string]os.DirEntry{}
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if !isForeignCandidate(e.Name()) {
+		if e.IsDir() || !isForeignCandidate(e.Name()) {
 			continue
 		}
 		onDisk[e.Name()] = e
 	}
 
-	recorded := 0
-	baselined := 0
-	// skipped covers files that the per-file pipeline could not classify
-	// because a transient error short-circuited it: a provenance read
-	// failure, a hash failure, an allowlist probe failure, or an upsert
-	// failure. We keep a single counter so the per-scan log can roll up
-	// "how many files did we punt on" rather than the operator inferring
-	// it from the gap between onDisk size and (recorded + baselined). The
-	// reconciliation pass below uses its own skip-don't-clear policy and
-	// is intentionally not folded in here.
-	skipped := 0
+	// skipped counts files the per-file pipeline could not classify due to
+	// a transient error (provenance read, hash, allowlist probe, or upsert).
+	// The reconcile pass uses its own skip-don't-clear policy and is
+	// intentionally not folded into this counter.
+	recorded, baselined, skipped := 0, 0, 0
 	for name, de := range onDisk {
 		if ctx.Err() != nil {
 			return recorded, 0, skipped, baselined
 		}
 		fullPath := filepath.Join(a.Path, name)
-
-		// Provenance is checked before hashing: a Stillwater-managed
-		// image is not foreign and never reaches the allowlist, so on a
-		// steady-state library this skips a full-file read for the
-		// common case.
-		meta, err := img.ReadProvenance(fullPath)
-		if err != nil {
-			s.logger.Warn("read provenance failed; skipping",
-				slog.String("path", fullPath),
-				slog.Any("error", err))
-			skipped++
-			continue
-		}
-		if meta != nil {
-			// Has Stillwater provenance -- not foreign.
-			continue
-		}
-
-		// Hash is computed before the allowlist check because the
-		// allowlist now keys on byte content rather than basename. If
-		// hashing fails (permission, partial write) we skip the file
-		// silently; re-detection on the next scan catches it once the
-		// file is readable.
-		hash, err := hashFile(fullPath)
-		if err != nil {
-			s.logger.Warn("hash file failed; skipping",
-				slog.String("path", fullPath),
-				slog.Any("error", err))
-			skipped++
-			continue
-		}
-
-		allowed, err := s.repo.IsAllowlisted(ctx, a.ID, hash)
-		if err != nil {
-			s.logger.Warn("allowlist check failed; skipping file",
-				slog.String("artist_id", a.ID),
-				slog.String("file", name),
-				slog.Any("error", err))
-			skipped++
-			continue
-		}
-		if allowed {
-			continue
-		}
-
-		var size int64
-		if info, ierr := de.Info(); ierr == nil {
-			size = info.Size()
-		}
-
-		// Baseline mode: admit the file into the global content-hash
-		// allowlist instead of the alert ledger. The OOBE summary panel
-		// will surface the per-scan count as informational copy
-		// ("Found N existing files; recorded as your starting point")
-		// so the user sees a neutral starting state rather than 325
-		// red-banner incidents.
-		if runAsBaseline {
-			allow := AllowlistEntry{
-				Scope:       ScopeGlobal,
-				FileName:    name,
-				ContentHash: hash,
-				Note:        "Recorded during first foreign-file scan baseline",
-			}
-			if err := s.repo.AddAllowlist(ctx, allow); err != nil {
-				s.logger.Warn("baseline: admitting file to allowlist failed",
-					slog.String("artist_id", a.ID),
-					slog.String("file", name),
-					slog.Any("error", err))
-				skipped++
-				continue
-			}
+		switch s.processCandidate(ctx, a, name, de, fullPath, runAsBaseline) {
+		case candidateRecorded:
+			recorded++
+		case candidateBaselined:
 			baselined++
-			continue
-		}
-
-		entry := Entry{
-			ArtistID:    a.ID,
-			FilePath:    fullPath,
-			FileName:    name,
-			ContentHash: hash,
-			SizeBytes:   size,
-			DetectedAt:  time.Now().UTC(),
-		}
-		if err := s.repo.Upsert(ctx, entry); err != nil {
-			s.logger.Warn("upsert foreign-file entry",
-				slog.String("artist_id", a.ID),
-				slog.String("file", name),
-				slog.Any("error", err))
+		case candidateSkip:
 			skipped++
-			continue
+		case candidateKeep:
+			// Stillwater-managed or allowlisted; no ledger action.
 		}
-		recorded++
 	}
 
 	// Reconciliation pass: drop ledger rows whose file is no longer on disk
@@ -469,78 +399,12 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 	cleared := 0
 	for i := range existing {
 		ex := &existing[i]
-		if _, present := onDisk[ex.FileName]; present {
-			// Still on disk; only clear if it has gained provenance OR is
-			// now allowlisted. Both already filtered above (we would have
-			// continued before upserting), but the row may pre-date the
-			// fix, so re-evaluate here.
-			//
-			// Allowlist matching keys on content_hash. Pre-008 rows may
-			// have an empty hash; backfill by rehashing on demand so the
-			// allowlist check has a key to compare against. The next
-			// upsert path (above) writes the hash back so subsequent
-			// scans skip the rehash.
-			hash := ex.ContentHash
-			if hash == "" {
-				h, herr := hashFile(ex.FilePath)
-				if herr != nil {
-					s.logger.Debug("rehash for reconcile failed; leaving row in place",
-						slog.String("artist_id", a.ID),
-						slog.String("file_path", ex.FilePath),
-						slog.Any("error", herr))
-					continue
-				}
-				hash = h
-			}
-			allowed, err := s.repo.IsAllowlisted(ctx, a.ID, hash)
-			if err != nil {
-				// Skip this row; leaving it in place is correct under the
-				// skip-don't-clear policy, but the failure must be visible
-				// so a chronic DB error does not silently freeze the
-				// reconcile loop on every row.
-				s.logger.Warn("checking allowlist for reconcile; leaving row in place",
-					slog.String("artist_id", a.ID),
-					slog.String("file_name", ex.FileName),
-					slog.Any("error", err))
-				continue
-			}
-			if allowed {
-				if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
-					s.logger.Warn("clearing allowlisted foreign-file row failed",
-						slog.String("artist_id", a.ID),
-						slog.String("file_path", ex.FilePath),
-						slog.Any("error", derr))
-				} else {
-					cleared++
-				}
-				continue
-			}
-			meta, perr := img.ReadProvenance(ex.FilePath)
-			if perr != nil {
-				// Same skip-don't-clear policy: an unreadable file may be
-				// transient (mid-write, perm flap). Surface the failure
-				// rather than silently leaving the row stale.
-				s.logger.Warn("reading provenance for reconcile; leaving row in place",
-					slog.String("artist_id", a.ID),
-					slog.String("file_path", ex.FilePath),
-					slog.Any("error", perr))
-				continue
-			}
-			if meta != nil {
-				if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
-					s.logger.Warn("clearing re-provenanced foreign-file row failed",
-						slog.String("artist_id", a.ID),
-						slog.String("file_path", ex.FilePath),
-						slog.Any("error", derr))
-				} else {
-					cleared++
-				}
-			}
+		action, failMsg := s.classifyExisting(ctx, a.ID, ex, onDisk)
+		if action != rowClear {
 			continue
 		}
-		// File is gone from disk -- safe to clear.
 		if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
-			s.logger.Warn("clearing missing-file foreign-file row failed",
+			s.logger.Warn(failMsg,
 				slog.String("artist_id", a.ID),
 				slog.String("file_path", ex.FilePath),
 				slog.Any("error", derr))
@@ -550,6 +414,165 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist, runAsBaseline
 	}
 
 	return recorded, cleared, skipped, baselined
+}
+
+// processCandidate classifies and processes a single on-disk foreign-file
+// candidate. When classification succeeds it performs the relevant persistence
+// action (Upsert or AddAllowlist) before returning. All errors are logged and
+// return candidateSkip, preserving the skip-don't-clear blast-radius safeguard:
+// an ambiguous read MUST NOT silently record or remove anything.
+func (s *Scanner) processCandidate(
+	ctx context.Context, a artist.Artist,
+	name string, de os.DirEntry, fullPath string, runAsBaseline bool,
+) candidateAction {
+	// Provenance is checked before hashing: a Stillwater-managed image is
+	// not foreign and never reaches the allowlist, so on a steady-state
+	// library this skips a full-file read for the common case.
+	meta, err := img.ReadProvenance(fullPath)
+	if err != nil {
+		s.logger.Warn("read provenance failed; skipping",
+			slog.String("path", fullPath),
+			slog.Any("error", err))
+		return candidateSkip
+	}
+	if meta != nil {
+		return candidateKeep // has Stillwater provenance; not foreign
+	}
+
+	// Hash is computed before the allowlist check because the allowlist
+	// keys on byte content rather than basename. If hashing fails
+	// (permission, partial write) we skip; re-detection on the next scan
+	// catches it once the file is readable.
+	hash, err := hashFile(fullPath)
+	if err != nil {
+		s.logger.Warn("hash file failed; skipping",
+			slog.String("path", fullPath),
+			slog.Any("error", err))
+		return candidateSkip
+	}
+
+	allowed, err := s.repo.IsAllowlisted(ctx, a.ID, hash)
+	if err != nil {
+		s.logger.Warn("allowlist check failed; skipping file",
+			slog.String("artist_id", a.ID),
+			slog.String("file", name),
+			slog.Any("error", err))
+		return candidateSkip
+	}
+	if allowed {
+		return candidateKeep
+	}
+
+	var size int64
+	if info, ierr := de.Info(); ierr == nil {
+		size = info.Size()
+	}
+
+	// Baseline mode: admit the file into the global content-hash allowlist
+	// instead of the alert ledger. The OOBE summary panel surfaces the
+	// per-scan count as informational copy ("Found N existing files;
+	// recorded as your starting point") so the user sees a neutral starting
+	// state rather than 325 red-banner incidents.
+	if runAsBaseline {
+		allow := AllowlistEntry{
+			Scope:       ScopeGlobal,
+			FileName:    name,
+			ContentHash: hash,
+			Note:        "Recorded during first foreign-file scan baseline",
+		}
+		if err := s.repo.AddAllowlist(ctx, allow); err != nil {
+			s.logger.Warn("baseline: admitting file to allowlist failed",
+				slog.String("artist_id", a.ID),
+				slog.String("file", name),
+				slog.Any("error", err))
+			return candidateSkip
+		}
+		return candidateBaselined
+	}
+
+	entry := Entry{
+		ArtistID:    a.ID,
+		FilePath:    fullPath,
+		FileName:    name,
+		ContentHash: hash,
+		SizeBytes:   size,
+		DetectedAt:  time.Now().UTC(),
+	}
+	if err := s.repo.Upsert(ctx, entry); err != nil {
+		s.logger.Warn("upsert foreign-file entry",
+			slog.String("artist_id", a.ID),
+			slog.String("file", name),
+			slog.Any("error", err))
+		return candidateSkip
+	}
+	return candidateRecorded
+}
+
+// classifyExisting re-evaluates a single ledger row during the reconcile pass.
+// Returns (rowClear, <log message for delete failure>) when the row should be
+// removed; returns (rowSkip, "") on any ambiguous error, preserving the
+// skip-don't-clear policy; returns (rowKeep, "") when the file is still a
+// valid unallowlisted foreign file.
+func (s *Scanner) classifyExisting(
+	ctx context.Context, artistID string,
+	ex *Entry, onDisk map[string]os.DirEntry,
+) (rowAction, string) {
+	if _, present := onDisk[ex.FileName]; !present {
+		return rowClear, "clearing missing-file foreign-file row failed"
+	}
+
+	// Still on disk; only clear if it has gained provenance OR is now
+	// allowlisted. Both are already filtered in the forward pass, but
+	// the row may pre-date the fix, so re-evaluate here.
+	//
+	// Allowlist matching keys on content_hash. Pre-008 rows may have an
+	// empty hash; backfill by rehashing on demand so the allowlist check
+	// has a key to compare against. The next upsert path writes the hash
+	// back so subsequent scans skip the rehash.
+	hash := ex.ContentHash
+	if hash == "" {
+		h, herr := hashFile(ex.FilePath)
+		if herr != nil {
+			s.logger.Debug("rehash for reconcile failed; leaving row in place",
+				slog.String("artist_id", artistID),
+				slog.String("file_path", ex.FilePath),
+				slog.Any("error", herr))
+			return rowSkip, ""
+		}
+		hash = h
+	}
+
+	allowed, err := s.repo.IsAllowlisted(ctx, artistID, hash)
+	if err != nil {
+		// Skip this row; leaving it in place is correct under the
+		// skip-don't-clear policy, but the failure must be visible
+		// so a chronic DB error does not silently freeze the reconcile loop.
+		s.logger.Warn("checking allowlist for reconcile; leaving row in place",
+			slog.String("artist_id", artistID),
+			slog.String("file_name", ex.FileName),
+			slog.Any("error", err))
+		return rowSkip, ""
+	}
+	if allowed {
+		return rowClear, "clearing allowlisted foreign-file row failed"
+	}
+
+	meta, perr := img.ReadProvenance(ex.FilePath)
+	if perr != nil {
+		// Same skip-don't-clear policy: an unreadable file may be transient
+		// (mid-write, perm flap). Surface the failure rather than silently
+		// leaving the row stale.
+		s.logger.Warn("reading provenance for reconcile; leaving row in place",
+			slog.String("artist_id", artistID),
+			slog.String("file_path", ex.FilePath),
+			slog.Any("error", perr))
+		return rowSkip, ""
+	}
+	if meta != nil {
+		return rowClear, "clearing re-provenanced foreign-file row failed"
+	}
+
+	return rowKeep, ""
 }
 
 // listForArtist returns the existing ledger rows for one artist, used by
