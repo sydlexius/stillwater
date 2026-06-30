@@ -344,41 +344,45 @@ func buildActivityRecentMsg(data map[string]any) string {
 	return strVal(data, "text")
 }
 
-// SubscribeToEventBus registers event bus handlers that convert internal events
-// into SSE events and broadcast them to all connected clients.
-//
-// The mappings slice is flat by design: every per-event message builder
-// lives at file scope (buildScanCompletedMsg etc.) so this function stays
-// under the gocognit lint threshold. Adding a new event type means
-// declaring a build*Msg helper and appending one entry below.
-func (h *SSEHub) SubscribeToEventBus(bus *event.Bus) {
-	mappings := []sseEventMapping{
-		{event.ScanCompleted, "Scan completed", buildScanCompletedMsg},
-		{event.RuleViolation, "New rule violation", buildRuleViolationMsg},
-		{event.BulkCompleted, "Bulk operation completed", buildBulkCompletedMsg},
-		{event.ArtistNew, "New artist discovered", nil},
-		{event.ArtistUpdated, "Artist updated", nil},
-		{event.MetadataFixed, "Metadata fixed", buildMetadataFixedMsg},
-		{event.ConflictChanged, "Conflict state changed", buildConflictChangedMsg},
-		// OperationProgress carries its own structured fields (op_id, label,
-		// processed, total, status) for the ProgressPill renderer. The
-		// Title/Message text is only used as a fallback for clients that
-		// surface unknown events as plain toasts.
-		{event.OperationProgress, "Operation progress", buildOperationProgressMsg},
-		// ConnectionPushFailed Data carries the structured connection +
-		// error_class + artist_name fields; the raw transport error is
-		// deliberately NOT in Data. See internal/publish/notifier.go.
-		{event.ConnectionPushFailed, "Platform push failed", buildConnectionPushFailedMsg},
-		// M55 next-channel events. These are low-volume cross-tab / dashboard
-		// signals; their consumers read the structured Data, so the Title is
-		// only a plain-toast fallback. logs.line / logs.throttled are NOT here
-		// (emitted on the dedicated logs stream in #1338).
-		{event.ActivityRecent, "Recent activity", buildActivityRecentMsg},
-		{event.SettingsChanged, "Settings changed", nil},
-		{event.DashboardActionResolved, "Action resolved", nil},
-	}
+// sseEventMappings is the flat list of event types the SSE hub forwards to
+// browser clients, with their fallback title and optional message builder.
+// Flat by design: every per-event message builder lives at file scope
+// (buildScanCompletedMsg etc.) so SubscribeToEventBus stays under the gocognit
+// lint threshold -- adding a new event type means declaring a build*Msg helper
+// and appending one entry here. Hoisted to package scope so the drift guard
+// (#2009 #12) can assert it stays in sync with event.SSEForwardedTypes and the
+// SSE catalog doc. logs.line / logs.throttled are intentionally absent here --
+// they stream on the dedicated logs endpoint (#1338) -- but are still part of
+// event.SSEForwardedTypes.
+var sseEventMappings = []sseEventMapping{
+	{event.ScanCompleted, "Scan completed", buildScanCompletedMsg},
+	{event.RuleViolation, "New rule violation", buildRuleViolationMsg},
+	{event.BulkCompleted, "Bulk operation completed", buildBulkCompletedMsg},
+	{event.ArtistNew, "New artist discovered", nil},
+	{event.ArtistUpdated, "Artist updated", nil},
+	{event.MetadataFixed, "Metadata fixed", buildMetadataFixedMsg},
+	{event.ConflictChanged, "Conflict state changed", buildConflictChangedMsg},
+	// OperationProgress carries its own structured fields (op_id, label,
+	// processed, total, status) for the ProgressPill renderer. The
+	// Title/Message text is only a fallback for clients that surface unknown
+	// events as plain toasts.
+	{event.OperationProgress, "Operation progress", buildOperationProgressMsg},
+	// ConnectionPushFailed Data carries the structured connection +
+	// error_class + artist_name fields; the raw transport error is
+	// deliberately NOT in Data. See internal/publish/notifier.go.
+	{event.ConnectionPushFailed, "Platform push failed", buildConnectionPushFailedMsg},
+	// M55 next-channel events: low-volume cross-tab / dashboard signals whose
+	// consumers read the structured Data, so the Title is a plain-toast fallback.
+	{event.ActivityRecent, "Recent activity", buildActivityRecentMsg},
+	{event.SettingsChanged, "Settings changed", nil},
+	{event.DashboardActionResolved, "Action resolved", nil},
+}
 
-	for _, m := range mappings {
+// SubscribeToEventBus registers event bus handlers that convert internal events
+// into SSE events and broadcast them to all connected clients. The forwarded
+// set is sseEventMappings (kept in sync with event.SSEForwardedTypes).
+func (h *SSEHub) SubscribeToEventBus(bus *event.Bus) {
+	for _, m := range sseEventMappings {
 		m := m // capture loop variable
 		bus.Subscribe(m.eventType, func(e event.Event) {
 			msg := ""
