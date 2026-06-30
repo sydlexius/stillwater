@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // openapi_route_coverage_test.go is #2009 #5: a bidirectional route<->spec
@@ -57,7 +59,10 @@ func writeRouteIgnore(path string, keys []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	// Route the in-place rewrite of the tracked fixture through the repo's
+	// atomic tmp/bak/rename helper so an interrupted regeneration can't leave
+	// testdata/openapi-route-ignore.json truncated or invalid.
+	return filesystem.WriteFileAtomic(path, append(data, '\n'), 0o644)
 }
 
 func TestOpenAPIRouteCoverage(t *testing.T) {
