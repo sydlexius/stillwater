@@ -26,12 +26,145 @@ func (r *Router) handleListProviders(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"providers": statuses})
 }
 
+// providerKeyInput holds the parsed result of a set-provider-key request.
+type providerKeyInput struct {
+	APIKey   string
+	SkipTest bool
+}
+
+// buildSpotifyKey encodes a client_id + client_secret pair into the JSON
+// blob Stillwater stores as the Spotify API key.
+func buildSpotifyKey(clientID, clientSecret string) (string, error) {
+	b, err := json.Marshal(map[string]string{
+		"client_id":     clientID,
+		"client_secret": clientSecret,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// parseProviderKeyForm parses a form-encoded set-provider-key request body.
+// Writes an error response and returns (_, false) on any parse failure.
+func parseProviderKeyForm(w http.ResponseWriter, req *http.Request, name provider.ProviderName) (providerKeyInput, bool) {
+	if err := req.ParseForm(); err != nil {
+		writeError(w, req, http.StatusBadRequest, "invalid form data")
+		return providerKeyInput{}, false
+	}
+	apiKey := req.FormValue("api_key")
+	skipTest := req.FormValue("skip_test") == "true"
+	// Spotify uses two fields (client_id + client_secret) combined as JSON.
+	if name == provider.NameSpotify && apiKey == "" {
+		clientID := req.FormValue("client_id")
+		clientSecret := req.FormValue("client_secret")
+		if clientID != "" && clientSecret != "" {
+			key, err := buildSpotifyKey(clientID, clientSecret)
+			if err != nil {
+				writeError(w, req, http.StatusInternalServerError, "failed to encode credentials")
+				return providerKeyInput{}, false
+			}
+			apiKey = key
+		}
+	}
+	return providerKeyInput{APIKey: apiKey, SkipTest: skipTest}, true
+}
+
+// parseProviderKeyJSON parses a JSON-encoded set-provider-key request body.
+// Writes an error response and returns (_, false) on any parse failure.
+func parseProviderKeyJSON(w http.ResponseWriter, req *http.Request, name provider.ProviderName) (providerKeyInput, bool) {
+	var body struct {
+		APIKey       string `json:"api_key"`
+		SkipTest     bool   `json:"skip_test"`
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeError(w, req, http.StatusBadRequest, "invalid request body")
+		return providerKeyInput{}, false
+	}
+	apiKey := body.APIKey
+	// Spotify: combine client_id + client_secret into JSON when api_key absent.
+	if name == provider.NameSpotify && apiKey == "" && body.ClientID != "" && body.ClientSecret != "" {
+		key, err := buildSpotifyKey(body.ClientID, body.ClientSecret)
+		if err != nil {
+			writeError(w, req, http.StatusInternalServerError, "failed to encode credentials")
+			return providerKeyInput{}, false
+		}
+		apiKey = key
+	}
+	return providerKeyInput{APIKey: apiKey, SkipTest: body.SkipTest}, true
+}
+
+// parseProviderKeyInput dispatches to parseProviderKeyForm or parseProviderKeyJSON
+// based on Content-Type. Returns (input, true) on success; writes an error response
+// and returns (_, false) on failure.
+func parseProviderKeyInput(w http.ResponseWriter, req *http.Request, name provider.ProviderName) (providerKeyInput, bool) {
+	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		return parseProviderKeyForm(w, req, name)
+	}
+	return parseProviderKeyJSON(w, req, name)
+}
+
+// testProviderKeyFailed runs a connection test for the given apiKey.
+// Returns true and writes the appropriate error response if the test fails.
+// Returns false when the test passes or the provider is not testable.
+func (r *Router) testProviderKeyFailed(w http.ResponseWriter, req *http.Request, name provider.ProviderName, apiKey string, isOOBE bool) bool {
+	p := r.providerRegistry.Get(name)
+	if p == nil {
+		return false
+	}
+	testable, ok := p.(provider.TestableProvider)
+	if !ok {
+		return false
+	}
+	testCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+	defer cancel()
+	testCtx = provider.WithAPIKeyOverride(testCtx, name, apiKey)
+	testErr := testable.TestConnection(testCtx)
+	if testErr == nil {
+		return false
+	}
+	r.logger.Error("provider key test failed before save", "provider", name, "error", testErr)
+	const sanitizedMsg = "Unable to verify provider credentials"
+	if isHTMXRequest(req) {
+		if isOOBE {
+			w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
+			w.Header().Set("HX-Reswap", "outerHTML")
+		} else {
+			w.Header().Set("HX-Retarget", "#provider-save-result-"+string(name))
+			w.Header().Set("HX-Reswap", "innerHTML")
+		}
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, sanitizedMsg, isOOBE))
+		return true
+	}
+	writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+		"status": "test_failed",
+		"error":  sanitizedMsg,
+	})
+	return true
+}
+
+// persistProviderKeyStatus records "ok" test status after a successful save.
+// Only writes if the provider is testable; non-fatal on error.
+func (r *Router) persistProviderKeyStatus(ctx context.Context, name provider.ProviderName) {
+	p := r.providerRegistry.Get(name)
+	if p == nil {
+		return
+	}
+	if _, ok := p.(provider.TestableProvider); !ok {
+		return
+	}
+	if err := r.providerSettings.SetKeyStatus(ctx, name, "ok"); err != nil {
+		r.logger.Error("setting key status after save", "provider", name, "error", err)
+	}
+}
+
 // handleSetProviderKey stores an encrypted API key for a provider.
 // By default, the key is tested before saving. If the test fails, an error is
 // returned with a "Save anyway" option (skip_test=true). Supports both JSON
 // body and form-encoded data (for HTMX forms).
-//
-//nolint:gocognit // Set-provider-key handler (cog 58): content-type-dependent input parsing (JSON vs form), provider-by-name dispatch for the test call, encrypted persistence with "save anyway" fallback, and HTMX-aware response shaping (full JSON vs partial render); the parse/test/persist/respond pipeline could be sliced into named stages while keeping the single-flight semantics. Refactor tracked in #1547.
 func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	if !isValidProviderName(name) {
@@ -39,120 +172,38 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	var apiKey string
-	var skipTest bool
-	contentType := req.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
-		if err := req.ParseForm(); err != nil {
-			writeError(w, req, http.StatusBadRequest, "invalid form data")
-			return
-		}
-		apiKey = req.FormValue("api_key")
-		skipTest = req.FormValue("skip_test") == "true"
-		// Spotify uses two fields (client_id + client_secret) combined as JSON
-		if name == provider.NameSpotify && apiKey == "" {
-			clientID := req.FormValue("client_id")
-			clientSecret := req.FormValue("client_secret")
-			if clientID != "" && clientSecret != "" {
-				combined, err := json.Marshal(map[string]string{
-					"client_id":     clientID,
-					"client_secret": clientSecret,
-				})
-				if err != nil {
-					writeError(w, req, http.StatusInternalServerError, "failed to encode credentials")
-					return
-				}
-				apiKey = string(combined)
-			}
-		}
-	} else {
-		var body struct {
-			APIKey       string `json:"api_key"`
-			SkipTest     bool   `json:"skip_test"`
-			ClientID     string `json:"client_id"`
-			ClientSecret string `json:"client_secret"`
-		}
-		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-			writeError(w, req, http.StatusBadRequest, "invalid request body")
-			return
-		}
-		apiKey = body.APIKey
-		skipTest = body.SkipTest
-		// Spotify: combine client_id + client_secret into JSON
-		if name == provider.NameSpotify && apiKey == "" && body.ClientID != "" && body.ClientSecret != "" {
-			combined, err := json.Marshal(map[string]string{
-				"client_id":     body.ClientID,
-				"client_secret": body.ClientSecret,
-			})
-			if err != nil {
-				writeError(w, req, http.StatusInternalServerError, "failed to encode credentials")
-				return
-			}
-			apiKey = string(combined)
-		}
+	input, ok := parseProviderKeyInput(w, req, name)
+	if !ok {
+		return
 	}
 
-	if name == provider.NameSpotify && apiKey == "" {
+	if name == provider.NameSpotify && input.APIKey == "" {
 		writeError(w, req, http.StatusBadRequest, "both client_id and client_secret are required for Spotify")
 		return
 	}
 
-	if apiKey == "" {
+	if input.APIKey == "" {
 		writeError(w, req, http.StatusBadRequest, "api_key is required")
 		return
 	}
 
 	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
 
-	// Test-before-save: if the provider supports testing, verify the key works
-	// before persisting it. On failure, offer "Save anyway" (skip_test).
-	if !skipTest {
-		if p := r.providerRegistry.Get(name); p != nil {
-			if testable, ok := p.(provider.TestableProvider); ok {
-				testCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
-				defer cancel()
-				testCtx = provider.WithAPIKeyOverride(testCtx, name, apiKey)
-				if testErr := testable.TestConnection(testCtx); testErr != nil {
-					r.logger.Error("provider key test failed before save", "provider", name, "error", testErr)
-					sanitizedMsg := "Unable to verify provider credentials"
-					if isHTMXRequest(req) {
-						if isOOBE {
-							w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
-							w.Header().Set("HX-Reswap", "outerHTML")
-						} else {
-							w.Header().Set("HX-Retarget", "#provider-save-result-"+string(name))
-							w.Header().Set("HX-Reswap", "innerHTML")
-						}
-						w.WriteHeader(http.StatusUnprocessableEntity)
-						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, sanitizedMsg, isOOBE))
-						return
-					}
-					writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
-						"status": "test_failed",
-						"error":  sanitizedMsg,
-					})
-					return
-				}
-			}
-		}
+	// Test-before-save: verify the key works before persisting it.
+	// On failure, offer "Save anyway" (skip_test=true).
+	if !input.SkipTest && r.testProviderKeyFailed(w, req, name, input.APIKey, isOOBE) {
+		return
 	}
 
-	if err := r.providerSettings.SetAPIKey(req.Context(), name, apiKey); err != nil {
+	if err := r.providerSettings.SetAPIKey(req.Context(), name, input.APIKey); err != nil {
 		r.logger.Error("setting provider API key", "provider", name, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to save API key")
 		return
 	}
 
-	// Persist test status: "ok" if we tested successfully, leave as "untested"
-	// if we skipped the test or if the provider is not testable.
-	if !skipTest {
-		if p := r.providerRegistry.Get(name); p != nil {
-			if _, ok := p.(provider.TestableProvider); ok {
-				if err := r.providerSettings.SetKeyStatus(req.Context(), name, "ok"); err != nil {
-					r.logger.Error("setting key status after save", "provider", name, "error", err)
-				}
-			}
-		}
+	// Persist "ok" test status only when the test was not skipped.
+	if !input.SkipTest {
+		r.persistProviderKeyStatus(req.Context(), name)
 	}
 
 	// For HTMX requests, re-render the provider card with updated status.

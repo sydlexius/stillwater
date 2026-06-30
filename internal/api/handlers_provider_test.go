@@ -610,6 +610,373 @@ func TestHandleSetProviderConfig_NoVerbosityProvider(t *testing.T) {
 	}
 }
 
+// testRouterWithTestServer creates a router with musicbrainz registered and its
+// base URL set to srvURL (a loopback httptest.Server URL).
+func testRouterWithTestServer(t *testing.T, srvURL string) *Router {
+	t.Helper()
+	r := testRouterWithMirror(t)
+	p := r.providerRegistry.Get(provider.NameMusicBrainz)
+	p.(provider.MirrorableProvider).SetBaseURL(srvURL)
+	return r
+}
+
+// TestHandleSetProviderKey_JSON tests the JSON-body happy path for a provider
+// not in the registry (no test run), persists the key, and returns JSON.
+func TestHandleSetProviderKey_JSON(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader(`{"api_key":"testkey123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["status"] != "saved" {
+		t.Errorf("status = %q, want %q", resp["status"], "saved")
+	}
+	// Verify the key was persisted.
+	val, err := r.providerSettings.GetAPIKey(context.Background(), provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetAPIKey: %v", err)
+	}
+	if val != "testkey123" {
+		t.Errorf("persisted key = %q, want %q", val, "testkey123")
+	}
+}
+
+// TestHandleSetProviderKey_Form tests the form-encoded body path.
+func TestHandleSetProviderKey_Form(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader("api_key=formkey456&skip_test=true"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestHandleSetProviderKey_HTMX verifies that an HTMX request renders an HTML
+// provider card fragment rather than a JSON response.
+func TestHandleSetProviderKey_HTMX(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader(`{"api_key":"htmxkey"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "<") {
+		t.Errorf("expected HTML response for HTMX request; body: %s", w.Body.String())
+	}
+}
+
+// TestHandleSetProviderKey_InvalidProvider verifies that an unknown provider name
+// returns 400.
+func TestHandleSetProviderKey_InvalidProvider(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/notreal/key",
+		strings.NewReader(`{"api_key":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "notreal")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleSetProviderKey_MissingKey verifies that an empty api_key returns 400.
+func TestHandleSetProviderKey_MissingKey(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader(`{"api_key":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+// TestHandleSetProviderKey_InvalidJSON verifies that a malformed JSON body
+// returns 400.
+func TestHandleSetProviderKey_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader(`not-json`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleSetProviderKey_Spotify_MissingCredentials verifies that a Spotify
+// request with no api_key, client_id, or client_secret returns 400.
+func TestHandleSetProviderKey_Spotify_MissingCredentials(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/spotify/key",
+		strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "spotify")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+// TestHandleSetProviderKey_Spotify_JSON verifies that a Spotify request with
+// client_id + client_secret in JSON is combined and saved.
+func TestHandleSetProviderKey_Spotify_JSON(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	body := `{"client_id":"cid","client_secret":"csec","skip_test":true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/spotify/key",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "spotify")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	// The persisted key should be the JSON blob combining both fields.
+	val, err := r.providerSettings.GetAPIKey(context.Background(), provider.NameSpotify)
+	if err != nil {
+		t.Fatalf("GetAPIKey: %v", err)
+	}
+	var stored map[string]string
+	if err := json.Unmarshal([]byte(val), &stored); err != nil {
+		t.Fatalf("stored key is not JSON: %v; raw: %s", err, val)
+	}
+	if stored["client_id"] != "cid" || stored["client_secret"] != "csec" {
+		t.Errorf("stored key = %v, want {client_id:cid, client_secret:csec}", stored)
+	}
+}
+
+// TestHandleSetProviderKey_Spotify_Form verifies that a Spotify request with
+// client_id + client_secret in a form body is combined and saved.
+func TestHandleSetProviderKey_Spotify_Form(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/spotify/key",
+		strings.NewReader("client_id=cid&client_secret=csec&skip_test=true"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "spotify")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	val, err := r.providerSettings.GetAPIKey(context.Background(), provider.NameSpotify)
+	if err != nil {
+		t.Fatalf("GetAPIKey: %v", err)
+	}
+	var stored map[string]string
+	if err := json.Unmarshal([]byte(val), &stored); err != nil {
+		t.Fatalf("stored key is not JSON: %v; raw: %s", err, val)
+	}
+	if stored["client_id"] != "cid" {
+		t.Errorf("stored client_id = %q, want %q", stored["client_id"], "cid")
+	}
+}
+
+// TestHandleSetProviderKey_SkipTest verifies that skip_test=true saves without
+// running the provider connection test.
+func TestHandleSetProviderKey_SkipTest(t *testing.T) {
+	t.Parallel()
+	// Use musicbrainz (testable) but skip the test -- no mock server needed.
+	r := testRouterWithMirror(t)
+
+	body := `{"api_key":"skipit","skip_test":true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/key",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "musicbrainz")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	// Status should NOT be set to "ok" when test was skipped.
+	status, err := r.providerSettings.GetKeyStatus(context.Background(), provider.NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetKeyStatus: %v", err)
+	}
+	if status == "ok" {
+		t.Errorf("key status = %q after skip_test; want not-ok", status)
+	}
+}
+
+// TestHandleSetProviderKey_TestFails_JSON verifies that a failed connection test
+// returns 422 JSON with test_failed status.
+func TestHandleSetProviderKey_TestFails_JSON(t *testing.T) {
+	t.Parallel()
+	// Server that returns 500 to make TestConnection fail.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r := testRouterWithTestServer(t, srv.URL)
+
+	body := `{"api_key":"badkey"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/key",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "musicbrainz")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["status"] != "test_failed" {
+		t.Errorf("status = %q, want %q", resp["status"], "test_failed")
+	}
+	if resp["error"] == "" {
+		t.Errorf("expected non-empty error message in response")
+	}
+}
+
+// TestHandleSetProviderKey_TestFails_HTMX verifies that a failed connection test
+// with an HTMX request returns 422 with an HTML error fragment.
+func TestHandleSetProviderKey_TestFails_HTMX(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r := testRouterWithTestServer(t, srv.URL)
+
+	body := `{"api_key":"badkey"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/key",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("name", "musicbrainz")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "<") {
+		t.Errorf("expected HTML fragment for HTMX test failure; body: %s", w.Body.String())
+	}
+}
+
+// TestHandleSetProviderKey_TestPasses verifies that a passing connection test
+// saves the key and sets the key status to "ok".
+func TestHandleSetProviderKey_TestPasses(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"created":"2024-01-01T00:00:00.000Z","count":0,"offset":0,"artists":[]}`))
+	}))
+	defer srv.Close()
+
+	r := testRouterWithTestServer(t, srv.URL)
+
+	body := `{"api_key":"goodkey"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/key",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "musicbrainz")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	// Key status must be "ok" after a successful test.
+	status, err := r.providerSettings.GetKeyStatus(context.Background(), provider.NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetKeyStatus: %v", err)
+	}
+	if status != "ok" {
+		t.Errorf("key status = %q, want %q", status, "ok")
+	}
+}
+
+// TestHandleSetProviderKey_TestFails_HTMX_OOBE verifies the OOBE HTMX path uses
+// HX-Retarget headers for the full provider card rather than the inline fragment.
+func TestHandleSetProviderKey_TestFails_HTMX_OOBE(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r := testRouterWithTestServer(t, srv.URL)
+
+	body := `{"api_key":"badkey"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/key",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost/setup/wizard")
+	req.SetPathValue("name", "musicbrainz")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	}
+	if w.Header().Get("HX-Retarget") != "#ob-provider-card-musicbrainz" {
+		t.Errorf("HX-Retarget = %q, want %q",
+			w.Header().Get("HX-Retarget"), "#ob-provider-card-musicbrainz")
+	}
+}
+
 func providersEqual(a, b []provider.ProviderName) bool {
 	if len(a) != len(b) {
 		return false
