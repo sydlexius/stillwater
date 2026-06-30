@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -58,7 +59,23 @@ func TestLocaleCompleteness(t *testing.T) {
 	root := repoRoot(t)
 	en := loadLocaleKeys(t, root, "en")
 
-	for _, loc := range []string{"fr", "ja"} {
+	// Discover the non-English locales from the locales directory rather than
+	// hard-coding them: a newly added locale file must be checked automatically,
+	// otherwise this guard recreates the duplicate-truth problem it exists to
+	// prevent (a new locale silently unguarded until someone edits this slice).
+	localesDir := filepath.Join(root, "internal", "i18n", "locales")
+	entries, err := os.ReadDir(localesDir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", localesDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		loc := strings.TrimSuffix(entry.Name(), ".json")
+		if loc == "en" {
+			continue // en is the canonical key set, not a target.
+		}
 		t.Run(loc, func(t *testing.T) {
 			var orphans []string
 			for k := range loadLocaleKeys(t, root, loc) {
@@ -80,6 +97,23 @@ func TestLocaleCompleteness(t *testing.T) {
 // built keys (t(ctx, "prefix."+x)) are intentionally out of scope.
 var templKeyRE = regexp.MustCompile(`\bt\(ctx,\s*"([^"]+)"\)`)
 
+// stripLineComments removes `//` line comments from templ source so that an
+// example call written in a doc comment (e.g. `// fetched via t(ctx, "key")`)
+// is not mistaken for a real translation call. A `//` immediately preceded by
+// `:` is treated as part of a URL (https://...), not a comment.
+func stripLineComments(src []byte) []byte {
+	lines := strings.Split(string(src), "\n")
+	for i, line := range lines {
+		for j := 0; j+1 < len(line); j++ {
+			if line[j] == '/' && line[j+1] == '/' && (j == 0 || line[j-1] != ':') {
+				lines[i] = line[:j]
+				break
+			}
+		}
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
 // TestTranslationKeysDefined guards #2009 #9 (the used-but-undefined direction):
 // every string-literal key passed to t(ctx, "...") in a templ source must exist
 // in en.json. A missing key renders the bare key string in the UI -- a visible,
@@ -94,31 +128,39 @@ func TestTranslationKeysDefined(t *testing.T) {
 	root := repoRoot(t)
 	en := loadLocaleKeys(t, root, "en")
 
-	templDir := filepath.Join(root, "web", "templates")
 	missing := map[string][]string{} // key -> files referencing it
 
-	err := filepath.WalkDir(templDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || filepath.Ext(path) != ".templ" {
-			return nil
-		}
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(root, path)
-		for _, m := range templKeyRE.FindAllSubmatch(src, -1) {
-			key := string(m[1])
-			if _, ok := en[key]; !ok {
-				missing[key] = append(missing[key], rel)
+	// Scan every templ surface, not just web/templates: web/components holds
+	// reusable templ fragments that also call t(ctx, "..."), so an undefined key
+	// there would otherwise ship unguarded.
+	for _, templDir := range []string{
+		filepath.Join(root, "web", "templates"),
+		filepath.Join(root, "web", "components"),
+	} {
+		err := filepath.WalkDir(templDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
+			if d.IsDir() || filepath.Ext(path) != ".templ" {
+				return nil
+			}
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(root, path)
+			src = stripLineComments(src)
+			for _, m := range templKeyRE.FindAllSubmatch(src, -1) {
+				key := string(m[1])
+				if _, ok := en[key]; !ok {
+					missing[key] = append(missing[key], rel)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walking %s: %v", templDir, err)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking %s: %v", templDir, err)
 	}
 
 	if len(missing) > 0 {
