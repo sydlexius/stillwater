@@ -237,7 +237,7 @@ func TestFetchMetadata_MBNameAuthoritative_EmptyDoesNotClobber(t *testing.T) {
 
 // TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber verifies the
 // override respects provider errors: when MB returns an error (timeout, 5xx,
-// unreachable), its cached providerResult has err != nil and the override
+// unreachable), its cached ProviderResult has err != nil and the override
 // must short-circuit, preserving a Name set by another provider. Without
 // this guard a transient MB outage would erase the artist's Name on every
 // affected refresh.
@@ -1482,7 +1482,7 @@ func TestApplyFieldDetailFields(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.field, func(t *testing.T) {
 			result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
-			pr := &providerResult{meta: &tc.meta}
+			pr := &ProviderResult{meta: &tc.meta}
 			if !applyField(result, tc.field, pr, NameMusicBrainz) {
 				t.Fatalf("applyField(%s) = false, want true", tc.field)
 			}
@@ -1494,7 +1494,7 @@ func TestApplyFieldDetailFields(t *testing.T) {
 				t.Errorf("applyField(%s) source = %v, want provider %s", tc.field, src, NameMusicBrainz)
 			}
 			// Second provider must not overwrite the first-match-wins value.
-			pr2 := &providerResult{meta: &ArtistMetadata{
+			pr2 := &ProviderResult{meta: &ArtistMetadata{
 				Gender: "Female", Type: "solo", YearsActive: "1999", Born: "x",
 				Died: "y", Disbanded: "z", Origin: "Canada",
 			}}
@@ -1517,7 +1517,7 @@ func TestApplyFieldGenderClearedOnNonIndividualType(t *testing.T) {
 	result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
 
 	// First apply gender from one provider.
-	prGender := &providerResult{meta: &ArtistMetadata{Gender: "Female"}}
+	prGender := &ProviderResult{meta: &ArtistMetadata{Gender: "Female"}}
 	if !applyField(result, "gender", prGender, NameMusicBrainz) {
 		t.Fatalf("applyField(gender) = false, want true")
 	}
@@ -1529,7 +1529,7 @@ func TestApplyFieldGenderClearedOnNonIndividualType(t *testing.T) {
 	}
 
 	// Now apply a non-individual type; gender and its provenance must clear.
-	prType := &providerResult{meta: &ArtistMetadata{Type: "group"}}
+	prType := &ProviderResult{meta: &ArtistMetadata{Type: "group"}}
 	if !applyField(result, "type", prType, NameWikidata) {
 		t.Fatalf("applyField(type) = false, want true")
 	}
@@ -1552,7 +1552,7 @@ func TestApplyFieldGenderRejectedWhenTypeNonIndividual(t *testing.T) {
 		Metadata: &ArtistMetadata{Type: "group", URLs: make(map[string]string)},
 		Sources:  []FieldSource{{Field: "type", Provider: NameMusicBrainz}},
 	}
-	pr := &providerResult{meta: &ArtistMetadata{Gender: "Male"}}
+	pr := &ProviderResult{meta: &ArtistMetadata{Gender: "Male"}}
 	if applyField(result, "gender", pr, NameWikidata) {
 		t.Errorf("applyField(gender) = true with non-individual type, want false")
 	}
@@ -1575,8 +1575,8 @@ func TestApplyFieldGenderPreservedForIndividualTypes(t *testing.T) {
 	for _, typ := range []string{"solo", "person", "character"} {
 		t.Run("gender_first_type="+typ, func(t *testing.T) {
 			result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
-			applyField(result, "gender", &providerResult{meta: &ArtistMetadata{Gender: "Female"}}, NameMusicBrainz)
-			applyField(result, "type", &providerResult{meta: &ArtistMetadata{Type: typ}}, NameWikidata)
+			applyField(result, "gender", &ProviderResult{meta: &ArtistMetadata{Gender: "Female"}}, NameMusicBrainz)
+			applyField(result, "type", &ProviderResult{meta: &ArtistMetadata{Type: typ}}, NameWikidata)
 			if result.Metadata.Gender != "Female" {
 				t.Errorf("Gender = %q, want Female (type %q must preserve gender)", result.Metadata.Gender, typ)
 			}
@@ -1589,7 +1589,7 @@ func TestApplyFieldGenderPreservedForIndividualTypes(t *testing.T) {
 				Metadata: &ArtistMetadata{Type: typ, URLs: make(map[string]string)},
 				Sources:  []FieldSource{{Field: "type", Provider: NameMusicBrainz}},
 			}
-			if !applyField(result, "gender", &providerResult{meta: &ArtistMetadata{Gender: "Male"}}, NameWikidata) {
+			if !applyField(result, "gender", &ProviderResult{meta: &ArtistMetadata{Gender: "Male"}}, NameWikidata) {
 				t.Errorf("applyField(gender) = false for individual type %q, want true", typ)
 			}
 			if result.Metadata.Gender != "Male" {
@@ -1606,7 +1606,7 @@ func TestApplyFieldImageTypeFilter(t *testing.T) {
 		Metadata: &ArtistMetadata{URLs: make(map[string]string)},
 	}
 	// Provider has fanart images but no thumb images.
-	pr := &providerResult{
+	pr := &ProviderResult{
 		meta: &ArtistMetadata{Name: "Test"},
 		images: []ImageResult{
 			{URL: "http://example.com/fanart1.jpg", Type: ImageFanart, Source: "test"},
@@ -3320,7 +3320,7 @@ func TestAIMDOrdinaryErrorDoesNotTriggerRecordFailure(t *testing.T) {
 		t.Fatalf("SetAPIKey: %v", err)
 	}
 
-	cache := make(map[ProviderName]*providerResult)
+	cache := make(map[ProviderName]*ProviderResult)
 	var mu sync.Mutex
 	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
 
@@ -3355,7 +3355,7 @@ func TestAIMDRateLimitErrorTriggerRecordFailure(t *testing.T) {
 		},
 	})
 
-	cache := make(map[ProviderName]*providerResult)
+	cache := make(map[ProviderName]*ProviderResult)
 	var mu sync.Mutex
 	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
 
@@ -3385,7 +3385,7 @@ func TestAIMDSingleSignalPerProviderCall(t *testing.T) {
 	})
 
 	// Drive one full getProviderResult call.
-	cache := make(map[ProviderName]*providerResult)
+	cache := make(map[ProviderName]*ProviderResult)
 	var mu sync.Mutex
 	_ = orch.getProviderResult(context.Background(), prov, "mbid-test", "Artist Name", nil, cache, &mu)
 
@@ -3545,7 +3545,7 @@ func TestApplyTagSliceField_VocabFilter(t *testing.T) {
 			Metadata:         &ArtistMetadata{},
 			MetadataVocabCfg: &tagdict.VocabConfig{Exclude: []string{"junk*"}},
 		}
-		pr := &providerResult{meta: &ArtistMetadata{Genres: []string{"Rock", "junk tag", "Pop"}}}
+		pr := &ProviderResult{meta: &ArtistMetadata{Genres: []string{"Rock", "junk tag", "Pop"}}}
 
 		applyTagSliceField(result, "genres", pr, NameMusicBrainz)
 
@@ -3564,7 +3564,7 @@ func TestApplyTagSliceField_VocabFilter(t *testing.T) {
 			Metadata:         &ArtistMetadata{},
 			MetadataVocabCfg: &tagdict.VocabConfig{MaxGenres: 2},
 		}
-		pr := &providerResult{meta: &ArtistMetadata{Genres: []string{"Rock", "Pop", "Jazz", "Blues"}}}
+		pr := &ProviderResult{meta: &ArtistMetadata{Genres: []string{"Rock", "Pop", "Jazz", "Blues"}}}
 
 		applyTagSliceField(result, "genres", pr, NameMusicBrainz)
 
