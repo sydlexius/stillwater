@@ -559,14 +559,10 @@ func wireInfraServices(ctx context.Context, a *Application, db *sql.DB, cfg *con
 // scanner, bulk executor, FSCache invalidator, health subscriber, and dirty
 // subscriber. All services wired here must be initialized before this call.
 func wireEventSubscriptions(a *Application) {
-	for _, eventType := range []event.Type{
-		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
-		event.RuleViolation, event.BulkCompleted, event.ScanCompleted,
-		event.LidarrArtistAdd, event.LidarrDownload,
-		event.EmbyArtistUpdate, event.EmbyLibraryScan,
-		event.JellyfinArtistUpdate, event.JellyfinLibraryScan,
-		event.FSDirCreated, event.FSDirRemoved, event.FSUnexpectedWrite,
-	} {
+	// event.WebhookEventTypes is the single source of truth for the
+	// webhook-eligible event set; the API validates subscriptions and openapi
+	// documents the enum against the same list (#2009 #6).
+	for _, eventType := range event.WebhookEventTypes {
 		a.eventBus.Subscribe(eventType, a.webhookDispatcher.HandleEvent)
 	}
 	a.scannerService.SetEventBus(a.eventBus)

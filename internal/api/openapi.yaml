@@ -653,6 +653,22 @@ components:
           description: Event types this webhook subscribes to.
           items:
             type: string
+            enum:
+              - artist.new
+              - metadata.fixed
+              - review.needed
+              - rule.violation
+              - bulk.completed
+              - scan.completed
+              - lidarr.artist.add
+              - lidarr.download
+              - emby.artist.update
+              - emby.library.scan
+              - jellyfin.artist.update
+              - jellyfin.library.scan
+              - fs.dir.created
+              - fs.dir.removed
+              - fs.unexpected.write
         enabled:
           type: boolean
           description: Whether this webhook is active and will fire on matching events.
@@ -6574,6 +6590,22 @@ paths:
                   type: array
                   items:
                     type: string
+                    enum:
+                      - artist.new
+                      - metadata.fixed
+                      - review.needed
+                      - rule.violation
+                      - bulk.completed
+                      - scan.completed
+                      - lidarr.artist.add
+                      - lidarr.download
+                      - emby.artist.update
+                      - emby.library.scan
+                      - jellyfin.artist.update
+                      - jellyfin.library.scan
+                      - fs.dir.created
+                      - fs.dir.removed
+                      - fs.unexpected.write
                 enabled:
                   type: boolean
               required: [name, url]
@@ -6641,6 +6673,22 @@ paths:
                   type: array
                   items:
                     type: string
+                    enum:
+                      - artist.new
+                      - metadata.fixed
+                      - review.needed
+                      - rule.violation
+                      - bulk.completed
+                      - scan.completed
+                      - lidarr.artist.add
+                      - lidarr.download
+                      - emby.artist.update
+                      - emby.library.scan
+                      - jellyfin.artist.update
+                      - jellyfin.library.scan
+                      - fs.dir.created
+                      - fs.dir.removed
+                      - fs.unexpected.write
                 enabled:
                   type: boolean
       responses:
