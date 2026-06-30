@@ -668,6 +668,70 @@ func TestHandleSetProviderKey_Form(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+	// Read back the persisted key so the form parser contract is actually
+	// locked in -- a 200 alone would still pass if parseProviderKeyForm saved
+	// the wrong value.
+	val, err := r.providerSettings.GetAPIKey(context.Background(), provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetAPIKey: %v", err)
+	}
+	if val != "formkey456" {
+		t.Errorf("persisted key = %q, want %q", val, "formkey456")
+	}
+}
+
+// TestHandleSetProviderKey_UnsupportedMediaType verifies that a body whose
+// Content-Type is neither form-urlencoded nor JSON is rejected with 415 rather
+// than silently decoded as JSON.
+func TestHandleSetProviderKey_UnsupportedMediaType(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader(`{"api_key":"x"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnsupportedMediaType, w.Body.String())
+	}
+}
+
+// TestHandleSetProviderKey_MissingContentType verifies that a request with no
+// Content-Type header is rejected with 415 (it previously fell through to JSON).
+func TestHandleSetProviderKey_MissingContentType(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader(`{"api_key":"x"}`))
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnsupportedMediaType, w.Body.String())
+	}
+}
+
+// TestHandleSetProviderKey_TrailingJSON verifies that a JSON body with a second
+// document appended is rejected with 400 rather than silently ignoring the trailer.
+func TestHandleSetProviderKey_TrailingJSON(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/fanarttv/key",
+		strings.NewReader(`{"api_key":"x"}{"api_key":"y"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
 }
 
 // TestHandleSetProviderKey_HTMX verifies that an HTMX request renders an HTML
@@ -818,8 +882,11 @@ func TestHandleSetProviderKey_Spotify_Form(t *testing.T) {
 	if err := json.Unmarshal([]byte(val), &stored); err != nil {
 		t.Fatalf("stored key is not JSON: %v; raw: %s", err, val)
 	}
-	if stored["client_id"] != "cid" {
-		t.Errorf("stored client_id = %q, want %q", stored["client_id"], "cid")
+	// Assert both halves of the credential blob: a regression dropping
+	// client_secret in the form path would otherwise slip past a client_id-only
+	// check (the JSON path already verifies both).
+	if stored["client_id"] != "cid" || stored["client_secret"] != "csec" {
+		t.Errorf("stored key = %v, want {client_id:cid, client_secret:csec}", stored)
 	}
 }
 
@@ -881,8 +948,11 @@ func TestHandleSetProviderKey_TestFails_JSON(t *testing.T) {
 	if resp["status"] != "test_failed" {
 		t.Errorf("status = %q, want %q", resp["status"], "test_failed")
 	}
-	if resp["error"] == "" {
-		t.Errorf("expected non-empty error message in response")
+	// Pin the exact sanitized message: the test_failed path must return a
+	// generic string, never the raw provider/internal error, so a regression
+	// that leaks the underlying TestConnection failure is caught here.
+	if resp["error"] != "Unable to verify provider credentials" {
+		t.Errorf("error = %q, want sanitized %q", resp["error"], "Unable to verify provider credentials")
 	}
 }
 

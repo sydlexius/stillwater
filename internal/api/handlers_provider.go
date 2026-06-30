@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -79,8 +81,16 @@ func parseProviderKeyJSON(w http.ResponseWriter, req *http.Request, name provide
 		ClientID     string `json:"client_id"`
 		ClientSecret string `json:"client_secret"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+	dec := json.NewDecoder(req.Body)
+	if err := dec.Decode(&body); err != nil {
 		writeError(w, req, http.StatusBadRequest, "invalid request body")
+		return providerKeyInput{}, false
+	}
+	// Reject trailing content after the first document: a clean body decodes to
+	// exactly one value, so a second Decode must report io.EOF. Anything else
+	// (another JSON document, junk) widens the contract and is rejected.
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		writeError(w, req, http.StatusBadRequest, "request body must contain a single JSON document")
 		return providerKeyInput{}, false
 	}
 	apiKey := body.APIKey
@@ -97,13 +107,25 @@ func parseProviderKeyJSON(w http.ResponseWriter, req *http.Request, name provide
 }
 
 // parseProviderKeyInput dispatches to parseProviderKeyForm or parseProviderKeyJSON
-// based on Content-Type. Returns (input, true) on success; writes an error response
-// and returns (_, false) on failure.
+// based on the request media type. Only form-urlencoded and JSON bodies are
+// accepted; any other (or missing) Content-Type is rejected with 415 rather than
+// silently falling through to the JSON decoder. Returns (input, true) on success;
+// writes an error response and returns (_, false) on failure.
 func parseProviderKeyInput(w http.ResponseWriter, req *http.Request, name provider.ProviderName) (providerKeyInput, bool) {
-	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
-		return parseProviderKeyForm(w, req, name)
+	mediaType, _, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil {
+		writeError(w, req, http.StatusUnsupportedMediaType, "unsupported content type")
+		return providerKeyInput{}, false
 	}
-	return parseProviderKeyJSON(w, req, name)
+	switch mediaType {
+	case "application/x-www-form-urlencoded":
+		return parseProviderKeyForm(w, req, name)
+	case "application/json":
+		return parseProviderKeyJSON(w, req, name)
+	default:
+		writeError(w, req, http.StatusUnsupportedMediaType, "unsupported content type")
+		return providerKeyInput{}, false
+	}
 }
 
 // testProviderKeyFailed runs a connection test for the given apiKey.
@@ -125,7 +147,10 @@ func (r *Router) testProviderKeyFailed(w http.ResponseWriter, req *http.Request,
 	if testErr == nil {
 		return false
 	}
-	r.logger.Error("provider key test failed before save", "provider", name, "error", testErr)
+	// Scrub the raw error: provider TestConnection failures can wrap a request
+	// URL whose query string carries the credential (e.g. Fanart.tv's api_key),
+	// which url.Error does not redact. ScrubError redacts sensitive params.
+	r.logger.Error("provider key test failed before save", "provider", name, "error", provider.ScrubError(testErr))
 	const sanitizedMsg = "Unable to verify provider credentials"
 	if isHTMXRequest(req) {
 		if isOOBE {
