@@ -562,7 +562,7 @@ func wireEventSubscriptions(a *Application) {
 	// event.WebhookEventTypes is the single source of truth for the
 	// webhook-eligible event set; the API validates subscriptions and openapi
 	// documents the enum against the same list (#2009 #6).
-	for _, eventType := range event.WebhookEventTypes {
+	for _, eventType := range event.WebhookEventTypes() {
 		a.eventBus.Subscribe(eventType, a.webhookDispatcher.HandleEvent)
 	}
 	a.scannerService.SetEventBus(a.eventBus)

@@ -4,9 +4,9 @@ import "testing"
 
 func TestIsWebhookEvent(t *testing.T) {
 	// Every canonical type is accepted.
-	for _, ty := range WebhookEventTypes {
+	for _, ty := range WebhookEventTypes() {
 		if !IsWebhookEvent(string(ty)) {
-			t.Errorf("IsWebhookEvent(%q) = false; want true (it is in WebhookEventTypes)", ty)
+			t.Errorf("IsWebhookEvent(%q) = false; want true (it is in WebhookEventTypes())", ty)
 		}
 	}
 	// Non-subscribable / unknown types are rejected.
@@ -24,12 +24,13 @@ func TestIsWebhookEvent(t *testing.T) {
 
 func TestWebhookEventStrings(t *testing.T) {
 	got := WebhookEventStrings()
-	if len(got) != len(WebhookEventTypes) {
-		t.Fatalf("WebhookEventStrings() len = %d, want %d", len(got), len(WebhookEventTypes))
+	want := WebhookEventTypes()
+	if len(got) != len(want) {
+		t.Fatalf("WebhookEventStrings() len = %d, want %d", len(got), len(want))
 	}
-	for i, ty := range WebhookEventTypes {
+	for i, ty := range want {
 		if got[i] != string(ty) {
-			t.Errorf("WebhookEventStrings()[%d] = %q, want %q (order must match WebhookEventTypes)", i, got[i], ty)
+			t.Errorf("WebhookEventStrings()[%d] = %q, want %q (order must match WebhookEventTypes())", i, got[i], ty)
 		}
 	}
 }
