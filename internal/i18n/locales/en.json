@@ -611,6 +611,7 @@
   "common.select_all": "Select all",
   "common.session_expired": "Session expired. Please reload the page and try again.",
   "common.severity": "Severity",
+  "common.skip_to_main": "Skip to main content",
   "common.severity_error": "Error",
   "common.severity_info": "Info",
   "common.severity_warning": "Warning",

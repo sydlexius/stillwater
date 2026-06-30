@@ -6812,3 +6812,35 @@ html[data-density="spacious"] .sw-next-rail-item {
 :root:not(.dark) #section-platform .text-green-600 {
   color: #15803d !important; /* green-700: ~4.5:1 on white */
 }
+
+/* -- Skip-to-main link (WCAG 2.4.1 Bypass Blocks) -------------------- */
+/* Scoped to next/ chrome. Visually off-screen until focused, then
+ * revealed at the top of the viewport. Background uses the near-opaque
+ * sidebar glass token so it reads clearly over the ambient backdrop in
+ * both themes. Focus ring matches the --sw-accent-primary ring used on
+ * all other interactive next/ controls. */
+.sw-skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translate(-50%, -200%);
+  z-index: 9999;
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--sw-radius-md);
+  background: var(--sw-sidebar-glass-bg);
+  backdrop-filter: var(--sw-glass-blur);
+  -webkit-backdrop-filter: var(--sw-glass-blur);
+  border: 2px solid var(--sw-accent-primary);
+  color: var(--sw-sidebar-text-hover);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.15s ease;
+}
+
+.sw-skip-link:focus-visible {
+  transform: translate(-50%, 0);
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
+}
