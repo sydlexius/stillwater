@@ -137,7 +137,25 @@ bash "$TOOL_VERSIONS_HELPER"
 
 echo ""
 echo "=== Tests ==="
-go test -race -count=1 -covermode=atomic -coverprofile="$COVER_OUT" ./...
+# -coverpkg=./... matches CI's methodology (.github/workflows/ci.yml): each test
+# binary is instrumented against every package, so a package exercised mainly by
+# other packages' integration tests (e.g. internal/connection via api/publish/
+# imagebridge) is credited that cross-package coverage. Without it the local
+# profile reads lower than CI and fails the floor locally while CI passes (#2062;
+# the avoidable extra test-writing on #1686/#1564). Costs extra instrumentation
+# time vs per-package coverage -- the tradeoff for floor numbers that match CI.
+go test -race -count=1 -covermode=atomic -coverpkg=./... -coverprofile="$COVER_OUT" ./...
+
+# Union the profile before the floor/patch checks consume it. A single
+# `go test ./... -coverpkg=./...` invocation emits each block once PER test
+# binary (every binary instruments every package), so the raw profile is
+# heavily duplicated. `go tool cover` dedups on read, but coverage-floor.sh and
+# patch-coverage.sh sum nstmts across duplicate blocks and would read every
+# package at ~1/N of its real coverage, failing the floor spuriously. gocovmerge
+# applies the same per-block UNION that CI runs across its 9 shards
+# (.github/workflows/ci.yml:575) so the local floor/patch numbers match CI.
+go tool gocovmerge "$COVER_OUT" > "$COVER_OUT.merged"
+mv "$COVER_OUT.merged" "$COVER_OUT"
 
 echo ""
 echo "=== Lint (diff-only) ==="
@@ -312,8 +330,9 @@ fi
 
 echo ""
 echo "=== Patch coverage ==="
-# Matches codecov.yml's 75% patch threshold. The script approximates the
-# same semantics locally so we catch gaps before push instead of learning
+# Matches codecov.yml's 78% patch threshold (codecov.yml:14). With -coverpkg on
+# the test run above, the local profile now uses the same cross-package
+# methodology as Codecov, so we catch patch gaps before push instead of learning
 # about them from a failing codecov check.
 #
 # patch-coverage.sh uses exit codes 0|1|2 (2 = config error). This wrapper
@@ -338,7 +357,7 @@ if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
   echo "pre-push-gate: patch-coverage.sh not found in scripts/ or ~/.claude/scripts/" >&2
   exit 1
 fi
-if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=75 \
+if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=78 \
     PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go scripts/" \
     bash "$PATCH_COVERAGE_HELPER"; then
   :
