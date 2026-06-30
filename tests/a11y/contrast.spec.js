@@ -18,30 +18,24 @@
 import { test, expect } from 'playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-import { setupAndLogin } from './helpers/bootstrap.js';
+// Auth: a single login happens once in global-setup.js; the session is loaded
+// into every test context via `use.storageState` (playwright.config.js), so no
+// per-file login or per-test cookie injection is needed here.
 
-const BASE_URL = process.env.SW_TEST_URL
-  || `http://127.0.0.1:${process.env.SW_PORT || '1973'}`;
-
-// ---------------------------------------------------------------------------
-// Auth: one-time login; storageState carries the session across all tests.
-// ---------------------------------------------------------------------------
-
-let authCookie = '';
-
-test.beforeAll(async ({ playwright }) => {
-  const request = await playwright.request.newContext({ baseURL: BASE_URL });
-  try {
-    const { cookie } = await setupAndLogin(request);
-    authCookie = cookie;
-  } finally {
-    await request.dispose();
-  }
-});
-
-// Each test gets a context pre-seeded with the session cookie.
-test.use({
-  extraHTTPHeaders: {},
+// Disable CSS transitions/animations in every test page so axe reads SETTLED
+// colors. Many theme-token colors ride Tailwind's `transition-colors` (150ms);
+// a synchronous getComputedStyle (axe's color-contrast rule) taken right after
+// a theme flip (the light-mode test toggles the theme before scanning) can
+// otherwise sample a mid-transition blended color and report a FALSE contrast
+// failure even though the settled page is AA-compliant. This is a test-
+// measurement concern only -- production theme switching is unchanged.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const style = document.createElement('style');
+    style.textContent =
+      '*, *::before, *::after { transition: none !important; animation: none !important; }';
+    document.documentElement.appendChild(style);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -70,13 +64,6 @@ function buildAxeBuilder(page) {
 // ---------------------------------------------------------------------------
 
 test('dashboard stat cards pass a11y scan', async ({ page }) => {
-  await page.context().addCookies([{
-    name:   'session',
-    value:  authCookie.replace('session=', ''),
-    domain: '127.0.0.1',
-    path:   '/',
-  }]);
-
   await page.goto('/next/');
   // Wait for the header strip (stat cards) to be present.
   await page.waitForSelector('.sw-next-header-strip', { timeout: 10_000 });
@@ -99,13 +86,6 @@ test('dashboard stat cards pass a11y scan', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('bulk-action bar passes a11y scan', async ({ page }) => {
-  await page.context().addCookies([{
-    name:   'session',
-    value:  authCookie.replace('session=', ''),
-    domain: '127.0.0.1',
-    path:   '/',
-  }]);
-
   await page.goto('/next/artists?view=grid');
   // Grid view: #bulk-action-bar is always visible (no contextual hide).
   await page.waitForSelector('#bulk-action-bar', { timeout: 10_000 });
@@ -128,13 +108,6 @@ test('bulk-action bar passes a11y scan', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('artwork modal passes a11y scan', async ({ page }) => {
-  await page.context().addCookies([{
-    name:   'session',
-    value:  authCookie.replace('session=', ''),
-    domain: '127.0.0.1',
-    path:   '/',
-  }]);
-
   await page.goto('/next/artists');
   // 'networkidle' never completes while the SSE event stream is live.
   // 'load' waits for all resources to finish and is sufficient for the
@@ -177,13 +150,6 @@ test('artwork modal passes a11y scan', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('prefs drawer passes a11y scan', async ({ page }) => {
-  await page.context().addCookies([{
-    name:   'session',
-    value:  authCookie.replace('session=', ''),
-    domain: '127.0.0.1',
-    path:   '/',
-  }]);
-
   await page.goto('/next/');
   // 'networkidle' never completes while the SSE event stream is live.
   await page.waitForLoadState('load');
@@ -237,13 +203,6 @@ test('prefs drawer passes a11y scan', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
-  await page.context().addCookies([{
-    name:   'session',
-    value:  authCookie.replace('session=', ''),
-    domain: '127.0.0.1',
-    path:   '/',
-  }]);
-
   // Force dark-mode media query so preferences.js resolves 'system' as dark.
   await page.emulateMedia({ colorScheme: 'dark' });
 
@@ -278,27 +237,33 @@ test('/next/settings passes a11y scan in dark mode', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('/next/settings passes a11y scan in light mode', async ({ page }) => {
-  await page.context().addCookies([{
-    name:   'session',
-    value:  authCookie.replace('session=', ''),
-    domain: '127.0.0.1',
-    path:   '/',
-  }]);
-
   await page.goto('/next/settings');
   await page.waitForSelector('.sw-next-settings-pane', { timeout: 10_000 });
 
   // Switch to light via the real sidebar theme toggle (not classList forcing).
-  // Seed to 'dark' first so one cycleTheme() call deterministically lands on
-  // 'light' regardless of any prior localStorage state.
+  // Wait for the sidebar JS to be wired first: cycleTheme() silently no-ops if
+  // swSidebar isn't ready yet, which on a slow/loaded runner leaves the theme
+  // stuck on dark and the scan never reaches light mode (a pre-existing flake
+  // that only surfaces now that the suite actually reaches this test). Seed to
+  // 'dark' so one cycleTheme() call deterministically lands on 'light'.
+  await page.waitForFunction(
+    () => !!(window.swPreferences && window.swSidebar
+      && typeof window.swSidebar.cycleTheme === 'function'),
+    { timeout: 10_000 },
+  );
   await page.evaluate(() => {
-    if (window.swPreferences) window.swPreferences.set('theme', 'dark');
-    if (window.swSidebar && window.swSidebar.cycleTheme) window.swSidebar.cycleTheme();
+    window.swPreferences.set('theme', 'dark');
+    window.swSidebar.cycleTheme();
   });
   await page.waitForFunction(
     () => !document.documentElement.classList.contains('dark'),
-    { timeout: 3_000 },
+    { timeout: 5_000 },
   );
+  // Let the theme swap fully settle (CSS transitions are disabled in
+  // beforeEach, but preferences.js also recomputes the glass/opacity tokens in
+  // JS on a theme change). Without this, axe's synchronous color-contrast read
+  // can occasionally still sample a transient color and report a false failure.
+  await page.waitForTimeout(300);
 
   const results = await buildAxeBuilder(page).analyze();
   expect(

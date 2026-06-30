@@ -16,30 +16,25 @@
 import { test, expect } from 'playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-import { setupAndLogin } from './helpers/bootstrap.js';
-
-const BASE_URL = process.env.SW_TEST_URL
-  || `http://127.0.0.1:${process.env.SW_PORT || '1973'}`;
-
-// ---------------------------------------------------------------------------
-// Auth: one-time login; storageState carries the session across all tests.
-// ---------------------------------------------------------------------------
-
-let authCookie = '';
-
-test.beforeAll(async ({ playwright }) => {
-  const request = await playwright.request.newContext({ baseURL: BASE_URL });
-  try {
-    const { cookie } = await setupAndLogin(request);
-    authCookie = cookie;
-  } finally {
-    await request.dispose();
-  }
-});
+// Auth: a single login happens once in global-setup.js; the session is loaded
+// into every test context via `use.storageState` (playwright.config.js).
 
 // Force dark mode: prefers-color-scheme: dark media feature so the themeInit
 // script resolves to dark on first paint (matching next/'s dark default).
 test.use({ colorScheme: 'dark' });
+
+// Disable CSS transitions/animations so axe reads SETTLED colors (see the same
+// guard in contrast.spec.js): a synchronous color-contrast read taken during a
+// `transition-colors` window can sample a blended mid-transition color and
+// report a false failure. Test-measurement only; production is unchanged.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const style = document.createElement('style');
+    style.textContent =
+      '*, *::before, *::after { transition: none !important; animation: none !important; }';
+    document.documentElement.appendChild(style);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helper: same axe rule set as contrast.spec.js.
@@ -59,12 +54,6 @@ function buildAxeBuilder(page) {
 // ---------------------------------------------------------------------------
 
 test('cheat-sheet modal passes full-page a11y scan (dark mode)', async ({ page }) => {
-  await page.context().addCookies([{
-    name:   'session',
-    value:  authCookie.replace('session=', ''),
-    url:    BASE_URL,
-  }]);
-
   await page.goto('/next/');
   // 'networkidle' never settles while the SSE event stream is live.
   await page.waitForLoadState('load');

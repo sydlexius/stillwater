@@ -10,22 +10,33 @@
 
 import { defineConfig, devices } from 'playwright/test';
 
+import { STORAGE_STATE } from './tests/a11y/global-setup.js';
+
 const port = process.env.SW_PORT || '1973';
 const baseURL = process.env.SW_TEST_URL || `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: './tests/a11y',
+  // Authenticate ONCE for the whole run (avoids tripping the login rate
+  // limiter); every test context loads the resulting session via storageState.
+  globalSetup: './tests/a11y/global-setup.js',
   // Deterministic: no retries so a failure is a failure.
   retries: 0,
   // Single worker: tests authenticate sequentially against the ephemeral server.
   workers: 1,
-  // Reasonable wall-clock budget for a smoke set.
-  timeout: 30_000,
+  // Wall-clock budget per test. These tests drive a real booted server +
+  // Chromium and the /next/settings light-mode test does several sequential
+  // steps (navigate, wait for sidebar JS, theme toggle, settle); 30s was tight
+  // enough to false-timeout under CI/parallel load, so give headroom.
+  timeout: 60_000,
   // Concise reporter for CI; full verbose logs on failure.
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'tests/a11y/report' }]],
 
   use: {
     baseURL,
+    // Pre-authenticated session captured once in global-setup; replaces the
+    // former per-spec-file login + per-test addCookies plumbing.
+    storageState: STORAGE_STATE,
     // Headless Chromium for CI. The a11y scan needs a real rendering engine for
     // CSS cascade + contrast calculations.
     headless: true,
