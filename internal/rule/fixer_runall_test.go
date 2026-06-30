@@ -1,8 +1,88 @@
 package rule
 
 import (
+	"context"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/artist"
 )
+
+// TestProcessArtistForRunAll_EvaluateError covers the early-return branch in
+// processArtistForRunAll where the engine's Evaluate fails. The integration
+// tests never inject an engine error, so this drives the unit directly: with a
+// cold rule cache, closing the DB forces cachedRules -> List to error, which
+// Evaluate propagates. The method must bail with (contrib{}, false) and zero
+// violations recorded.
+func TestProcessArtistForRunAll_EvaluateError(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	p := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
+
+	// Close before any Evaluate so the engine rule cache stays cold; the next
+	// cachedRules call hits the closed DB and errors.
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Eval Err", Path: t.TempDir()}
+	contrib, persistOK := p.processArtistForRunAll(context.Background(), a)
+	if persistOK {
+		t.Error("persistOK = true; want false when Evaluate errors")
+	}
+	if contrib.violationsFound != 0 {
+		t.Errorf("violationsFound = %d; want 0 on the Evaluate-error early return", contrib.violationsFound)
+	}
+}
+
+// TestProcessArtistForRunAll_RuleLookupError covers the getCachedRule-error
+// branch inside the per-violation loop. Evaluate is warmed first (engine rule
+// cache populated, violations confirmed) so the post-close Evaluate still
+// succeeds from cache; closing the DB afterward makes the pipeline-level
+// getCachedRule -> GetByID error, driving acc.persistOK false via the continue
+// branch. The trailing persist steps (health, resolved rows, pass results) also
+// fail against the closed DB, reinforcing persistOK == false.
+func TestProcessArtistForRunAll_RuleLookupError(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	p := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
+
+	// Seed the default rules so Evaluate has enabled rules to check; a no-NFO
+	// artist reliably violates RuleNFOExists, a field-based rule that still
+	// fires after the DB is closed (the rule set comes from the warm cache).
+	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("seeding default rules: %v", err)
+	}
+	a := &artist.Artist{Name: "Lookup Err", SortName: "Lookup Err", NFOExists: false, Path: t.TempDir()}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Warm the engine rule cache and confirm the artist violates at least one
+	// rule, so the per-violation loop runs after the DB is closed.
+	eval, err := engine.Evaluate(context.Background(), a)
+	if err != nil {
+		t.Fatalf("warm-up Evaluate: %v", err)
+	}
+	if len(eval.Violations) == 0 {
+		t.Fatal("expected the bare artist to violate at least one rule")
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	contrib, persistOK := p.processArtistForRunAll(context.Background(), a)
+	if persistOK {
+		t.Error("persistOK = true; want false when getCachedRule errors")
+	}
+	if contrib.violationsFound == 0 {
+		t.Error("violationsFound = 0; want the warmed-cache Evaluate to still surface violations")
+	}
+}
 
 // TestMergeIntoContrib exercises every branch of the mergeIntoContrib helper,
 // which is the per-violation merge path used by processArtistForRunAll. The
