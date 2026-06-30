@@ -719,6 +719,32 @@ func (acc *runForArtistAccum) mergeOutcome(out violationOutcome, result *RunResu
 	}
 }
 
+// mergeIntoContrib folds one violation's delta into acc and contrib for
+// the RunAllScoped pass path, where per-artist results accumulate into an
+// artistContribution (merged under a mutex by the walker) rather than
+// directly into a *RunResult.
+func (acc *runForArtistAccum) mergeIntoContrib(out violationOutcome, contrib *artistContribution) {
+	if out.fr != nil {
+		contrib.results = append(contrib.results, *out.fr)
+		contrib.fixesAttempted++
+	}
+	if out.persistFailed {
+		acc.persistOK = false
+	}
+	if out.fixed {
+		contrib.fixesSucceeded++
+		acc.artistDirty = true
+		if out.imageFix {
+			acc.fixedImageTypes = append(acc.fixedImageTypes, out.imageType)
+		} else {
+			acc.metadataFixed = true
+		}
+	}
+	if out.resolvedRow != nil {
+		acc.resolvedRows = append(acc.resolvedRows, out.resolvedRow)
+	}
+}
+
 // runForArtistFiltered is the shared body of RunForArtist and
 // RunImageRulesForArtist. An empty categoryFilter runs every violation; a
 // non-empty value runs only violations whose Category matches exactly.
@@ -1077,6 +1103,74 @@ func (p *Pipeline) allowedRulesForCategory(ctx context.Context, a *artist.Artist
 	return allowedIDs, true
 }
 
+// processArtistForRunAll is the per-artist work unit for RunAllScoped.
+// It evaluates the artist, dispatches every violation through the
+// automation-mode strategies (reusing processManualViolation /
+// processAutoFixViolation, the same helpers runForArtistFiltered uses),
+// then finalizes health (#699), deferred resolved rows (#983), pass rows,
+// and platform publishing. The returned artistContribution is merged into
+// the shared RunResult by walkArtistsWithMark under a mutex, keeping this
+// hot path lock-free. rules_evaluated_at is NOT stamped here;
+// walkArtistsWithMark owns that step so the timestamp aligns with the
+// per-iteration startedAt captured by iterateArtistsByScope.
+func (p *Pipeline) processArtistForRunAll(ctx context.Context, a *artist.Artist) (artistContribution, bool) {
+	var contrib artistContribution
+	acc := &runForArtistAccum{persistOK: true}
+	// startedAt captured pre-Evaluate so every rule_results row written
+	// during this pass shares a timestamp (issue #699).
+	startedAt := time.Now().UTC()
+
+	// Issue #1133: per-artist EvaluationContext for fetch coalescing.
+	// Shadows the outer ctx so every downstream call inside this method
+	// inherits the coalescer without a rename.
+	ctx, counters := p.withEvalContext(ctx, a)
+	defer p.logEvalCounters(a, counters)
+
+	eval, err := p.engine.Evaluate(ctx, a)
+	if err != nil {
+		p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
+		return contrib, false
+	}
+
+	for j := range eval.Violations {
+		v := &eval.Violations[j]
+		contrib.violationsFound++
+		// getCachedRule is pipeline-level and RWMutex-guarded, safe for
+		// concurrent artist workers (issue #1730).
+		r, lookupErr := p.getCachedRule(ctx, v.RuleID)
+		if lookupErr != nil {
+			p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", lookupErr)
+			acc.persistOK = false
+			continue
+		}
+		acc.mergeIntoContrib(p.dispatchViolation(ctx, a, v, r), &contrib)
+	}
+
+	// Issue #699: derive pass/fail from the POST-fix evaluation so rules
+	// repaired during this pass are recorded as passed=1 in the same run.
+	postEval, persistOKHealth := p.updateHealthScore(ctx, a, acc.artistDirty)
+	if !persistOKHealth {
+		acc.persistOK = false
+	}
+	// Issue #983: only resolve violations once the artist row persisted
+	// cleanly. A failed Update leaves the mutation in memory; marking the
+	// violation resolved anyway would silently drop the fix.
+	if persistOKHealth && !p.finalizeResolvedRows(ctx, a, acc.resolvedRows) {
+		acc.persistOK = false
+	}
+	if postEval != nil {
+		postViolated := make(map[string]struct{}, len(postEval.Violations))
+		for j := range postEval.Violations {
+			postViolated[postEval.Violations[j].RuleID] = struct{}{}
+		}
+		if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, nil) {
+			acc.persistOK = false
+		}
+	}
+	p.publishAccumulated(ctx, a, acc.metadataFixed, acc.fixedImageTypes)
+	return contrib, acc.persistOK
+}
+
 // RunAll evaluates all enabled rules against eligible artists and attempts
 // fixes. Defaults to incremental scope -- only artists flagged as dirty are
 // processed. Use RunAllScoped(ctx, RunScopeAll) for a forced full sweep.
@@ -1088,8 +1182,6 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 // by scope (incremental or all). The result reports both the number of
 // artists processed and the total eligible count so progress UIs can show
 // "evaluating 12 of 800 (788 unchanged)".
-//
-//nolint:gocognit // Full-sweep pipeline (cog 77): rule registry walk, per-rule artist iteration with scope-aware source, evaluate-fix-persist + #983 deferred resolved-status writes, automation-mode dispatch, per-rule and global counters; the rule-major iteration order is required so that all violations of a given rule see a coherent before/after view of the artist within a single pipeline pass. Refactor tracked in #1542.
 func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult, error) {
 	result := &RunResult{Scope: scope.String()}
 	// passStart drives the pass_wall_clock_ms telemetry emitted at the end so
@@ -1106,8 +1198,8 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 	// Issue #1134 (M54 W3): pass-scoped provider-fetch cache. Construct a
 	// PassContext for the lifetime of this RunAllScoped invocation and
 	// plumb it onto the context so every per-artist EvaluationContext built
-	// inside processArtist finds it via passContextFromContext. When an
-	// artist is re-evaluated later in the same pass (e.g. dirtied by a
+	// inside processArtistForRunAll finds it via passContextFromContext. When
+	// an artist is re-evaluated later in the same pass (e.g. dirtied by a
 	// prior fix), its new EvaluationContext will find the cached provider
 	// payload in the PassContext instead of issuing a fresh network call.
 	// The PassContext falls out of scope when this function returns; there
@@ -1127,207 +1219,7 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 	}
 
 	processArtist := func(a *artist.Artist) (artistContribution, bool) {
-		// contrib accumulates this artist's counters/results locally instead
-		// of mutating the shared run-level result, so walkArtistsWithMark
-		// can run artists concurrently and merge under a mutex. Issue #1730.
-		var contrib artistContribution
-		var perArtistMetadata bool
-		var perArtistImages []string
-		var perArtistDirty bool
-		// resolvedRows collects violation upserts that should land with
-		// Status=ViolationStatusResolved. Issue #983: deferred until
-		// AFTER updateHealthScore persists the mutated artist so a
-		// failed artist Update does not silently mark the violation
-		// resolved while the actual fix never reached the DB.
-		var resolvedRows []*RuleViolation
-		// See RunRuleScoped's processArtist: persistOK gates the
-		// rules_evaluated_at stamp so a transient DB failure keeps the
-		// artist in the dirty set for retry instead of masking dropped
-		// violations until the next mutation.
-		persistOK := true
-		// startedAt captured pre-Evaluate so every rule_results pass row
-		// written during this pass shares a timestamp (issue #699).
-		startedAt := time.Now().UTC()
-
-		// Issue #1133: per-artist EvaluationContext for fetch coalescing.
-		// Shadows the outer ctx so every downstream call inside this
-		// closure inherits the coalescer without an artistCtx rename.
-		ctx, counters := p.withEvalContext(ctx, a)
-		defer p.logEvalCounters(a, counters)
-
-		eval, err := p.engine.Evaluate(ctx, a)
-		if err != nil {
-			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
-			return contrib, false
-		}
-
-		for j := range eval.Violations {
-			v := &eval.Violations[j]
-			contrib.violationsFound++
-
-			// Look up rule to determine automation mode. getCachedRule uses
-			// the pipeline-level ruleCache (RWMutex-guarded), so it is safe
-			// to share across concurrent artist workers. Issue #1730.
-			r, lookupErr := p.getCachedRule(ctx, v.RuleID)
-			if lookupErr != nil {
-				p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", lookupErr)
-				persistOK = false
-				continue
-			}
-
-			// Manual mode: discover candidates but never auto-apply.
-			// Only invoke fixers that support candidate discovery
-			// without side effects.
-			if r.AutomationMode == AutomationModeManual {
-				fixer := p.findFixer(v)
-				if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
-					rv := &RuleViolation{
-						RuleID:     v.RuleID,
-						ArtistID:   a.ID,
-						ArtistName: a.Name,
-						Severity:   v.Severity,
-						Message:    v.Message,
-						Fixable:    v.Fixable && fixer != nil,
-						Status:     ViolationStatusOpen,
-					}
-					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-						p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-						persistOK = false
-					}
-					continue
-				}
-
-				v.Config.DiscoveryOnly = true
-				fr := p.attemptFix(ctx, a, v)
-				contrib.results = append(contrib.results, *fr)
-				contrib.fixesAttempted++
-
-				status := ViolationStatusOpen
-				if len(fr.Candidates) > 0 {
-					status = ViolationStatusPendingChoice
-				}
-
-				rv := &RuleViolation{
-					RuleID:     v.RuleID,
-					ArtistID:   a.ID,
-					ArtistName: a.Name,
-					Severity:   v.Severity,
-					Message:    v.Message,
-					Fixable:    true,
-					Status:     status,
-					Candidates: fr.Candidates,
-				}
-				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-					p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-					persistOK = false
-				}
-				continue
-			}
-
-			// Auto mode (default): persist unfixable as open, attempt fix for fixable
-			if !v.Fixable {
-				rv := &RuleViolation{
-					RuleID:     v.RuleID,
-					ArtistID:   a.ID,
-					ArtistName: a.Name,
-					Severity:   v.Severity,
-					Message:    v.Message,
-					Fixable:    false,
-					Status:     ViolationStatusOpen,
-				}
-				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-					p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-					persistOK = false
-				}
-				continue
-			}
-
-			fr := p.attemptFix(ctx, a, v)
-			contrib.results = append(contrib.results, *fr)
-			contrib.fixesAttempted++
-
-			// Issue #983: defer the resolved upsert until AFTER
-			// updateHealthScore persists the mutated artist. See the
-			// matching comment in RunRuleScoped.processArtist.
-			if fr.Fixed {
-				contrib.fixesSucceeded++
-				perArtistDirty = true
-				if fr.ImageType != "" {
-					perArtistImages = append(perArtistImages, fr.ImageType)
-				} else {
-					perArtistMetadata = true
-				}
-				// Issue #1106: emit a Recent Activity entry. See the
-				// matching comment + helper docstring in
-				// RunRuleScoped.processArtist.
-				p.recordRuleFixHistory(ctx, a.ID, fr)
-				resolvedRows = append(resolvedRows, &RuleViolation{
-					RuleID:     v.RuleID,
-					ArtistID:   a.ID,
-					ArtistName: a.Name,
-					Severity:   v.Severity,
-					Message:    v.Message,
-					Fixable:    true,
-					Candidates: fr.Candidates,
-				})
-				continue
-			}
-
-			status := ViolationStatusOpen
-			if len(fr.Candidates) > 0 {
-				status = ViolationStatusPendingChoice
-			}
-			rv := &RuleViolation{
-				RuleID:     v.RuleID,
-				ArtistID:   a.ID,
-				ArtistName: a.Name,
-				Severity:   v.Severity,
-				Message:    v.Message,
-				Fixable:    true,
-				Status:     status,
-				Candidates: fr.Candidates,
-			}
-			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-				p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-				persistOK = false
-			}
-		}
-
-		// Issue #699 propagation fix: derive the pass/fail skip-set from
-		// the POST-fix evaluation returned by updateHealthScore so rules
-		// repaired during this pass are recorded as passed=1 in the same
-		// run. Using the pre-fix violation snapshot would suppress them
-		// until the next evaluation.
-		postEval, persistOKHealth := p.updateHealthScore(ctx, a, perArtistDirty)
-		if !persistOKHealth {
-			persistOK = false
-		}
-		// Issue #983: only resolve violations once the artist row
-		// persisted cleanly. A failed Update leaves the mutation in
-		// memory; marking the violation resolved anyway would silently
-		// drop the fix.
-		if persistOKHealth {
-			now := time.Now().UTC()
-			for _, rv := range resolvedRows {
-				rv.Status = ViolationStatusResolved
-				rv.ResolvedAt = &now
-				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-					p.logger.Warn("persisting resolved violation", "rule_id", rv.RuleID, "artist", a.Name, "error", err)
-					persistOK = false
-				}
-			}
-		}
-		if postEval != nil {
-			postViolated := make(map[string]struct{}, len(postEval.Violations))
-			for j := range postEval.Violations {
-				postViolated[postEval.Violations[j].RuleID] = struct{}{}
-			}
-			if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, nil) {
-				persistOK = false
-			}
-		}
-		p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
-		return contrib, persistOK
+		return p.processArtistForRunAll(ctx, a)
 	}
 
 	// RunAll covers every enabled rule, so it owns rules_evaluated_at:
