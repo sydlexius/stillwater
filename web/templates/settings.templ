@@ -1943,7 +1943,7 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 					<div
 						class={
 							"inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium cursor-grab select-none transition-colors border",
-							templ.KV("bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700", !isWebSearchProvider(prov)),
+							templ.KV("bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 border-green-300 dark:border-green-700", !isWebSearchProvider(prov)),
 							templ.KV("bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-dashed border-purple-300 dark:border-purple-700", isWebSearchProvider(prov)),
 						}
 						data-provider={ string(prov) }
@@ -2125,7 +2125,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							</button>
 							<button
 								type="button"
-								class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+								class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 								onclick={ settingsDeleteConnection(c.ID) }
 							>
 								Delete
@@ -2519,7 +2519,7 @@ templ webhookCard(wh webhook.Webhook) {
 			</button>
 			<button
 				type="button"
-				class="text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+				class="text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 				hx-delete={ "/api/v1/webhooks/" + wh.ID }
 				hx-confirm={ t(ctx, "settings.webhooks.confirm_delete") }
 				hx-swap="none"
@@ -2606,11 +2606,11 @@ templ profileCard(p platform.Profile) {
 				</span>
 			}
 		</div>
-		<div class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+		<div class="mt-2 text-xs text-gray-600 dark:text-gray-400 space-y-1">
 			<div>
 				NFO:
 				if p.NFOEnabled {
-					<span class="text-green-600 dark:text-green-400">{ t(ctx, "common.enabled") }</span>
+					<span class="text-green-800 dark:text-green-400">{ t(ctx, "common.enabled") }</span>
 				} else {
 					<span class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.disabled") }</span>
 				}

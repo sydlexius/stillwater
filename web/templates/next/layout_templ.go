@@ -61,7 +61,20 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"sw-next-shell h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\" style=\"font-family: var(--sw-font-family)\"><a href=\"#sw-main\" class=\"sw-skip-link\">Skip to main content</a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"sw-next-shell h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\" style=\"font-family: var(--sw-font-family)\"><a href=\"#sw-main\" class=\"sw-skip-link\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var2 string
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.skip_to_main"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 32, Col: 74}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -73,7 +86,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"min-h-full sw-sidebar-content\" id=\"sw-main-content\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-h-full sw-sidebar-content\" id=\"sw-main-content\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -87,7 +100,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<main id=\"sw-main\" tabindex=\"-1\" class=\"w-full px-4 py-6 sm:px-6 lg:px-8\" hx-headers='{\"X-Stillwater-UX\": \"next\"}'>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<main id=\"sw-main\" tabindex=\"-1\" class=\"w-full px-4 py-6 sm:px-6 lg:px-8\" hx-headers='{\"X-Stillwater-UX\": \"next\"}'>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -95,7 +108,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</main></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</main></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -103,20 +116,20 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<!-- M55 #1774: preferences drawer lazy-load mount point.\n\t\t\t     hx-trigger=\"sw:prefs-open from:body once\" loads the drawer\n\t\t\t     on the first open; thereafter the existing DOM node handles it.\n\t\t\t     hx-swap=\"outerHTML\" replaces this container with the real drawer\n\t\t\t     (the scrim div + aside), leaving no extra wrapper in the tree. --><div id=\"sw-prefs-mount\" hx-get=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<!-- M55 #1774: preferences drawer lazy-load mount point.\n\t\t\t     hx-trigger=\"sw:prefs-open from:body once\" loads the drawer\n\t\t\t     on the first open; thereafter the existing DOM node handles it.\n\t\t\t     hx-swap=\"outerHTML\" replaces this container with the real drawer\n\t\t\t     (the scrim div + aside), leaving no extra wrapper in the tree. --><div id=\"sw-prefs-mount\" hx-get=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var2 string
-		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/next/preferences-drawer")
+		var templ_7745c5c3_Var3 string
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/next/preferences-drawer")
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 52, Col: 57}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-trigger=\"sw:prefs-open from:body once\" hx-swap=\"outerHTML\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" hx-trigger=\"sw:prefs-open from:body once\" hx-swap=\"outerHTML\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -128,7 +141,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

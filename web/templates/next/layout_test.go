@@ -2,6 +2,7 @@ package next
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -60,27 +61,81 @@ func findFirst(n *html.Node, tag string, hasClass func(string) bool) *html.Node 
 	return nil
 }
 
-// documentOrder returns the order (0-based position in a DFS walk) of the
-// node, or -1 if not found.
-func documentOrder(root, target *html.Node) int {
-	pos := 0
-	var walk func(*html.Node) bool
-	walk = func(n *html.Node) bool {
-		if n == target {
-			return true
-		}
-		pos++
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if walk(c) {
-				return true
-			}
-		}
+// isKeyboardFocusable reports whether n participates in the keyboard tab order:
+// a natively focusable control (a/area with href, button, select, textarea,
+// non-hidden input) or any element with tabindex >= 0. Elements with
+// tabindex="-1" (e.g. the main landmark) are programmatically focusable but NOT
+// tabbable, and disabled controls are skipped, so both are excluded.
+func isKeyboardFocusable(n *html.Node) bool {
+	if n.Type != html.ElementNode {
 		return false
 	}
-	if walk(root) {
-		return pos
+	var href, tabindex, inputType string
+	hasTabindex, disabled := false, false
+	for _, a := range n.Attr {
+		switch a.Key {
+		case "href":
+			href = a.Val
+		case "tabindex":
+			tabindex, hasTabindex = a.Val, true
+		case "type":
+			inputType = a.Val
+		case "disabled":
+			disabled = true
+		}
 	}
-	return -1
+	if disabled {
+		return false
+	}
+	if hasTabindex {
+		return tabindex != "" && !strings.HasPrefix(tabindex, "-")
+	}
+	switch n.Data {
+	case "a", "area":
+		return href != ""
+	case "button", "select", "textarea":
+		return true
+	case "input":
+		return inputType != "hidden"
+	}
+	return false
+}
+
+// textContent returns the concatenated text-node content under n.
+func textContent(n *html.Node) string {
+	var sb strings.Builder
+	var rec func(*html.Node)
+	rec = func(m *html.Node) {
+		if m.Type == html.TextNode {
+			sb.WriteString(m.Data)
+		}
+		for c := m.FirstChild; c != nil; c = c.NextSibling {
+			rec(c)
+		}
+	}
+	rec(n)
+	return sb.String()
+}
+
+// firstFocusable returns the first keyboard-focusable element in document order,
+// or nil if none exists.
+func firstFocusable(root *html.Node) *html.Node {
+	var found *html.Node
+	var walkNode func(*html.Node)
+	walkNode = func(n *html.Node) {
+		if found != nil {
+			return
+		}
+		if isKeyboardFocusable(n) {
+			found = n
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walkNode(c)
+		}
+	}
+	walkNode(root)
+	return found
 }
 
 // TestLayoutNext_SkipLink verifies WCAG 2.4.1 Bypass Blocks: the skip-to-main
@@ -130,32 +185,31 @@ func TestLayoutNext_SkipLink(t *testing.T) {
 		t.Errorf("<main id=sw-main> tabindex = %q, want \"-1\"", tabindex)
 	}
 
-	// 4. Skip link precedes the sidebar nav in document order.
-	// The sidebar is the <nav> or the first <aside>/<div> with a sidebar marker.
-	// We locate the first <nav> element as a proxy for the sidebar chrome.
-	var navEl *html.Node
-	walk(root, func(n *html.Node) {
-		if navEl == nil && n.Data == "nav" {
-			navEl = n
+	// 4. Skip link is the FIRST keyboard-focusable element in the whole
+	// document -- the real WCAG 2.4.1 contract, not the earlier <nav>-precedence
+	// proxy. Any tabbable control inserted before it (a button, link, input, or
+	// positive-tabindex element, anywhere including the head) now fails this
+	// test, whereas the nav proxy would still pass.
+	first := firstFocusable(root)
+	if first == nil {
+		t.Fatal("no keyboard-focusable element found in LayoutNext output")
+	}
+	if first != skipLink {
+		desc := "<" + first.Data
+		for _, a := range first.Attr {
+			if a.Key == "id" || a.Key == "class" {
+				desc += " " + a.Key + "=" + strconv.Quote(a.Val)
+			}
 		}
-	})
-	if navEl == nil {
-		t.Fatal("no <nav> element found in LayoutNext output -- cannot verify skip-link order")
-	}
-	skipPos := documentOrder(root, skipLink)
-	navPos := documentOrder(root, navEl)
-	if skipPos < 0 {
-		t.Fatal("skip link not found in document order walk")
-	}
-	if navPos < 0 {
-		t.Fatal("<nav> not found in document order walk")
-	}
-	if skipPos >= navPos {
-		t.Errorf("skip link at position %d, <nav> at %d -- skip link must precede nav", skipPos, navPos)
+		desc += ">"
+		t.Errorf("first keyboard-focusable element is %s; the sw-skip-link must be first", desc)
 	}
 
-	// 5. Skip link text content is present (non-empty accessible label).
-	if !strings.Contains(raw, "Skip to main content") {
-		t.Error("skip link text 'Skip to main content' not found in rendered output")
+	// 5. Skip link carries a non-empty accessible name (localized via t(ctx,...)).
+	// The test context uses the en translator, so the label resolves to English.
+	if text := strings.TrimSpace(textContent(skipLink)); text == "" {
+		t.Error("skip link has empty text content -- accessible name missing")
+	} else if !strings.Contains(raw, "Skip to main content") {
+		t.Errorf("skip link label = %q; want the localized %q", text, "Skip to main content")
 	}
 }
