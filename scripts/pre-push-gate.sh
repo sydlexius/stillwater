@@ -423,34 +423,71 @@ echo "OK"
 
 echo ""
 echo "=== Accessibility (axe-core) ==="
-# Opt-in only. `make test-a11y` builds the binary, boots an ephemeral server,
-# installs npm deps, downloads a Chromium browser, and runs the Playwright +
-# @axe-core/playwright rendered-contrast smoke tests -- minutes of work plus a
-# one-time browser download. That cost is inappropriate for every push, so the
-# check is gated behind RUN_A11Y and SKIPS by default. CI runs the same
-# target unconditionally in its dedicated a11y-test job, so default-skipping
-# here only trades local speed for the CI gate, never removes coverage.
-# Self-contained block (no shared state with other steps) to minimize merge
-# conflicts with sibling branches that also append to this gate.
-# Accept common truthy values (1/true/yes/on), case-insensitive, so
-# contributors can opt in with whichever convention they reach for; anything
-# else (incl. unset/empty) skips. ${RUN_A11Y:-} keeps `set -u` happy.
-# Strip all whitespace too, so a stray leading/trailing space (e.g.
-# RUN_A11Y=' true') still matches instead of silently skipping a11y.
+# Runs the axe-core rendered-contrast smoke when a11y-relevant files changed
+# since BASE, mirroring CI's changes filter (.github/workflows/ci.yml a11y
+# paths), so a WCAG regression is caught locally instead of only by the CI a11y
+# job (the #2139 gap, where a borderline /next/settings contrast failure passed
+# the local gate and only CI caught it). `make test-a11y` builds the binary,
+# boots an ephemeral server, and runs Playwright + @axe-core/playwright.
+#
+# Degrades gracefully (#2140), and stays self-contained (no shared state with
+# other steps) to minimize merge conflicts with sibling branches:
+#   - RUN_A11Y truthy (1/true/yes/on): force a RUN regardless of changed files.
+#   - RUN_A11Y falsy  (0/false/no/off): force a SKIP (escape hatch when the
+#     Playwright toolchain is unavailable and you must push anyway; CI still
+#     gates a11y).
+#   - RUN_A11Y unset (auto, the default): run iff a11y-relevant files changed
+#     AND the Playwright toolchain is installed; otherwise SKIP -- never FAIL --
+#     so a fresh clone without `npx playwright install` can still push, matching
+#     the oasdiff/python3 optional-tool SKIP pattern above.
 a11y_flag="$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+
+# a11y_changed: did this branch touch any file CI's a11y filter watches?
+a11y_changed() {
+  git diff --name-only "$BASE" HEAD 2>/dev/null \
+    | grep -qE '^(web/templates/|web/static/css/|web/static/js/|tests/a11y/|playwright\.config\.js|package(-lock)?\.json)|\.templ$'
+}
+# a11y_toolchain_ready: are the Playwright browser binaries available? make
+# test-a11y runs `npm ci` itself (so node deps are not the gating concern) but
+# never `npx playwright install`, so the BROWSER cache is the real dependency.
+# Its location is platform-specific -- ~/.cache (Linux/CI), ~/Library/Caches
+# (macOS), %LOCALAPPDATA% (Windows) -- and PLAYWRIGHT_BROWSERS_PATH overrides it,
+# so probe all of them rather than a single Linux path.
+a11y_toolchain_ready() {
+  command -v npx >/dev/null 2>&1 || return 1
+  for d in "${PLAYWRIGHT_BROWSERS_PATH:-}" "$HOME/.cache/ms-playwright" "$HOME/Library/Caches/ms-playwright" "${LOCALAPPDATA:-}/ms-playwright"; do
+    [ -n "$d" ] && [ -d "$d" ] && return 0
+  done
+  return 1
+}
+
+run_a11y=0
 case "$a11y_flag" in
+  0 | false | no | off)
+    echo "a11y: skipped (RUN_A11Y=${RUN_A11Y} forces opt-out; CI still gates a11y)"
+    ;;
   1 | true | yes | on)
-    if ! make test-a11y; then
-      echo ""
-      echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
-      exit 1
-    fi
-    echo "OK"
+    run_a11y=1
     ;;
   *)
-    echo "a11y: skipped (set RUN_A11Y=1 to run; also accepts true/yes/on)"
+    if ! a11y_changed; then
+      echo "a11y: skipped (no a11y-relevant changes since BASE; set RUN_A11Y=1 to force)"
+    elif ! a11y_toolchain_ready; then
+      echo "a11y: skipped (Playwright browsers not installed -- run 'npx playwright install chromium' to enable locally; CI still gates a11y)"
+    else
+      run_a11y=1
+    fi
     ;;
 esac
+
+if [ "$run_a11y" -eq 1 ]; then
+  if ! make test-a11y; then
+    echo ""
+    echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
+    exit 1
+  fi
+  echo "OK"
+fi
 
 echo "=== Bruno route parity check ==="
 # Verify every /api/v1 route registered in internal/api/router.go is either
