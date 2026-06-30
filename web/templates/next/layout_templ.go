@@ -61,7 +61,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"sw-next-shell h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\" style=\"font-family: var(--sw-font-family)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"sw-next-shell h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\" style=\"font-family: var(--sw-font-family)\"><a href=\"#sw-main\" class=\"sw-skip-link\">Skip to main content</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -87,7 +87,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<main class=\"w-full px-4 py-6 sm:px-6 lg:px-8\" hx-headers='{\"X-Stillwater-UX\": \"next\"}'>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<main id=\"sw-main\" tabindex=\"-1\" class=\"w-full px-4 py-6 sm:px-6 lg:px-8\" hx-headers='{\"X-Stillwater-UX\": \"next\"}'>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -110,7 +110,7 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/next/preferences-drawer")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 51, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 52, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
