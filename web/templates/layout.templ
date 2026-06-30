@@ -63,6 +63,12 @@ type AssetPaths struct {
 	SettingsRuleToggleJS              string
 	SettingsApiTokenJS                string
 	SettingsUpdatesJS                 string
+	// SettingsOpsJS persists the operational text/number controls surfaced from
+	// env-only into the UI (#1746, #1753): artist-worker count, scanner
+	// exclusions, and the backup interval. Toggles reuse window.updateSetting
+	// from notif-badges.js; this module provides swSaveOpsSetting() for the
+	// save-button-backed inputs and reveals the backup restart-required banner.
+	SettingsOpsJS string
 	// SettingsSectionRefreshJS is the targeted section-refresh helper (M55 #1339
 	// items 1+6): swRefreshSettingsSection() re-fetches the current page and swaps
 	// in just the changed [data-settings-fragment] section, replacing the old

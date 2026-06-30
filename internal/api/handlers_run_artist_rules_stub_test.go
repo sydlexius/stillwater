@@ -26,6 +26,7 @@ type stubPipeline struct {
 	runImageRulesFn func(ctx context.Context, a *artist.Artist) (*rule.RunResult, error)
 	runRuleFn       func(ctx context.Context, ruleID string) (*rule.RunResult, error)
 	fixViolationFn  func(ctx context.Context, violationID string) (*rule.FixResult, error)
+	artistWorkers   int
 }
 
 func (s *stubPipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*rule.RunResult, error) {
@@ -69,6 +70,15 @@ func (s *stubPipeline) FixViolation(ctx context.Context, violationID string) (*r
 		return s.fixViolationFn(ctx, violationID)
 	}
 	return &rule.FixResult{Fixed: true, Message: "stub fixed"}, nil
+}
+
+func (s *stubPipeline) SetArtistWorkers(n int) { s.artistWorkers = n }
+
+func (s *stubPipeline) ArtistWorkers() int {
+	if s.artistWorkers < 1 {
+		return 1
+	}
+	return s.artistWorkers
 }
 
 // testRouterWithStubPipeline creates a Router backed by a stubPipeline,

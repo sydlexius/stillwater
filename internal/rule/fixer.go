@@ -108,6 +108,14 @@ type PipelineRunner interface {
 	// RunRuleScoped is the dirty-aware variant of RunRule.
 	RunRuleScoped(ctx context.Context, ruleID string, scope RunScope) (*RunResult, error)
 	FixViolation(ctx context.Context, violationID string) (*FixResult, error)
+	// SetArtistWorkers tunes how many artists a RunAll/RunRule pass evaluates
+	// concurrently. Wired from the settings handler so the value is editable
+	// at runtime; the next pass reads it via getArtistWorkers.
+	SetArtistWorkers(n int)
+	// ArtistWorkers reports the currently configured concurrency so the
+	// settings UI can render the value actually in effect (which already
+	// reflects SW_RULE_ENGINE_ARTIST_WORKERS applied at startup).
+	ArtistWorkers() int
 }
 
 // Compile-time assertion: *Pipeline implements PipelineRunner.
@@ -299,6 +307,13 @@ func (p *Pipeline) SetArtistWorkers(n int) {
 	p.artistWorkersMu.Lock()
 	p.artistWorkers = n
 	p.artistWorkersMu.Unlock()
+}
+
+// ArtistWorkers returns the normalized worker count currently in effect (at
+// least 1). It is the exported, interface-level accessor used by the settings
+// UI; internal callers use getArtistWorkers directly.
+func (p *Pipeline) ArtistWorkers() int {
+	return p.getArtistWorkers()
 }
 
 // getArtistWorkers returns the configured worker count under the read lock,

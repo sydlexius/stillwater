@@ -130,9 +130,9 @@ func nextSettingsGroups() []railGroup {
 				{ID: "auth", LabelKey: "settings.next.section.auth", Icon: "shield",
 					Keywords: []string{"OIDC", "OpenID Connect", "SAML", "LDAP", "local auth", "SSO", "Authelia", "Authentik", "session timeout", "2FA"}},
 				{ID: "config-file", LabelKey: "settings.next.section.config_file", Icon: "config",
-					Keywords: []string{"TOML", "config.toml", "stillwater.toml", "version control", "git", "Ansible", "infrastructure as code", "IaC", "import config", "export config", "diff", "hand-edit", "watcher"}},
+					Keywords: []string{"TOML", "config.toml", "stillwater.toml", "version control", "git", "Ansible", "infrastructure as code", "IaC", "import config", "export config", "diff", "hand-edit", "watcher", "scanner exclusions", "skip patterns", "artist workers", "concurrency", "mtime fast path", "performance"}},
 				{ID: "maintenance", LabelKey: "settings.next.section.maintenance", Icon: "wrench",
-					Keywords: []string{"rebuild index", "vacuum database", "clear cache", "reset thumbnails", "backup", "restore", "export", "DB"}},
+					Keywords: []string{"rebuild index", "vacuum database", "clear cache", "reset thumbnails", "backup", "restore", "export", "DB", "backup interval", "backup schedule"}},
 				{ID: "updates", LabelKey: "settings.next.section.updates", Icon: "download",
 					Keywords: []string{"release channel", "stable", "beta", "version", "changelog", "auto-update", "self-host"}},
 			},
@@ -242,6 +242,7 @@ templ SettingsPageNext(assets templates.AssetPaths, data templates.SettingsData)
 		@templates.SettingsSearchIndexScript(templates.BuildSettingsSearchIndex(ctx))
 		<script src={ assets.SortableJS }></script>
 		<script src={ assets.SettingsNotifBadgesJS }></script>
+		<script src={ assets.SettingsOpsJS }></script>
 		<div class="sw-next-settings">
 			<header class="sw-card rounded-lg px-6 py-4 mb-6 sw-next-settings-head">
 				<div class="sw-next-settings-head-row">
@@ -412,6 +413,7 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 		}
 		@nextSettingsSection("config-file", "system") {
 			@nextSectionHeader("settings.next.section.config_file", "")
+			@templates.SectionScannerOps(data)
 			@templates.SectionExportImport(data)
 			@templates.SectionAdvanced(data)
 		}
@@ -419,6 +421,7 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 			@nextSectionHeader("settings.next.section.maintenance", "")
 			@templates.SectionDatabaseMaintenance(data)
 			@templates.SectionBackup(data)
+			@templates.SectionBackupSchedule(data)
 			@templates.SectionImageCache(data, assets)
 		}
 		@nextSettingsSection("updates", "system") {

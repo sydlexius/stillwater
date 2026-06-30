@@ -311,6 +311,127 @@ func TestValidateIntRange(t *testing.T) {
 	}
 }
 
+// TestOpsSettingsValidators covers the four operational settings surfaced from
+// env-only into the UI (#1746, #1753): the registry wiring plus each
+// validator's canonicalisation and bounds.
+func TestOpsSettingsValidators(t *testing.T) {
+	t.Parallel()
+
+	// rule_engine.artist_workers: bounded int 1..64.
+	workers, ok := settingValidators["rule_engine.artist_workers"]
+	if !ok {
+		t.Fatal("rule_engine.artist_workers not registered in settingValidators")
+	}
+	workerCases := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"1", "1", false},
+		{"2", "2", false},
+		{"64", "64", false},
+		{"0", "", true},
+		{"65", "", true},
+		{"-1", "", true},
+		{"abc", "", true},
+	}
+	for _, c := range workerCases {
+		got, err := workers(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("artist_workers(%q): expected error", c.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("artist_workers(%q): unexpected error: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Errorf("artist_workers(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// scanner.exclusions: CSV normaliser -- trim tokens, drop empties, rejoin.
+	excl, ok := settingValidators["scanner.exclusions"]
+	if !ok {
+		t.Fatal("scanner.exclusions not registered in settingValidators")
+	}
+	exclCases := []struct{ in, want string }{
+		{"Various Artists, Soundtrack", "Various Artists, Soundtrack"},
+		{" VA ,  , OST ", "VA, OST"},
+		{"", ""},
+		{"  ,  ", ""},
+		{"Single", "Single"},
+	}
+	for _, c := range exclCases {
+		got, err := excl(c.in)
+		if err != nil {
+			t.Errorf("exclusions(%q): unexpected error: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Errorf("exclusions(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// scanner.mtime_fast_path: bool, canonicalised to true/false.
+	mtime, ok := settingValidators["scanner.mtime_fast_path"]
+	if !ok {
+		t.Fatal("scanner.mtime_fast_path not registered in settingValidators")
+	}
+	mtimeCases := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"true", "true", false},
+		{"TRUE", "true", false},
+		{" 1 ", "true", false},
+		{"false", "false", false},
+		{"0", "false", false},
+		{"yes", "", true},
+		{"", "", true},
+	}
+	for _, c := range mtimeCases {
+		got, err := mtime(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("mtime(%q): expected error", c.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("mtime(%q): unexpected error: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Errorf("mtime(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// backup.interval_hours: positive int (>= 1).
+	interval, ok := settingValidators["backup.interval_hours"]
+	if !ok {
+		t.Fatal("backup.interval_hours not registered in settingValidators")
+	}
+	for _, c := range []struct {
+		in      string
+		wantErr bool
+	}{
+		{"1", false},
+		{"24", false},
+		{"0", true},
+		{"-3", true},
+		{"abc", true},
+	} {
+		_, err := interval(c.in)
+		if c.wantErr && err == nil {
+			t.Errorf("interval(%q): expected error", c.in)
+		}
+		if !c.wantErr && err != nil {
+			t.Errorf("interval(%q): unexpected error: %v", c.in, err)
+		}
+	}
+}
+
 func TestValidateEnum(t *testing.T) {
 	t.Parallel()
 	fn := validateEnum("my_key", "alpha", "beta", "gamma")

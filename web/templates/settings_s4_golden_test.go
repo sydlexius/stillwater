@@ -38,6 +38,28 @@ var s4MaintenanceData = SettingsData{
 	MaintIntervalHours: 24,
 	BackupRetention:    7,
 	BackupMaxAgeDays:   30,
+	// Operational settings surfaced from env-only (#1746, #1753); non-default
+	// values lock the rendered initial state of the new System-group cards.
+	ArtistWorkers:        2,
+	ScannerExclusions:    "Various Artists, Soundtrack",
+	ScannerMtimeFastPath: true,
+	BackupIntervalHours:  24,
+}
+
+// s4OpsEnvPinnedData renders the ops cards in their env-pinned state (env-wins,
+// AC4): every control is read-only, its Save button suppressed, and the
+// backup restart banner replaced by the "managed by environment" hint. The
+// goldens lock that read-only markup so a regression that re-enables a save on
+// an env-pinned control is caught.
+var s4OpsEnvPinnedData = SettingsData{
+	ArtistWorkers:              9,
+	ScannerExclusions:          "Live, Bootlegs",
+	ScannerMtimeFastPath:       false,
+	BackupIntervalHours:        12,
+	ArtistWorkersEnvPinned:     true,
+	ScannerExclusionsEnvPinned: true,
+	ScannerMtimeEnvPinned:      true,
+	BackupIntervalEnvPinned:    true,
 }
 
 // TestS4_PageComposesSections asserts that SettingsPage embeds each extracted
@@ -94,6 +116,10 @@ func TestSettingsSections_S4_Golden(t *testing.T) {
 		{name: "export_import", render: SectionExportImport(s4MaintenanceData).Render},
 		{name: "log_settings", render: SectionLogSettings(s4MaintenanceData).Render},
 		{name: "log_viewer", render: SectionLogViewer(s4MaintenanceData).Render},
+		{name: "scanner_ops", render: SectionScannerOps(s4MaintenanceData).Render},
+		{name: "backup_schedule", render: SectionBackupSchedule(s4MaintenanceData).Render},
+		{name: "scanner_ops_env_pinned", render: SectionScannerOps(s4OpsEnvPinnedData).Render},
+		{name: "backup_schedule_env_pinned", render: SectionBackupSchedule(s4OpsEnvPinnedData).Render},
 	}
 
 	for _, tt := range tests {

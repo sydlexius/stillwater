@@ -53,6 +53,10 @@ func (f *fakePipelineRunner) FixViolation(_ context.Context, _ string) (*FixResu
 	return &FixResult{}, nil
 }
 
+func (f *fakePipelineRunner) SetArtistWorkers(_ int) {}
+
+func (f *fakePipelineRunner) ArtistWorkers() int { return 1 }
+
 func (f *fakePipelineRunner) capturedContexts() []context.Context {
 	f.mu.Lock()
 	defer f.mu.Unlock()

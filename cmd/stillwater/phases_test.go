@@ -671,6 +671,70 @@ func TestGetDBIntSetting_FallbackOnNonNumeric(t *testing.T) {
 	}
 }
 
+// --- applyPersistedPositiveInt (Fix 1: no silent drop of a corrupt value) ---
+
+// TestApplyPersistedPositiveInt covers the boot read-back for the integer ops
+// keys: a valid positive row applies via the callback, while an absent, non-
+// numeric, or out-of-range row does NOT apply (and the latter two warn instead
+// of silently reverting -- exercised here by asserting the callback never runs).
+func TestApplyPersistedPositiveInt(t *testing.T) {
+	cases := []struct {
+		name      string
+		insert    bool
+		value     string
+		wantApply bool
+		wantN     int
+	}{
+		{name: "valid", insert: true, value: "8", wantApply: true, wantN: 8},
+		{name: "absent", insert: false},
+		{name: "non_numeric", insert: true, value: "notanumber"},
+		{name: "zero", insert: true, value: "0"},
+		{name: "negative", insert: true, value: "-4"},
+		{name: "empty", insert: true, value: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			const key = "rule_engine.artist_workers"
+			if tc.insert {
+				if _, err := db.ExecContext(context.Background(),
+					`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, '2024-01-01T00:00:00Z')`,
+					key, tc.value); err != nil {
+					t.Fatalf("inserting row: %v", err)
+				}
+			}
+			applied := false
+			gotN := 0
+			applyPersistedPositiveInt(context.Background(), db, slog.Default(), key, func(n int) {
+				applied = true
+				gotN = n
+			})
+			if applied != tc.wantApply {
+				t.Fatalf("applied = %v, want %v", applied, tc.wantApply)
+			}
+			if tc.wantApply && gotN != tc.wantN {
+				t.Errorf("applied n = %d, want %d", gotN, tc.wantN)
+			}
+		})
+	}
+}
+
+// TestApplyPersistedPositiveInt_DBError: a read error (closed DB) must not
+// apply and must not panic -- the boot overlay warns and leaves the default.
+func TestApplyPersistedPositiveInt_DBError(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	applied := false
+	applyPersistedPositiveInt(context.Background(), db, slog.Default(), "backup.interval_hours", func(int) {
+		applied = true
+	})
+	if applied {
+		t.Error("callback ran despite a DB read error")
+	}
+}
+
 // --- resolveEncryptionKey edge-case tests ---
 
 // TestResolveEncryptionKey_EmptyFile verifies that an empty key file does not

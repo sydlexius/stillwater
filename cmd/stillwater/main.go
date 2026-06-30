@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -850,6 +851,12 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	a.bulkService = rule.NewBulkService(db)
 	a.bulkExecutor = rule.NewBulkExecutor(a.bulkService, a.artistService, a.orchestrator, a.pipeline, a.nfoSnapshotService, a.platformService, a.expectedWrites, a.publisher, logger)
 
+	// Overlay UI-persisted operational settings (#1746, #1753) now that the
+	// scanner and rule pipeline are wired. Env-wins; see applyPersistedOpsSettings.
+	// Runs before startListeners so the backup-interval write-back reaches the
+	// scheduler at boot.
+	applyPersistedOpsSettings(ctx, a, logger)
+
 	return nil
 }
 
@@ -1110,6 +1117,117 @@ func applyPersistedBasePath(ctx context.Context, db *sql.DB, cfg *config.Config,
 			"previous", cfg.Server.BasePath, "override", normalized)
 		cfg.Server.BasePath = normalized
 	}
+}
+
+// envSet reports whether an SW_* override is present and non-empty, matching
+// the loader's non-empty os.Getenv semantics (config.loadFromEnv applies a
+// binding only when the variable is non-empty).
+func envSet(key string) bool {
+	return strings.TrimSpace(os.Getenv(key)) != ""
+}
+
+// dbSettingPresent reports whether a settings-table row exists for key,
+// regardless of its (possibly empty) value. Used to distinguish "the operator
+// explicitly saved an empty value" (e.g. cleared all scanner exclusions) from
+// "never saved", which a value-with-fallback read cannot tell apart.
+func dbSettingPresent(ctx context.Context, db *sql.DB, key string) bool {
+	var v string
+	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	return err == nil
+}
+
+// applyPersistedOpsSettings overlays the operational settings saved from the UI
+// (#1746, #1753) onto the live services at startup so a UI change survives a
+// restart. Precedence mirrors applyPersistedBasePath: env wins. When the
+// corresponding SW_* env var is set, the persisted value is skipped entirely so
+// an operator who pinned the knob via the environment is never overridden by a
+// stale settings-table row (AC4). When neither env nor a persisted value is
+// present, the config/default value already wired stands unchanged, so a user
+// who set nothing sees no behavior change.
+//
+// The scanner and rule-engine values apply live (next scan / next pass). The
+// backup interval is written back into cfg so the backup scheduler -- started
+// later in startListeners and only bound once -- launches with the persisted
+// cadence; the UI carries a restart-required affordance for the running process.
+func applyPersistedOpsSettings(ctx context.Context, a *Application, logger *slog.Logger) {
+	db := a.db
+	cfg := a.cfg
+
+	// scanner.exclusions -- presence-checked so an explicit "cleared" (empty)
+	// value persists rather than falling back to the config default list.
+	if !envSet("SW_SCANNER_EXCLUSIONS") && dbSettingPresent(ctx, db, "scanner.exclusions") {
+		raw := getDBStringSetting(ctx, db, "scanner.exclusions", "")
+		parts := strings.Split(raw, ",")
+		exclusions := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if t := strings.TrimSpace(p); t != "" {
+				exclusions = append(exclusions, t)
+			}
+		}
+		a.scannerService.SetExclusions(exclusions)
+		logger.Info("applied persisted scanner.exclusions override", "count", len(exclusions))
+	}
+
+	// scanner.mtime_fast_path -- stored as "true"/"false"; non-empty when set.
+	if !envSet("SW_SCANNER_MTIME_FAST_PATH") && dbSettingPresent(ctx, db, "scanner.mtime_fast_path") {
+		enabled := getDBBoolSetting(ctx, db, "scanner.mtime_fast_path", cfg.Scanner.MtimeFastPath)
+		a.scannerService.SetMtimeFastPath(enabled)
+		logger.Info("applied persisted scanner.mtime_fast_path override", "enabled", enabled)
+	}
+
+	// rule_engine.artist_workers -- validated 1..64 by the API. Presence-gated
+	// like the scanner keys so a present-but-malformed row (or a DB read error)
+	// is warn-logged rather than silently reverting to the default: the boot
+	// overlay is the only place a corrupt persisted value would otherwise
+	// disappear without a trace.
+	if !envSet("SW_RULE_ENGINE_ARTIST_WORKERS") {
+		applyPersistedPositiveInt(ctx, db, logger, "rule_engine.artist_workers",
+			func(n int) {
+				a.pipeline.SetArtistWorkers(n)
+				logger.Info("applied persisted rule_engine.artist_workers override", "workers", n)
+			})
+	}
+
+	// backup.interval_hours -- write back into cfg before the scheduler starts.
+	// Same presence-gated, warn-on-corrupt handling as the worker count above.
+	if !envSet("SW_BACKUP_INTERVAL") {
+		applyPersistedPositiveInt(ctx, db, logger, "backup.interval_hours",
+			func(n int) {
+				cfg.Backup.IntervalHours = n
+				logger.Info("applied persisted backup.interval_hours override", "hours", n)
+			})
+	}
+}
+
+// applyPersistedPositiveInt applies a persisted integer ops-setting override at
+// boot, distinguishing the three states the silent getDBIntSetting collapses so
+// a corrupt value is never dropped without a log (mirrors applyPersistedBasePath
+// and the scanner keys' presence gate):
+//   - no row                       -> no-op, the wired config/default stands.
+//   - row present and a valid >0   -> apply via the supplied callback.
+//   - row present but unparsable, out of range, or a DB read error -> warn.
+func applyPersistedPositiveInt(ctx context.Context, db *sql.DB, logger *slog.Logger, key string, apply func(n int)) {
+	var raw string
+	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return // absent: leave the config/default value in force.
+	}
+	if err != nil {
+		logger.Warn("reading persisted ops setting failed; leaving default in force", "key", key, "error", err)
+		return
+	}
+	n, perr := strconv.Atoi(strings.TrimSpace(raw))
+	if perr != nil {
+		logger.Warn("ignoring persisted ops setting: value is not a valid integer",
+			"key", key, "stored_value", raw)
+		return
+	}
+	if n <= 0 {
+		logger.Warn("ignoring persisted ops setting: value out of range (must be positive)",
+			"key", key, "stored_value", n)
+		return
+	}
+	apply(n)
 }
 
 // resolveEncryptionKey determines the encryption key to use.

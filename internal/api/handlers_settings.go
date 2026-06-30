@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,56 @@ var settingValidators = map[string]validator{
 	"auth.method":                        validateEnum("auth.method", "local", "emby", "jellyfin"),
 	"server.base_path":                   validateBasePath,
 	"auth.providers.local.enabled":       validateLocalAuthEnabled,
+	// Operational settings surfaced from env-only into the UI (#1746, #1753).
+	"rule_engine.artist_workers": validateIntRange("rule_engine.artist_workers", 1, 64),
+	"scanner.exclusions":         validateCSV,
+	"scanner.mtime_fast_path":    validateBool("scanner.mtime_fast_path"),
+	"backup.interval_hours":      validatePositiveInt("backup.interval_hours"),
+}
+
+// validateCSV normalises a comma-separated value the same way config.setCSV
+// (the SW_SCANNER_EXCLUSIONS loader) does: split on commas, trim whitespace
+// from each token, drop empty tokens, and rejoin with ", " so the persisted
+// form is canonical and round-trips cleanly. An all-empty input canonicalises
+// to "" (no exclusions), which is valid. Never returns an error.
+func validateCSV(v string) (string, error) {
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return strings.Join(out, ", "), nil
+}
+
+// validateBool returns a validator that accepts the common boolean literals and
+// canonicalises them to "true"/"false". Input is trimmed and lowercased so
+// "TRUE", " 1 ", and similar variants are accepted.
+func validateBool(key string) validator {
+	return func(v string) (string, error) {
+		switch strings.TrimSpace(strings.ToLower(v)) {
+		case "true", "1":
+			return "true", nil
+		case "false", "0":
+			return "false", nil
+		default:
+			return "", fmt.Errorf("%s must be true or false", key)
+		}
+	}
+}
+
+// csvToSlice splits an already-canonical CSV setting value into a trimmed,
+// empty-dropped slice for handing to scanner.SetExclusions.
+func csvToSlice(v string) []string {
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // validatePositiveInt returns a validator that accepts integers >= 1.
@@ -258,8 +309,19 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		_, _ = r.db.ExecContext(req.Context(), `DELETE FROM settings WHERE key = ?`, "rule_schedule.interval_hours")
 	}
 
-	// Apply backup settings to the service immediately so the live service
-	// reflects the new values without requiring a restart.
+	// Push the just-persisted settings that have a live service into it so the
+	// change takes effect without a restart.
+	r.applyLiveSettingSideEffects(body)
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// applyLiveSettingSideEffects applies the subset of just-persisted settings
+// that have a live service so the change takes effect on the next scan / rule
+// pass / backup run without a restart. backup.interval_hours is intentionally
+// absent: the backup scheduler binds once at boot and the UI carries a
+// restart-required affordance.
+func (r *Router) applyLiveSettingSideEffects(body map[string]string) {
 	if v, ok := body["backup_retention_count"]; ok {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			r.backupService.SetRetention(n)
@@ -270,8 +332,42 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			r.backupService.SetMaxAgeDays(n)
 		}
 	}
+	if v, ok := body["scanner.exclusions"]; ok && !r.opsSettingEnvPinned("scanner.exclusions", "SW_SCANNER_EXCLUSIONS") {
+		if r.scannerService == nil {
+			r.logger.Warn("persisted but not applied live: scanner service unavailable", "key", "scanner.exclusions")
+		} else {
+			r.scannerService.SetExclusions(csvToSlice(v))
+		}
+	}
+	if v, ok := body["scanner.mtime_fast_path"]; ok && !r.opsSettingEnvPinned("scanner.mtime_fast_path", "SW_SCANNER_MTIME_FAST_PATH") {
+		if r.scannerService == nil {
+			r.logger.Warn("persisted but not applied live: scanner service unavailable", "key", "scanner.mtime_fast_path")
+		} else {
+			r.scannerService.SetMtimeFastPath(v == "true" || v == "1")
+		}
+	}
+	if v, ok := body["rule_engine.artist_workers"]; ok && !r.opsSettingEnvPinned("rule_engine.artist_workers", "SW_RULE_ENGINE_ARTIST_WORKERS") {
+		if r.pipeline == nil {
+			r.logger.Warn("persisted but not applied live: rule pipeline unavailable", "key", "rule_engine.artist_workers")
+		} else if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			r.pipeline.SetArtistWorkers(n)
+		}
+	}
+}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+// opsSettingEnvPinned reports whether an operational setting is pinned by its
+// SW_* environment variable. When pinned, env-wins precedence (AC4) means a UI
+// save must NOT apply the value live -- doing so would override env at runtime
+// only for the value to revert on the next restart. The UI renders these
+// controls read-only, so a save arriving for a pinned key is unexpected; it is
+// warn-logged and skipped (defense in depth, not the primary guard).
+func (r *Router) opsSettingEnvPinned(key, envVar string) bool {
+	if strings.TrimSpace(os.Getenv(envVar)) == "" {
+		return false
+	}
+	r.logger.Warn("ignoring live-apply for env-pinned ops setting (env-wins)",
+		"key", key, "env_var", envVar)
+	return true
 }
 
 // getBoolSetting reads a boolean setting from the key-value table.
