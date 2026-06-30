@@ -9,7 +9,6 @@
   "clearResolvedViolations",
   "clobberCheck",
   "createPlatform",
-  "createWebhook",
   "deleteLogFiles",
   "deletePlatform",
   "deleteProviderKey",
@@ -64,6 +63,5 @@
   "updateConnectionScraperConfig",
   "updateLogging",
   "updateMaintenanceSchedule",
-  "updateScraperConfig",
-  "updateWebhook"
+  "updateScraperConfig"
 ]
