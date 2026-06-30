@@ -41,6 +41,20 @@ func (r *Router) handleGetWebhook(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleCreateWebhook registers a new outbound webhook.
+// firstInvalidWebhookEvent returns the first entry of events that is not a
+// subscribable webhook event type (event.WebhookEventTypes), with false.
+// Returns ("", true) when every entry is valid, including an empty/nil list.
+// Validating here rejects a typo'd subscription at the API boundary instead of
+// silently storing an event that the dispatcher will never fire (#2009 #6).
+func firstInvalidWebhookEvent(events []string) (string, bool) {
+	for _, e := range events {
+		if !event.IsWebhookEvent(e) {
+			return e, false
+		}
+	}
+	return "", true
+}
+
 // POST /api/v1/webhooks
 func (r *Router) handleCreateWebhook(w http.ResponseWriter, req *http.Request) {
 	var body struct {
@@ -60,6 +74,11 @@ func (r *Router) handleCreateWebhook(w http.ResponseWriter, req *http.Request) {
 		body.URL = req.FormValue("url")
 		body.Type = req.FormValue("type")
 		body.Enabled = true
+	}
+
+	if bad, ok := firstInvalidWebhookEvent(body.Events); !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown webhook event type: " + bad})
+		return
 	}
 
 	wh := &webhook.Webhook{
@@ -114,6 +133,10 @@ func (r *Router) handleUpdateWebhook(w http.ResponseWriter, req *http.Request) {
 		existing.Type = body.Type
 	}
 	if body.Events != nil {
+		if bad, ok := firstInvalidWebhookEvent(body.Events); !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown webhook event type: " + bad})
+			return
+		}
 		existing.Events = body.Events
 	}
 	if body.Enabled != nil {

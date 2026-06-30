@@ -95,6 +95,17 @@ require() {
 # Each extraction ends in `|| true` so a grep miss (exit 1) does not abort the
 # script under `set -e`/`pipefail`; an empty result is reported by require().
 
+# Go: the go.mod `go` directive and the Dockerfile golang base-image tag must
+# pin the same version, so the release image builds on the same toolchain as
+# CI / local dev (#2009 #7). The Dockerfile also @sha256-pins the image (the
+# real reproducibility guarantee), but the tag must still read the correct
+# patch for humans and for this guard to catch a go.mod bump that forgot the
+# Dockerfile. No auto-fixer: bump go.mod + the Dockerfile tag together, then
+# re-pin the digest.
+go_mod=$(grep -oE '^go[[:space:]]+[0-9.]+' go.mod | grep -oE '[0-9.]+' | head -1 || true)
+go_docker=$(grep -oE 'golang:[0-9.]+' build/docker/Dockerfile | grep -oE '[0-9.]+' | head -1 || true)
+require "go" "$go_mod" "$go_docker" "go.mod" "build/docker/Dockerfile"
+
 # Tailwind: the composite action (CI glibc x64 binary) and the Dockerfile (musl
 # binaries) pin the SAME TAILWIND_VERSION but DIFFERENT SHAs. Only the version is
 # a shared invariant, so assert just the version here; the SHAs intentionally

@@ -242,7 +242,7 @@
     "method": "POST",
     "path": "/webhooks",
     "handler": "handleCreateWebhook",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "cropImage",
@@ -1782,7 +1782,7 @@
     "method": "PUT",
     "path": "/webhooks/{id}",
     "handler": "handleUpdateWebhook",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "uploadImage",
