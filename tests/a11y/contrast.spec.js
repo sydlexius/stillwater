@@ -18,24 +18,20 @@
 import { test, expect } from 'playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+import { disableTransitions } from './helpers/settle.js';
+
 // Auth: a single login happens once in global-setup.js; the session is loaded
 // into every test context via `use.storageState` (playwright.config.js), so no
 // per-file login or per-test cookie injection is needed here.
 
-// Disable CSS transitions/animations in every test page so axe reads SETTLED
-// colors. Many theme-token colors ride Tailwind's `transition-colors` (150ms);
-// a synchronous getComputedStyle (axe's color-contrast rule) taken right after
-// a theme flip (the light-mode test toggles the theme before scanning) can
-// otherwise sample a mid-transition blended color and report a FALSE contrast
-// failure even though the settled page is AA-compliant. This is a test-
-// measurement concern only -- production theme switching is unchanged.
+// Disable CSS transitions/animations so axe reads SETTLED colors (see
+// helpers/settle.js): a synchronous getComputedStyle taken right after a theme
+// flip (the light-mode test toggles the theme before scanning) can otherwise
+// sample a mid-transition blended color and report a FALSE contrast failure
+// even though the settled page is AA-compliant. Test-measurement only --
+// production theme switching is unchanged.
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    const style = document.createElement('style');
-    style.textContent =
-      '*, *::before, *::after { transition: none !important; animation: none !important; }';
-    document.documentElement.appendChild(style);
-  });
+  await disableTransitions(page);
 });
 
 // ---------------------------------------------------------------------------

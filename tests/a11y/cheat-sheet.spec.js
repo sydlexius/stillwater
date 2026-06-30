@@ -16,6 +16,8 @@
 import { test, expect } from 'playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+import { disableTransitions } from './helpers/settle.js';
+
 // Auth: a single login happens once in global-setup.js; the session is loaded
 // into every test context via `use.storageState` (playwright.config.js).
 
@@ -23,17 +25,12 @@ import AxeBuilder from '@axe-core/playwright';
 // script resolves to dark on first paint (matching next/'s dark default).
 test.use({ colorScheme: 'dark' });
 
-// Disable CSS transitions/animations so axe reads SETTLED colors (see the same
-// guard in contrast.spec.js): a synchronous color-contrast read taken during a
+// Disable CSS transitions/animations so axe reads SETTLED colors (see
+// helpers/settle.js): a synchronous color-contrast read taken during a
 // `transition-colors` window can sample a blended mid-transition color and
 // report a false failure. Test-measurement only; production is unchanged.
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    const style = document.createElement('style');
-    style.textContent =
-      '*, *::before, *::after { transition: none !important; animation: none !important; }';
-    document.documentElement.appendChild(style);
-  });
+  await disableTransitions(page);
 });
 
 // ---------------------------------------------------------------------------

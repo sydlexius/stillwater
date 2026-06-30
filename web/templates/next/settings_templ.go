@@ -2054,7 +2054,8 @@ func nextPlatformSymlinkCard(data templates.SettingsData) templ.Component {
 
 // nextSectionActiveProfile is the next/-local Active Profile card: a verbatim
 // copy of templates.SectionActiveProfile WITH THE SYMLINK TOGGLE REMOVED (#1339
-// B-KEEP). The symlink default is re-homed to the Music Libraries section.
+// B-KEEP). The symlink default toggle now lives in the Platform Profile
+// section, gated to the Custom profile only (#2120).
 func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -2101,7 +2102,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 				var templ_7745c5c3_Var84 string
 				templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.active_profile.description"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 587, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 588, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 				if templ_7745c5c3_Err != nil {
@@ -2119,7 +2120,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.prompt_filename"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 595, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 596, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var85)
 			if templ_7745c5c3_Err != nil {
@@ -2132,7 +2133,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.error_path_separator"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 596, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 597, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
 			if templ_7745c5c3_Err != nil {
@@ -2145,7 +2146,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var87 string
 			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.error_no_extension"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 597, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 598, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var87)
 			if templ_7745c5c3_Err != nil {
@@ -2158,7 +2159,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var88 string
 			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.error_invalid_extension"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 598, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 599, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var88)
 			if templ_7745c5c3_Err != nil {
@@ -2171,7 +2172,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.error_logo_extension"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 599, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 600, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
 			if templ_7745c5c3_Err != nil {
@@ -2184,7 +2185,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var90 string
 			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.error_duplicate"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 600, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 601, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
 			if templ_7745c5c3_Err != nil {
@@ -2197,7 +2198,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.aria_remove"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 601, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 602, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var91)
 			if templ_7745c5c3_Err != nil {
@@ -2210,7 +2211,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var92 string
 			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.status_saving"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 602, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 603, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var92)
 			if templ_7745c5c3_Err != nil {
@@ -2223,7 +2224,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var93 string
 			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.status_saved"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 603, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 604, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var93)
 			if templ_7745c5c3_Err != nil {
@@ -2236,7 +2237,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var94 string
 			templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.status_save_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 604, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 605, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var94)
 			if templ_7745c5c3_Err != nil {
@@ -2249,7 +2250,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var95 string
 			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "settings.profile_naming.status_network"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 605, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 606, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95)
 			if templ_7745c5c3_Err != nil {
@@ -2262,7 +2263,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 			var templ_7745c5c3_Var96 string
 			templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.active_profile.nfo_output"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 610, Col: 111}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 611, Col: 111}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 			if templ_7745c5c3_Err != nil {
@@ -2276,7 +2277,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 				var templ_7745c5c3_Var97 string
 				templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.active_profile.nfo_enabled_format", data.ActiveProfile.NFOFormat))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 613, Col: 93}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 614, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 				if templ_7745c5c3_Err != nil {
@@ -2286,7 +2287,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 				var templ_7745c5c3_Var98 string
 				templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 615, Col: 35}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 616, Col: 35}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 				if templ_7745c5c3_Err != nil {
@@ -2334,7 +2335,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 				var templ_7745c5c3_Var100 string
 				templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.ActiveProfile.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 629, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 630, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var100)
 				if templ_7745c5c3_Err != nil {
@@ -2360,7 +2361,7 @@ func nextSectionActiveProfile(data templates.SettingsData) templ.Component {
 				var templ_7745c5c3_Var102 string
 				templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.active_profile.save_filenames"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 632, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/settings.templ`, Line: 633, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 				if templ_7745c5c3_Err != nil {

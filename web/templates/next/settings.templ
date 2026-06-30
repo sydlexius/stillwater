@@ -573,7 +573,8 @@ templ nextPlatformSymlinkCard(data templates.SettingsData) {
 
 // nextSectionActiveProfile is the next/-local Active Profile card: a verbatim
 // copy of templates.SectionActiveProfile WITH THE SYMLINK TOGGLE REMOVED (#1339
-// B-KEEP). The symlink default is re-homed to the Music Libraries section.
+// B-KEEP). The symlink default toggle now lives in the Platform Profile
+// section, gated to the Custom profile only (#2120).
 templ nextSectionActiveProfile(data templates.SettingsData) {
 	if data.ActiveProfile != nil {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
