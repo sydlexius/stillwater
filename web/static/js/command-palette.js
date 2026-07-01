@@ -77,6 +77,7 @@
     row.setAttribute('role', 'option');
     row.setAttribute('data-idx', String(idx));
     row.setAttribute('data-id', item.id);
+    row.id = 'sw-cmdk-option-' + idx;
 
     var label = document.createElement('span');
     label.className = 'sw-cmdk-row-label';
@@ -102,7 +103,12 @@
       row.appendChild(tag);
     }
 
-    if (idx === activeIdx) row.setAttribute('data-active', 'true');
+    if (idx === activeIdx) {
+      row.setAttribute('data-active', 'true');
+      row.setAttribute('aria-selected', 'true');
+    } else {
+      row.setAttribute('aria-selected', 'false');
+    }
     row.addEventListener('click', function () {
       window.swCommandPalette.activate(item);
     });
@@ -130,7 +136,7 @@
     if (!listEl) return;
     var all = buildIndex(window.swKeyboardShortcuts ? window.swKeyboardShortcuts.list() : []);
     items = all.filter(function (item) { return match(item, q); });
-    if (activeIdx >= items.length) activeIdx = items.length ? 0 : -1;
+    if (activeIdx < 0 || activeIdx >= items.length) activeIdx = items.length ? 0 : -1;
 
     listEl.innerHTML = '';
     var prevKind = null;
@@ -148,6 +154,20 @@
       } else {
         emptyEl.classList.add('hidden');
       }
+    }
+
+    updateActiveDescendant();
+  }
+
+  // updateActiveDescendant syncs the input's aria-activedescendant with the
+  // current activeIdx, so screen readers announce the highlighted row
+  // without moving DOM focus off the input.
+  function updateActiveDescendant() {
+    if (!input) return;
+    if (activeIdx >= 0 && activeIdx < items.length) {
+      input.setAttribute('aria-activedescendant', 'sw-cmdk-option-' + activeIdx);
+    } else {
+      input.removeAttribute('aria-activedescendant');
     }
   }
 
@@ -256,6 +276,7 @@
   // so it never collides with keyboard.js's roving j/k handler which is
   // scoped to non-modal contexts.
   function onKeydown(e) {
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (items.length) {
@@ -283,6 +304,7 @@
     root.classList.remove('hidden');
     if (input) {
       input.value = '';
+      input.setAttribute('aria-expanded', 'true');
     }
     // Pre-select the first row (index 0) so ArrowDown/Enter can activate
     // without an initial keypress just to "enter" the list.
@@ -304,7 +326,11 @@
     ensureEls();
     if (!root) return;
     root.classList.add('hidden');
-    if (input) input.value = '';
+    if (input) {
+      input.value = '';
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
     armedConfirmId = null;
     if (navWired) {
       document.removeEventListener('keydown', onKeydown);

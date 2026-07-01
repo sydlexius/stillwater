@@ -230,3 +230,22 @@ func TestLayoutNext_MountsCommandPalette(t *testing.T) {
 		t.Fatal("command palette must be hidden by default")
 	}
 }
+
+// TestLayoutNext_MountsCommandPaletteScript verifies LayoutNext emits the
+// controller <script> tag for the command palette (#1775), referencing the
+// cache-busted command-palette.js asset path from AssetPaths.
+func TestLayoutNext_MountsCommandPaletteScript(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := nextTestCtx(t)
+	assets := templates.AssetPaths{CommandPaletteJS: "/js/command-palette.js?v=abc123"}
+	if err := LayoutNext("Test", assets).Render(ctx, &buf); err != nil {
+		t.Fatalf("rendering LayoutNext: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "<script") || !strings.Contains(out, "command-palette") {
+		t.Fatal("LayoutNext output must include a <script> tag referencing the command-palette controller asset")
+	}
+	if !strings.Contains(out, `src="/js/command-palette.js?v=abc123"`) {
+		t.Fatal("command palette script tag must use the AssetPaths.CommandPaletteJS value")
+	}
+}

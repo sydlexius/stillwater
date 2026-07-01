@@ -683,7 +683,7 @@
       { key: 'g l', label: 'Go to Logs' },
       { key: 'g f', label: 'Go to Findings' },
       { key: 'g s', label: 'Go to Settings' },
-      { key: '⌘K', label: 'Command palette' },
+      { key: '⌘K', label: 'Command palette (Ctrl-K)' },
       { key: '?',   label: 'Show Keyboard Shortcuts' },
       { key: 'Esc', label: 'Close / clear focus' }
     ]);

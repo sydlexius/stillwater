@@ -7020,6 +7020,7 @@ html[data-density="spacious"] .sw-next-rail-item {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
   font-family: var(--sw-font-sans);
   overflow: hidden;
+  min-height: 0;
 }
 
 .sw-cmdk-input-row {
@@ -7053,6 +7054,8 @@ html[data-density="spacious"] .sw-next-rail-item {
 }
 
 .sw-cmdk-list {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 0.5rem;
 }

@@ -102,6 +102,27 @@ describe('command palette open/hide/render', () => {
     });
   });
 
+  it('screen rows render a two-key shortcut chip pair; non-screen rows render a kind tag instead', () => {
+    const dom = withPalette();
+    const p = dom.window.swCommandPalette;
+    p.open();
+    const rows = [...dom.window.document.querySelectorAll('[data-cmdk-list] .sw-cmdk-row')];
+    const screenRows = rows.filter((r) => r.querySelector('.sw-cmdk-row-shortcut'));
+    const kindRows = rows.filter((r) => r.querySelector('.sw-cmdk-row-kind'));
+    // Two 'g'-leader entries from the stubbed registry -> two shortcut chip rows.
+    assert.equal(screenRows.length, 2);
+    screenRows.forEach((row) => {
+      const chips = row.querySelectorAll('.sw-cmdk-row-shortcut kbd.sw-kbd');
+      assert.equal(chips.length, 2, 'a screen row with a valid shortcut renders exactly a two-key chip pair');
+      assert.equal(row.querySelector('.sw-cmdk-row-kind'), null, 'a shortcut-chip row must not also render a kind tag');
+    });
+    // Every non-screen row (settings + actions) falls back to a plain kind tag.
+    assert.ok(kindRows.length > 0);
+    kindRows.forEach((row) => {
+      assert.equal(row.querySelector('.sw-cmdk-row-shortcut'), null, 'a kind-tag row must not also render shortcut chips');
+    });
+  });
+
   it('typing filters the rows and shows empty state on no match', () => {
     const dom = withPalette();
     const p = dom.window.swCommandPalette;
