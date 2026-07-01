@@ -44,9 +44,45 @@
     return Array.prototype.slice.call((root || document).querySelectorAll(sel));
   }
 
+  // M55 #2117 (next-only a11y): the pane composes shared section bodies, one of
+  // which (the Users table) wraps its content in a horizontally scrollable
+  // `.overflow-x-auto` div. axe `scrollable-region-focusable` requires a scroll
+  // container to be keyboard-reachable. We can't add the attribute in the shared
+  // template without changing the stable v1 render, so we enhance it here on the
+  // next/ page only: make each scrollable region focusable (tabindex=0) and, when
+  // a section heading is available, expose it as a labelled region (role=region +
+  // localized aria-label from the heading). Idempotent + re-run-safe.
+  function swMakeScrollRegionsFocusable(root) {
+    var regions = list(root, '.overflow-x-auto, .overflow-auto');
+    for (var i = 0; i < regions.length; i++) {
+      var el = regions[i];
+      if (el.dataset.swScrollA11y === '1') continue;
+      el.dataset.swScrollA11y = '1';
+      if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+      if (!el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')) {
+        var section = el.closest('section[data-rail-section]');
+        var heading = section && section.querySelector('.sw-next-section-heading');
+        var label = heading ? heading.textContent.trim() : '';
+        if (label) {
+          if (!el.getAttribute('role')) el.setAttribute('role', 'region');
+          el.setAttribute('aria-label', label);
+        }
+      }
+    }
+  }
+
   function swInitNextSettings() {
     var pane = document.getElementById('sw-next-settings-pane');
     if (!pane) return;
+
+    swMakeScrollRegionsFocusable(pane);
+
+    // Re-apply after any HTMX swap inside the pane so scroll regions added by
+    // dynamic content (e.g. Users table refresh / pagination) stay
+    // keyboard-accessible. Idempotent via the swScrollA11y guard. (CR #2159)
+    pane.addEventListener('htmx:afterSwap', function () {
+      swMakeScrollRegionsFocusable(pane);
+    });
 
     var input = document.getElementById('settings-search-input');
     var sections = list(pane, 'section[data-rail-section]');

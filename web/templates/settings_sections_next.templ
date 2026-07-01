@@ -1,0 +1,421 @@
+package templates
+
+// settings_sections_next.templ -- next/ redesigned Section bodies for the
+// Connections/Servers section (M55 #2117). These live in package templates
+// (NOT web/templates/next) on purpose: the per-connection disclosure handlers
+// (toggleConnectionFeatures / toggleConnectionEdit / toggleConnectionForm /
+// settingsDeleteConnection) are templ inline `script` funcs whose mangled
+// definitions (e.g. __templ_toggleConnectionFeatures_cfb5) are emitted only
+// where the script expression is rendered. A pure next-package fork could not
+// reference them, and hand-writing the onclick string would call an undefined
+// function. Rendering the redesigned unit from THIS package reuses those exact
+// script exprs verbatim, so every disclosure + toggle hook survives byte-for-
+// byte.
+//
+// Providers (#2116) intentionally has NO *Next fork: its four cards already
+// render to the next/ aesthetic via the reused exported sub-components
+// (ProviderKeyCard / WebSearchToggle / PriorityChipRows) plus the #1339 CSS
+// de-blue layer, and its HTMX fragment re-renders (renderProviderCard,
+// priorities reset/toggle) return those same sub-components -- so a fork would
+// only risk a re-render parity break. The one provider defect the redesign
+// names (the pane heading duplicating the API-keys card description) is fixed
+// in web/templates/next/settings.templ by dropping the pane-level description.
+//
+// #1917 toggle cleanup is folded in here (next only; stable serviceConnectionCard
+// is untouched): the dead library_import / nfo_write feature toggles are NOT
+// rendered, and image_write is gated to Emby/Jellyfin (never Lidarr).
+
+import (
+	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// serverTypeLabel maps a connection type to its display label for the row's
+// type tag (the flat list mixes all three types, so each row is type-tagged).
+func serverTypeLabel(connType string) string {
+	switch connType {
+	case "emby":
+		return "Emby"
+	case "jellyfin":
+		return "Jellyfin"
+	case "lidarr":
+		return "Lidarr"
+	default:
+		return connType
+	}
+}
+
+// serverStatusBadge renders the connection status as a small pill (green =
+// connected, red = error, gray = not tested), mirroring the row status-dot
+// semantics preserved from the stable card.
+templ serverStatusBadge(status string) {
+	switch status {
+		case "ok":
+			<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300">{ t(ctx, "settings.connections.status_ok") }</span>
+		case "error":
+			<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300">{ t(ctx, "settings.connections.status_error") }</span>
+		default:
+			<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{ t(ctx, "settings.connections.status_unknown") }</span>
+	}
+}
+
+// SectionServersNext renders the redesigned next/ Connections section (M55
+// #2117): a FLAT, single list of all servers (Emby / Jellyfin / Lidarr mixed),
+// each a collapse-to-row entry that expands to its feature panel + edit form,
+// and ONE "Add server" entry point that fans out to the per-type add forms.
+// Every JS-hook id, data-* attr, hx-* attr, and endpoint from the stable card
+// is preserved; the disclosure/feature scripts are reused verbatim.
+templ SectionServersNext(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<div class="flex items-center gap-2">
+				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.connections.title"))
+				@components.ContextHelp("help-connections", t(ctx, "settings.connections.title"), t(ctx, "settings.connections.help"), "settings-connections-connections")
+			</div>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.connections.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<!-- The connections targeted-refresh anchor (M55 #1339): after a
+			     connection Test / Delete / save-cancel, section-refresh.js re-fetches
+			     the page and swaps just this one node so live status updates without a
+			     full-page reload. Exactly one such anchor per name; kept on the
+			     wrapping list node below. -->
+			<div class="space-y-2" data-settings-fragment="connections">
+				if len(data.Connections) > 0 {
+					for _, c := range data.Connections {
+						@serverConnectionRowNext(c)
+					}
+				} else {
+					<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.connections.not_configured") }</p>
+				}
+			</div>
+			@serverAddNext()
+		</div>
+	</div>
+}
+
+// serverConnectionRowNext is one server in the flat list: a status row (dot +
+// name + type tag + url + status badge + ghost actions) that discloses the
+// feature panel and the edit form. Hook ids preserved: connection-{id},
+// discover-{id}, features-{id}, edit-panel-{id}, edit-result-{id}, and the
+// managed / verify-path / detected / feature-toggle contracts within the panels.
+templ serverConnectionRowNext(c connection.Connection) {
+	<div id={ "connection-" + c.ID } class="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2.5 target:ring-2 target:ring-amber-400/60 target:bg-amber-50/40 dark:target:bg-amber-900/10">
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+			<div class="flex items-center gap-2.5 min-w-0">
+				<!-- UAT de-dup (#2117): the leading status DOT was removed as
+				     redundant with the status BADGE on the right (which carries the
+				     state as color + word, better a11y). The server-type text pill was
+				     removed as redundant with the LOGO; the type is kept accessible via
+				     the logo's alt text (all three types have a logo asset), so no
+				     screen-reader regression from dropping the visible pill. -->
+				<img src={ logoSrc(c.Type) } alt={ serverTypeLabel(c.Type) } class="h-6 w-6 shrink-0"/>
+				<div class="min-w-0">
+					<div class="font-medium text-sm truncate">{ c.Name }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400 truncate">{ c.URL }</div>
+				</div>
+			</div>
+			<div class="flex items-center gap-1.5 shrink-0">
+				@serverStatusBadge(c.Status)
+				<button
+					type="button"
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					hx-post={ "/api/v1/connections/" + c.ID + "/test" }
+					hx-swap="none"
+					hx-on::after-request="swRefreshSettingsSection('connections')"
+				>
+					{ t(ctx, "common.test") }
+				</button>
+				if c.Status == "ok" && c.Type != "lidarr" {
+					<button
+						type="button"
+						class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						hx-get={ "/api/v1/connections/" + c.ID + "/libraries" }
+						hx-target={ "#discover-" + c.ID }
+						hx-swap="innerHTML"
+					>
+						{ t(ctx, "settings.connections.discover") }
+					</button>
+				}
+				<button
+					type="button"
+					class="text-xs p-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick={ toggleConnectionFeatures(c.ID) }
+					title={ t(ctx, "settings.connections.feature_toggles") }
+					aria-label={ t(ctx, "settings.connections.feature_toggles") }
+					aria-expanded="false"
+					aria-controls={ "features-" + c.ID }
+				>
+					@components.IconCog6Tooth("h-3.5 w-3.5")
+				</button>
+				<button
+					type="button"
+					class="text-xs p-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick={ toggleConnectionEdit(c.ID) }
+					title={ t(ctx, "actions.edit") }
+					aria-label={ t(ctx, "actions.edit") }
+					aria-expanded="false"
+					aria-controls={ "edit-panel-" + c.ID }
+				>
+					@components.IconPencilSquare("h-3.5 w-3.5")
+				</button>
+				<button
+					type="button"
+					class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+					onclick={ settingsDeleteConnection(c.ID) }
+				>
+					{ t(ctx, "common.delete") }
+				</button>
+			</div>
+		</div>
+		<div id={ "discover-" + c.ID } class="mt-2"></div>
+		<div id={ "features-" + c.ID } class="hidden mt-2 space-y-2">
+			if c.Type != "lidarr" {
+				<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+					<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.connections.sends_heading") }</div>
+					<div class="space-y-2">
+						@connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.GetFeatureImageWrite(), t(ctx, "settings.connections.feature_image_write_tooltip"), "settings-connections-connections-feature-image-write")
+					</div>
+				</div>
+			}
+			<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+				<div class="flex items-center justify-between">
+					<div class="min-w-0 pr-3">
+						<div class="flex items-center gap-1">
+							<span id={ "stillwater-managed-label-" + c.ID } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.manage_title") }</span>
+							@components.ContextHelp("help-managed-"+c.ID, t(ctx, "settings.connections.manage_title"), t(ctx, "settings.connections.manage_title.help"), "settings-connections-connections-manage-title")
+						</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+							{ t(ctx, "settings.connections.manage_description") }
+						</div>
+					</div>
+					<button
+						id={ "stillwater-managed-" + c.ID }
+						type="button"
+						class={ ruleToggleBtnClasses(c.FeatureManageServerFiles) }
+						role="switch"
+						aria-checked={ boolAttr(c.FeatureManageServerFiles) }
+						aria-labelledby={ "stillwater-managed-label-" + c.ID }
+						hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
+						hx-vals={ manageServerFilesPayload(!c.FeatureManageServerFiles) }
+						hx-swap="none"
+						data-conn-id={ c.ID }
+						data-sw-btn-on={ ruleToggleBtnClasses(true) }
+						data-sw-btn-off={ ruleToggleBtnClasses(false) }
+						data-sw-knob-on={ ruleToggleKnobClasses(true) }
+						data-sw-knob-off={ ruleToggleKnobClasses(false) }
+						data-sw-error={ t(ctx, "settings.connections.manage_error") }
+						hx-on:htmx:after-request="swStillwaterManagedAfterRequest(this, event)"
+					>
+						<span class={ ruleToggleKnobClasses(c.FeatureManageServerFiles) }></span>
+					</button>
+				</div>
+			</div>
+			if c.Type == "lidarr" {
+				<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+					<div class="flex items-center justify-between">
+						<div class="min-w-0 pr-3">
+							<span id={ "verify-path-label-" + c.ID } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.verify_path_title") }</span>
+							<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+								{ t(ctx, "settings.connections.verify_path_description") }
+							</div>
+						</div>
+						<button
+							id={ "verify-path-" + c.ID }
+							type="button"
+							class={ ruleToggleBtnClasses(c.GetVerifyPathAfterUpdate()) }
+							role="switch"
+							aria-checked={ boolAttr(c.GetVerifyPathAfterUpdate()) }
+							aria-labelledby={ "verify-path-label-" + c.ID }
+							hx-post={ "/api/v1/connections/" + c.ID + "/verify-path-after-update" }
+							hx-vals={ verifyPathAfterUpdatePayload(!c.GetVerifyPathAfterUpdate()) }
+							hx-swap="none"
+							data-conn-id={ c.ID }
+							data-sw-btn-on={ ruleToggleBtnClasses(true) }
+							data-sw-btn-off={ ruleToggleBtnClasses(false) }
+							data-sw-knob-on={ ruleToggleKnobClasses(true) }
+							data-sw-knob-off={ ruleToggleKnobClasses(false) }
+							data-sw-error={ t(ctx, "settings.connections.verify_path_error") }
+							hx-on:htmx:after-request="swVerifyPathAfterUpdateAfterRequest(this, event)"
+						>
+							<span class={ ruleToggleKnobClasses(c.GetVerifyPathAfterUpdate()) }></span>
+						</button>
+					</div>
+					<span id={ "verify-path-error-" + c.ID } class="hidden text-xs text-red-600 dark:text-red-400 mt-1"></span>
+				</div>
+			}
+			<div
+				id={ "detected-" + c.ID }
+				class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2"
+				hx-get={ "/api/v1/connections/" + c.ID + "/conflict-detail" }
+				hx-trigger="load"
+				hx-swap="innerHTML"
+			>
+				<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.connections.checking_saver_status") }</div>
+			</div>
+		</div>
+		<div id={ "edit-panel-" + c.ID } class="hidden mt-2">
+			<form
+				class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-3 space-y-2"
+				hx-put={ "/api/v1/connections/" + c.ID }
+				hx-ext="json-enc"
+				hx-target={ "#edit-result-" + c.ID }
+				hx-swap="innerHTML"
+			>
+				<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "actions.edit") }</div>
+				<div>
+					<label for={ "edit-name-" + c.ID } class="sr-only">{ t(ctx, "settings.connections.server_name") }</label>
+					<input
+						id={ "edit-name-" + c.ID }
+						name="name"
+						type="text"
+						value={ c.Name }
+						placeholder={ t(ctx, "settings.connections.server_name") }
+						class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+				<div>
+					<div class="flex items-center gap-1 mb-1">
+						<label for={ "edit-url-" + c.ID } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.base_url") }</label>
+						@components.ContextHelp("help-edit-url-"+c.ID, t(ctx, "settings.connections.base_url"), t(ctx, "settings.connections.base_url.help"), "settings-connections-connections-base-url")
+					</div>
+					<input
+						id={ "edit-url-" + c.ID }
+						name="url"
+						type="url"
+						value={ c.URL }
+						placeholder={ t(ctx, "settings.connections.base_url") }
+						class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+				<div>
+					<div class="flex items-center gap-1 mb-1">
+						<label for={ "edit-api-key-" + c.ID } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.api_key") }</label>
+						@components.ContextHelp("help-edit-api-key-"+c.ID, t(ctx, "settings.connections.api_key"), t(ctx, "settings.connections.api_key.help"), "settings-connections-connections-api-key")
+					</div>
+					<input
+						id={ "edit-api-key-" + c.ID }
+						name="api_key"
+						type="text"
+						placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
+						autocomplete="off"
+						data-1p-ignore
+						data-lpignore="true"
+						data-focus-target="api_key"
+						class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+				<div class="flex gap-2">
+					<button type="submit" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">{ t(ctx, "actions.save") }</button>
+					<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleConnectionEdit(c.ID) }>{ t(ctx, "actions.cancel") }</button>
+				</div>
+			</form>
+			<div id={ "edit-result-" + c.ID } class="mt-1"></div>
+		</div>
+	</div>
+}
+
+// serverAddNext is the single "Add server" entry point. It discloses a type
+// chooser; each type reveals its per-type add form (conn-form-{connType}),
+// preserving every add-form hook (conn-name/url/api-key-{connType},
+// conn-result-{connType}, and the toggleConnectionForm disclosure script).
+templ serverAddNext() {
+	<div class="mt-3">
+		<button
+			type="button"
+			class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+			aria-controls="server-add-panel"
+			aria-expanded="false"
+			onclick={ toggleServerAddPanel() }
+		>
+			<span aria-hidden="true">+</span> { t(ctx, "settings.connections.add_server") }
+		</button>
+		<div id="server-add-panel" class="hidden mt-3 space-y-3">
+			<div class="text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "settings.connections.pick_type") }</div>
+			<div class="flex flex-wrap gap-2">
+				<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" aria-controls="conn-form-emby" aria-expanded="false" onclick={ toggleConnectionForm("emby") }>Emby</button>
+				<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" aria-controls="conn-form-jellyfin" aria-expanded="false" onclick={ toggleConnectionForm("jellyfin") }>Jellyfin</button>
+				<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" aria-controls="conn-form-lidarr" aria-expanded="false" onclick={ toggleConnectionForm("lidarr") }>Lidarr</button>
+			</div>
+			@serverAddFormNext("emby", "Emby", "http://192.168.1.100:8096")
+			@serverAddFormNext("jellyfin", "Jellyfin", "http://192.168.1.100:8096")
+			@serverAddFormNext("lidarr", "Lidarr", "http://192.168.1.100:8686")
+		</div>
+	</div>
+}
+
+// serverAddFormNext is one per-type add-connection form, styled to the next/
+// aesthetic. All ids, field names, and the HTMX post/target/swap contract are
+// preserved from the stable card so the add flow behaves identically.
+templ serverAddFormNext(connType string, displayName string, exampleURL string) {
+	<div id={ "conn-form-" + connType } class="hidden">
+		<form
+			class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-3 space-y-2"
+			hx-post="/api/v1/connections"
+			hx-target={ "#conn-result-" + connType }
+			hx-swap="innerHTML"
+		>
+			<input type="hidden" name="type" value={ connType }/>
+			<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">{ displayName }</div>
+			<label for={ "conn-name-" + connType } class="sr-only">{ t(ctx, "settings.connections.server_name") }</label>
+			<input
+				id={ "conn-name-" + connType }
+				name="name"
+				placeholder={ displayName + " server" }
+				required
+				class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+			/>
+			<div>
+				<div class="flex items-center gap-1 mb-1">
+					<label for={ "conn-url-" + connType } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.base_url") }</label>
+					@components.ContextHelp("help-conn-url-"+connType, t(ctx, "settings.connections.base_url"), t(ctx, "settings.connections.base_url.help"), "settings-connections-connections-base-url")
+				</div>
+				<input
+					id={ "conn-url-" + connType }
+					name="url"
+					type="url"
+					placeholder={ "URL (e.g. " + exampleURL + ")" }
+					required
+					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+			<div>
+				<div class="flex items-center gap-1 mb-1">
+					<label for={ "conn-api-key-" + connType } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.api_key") }</label>
+					@components.ContextHelp("help-conn-api-key-"+connType, t(ctx, "settings.connections.api_key"), t(ctx, "settings.connections.api_key.help"), "settings-connections-connections-api-key")
+				</div>
+				<input
+					id={ "conn-api-key-" + connType }
+					name="api_key"
+					type="text"
+					placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
+					required
+					autocomplete="off"
+					data-1p-ignore
+					data-lpignore="true"
+					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+			</div>
+			<div class="flex gap-2">
+				<button type="submit" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">{ t(ctx, "actions.save") }</button>
+				<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleConnectionForm(connType) }>{ t(ctx, "actions.cancel") }</button>
+			</div>
+		</form>
+		<div id={ "conn-result-" + connType } class="mt-2"></div>
+	</div>
+}
+
+// toggleServerAddPanel discloses the "Add server" type chooser, keeping the
+// trigger's aria-expanded in sync (mirrors the toggleConnectionForm pattern).
+script toggleServerAddPanel() {
+	var panel = document.getElementById("server-add-panel");
+	if (panel) {
+		panel.classList.toggle("hidden");
+		var btn = document.querySelector('[aria-controls="server-add-panel"]');
+		if (btn) {
+			btn.setAttribute('aria-expanded', String(!panel.classList.contains('hidden')));
+		}
+	}
+}

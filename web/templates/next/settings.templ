@@ -370,7 +370,10 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 		}
 		@settingsGroupHeading("data", "settings.next.group_data")
 		@nextSettingsSection("providers", "data") {
-			@nextSectionHeader("settings.next.section.providers", "settings.provider_keys.description")
+			<!-- #2116: section description blanked here to kill the duplicate with the
+			     Provider API Keys card's own description (settings.provider_keys.description);
+			     the four provider cards each self-describe below. -->
+			@nextSectionHeader("settings.next.section.providers", "")
 			@templates.SectionProviderKeys(data)
 			@templates.SectionWebSearch(data)
 			@templates.SectionProviderPriorities(data)
@@ -390,8 +393,10 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 		}
 		@settingsGroupHeading("integrations", "settings.next.group_integrations")
 		@nextSettingsSection("connections", "integrations") {
-			@nextSectionHeader("settings.next.section.connections", "settings.connections.description")
-			@templates.SectionServers(data)
+			<!-- #2117: section description blanked here to kill the duplicate with the
+			     Connections card's own description (settings.connections.description). -->
+			@nextSectionHeader("settings.next.section.connections", "")
+			@templates.SectionServersNext(data)
 		}
 		@nextSettingsSection("webhooks", "integrations") {
 			@nextSectionHeader("settings.next.section.webhooks", "settings.webhooks.description")

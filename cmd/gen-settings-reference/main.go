@@ -86,6 +86,16 @@ var subTemplateExclude = map[string]struct{}{}
 // basename keeps the set portable across worktrees and test fixtures.
 var subTemplateHelperOnly = map[string]struct{}{
 	"settings_sections.templ": {},
+	// settings_sections_next.templ holds the next/-only redesigned Connections
+	// section (M55 #2117). Its templ funcs are @-called from the next/ settings
+	// trunk (web/templates/next/settings.templ), NOT from a stable Settings tab
+	// panel, so the filename-stem-derived panel ID ("sections_next") is
+	// meaningless and has no data-tab-panel div in the stable trunk. Every
+	// ContextHelp docAnchor it renders (manage-title, base-url, api-key,
+	// feature-image-write, connections) is already emitted by the stable
+	// serviceConnectionCard, so folding it into the global helper index (and
+	// skipping filename-stem attribution) keeps the docs correct.
+	"settings_sections_next.templ": {},
 }
 
 // discoverTemplSources auto-discovers the trunk + sub-template files the

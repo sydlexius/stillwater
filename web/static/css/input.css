@@ -6416,10 +6416,64 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 
 /* Pane: ALL-SCROLLABLE. Every section renders and is visible; the user scrolls
  * through them and the rail scroll-spies the one in view. */
+/* M55 #2117 UAT — continuous settings surface (real app glass tokens).
+ * The content pane was transparent: pane/section headings + descriptions sat
+ * directly on the rotating dynamic backdrop and washed out, and the cards were
+ * translucent glass that also bled. Give the WHOLE pane ONE continuous surface
+ * so nothing ever sits on the raw backdrop, and flatten the per-card glass
+ * bubbles into flat sections separated by hairline dividers on that surface.
+ * Scoped to .sw-next-settings ONLY — the global .sw-card glass component is
+ * untouched (stable v1 unaffected). The surface fill is the app's real
+ * --sw-glass-bg token, which preferences.js drives from the Background Opacity
+ * pref (85–100% alpha, floored at 85 so it never fully washes out); the border
+ * is --sw-glass-border and the blur is --sw-glass-blur — the SAME treatment as
+ * every shipped next/ glass surface, so the pane reads in the app's established
+ * surface color and honors the opacity pref instead of a hardcoded shade. */
 .sw-next-settings-pane {
   flex: 1 1 auto;
   min-width: 0;
+  background-color: var(--sw-glass-bg);
+  backdrop-filter: var(--sw-glass-blur);
+  -webkit-backdrop-filter: var(--sw-glass-blur);
+  border: 1px solid var(--sw-glass-border);
+  border-radius: var(--sw-radius-lg);
+  padding: 0.5rem 0 1.25rem;
 }
+/* Cards -> flat sections on the continuous surface (glass fill/blur/border/
+ * shadow/radius removed). !important overrides the Tailwind
+ * bg-white/dark:bg-gray-800/shadow/rounded-lg utilities the shared Section*
+ * bodies carry. Their inner header border-b stays as a title divider. */
+.sw-next-settings-pane .sw-card {
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+/* Hairline divider between stacked flat cards within a section. */
+.sw-next-settings-pane .sw-card + .sw-card {
+  border-top: 1px solid var(--sw-glass-border) !important;
+}
+/* Align the section intro + group divider with the cards' px-6 content inset so
+ * headings/descriptions and card content share one left edge on the surface
+ * (the pane itself carries no horizontal padding). */
+.sw-next-settings-pane .sw-next-section-intro {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+.sw-next-settings-pane .sw-next-settings-group-heading {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  border-bottom-color: var(--sw-glass-border);
+}
+/* Heading + description on the continuous surface use the app's real content
+ * ink tokens (heading -> --sw-content-text, description ->
+ * --sw-content-text-secondary), the same near-white/secondary ramp every next/
+ * surface uses. On the glass fill (slate-800 @ >=85% dark / white @ >=85% light)
+ * both clear WCAG AA in both themes. */
+.sw-next-settings-pane .sw-next-section-heading { color: var(--sw-content-text); }
+.sw-next-settings-pane .sw-next-section-desc { color: var(--sw-content-text-secondary); }
 /* Per-section intro block: h3 heading + optional description paragraph that
  * precedes the cards inside each pane section. h3 is used so the chain
  * h1(page) -> h2(group) -> h3(section) -> h3(card) never skips a level; the
