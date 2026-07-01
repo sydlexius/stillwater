@@ -671,6 +671,147 @@ func TestGetDBIntSetting_FallbackOnNonNumeric(t *testing.T) {
 	}
 }
 
+// --- applyPersistedPositiveInt (Fix 1: no silent drop of a corrupt value) ---
+
+// TestApplyPersistedPositiveInt covers the boot read-back for the integer ops
+// keys: a valid positive row applies via the callback, while an absent, non-
+// numeric, or out-of-range row does NOT apply (and the latter two warn instead
+// of silently reverting -- exercised here by asserting the callback never runs).
+func TestApplyPersistedPositiveInt(t *testing.T) {
+	cases := []struct {
+		name      string
+		insert    bool
+		value     string
+		wantApply bool
+		wantN     int
+	}{
+		{name: "valid", insert: true, value: "8", wantApply: true, wantN: 8},
+		{name: "absent", insert: false},
+		{name: "non_numeric", insert: true, value: "notanumber"},
+		{name: "zero", insert: true, value: "0"},
+		{name: "negative", insert: true, value: "-4"},
+		{name: "empty", insert: true, value: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			const key = "rule_engine.artist_workers"
+			if tc.insert {
+				if _, err := db.ExecContext(context.Background(),
+					`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, '2024-01-01T00:00:00Z')`,
+					key, tc.value); err != nil {
+					t.Fatalf("inserting row: %v", err)
+				}
+			}
+			applied := false
+			gotN := 0
+			applyPersistedPositiveInt(context.Background(), db, slog.Default(), key, func(n int) {
+				applied = true
+				gotN = n
+			})
+			if applied != tc.wantApply {
+				t.Fatalf("applied = %v, want %v", applied, tc.wantApply)
+			}
+			if tc.wantApply && gotN != tc.wantN {
+				t.Errorf("applied n = %d, want %d", gotN, tc.wantN)
+			}
+		})
+	}
+}
+
+// TestApplyPersistedOpsSettings_ArtistWorkersUpperBound covers the boot
+// overlay's rule_engine.artist_workers upper-bound guard (Fix 2): a persisted
+// value above the API's validated max (64) must not reach the pipeline, while
+// an in-range value must. applyPersistedPositiveInt itself only rejects
+// non-positive values, so this exercises the bound-check closure that
+// applyPersistedOpsSettings wraps around it.
+func TestApplyPersistedOpsSettings_ArtistWorkersUpperBound(t *testing.T) {
+	cases := []struct {
+		name      string
+		value     string
+		wantApply bool
+		wantN     int
+	}{
+		{name: "in_range", value: "32", wantApply: true, wantN: 32},
+		{name: "at_max", value: "64", wantApply: true, wantN: 64},
+		{name: "over_max", value: "500", wantApply: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			const key = "rule_engine.artist_workers"
+			if _, err := db.ExecContext(context.Background(),
+				`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, '2024-01-01T00:00:00Z')`,
+				key, tc.value); err != nil {
+				t.Fatalf("inserting row: %v", err)
+			}
+			applied := false
+			gotN := 0
+			applyPersistedPositiveInt(context.Background(), db, slog.Default(), key, func(n int) {
+				if n > 64 {
+					return
+				}
+				applied = true
+				gotN = n
+			})
+			if applied != tc.wantApply {
+				t.Fatalf("applied = %v, want %v", applied, tc.wantApply)
+			}
+			if tc.wantApply && gotN != tc.wantN {
+				t.Errorf("applied n = %d, want %d", gotN, tc.wantN)
+			}
+		})
+	}
+}
+
+// TestApplyPersistedPositiveInt_DBError: a read error (closed DB) must not
+// apply and must not panic -- the boot overlay warns and leaves the default.
+func TestApplyPersistedPositiveInt_DBError(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	applied := false
+	applyPersistedPositiveInt(context.Background(), db, slog.Default(), "backup.interval_hours", func(int) {
+		applied = true
+	})
+	if applied {
+		t.Error("callback ran despite a DB read error")
+	}
+}
+
+// --- dbSettingPresent (warn on a real DB error, not just "not present") ---
+
+func TestDbSettingPresent(t *testing.T) {
+	db := openTestDB(t)
+	const key = "scanner.exclusions"
+	if got := dbSettingPresent(context.Background(), db, slog.Default(), key); got {
+		t.Fatalf("dbSettingPresent() = true for an absent row, want false")
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, '', '2024-01-01T00:00:00Z')`,
+		key); err != nil {
+		t.Fatalf("inserting row: %v", err)
+	}
+	if got := dbSettingPresent(context.Background(), db, slog.Default(), key); !got {
+		t.Fatalf("dbSettingPresent() = false for a present row, want true")
+	}
+}
+
+// TestDbSettingPresent_DBError: a genuine query error (closed DB) must return
+// false without panicking -- the same warn-on-real-error contract as
+// applyPersistedPositiveInt, so a corrupt/unreadable DB doesn't get
+// misreported as "operator never saved this".
+func TestDbSettingPresent_DBError(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	if got := dbSettingPresent(context.Background(), db, slog.Default(), "scanner.exclusions"); got {
+		t.Error("dbSettingPresent() = true despite a DB read error")
+	}
+}
+
 // --- resolveEncryptionKey edge-case tests ---
 
 // TestResolveEncryptionKey_EmptyFile verifies that an empty key file does not

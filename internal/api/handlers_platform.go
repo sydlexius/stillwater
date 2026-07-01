@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -441,6 +444,53 @@ func (r *Router) buildSettingsData(req *http.Request, userID string, tab templat
 	// Inject the romanization-fallback preference separately so that adding this
 	// field does not force gofmt to realign the entire struct literal above.
 	data.NameRomanizationFallback = r.getUserBoolPreference(req.Context(), PrefMetadataNameRomanization, true)
+	// Operational settings (#1746, #1753). Display the EFFECTIVE value, not the
+	// persisted settings-table value. The scanner + rule-pipeline services
+	// already incorporate the SW_* env overrides applied at startup (env-wins,
+	// AC4) and every UI save updates them synchronously, so the live getters
+	// reflect exactly what is in force. Reading the persisted DB value (the
+	// get*Setting helpers) would show a stale, non-effective value whenever an
+	// env override is active.
+	// Env-pin flags (env-wins, AC4): when the SW_* var is set the loader/boot
+	// overlay ignores any persisted value, so the template renders the control
+	// read-only and the displayed value is the effective env value.
+	data.ArtistWorkersEnvPinned = strings.TrimSpace(os.Getenv("SW_RULE_ENGINE_ARTIST_WORKERS")) != ""
+	data.ScannerExclusionsEnvPinned = strings.TrimSpace(os.Getenv("SW_SCANNER_EXCLUSIONS")) != ""
+	data.ScannerMtimeEnvPinned = strings.TrimSpace(os.Getenv("SW_SCANNER_MTIME_FAST_PATH")) != ""
+	data.BackupIntervalEnvPinned = strings.TrimSpace(os.Getenv("SW_BACKUP_INTERVAL")) != ""
+
+	data.ArtistWorkers = 2
+	if r.pipeline != nil {
+		data.ArtistWorkers = r.pipeline.ArtistWorkers()
+	}
+	data.ScannerExclusions = ""
+	data.ScannerMtimeFastPath = true
+	if r.scannerService != nil {
+		data.ScannerExclusions = strings.Join(r.scannerService.Exclusions(), ", ")
+		data.ScannerMtimeFastPath = r.scannerService.MtimeFastPath()
+	}
+	// backup.interval_hours is persist-only (the scheduler binds once at boot,
+	// so the Router holds no live value). When SW_BACKUP_INTERVAL pins it, show
+	// that effective value (env-wins); otherwise show the saved/pending value,
+	// which the restart-required banner explains is applied on next restart.
+	//
+	// A present-but-INVALID SW_BACKUP_INTERVAL (non-numeric or <=0) is ignored
+	// by the config loader AND blocks the boot overlay from applying any
+	// persisted value, so the value actually in force is the config default.
+	// Showing the persisted value here would mislead, so display the default
+	// (24) and warn on the bad env var instead.
+	switch {
+	case data.BackupIntervalEnvPinned:
+		if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("SW_BACKUP_INTERVAL"))); err == nil && n > 0 {
+			data.BackupIntervalHours = n
+		} else {
+			r.logger.Warn("ignoring invalid SW_BACKUP_INTERVAL; showing config default",
+				"value", os.Getenv("SW_BACKUP_INTERVAL"), "default", 24)
+			data.BackupIntervalHours = 24
+		}
+	default:
+		data.BackupIntervalHours = r.getIntSetting(req.Context(), "backup.interval_hours", 24)
+	}
 	// Load the metadata_vocab configuration so the Tag Sources card is
 	// pre-filled with the current exclude patterns and count caps. Degrades
 	// gracefully to the no-op default on any error (consistent with how

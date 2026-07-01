@@ -40,15 +40,28 @@ var (
 
 // Service runs filesystem scans against the music library.
 type Service struct {
-	artistService    *artist.Service
-	ruleEngine       *rule.Engine
-	ruleService      *rule.Service
-	logger           *slog.Logger
-	libraryPath      string
-	exclusions       map[string]bool
-	eventBus         *event.Bus
-	defaultLibraryID string
-	libraryLister    LibraryLister
+	artistService *artist.Service
+	ruleEngine    *rule.Engine
+	ruleService   *rule.Service
+	logger        *slog.Logger
+	libraryPath   string
+	// exclusions holds the lowercased artist-directory names the scanner
+	// skips. Stored as an atomic.Pointer so a live update via SetExclusions
+	// (from the settings handler) is visible to in-flight background scans
+	// without a lock, mirroring the mtimeFastPath atomic rationale below.
+	// The pointed-to map is never mutated in place after Store; SetExclusions
+	// always swaps in a freshly built map.
+	exclusions atomic.Pointer[map[string]bool]
+	// exclusionsDisplay holds the same exclusion tokens in their ORIGINAL case
+	// and input order, swapped in lockstep with exclusions. Matching uses the
+	// lowercased map above; this slice exists purely so the settings UI round-
+	// trips the operator's typed casing (e.g. "Various Artists") instead of the
+	// lowercased lookup key ("various artists"). Stored as an atomic.Pointer for
+	// the same lock-free live-update reason as exclusions.
+	exclusionsDisplay atomic.Pointer[[]string]
+	eventBus          *event.Bus
+	defaultLibraryID  string
+	libraryLister     LibraryLister
 
 	// mtimeFastPath toggles the per-directory mtime check that skips the
 	// inner ReadDir + image probe loop when an artist directory has not
@@ -91,10 +104,6 @@ func (s *Service) SetLibraryLister(ll LibraryLister) {
 // explicit setter call; callers that need to disable it (FUSE mounts,
 // restored backups with broken mtimes) toggle SetMtimeFastPath(false).
 func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleService *rule.Service, logger *slog.Logger, libraryPath string, exclusions []string) *Service {
-	excMap := make(map[string]bool, len(exclusions))
-	for _, e := range exclusions {
-		excMap[strings.ToLower(e)] = true
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{
 		artistService:  artistService,
@@ -102,12 +111,74 @@ func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleServ
 		ruleService:    ruleService,
 		logger:         logger,
 		libraryPath:    libraryPath,
-		exclusions:     excMap,
 		shutdownCtx:    ctx,
 		shutdownCancel: cancel,
 	}
+	excMap, display := buildExclusions(exclusions)
+	s.exclusions.Store(&excMap)
+	s.exclusionsDisplay.Store(&display)
 	s.mtimeFastPath.Store(true) // matches ScannerConfig.MtimeFastPath default
 	return s
+}
+
+// buildExclusions normalises a slice of artist-directory names into the two
+// representations the scanner keeps in lockstep: the lowercased lookup map used
+// for case-insensitive matching, and a display slice that preserves the
+// operator's ORIGINAL casing and input order for the settings UI. Empty/
+// whitespace-only tokens are dropped (a trailing comma or blank CSV field must
+// not create an exclusion for the empty directory name), and tokens that
+// collapse to the same lowercased key are de-duplicated -- the first-seen
+// casing wins -- so the UI never shows a redundant pair like "VA, va".
+func buildExclusions(exclusions []string) (map[string]bool, []string) {
+	excMap := make(map[string]bool, len(exclusions))
+	display := make([]string, 0, len(exclusions))
+	for _, e := range exclusions {
+		name := strings.TrimSpace(e)
+		if name == "" {
+			continue
+		}
+		lower := strings.ToLower(name)
+		if excMap[lower] {
+			continue // duplicate (case-insensitively); keep the first casing.
+		}
+		excMap[lower] = true
+		display = append(display, name)
+	}
+	return excMap, display
+}
+
+// SetExclusions replaces the scanner's exclusion set at runtime. The next scan
+// (and any directory not yet processed by an in-flight scan) honors the new
+// set; tokens are trimmed and empties dropped to match the constructor and the
+// SW_SCANNER_EXCLUSIONS CSV semantics. Wired from the settings handler so an
+// operator can edit the skip list without a restart.
+func (s *Service) SetExclusions(exclusions []string) {
+	excMap, display := buildExclusions(exclusions)
+	s.exclusions.Store(&excMap)
+	s.exclusionsDisplay.Store(&display)
+}
+
+// Exclusions returns the current exclusion set in the operator's original
+// casing and input order. Used by the settings UI to display the value
+// actually in effect (which already reflects the SW_SCANNER_EXCLUSIONS env /
+// YAML value applied at startup) without lowercasing the operator's typed
+// casing on save+reload. Matching remains case-insensitive via the lowercased
+// lookup map; this accessor is display-only. The returned slice is a copy, so
+// callers cannot mutate the stored set.
+func (s *Service) Exclusions() []string {
+	d := s.exclusionsDisplay.Load()
+	if d == nil {
+		return nil
+	}
+	out := make([]string, len(*d))
+	copy(out, *d)
+	return out
+}
+
+// MtimeFastPath reports whether the per-directory mtime fast path is currently
+// enabled. Used by the settings UI to render the toggle's initial state.
+func (s *Service) MtimeFastPath() bool {
+	return s.mtimeFastPath.Load()
 }
 
 // SetMtimeFastPath toggles the per-directory mtime-based fast path. Pass
@@ -339,7 +410,10 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 }
 
 func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID string, preloaded map[string]*artist.Artist, preloadedKeys map[string]string, result *ScanResult) error {
-	excluded := s.exclusions[strings.ToLower(name)]
+	excluded := false
+	if m := s.exclusions.Load(); m != nil {
+		excluded = (*m)[strings.ToLower(name)]
+	}
 
 	// Look up existing artist before detectFiles so we can skip expensive
 	// placeholder regeneration when one already exists. Prefer the

@@ -94,6 +94,21 @@ type SettingsData struct {
 	Users                    UsersTabData
 	AuthProviders            AuthProvidersData
 	Updates                  UpdatesTabData
+	// Operational settings surfaced from env-only into the UI (#1746, #1753).
+	ArtistWorkers        int    // rule_engine.artist_workers (number input, bounded 1..64).
+	ScannerExclusions    string // scanner.exclusions as a canonical ", "-joined CSV.
+	ScannerMtimeFastPath bool   // scanner.mtime_fast_path toggle state.
+	BackupIntervalHours  int    // backup.interval_hours (persist-only; restart required).
+	// Env-pinned flags (#1746, #1753 env-wins, AC4). True when the corresponding
+	// SW_* env var is set, in which case the loader/boot-overlay ignores any
+	// persisted value and a UI save would only take effect until the next
+	// restart. The template renders the control read-only and suppresses the
+	// Save button + restart banner so the UI never falsely promises a change
+	// that env precedence will discard.
+	ArtistWorkersEnvPinned     bool // SW_RULE_ENGINE_ARTIST_WORKERS is set.
+	ScannerExclusionsEnvPinned bool // SW_SCANNER_EXCLUSIONS is set.
+	ScannerMtimeEnvPinned      bool // SW_SCANNER_MTIME_FAST_PATH is set.
+	BackupIntervalEnvPinned    bool // SW_BACKUP_INTERVAL is set.
 }
 
 // TLSStatusData feeds the read-only TLS Status card in the Settings General
