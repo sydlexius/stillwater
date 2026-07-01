@@ -19,6 +19,14 @@ func setupTestService(t *testing.T) *Service {
 	return NewService(newTestDB(t))
 }
 
+// sha256Hex returns the hex-encoded SHA-256 digest of s. Tests compute the
+// expected at-rest token hash independently of the production hashToken helper
+// so a bug in that helper cannot silently pass these assertions.
+func sha256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
 // createTestUser creates an admin user via Setup and returns the service.
 // This is a convenience for tests that need an existing user.
 func createTestUser(t *testing.T, password string) *Service {
@@ -285,8 +293,10 @@ func TestValidateSession_ExpiredSession(t *testing.T) {
 	}
 
 	// Manually set the session expiry to the past to simulate expiration.
+	// Session ids are stored hashed at rest (#2170), so key on the hash.
+	sessionHash := sha256Hex(token)
 	pastTime := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
-	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, token)
+	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, sessionHash)
 	if err != nil {
 		t.Fatalf("updating session expiry: %v", err)
 	}
@@ -301,11 +311,71 @@ func TestValidateSession_ExpiredSession(t *testing.T) {
 
 	// Expired session should be deleted (Logout is called internally).
 	var count int
-	if err := svc.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sessions WHERE id = ?", token).Scan(&count); err != nil {
+	if err := svc.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sessions WHERE id = ?", sessionHash).Scan(&count); err != nil {
 		t.Fatalf("counting sessions: %v", err)
 	}
 	if count != 0 {
 		t.Error("expired session should have been deleted")
+	}
+}
+
+// TestCreateSession_HashedAtRest proves session tokens reach parity with API
+// tokens (#2170): the raw token is returned to the caller (for the cookie) but
+// only its SHA-256 hash is persisted in sessions.id, and the raw token still
+// authenticates via ValidateSession (which hashes before the lookup).
+func TestCreateSession_HashedAtRest(t *testing.T) {
+	t.Parallel()
+	svc := createTestUser(t, "secret")
+	ctx := context.Background()
+
+	token, err := svc.Login(ctx, "admin", "secret")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	// (b) The persisted id must be the hash, never the raw token.
+	var storedID string
+	if err := svc.db.QueryRowContext(ctx,
+		"SELECT id FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = 'admin')").
+		Scan(&storedID); err != nil {
+		t.Fatalf("reading stored session id: %v", err)
+	}
+	if storedID == token {
+		t.Fatal("session token stored in cleartext; expected a hash")
+	}
+	if want := sha256Hex(token); storedID != want {
+		t.Errorf("stored id = %q, want sha256(token) = %q", storedID, want)
+	}
+	// No row should exist keyed on the raw token.
+	var rawCount int
+	if err := svc.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sessions WHERE id = ?", token).Scan(&rawCount); err != nil {
+		t.Fatalf("counting raw-token rows: %v", err)
+	}
+	if rawCount != 0 {
+		t.Errorf("found %d session row(s) keyed on the raw token; want 0", rawCount)
+	}
+
+	// (a) The raw token still authenticates through the hashing lookup.
+	userID, err := svc.ValidateSession(ctx, token)
+	if err != nil {
+		t.Fatalf("ValidateSession with raw token: %v", err)
+	}
+	if userID == "" {
+		t.Error("expected non-empty user ID from ValidateSession")
+	}
+
+	// (c) Logout hashes the raw token and deletes the correct (hashed) row.
+	if err := svc.Logout(ctx, token); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+	var remaining int
+	if err := svc.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sessions WHERE id = ?", sha256Hex(token)).Scan(&remaining); err != nil {
+		t.Fatalf("counting sessions after logout: %v", err)
+	}
+	if remaining != 0 {
+		t.Error("Logout did not delete the hashed session row")
 	}
 }
 
@@ -360,9 +430,10 @@ func TestCleanExpiredSessions(t *testing.T) {
 		t.Fatalf("Login 2: %v", err)
 	}
 
-	// Expire token1 but keep token2 valid.
+	// Expire token1 but keep token2 valid. Session ids are stored hashed at
+	// rest (#2170), so key on the hash.
 	pastTime := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
-	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, token1)
+	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, sha256Hex(token1))
 	if err != nil {
 		t.Fatalf("expiring session: %v", err)
 	}

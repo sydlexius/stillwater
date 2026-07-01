@@ -157,10 +157,12 @@ func (s *Service) CreateSession(ctx context.Context, userID string) (string, err
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(sessionDuration).Format(time.RFC3339)
+	// Store only the hash at rest (parity with API tokens); the raw token is
+	// returned to the caller so setSessionCookie can write the usable cookie.
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO sessions (id, user_id, expires_at)
 		VALUES (?, ?, ?)
-	`, token, userID, expiresAt)
+	`, hashToken(token), userID, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("creating session: %w", err)
 	}
@@ -179,7 +181,7 @@ func (s *Service) ValidateSession(ctx context.Context, token string) (string, er
 	var userID, expiresAt string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT user_id, expires_at FROM sessions WHERE id = ?
-	`, token).Scan(&userID, &expiresAt)
+	`, hashToken(token)).Scan(&userID, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", errors.New("invalid session")
 	}
@@ -202,7 +204,7 @@ func (s *Service) ValidateSession(ctx context.Context, token string) (string, er
 
 // Logout deletes a session.
 func (s *Service) Logout(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?", token)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?", hashToken(token))
 	return err
 }
 
@@ -504,6 +506,14 @@ func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult
 	}
 
 	return s.CreateSession(ctx, id)
+}
+
+// hashToken computes the hex-encoded SHA-256 digest used to store session and
+// API tokens at rest. The recipe matches CreateAPIToken/ValidateAPIToken so
+// tokens are never persisted in cleartext.
+func hashToken(plaintext string) string {
+	hash := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(hash[:])
 }
 
 func generateToken() (string, error) {
