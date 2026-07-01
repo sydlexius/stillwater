@@ -248,9 +248,9 @@ func ConvertToFormat(src io.Reader, targetFormat string) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported target format: %s", targetFormat)
 	}
 
-	img, _, err := image.Decode(src)
+	img, err := decodeWithLimit(src, maxDecodeBytes, maxDecodePixels)
 	if err != nil {
-		return nil, fmt.Errorf("decoding image: %w", err)
+		return nil, err
 	}
 
 	return encode(img, targetFormat, 85)
@@ -574,11 +574,50 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 	return data, outFormat, nil
 }
 
-// Size limits for placeholder generation to prevent OOM on huge images.
+// Size limits for image decoding to prevent OOM on huge or maliciously
+// crafted images (decompression-bomb style: a tiny file that declares an
+// enormous pixel count). Applied uniformly via decodeWithLimit.
 const (
-	maxPlaceholderBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
-	maxPlaceholderPixels int64 = 100_000_000 // 100 megapixels
+	maxDecodeBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
+	maxDecodePixels int64 = 100_000_000 // 100 megapixels
+
+	maxPlaceholderBytes  = maxDecodeBytes
+	maxPlaceholderPixels = maxDecodePixels
 )
+
+// decodeWithLimit reads up to maxBytes from r, checks the declared pixel
+// dimensions via image.DecodeConfig (before any pixel buffer is allocated),
+// and only then fully decodes the image. This rejects decompression-bomb
+// style inputs (a small file declaring huge dimensions) before the expensive
+// allocation happens.
+func decodeWithLimit(r io.Reader, maxBytes, maxPixels int64) (image.Image, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading image data: %w", err)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), maxBytes)
+	}
+
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decoding image config: %w", err)
+	}
+	w := int64(cfg.Width)
+	h := int64(cfg.Height)
+	if w <= 0 || h <= 0 {
+		return nil, fmt.Errorf("invalid image dimensions (%dx%d)", cfg.Width, cfg.Height)
+	}
+	if h > maxPixels || w > maxPixels/h {
+		return nil, fmt.Errorf("image too many pixels (%dx%d, max %d)", cfg.Width, cfg.Height, maxPixels)
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decoding image: %w", err)
+	}
+	return img, nil
+}
 
 // GeneratePlaceholder creates a tiny 16x16 base64-encoded data URI from the
 // source image. Logos are encoded as PNG (to preserve alpha); all other types
@@ -590,30 +629,9 @@ func GeneratePlaceholder(src io.Reader, imageType string) (string, error) {
 		return "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(replay, maxPlaceholderBytes+1))
+	decoded, err := decodeWithLimit(replay, maxPlaceholderBytes, maxPlaceholderPixels)
 	if err != nil {
-		return "", fmt.Errorf("reading image data: %w", err)
-	}
-	if int64(len(data)) > maxPlaceholderBytes {
-		return "", fmt.Errorf("image too large for placeholder (%d bytes, max %d)", len(data), maxPlaceholderBytes)
-	}
-
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return "", fmt.Errorf("decoding image config: %w", err)
-	}
-	w := int64(cfg.Width)
-	h := int64(cfg.Height)
-	if w <= 0 || h <= 0 {
-		return "", fmt.Errorf("invalid image dimensions (%dx%d)", cfg.Width, cfg.Height)
-	}
-	if h > maxPlaceholderPixels || w > maxPlaceholderPixels/h {
-		return "", fmt.Errorf("image too many pixels for placeholder (%dx%d, max %d)", cfg.Width, cfg.Height, maxPlaceholderPixels)
-	}
-
-	decoded, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return "", fmt.Errorf("decoding image: %w", err)
+		return "", err
 	}
 
 	dst := image.NewRGBA(image.Rect(0, 0, 16, 16))

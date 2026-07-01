@@ -2,11 +2,50 @@ package image
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
 	"testing"
 )
+
+// oversizedPNGHeader builds a minimal PNG byte stream containing only the
+// signature and an IHDR chunk declaring width x height, with no IDAT data.
+// image.DecodeConfig reads only the IHDR chunk, so this is sufficient to
+// exercise the declared-dimensions check without allocating real pixel data
+// (a decompression-bomb-style input: a tiny file, huge declared dimensions).
+func oversizedPNGHeader(t *testing.T, width, height uint32) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], width)
+	binary.BigEndian.PutUint32(ihdr[4:8], height)
+	ihdr[8] = 8  // bit depth
+	ihdr[9] = 6  // color type: RGBA
+	ihdr[10] = 0 // compression
+	ihdr[11] = 0 // filter
+	ihdr[12] = 0 // interlace
+
+	var lenBuf [4]byte
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(ihdr)))
+	buf.Write(lenBuf[:])
+
+	chunkType := []byte("IHDR")
+	buf.Write(chunkType)
+	buf.Write(ihdr)
+
+	crc := crc32.NewIEEE()
+	crc.Write(chunkType)
+	crc.Write(ihdr)
+	var crcBuf [4]byte
+	binary.BigEndian.PutUint32(crcBuf[:], crc.Sum32())
+	buf.Write(crcBuf[:])
+
+	return buf.Bytes()
+}
 
 func solidImage(w, h int, c color.Color) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -169,5 +208,16 @@ func TestHashHex_RoundTrip(t *testing.T) {
 	}
 	if parsed != original {
 		t.Errorf("round-trip failed: got %x, want %x", parsed, original)
+	}
+}
+
+func TestPerceptualHash_RejectsOversizedDeclaredDimensions(t *testing.T) {
+	// 50000 x 50000 = 2.5 billion declared pixels, well over maxDecodePixels,
+	// but the file itself is only the PNG signature + IHDR chunk (~30 bytes).
+	data := oversizedPNGHeader(t, 50_000, 50_000)
+
+	_, err := PerceptualHash(bytes.NewReader(data))
+	if err == nil {
+		t.Fatal("expected error for oversized declared dimensions, got nil")
 	}
 }
