@@ -213,3 +213,20 @@ func TestLayoutNext_SkipLink(t *testing.T) {
 		t.Errorf("skip link label = %q; want the localized %q", text, "Skip to main content")
 	}
 }
+
+// TestLayoutNext_MountsCommandPalette verifies the Cmd-K command palette shell
+// is mounted in LayoutNext, hidden by default (#1775).
+func TestLayoutNext_MountsCommandPalette(t *testing.T) {
+	html, root := renderLayoutNext(t)
+	if !strings.Contains(html, `id="sw-cmdk"`) {
+		t.Fatal("command palette root #sw-cmdk not found in LayoutNext output")
+	}
+	node := findFirst(root, "div", func(cls string) bool { return strings.Contains(cls, "sw-cmdk-overlay") })
+	if node == nil {
+		t.Fatal("command palette overlay not rendered")
+	}
+	// Hidden by default.
+	if !strings.Contains(html, `id="sw-cmdk" class="fixed inset-0 z-50 hidden`) {
+		t.Fatal("command palette must be hidden by default")
+	}
+}
