@@ -56,6 +56,9 @@ templ LayoutNext(title string, assets templates.AssetPaths) {
 			@templates.LayoutGlobalChrome(assets)
 			@components.CheatSheetModal()
 			@components.CommandPalette()
+			<!-- #1775: command palette controller. Loaded after LayoutGlobalChrome's
+			     keyboard.js (above) so window.swKeyboardShortcuts exists first. -->
+			<script src={ assets.CommandPaletteJS } defer></script>
 		</body>
 	</html>
 }
