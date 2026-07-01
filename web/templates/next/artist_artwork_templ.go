@@ -560,7 +560,7 @@ func artworkFindingDot(severity string, tooltip string) templ.Component {
 			templ_7745c5c3_Var26 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var27 = []any{"absolute top-1.5 right-1.5 z-10 inline-flex h-3 w-3 rounded-full ring-2 ring-black/30",
+		var templ_7745c5c3_Var27 = []any{"absolute top-1.5 right-1.5 z-10 inline-flex h-3 w-3 rounded-full ring-2 ring-black",
 			artworkSeverityDotClass(severity),
 		}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var27...)
@@ -944,7 +944,7 @@ func artworkBackdropTile(artistID string, index int, total int) templ.Component 
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<button type=\"button\" class=\"absolute top-2 right-2 z-10 p-1.5 rounded-full bg-black/40 hover:bg-amber-500/80 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<button type=\"button\" class=\"absolute top-2 right-2 z-10 p-1.5 rounded-full bg-black hover:bg-amber-500/80 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
