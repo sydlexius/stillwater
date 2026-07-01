@@ -6416,26 +6416,27 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 
 /* Pane: ALL-SCROLLABLE. Every section renders and is visible; the user scrolls
  * through them and the rail scroll-spies the one in view. */
-/* M55 #2117 UAT — continuous opaque settings surface.
+/* M55 #2117 UAT — continuous settings surface (real app glass tokens).
  * The content pane was transparent: pane/section headings + descriptions sat
  * directly on the rotating dynamic backdrop and washed out, and the cards were
- * translucent glass that also bled. Give the WHOLE pane ONE continuous,
- * near-opaque surface so nothing ever sits on the raw backdrop, and flatten the
- * per-card glass bubbles into flat sections separated by hairline dividers on
- * that surface. Scoped to .sw-next-settings ONLY — the global .sw-card glass
- * component is untouched (stable v1 unaffected). --swd-bg-raised/-line/-ink*
- * resolve on .sw-next-settings (light + dark token blocks above), so both themes
- * get a stable, readable surface INDEPENDENT of the Background Opacity pref
- * (readability must never depend on how low the user dials the backdrop). */
+ * translucent glass that also bled. Give the WHOLE pane ONE continuous surface
+ * so nothing ever sits on the raw backdrop, and flatten the per-card glass
+ * bubbles into flat sections separated by hairline dividers on that surface.
+ * Scoped to .sw-next-settings ONLY — the global .sw-card glass component is
+ * untouched (stable v1 unaffected). The surface fill is the app's real
+ * --sw-glass-bg token, which preferences.js drives from the Background Opacity
+ * pref (85–100% alpha, floored at 85 so it never fully washes out); the border
+ * is --sw-glass-border and the blur is --sw-glass-blur — the SAME treatment as
+ * every shipped next/ glass surface, so the pane reads in the app's established
+ * surface color and honors the opacity pref instead of a hardcoded shade. */
 .sw-next-settings-pane {
   flex: 1 1 auto;
   min-width: 0;
-  background-color: color-mix(in srgb, var(--swd-bg-raised) 97%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid var(--swd-line);
-  border-radius: var(--swd-r-3, 14px);
-  box-shadow: var(--swd-shadow-2);
+  background-color: var(--sw-glass-bg);
+  backdrop-filter: var(--sw-glass-blur);
+  -webkit-backdrop-filter: var(--sw-glass-blur);
+  border: 1px solid var(--sw-glass-border);
+  border-radius: var(--sw-radius-lg);
   padding: 0.5rem 0 1.25rem;
 }
 /* Cards -> flat sections on the continuous surface (glass fill/blur/border/
@@ -6452,7 +6453,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 /* Hairline divider between stacked flat cards within a section. */
 .sw-next-settings-pane .sw-card + .sw-card {
-  border-top: 1px solid var(--swd-line) !important;
+  border-top: 1px solid var(--sw-glass-border) !important;
 }
 /* Align the section intro + group divider with the cards' px-6 content inset so
  * headings/descriptions and card content share one left edge on the surface
@@ -6464,14 +6465,15 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-next-settings-pane .sw-next-settings-group-heading {
   padding-left: 1.5rem;
   padding-right: 1.5rem;
-  border-bottom-color: var(--swd-line);
+  border-bottom-color: var(--sw-glass-border);
 }
-/* Description + heading contrast on the opaque surface (WCAG AA, both themes):
- * heading -> --swd-ink, description -> --swd-ink-2. Light surface (~#ffffff):
- * ink-2 #334155 ~= 9:1. Dark surface (~#111a2e): ink-2 #b6c2d4 ~= 8.6:1. Both
- * clear AA comfortably, replacing the pre-fix backdrop bleed. */
-.sw-next-settings-pane .sw-next-section-heading { color: var(--swd-ink); }
-.sw-next-settings-pane .sw-next-section-desc { color: var(--swd-ink-2); }
+/* Heading + description on the continuous surface use the app's real content
+ * ink tokens (heading -> --sw-content-text, description ->
+ * --sw-content-text-secondary), the same near-white/secondary ramp every next/
+ * surface uses. On the glass fill (slate-800 @ >=85% dark / white @ >=85% light)
+ * both clear WCAG AA in both themes. */
+.sw-next-settings-pane .sw-next-section-heading { color: var(--sw-content-text); }
+.sw-next-settings-pane .sw-next-section-desc { color: var(--sw-content-text-secondary); }
 /* Per-section intro block: h3 heading + optional description paragraph that
  * precedes the cards inside each pane section. h3 is used so the chain
  * h1(page) -> h2(group) -> h3(section) -> h3(card) never skips a level; the
