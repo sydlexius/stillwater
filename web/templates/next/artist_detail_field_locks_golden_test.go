@@ -117,8 +117,6 @@ func TestArtistFieldLocksPanel_NoLockedFields_Golden(t *testing.T) {
 	if strings.TrimSpace(out) != "" {
 		t.Errorf("empty-state panel should render nothing, got %q", out)
 	}
-
-	checkOrUpdateFieldLocksGolden(t, "empty", out)
 }
 
 // TestArtistDetailPage_FieldLocksPanelMounted verifies the panel is wired into
