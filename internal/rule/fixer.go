@@ -459,7 +459,7 @@ func (p *Pipeline) processArtistForRunRule(ctx context.Context, a *artist.Artist
 
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
-		p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
+		p.logger.Warn("evaluating artist", "artist", a.Name, "rule_id", ruleID, "error", err)
 		return contrib, false
 	}
 
