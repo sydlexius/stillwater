@@ -988,6 +988,17 @@ components:
           type: string
           format: date-time
           description: When the rule run finished (UTC, RFC 3339).
+        last_evaluation_at:
+          type: string
+          format: date-time
+          description: >
+            The scheduler's last-evaluation stamp (the same value
+            /rules/status surfaces), captured atomically with this run-all
+            completion so a client polling this endpoint sees "completed"
+            and the fresh stamp together in one response (#2152). Set only
+            on a successful run-all completion when a scheduler is
+            configured; omitted for single-rule runs and while a run is
+            still in progress or failed.
         error:
           type: string
           description: Error message if the run failed. Omitted on success.

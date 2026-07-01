@@ -36,6 +36,15 @@ type ruleRunStatus struct {
 	StartedAt           time.Time `json:"started_at,omitempty"`
 	CompletedAt         time.Time `json:"completed_at,omitempty"`
 	Error               string    `json:"error,omitempty"`
+	// LastEvaluationAt mirrors the scheduler's lastRunAt stamp taken by
+	// MarkEvaluated() for a run-all completion, captured under ruleRunMu in
+	// the SAME critical section that flips Status to "completed" (#2152).
+	// That makes "status == completed" and "the stamp is set" observable
+	// atomically from one response body, instead of a caller reading this
+	// status and the scheduler's Status() separately and racing the two
+	// locks. Left nil for single-rule runs (out of scope) and when no
+	// scheduler is wired up.
+	LastEvaluationAt *time.Time `json:"last_evaluation_at,omitempty"`
 }
 
 // parseRunScope reads the scope query parameter and resolves it to a
@@ -684,8 +693,17 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		// "completed" and immediately polls /rules/status must already see the
 		// fresh last_evaluation_at. Stamping after we publish "completed" (or
 		// after unlocking) reopens the stale-stat race this change closes.
+		//
+		// r.ruleRun.LastEvaluationAt is also set here, under the same
+		// ruleRunMu critical section, to the exact time.Time MarkEvaluated
+		// returned. That makes "run-all/status reads completed" and "the
+		// stamp is set" a single atomic observation on one response body,
+		// closing the two-mutex race where a caller reading the scheduler's
+		// Status() and this run status via two separate locked reads could
+		// observe a stale-nil stamp alongside a fresh "completed" (#2152).
 		if r.ruleScheduler != nil {
-			r.ruleScheduler.MarkEvaluated()
+			stamp := r.ruleScheduler.MarkEvaluated()
+			r.ruleRun.LastEvaluationAt = &stamp
 			r.ruleScheduler.Reset()
 		}
 
