@@ -129,17 +129,22 @@ func (s *Scheduler) Reset() {
 }
 
 // MarkEvaluated records that a rule evaluation just completed, advancing the
-// lastRunAt timestamp Status() surfaces as last_evaluation_at. The scheduled
-// tick (runEnabledRules) sets lastRunAt itself, but a MANUAL "Run rules" run
-// goes through the HTTP handler and the pipeline directly, bypassing the tick.
-// Without this call the dashboards' "Last evaluated" stat (which reads
-// /api/v1/rules/status) would stay frozen at the last scheduled tick (or
-// "Never" if none has fired), even though a manual run just evaluated every
-// rule. Callers invoke this on a successful manual run alongside Reset().
-func (s *Scheduler) MarkEvaluated() {
+// lastRunAt timestamp Status() surfaces as last_evaluation_at, and returns the
+// timestamp it stamped. The scheduled tick (runEnabledRules) sets lastRunAt
+// itself, but a MANUAL "Run rules" run goes through the HTTP handler and the
+// pipeline directly, bypassing the tick. Without this call the dashboards'
+// "Last evaluated" stat (which reads /api/v1/rules/status) would stay frozen
+// at the last scheduled tick (or "Never" if none has fired), even though a
+// manual run just evaluated every rule. Callers invoke this on a successful
+// manual run alongside Reset(). The returned time lets a caller atomically
+// pair "evaluation completed" with "this is the stamp" under its own lock,
+// rather than re-reading Status() afterward and risking a stale read (#2152).
+func (s *Scheduler) MarkEvaluated() time.Time {
+	now := time.Now().UTC()
 	s.mu.Lock()
-	s.lastRunAt = time.Now().UTC()
+	s.lastRunAt = now
 	s.mu.Unlock()
+	return now
 }
 
 // SeedLastEvaluated hydrates the in-memory lastRunAt from a persisted value
