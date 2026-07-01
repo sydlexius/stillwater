@@ -330,7 +330,7 @@ templ serverAddNext() {
 			aria-expanded="false"
 			onclick={ toggleServerAddPanel() }
 		>
-			{ "+ " + t(ctx, "settings.connections.add_server") }
+			<span aria-hidden="true">+</span> { t(ctx, "settings.connections.add_server") }
 		</button>
 		<div id="server-add-panel" class="hidden mt-3 space-y-3">
 			<div class="text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "settings.connections.pick_type") }</div>

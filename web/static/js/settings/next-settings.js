@@ -77,6 +77,13 @@
 
     swMakeScrollRegionsFocusable(pane);
 
+    // Re-apply after any HTMX swap inside the pane so scroll regions added by
+    // dynamic content (e.g. Users table refresh / pagination) stay
+    // keyboard-accessible. Idempotent via the swScrollA11y guard. (CR #2159)
+    pane.addEventListener('htmx:afterSwap', function () {
+      swMakeScrollRegionsFocusable(pane);
+    });
+
     var input = document.getElementById('settings-search-input');
     var sections = list(pane, 'section[data-rail-section]');
     var items = list(document, 'a.sw-next-rail-item[data-rail-link]');
