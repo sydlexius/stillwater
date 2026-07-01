@@ -321,34 +321,58 @@ components:
         always carries a `conflicts` array (possibly empty); the
         `merge_in_progress` variant never carries `conflicts`.
       oneOf:
-        - type: object
-          description: >-
-            Pre-flight walk found same-name album collisions; nothing was
-            moved. The conflicts list enumerates each one with both the
-            survivor-side existing path and the would-be loser source.
-          properties:
-            error:
-              type: string
-              enum: [collisions]
-            survivor_id:
-              type: string
-            survivor_path:
-              type: string
-            conflicts:
-              type: array
-              items:
-                $ref: "#/components/schemas/MergeConflict"
-          required: [error, conflicts]
-        - type: object
-          description: >-
-            Another merge is already in flight for some group; the caller
-            should back off and retry shortly. No filesystem or database
-            state was touched by this request.
-          properties:
-            error:
-              type: string
-              enum: [merge_in_progress]
-          required: [error]
+        - $ref: "#/components/schemas/MergeCollisionConflict"
+        - $ref: "#/components/schemas/MergeInProgressError"
+      discriminator:
+        propertyName: error
+        mapping:
+          collisions: "#/components/schemas/MergeCollisionConflict"
+          merge_in_progress: "#/components/schemas/MergeInProgressError"
+    MergeCollisionConflict:
+      type: object
+      description: >-
+        Pre-flight walk found same-name album collisions; nothing was
+        moved. The conflicts list enumerates each one with both the
+        survivor-side existing path and the would-be loser source.
+      properties:
+        error:
+          type: string
+          enum: [collisions]
+        survivor_id:
+          type: string
+        survivor_path:
+          type: string
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeConflict"
+      required: [error, conflicts]
+    MergeInProgressError:
+      type: object
+      description: >-
+        Another merge is already in flight for some group; the caller
+        should back off and retry shortly. No filesystem or database
+        state was touched by this request.
+      properties:
+        error:
+          type: string
+          enum: [merge_in_progress]
+      required: [error]
+    FieldLockedError:
+      type: object
+      description: >-
+        Returned when attempting to modify a user-locked field. Shared
+        across link endpoints, so `field` is a plain string rather than an
+        endpoint-specific enum since the discriminator operates on `error`.
+      properties:
+        error:
+          type: string
+          enum: [field_locked]
+        field:
+          type: string
+        reason:
+          type: string
+      required: [error, field, reason]
     ConflictWriteBlock:
       type: object
       description: >
@@ -12013,17 +12037,13 @@ paths:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/ConflictWriteBlock"
-                  - type: object
-                    required: [error, field, reason]
-                    properties:
-                      error:
-                        type: string
-                        enum: [field_locked]
-                      field:
-                        type: string
-                        enum: [discogs_id]
-                      reason:
-                        type: string
+                  - $ref: "#/components/schemas/FieldLockedError"
+                discriminator:
+                  propertyName: error
+                  mapping:
+                    field_locked: "#/components/schemas/FieldLockedError"
+                    nfo_write_blocked: "#/components/schemas/ConflictWriteBlock"
+                    round_trip_write_blocked: "#/components/schemas/ConflictWriteBlock"
         "500":
           description: Failed to link Discogs ID
           content:
@@ -12228,17 +12248,13 @@ paths:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/ConflictWriteBlock"
-                  - type: object
-                    required: [error, field, reason]
-                    properties:
-                      error:
-                        type: string
-                        enum: [field_locked]
-                      field:
-                        type: string
-                        enum: [audiodb_id]
-                      reason:
-                        type: string
+                  - $ref: "#/components/schemas/FieldLockedError"
+                discriminator:
+                  propertyName: error
+                  mapping:
+                    field_locked: "#/components/schemas/FieldLockedError"
+                    nfo_write_blocked: "#/components/schemas/ConflictWriteBlock"
+                    round_trip_write_blocked: "#/components/schemas/ConflictWriteBlock"
         "500":
           description: Failed to link TheAudioDB ID
           content:
