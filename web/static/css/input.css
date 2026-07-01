@@ -3123,6 +3123,41 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
   outline-offset: 2px;
 }
 
+/* Column-visibility control de-blue (M55 #2067): mirror the maintainer-approved
+ * reports treatment (#1337 UAT; the .sw-next-reports [data-col-toggle] rule later
+ * in this file) on the artists dashboard. The shared ColumnToggle control is a
+ * settings affordance, not a row selection, so its checkbox carries NO colored
+ * backdrop in ANY state -- the box stays transparent (matching the surface behind
+ * it) with only a thin theme border, and checked/indeterminate read via a drawn
+ * glyph in --sw-content-text, never a grey/blue filled square. This overrides the
+ * .sw-next-artists checkbox restyle (#1335) which fills :checked blue-600. Scoped
+ * to [data-col-toggle] so the row/bulk-select selection blue (#1335) is untouched,
+ * and to .sw-next-artists so stable + other surfaces are unaffected. The #1335 base
+ * rule already supplies appearance:none + box geometry + the ::after glyph shape;
+ * here we override only the colors/fill. */
+.sw-next-artists [data-col-toggle] input[type="checkbox"] {
+  background-color: transparent;
+  border-color: var(--sw-content-text-secondary);
+}
+.sw-next-artists [data-col-toggle] input[type="checkbox"]:checked,
+.sw-next-artists [data-col-toggle] input[type="checkbox"]:indeterminate {
+  background-color: transparent;
+  border-color: var(--sw-content-text);
+}
+.sw-next-artists [data-col-toggle] input[type="checkbox"]:checked::after {
+  border-left-color: var(--sw-content-text);
+  border-bottom-color: var(--sw-content-text);
+}
+.sw-next-artists [data-col-toggle] input[type="checkbox"]:indeterminate::after {
+  background: var(--sw-content-text);
+}
+.sw-next-artists [data-col-toggle] input[type="checkbox"]:hover {
+  border-color: var(--sw-content-text); /* override the #1335 blue-500 hover */
+}
+.sw-next-artists [data-col-toggle] input[type="checkbox"]:focus-visible {
+  outline-color: var(--sw-content-text-secondary); /* override #1335 blue outline */
+}
+
 /* Roving keyboard focus (M55 #1789): j/k move focus between list rows/cards via
  * the shared keyboard helper. A <tr>/<div> has no reliable default focus ring,
  * so give the roving item an explicit visible outline for keyboard-only nav. */
