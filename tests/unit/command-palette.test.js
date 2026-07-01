@@ -63,6 +63,16 @@ describe('command palette index', () => {
     assert.equal(m({ label: 'Go to Artists', keywords: [] }, 'xyz'), false);
     assert.equal(m({ label: 'Anything', keywords: [] }, ''), true);
   });
+
+  it('buildIndex settings entries deep-link to a #section- anchor the rail can jump to (#1775 hostile-review finding 1)', () => {
+    const dom = withPalette();
+    const list = dom.window.swCommandPalette.buildIndex(dom.window.swKeyboardShortcuts.list());
+    const settings = list.filter((i) => i.kind === 'setting');
+    assert.ok(settings.length > 0);
+    settings.forEach((s) => {
+      assert.match(s.href, /^\/next\/settings#section-/, `setting "${s.label}" href "${s.href}" must target a #section- anchor`);
+    });
+  });
 });
 
 describe('command palette open/hide/render', () => {

@@ -7077,6 +7077,19 @@ html[data-density="spacious"] .sw-next-rail-item {
   cursor: pointer;
   transition: background-color 0.1s ease, border-color 0.1s ease;
 }
+/* Density preference bridge (#1775 hostile-review finding 2): the palette row
+ * is one of the next/ list surfaces the "Density" appearance pref should reach
+ * (M55 #1935 established the html[data-density="..."] bridge for artists/
+ * dashboard/activity/duplicates). "comfortable" is this row's native, hand-tuned
+ * rhythm (0.75rem vertical) so it is left untouched like the other bridged
+ * surfaces; only compact/spacious shift the vertical padding, horizontal stays
+ * fixed at 0.875rem to match the comfortable default. */
+html[data-density="compact"] .sw-cmdk-row {
+  padding: 0.5rem 0.875rem;
+}
+html[data-density="spacious"] .sw-cmdk-row {
+  padding: 1rem 0.875rem;
+}
 .sw-cmdk-row:hover {
   background: var(--flyout-row-hover);
 }
@@ -7125,6 +7138,13 @@ html[data-density="spacious"] .sw-next-rail-item {
   font-size: 0.875rem;
 }
 
+/* Intentionally exempt from [data-kbd="hide"] (#1775 hostile-review finding 3,
+ * doc-gap only, no behavior change): this footer is the palette's own keyboard
+ * hint strip, analogous to the ? cheat-sheet's .sw-sidebar-kbd hints -- the same
+ * rationale already codified for the .sw-cmdk .sw-kbd chip exemption above
+ * ("command palette always shows its keycap chips -- same rationale as the
+ * cheat sheet"). A keyboard-first surface always shows its own key hints, so
+ * neither the chips nor the labels around them are hidden by the pref. */
 .sw-cmdk-foot {
   display: flex;
   flex-wrap: wrap;

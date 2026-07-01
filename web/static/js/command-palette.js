@@ -31,11 +31,11 @@
   ];
 
   var SETTINGS = [
-    { id: 'set-general',     label: 'General',            kind: 'setting', href: '/next/settings#general', group: 'Essentials' },
-    { id: 'set-libraries',   label: 'Music libraries',    kind: 'setting', href: '/next/settings#libraries', group: 'Essentials' },
-    { id: 'set-providers',   label: 'Metadata providers', kind: 'setting', href: '/next/settings#providers', group: 'Data' },
-    { id: 'set-rules',       label: 'Rules & severity',   kind: 'setting', href: '/next/settings#rules', group: 'Data' },
-    { id: 'set-connections', label: 'Servers',            kind: 'setting', href: '/next/settings#connections', group: 'Integrations' },
+    { id: 'set-general',     label: 'General',            kind: 'setting', href: '/next/settings#section-general', group: 'Essentials' },
+    { id: 'set-libraries',   label: 'Music libraries',    kind: 'setting', href: '/next/settings#section-libraries', group: 'Essentials' },
+    { id: 'set-providers',   label: 'Metadata providers', kind: 'setting', href: '/next/settings#section-providers', group: 'Data' },
+    { id: 'set-rules',       label: 'Rules & severity',   kind: 'setting', href: '/next/settings#section-rules', group: 'Data' },
+    { id: 'set-connections', label: 'Servers',            kind: 'setting', href: '/next/settings#section-connections', group: 'Integrations' },
   ];
 
   function buildIndex(registryList) {
