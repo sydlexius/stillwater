@@ -2,6 +2,7 @@ package next
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -95,6 +96,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 		>
 			@artistStickyHeader(assets, data)
 			@artistHero(assets, data)
+			@artistFieldLocksPanel(data)
 			// Reorderable region (#2065): SortableJS (section-layout.js) mounts on
 			// [data-sw-sortable-section] and drags its direct-child <section>s by the
 			// .sw-section-drag-handle. The hero + sticky header stay outside so they
@@ -347,6 +349,52 @@ templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 			</div>
 		</div>
 	</section>
+}
+
+// artistFieldLocksPanel is the v1-parity field-locks summary card (#1754):
+// every individually pinned field (Artist.LockedFields), each removable via
+// an inline unlock control. Fixed after the hero, NOT part of the
+// reorderable section list (mirrors v1's placement ahead of the tab bar).
+// Hidden entirely when nothing is locked, matching v1's "stay quiet for the
+// common case" behavior; the last chip's removal removes the card from the
+// DOM client-side so an empty amber card never lingers.
+templ artistFieldLocksPanel(data ArtistDetailPageData) {
+	{{ a := data.Detail.Artist }}
+	if len(a.LockedFields) > 0 {
+		<section id={ "next-field-locks-" + a.ID } class="sw-dash-card" aria-labelledby={ "next-field-locks-heading-" + a.ID }>
+			<div class="body">
+				<div class="flex items-center gap-2 mb-2">
+					<h2 id={ "next-field-locks-heading-" + a.ID } class="sw-next-subhead" style="margin:0">
+						{ t(ctx, "artist.locked_fields") }
+					</h2>
+					@components.ContextHelp(
+						"next-help-locked-fields-panel-"+a.ID,
+						t(ctx, "artist.help.locked_fields_panel.label"),
+						t(ctx, "artist.help.locked_fields_panel"),
+						"core-concepts/field-locks#layer-2-field-locks-per-field-protection",
+					)
+				</div>
+				<div class="flex flex-wrap gap-2">
+					for _, f := range a.LockedFields {
+						<span class="sw-next-field-lock-chip inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" style="background:var(--swd-warn-soft);color:var(--swd-warn)">
+							{ f }
+							<button
+								type="button"
+								class="ml-1 hover:opacity-75"
+								style="color:var(--swd-warn)"
+								hx-delete={ "/api/v1/artists/" + a.ID + "/field-locks/" + url.PathEscape(f) }
+								hx-swap="none"
+								hx-trigger="click"
+								hx-on::after-request="(function(btn, ev){ if (ev.detail.successful) { var chip = btn.closest('.sw-next-field-lock-chip'); var panel = btn.closest('[id^=\'next-field-locks-\']'); chip.remove(); if (panel && !panel.querySelector('.sw-next-field-lock-chip')) { panel.remove(); } } else { alert(btn.getAttribute('data-unlock-error') || 'Unlock failed. Please try again.'); } })(this, event)"
+								data-unlock-error={ t(ctx, "artist.unlock_field_failed") }
+								aria-label={ t(ctx, "artist.unlock_field") }
+							>x</button>
+						</span>
+					}
+				</div>
+			</div>
+		</section>
+	}
 }
 
 // heroInitial returns the uppercased first letter of an artist name for the
