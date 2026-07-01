@@ -339,7 +339,7 @@ templ SettingsUsersTab(data UsersTabData) {
 						data-i18n-toast-refresh-users={ t(ctx, "settings.users.toast_refresh_users_failed") }
 						data-i18n-toast-refresh-invites={ t(ctx, "settings.users.toast_refresh_invites_failed") }
 						hx-get="/api/v1/users"
-						hx-trigger="load"
+						hx-trigger="intersect once"
 						hx-swap="innerHTML"
 					>
 						if len(data.Users) == 0 {
@@ -372,7 +372,7 @@ templ SettingsUsersTab(data UsersTabData) {
 				id="invites-list"
 				class="px-6 py-4 space-y-2"
 				hx-get="/api/v1/users/invites"
-				hx-trigger="load"
+				hx-trigger="intersect once"
 				hx-swap="innerHTML"
 			>
 				if len(data.Invites) == 0 {
@@ -645,7 +645,7 @@ templ SettingsUsersScript() {
 				valueEl.value = link;
 				resultEl.classList.remove('hidden');
 				// Refresh the invites list. See refreshUsersTable() for why
-				// htmx.ajax is required rather than re-dispatching 'load'.
+				// htmx.ajax is required rather than re-dispatching 'intersect'.
 				// The URL must be root-relative: htmx's configRequest
 				// listener in layout.templ already prepends htmx-base-path
 				// to every absolute HTMX path, so concatenating usersBasePath
@@ -725,10 +725,11 @@ templ SettingsUsersScript() {
 		}
 
 		// Re-fetch the users table using the body's current hx-get URL.
-		// htmx.ajax is required because hx-trigger="load" is processed once
-		// when htmx initializes the element; htmx does not install a DOM
-		// listener for the load event, so manually dispatching 'load' does
-		// nothing. A null-guard on body covers the case where the user
+		// htmx.ajax is required because hx-trigger="intersect once" fires (at
+		// most) once per element -- once the panel has been revealed and the
+		// fetch has run, htmx does not re-arm the intersect listener, so
+		// manually dispatching 'intersect' does nothing. A null-guard on body
+		// covers the case where the user
 		// navigated to another settings tab before an in-flight mutation
 		// resolved (the panel detaches). A .catch surfaces a refresh failure
 		// rather than leaving the table silently stale next to a "success"

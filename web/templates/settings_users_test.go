@@ -8,12 +8,13 @@ import (
 
 // TestSettingsUsersScript_NoOneShotLoadTriggers guards against the #1682
 // regression class: using `htmx.trigger(elem, 'load')` to refresh an element
-// whose hx-trigger="load" was already consumed by htmx at element-init time.
-// The trigger is a no-op against the one-shot load handler, so the table
+// whose hx-trigger fires at most once (originally "load", now "intersect
+// once" per #2132) and was already consumed by htmx at element-init/reveal
+// time. The trigger is a no-op against the one-shot handler, so the table
 // stays stale while the upstream mutation's success toast fires. Fix uses
 // htmx.ajax directly. This test pins the inline JS away from the broken
 // pattern so a future contributor cannot re-introduce it for either the
-// users table or the invites list (both render with hx-trigger="load").
+// users table or the invites list (both render with a one-shot hx-trigger).
 func TestSettingsUsersScript_NoOneShotLoadTriggers(t *testing.T) {
 	var buf bytes.Buffer
 	if err := SettingsUsersScript().Render(testCtx(t), &buf); err != nil {
@@ -66,5 +67,34 @@ func TestSettingsUsersScript_NoOneShotLoadTriggers(t *testing.T) {
 	callCount := strings.Count(js, `refreshUsersTable();`)
 	if callCount < 3 {
 		t.Errorf("expected refreshUsersTable() to be called at least 3 times (reload + role-change success + role-change failure + deactivate), got %d", callCount)
+	}
+}
+
+// TestSettingsUsersTab_RevealTriggeredFetch guards #2132: the stable Users
+// panel is always present in the settings DOM (only its ancestor tab panel
+// toggles the `hidden` class on client-side tab switch -- see
+// settings.templ's data-tab-panel wiring), so a page-load-only fetch trigger
+// would only ever refresh in the background of whichever tab happened to be
+// active at initial render. Both the users table and the invites list must
+// fetch on `intersect once` (matching the canonical lazy-tab pattern in
+// artist_detail.templ) so navigating to the Users tab client-side reliably
+// populates the panel, not just on a full page reload.
+func TestSettingsUsersTab_RevealTriggeredFetch(t *testing.T) {
+	data := UsersTabData{MultiUserEnabled: true, CallerID: "u1"}
+
+	var buf bytes.Buffer
+	if err := SettingsUsersTab(data).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := buf.String()
+
+	usersTag := findOpeningTagByID(t, html, "users-table-body")
+	if !strings.Contains(usersTag, `hx-trigger="intersect once"`) {
+		t.Errorf("users-table-body must fetch on intersect once, not page load; tag = %q", usersTag)
+	}
+
+	invitesTag := findOpeningTagByID(t, html, "invites-list")
+	if !strings.Contains(invitesTag, `hx-trigger="intersect once"`) {
+		t.Errorf("invites-list must fetch on intersect once, not page load; tag = %q", invitesTag)
 	}
 }
