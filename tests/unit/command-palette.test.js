@@ -58,3 +58,32 @@ describe('command palette index', () => {
     assert.equal(m({ label: 'Anything', keywords: [] }, ''), true);
   });
 });
+
+describe('command palette open/hide/render', () => {
+  it('open shows the root and renders rows; hide re-hides + clears query', () => {
+    const dom = withPalette();
+    const p = dom.window.swCommandPalette;
+    const root = dom.window.document.getElementById('sw-cmdk');
+    p.open();
+    assert.equal(root.classList.contains('hidden'), false);
+    const rows = dom.window.document.querySelectorAll('[data-cmdk-list] .sw-cmdk-row');
+    assert.ok(rows.length >= 5); // 2 screens + 5 settings/actions minimum
+    p.hide();
+    assert.equal(root.classList.contains('hidden'), true);
+    assert.equal(dom.window.document.getElementById('sw-cmdk-input').value, '');
+  });
+
+  it('typing filters the rows and shows empty state on no match', () => {
+    const dom = withPalette();
+    const p = dom.window.swCommandPalette;
+    const input = dom.window.document.getElementById('sw-cmdk-input');
+    p.open();
+    input.value = 'artists';
+    input.dispatchEvent(new dom.window.Event('input'));
+    const rows = dom.window.document.querySelectorAll('[data-cmdk-list] .sw-cmdk-row');
+    assert.equal(rows.length, 1);
+    input.value = 'zzznomatch';
+    input.dispatchEvent(new dom.window.Event('input'));
+    assert.equal(dom.window.document.getElementById('sw-cmdk-empty').classList.contains('hidden'), false);
+  });
+});
