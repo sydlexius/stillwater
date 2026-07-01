@@ -694,6 +694,49 @@ func TestWriteFileAtomic_TempFilePermissionsRestricted(t *testing.T) {
 	}
 }
 
+// TestWriteTempFile_WriteFails covers writeTempFile's own Write error branch
+// (as opposed to WriteFileAtomic's handling of a writeTempFile failure, which
+// is covered separately via the hook). Closing the file before calling the
+// real writeTempFile implementation makes the underlying Write syscall fail
+// deterministically.
+func TestWriteTempFile_WriteFails(t *testing.T) {
+	dir := t.TempDir()
+	f, err := os.CreateTemp(dir, "closed-*.tmp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeTempFile(f, []byte("data"), 0o644); err == nil {
+		t.Fatal("expected error writing to a closed file")
+	}
+}
+
+// TestWriteTempFile_ChmodFails covers writeTempFile's Chmod error branch.
+// Writing to /dev/null always succeeds (the kernel discards the data), but
+// chmod-ing it fails for a non-root caller since /dev/null is root-owned --
+// this gives a Write-succeeds-then-Chmod-fails sequence without needing to
+// inject a fake filesystem.
+func TestWriteTempFile_ChmodFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission semantics; /dev/null chmod behavior differs on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root can chmod any file, including /dev/null")
+	}
+	f, err := os.OpenFile("/dev/null", os.O_WRONLY, 0)
+	if err != nil {
+		t.Skipf("/dev/null not writable in this environment: %v", err)
+	}
+	defer f.Close()
+
+	if err := writeTempFile(f, []byte("data"), 0o600); err == nil {
+		t.Fatal("expected error chmod-ing /dev/null as a non-root user")
+	}
+}
+
 // TestWriteFileAtomic_CreateTempFails covers the error branch where
 // os.CreateTemp cannot create the staging file (e.g. the parent directory is
 // unwritable). Uses a real read-only directory rather than an injected
