@@ -84,6 +84,10 @@ func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 		return nil, fmt.Errorf("VACUUM INTO: %w", err)
 	}
 
+	if err := os.Chmod(dest, 0o600); err != nil {
+		return nil, fmt.Errorf("restricting backup permissions: %w", err)
+	}
+
 	info, err := os.Stat(dest)
 	if err != nil {
 		return nil, fmt.Errorf("stat backup file: %w", err)

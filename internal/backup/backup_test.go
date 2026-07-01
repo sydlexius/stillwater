@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -87,6 +88,33 @@ func TestBackup(t *testing.T) {
 	}
 	if value != "hello" {
 		t.Errorf("expected 'hello', got %q", value)
+	}
+}
+
+// TestBackup_SnapshotIsOwnerOnly verifies that a backup snapshot is written
+// with 0600 permissions (owner read/write only), since it contains a full
+// copy of the application database including encrypted secrets.
+func TestBackup_SnapshotIsOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not meaningful on Windows")
+	}
+
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger)
+
+	info, err := svc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+
+	fi, err := os.Stat(filepath.Join(backupDir, info.Filename))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("backup snapshot mode = %o, want 0600", perm)
 	}
 }
 

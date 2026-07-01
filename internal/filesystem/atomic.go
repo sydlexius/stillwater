@@ -16,15 +16,15 @@ var osRename = os.Rename
 // This prevents data corruption if the process is interrupted during the write.
 //
 // Steps:
-//  1. Write data to <target>.tmp
+//  1. Write data to a uniquely-named temp file created via os.CreateTemp (O_EXCL),
+//     so concurrent writers targeting the same path never collide on the temp name
 //  2. If <target> exists, rename it to <target>.bak
-//  3. Rename <target>.tmp to <target>
+//  3. Rename the temp file to <target>
 //  4. Remove <target>.bak
 //
 // If rename fails (e.g., cross-mount point), falls back to copy+delete with fsync.
 func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 	TraceFSWrite("WriteFileAtomic", target, 0)
-	tmpPath := target + ".tmp"
 	bakPath := target + ".bak"
 
 	// Ensure parent directory exists
@@ -33,9 +33,27 @@ func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("creating parent directory: %w", err)
 	}
 
-	// Step 1: Write to .tmp
-	if err := os.WriteFile(tmpPath, data, perm); err != nil {
+	// Step 1: Write to a uniquely-named temp file (O_EXCL via os.CreateTemp),
+	// then chmod to the caller's intended perm since CreateTemp always creates
+	// the file 0o600 regardless of perm.
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(target)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing temp file: %w", err)
+	}
+	if err := tmpFile.Chmod(perm); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("setting temp file permissions: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("closing temp file: %w", err)
 	}
 
 	// Step 2: Backup existing file if it exists

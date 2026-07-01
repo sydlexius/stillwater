@@ -3,11 +3,13 @@ package filesystem
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -661,5 +663,152 @@ func TestWriteReaderAtomic_NonSeekableReader(t *testing.T) {
 	}
 	if !bytes.Equal(got, data) {
 		t.Errorf("content = %q, want %q", got, data)
+	}
+}
+
+// --- Security hardening tests (#2172) ---
+
+// TestWriteFileAtomic_TempFilePermissionsRestricted verifies that the temp
+// file used during the write is never world/group readable, even before the
+// final chmod to the caller's requested perm -- os.CreateTemp always creates
+// with 0o600, so a caller-requested wider mode is only granted at the very
+// end via tmpFile.Chmod, never during the write itself.
+func TestWriteFileAtomic_TempFilePermissionsRestricted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not meaningful on Windows")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "secret.db")
+
+	if err := WriteFileAtomic(target, []byte("sensitive"), 0o600); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("final mode = %o, want 0600", perm)
+	}
+}
+
+// TestWriteFileAtomic_ConcurrentWritesGetUniqueTemps runs many concurrent
+// WriteFileAtomic calls, each against its own target file but all sharing the
+// same parent directory, and verifies every write lands its complete payload
+// with no leftover or cross-contaminated temp files. This exercises the
+// os.CreateTemp-based unique naming (replacing the old predictable
+// "<target>.tmp" name): under the old scheme, temp names were derived only
+// from the target path, so this is the scenario -- many writers racing in one
+// directory -- where a fixed suffix risked collisions (e.g. if two targets
+// ever normalized to the same tmp path, or under future refactors reusing a
+// shared staging name). Writes to the *same* target are intentionally out of
+// scope here; WriteFileAtomic never guaranteed same-target concurrent-write
+// safety (the backup-then-rename sequence isn't mutex-protected), and this
+// change doesn't alter that pre-existing contract.
+func TestWriteFileAtomic_ConcurrentWritesGetUniqueTemps(t *testing.T) {
+	dir := t.TempDir()
+	const n = 50
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			target := filepath.Join(dir, fmt.Sprintf("target-%d.txt", i))
+			data := []byte(strings.Repeat(string(rune('a'+i%26)), 10))
+			if err := WriteFileAtomic(target, data, 0o644); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent WriteFileAtomic: %v", err)
+	}
+
+	// Every target must exist with its own complete, uncorrupted payload.
+	for i := 0; i < n; i++ {
+		target := filepath.Join(dir, fmt.Sprintf("target-%d.txt", i))
+		got, err := os.ReadFile(target)
+		if err != nil {
+			t.Fatalf("ReadFile target-%d: %v", i, err)
+		}
+		want := strings.Repeat(string(rune('a'+i%26)), 10)
+		if string(got) != want {
+			t.Errorf("target-%d content = %q, want %q", i, got, want)
+		}
+	}
+
+	// No leftover temp/bak files should remain in the directory.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != n {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("expected exactly %d target files, got %d: %v", n, len(entries), names)
+	}
+}
+
+// TestWriteFileAtomic_SymlinkTargetNotFollowed verifies that when target is a
+// symlink, WriteFileAtomic replaces the symlink itself rather than writing
+// through it to the file it points at. os.Rename operates on the directory
+// entry (not the link's referent), so the backup-then-rename sequence in
+// WriteFileAtomic never dereferences the symlink -- this test locks that
+// behavior in so a future refactor cannot silently start following links.
+func TestWriteFileAtomic_SymlinkTargetNotFollowed(t *testing.T) {
+	if !ProbeSymlinkSupport(t.TempDir()) {
+		t.Skip("symlinks not supported on this platform/configuration")
+	}
+
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim.txt")
+	link := filepath.Join(dir, "link.txt")
+
+	victimData := []byte("do not touch")
+	if err := os.WriteFile(victim, victimData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateRelativeSymlink(victim, link); err != nil {
+		t.Fatalf("CreateRelativeSymlink: %v", err)
+	}
+
+	newData := []byte("new content via link")
+	if err := WriteFileAtomic(link, newData, 0o644); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+
+	// The victim file must be untouched.
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("ReadFile victim: %v", err)
+	}
+	if !bytes.Equal(got, victimData) {
+		t.Errorf("victim content = %q, want untouched %q", got, victimData)
+	}
+
+	// The link path must now be a regular file with the new content, since
+	// WriteFileAtomic replaces the directory entry rather than the referent.
+	fi, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("Lstat link: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("expected link path to become a regular file, still a symlink")
+	}
+	got, err = os.ReadFile(link)
+	if err != nil {
+		t.Fatalf("ReadFile link: %v", err)
+	}
+	if !bytes.Equal(got, newData) {
+		t.Errorf("link content = %q, want %q", got, newData)
 	}
 }
