@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // setupTestService returns a new auth Service backed by a pre-migrated test
@@ -224,6 +226,64 @@ func TestLogin_UnknownUser(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid credentials") {
 		t.Errorf("error = %q, want 'invalid credentials'", err.Error())
+	}
+}
+
+// TestGetDummyHash_IsRealBcryptAtDefaultCost proves the timing-equalization
+// fixture is genuine bcrypt work at the same cost as real password hashes, so
+// the unknown-user compare in Login is not a cheap no-op (#2171).
+func TestGetDummyHash_IsRealBcryptAtDefaultCost(t *testing.T) {
+	t.Parallel()
+	h := getDummyHash()
+	if len(h) == 0 {
+		t.Fatal("getDummyHash returned empty; constant-time compare would be a no-op")
+	}
+	cost, err := bcrypt.Cost(h)
+	if err != nil {
+		t.Fatalf("dummy hash is not a valid bcrypt hash: %v", err)
+	}
+	if cost != bcrypt.DefaultCost {
+		t.Errorf("dummy hash cost = %d, want DefaultCost %d (must match real hashes for equal timing)", cost, bcrypt.DefaultCost)
+	}
+}
+
+// TestLogin_ConstantTime asserts the unknown-user path spends comparable time to
+// the wrong-password path: both perform a bcrypt compare, closing the
+// username-enumeration timing side channel (#2171). A missing dummy compare
+// would make the unknown-user path return in microseconds while the
+// wrong-password path spends the full bcrypt cost (tens of ms), so a lenient
+// lower-bound ratio reliably distinguishes the two without flaking.
+func TestLogin_ConstantTime(t *testing.T) {
+	t.Parallel()
+	svc := createTestUser(t, "secret")
+	ctx := context.Background()
+
+	// Warm up: trigger the lazy dummy-hash init and prime caches so neither
+	// measurement pays one-time costs.
+	_, _ = svc.Login(ctx, "admin", "wrongpassword")
+	_, _ = svc.Login(ctx, "ghost-warmup", "wrongpassword")
+
+	const iters = 3
+	var wrongElapsed, unknownElapsed time.Duration
+	for i := 0; i < iters; i++ {
+		start := time.Now()
+		if _, err := svc.Login(ctx, "admin", "wrongpassword"); err == nil {
+			t.Fatal("expected error for wrong password")
+		}
+		wrongElapsed += time.Since(start)
+
+		start = time.Now()
+		if _, err := svc.Login(ctx, "nonexistent-user", "wrongpassword"); err == nil {
+			t.Fatal("expected error for unknown user")
+		}
+		unknownElapsed += time.Since(start)
+	}
+
+	// The unknown-user path must not be dramatically faster. Without the dummy
+	// compare the ratio would be far below 1/4 (near-zero vs full bcrypt cost).
+	if unknownElapsed < wrongElapsed/4 {
+		t.Errorf("unknown-user login too fast: unknown=%v wrong=%v (want unknown >= wrong/4; missing constant-time compare?)",
+			unknownElapsed, wrongElapsed)
 	}
 }
 

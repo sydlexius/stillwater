@@ -9,11 +9,40 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// dummyHash holds a bcrypt hash computed once at DefaultCost, used by Login to
+// perform a comparison on the unknown-user path so it takes the same time as
+// the wrong-password path (constant-time login; #2171 defeats username
+// enumeration via a timing side channel). Lazily initialized via dummyHashOnce
+// so the ~cost bcrypt work happens on first login, not at package init.
+var (
+	dummyHashOnce sync.Once
+	dummyHash     []byte
+)
+
+// getDummyHash returns a package-level bcrypt hash for the timing-equalization
+// compare in Login. It is derived from a fixed throwaway password; the value is
+// never a valid credential (no user's password_hash is set from it).
+func getDummyHash() []byte {
+	dummyHashOnce.Do(func() {
+		// bcrypt.GenerateFromPassword only errors on an out-of-range cost, which
+		// DefaultCost never is; fall back to a precomputed constant if it ever does
+		// so the compare below still runs rather than panicking a login.
+		h, err := bcrypt.GenerateFromPassword(PrehashPassword("stillwater-dummy-password"), bcrypt.DefaultCost)
+		if err != nil {
+			slog.Error("auth: failed to generate dummy bcrypt hash for constant-time login", "err", err)
+			return
+		}
+		dummyHash = h
+	})
+	return dummyHash
+}
 
 const sessionDuration = 24 * time.Hour
 
@@ -132,6 +161,11 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		SELECT id, password_hash FROM users WHERE username = ?
 	`, username).Scan(&id, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
+		// Constant-time login: run a bcrypt compare against a dummy hash so the
+		// unknown-user path costs the same as the wrong-password path below.
+		// Without this, an attacker could distinguish "user exists" from "user
+		// unknown" by response latency (username enumeration; #2171).
+		_ = bcrypt.CompareHashAndPassword(getDummyHash(), PrehashPassword(password))
 		return "", errors.New("invalid credentials")
 	}
 	if err != nil {

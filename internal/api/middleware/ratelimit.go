@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -20,18 +21,33 @@ type ipLimiter struct {
 type LoginRateLimiter struct {
 	mu       sync.Mutex
 	limiters map[string]*ipLimiter
+	// trustedProxies is the set of CIDR ranges whose direct connections are
+	// trusted to set X-Forwarded-For / X-Real-Ip. Parsed once at construction
+	// from the operator-configured strings (already CIDR-validated by config).
+	// Empty means no proxy is trusted and forwarded headers are always ignored.
+	trustedProxies []netip.Prefix
 }
 
 // NewLoginRateLimiter creates a rate limiter that cleans up stale entries periodically.
-// The cleanup goroutine stops when the provided context is canceled.
+// The cleanup goroutine stops when the provided context is canceled. trustedProxies
+// are CIDR strings (already validated by config.validateTrustedProxies); any that
+// fail to parse here are skipped defensively so a single bad entry cannot disable
+// rate limiting entirely.
 //
 //nolint:contextcheck // boot-time constructor; ctx is the long-lived app context that governs the cleanup goroutine, not a request ctx
-func NewLoginRateLimiter(ctx context.Context) *LoginRateLimiter {
+func NewLoginRateLimiter(ctx context.Context, trustedProxies []string) *LoginRateLimiter {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	prefixes := make([]netip.Prefix, 0, len(trustedProxies))
+	for _, p := range trustedProxies {
+		if prefix, err := netip.ParsePrefix(p); err == nil {
+			prefixes = append(prefixes, prefix)
+		}
+	}
 	rl := &LoginRateLimiter{
-		limiters: make(map[string]*ipLimiter),
+		limiters:       make(map[string]*ipLimiter),
+		trustedProxies: prefixes,
 	}
 	go rl.cleanup(ctx)
 	return rl
@@ -41,7 +57,7 @@ func NewLoginRateLimiter(ctx context.Context) *LoginRateLimiter {
 // Allows 5 requests per minute with a burst of 5.
 func (rl *LoginRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r)
+		ip := rl.clientIP(r)
 		limiter := rl.getLimiter(ip)
 		if !limiter.Allow() {
 			http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
@@ -86,15 +102,16 @@ func (rl *LoginRateLimiter) cleanup(ctx context.Context) {
 	}
 }
 
-func clientIP(r *http.Request) string {
+func (rl *LoginRateLimiter) clientIP(r *http.Request) string {
 	remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if remoteIP == "" {
 		remoteIP = r.RemoteAddr
 	}
 
-	// Only honor proxy headers when the direct connection is from a private/loopback IP,
-	// which indicates a trusted reverse proxy is in front of the application.
-	if isPrivateIP(remoteIP) {
+	// Only honor proxy headers when the DIRECT peer is inside an operator-configured
+	// trusted-proxy range. A LAN client that is not itself a trusted proxy can no
+	// longer spoof X-Forwarded-For to escape its own rate-limit bucket (#2171).
+	if rl.isTrustedProxy(remoteIP) {
 		// Use the rightmost XFF IP (added by the nearest trusted proxy) to resist spoofing.
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
@@ -111,11 +128,18 @@ func clientIP(r *http.Request) string {
 	return remoteIP
 }
 
-// isPrivateIP checks if an IP address is in a private or loopback range.
-func isPrivateIP(ipStr string) bool {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
+// isTrustedProxy reports whether the direct-peer address falls inside any
+// configured trusted-proxy CIDR range. An unparsable address or an empty
+// trusted set returns false, so forwarded headers are ignored by default.
+func (rl *LoginRateLimiter) isTrustedProxy(ipStr string) bool {
+	addr, err := netip.ParseAddr(ipStr)
+	if err != nil {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate()
+	for _, prefix := range rl.trustedProxies {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
