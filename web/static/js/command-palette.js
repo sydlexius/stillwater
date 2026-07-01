@@ -1,7 +1,8 @@
 /* Command palette (next/) — Cmd-K. Vanilla JS, no framework. Exposes
- * window.swCommandPalette = { buildIndex, match, open, hide, toggle, isOpen }.
- * Keyboard binding (Cmd-K) and row activation/dispatch land in later tasks;
- * this module only owns show/hide, row rendering, and live-filter-on-input. */
+ * window.swCommandPalette = { buildIndex, match, open, hide, toggle, isOpen,
+ * activate }. This module owns show/hide, row rendering, live-filter-on-input,
+ * dispatch routing (navigate / client action / server POST / inline confirm),
+ * and open-scoped ↑/↓/Enter + row-click activation. */
 (function () {
   'use strict';
 
@@ -17,6 +18,9 @@
   var activeIdx = -1;
   var opener = null;
   var wired = false;
+  var navWired = false;
+  var armedConfirmId = null;
+  var CONFIRM_LABEL = 'Press Enter again to confirm — rewrites metadata in bulk';
 
   var ACTIONS = [
     { id: 'act-theme',     label: 'Toggle theme',        kind: 'action', run: 'theme',   keywords: ['dark', 'light'] },
@@ -76,7 +80,7 @@
 
     var label = document.createElement('span');
     label.className = 'sw-cmdk-row-label';
-    label.textContent = item.label;
+    label.textContent = (item.id && item.id === armedConfirmId) ? CONFIRM_LABEL : item.label;
     row.appendChild(label);
 
     if (item.kind === 'screen' && item.shortcut && item.shortcut.length === 2) {
@@ -99,6 +103,9 @@
     }
 
     if (idx === activeIdx) row.setAttribute('data-active', 'true');
+    row.addEventListener('click', function () {
+      window.swCommandPalette.activate(item);
+    });
     return row;
   }
 
@@ -129,6 +136,127 @@
     render(input ? input.value : '');
   }
 
+  // basePath reads the app's mount prefix from the layout's meta tag, used to
+  // build absolute URLs for navigation and server-POST dispatch.
+  function basePath() {
+    var meta = document.querySelector('meta[name="htmx-base-path"]');
+    return (meta && meta.getAttribute('content')) || '';
+  }
+
+  function navigate(url) {
+    if (typeof window.swNavigate === 'function') {
+      window.swNavigate(url);
+    } else {
+      window.location.href = url;
+    }
+  }
+
+  // callClientFn invokes a named window.<obj>.<method>() action, warning
+  // loudly (never silently) when the target isn't wired up.
+  function callClientFn(obj, method, warnMsg) {
+    var target = window[obj];
+    if (target && typeof target[method] === 'function') {
+      target[method]();
+      return true;
+    }
+    console.error('[command-palette] missing client target: window.' + obj + '.' + method);
+    if (typeof window.showWarningToast === 'function') window.showWarningToast(warnMsg);
+    return false;
+  }
+
+  // doPost issues the server-POST dispatch for run:'post' (and the confirmed
+  // second activation of run:'confirm-post'), toasting success/failure.
+  function doPost(item) {
+    var url = basePath() + item.href;
+    var headers = {};
+    if (typeof window.swCsrfToken === 'function') headers['X-CSRF-Token'] = window.swCsrfToken();
+    return fetch(url, { method: 'POST', headers: headers })
+      .then(function (res) {
+        if (res && res.ok) {
+          if (typeof window.showSuccessToast === 'function') window.showSuccessToast(item.label + ' started.');
+        } else {
+          if (typeof window.showWarningToast === 'function') window.showWarningToast(item.label + ' failed.');
+        }
+      })
+      .catch(function () {
+        if (typeof window.showWarningToast === 'function') window.showWarningToast(item.label + ' failed.');
+      });
+  }
+
+  // activate dispatches an index entry by kind/run. Returns a Promise for
+  // POST-backed actions (server dispatch, confirmed fix-all) so callers can
+  // await completion; other kinds return undefined.
+  function activate(item) {
+    if (!item) return;
+
+    if (item.kind === 'screen' || item.kind === 'setting') {
+      navigate(basePath() + item.href);
+      hide();
+      return;
+    }
+
+    if (item.run === 'theme') {
+      callClientFn('swSidebar', 'cycleTheme', 'Theme toggle is unavailable on this page.');
+      hide();
+      return;
+    }
+
+    if (item.run === 'prefs') {
+      callClientFn('swPrefsDrawer', 'open', 'Preferences are unavailable on this page.');
+      hide();
+      return;
+    }
+
+    if (item.run === 'confirm-post') {
+      if (armedConfirmId !== item.id) {
+        // First activation arms the confirm state and re-renders the row
+        // with the confirm label; no request is made yet.
+        armedConfirmId = item.id;
+        render(input ? input.value : '');
+        return;
+      }
+      // Second activation of the same item: disarm and perform the POST.
+      armedConfirmId = null;
+      var result = doPost(item);
+      hide();
+      return result;
+    }
+
+    if (item.run === 'post') {
+      var p = doPost(item);
+      hide();
+      return p;
+    }
+
+    console.error('[command-palette] unknown item, cannot activate: ' + JSON.stringify(item));
+    if (typeof window.showWarningToast === 'function') window.showWarningToast('This command is not available.');
+    hide();
+  }
+
+  // onKeydown is attached only while the palette is open (see open()/hide()),
+  // so it never collides with keyboard.js's roving j/k handler which is
+  // scoped to non-modal contexts.
+  function onKeydown(e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (items.length) {
+        activeIdx = (activeIdx < 0) ? 0 : Math.min(activeIdx + 1, items.length - 1);
+        render(input ? input.value : '');
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (items.length) {
+        activeIdx = (activeIdx < 0) ? 0 : Math.max(activeIdx - 1, 0);
+        render(input ? input.value : '');
+      }
+    } else if (e.key === 'Enter') {
+      if (activeIdx >= 0 && activeIdx < items.length) {
+        e.preventDefault();
+        window.swCommandPalette.activate(items[activeIdx]);
+      }
+    }
+  }
+
   function open() {
     ensureEls();
     if (!root) return;
@@ -137,11 +265,18 @@
     if (input) {
       input.value = '';
     }
-    activeIdx = -1;
+    // Pre-select the first row (index 0) so ArrowDown/Enter can activate
+    // without an initial keypress just to "enter" the list.
+    activeIdx = 0;
+    armedConfirmId = null;
     render('');
     if (!wired && input) {
       input.addEventListener('input', onInput);
       wired = true;
+    }
+    if (!navWired) {
+      document.addEventListener('keydown', onKeydown);
+      navWired = true;
     }
     if (input && typeof input.focus === 'function') input.focus();
   }
@@ -151,6 +286,11 @@
     if (!root) return;
     root.classList.add('hidden');
     if (input) input.value = '';
+    armedConfirmId = null;
+    if (navWired) {
+      document.removeEventListener('keydown', onKeydown);
+      navWired = false;
+    }
     if (opener && typeof opener.focus === 'function') opener.focus();
     opener = null;
   }
@@ -175,5 +315,6 @@
     hide: hide,
     toggle: toggle,
     isOpen: isOpen,
+    activate: activate,
   };
 })();

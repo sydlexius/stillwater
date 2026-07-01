@@ -94,6 +94,78 @@ describe('command palette open/hide/render', () => {
   });
 });
 
+describe('command palette dispatch', () => {
+  function domWithStubs() {
+    const dom = withPalette();
+    const w = dom.window;
+    w.swNavigate = (url) => { w.__nav = url; };
+    w.swSidebar = { cycleTheme() { w.__theme = (w.__theme || 0) + 1; } };
+    w.swPrefsDrawer = { open() { w.__prefs = (w.__prefs || 0) + 1; } };
+    w.swCsrfToken = () => 'csrf123';
+    w.showSuccessToast = (m) => { w.__ok = m; };
+    w.showWarningToast = (m) => { w.__warn = m; };
+    w.__posts = [];
+    w.fetch = (url, opts) => { w.__posts.push({ url, opts }); return Promise.resolve({ ok: true }); };
+    return dom;
+  }
+
+  it('screen item navigates with base path', () => {
+    const dom = domWithStubs();
+    dom.window.swCommandPalette.activate({ kind: 'screen', href: '/next/artists' });
+    assert.equal(dom.window.__nav, '/next/artists');
+  });
+
+  it('theme + prefs actions call their client fns', () => {
+    const dom = domWithStubs();
+    dom.window.swCommandPalette.activate({ kind: 'action', run: 'theme' });
+    dom.window.swCommandPalette.activate({ kind: 'action', run: 'prefs' });
+    assert.equal(dom.window.__theme, 1);
+    assert.equal(dom.window.__prefs, 1);
+  });
+
+  it('post action POSTs with CSRF header', async () => {
+    const dom = domWithStubs();
+    await dom.window.swCommandPalette.activate({ kind: 'action', run: 'post', href: '/api/v1/scanner/run' });
+    const call = dom.window.__posts[0];
+    assert.equal(call.opts.method, 'POST');
+    assert.equal(call.opts.headers['X-CSRF-Token'], 'csrf123');
+  });
+
+  it('confirm-post requires a second activate before POSTing', async () => {
+    const dom = domWithStubs();
+    const item = { kind: 'action', run: 'confirm-post', href: '/api/v1/notifications/fix-all', id: 'act-fix-all' };
+    await dom.window.swCommandPalette.activate(item); // arms confirm, no POST
+    assert.equal(dom.window.__posts.length, 0);
+    await dom.window.swCommandPalette.activate(item); // confirmed
+    assert.equal(dom.window.__posts.length, 1);
+  });
+
+  it('missing client target logs error + warns, no throw', () => {
+    const dom = domWithStubs();
+    delete dom.window.swSidebar;
+    dom.window.swCommandPalette.activate({ kind: 'action', run: 'theme' });
+    assert.ok(dom.window.__warn);
+  });
+});
+
+describe('command palette keyboard nav', () => {
+  it('ArrowDown then Enter activates the second row', () => {
+    const dom = withPalette();
+    const w = dom.window;
+    const p = w.swCommandPalette;
+    p.open();
+    const rows = w.document.querySelectorAll('[data-cmdk-list] .sw-cmdk-row');
+    assert.ok(rows.length >= 2);
+    const secondId = rows[1].getAttribute('data-id');
+    let activated = null;
+    const origActivate = p.activate;
+    p.activate = (item) => { activated = item; return origActivate.call(p, item); };
+    w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter' }));
+    assert.equal(activated && activated.id, secondId);
+  });
+});
+
 describe('Cmd-K keyboard integration (#1775)', () => {
   it('Cmd-K toggles the palette on next/ pages and ⌘K is registered', () => {
     const dom = createDom({
