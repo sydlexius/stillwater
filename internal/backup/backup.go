@@ -17,6 +17,11 @@ import (
 // backupPattern matches backup filenames: stillwater-YYYYMMDD-HHMMSS.db
 var backupPattern = regexp.MustCompile(`^stillwater-\d{8}-\d{6}\.db$`)
 
+// osChmod is the chmod function used to restrict a snapshot's permissions
+// after VACUUM INTO. Overridable in tests to simulate a failure, following
+// the same injectable-hook pattern as osRename in internal/filesystem.
+var osChmod = os.Chmod
+
 // BackupInfo describes a backup file.
 type BackupInfo struct {
 	Filename  string    `json:"filename"`
@@ -84,7 +89,7 @@ func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 		return nil, fmt.Errorf("VACUUM INTO: %w", err)
 	}
 
-	if err := os.Chmod(dest, 0o600); err != nil {
+	if err := osChmod(dest, 0o600); err != nil {
 		return nil, fmt.Errorf("restricting backup permissions: %w", err)
 	}
 

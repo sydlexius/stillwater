@@ -12,6 +12,20 @@ import (
 // following the same injectable-hook pattern used by renameFunc in rename.go.
 var osRename = os.Rename
 
+// writeTempFile writes data to f, restricts it to perm, and closes it.
+// Extracted into a package-level var (rather than inlined in WriteFileAtomic)
+// so tests can override it to simulate write/chmod/close failures on the
+// temp file, the same injectable-hook pattern osRename uses for renameSafe.
+var writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		return err
+	}
+	return f.Close()
+}
+
 // WriteFileAtomic writes data to the target path using the tmp/bak/rename pattern.
 // This prevents data corruption if the process is interrupted during the write.
 //
@@ -41,19 +55,10 @@ func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	if _, err := tmpFile.Write(data); err != nil {
+	if err := writeTempFile(tmpFile, data, perm); err != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing temp file: %w", err)
-	}
-	if err := tmpFile.Chmod(perm); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("setting temp file permissions: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("closing temp file: %w", err)
 	}
 
 	// Step 2: Backup existing file if it exists

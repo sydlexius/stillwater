@@ -694,6 +694,68 @@ func TestWriteFileAtomic_TempFilePermissionsRestricted(t *testing.T) {
 	}
 }
 
+// TestWriteFileAtomic_CreateTempFails covers the error branch where
+// os.CreateTemp cannot create the staging file (e.g. the parent directory is
+// unwritable). Uses a real read-only directory rather than an injected
+// error, since CreateTemp itself has no package-level hook.
+func TestWriteFileAtomic_CreateTempFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod is not effective on Windows NTFS")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("chmod restrictions do not apply to root")
+	}
+
+	roDir := t.TempDir()
+	if err := os.Chmod(roDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(roDir, 0o755) })
+
+	target := filepath.Join(roDir, "test.txt")
+	err := WriteFileAtomic(target, []byte("data"), 0o644)
+	if err == nil {
+		t.Fatal("expected error when temp directory is unwritable")
+	}
+	if !strings.Contains(err.Error(), "creating temp file") {
+		t.Errorf("error = %q, want it to contain 'creating temp file'", err.Error())
+	}
+}
+
+// TestWriteFileAtomic_WriteTempFileFails covers the error branch where
+// writing/chmoding/closing the temp file fails, injected via the
+// writeTempFile hook (same pattern as osRename). Verifies the temp file is
+// cleaned up and the target is never created.
+func TestWriteFileAtomic_WriteTempFileFails(t *testing.T) {
+	orig := writeTempFile
+	t.Cleanup(func() { writeTempFile = orig })
+	writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
+		return errors.New("simulated write failure")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+
+	err := WriteFileAtomic(target, []byte("data"), 0o644)
+	if err == nil {
+		t.Fatal("expected error from simulated write failure")
+	}
+	if !strings.Contains(err.Error(), "writing temp file") {
+		t.Errorf("error = %q, want it to contain 'writing temp file'", err.Error())
+	}
+
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Error("target should not have been created")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected temp file to be cleaned up, dir has %d entries", len(entries))
+	}
+}
+
 // TestWriteFileAtomic_ConcurrentWritesGetUniqueTemps runs many concurrent
 // WriteFileAtomic calls, each against its own target file but all sharing the
 // same parent directory, and verifies every write lands its complete payload

@@ -3,10 +3,12 @@ package backup
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -115,6 +117,30 @@ func TestBackup_SnapshotIsOwnerOnly(t *testing.T) {
 	}
 	if perm := fi.Mode().Perm(); perm != 0o600 {
 		t.Errorf("backup snapshot mode = %o, want 0600", perm)
+	}
+}
+
+// TestBackup_ChmodFailurePropagates covers the error branch where restricting
+// the snapshot's permissions fails after VACUUM INTO, injected via the
+// osChmod hook (same pattern as osRename in internal/filesystem).
+func TestBackup_ChmodFailurePropagates(t *testing.T) {
+	orig := osChmod
+	t.Cleanup(func() { osChmod = orig })
+	osChmod = func(name string, mode os.FileMode) error {
+		return errors.New("simulated chmod failure")
+	}
+
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger)
+
+	_, err := svc.Backup(context.Background())
+	if err == nil {
+		t.Fatal("expected error from simulated chmod failure")
+	}
+	if !strings.Contains(err.Error(), "restricting backup permissions") {
+		t.Errorf("error = %q, want it to contain 'restricting backup permissions'", err.Error())
 	}
 }
 
