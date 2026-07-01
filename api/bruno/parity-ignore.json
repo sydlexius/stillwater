@@ -336,18 +336,6 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
-    "route": "POST /api/v1/connections/{}/libraries/import",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "POST /api/v1/connections/{}/libraries/{}/populate",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "POST /api/v1/connections/{}/libraries/{}/scan",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
     "route": "POST /api/v1/connections/{}/platform-settings/disable",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },

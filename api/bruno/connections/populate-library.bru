@@ -1,0 +1,33 @@
+meta {
+  name: Populate Library (Sentinel 404)
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{apiBase}}/connections/{{connectionId}}/libraries/{{libraryId}}/populate
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  connectionId is the sentinel UUID guaranteed not to exist in the CI
+  database. The handler verifies the connection exists before the library
+  lookup, so a non-existent connection yields a deterministic 404 with an
+  error envelope regardless of the libraryId value.
+}
+
+tests {
+  test("returns 404 for sentinel connectionId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports connection not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("connection not found");
+  });
+}

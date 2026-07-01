@@ -1,0 +1,33 @@
+meta {
+  name: Import Libraries (Sentinel 404)
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{apiBase}}/connections/{{connectionId}}/libraries/import
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  connectionId is the all-zeros-style sentinel UUID that is guaranteed not to
+  exist in the CI database. The handler verifies the connection exists before
+  touching the request body, so a non-existent connection yields a
+  deterministic 404 with an error envelope.
+}
+
+tests {
+  test("returns 404 for sentinel connectionId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports connection not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("connection not found");
+  });
+}
