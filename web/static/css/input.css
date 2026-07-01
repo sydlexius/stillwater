@@ -7085,7 +7085,9 @@ html[data-density="spacious"] .sw-next-rail-item {
  * surfaces; only compact/spacious shift the vertical padding, horizontal stays
  * fixed at 0.875rem to match the comfortable default. */
 html[data-density="compact"] .sw-cmdk-row {
-  padding: 0.5rem 0.875rem;
+  padding: 0.3125rem 0.875rem; /* 5px -- distinctly tighter than the 12px comfortable rhythm */
+  gap: 0.5rem;
+  margin-bottom: 1px;
 }
 html[data-density="spacious"] .sw-cmdk-row {
   padding: 1rem 0.875rem;
