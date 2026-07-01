@@ -28,8 +28,12 @@ steps:
 
   - name: Install golangci-lint
     run: |
+      set -euo pipefail
       curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.12.2/install.sh \
-        | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+        -o /tmp/golangci-lint-install.sh
+      echo "d32d3534af96cfd59546a084d22b213e8a47541cada5013aa8a84c4fa2589905  /tmp/golangci-lint-install.sh" \
+        | sha256sum -c -
+      sh /tmp/golangci-lint-install.sh -b "$(go env GOPATH)/bin" v2.12.2
 
   - name: Verify build
     run: make build
