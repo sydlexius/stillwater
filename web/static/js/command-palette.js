@@ -109,6 +109,20 @@
     return row;
   }
 
+  var SECTION_LABELS = { screen: 'Screens', setting: 'Settings', action: 'Actions' };
+
+  // makeSectionLabel builds the presentational group header inserted before
+  // the first row of a new kind. It is NOT a .sw-cmdk-row and carries no
+  // data-idx, so it never consumes a slot in the items/activeIdx indexing
+  // that arrow-nav and makeRow rely on.
+  function makeSectionLabel(kind) {
+    var label = document.createElement('div');
+    label.className = 'sw-cmdk-section-label';
+    label.setAttribute('role', 'presentation');
+    label.textContent = SECTION_LABELS[kind] || kind;
+    return label;
+  }
+
   // render rebuilds the row list from the live registry, filtered by q, and
   // toggles the empty state. Called on open() and on every input event.
   function render(q) {
@@ -119,7 +133,12 @@
     if (activeIdx >= items.length) activeIdx = items.length ? 0 : -1;
 
     listEl.innerHTML = '';
+    var prevKind = null;
     items.forEach(function (item, idx) {
+      if (item.kind !== prevKind) {
+        listEl.appendChild(makeSectionLabel(item.kind));
+        prevKind = item.kind;
+      }
       listEl.appendChild(makeRow(item, idx));
     });
 

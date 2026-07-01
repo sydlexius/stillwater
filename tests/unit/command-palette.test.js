@@ -89,6 +89,19 @@ describe('command palette open/hide/render', () => {
     assert.equal(dom.window.document.getElementById('sw-cmdk-input').value, '');
   });
 
+  it('groups rows under SCREENS/SETTINGS/ACTIONS section labels without disturbing row indices', () => {
+    const dom = withPalette();
+    const p = dom.window.swCommandPalette;
+    p.open();
+    const labels = dom.window.document.querySelectorAll('[data-cmdk-list] .sw-cmdk-section-label');
+    assert.equal(labels.length, 3);
+    assert.deepEqual([...labels].map((l) => l.textContent), ['Screens', 'Settings', 'Actions']);
+    const rows = dom.window.document.querySelectorAll('[data-cmdk-list] .sw-cmdk-row');
+    [...rows].forEach((row, i) => {
+      assert.equal(row.getAttribute('data-idx'), String(i));
+    });
+  });
+
   it('typing filters the rows and shows empty state on no match', () => {
     const dom = withPalette();
     const p = dom.window.swCommandPalette;

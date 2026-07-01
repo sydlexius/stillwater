@@ -7057,6 +7057,19 @@ html[data-density="spacious"] .sw-next-rail-item {
   padding: 0.5rem;
 }
 
+/* Section label grouping rows by kind (SCREENS/SETTINGS/ACTIONS), mirroring
+ * the pinned Raycast reference and the cheat-sheet modal's section-label
+ * rhythm. Presentational only -- never a .sw-cmdk-row, carries no data-idx,
+ * and is skipped by arrow-nav (see command-palette.js render()). */
+.sw-cmdk-section-label {
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--flyout-ink-2);
+  padding: 0.5rem 0.875rem 0.25rem;
+}
+
 /* Chunky Raycast rows: generous vertical padding, rounded, plain until
  * hover/active. .sw-cmdk-row is a <button> (block 100% width). */
 .sw-cmdk-row {
