@@ -529,6 +529,41 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+// TestSearch_EscapesLikeMetacharacters verifies that literal `%`, `_`, and `\`
+// in a search term are matched literally rather than acting as SQL LIKE
+// wildcards, while an ordinary substring search still matches normally.
+func TestSearch_EscapesLikeMetacharacters(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	for _, name := range []string{"100%_off\\band", "Metallica"} {
+		if err := svc.Create(ctx, testArtist(name, "/music/"+name)); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+
+	// A literal wildcard-laden term should match only the artist whose name
+	// contains that literal text, not act as a `%`/`_` wildcard over all rows.
+	results, err := svc.Search(ctx, "100%_off\\band")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 1 || results[0].Name != "100%_off\\band" {
+		t.Errorf("Search(%q) = %v, want exactly the literal match", "100%_off\\band", results)
+	}
+
+	// An ordinary substring search is unaffected.
+	results, err = svc.Search(ctx, "Metal")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 1 || results[0].Name != "Metallica" {
+		t.Errorf("Search(%q) = %v, want exactly Metallica", "Metal", results)
+	}
+}
+
 // TestSearch_HydratesPrimaryLibrary asserts that Search populates LibraryID
 // from the artist_libraries membership table. Regression coverage for the
 // gap where Search/SearchWithAliases skipped hydratePrimaryLibrariesBatch
@@ -623,6 +658,47 @@ func TestSearchWithAliases_HydratesPrimaryLibrary(t *testing.T) {
 	if results[0].LibraryID != "lib-alias-a" {
 		t.Errorf("SearchWithAliases result %q LibraryID = %q, want lib-alias-a (alias path must hydrate primary library)",
 			results[0].Name, results[0].LibraryID)
+	}
+}
+
+// TestSearchWithAliases_EscapesLikeMetacharacters verifies that literal LIKE
+// metacharacters in an alias token are matched literally rather than acting
+// as wildcards, while an ordinary alias substring search still matches.
+func TestSearchWithAliases_EscapesLikeMetacharacters(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a1 := testArtist("Radiohead", "/music/Radiohead")
+	if err := svc.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+	a2 := testArtist("The Sugarcubes", "/music/The Sugarcubes")
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
+	}
+
+	const aliasToken = `100%_off\alias`
+	if _, err := svc.AddAlias(ctx, a1.ID, aliasToken, "manual"); err != nil {
+		t.Fatalf("AddAlias: %v", err)
+	}
+
+	results, err := svc.SearchWithAliases(ctx, aliasToken)
+	if err != nil {
+		t.Fatalf("SearchWithAliases: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != a1.ID {
+		t.Errorf("SearchWithAliases(%q) = %v, want exactly a1", aliasToken, results)
+	}
+
+	// An ordinary substring alias search is unaffected.
+	results, err = svc.SearchWithAliases(ctx, "off")
+	if err != nil {
+		t.Fatalf("SearchWithAliases: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != a1.ID {
+		t.Errorf(`SearchWithAliases("off") = %v, want exactly a1`, results)
 	}
 }
 
