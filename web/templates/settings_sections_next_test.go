@@ -16,6 +16,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/i18n"
 )
 
 // TestSectionServersNext_PreservesConnectionHooks asserts the fragile
@@ -60,6 +62,26 @@ func TestSectionServersNext_PreservesConnectionHooks(t *testing.T) {
 				t.Errorf("connection %s (%s): missing hook %q", c.ID, c.Type, want)
 			}
 		}
+	}
+
+	// UAT de-dup (#2117) a11y guard: removing the status dot + type pill must not
+	// drop status/type from the accessible output. TYPE survives as the logo alt;
+	// STATUS survives as the badge's visible text word (its accessible name).
+	// Both must be present as text for every row (fixture: 2x ok, 1x error).
+	for _, want := range []string{`alt="Emby"`, `alt="Jellyfin"`, `alt="Lidarr"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing logo type label %q (a11y after type-pill removal)", want)
+		}
+	}
+	// Status badge text words (settings.connections.status_ok/error): the fixture
+	// has 2 ok + 1 error connections, so both words must appear. (The template
+	// helper `t` is shadowed by *testing.T here, so resolve via i18n directly.)
+	tr := i18n.TFromCtx(ctx)
+	if !strings.Contains(out, ">"+tr.T("settings.connections.status_ok")+"<") {
+		t.Errorf("status badge missing the 'ok' state text (a11y after status-dot removal)")
+	}
+	if !strings.Contains(out, ">"+tr.T("settings.connections.status_error")+"<") {
+		t.Errorf("status badge missing the 'error' state text (a11y after status-dot removal)")
 	}
 
 	// The feature-toggle knob/track class names the JS adds/removes BY NAME

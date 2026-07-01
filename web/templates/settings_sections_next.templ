@@ -105,20 +105,15 @@ templ serverConnectionRowNext(c connection.Connection) {
 	<div id={ "connection-" + c.ID } class="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2.5 target:ring-2 target:ring-amber-400/60 target:bg-amber-50/40 dark:target:bg-amber-900/10">
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 			<div class="flex items-center gap-2.5 min-w-0">
-				<div
-					class={
-						"h-2.5 w-2.5 shrink-0 rounded-full",
-						templ.KV("bg-green-500", c.Status == "ok"),
-						templ.KV("bg-red-500", c.Status == "error"),
-						templ.KV("bg-gray-400 dark:bg-gray-500", c.Status != "ok" && c.Status != "error"),
-					}
-				></div>
-				<img src={ logoSrc(c.Type) } alt="" class="h-6 w-6 shrink-0" aria-hidden="true"/>
+				<!-- UAT de-dup (#2117): the leading status DOT was removed as
+				     redundant with the status BADGE on the right (which carries the
+				     state as color + word, better a11y). The server-type text pill was
+				     removed as redundant with the LOGO; the type is kept accessible via
+				     the logo's alt text (all three types have a logo asset), so no
+				     screen-reader regression from dropping the visible pill. -->
+				<img src={ logoSrc(c.Type) } alt={ serverTypeLabel(c.Type) } class="h-6 w-6 shrink-0"/>
 				<div class="min-w-0">
-					<div class="flex items-center gap-2">
-						<span class="font-medium text-sm truncate">{ c.Name }</span>
-						<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{ serverTypeLabel(c.Type) }</span>
-					</div>
+					<div class="font-medium text-sm truncate">{ c.Name }</div>
 					<div class="text-xs text-gray-500 dark:text-gray-400 truncate">{ c.URL }</div>
 				</div>
 			</div>
