@@ -213,3 +213,39 @@ func TestLayoutNext_SkipLink(t *testing.T) {
 		t.Errorf("skip link label = %q; want the localized %q", text, "Skip to main content")
 	}
 }
+
+// TestLayoutNext_MountsCommandPalette verifies the Cmd-K command palette shell
+// is mounted in LayoutNext, hidden by default (#1775).
+func TestLayoutNext_MountsCommandPalette(t *testing.T) {
+	html, root := renderLayoutNext(t)
+	if !strings.Contains(html, `id="sw-cmdk"`) {
+		t.Fatal("command palette root #sw-cmdk not found in LayoutNext output")
+	}
+	node := findFirst(root, "div", func(cls string) bool { return strings.Contains(cls, "sw-cmdk-overlay") })
+	if node == nil {
+		t.Fatal("command palette overlay not rendered")
+	}
+	// Hidden by default.
+	if !strings.Contains(html, `id="sw-cmdk" class="fixed inset-0 z-50 hidden`) {
+		t.Fatal("command palette must be hidden by default")
+	}
+}
+
+// TestLayoutNext_MountsCommandPaletteScript verifies LayoutNext emits the
+// controller <script> tag for the command palette (#1775), referencing the
+// cache-busted command-palette.js asset path from AssetPaths.
+func TestLayoutNext_MountsCommandPaletteScript(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := nextTestCtx(t)
+	assets := templates.AssetPaths{CommandPaletteJS: "/js/command-palette.js?v=abc123"}
+	if err := LayoutNext("Test", assets).Render(ctx, &buf); err != nil {
+		t.Fatalf("rendering LayoutNext: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "<script") || !strings.Contains(out, "command-palette") {
+		t.Fatal("LayoutNext output must include a <script> tag referencing the command-palette controller asset")
+	}
+	if !strings.Contains(out, `src="/js/command-palette.js?v=abc123"`) {
+		t.Fatal("command palette script tag must use the AssetPaths.CommandPaletteJS value")
+	}
+}
