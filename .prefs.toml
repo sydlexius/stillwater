@@ -1,0 +1,122 @@
+# UI-preference verification manifest (Phase 2, #201 pilot repo).
+#
+# Maps each user-configurable VISUAL preference to how a rendered surface is
+# verified to honor it. Consumed by (a) the orchestrate adversarial-review
+# charter's USER-PREFERENCE COVERAGE dimension, and (b)
+# ~/.claude/scripts/prefs-coverage.py, a deterministic prep-pr gate (NOT yet
+# wired into .gates.toml -- see the recommended snippet at the bottom of this
+# file's companion PR description).
+#
+# This file POINTS at the authoritative pref list; it does not re-declare pref
+# values. Every [[pref]].verify below was confirmed with a real grep hit
+# against the current tree before being committed (see PR description for the
+# per-pref confirming hit).
+#
+# Non-visual preferences are OMITTED (no rendered surface to honor):
+# language, notification_enabled, auto_fetch_images, metadata_name_romanization,
+# metadata_languages, show_platform_debug, page_size,
+# artist_detail_section_order, artist_detail_hidden_sections,
+# artist_detail_collapsed_sections, suppress_confirm_*.
+#
+# font_size and letter_spacing are also OMITTED, but for a DIFFERENT reason
+# than non-visual: they ARE visual, but their mechanism is a pure root-level
+# CSS cascade -- [data-font-size]/[data-letter-spacing] set font-size/
+# letter-spacing directly on <html> in design-tokens.css, and every surface
+# inherits automatically via normal CSS cascade with no per-component var()
+# or class to reference. There is no discrete token a surface's markup could
+# fail to wire into, so there is nothing a per-surface grep could check.
+
+[source]
+file = "internal/api/preference_registry.go"    # canonical PreferenceRegistry()
+docs = "docs/site/src/reference/preferences.md"  # generated human reference
+
+[[pref]]
+key = "theme"
+applies_via = "class"
+mechanism = ".dark selectors (Tailwind dark: variant) + var(--sw-content-*/--sw-sidebar-*)"
+surface = "web/templates/*.templ"
+verify = "\\bdark\\b|var\\(--sw-content-|var\\(--sw-sidebar-"
+severity = "high"
+
+[[pref]]
+key = "content_width"
+applies_via = "data-attr"
+mechanism = "[data-width] main { max-width: var(--sw-content-max-width) }; only the <main> tag in each layout shell participates"
+surface = "web/templates/*layout*.templ"
+verify = "<main"
+severity = "medium"
+
+[[pref]]
+key = "font_family"
+applies_via = "data-attr"
+mechanism = "[data-font-family] rebinds --sw-font-family; body { font-family: var(--sw-font-family) } set once per layout shell"
+surface = "web/templates/*layout*.templ"
+verify = "var\\(--sw-font-family\\)"
+severity = "high"
+
+[[pref]]
+key = "mono_font"
+applies_via = "data-attr"
+mechanism = "[data-mono] rebinds --sw-font-mono; consumed by known mono-role classes (sidebar version, log viewer, identifiers, activity timestamps, prefs slider value)"
+surface = "web/templates/*.templ"
+verify = "sw-sidebar-version|sw-log-viewer|sw-next-identifiers|sw-activity-row|sw-prefs-slider-value"
+severity = "medium"
+
+[[pref]]
+key = "density"
+applies_via = "data-attr"
+mechanism = "[data-density] on <html>; consumed by input.css rules scoped to the five known next/ list-surface root classes"
+surface = "web/templates/next/*.templ"
+verify = "sw-next-(artists|dashboard|artist-detail|foreign-files|logs)"
+severity = "high"
+
+[[pref]]
+key = "reduced_motion"
+applies_via = "data-attr"
+mechanism = "[data-motion=\"on\"] disables CSS transitions globally; custom JS-driven animations must additionally check prefers-reduced-motion directly"
+surface = "web/templates/next/*.templ"
+verify = "data-motion|prefers-reduced-motion"
+severity = "medium"
+
+[[pref]]
+key = "lite_mode"
+applies_via = "data-attr"
+mechanism = "[data-lite=\"on\"] zeroes --sw-glass-blur and forces opaque backgrounds on .sw-glass/.glass-noise surfaces"
+surface = "web/templates/*.templ"
+verify = "sw-glass-blur|sw-glass\\b"
+severity = "low"
+
+[[pref]]
+key = "bg_opacity"
+applies_via = "css-var"
+mechanism = "preferences.js writes an inline --sw-glass-bg rgba() alpha onto <html>; surfaces consume it via var(--sw-glass-bg)"
+surface = "web/templates/*.templ"
+verify = "var\\(--sw-glass-bg"
+severity = "low"
+
+[[pref]]
+key = "sidebar_state"
+applies_via = "data-attr"
+mechanism = "sidebar.js mirrors the sidebar_state pref onto data-sidebar-state on #sw-sidebar (not the html[data-sidebar] attr, which only positions the prefs drawer)"
+surface = "web/templates/*sidebar*.templ"
+verify = "data-sidebar-state|sw-sidebar-kbd"
+severity = "high"
+
+[[pref]]
+key = "kbd_hints"
+applies_via = "data-attr"
+mechanism = "[data-kbd=\"hide\"] on <html> hides .sw-list-tips footers and standalone .sw-kbd badges (the cheat-sheet modal is deliberately exempt from the hide rule)"
+surface = "web/*.templ"
+verify = "sw-list-tips|sw-kbd\\b|sw-cheat-sheet-modal"
+severity = "low"
+
+# thumbnail_size (data-thumbnail-size -> --sw-thumb-size / --sw-thumb-grid-min)
+# is a REAL COVERAGE GAP, not represented as a [[pref]] here: the variables are
+# DEFINED by design-tokens.css's [data-thumbnail-size="..."] rules but are not
+# CONSUMED anywhere -- `grep -rn 'sw-thumb-size\|sw-thumb-grid-min' web/` past
+# design-tokens.css's own definitions returns zero hits in any .templ or other
+# .css file. The preference is user-facing (Settings > Appearance) but has no
+# rendered effect. Shipping a [[pref]] entry with a verify pattern that matches
+# nothing would be a phantom check (would fail-MISSING on every touched grid
+# surface with no way to satisfy it short of an unjustified [[exempt]]), so it
+# is omitted here and reported to the lead as a gap to file as its own issue.
