@@ -404,6 +404,15 @@
       }
     }
 
+    // Cmd-K / Ctrl-K: open the command palette (next/ only).
+    if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+      if (isNextPage() && window.swCommandPalette && typeof window.swCommandPalette.toggle === 'function') {
+        e.preventDefault();
+        window.swCommandPalette.toggle();
+        return;
+      }
+    }
+
     if (isTyping(document.activeElement)) return;
 
     // Layer 3: bulk select parity. Cmd/Ctrl+A selects all, Esc clears, scoped
@@ -674,6 +683,7 @@
       { key: 'g l', label: 'Go to Logs' },
       { key: 'g f', label: 'Go to Findings' },
       { key: 'g s', label: 'Go to Settings' },
+      { key: '⌘K', label: 'Command palette' },
       { key: '?',   label: 'Show Keyboard Shortcuts' },
       { key: 'Esc', label: 'Close / clear focus' }
     ]);

@@ -1,6 +1,12 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createDom } from './helpers/dom-harness.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const KEYBOARD_PATH = resolve(__dirname, '../../web/static/js/keyboard.js');
 
 const HTML = '<!doctype html><html><head>' +
   '<meta name="htmx-base-path" content="">' +
@@ -85,5 +91,28 @@ describe('command palette open/hide/render', () => {
     input.value = 'zzznomatch';
     input.dispatchEvent(new dom.window.Event('input'));
     assert.equal(dom.window.document.getElementById('sw-cmdk-empty').classList.contains('hidden'), false);
+  });
+});
+
+describe('Cmd-K keyboard integration (#1775)', () => {
+  it('Cmd-K toggles the palette on next/ pages and ⌘K is registered', () => {
+    const dom = createDom({
+      html: '<!doctype html><html><head><meta name="htmx-base-path" content=""></head><body></body></html>',
+      modules: [],
+    });
+    // The isNextPage() seam must be set BEFORE keyboard.js is eval'd, since the
+    // global-shortcut registration (⌘K, g-leader, etc.) runs once at module
+    // load time (see keyboard-gleader.test.js for the same pattern).
+    dom.window.SW_IS_NEXT_PAGE = true;
+    dom.window.eval(readFileSync(KEYBOARD_PATH, 'utf-8'));
+    dom.window.swKeyboardShortcuts.rebuild();
+
+    let toggled = 0;
+    dom.window.swCommandPalette = { toggle() { toggled++; }, hide() {} };
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'k', metaKey: true }));
+    assert.equal(toggled, 1);
+
+    const keys = dom.window.swKeyboardShortcuts.list().map((e) => e.key);
+    assert.ok(keys.includes('⌘K'));
   });
 });
