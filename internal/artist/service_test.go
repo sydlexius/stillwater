@@ -529,39 +529,63 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-// TestSearch_EscapesLikeMetacharacters verifies that literal `%`, `_`, and `\`
-// in a search term are matched literally rather than acting as SQL LIKE
-// wildcards, while an ordinary substring search still matches normally.
+// TestSearch_EscapesLikeMetacharacters locks in the fix for issue #2173:
+// user search input flowed into a SQL LIKE pattern unescaped, so a search
+// for "100%" matched every row containing "100" (the % wildcard) and a
+// search for "foo_bar" matched any "foo<any-char>bar". Each case below
+// seeds a decoy row that WOULD false-match under the unescaped pattern,
+// so reverting the fix turns these red.
 func TestSearch_EscapesLikeMetacharacters(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
-	for _, name := range []string{"100%_off\\band", "Metallica"} {
+	// "100 Percent Off" would match an unescaped "%100%%" pattern (% is a
+	// wildcard, so consecutive %s collapse to "contains 100"); it must NOT
+	// match once % is escaped and bound literally.
+	for _, name := range []string{"100% Off", "100 Percent Off", "Metallica"} {
+		if err := svc.Create(ctx, testArtist(name, "/music/"+name)); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+	// "fooXbar" would match an unescaped "%foo_bar%" pattern (_ matches any
+	// single char); it must NOT match once _ is escaped and bound literally.
+	for _, name := range []string{"foo_bar artist", "fooXbar decoy"} {
 		if err := svc.Create(ctx, testArtist(name, "/music/"+name)); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
 	}
 
-	// A literal wildcard-laden term should match only the artist whose name
-	// contains that literal text, not act as a `%`/`_` wildcard over all rows.
-	results, err := svc.Search(ctx, "100%_off\\band")
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if len(results) != 1 || results[0].Name != "100%_off\\band" {
-		t.Errorf("Search(%q) = %v, want exactly the literal match", "100%_off\\band", results)
-	}
+	t.Run("percent is treated as a literal", func(t *testing.T) {
+		results, err := svc.Search(ctx, "100%")
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(results) != 1 || results[0].Name != "100% Off" {
+			t.Errorf(`Search("100%%") = %v, want exactly "100%% Off"`, results)
+		}
+	})
 
-	// An ordinary substring search is unaffected.
-	results, err = svc.Search(ctx, "Metal")
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if len(results) != 1 || results[0].Name != "Metallica" {
-		t.Errorf("Search(%q) = %v, want exactly Metallica", "Metal", results)
-	}
+	t.Run("underscore is treated as a literal", func(t *testing.T) {
+		results, err := svc.Search(ctx, "foo_bar")
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(results) != 1 || results[0].Name != "foo_bar artist" {
+			t.Errorf(`Search("foo_bar") = %v, want exactly "foo_bar artist"`, results)
+		}
+	})
+
+	t.Run("non-wildcard substring still matches", func(t *testing.T) {
+		results, err := svc.Search(ctx, "Metal")
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if len(results) != 1 || results[0].Name != "Metallica" {
+			t.Errorf(`Search("Metal") = %v, want exactly Metallica`, results)
+		}
+	})
 }
 
 // TestSearch_HydratesPrimaryLibrary asserts that Search populates LibraryID
@@ -661,45 +685,79 @@ func TestSearchWithAliases_HydratesPrimaryLibrary(t *testing.T) {
 	}
 }
 
-// TestSearchWithAliases_EscapesLikeMetacharacters verifies that literal LIKE
-// metacharacters in an alias token are matched literally rather than acting
-// as wildcards, while an ordinary alias substring search still matches.
+// TestSearchWithAliases_EscapesLikeMetacharacters mirrors
+// TestSearch_EscapesLikeMetacharacters for the alias-join LIKE clauses in
+// sqlite_alias.go. Each case seeds a decoy alias/name that WOULD false-match
+// under the unescaped pattern, so reverting the fix turns these red.
 func TestSearchWithAliases_EscapesLikeMetacharacters(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
-	a1 := testArtist("Radiohead", "/music/Radiohead")
-	if err := svc.Create(ctx, a1); err != nil {
-		t.Fatalf("Create a1: %v", err)
+	literalPercent := testArtist("Percent Artist", "/music/Percent Artist")
+	if err := svc.Create(ctx, literalPercent); err != nil {
+		t.Fatalf("Create literalPercent: %v", err)
 	}
-	a2 := testArtist("The Sugarcubes", "/music/The Sugarcubes")
-	if err := svc.Create(ctx, a2); err != nil {
-		t.Fatalf("Create a2: %v", err)
+	// Decoy: this alias would match an unescaped "%100%%" pattern (%
+	// collapses to "contains 100") but must not match once escaped.
+	decoyPercent := testArtist("Decoy Percent", "/music/Decoy Percent")
+	if err := svc.Create(ctx, decoyPercent); err != nil {
+		t.Fatalf("Create decoyPercent: %v", err)
 	}
-
-	const aliasToken = `100%_off\alias`
-	if _, err := svc.AddAlias(ctx, a1.ID, aliasToken, "manual"); err != nil {
-		t.Fatalf("AddAlias: %v", err)
+	if _, err := svc.AddAlias(ctx, literalPercent.ID, "100% alias", "manual"); err != nil {
+		t.Fatalf("AddAlias literalPercent: %v", err)
 	}
-
-	results, err := svc.SearchWithAliases(ctx, aliasToken)
-	if err != nil {
-		t.Fatalf("SearchWithAliases: %v", err)
-	}
-	if len(results) != 1 || results[0].ID != a1.ID {
-		t.Errorf("SearchWithAliases(%q) = %v, want exactly a1", aliasToken, results)
+	if _, err := svc.AddAlias(ctx, decoyPercent.ID, "100 percent alias", "manual"); err != nil {
+		t.Fatalf("AddAlias decoyPercent: %v", err)
 	}
 
-	// An ordinary substring alias search is unaffected.
-	results, err = svc.SearchWithAliases(ctx, "off")
-	if err != nil {
-		t.Fatalf("SearchWithAliases: %v", err)
+	literalUnderscore := testArtist("Underscore Artist", "/music/Underscore Artist")
+	if err := svc.Create(ctx, literalUnderscore); err != nil {
+		t.Fatalf("Create literalUnderscore: %v", err)
 	}
-	if len(results) != 1 || results[0].ID != a1.ID {
-		t.Errorf(`SearchWithAliases("off") = %v, want exactly a1`, results)
+	// Decoy: this alias would match an unescaped "%foo_bar%" pattern (_
+	// matches any single char) but must not match once escaped.
+	decoyUnderscore := testArtist("Underscore Decoy", "/music/Underscore Decoy")
+	if err := svc.Create(ctx, decoyUnderscore); err != nil {
+		t.Fatalf("Create decoyUnderscore: %v", err)
 	}
+	if _, err := svc.AddAlias(ctx, literalUnderscore.ID, "foo_bar alias", "manual"); err != nil {
+		t.Fatalf("AddAlias literalUnderscore: %v", err)
+	}
+	if _, err := svc.AddAlias(ctx, decoyUnderscore.ID, "fooXbar alias", "manual"); err != nil {
+		t.Fatalf("AddAlias decoyUnderscore: %v", err)
+	}
+
+	t.Run("percent is treated as a literal", func(t *testing.T) {
+		results, err := svc.SearchWithAliases(ctx, "100%")
+		if err != nil {
+			t.Fatalf("SearchWithAliases: %v", err)
+		}
+		if len(results) != 1 || results[0].ID != literalPercent.ID {
+			t.Errorf(`SearchWithAliases("100%%") = %v, want exactly literalPercent`, results)
+		}
+	})
+
+	t.Run("underscore is treated as a literal", func(t *testing.T) {
+		results, err := svc.SearchWithAliases(ctx, "foo_bar")
+		if err != nil {
+			t.Fatalf("SearchWithAliases: %v", err)
+		}
+		if len(results) != 1 || results[0].ID != literalUnderscore.ID {
+			t.Errorf(`SearchWithAliases("foo_bar") = %v, want exactly literalUnderscore`, results)
+		}
+	})
+
+	t.Run("non-wildcard substring still matches", func(t *testing.T) {
+		results, err := svc.SearchWithAliases(ctx, "alias")
+		if err != nil {
+			t.Fatalf("SearchWithAliases: %v", err)
+		}
+		if len(results) != 4 {
+			t.Errorf(`SearchWithAliases("alias") = %d results, want 4 (all seeded rows)`, len(results))
+		}
+	})
 }
 
 func TestBandMembers_CRUD(t *testing.T) {
