@@ -1130,10 +1130,17 @@ func envSet(key string) bool {
 // regardless of its (possibly empty) value. Used to distinguish "the operator
 // explicitly saved an empty value" (e.g. cleared all scanner exclusions) from
 // "never saved", which a value-with-fallback read cannot tell apart.
-func dbSettingPresent(ctx context.Context, db *sql.DB, key string) bool {
+func dbSettingPresent(ctx context.Context, db *sql.DB, logger *slog.Logger, key string) bool {
 	var v string
 	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
-	return err == nil
+	if err == nil {
+		return true
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.Warn("reading persisted ops setting presence failed; leaving default in force",
+			"key", key, "error", err)
+	}
+	return false
 }
 
 // applyPersistedOpsSettings overlays the operational settings saved from the UI
@@ -1155,7 +1162,7 @@ func applyPersistedOpsSettings(ctx context.Context, a *Application, logger *slog
 
 	// scanner.exclusions -- presence-checked so an explicit "cleared" (empty)
 	// value persists rather than falling back to the config default list.
-	if !envSet("SW_SCANNER_EXCLUSIONS") && dbSettingPresent(ctx, db, "scanner.exclusions") {
+	if !envSet("SW_SCANNER_EXCLUSIONS") && dbSettingPresent(ctx, db, logger, "scanner.exclusions") {
 		raw := getDBStringSetting(ctx, db, "scanner.exclusions", "")
 		parts := strings.Split(raw, ",")
 		exclusions := make([]string, 0, len(parts))
@@ -1169,7 +1176,7 @@ func applyPersistedOpsSettings(ctx context.Context, a *Application, logger *slog
 	}
 
 	// scanner.mtime_fast_path -- stored as "true"/"false"; non-empty when set.
-	if !envSet("SW_SCANNER_MTIME_FAST_PATH") && dbSettingPresent(ctx, db, "scanner.mtime_fast_path") {
+	if !envSet("SW_SCANNER_MTIME_FAST_PATH") && dbSettingPresent(ctx, db, logger, "scanner.mtime_fast_path") {
 		enabled := getDBBoolSetting(ctx, db, "scanner.mtime_fast_path", cfg.Scanner.MtimeFastPath)
 		a.scannerService.SetMtimeFastPath(enabled)
 		logger.Info("applied persisted scanner.mtime_fast_path override", "enabled", enabled)
@@ -1183,6 +1190,11 @@ func applyPersistedOpsSettings(ctx context.Context, a *Application, logger *slog
 	if !envSet("SW_RULE_ENGINE_ARTIST_WORKERS") {
 		applyPersistedPositiveInt(ctx, db, logger, "rule_engine.artist_workers",
 			func(n int) {
+				if n > 64 {
+					logger.Warn("ignoring persisted rule_engine.artist_workers: value out of range (max 64)",
+						"stored_value", n)
+					return
+				}
 				a.pipeline.SetArtistWorkers(n)
 				logger.Info("applied persisted rule_engine.artist_workers override", "workers", n)
 			})

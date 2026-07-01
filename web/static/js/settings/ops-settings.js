@@ -24,6 +24,17 @@
 
   if (window.swOpsSettings) return;
 
+  // normalizeCSV mirrors the server's canonicalization of scanner.exclusions
+  // (trim each entry, drop blanks, join with ", ") so the input reflects what
+  // was actually persisted rather than the operator's raw typed value.
+  function normalizeCSV(value) {
+    return String(value)
+      .split(',')
+      .map(function (part) { return part.replace(/^\s+|\s+$/g, ''); })
+      .filter(function (part) { return part !== ''; })
+      .join(', ');
+  }
+
   // saveOpsSetting persists one setting key from the value of inputId.
   //   key:       the settings-table key (e.g. "rule_engine.artist_workers")
   //   inputId:   id of the <input> whose .value is sent
@@ -51,6 +62,9 @@
       body: JSON.stringify(body)
     }).then(function (r) {
       if (r.ok) {
+        if (key === 'scanner.exclusions') {
+          input.value = normalizeCSV(input.value);
+        }
         if (statusId) {
           var pill = document.getElementById(statusId);
           if (pill) {
