@@ -92,10 +92,139 @@ var validContentTypes = map[string]bool{
 	"image/webp": true,
 }
 
+// imageSyncBehavior selects which platform-sync call (if any) finalizeImageSave
+// performs for a given call site.
+type imageSyncBehavior int
+
+const (
+	// syncNone skips platform sync entirely (upload's fanart-append branch:
+	// platforms only support a single backdrop, and the primary was already
+	// synced when first saved; re-syncing here would re-push the primary
+	// rather than the new numbered variant).
+	syncNone imageSyncBehavior = iota
+	// syncSingle syncs the single saved imageType via SyncImageToPlatforms.
+	syncSingle
+	// syncAllFanart syncs the full fanart set via SyncAllFanartToPlatforms.
+	syncAllFanart
+)
+
+// imagePublishOrder selects whether finalizeImageSave publishes the
+// ArtistUpdated event before or after rule reevaluation. This MUST be set
+// per call site rather than hardcoded: three of the four post-save tails
+// publish before RunForArtist runs, but handleImageFetch's fanart-append
+// branch publishes after, so SSE/event-bus consumers there observe the
+// update only once violations have been recalculated. Homogenizing this
+// order would silently change when consumers see the update. See #1552.
+type imagePublishOrder int
+
+const (
+	publishBeforeRuleEval imagePublishOrder = iota
+	publishAfterRuleEval
+)
+
+// imageSaveFinalization captures the behavioral variations between the four
+// post-save tails (upload primary/fanart-append, fetch primary/fanart-append)
+// that finalizeImageSave consolidates.
+type imageSaveFinalization struct {
+	// isHTMX selects the response shape: 204 + HX-Refresh when true, a JSON
+	// body otherwise. Upload has no HTMX path and always passes false.
+	isHTMX bool
+	// syncBehavior selects the platform-sync call, if any.
+	syncBehavior imageSyncBehavior
+	// isFanartAppend selects the flag/count update: append branches only
+	// bump the fanart count, primary-save branches set the image-type flag
+	// (and additionally bump the fanart count when imageType == "fanart").
+	isFanartAppend bool
+	// publishOrder selects whether the ArtistUpdated event is published
+	// before or after rule reevaluation. See imagePublishOrder.
+	publishOrder imagePublishOrder
+	// setTriggerOnJSON controls whether the JSON (non-HTMX) response path
+	// also calls setSyncWarningTrigger before writing the body. The HTMX
+	// response path always sets the trigger (its 204 body carries no
+	// warnings, so the header is the only way to surface them client-side).
+	setTriggerOnJSON bool
+}
+
+// finalizeImageSave runs the shared post-save tail common to
+// handleImageUpload and handleImageFetch: cache-limit enforcement, flag/count
+// updates, event publication, health-cache invalidation, rule reevaluation,
+// platform sync, and response writing. The four call sites differ only in
+// the dimensions captured by opts; see imageSaveFinalization and #1552.
+func (r *Router) finalizeImageSave(ctx context.Context, w http.ResponseWriter, a *artist.Artist, imageType string, saved []string, opts imageSaveFinalization) {
+	r.enforceCacheLimitIfNeeded(ctx, a)
+
+	if opts.isFanartAppend {
+		r.updateArtistFanartCount(ctx, a)
+	} else {
+		r.updateArtistImageFlag(ctx, a, imageType)
+		if imageType == "fanart" {
+			r.updateArtistFanartCount(ctx, a)
+		}
+	}
+
+	publish := func() {
+		if r.eventBus != nil {
+			r.eventBus.Publish(event.Event{
+				Type: event.ArtistUpdated,
+				Data: map[string]any{"artist_id": a.ID},
+			})
+		}
+	}
+
+	// Publish event and invalidate cache before platform sync (which can take
+	// up to 30s) so health scores update within the 5-second target -- except
+	// where opts.publishOrder says otherwise (see imagePublishOrder).
+	if opts.publishOrder == publishBeforeRuleEval {
+		publish()
+	}
+	r.InvalidateHealthCache()
+	// Re-evaluate rules after a successful image write so image-related
+	// violations (missing thumbnail, fanart count, etc.) auto-clear in auto
+	// mode without waiting for the next scheduled scan. See #1028.
+	r.runRulesAfterRefresh(ctx, a)
+	if opts.publishOrder == publishAfterRuleEval {
+		publish()
+	}
+
+	var warnings []string
+	switch opts.syncBehavior {
+	case syncSingle:
+		syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		warnings = r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
+	case syncAllFanart:
+		syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		warnings = r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
+	case syncNone:
+		warnings = []string{}
+	}
+
+	if opts.isHTMX {
+		setSyncWarningTrigger(w, warnings)
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if opts.setTriggerOnJSON {
+		setSyncWarningTrigger(w, warnings)
+	}
+
+	resp := map[string]any{
+		"status":        "ok",
+		"saved":         saved,
+		"type":          imageType,
+		"sync_warnings": warnings,
+	}
+	if imageType == "fanart" {
+		resp["count"] = a.FanartCount
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // handleImageUpload handles multipart file uploads for artist images.
 // POST /api/v1/artists/{id}/images/upload
-//
-//nolint:gocognit // Linear guard chain (auth, artist exists, image dir, multipart parse, type allowlist, file slot, content-type allowlist, size cap, pre-save geometry check) then either the fanart-append or primary-save branch with per-branch provenance, event emission, rule re-eval, and platform sync; the guard ordering is the API contract. The companion handleImageFetch (sub-issue) covers the duplicated branch shape; refactor tracked in #1552.
 func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -188,30 +317,16 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 			return
 		}
-		r.enforceCacheLimitIfNeeded(req.Context(), a)
-		r.updateArtistFanartCount(req.Context(), a)
-		if r.eventBus != nil {
-			r.eventBus.Publish(event.Event{
-				Type: event.ArtistUpdated,
-				Data: map[string]any{"artist_id": a.ID},
-			})
-		}
-		r.InvalidateHealthCache()
-		// Re-evaluate rules after a successful image write so image-related
-		// violations (missing thumbnail, fanart count, etc.) auto-clear in
-		// auto mode without waiting for the next scheduled scan. See #1028.
-		r.runRulesAfterRefresh(req.Context(), a)
 		// Skip platform sync for fanart appends: platforms only support a single
 		// backdrop image, and the primary (fanart.jpg) was already synced when
 		// first saved. Re-syncing here would re-push the primary, not the new
 		// variant (fanart2.jpg etc.), because syncImageToPlatforms discovers
 		// files via findExistingImage which always returns the primary.
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":        "ok",
-			"saved":         saved,
-			"type":          imageType,
-			"count":         a.FanartCount,
-			"sync_warnings": []string{},
+		r.finalizeImageSave(req.Context(), w, a, imageType, saved, imageSaveFinalization{
+			isHTMX:         false,
+			syncBehavior:   syncNone,
+			isFanartAppend: true,
+			publishOrder:   publishBeforeRuleEval,
 		})
 		return
 	}
@@ -222,47 +337,17 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
-	r.enforceCacheLimitIfNeeded(req.Context(), a)
-
-	r.updateArtistImageFlag(req.Context(), a, imageType)
-	if imageType == "fanart" {
-		r.updateArtistFanartCount(req.Context(), a)
-	}
-
-	// Publish event and invalidate cache before platform sync (which can
-	// take up to 30s) so health scores update within the 5-second target.
-	if r.eventBus != nil {
-		r.eventBus.Publish(event.Event{
-			Type: event.ArtistUpdated,
-			Data: map[string]any{"artist_id": a.ID},
-		})
-	}
-	r.InvalidateHealthCache()
-	// Re-evaluate rules after a successful image write so image-related
-	// violations auto-clear in auto mode. See #1028.
-	r.runRulesAfterRefresh(req.Context(), a)
-
-	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-	defer cancel()
-	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
-
-	resp := map[string]any{
-		"status":        "ok",
-		"saved":         saved,
-		"type":          imageType,
-		"sync_warnings": warnings,
-	}
-	if imageType == "fanart" {
-		resp["count"] = a.FanartCount
-	}
-	setSyncWarningTrigger(w, warnings)
-	writeJSON(w, http.StatusOK, resp)
+	r.finalizeImageSave(req.Context(), w, a, imageType, saved, imageSaveFinalization{
+		isHTMX:           false,
+		syncBehavior:     syncSingle,
+		isFanartAppend:   false,
+		publishOrder:     publishBeforeRuleEval,
+		setTriggerOnJSON: true,
+	})
 }
 
 // handleImageFetch fetches an image from a URL and saves it for the artist.
 // POST /api/v1/artists/{id}/images/fetch
-//
-//nolint:gocognit // URL-fetch image handler (cog 35): mirrors handleImageUpload's guard chain (auth, artist, image dir, validation, pre-save geometry, fanart-vs-primary save) with a URL fetch substituted for the multipart parse and an extra private-URL block; the cross-handler duplication is the structural smell driving cog and a shared image-receive helper would flatten both. Refactor tracked in #1552.
 func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -359,35 +444,15 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 			return
 		}
-		r.enforceCacheLimitIfNeeded(req.Context(), a)
-		r.updateArtistFanartCount(req.Context(), a)
-		r.InvalidateHealthCache()
-		// Re-evaluate rules after a successful image write. See #1028.
-		r.runRulesAfterRefresh(req.Context(), a)
-
-		if r.eventBus != nil {
-			r.eventBus.Publish(event.Event{
-				Type: event.ArtistUpdated,
-				Data: map[string]any{"artist_id": a.ID},
-			})
-		}
-
-		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-		defer cancel()
-		syncWarnings := r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
-
-		if isHTMXRequest(req) {
-			setSyncWarningTrigger(w, syncWarnings)
-			w.Header().Set("HX-Refresh", "true")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":        "ok",
-			"saved":         saved,
-			"type":          imageType,
-			"count":         a.FanartCount,
-			"sync_warnings": syncWarnings,
+		// NOTE: unlike the other three post-save tails, this branch publishes
+		// ArtistUpdated AFTER rule reevaluation (publishAfterRuleEval), not
+		// before. Do not "fix" this to match the others -- see
+		// imagePublishOrder and #1552.
+		r.finalizeImageSave(req.Context(), w, a, imageType, saved, imageSaveFinalization{
+			isHTMX:         isHTMXRequest(req),
+			syncBehavior:   syncAllFanart,
+			isFanartAppend: true,
+			publishOrder:   publishAfterRuleEval,
 		})
 		return
 	}
@@ -398,45 +463,12 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
-	r.enforceCacheLimitIfNeeded(req.Context(), a)
-
-	r.updateArtistImageFlag(req.Context(), a, imageType)
-	// Sync fanart count after initial save
-	if imageType == "fanart" {
-		r.updateArtistFanartCount(req.Context(), a)
-	}
-
-	if r.eventBus != nil {
-		r.eventBus.Publish(event.Event{
-			Type: event.ArtistUpdated,
-			Data: map[string]any{"artist_id": a.ID},
-		})
-	}
-	r.InvalidateHealthCache()
-	// Re-evaluate rules after a successful image write. See #1028.
-	r.runRulesAfterRefresh(req.Context(), a)
-
-	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-	defer cancel()
-	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
-
-	if isHTMXRequest(req) {
-		setSyncWarningTrigger(w, warnings)
-		w.Header().Set("HX-Refresh", "true")
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	resp := map[string]any{
-		"status":        "ok",
-		"saved":         saved,
-		"type":          imageType,
-		"sync_warnings": warnings,
-	}
-	if imageType == "fanart" {
-		resp["count"] = a.FanartCount
-	}
-	writeJSON(w, http.StatusOK, resp)
+	r.finalizeImageSave(req.Context(), w, a, imageType, saved, imageSaveFinalization{
+		isHTMX:         isHTMXRequest(req),
+		syncBehavior:   syncSingle,
+		isFanartAppend: false,
+		publishOrder:   publishBeforeRuleEval,
+	})
 }
 
 // handleImageSearch searches for images from all providers for an artist.
