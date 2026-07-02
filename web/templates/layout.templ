@@ -294,8 +294,10 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 		// SortableJS must precede prefs-drawer.js: the prefs layout card
 		// feature-detects window.Sortable at wire time (#1774). PrefsDrawerJS is
 		// set on every route that renders the promoted shell (M55 #1757), so this
-		// pair loads app-wide -- including /settings, which no longer emits its own
-		// SortableJS tag (the drag-reorder there reuses this one).
+		// pair loads app-wide. This copy renders AFTER {children...}; the /settings
+		// page emits its OWN earlier Sortable.min.js (load-order-critical for its
+		// parse-time sortable-init.js), so this shared copy does not replace that
+		// one -- the resulting double-load on /settings is intentional (#1808).
 		<script src={ assets.SortableJS }></script>
 		<script src={ assets.PrefsDrawerJS }></script>
 	}
