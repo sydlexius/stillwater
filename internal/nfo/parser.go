@@ -45,13 +45,21 @@ var htmlEntityReplacer = strings.NewReplacer(
 	"&auml;", "&#228;",
 )
 
+// maxNFOBytes caps the size of an artist.nfo file read into memory. Kodi NFOs
+// are a few KB; this is generous headroom against a malicious or corrupted
+// file exhausting memory via io.ReadAll.
+const maxNFOBytes = 10 << 20 // 10 MB
+
 // Parse reads a Kodi-compatible artist.nfo from the reader.
 // It handles UTF-8 BOM and HTML entities in biography text.
 // Unknown XML elements are preserved for round-trip fidelity.
 func Parse(r io.Reader) (*ArtistNFO, error) {
-	data, err := io.ReadAll(r)
+	data, err := io.ReadAll(io.LimitReader(r, maxNFOBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading nfo data: %w", err)
+	}
+	if int64(len(data)) > maxNFOBytes {
+		return nil, fmt.Errorf("nfo file too large (max %d bytes)", maxNFOBytes)
 	}
 
 	data = stripBOM(data)

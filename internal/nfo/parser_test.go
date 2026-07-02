@@ -722,6 +722,20 @@ func TestParse_InvalidXMLNameSkipped(t *testing.T) {
 	}
 }
 
+func TestParse_RejectsOversizedNFO(t *testing.T) {
+	// One byte over the cap; content doesn't need to be valid XML since the
+	// size check runs before parsing.
+	oversized := bytes.Repeat([]byte("a"), maxNFOBytes+1)
+
+	_, err := Parse(bytes.NewReader(oversized))
+	if err == nil {
+		t.Fatal("expected error for oversized nfo, got nil")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Errorf("error = %q, want mention of 'too large'", err.Error())
+	}
+}
+
 func TestStripBOM(t *testing.T) {
 	tests := []struct {
 		name string
