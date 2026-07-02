@@ -92,6 +92,7 @@ make lint           # Run golangci-lint
 make hadolint       # Lint Dockerfile(s)
 make fmt            # Format Go + Templ files
 make check-openapi  # Validate OpenAPI spec against handler implementations
+make audit          # Advisory local security pass (govulncheck+gosec+semgrep+syft/grype)
 
 # Hooks / worktrees
 make hooks          # Install git pre-commit + pre-push hooks

@@ -158,6 +158,19 @@ go tool gocovmerge "$COVER_OUT" > "$COVER_OUT.merged"
 mv "$COVER_OUT.merged" "$COVER_OUT"
 
 echo ""
+echo "=== Vulnerability scan (govulncheck) ==="
+# Blocking: a reachable known vulnerability fails the push. Pinned to the same
+# version as `make vulncheck` / CI (fresh-clone-friendly `go run`, no local
+# install required). Default source-based reachability mode (no -scan=module)
+# so only actually-reachable vulnerabilities gate, and whole-module ./... scope
+# to match CI's authoritative behavior (no go.mod-diff gating).
+if ! go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; then
+  echo "FAIL: govulncheck found a reachable known vulnerability" >&2
+  exit 1
+fi
+echo "OK"
+
+echo ""
 echo "=== Lint (diff-only) ==="
 # Lint only the lines changed since BASE. With a warm cache this runs in
 # ~5s; cold it can take ~30s. Closes the `git commit --no-verify` bypass:
