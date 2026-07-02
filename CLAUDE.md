@@ -192,7 +192,12 @@ See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude
 - `scripts/check-generated.sh` -- verify `*_templ.go` was regenerated after `.templ` changes
 - `scripts/check-hooks.sh` -- verify `core.hooksPath` points at `.githooks` and the hook files are executable
 - `~/.claude/scripts/cleanup-worktree.sh <suffix>` -- remove worktree, delete local/remote branches, prune refs (repo-agnostic; auto-detects the main worktree's basename as the prefix). In Stillwater, prefer `make remove-worktree NAME=<slug>` (see Worktrees section); the make target wraps this script and additionally strips the Active-table row in `worktrees.md`.
-- `~/.claude/scripts/pr-unreplied-comments.sh [--allow-stale] [--pending-only] [--count-only] [--coverage-only] [--wait] <PR>` -- unreplied bot comments + codecov advisory
+- `~/.claude/scripts/pr-unreplied-comments.sh [--allow-stale] [--pending-only] [--count-only] [--coverage-only] [--wait] [--latest-per-reviewer] [--check-resolved] <PR>` -- unreplied bot comments + codecov advisory
+- `~/.claude/scripts/pr-read-comments.sh [--reviews] [--issue] <PR>` -- read full review/issue comment bodies
+- `~/.claude/scripts/reply-comment.sh` -- post a threaded reply (and `@coderabbitai resolve`) to a review comment
+- `~/.claude/scripts/ship-gate-preflight.sh <PR>` -- deterministic merge oracle (CI all-green + 0 actionable review-body findings, fail-closed)
+
+**Prefer these helpers over raw `gh api` for all PR comment/review/thread data** (list, read, reply, resolve, check review state, ship-gate). Raw `gh api` / inline `jq` for PR review data is a recurring miss -- the helpers filter and format correctly where ad-hoc calls drop comment types and mishandle whitespace. If a case isn't covered, improve the script rather than bypass it. GitHub reactions (bot-root 👍/:eyes: acks) have no wrapper and remain a direct `gh api ...reactions` call.
 
 ## License
 
