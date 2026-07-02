@@ -75,7 +75,7 @@ docs/prototypes/
 docs/superpowers/
 .planning/
 
-# MkDocs build output
+# ProperDocs build output
 docs/site/site/
 
 # Load test results (binary reports, target files)

@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan audit bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs docs-serve migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan audit bruno-ci
 
 # Use bash for all recipes so bash-only constructs (set -o pipefail) work even
 # where /bin/sh is dash (Debian/Ubuntu); plain sh lacks pipefail.
@@ -160,6 +160,10 @@ generate-docs:
 	go run ./cmd/gen-platform-profiles
 	go run ./cmd/gen-prefs-reference
 	go run ./cmd/gen-ci-reference
+
+## docs-serve: Serve the docs site locally with live reload (requires properdocs)
+docs-serve:
+	properdocs serve --config-file docs/site/properdocs.yml
 
 ## tailwind-watch: Watch and rebuild Tailwind CSS
 tailwind-watch:

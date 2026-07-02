@@ -253,29 +253,29 @@ echo "=== Doc facts ==="
 bash "$SCRIPT_DIR/check-doc-facts.sh"
 
 echo ""
-echo "=== Mkdocs config YAML ==="
+echo "=== ProperDocs config YAML ==="
 # Catch syntax errors (incl. residual conflict markers, indentation slips,
-# duplicate keys) in the mkdocs config before CI's "Build site" job does.
-# Stdlib PyYAML only -- no need for mkdocs itself locally. If python3 is
+# duplicate keys) in the properdocs config before CI's "Build site" job does.
+# Stdlib PyYAML only -- no need for properdocs itself locally. If python3 is
 # missing or PyYAML is unavailable, skip with a one-line warning rather than
 # fail the gate (a dev without a Python toolchain shouldn't be blocked).
-if [ -f docs/site/mkdocs.yml ]; then
+if [ -f docs/site/properdocs.yml ]; then
     if command -v python3 >/dev/null 2>&1; then
         if python3 -c 'import yaml' 2>/dev/null; then
-            # MkDocs configs use PyYAML "!!python/name:" / "!!python/object"
+            # ProperDocs configs use PyYAML "!!python/name:" / "!!python/object"
             # tags (e.g. the pymdownx.superfences custom fence that enables
             # Mermaid rendering). safe_load rejects those legitimate tags, so
             # validate with a SafeLoader extended to treat the python-specific
             # tag families as opaque. This still catches real syntax errors
             # (residual conflict markers, indentation slips) without requiring
-            # mkdocs itself to be importable here.
-            if ! python3 - docs/site/mkdocs.yml 2>&1 <<'PY'
+            # properdocs itself to be importable here.
+            if ! python3 - docs/site/properdocs.yml 2>&1 <<'PY'
 import sys
 import yaml
 
 
-class MkDocsLoader(yaml.SafeLoader):
-    """SafeLoader that tolerates MkDocs/pymdownx python tags."""
+class ProperDocsLoader(yaml.SafeLoader):
+    """SafeLoader that tolerates ProperDocs/pymdownx python tags."""
 
 
 def _ignore_python_tag(loader, suffix, node):
@@ -287,13 +287,13 @@ for _prefix in (
     "tag:yaml.org,2002:python/object:",
     "tag:yaml.org,2002:python/object/apply:",
 ):
-    MkDocsLoader.add_multi_constructor(_prefix, _ignore_python_tag)
+    ProperDocsLoader.add_multi_constructor(_prefix, _ignore_python_tag)
 
 with open(sys.argv[1], encoding="utf-8") as fh:
-    yaml.load(fh, Loader=MkDocsLoader)
+    yaml.load(fh, Loader=ProperDocsLoader)
 PY
             then
-                echo "FAIL: docs/site/mkdocs.yml is not valid YAML (see error above)."
+                echo "FAIL: docs/site/properdocs.yml is not valid YAML (see error above)."
                 exit 1
             fi
             echo "OK"
@@ -304,7 +304,7 @@ PY
         echo "SKIP: python3 not in PATH"
     fi
 else
-    echo "SKIP: docs/site/mkdocs.yml not present"
+    echo "SKIP: docs/site/properdocs.yml not present"
 fi
 
 echo ""
