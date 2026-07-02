@@ -1196,10 +1196,12 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 					if (dismissBtn) dismissBtn.addEventListener('click', runBulkDismiss);
 
 					document.body.addEventListener('htmx:afterSwap', function(e) {
-						if (e.detail.target && e.detail.target.id === 'action-queue') {
+						if (e.detail.target && (e.detail.target.id === 'action-queue' || e.detail.target.id === 'action-queue-entries')) {
 							// A fresh load has zero checked rows, so this reveals the
 							// controls when the queue has rows and hides them when it
-							// came back empty/errored.
+							// came back empty/errored. Prev/Next paging swaps only the
+							// nested #action-queue-entries, so refresh the controls there
+							// too or the select-all checkbox and bulk button go stale.
 							updateBulkControls();
 						}
 					});

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -279,6 +280,21 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	renderTempl(w, req, templates.DashboardActionQueue(data))
 }
 
+// loadDashboardLibraries fetches the library list best-effort for the filter
+// flyout; on error it logs under logLabel and returns nil so the flyout still
+// renders.
+func (r *Router) loadDashboardLibraries(ctx context.Context, logLabel string) []library.Library {
+	if r.libraryService == nil {
+		return nil
+	}
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Warn(logLabel, "error", err)
+		return nil
+	}
+	return libs
+}
+
 // buildDashboardFlyoutData assembles the filter-flyout state for an initial
 // page render: the parsed tri-state filter selection plus the per-dimension
 // facet counts and the library list the flyout needs to render its pills and
@@ -303,15 +319,7 @@ func (r *Router) buildDashboardFlyoutData(req *http.Request) templates.ActionQue
 	if r.ruleService == nil {
 		r.logger.Warn("dashboard flyout counts unavailable", "error", "rule service not configured")
 
-		var libraries []library.Library
-		if r.libraryService != nil {
-			libs, err := r.libraryService.List(ctx)
-			if err != nil {
-				r.logger.Warn("dashboard flyout libraries", "error", err)
-			} else {
-				libraries = libs
-			}
-		}
+		libraries := r.loadDashboardLibraries(ctx, "dashboard flyout libraries")
 
 		return templates.ActionQueueData{
 			BasePath: r.basePath,
@@ -376,15 +384,7 @@ func (r *Router) buildDashboardFlyoutData(req *http.Request) templates.ActionQue
 		fixableYes, fixableNo = 0, 0
 	}
 
-	var libraries []library.Library
-	if r.libraryService != nil {
-		libs, err := r.libraryService.List(ctx)
-		if err != nil {
-			r.logger.Warn("dashboard flyout libraries", "error", err)
-		} else {
-			libraries = libs
-		}
-	}
+	libraries := r.loadDashboardLibraries(ctx, "dashboard flyout libraries")
 
 	return templates.ActionQueueData{
 		BasePath: r.basePath,
