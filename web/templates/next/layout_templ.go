@@ -8,30 +8,15 @@ package next
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import (
-	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
-)
+import "github.com/sydlexius/stillwater/web/templates"
 
-// LayoutNext is the page shell for the next/ UI channel (M55 #1340). It composes
-// the same shared chrome partials as the stable Layout -- LayoutHead,
-// LayoutBackdrop, and LayoutGlobalChrome (which mounts the ProgressPill status
-// bar, the global modals, the toast manager, and the SSE client) -- so the
-// preview UI never forks that infrastructure. CheatSheetModal (#1775) is mounted
-// here (after LayoutGlobalChrome) rather than in the shared chrome so it remains
-// absent from stable pages; window.showCheatSheet is only defined on next/. The only channel difference is the
-// next/ Sidebar and BottomTabs, which currently delegate to the stable
-// components and are restyled by later screen issues. CSRF + base-path injection
-// and the cache-busted AssetPaths carry over unchanged via LayoutHead.
-//
-// Shared sidebar display helpers (SidebarInitial, SidebarDisplayName) live in
-// web/templates/sidebar_helpers.go and are imported by both channels.
-//
-// M55 #1774: the preferences drawer is mounted lazily. The mount point below
-// listens for the custom "sw:prefs-open" event (dispatched by swPrefsDrawer.open
-// in prefs-drawer.js on first open) and then fetches the drawer body via HTMX.
-// This avoids plumbing PreferencesData through every handler that renders a
-// next/ page; the DB query only runs when the drawer is first opened.
+// LayoutNext is retained as a thin delegating wrapper over the promoted
+// templates.Layout (M55 #1757 PR-1). The page shell, navigation, and command /
+// preferences chrome were promoted into templates.Layout, so LayoutNext now
+// forwards its children into that canonical shell rather than forking any
+// markup. Its exported signature is unchanged so the next/ screen templates and
+// tests that still call @LayoutNext(...) compile untouched; the wrapper itself
+// is deleted with the lane teardown in a later PR.
 func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -53,112 +38,25 @@ func LayoutNext(title string, assets templates.AssetPaths) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\" class=\"h-full\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templates.LayoutHead(title, assets).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"sw-next-shell h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\" style=\"font-family: var(--sw-font-family)\"><a href=\"#sw-main\" class=\"sw-skip-link\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var2 string
-		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.skip_to_main"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 32, Col: 74}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</a>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templates.LayoutBackdrop(assets).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = Sidebar(assets).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-h-full sw-sidebar-content\" id=\"sw-main-content\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templates.ConflictBanner().Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if assets.IsAdmin {
-			templ_7745c5c3_Err = templates.SharedFilesystemBar().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Var2 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templ_7745c5c3_Var1.Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<main id=\"sw-main\" tabindex=\"-1\" class=\"w-full px-4 py-6 sm:px-6 lg:px-8\" hx-headers='{\"X-Stillwater-UX\": \"next\"}'>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templ_7745c5c3_Var1.Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</main></div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = BottomTabs(assets).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<!-- M55 #1774: preferences drawer lazy-load mount point.\n\t\t\t     hx-trigger=\"sw:prefs-open from:body once\" loads the drawer\n\t\t\t     on the first open; thereafter the existing DOM node handles it.\n\t\t\t     hx-swap=\"outerHTML\" replaces this container with the real drawer\n\t\t\t     (the scrim div + aside), leaving no extra wrapper in the tree. --><div id=\"sw-prefs-mount\" hx-get=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath + "/next/preferences-drawer")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 52, Col: 57}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" hx-trigger=\"sw:prefs-open from:body once\" hx-swap=\"outerHTML\"></div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templates.LayoutGlobalChrome(assets).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.CheatSheetModal().Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.CommandPalette().Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<!-- #1775: command palette controller. Loaded after LayoutGlobalChrome's\n\t\t\t     keyboard.js (above) so window.swKeyboardShortcuts exists first. --><script src=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.CommandPaletteJS)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/layout.templ`, Line: 61, Col: 40}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" defer></script></body></html>")
+			return nil
+		})
+		templ_7745c5c3_Err = templates.Layout(title, assets).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -301,9 +301,11 @@ func TestLayoutContentArea_ContainsMainLandmark(t *testing.T) {
 		t.Error("response missing <main> element (required landmark)")
 	}
 
-	// Verify the main element has the semantic max-width class.
-	if !strings.Contains(htmlContent, "max-w-7xl") {
-		t.Error("main content area missing max-width constraint")
+	// The promoted shell (M55 #1757) uses a full-width <main> rather than the
+	// v1 centered max-w-7xl column, so the content spans the viewport beside
+	// the sidebar.
+	if !strings.Contains(htmlContent, "w-full") {
+		t.Error("main content area missing full-width class")
 	}
 
 	// Verify padding for responsive layout.
