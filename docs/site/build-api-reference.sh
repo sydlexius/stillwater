@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Build the standalone Scalar API reference into the MkDocs site output.
+# Build the standalone Scalar API reference into the ProperDocs site output.
 #
 # Mirrors the in-app reference served by internal/api/handlers_docs.go: it
 # reuses the exact vendored Scalar bundle and theme stylesheet the app ships,
 # so the published docs reference and the in-app reference stay in lockstep
 # (same renderer, same M55 palette, same native light/dark toggle).
 #
-# Run this AFTER `mkdocs build`, which produces the site output dir. The Pages
-# CI workflow calls it; it is also runnable locally to get a full API page that
-# `mkdocs build` alone does not produce.
+# Run this AFTER `properdocs build`, which produces the site output dir. The
+# Pages CI workflow calls it; it is also runnable locally to get a full API
+# page that `properdocs build` alone does not produce.
 #
 # Usage: docs/site/build-api-reference.sh [SITE_DIR]
-#   SITE_DIR defaults to docs/site/site (MkDocs' default output dir).
+#   SITE_DIR defaults to docs/site/site (ProperDocs' default output dir).
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -31,7 +31,7 @@ for f in "${scalar_js}" "${scalar_css}" "${openapi_spec}"; do
 done
 
 if [[ ! -d "${site_dir}" ]]; then
-  echo "build-api-reference: site dir not found: ${site_dir} (run 'mkdocs build' first)" >&2
+  echo "build-api-reference: site dir not found: ${site_dir} (run 'properdocs build' first)" >&2
   exit 1
 fi
 

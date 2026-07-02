@@ -22,6 +22,7 @@
 # in .github/workflows/pages.yml so a typosquat or compromised PyPI release
 # cannot substitute a different artifact under the same version string
 # (OpenSSF Scorecard PinnedDependenciesID).
+properdocs==1.6.7
 mkdocs-material==9.7.6
 mkdocs-awesome-pages-plugin==2.10.1
 mkdocs-git-revision-date-localized-plugin==1.5.3

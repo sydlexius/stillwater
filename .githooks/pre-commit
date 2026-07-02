@@ -304,11 +304,11 @@ fi
 # --------------------------------------------------------------------------
 # 9. mermaid -- parse Mermaid diagrams in staged markdown.
 # --------------------------------------------------------------------------
-# mkdocs renders Mermaid client-side (pymdownx.superfences custom_fence), so
-# `mkdocs build` never parses the diagram: a syntax error ships a broken page
-# that GitHub's stricter renderer rejects. mmdc parses every ```mermaid block
-# and exits non-zero on a parse error. It drives headless Chromium, so this is
-# an opt-in graceful skip. Install with:
+# properdocs renders Mermaid client-side (pymdownx.superfences custom_fence),
+# so `properdocs build` never parses the diagram: a syntax error ships a
+# broken page that GitHub's stricter renderer rejects. mmdc parses every
+# ```mermaid block and exits non-zero on a parse error. It drives headless
+# Chromium, so this is an opt-in graceful skip. Install with:
 #   brew install mermaid-cli      (macOS / Linuxbrew)
 #   npm install -g @mermaid-js/mermaid-cli   (cross-platform alternative)
 # Only staged markdown that actually contains a ```mermaid fence is checked;
@@ -343,7 +343,7 @@ if [ "${#STAGED_MERMAID[@]}" -gt 0 ]; then
         if [ "$MERMAID_FAILED" -eq 1 ]; then
             echo ""
             echo "Fix the Mermaid syntax above. GitHub and the published docs site"
-            echo "reject it even though 'mkdocs build' renders client-side and does not."
+            echo "reject it even though 'properdocs build' renders client-side and does not."
             exit 1
         fi
         pass "mermaid"

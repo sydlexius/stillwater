@@ -1,5 +1,5 @@
 /* --- M55 palette ---------------------------------------------------------
-   mkdocs.yml sets primary/accent to "custom" so the brand color is defined
+   properdocs.yml sets primary/accent to "custom" so the brand color is defined
    here rather than via a Material built-in. These match the app's M55 blue:
    blue-600 (#2563eb, the site theme_color / Scalar button hover) for primary
    and blue-500 (#3b82f6, the app's --scalar-color-accent) for accent. Applies
