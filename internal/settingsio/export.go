@@ -25,8 +25,23 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
-// pbkdf2Iterations is the OWASP-recommended iteration count for PBKDF2-SHA256.
-const pbkdf2Iterations = 600_000
+// defaultPBKDF2Iterations is the OWASP-recommended iteration count for
+// PBKDF2-SHA256 and the value production always runs at.
+const defaultPBKDF2Iterations = 600_000
+
+// pbkdf2Iterations is the active PBKDF2-SHA256 iteration count used to derive
+// the envelope key. It defaults to the OWASP value and is ONLY lowered by
+// tests (settingsio TestMain) so the deliberately expensive KDF does not
+// dominate the -race suite -- at 600k iterations every Export/Import spends
+// hundreds of ms in PBKDF2, making settingsio a ~128s CPU long-pole that a
+// full `go test -race ./...` run drags on. Production never mutates this.
+//
+// Lowering it in tests is self-consistent: envelopes carry no iteration count
+// (see Envelope), so decryptWithPassphrase re-derives the key from whatever
+// value is active, and every test encrypts and decrypts within the same run.
+// No persisted/committed fixture ciphertext exists that a lowered value could
+// fail to decrypt.
+var pbkdf2Iterations = defaultPBKDF2Iterations
 
 // CurrentEnvelopeVersion is the version emitted by Export. Bump whenever the
 // Payload schema changes in a way that older binaries cannot safely round-trip.

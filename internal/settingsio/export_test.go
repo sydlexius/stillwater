@@ -28,6 +28,16 @@ import (
 var templateDBPath string
 
 func TestMain(m *testing.M) {
+	// Lower the PBKDF2 work factor for the whole package test run. At the
+	// production default (600k iterations) every Export/Import spends hundreds
+	// of ms in the KDF, making settingsio a ~128s CPU long-pole under
+	// `go test -race ./...` -- the contention window in which its last-running
+	// import/export tests intermittently failed in setup (#2186). A small
+	// count keeps the crypto path exercised while removing the CPU hog.
+	// Safe because envelopes carry no iteration count and every test encrypts
+	// and decrypts within this same run (see pbkdf2Iterations in export.go).
+	pbkdf2Iterations = 4096
+
 	dir, err := os.MkdirTemp("", "settingsio-test-template-*")
 	if err != nil {
 		panic("creating temp dir: " + err.Error())
