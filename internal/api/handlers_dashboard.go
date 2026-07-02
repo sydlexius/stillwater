@@ -297,10 +297,22 @@ func (r *Router) buildDashboardFlyoutData(req *http.Request) templates.ActionQue
 	filters := parseDashboardFilters(req)
 
 	// Minimal routers (some integration tests) have no rule service; render the
-	// flyout with empty facet counts rather than panicking. The library list
-	// below has its own nil guard already.
+	// flyout with empty facet counts rather than panicking. This branch still
+	// fetches the library list itself (best-effort, own nil guard) so the
+	// Library filter dimension populates even without a rule service.
 	if r.ruleService == nil {
 		r.logger.Warn("dashboard flyout counts unavailable", "error", "rule service not configured")
+
+		var libraries []library.Library
+		if r.libraryService != nil {
+			libs, err := r.libraryService.List(ctx)
+			if err != nil {
+				r.logger.Warn("dashboard flyout libraries", "error", err)
+			} else {
+				libraries = libs
+			}
+		}
+
 		return templates.ActionQueueData{
 			BasePath: r.basePath,
 
@@ -321,6 +333,7 @@ func (r *Router) buildDashboardFlyoutData(req *http.Request) templates.ActionQue
 			CategoryCounts: map[string]int{},
 			LibraryCounts:  map[string]int{},
 			RuleCounts:     []rule.RuleViolationCount{},
+			Libraries:      libraries,
 		}
 	}
 

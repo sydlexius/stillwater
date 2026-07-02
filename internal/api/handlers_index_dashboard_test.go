@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -331,6 +332,46 @@ func TestHandleIndex_OnboardingIncomplete(t *testing.T) {
 	}
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "/setup/wizard") {
 		t.Errorf("Location = %q, want it to contain /setup/wizard", loc)
+	}
+}
+
+// TestBuildDashboardFlyoutData_NilRuleServiceStillPopulatesLibraries verifies
+// that when a router is configured with a libraryService but NO ruleService,
+// the flyout builder's rule-service-nil early-return branch still fetches and
+// populates the Libraries field. Before the fix that branch returned an
+// ActionQueueData without Libraries, so the flyout's Library filter dimension
+// rendered empty even though the library data was available. The assertion is
+// specific: it fails against the pre-fix code (empty Libraries) and against a
+// swapped/misnamed field, because it checks both the count and the concrete
+// library name/ID round-tripped from the seeded row.
+func TestBuildDashboardFlyoutData_NilRuleServiceStillPopulatesLibraries(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, false)
+
+	// Give the router a real library service and seed exactly one library, then
+	// remove the rule service so buildDashboardFlyoutData takes the early-return
+	// branch under test.
+	libSvc := library.NewService(r.db)
+	r.libraryService = libSvc
+	lib := &library.Library{Name: "Flyout Lib", Path: t.TempDir(), Type: "regular"}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	r.ruleService = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = withTestUser(req)
+
+	data := r.buildDashboardFlyoutData(req)
+
+	if len(data.Libraries) != 1 {
+		t.Fatalf("Libraries length = %d, want 1 (nil-ruleService branch must still fetch libraries); Libraries=%+v", len(data.Libraries), data.Libraries)
+	}
+	if got := data.Libraries[0].Name; got != "Flyout Lib" {
+		t.Errorf("Libraries[0].Name = %q, want %q", got, "Flyout Lib")
+	}
+	if got := data.Libraries[0].ID; got != lib.ID {
+		t.Errorf("Libraries[0].ID = %q, want %q (seeded library id)", got, lib.ID)
 	}
 }
 
