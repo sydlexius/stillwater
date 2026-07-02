@@ -738,14 +738,14 @@ func artistHero(assets templates.AssetPaths, data ArtistDetailPageData) templ.Co
 			return templ_7745c5c3_Err
 		}
 		if a.Path != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<div class=\"flex items-center gap-2 text-xs\"><code class=\"font-mono break-all\" style=\"color:var(--swd-ink-3)\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<div class=\"flex items-center gap-2 text-xs\"><code class=\"font-mono break-all text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(a.Path)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 242, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 242, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {

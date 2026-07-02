@@ -178,7 +178,7 @@ func TestArtistDetailPage_PrototypeChrome(t *testing.T) {
 
 	// Bug #5 regression: the score tone is a CLASS, not text content. The raw
 	// class string must never appear as escaped text inside a >...< text node.
-	if strings.Contains(out, ">text-green-600 dark:text-green-400<") ||
+	if strings.Contains(out, ">text-green-700 dark:text-green-400<") ||
 		strings.Contains(out, ">text-red-600 dark:text-red-400<") {
 		t.Errorf("health score tone class leaked as visible text (bug #5 regression)")
 	}
