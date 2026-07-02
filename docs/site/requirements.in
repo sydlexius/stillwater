@@ -1,22 +1,19 @@
-# Top-level docs build dependencies. Source-of-truth for pip-compile.
+# Top-level docs build dependencies. Source-of-truth for the lockfile compiler.
 #
 # Regenerate the hash-pinned lockfile (docs/site/requirements.txt) after
 # editing this file. Use Python 3.12 to match the version pinned in
-# .github/workflows/pages.yml (`python-version: '3.12'`); pip-tools
-# resolves against the running interpreter, so a different version can in
+# .github/workflows/pages.yml (`python-version: '3.12'`); the resolver
+# resolves against the target interpreter, so a different version can in
 # principle pick different transitive pins via PEP 508 markers or wheel
-# availability. If python3.12 is not installed locally:
+# availability.
 #
-#   uv python install 3.12
-#   PY312=$(uv python find 3.12)
+# Canonical regen command (uv, which produces this lockfile):
 #
-# Then regenerate:
+#   uv pip compile --generate-hashes --python-version 3.12 \
+#     docs/site/requirements.in -o docs/site/requirements.txt
 #
-#   "$PY312" -m venv /tmp/pin-venv
-#   /tmp/pin-venv/bin/pip install pip-tools
-#   /tmp/pin-venv/bin/pip-compile --generate-hashes \
-#     --output-file=docs/site/requirements.txt \
-#     docs/site/requirements.in
+# (`--python-version 3.12` targets 3.12 without needing it installed.)
+# The pip-tools equivalent is `pip-compile --generate-hashes`.
 #
 # The lockfile feeds `pip install --require-hashes -r docs/site/requirements.txt`
 # in .github/workflows/pages.yml so a typosquat or compromised PyPI release
