@@ -73,13 +73,14 @@ func (r *sqliteAliasRepo) ListByArtistID(ctx context.Context, artistID string) (
 }
 
 func (r *sqliteAliasRepo) SearchWithAliases(ctx context.Context, query string) ([]Artist, error) {
-	pattern := "%" + strings.ToLower(query) + "%"
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(query))
+	pattern := "%" + escaped + "%"
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT `+artistColumns+` FROM artists WHERE id IN ( `+
 		`SELECT artists.id FROM artists
 		LEFT JOIN artist_aliases ON artists.id = artist_aliases.artist_id
-		WHERE LOWER(artists.name) LIKE ? OR LOWER(artist_aliases.alias) LIKE ?
+		WHERE LOWER(artists.name) LIKE ? ESCAPE '\' OR LOWER(artist_aliases.alias) LIKE ? ESCAPE '\'
 		) ORDER BY name`, pattern, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("searching with aliases: %w", err)
