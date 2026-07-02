@@ -17,8 +17,9 @@ import (
 
 // newBrowseRouter returns a minimal Router sufficient for filesystem browse
 // tests. allowedRoot becomes the configured music library path, i.e. the
-// browse allowlist root ("/" allows the whole filesystem for tests that
-// exercise behavior unrelated to confinement).
+// browse allowlist root (plus its parent, per the option-B confinement).
+// A root of "/" is skipped as the filesystem root and grants nothing:
+// isFilesystemRoot fails closed, so browsing "/" returns 403.
 func newBrowseRouter(t *testing.T, allowedRoot string) *Router {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
