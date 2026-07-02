@@ -16,6 +16,11 @@ import (
 var (
 	hxEndpointRe = regexp.MustCompile(`hx-(?:post|get|delete)="([^"]*)"`)
 	hrefRe       = regexp.MustCompile(`href="([^"]*)"`)
+	// mainBodyRe extracts the <main id="sw-main"> ... </main> region -- the page
+	// BODY, excluding the shared promoted sidebar/chrome. The promoted Layout
+	// (M55 #1757) renders exactly one such landmark; (?s) lets it span newlines
+	// and .*? stops at the first </main>.
+	mainBodyRe = regexp.MustCompile(`(?s)<main[^>]*id="sw-main".*?</main>`)
 )
 
 // foreignEndpoints returns the set of hx-post/hx-get/hx-delete endpoint values
@@ -33,18 +38,42 @@ func foreignEndpoints(html string) map[string]bool {
 	return set
 }
 
-// foreignNavHrefCount counts navigation hrefs pointing at the foreign-files
-// feature. The channel prefix differs (/settings/... vs /next/reports/...), so
-// the parity check compares COUNTS, not literal hrefs: next/ must carry at
-// least as many foreign-files nav links as stable, or a header link was dropped.
+// foreignNavHrefCount counts the DISTINCT foreign-files navigation TARGETS in
+// the page BODY (the <main id="sw-main"> region, excluding the shared sidebar).
+// It unions href and hx-get/hx-post/hx-delete values containing "foreign-files"
+// into a set, so an element carrying both attributes with the same value (a
+// progressive-enhancement <a href hx-get> link) counts as ONE target.
+//
+// Body-scoping + distinct-value is required after the M55 #1757 shell
+// promotion. Stable and next now render the SAME promoted sidebar, so a
+// whole-page tally (a) double-counts the shared chrome and (b) is confounded by
+// next's back-link URL (/next/reports/foreign-files) coinciding with the
+// sidebar's foreign link. Scoping to <main> removes both. And counting raw
+// attribute OCCURRENCES wrongly scored the SAME "next page" nav across channels:
+// stable's @components.Pagination renders it as <a href+hx-get> (two matching
+// attributes) while next's @NextPagination renders it as a <button hx-get>
+// (one) -- the deliberate minimal Prev/Next-no-counter pager (#1790). Comparing
+// DISTINCT body targets measures the real intent: next/ must offer at least as
+// many foreign-files nav targets as stable. The channel path prefix still
+// differs (/settings/... vs /next/reports/...), so the check compares COUNTS,
+// not literal values.
 func foreignNavHrefCount(html string) int {
-	n := 0
-	for _, m := range hrefRe.FindAllStringSubmatch(html, -1) {
+	body := mainBodyRe.FindString(html)
+	if body == "" {
+		panic("foreignNavHrefCount: <main id=\"sw-main\"> landmark not found in rendered HTML")
+	}
+	targets := map[string]bool{}
+	for _, m := range hrefRe.FindAllStringSubmatch(body, -1) {
 		if strings.Contains(m[1], "foreign-files") {
-			n++
+			targets[m[1]] = true
 		}
 	}
-	return n
+	for _, m := range hxEndpointRe.FindAllStringSubmatch(body, -1) {
+		if strings.Contains(m[1], "foreign-files") {
+			targets[m[1]] = true
+		}
+	}
+	return len(targets)
 }
 
 // multiPageAllowlistView builds an allowlist view whose Pagination reports more

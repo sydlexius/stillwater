@@ -856,6 +856,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@components.ContextHelpScript()
 		@SettingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
 		<script src={ assets.SettingsSearchJS }></script>
+		// Sortable.min.js is loaded HERE, not left to LayoutGlobalChrome's shared
+		// copy, because the settings sortable-init.js emitted below calls
+		// initSortableContainers() at parse time and bails when window.Sortable is
+		// undefined. This tag loads before that init; LayoutGlobalChrome's copy
+		// renders later in the document (after {children...}), too late for it. The
+		// resulting double-load on /settings is intentional and harmless (cached
+		// fetch; the UMD bundle just re-assigns window.Sortable). #1808.
 		<script src={ assets.SortableJS }></script>
 		<script src={ assets.SettingsNotifBadgesJS }></script>
 		<div class="sw-settings space-y-6">

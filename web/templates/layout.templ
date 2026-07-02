@@ -102,6 +102,15 @@ type AssetPaths struct {
 	// CurrentPath is the request path with BasePath stripped. Used by the
 	// mobile bottom tab bar to highlight the active tab.
 	CurrentPath string
+	// UXChannel is the RESOLVED UI channel this page was rendered as ("stable"
+	// or "next"), stamped onto the shared <main>'s hx-headers X-Stillwater-UX
+	// marker so in-<main> HTMX sub-requests resolve to the SAME channel as the
+	// page that issued them (critical in dual mode, where a stable page must not
+	// tag its sub-requests "next"). In the request path this is always a concrete
+	// channel (the UX middleware resolves one, defaulting to "stable"); it is
+	// empty only for zero-value AssetPaths (unit renders), where the marker is
+	// omitted so cookie/path resolve the channel.
+	UXChannel string
 	// Username is the authenticated user's login name for the sidebar profile.
 	Username string
 	// DisplayName is the user's preferred display name. May differ from
@@ -116,18 +125,29 @@ type AssetPaths struct {
 	Version string
 }
 
-// Layout is the page shell for the stable UI channel.
+// Layout is the canonical page shell for the whole application (M55 #1757 PR-1).
+//
+// It carries the promoted UX shell: a full-width <main> landmark, the
+// skip-to-main bypass link, the preferences flyout mount point, and the
+// command-palette / cheat-sheet chrome. The next/ channel's LayoutNext now
+// delegates to this component (a thin wrapper retained until the lane teardown
+// in a later PR), so both channels render identical chrome from one source.
 //
 // Chrome composition pattern: LayoutHead, LayoutBackdrop, and
-// LayoutGlobalChrome are shared components used by both stable and next
-// channels; Sidebar and BottomTabs are channel-specific. Shared sidebar
-// display helpers (SidebarInitial, SidebarDisplayName) live in
+// LayoutGlobalChrome are shared partials; Sidebar and BottomTabs are the
+// promoted navigation components in this package. Shared sidebar display
+// helpers (SidebarInitial, SidebarDisplayName) live in
 // web/templates/sidebar_helpers.go.
+//
+// The sw-next-shell body class and the <main>'s hx-headers X-Stillwater-UX
+// marker are carried over from the promoted shell verbatim; they are removed in
+// later PRs (CSS unscoping and header cleanup respectively).
 templ Layout(title string, assets AssetPaths) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
 		@LayoutHead(title, assets)
-		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" style="font-family: var(--sw-font-family)">
+		<body class="sw-next-shell h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" style="font-family: var(--sw-font-family)">
+			<a href="#sw-main" class="sw-skip-link">{ t(ctx, "common.skip_to_main") }</a>
 			@LayoutBackdrop(assets)
 			@Sidebar(SidebarData{
 				BasePath:    assets.BasePath,
@@ -143,12 +163,34 @@ templ Layout(title string, assets AssetPaths) {
 				if assets.IsAdmin {
 					@SharedFilesystemBar()
 				}
-				<main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+				<main
+					id="sw-main"
+					tabindex="-1"
+					class="w-full px-4 py-6 sm:px-6 lg:px-8"
+					if assets.UXChannel != "" {
+						hx-headers={ uxHeaderJSON(assets.UXChannel) }
+					}
+				>
 					{ children... }
 				</main>
 			</div>
 			@BottomTabs(assets.BasePath, assets.CurrentPath, assets.IsAdmin)
+			<!-- Preferences drawer lazy-load mount point (M55 #1774). The
+			     sw:prefs-open custom event (dispatched by prefs-drawer.js on first
+			     open) triggers the HTMX fetch of the drawer body; hx-swap="outerHTML"
+			     replaces this container with the real drawer, leaving no wrapper. -->
+			<div
+				id="sw-prefs-mount"
+				hx-get={ assets.BasePath + "/next/preferences-drawer" }
+				hx-trigger="sw:prefs-open from:body once"
+				hx-swap="outerHTML"
+			></div>
 			@LayoutGlobalChrome(assets)
+			@components.CheatSheetModal()
+			@components.CommandPalette()
+			<!-- Command palette controller (#1775). Loaded after LayoutGlobalChrome's
+			     keyboard.js so window.swKeyboardShortcuts exists first. -->
+			<script src={ assets.CommandPaletteJS } defer></script>
 		</body>
 	</html>
 }
@@ -250,9 +292,12 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	<script src={ assets.FilterFlyoutJS }></script>
 	if assets.PrefsDrawerJS != "" {
 		// SortableJS must precede prefs-drawer.js: the prefs layout card
-		// feature-detects window.Sortable at wire time (#1774). Scoped to
-		// next/ pages (PrefsDrawerJS is only set there); the stable settings
-		// page loads Sortable itself in settings.templ.
+		// feature-detects window.Sortable at wire time (#1774). PrefsDrawerJS is
+		// set on every route that renders the promoted shell (M55 #1757), so this
+		// pair loads app-wide. This copy renders AFTER {children...}; the /settings
+		// page emits its OWN earlier Sortable.min.js (load-order-critical for its
+		// parse-time sortable-init.js), so this shared copy does not replace that
+		// one -- the resulting double-load on /settings is intentional (#1808).
 		<script src={ assets.SortableJS }></script>
 		<script src={ assets.PrefsDrawerJS }></script>
 	}

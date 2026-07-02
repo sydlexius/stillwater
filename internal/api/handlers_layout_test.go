@@ -301,9 +301,17 @@ func TestLayoutContentArea_ContainsMainLandmark(t *testing.T) {
 		t.Error("response missing <main> element (required landmark)")
 	}
 
-	// Verify the main element has the semantic max-width class.
-	if !strings.Contains(htmlContent, "max-w-7xl") {
-		t.Error("main content area missing max-width constraint")
+	// The promoted shell (M55 #1757) uses a full-width <main> rather than the
+	// v1 centered max-w-7xl column, so the content spans the viewport beside
+	// the sidebar. Scope the check to the <main id="sw-main"> start tag itself:
+	// a bare Contains(html, "w-full") can pass on an unrelated element while the
+	// <main> is not actually full-width.
+	if i := strings.Index(htmlContent, `<main id="sw-main"`); i < 0 {
+		t.Error("response missing <main id=\"sw-main\"> landmark")
+	} else if end := strings.Index(htmlContent[i:], ">"); end < 0 {
+		t.Error("malformed <main id=\"sw-main\"> start tag (no closing '>')")
+	} else if mainTag := htmlContent[i : i+end]; !strings.Contains(mainTag, "w-full") {
+		t.Error("main content area missing full-width class (w-full not in <main> start tag)")
 	}
 
 	// Verify padding for responsive layout.
