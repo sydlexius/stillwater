@@ -679,7 +679,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 						hx-target={ "#action-card-" + v.ID }
 						hx-swap="outerHTML"
 						hx-disabled-elt="this"
-						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 					>
 						{ dashboardFixLabel(ctx, v.RuleID) }
 					</button>

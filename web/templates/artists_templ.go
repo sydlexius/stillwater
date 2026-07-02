@@ -3210,7 +3210,7 @@ func NextArtistCardSources(a artist.Artist, sources map[string]LibrarySourceInfo
 		}
 		ctx = templ.ClearChildren(ctx)
 		if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 219, "<div class=\"absolute bottom-1 right-1 inline-flex items-center gap-0.5 rounded-full bg-black/55 p-0.5 shadow-sm\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 219, "<div class=\"absolute bottom-1 right-1 inline-flex items-center gap-0.5 rounded-full bg-black p-0.5 shadow-sm\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

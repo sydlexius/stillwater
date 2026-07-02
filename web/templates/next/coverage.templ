@@ -15,10 +15,10 @@ templ nextCoverageCell(a artist.Artist, profileName string) {
 	<div class="flex items-center gap-2">
 		<div class="flex items-center gap-0.5">
 			for _, c := range nextCoverageItems(ctx, a, profileName) {
-				<span class={ nextCoverageBubbleClass(c.State) } title={ c.Tooltip } aria-label={ c.Tooltip }>{ c.Label }</span>
+				<span class={ nextCoverageBubbleClass(c.State) } title={ c.Tooltip } aria-label={ c.Tooltip } role="img">{ c.Label }</span>
 			}
 		</div>
-		<span class="text-[11px] tabular-nums text-gray-400 dark:text-gray-500" title={ nextIDCountTitle(ctx, a) }>{ nextIDCountText(a) }</span>
+		<span class="text-[11px] tabular-nums text-gray-500 dark:text-gray-400" title={ nextIDCountTitle(ctx, a) }>{ nextIDCountText(a) }</span>
 	</div>
 }
 

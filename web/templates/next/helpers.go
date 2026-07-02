@@ -374,11 +374,15 @@ func nextProviderIDCount(a artist.Artist) (have, total int) {
 func nextScoreText(score float64) string {
 	switch {
 	case score >= 100:
-		return "text-green-600 dark:text-green-400"
+		// green-700 (not -600): white-bg contrast 4.94:1 vs green-600's 3.22:1
+		// (fails AA); dark keeps green-400 (7.83:1). #1784 contrast floor.
+		return "text-green-700 dark:text-green-400"
 	case score >= 70:
 		return "text-blue-600 dark:text-blue-400"
 	case score >= 40:
-		return "text-yellow-600 dark:text-yellow-400"
+		// yellow-700 (not -600): white-bg contrast 4.92:1 vs yellow-600's 2.93:1
+		// (fails AA); dark keeps yellow-400 (8.86:1). #1784 contrast floor.
+		return "text-yellow-700 dark:text-yellow-400"
 	default:
 		return "text-red-600 dark:text-red-400"
 	}

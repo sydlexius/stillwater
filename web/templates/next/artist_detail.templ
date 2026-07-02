@@ -239,7 +239,7 @@ templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 				// stands on its own.
 				if a.Path != "" {
 					<div class="flex items-center gap-2 text-xs">
-						<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ a.Path }</code>
+						<code class="font-mono break-all text-gray-500 dark:text-gray-400">{ a.Path }</code>
 					</div>
 				}
 				// Compliance summary bar: health score + findings + ID coverage.
@@ -454,10 +454,18 @@ templ artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData)
 	{{ a := data.Detail.Artist }}
 	<div class="sw-next-stickhdr" data-sw-stickhdr aria-hidden="true">
 		<div class="sw-next-stickhdr-inner">
+			// The sticky header is aria-hidden (a scroll-activated VISUAL duplicate of
+			// the hero toolbar; hiding it stops screen readers double-announcing). It
+			// stays MOUSE-clickable when stuck, so `inert` (which also kills pointer
+			// interaction) is wrong here. Instead every focusable descendant carries
+			// tabindex="-1" so keyboard users tab through the canonical hero controls
+			// and never land inside aria-hidden content (WCAG aria-hidden-focus, #1784;
+			// same aria-hidden + tabindex="-1" pattern as dashboard.templ select-all).
 			<a
 				href={ templ.SafeURL(assets.BasePath + "/next/artists") }
 				class="inline-flex items-center gap-1 text-sm hover:underline"
 				style="color:var(--swd-ink-3)"
+				tabindex="-1"
 			>
 				@components.IconChevronDown("h-3.5 w-3.5 rotate-90")
 				{ t(ctx, "nav.artists") }
@@ -467,7 +475,7 @@ templ artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData)
 				<span class="text-xs" style="color:var(--swd-ink-3)">{ nextTypeLabel(ctx, a.Type) }</span>
 			}
 			if data.Detail.ViolationCount > 0 {
-				<a href="#next-findings" class="inline-flex items-center gap-1 text-xs hover:underline" style="color:var(--swd-warn)">
+				<a href="#next-findings" class="inline-flex items-center gap-1 text-xs hover:underline" style="color:var(--swd-warn)" tabindex="-1">
 					<span class="inline-flex h-2 w-2 rounded-full" style="background:var(--swd-warn)" aria-hidden="true"></span>
 					{ tn(ctx, "artist.findings_count", data.Detail.ViolationCount) }
 				</a>
@@ -484,6 +492,7 @@ templ artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData)
 					data-label-edit={ t(ctx, "artist.edit") }
 					data-label-done={ t(ctx, "artist.edit_done") }
 					aria-pressed="false"
+					tabindex="-1"
 				>
 					@components.IconPencilSquare("h-3.5 w-3.5")
 					<span data-sw-edit-label>{ t(ctx, "artist.edit") }</span>
@@ -540,6 +549,10 @@ templ artistStickyActions(data ArtistDetailPageData) {
 	{{ a := data.Detail.Artist }}
 	{{ menuID := "next-artist-sticky-actions-" + a.ID }}
 	<div class="relative flex" data-context-menu={ menuID }>
+		// tabindex="-1": this dropdown lives inside the aria-hidden sticky header, so
+		// its trigger must stay out of the keyboard tab order (the hero's identical
+		// Actions menu is the keyboard-reachable one). The panel below is display:none
+		// until mouse-opened, so its menu items are not focusable at rest (#1784).
 		<button
 			type="button"
 			class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -548,6 +561,7 @@ templ artistStickyActions(data ArtistDetailPageData) {
 			aria-expanded="false"
 			aria-controls={ "ctx-panel-" + menuID }
 			onclick={ components.ToggleContextMenu(menuID) }
+			tabindex="-1"
 		>
 			{ t(ctx, "common.actions") }
 			@components.IconChevronDown("h-3.5 w-3.5")
@@ -850,7 +864,7 @@ templ artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) {
 				hx-trigger="load"
 				hx-swap="innerHTML"
 			>
-				<p class="text-sm text-gray-400 italic py-6 text-center">{ t(ctx, "common.loading") }</p>
+				<p class="text-sm text-gray-500 dark:text-gray-400 italic py-6 text-center">{ t(ctx, "common.loading") }</p>
 			</div>
 		</div>
 	</section>

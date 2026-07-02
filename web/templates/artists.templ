@@ -1058,7 +1058,7 @@ templ ArtistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySource
 // ArtistCard overlay (ArtistCardPlatformBadges) is unchanged.
 templ NextArtistCardSources(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
 	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
-		<div class="absolute bottom-1 right-1 inline-flex items-center gap-0.5 rounded-full bg-black/55 p-0.5 shadow-sm">
+		<div class="absolute bottom-1 right-1 inline-flex items-center gap-0.5 rounded-full bg-black p-0.5 shadow-sm">
 			for _, b := range badges {
 				@components.PlatformBadge(b.Platform, b.Tooltip)
 			}
