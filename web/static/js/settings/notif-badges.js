@@ -51,7 +51,13 @@
     var oldVal = !newVal;
 
     var bp = (document.querySelector('meta[name="htmx-base-path"]') || { content: '' }).content;
-    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+    var csrfToken;
+    if (typeof window.swCsrfToken === 'function') {
+      csrfToken = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrfToken = '';
+    }
     var body = {};
     body[key] = newVal ? 'true' : 'false';
 

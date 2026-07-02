@@ -201,7 +201,13 @@
 
       // clearLogs sends a DELETE to clear the ring buffer and refreshes the viewer.
       function clearLogs() {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         fetch(logBasePath + '/api/v1/logs', {
           method: 'DELETE',
           headers: { 'X-CSRF-Token': csrfToken, 'HX-Request': 'true' }
