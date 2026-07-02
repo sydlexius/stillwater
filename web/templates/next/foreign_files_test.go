@@ -58,9 +58,9 @@ func foreignEndpoints(html string) map[string]bool {
 // differs (/settings/... vs /next/reports/...), so the check compares COUNTS,
 // not literal values.
 func foreignNavHrefCount(html string) int {
-	body := html
-	if m := mainBodyRe.FindString(html); m != "" {
-		body = m
+	body := mainBodyRe.FindString(html)
+	if body == "" {
+		panic("foreignNavHrefCount: <main id=\"sw-main\"> landmark not found in rendered HTML")
 	}
 	targets := map[string]bool{}
 	for _, m := range hrefRe.FindAllStringSubmatch(body, -1) {

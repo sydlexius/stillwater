@@ -3,11 +3,13 @@ package templates
 // sidebar_test.go -- render-level coverage for the promoted Reports section
 // (M55 #1757 PR-1; the #1778/#1715 nav promoted over the v1 sidebar). The full
 // Sidebar component is large, but a few specific markers can be pinned without
-// snapshotting the whole nav: the whole Reports section (Compliance count
-// placeholder, Duplicates count placeholder, Foreign Files link) is admin-only
-// and must be omitted entirely for non-admins so a non-admin tab never spawns
-// the 60s poll-and-403; the Duplicates placeholder must carry the right
-// ?ch=next hx-get URL, and the Foreign Files child is always present for admins.
+// snapshotting the whole nav. The Reports section renders for ALL roles, but its
+// contents differ by role: admins get the HTMX-hydrated count placeholders
+// (compliance/duplicates/foreign) that poll every 60s via ?ch=next hx-get URLs;
+// non-admins get the Reports workspace link plus a PLAIN Compliance link (no
+// count pill, so no 60s poll-and-403) and NONE of the admin-only count
+// placeholders or the Foreign Files item. These tests pin the admin count URLs
+// (?ch=next) and the presence/absence of each item per role.
 
 import (
 	"bytes"
@@ -40,6 +42,9 @@ func TestSidebar_ReportsSection_AdminChildrenRender(t *testing.T) {
 	// Admins get the HTMX-hydrated count placeholders (not static links).
 	if !strings.Contains(html, `id="sidebar-compliance-nav"`) {
 		t.Error("admin sidebar missing compliance count placeholder")
+	}
+	if !strings.Contains(html, `hx-get="/api/v1/reports/compliance/count?ch=next"`) {
+		t.Error("admin sidebar missing compliance count hx-get URL (?ch=next)")
 	}
 	if !strings.Contains(html, `id="sidebar-duplicates-nav"`) {
 		t.Error("admin sidebar missing duplicates count placeholder")

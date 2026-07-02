@@ -151,24 +151,6 @@ templ Sidebar(data SidebarData) {
 						hx-trigger="load, every 60s"
 						hx-swap="innerHTML"
 					></li>
-				} else {
-					<!-- Compliance (non-admin): plain link to the compliance report
-					     page (wrapOptionalAuth), WITHOUT the admin-only count pill so
-					     no poll-and-403 fires. Restores the v1 non-admin Compliance
-					     entry. -->
-					<li>
-						<a
-							href={ templ.SafeURL(data.BasePath + "/reports/compliance") }
-							class="sw-sidebar-link sw-sidebar-subnav-link"
-							data-path="/reports/compliance"
-							aria-label={ t(ctx, "nav.reports.compliance") }
-						>
-							@components.IconChartBar("sw-sidebar-icon")
-							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.compliance") }</span>
-						</a>
-					</li>
-				}
-				if data.IsAdmin {
 					<!-- Duplicates: admin-only (count endpoint 403s for non-admins). -->
 					<li
 						id="sidebar-duplicates-nav"
@@ -198,6 +180,22 @@ templ Sidebar(data SidebarData) {
 								hx-swap="innerHTML"
 								hx-on::after-swap="swSidebar.swForeignPillSwap()"
 							></span>
+						</a>
+					</li>
+				} else {
+					<!-- Compliance (non-admin): plain link to the compliance report
+					     page (wrapOptionalAuth), WITHOUT the admin-only count pill so
+					     no poll-and-403 fires. Restores the v1 non-admin Compliance
+					     entry. -->
+					<li>
+						<a
+							href={ templ.SafeURL(data.BasePath + "/reports/compliance") }
+							class="sw-sidebar-link sw-sidebar-subnav-link"
+							data-path="/reports/compliance"
+							aria-label={ t(ctx, "nav.reports.compliance") }
+						>
+							@components.IconChartBar("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ t(ctx, "nav.reports.compliance") }</span>
 						</a>
 					</li>
 				}
@@ -253,7 +251,7 @@ templ Sidebar(data SidebarData) {
 					<!-- M55 #1774: the preferences trigger opens the flyout drawer instead
 					     of navigating to a standalone page. data-sw-prefs-trigger marks
 					     this element so swPrefsDrawer.wire() in prefs-drawer.js can bind
-					     the click handler. The href="/next/preferences" is a progressive-
+					     the click handler. The href="/preferences" is a progressive-
 					     enhancement fallback for users with JS disabled. -->
 					<a
 						href={ templ.SafeURL(data.BasePath + "/preferences") }
@@ -319,7 +317,7 @@ templ Sidebar(data SidebarData) {
 				class="sw-sidebar-user"
 				title={ t(ctx, "nav.preferences") }
 				data-sw-prefs-trigger
-				aria-label={ t(ctx, "nav.preferences") }
+				aria-label={ SidebarDisplayName(data.DisplayName, data.Username) + " - " + t(ctx, "nav.preferences") }
 				aria-haspopup="dialog"
 				aria-controls="sw-prefs-drawer"
 				aria-expanded="false"
