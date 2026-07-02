@@ -13,7 +13,8 @@
 #     docs/site/requirements.in -o docs/site/requirements.txt
 #
 # (`--python-version 3.12` targets 3.12 without needing it installed.)
-# The pip-tools equivalent is `pip-compile --generate-hashes`.
+# The pip-tools equivalent (run under Python 3.12) is:
+#   pip-compile --generate-hashes --output-file=docs/site/requirements.txt docs/site/requirements.in
 #
 # The lockfile feeds `pip install --require-hashes -r docs/site/requirements.txt`
 # in .github/workflows/pages.yml so a typosquat or compromised PyPI release
