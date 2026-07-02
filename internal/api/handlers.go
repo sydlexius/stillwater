@@ -158,15 +158,22 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 		a.TourJS = r.basePath + r.staticAssets.Path("/js/tour.js")
 	}
 
-	// M55 #1774: include the preferences drawer controller on all next/ pages.
-	// The drawer shell is mounted in LayoutNext; the JS must be available on
-	// every next/ route so the keyboard shortcut and sidebar trigger work.
-	// (SortableJS for the layout card's drag reordering is already set above
-	// for every page from the long-vendored /js/Sortable.min.js; the layout
-	// renders it ahead of prefs-drawer.js on next/ routes.)
-	if strings.HasPrefix(path, "/next") {
-		a.PrefsDrawerJS = r.basePath + r.staticAssets.Path("/js/prefs-drawer.js")
-	}
+	// M55 #1774/#1757: the preferences drawer controller is required wherever the
+	// promoted shell renders -- which is now EVERY app route, not just /next --
+	// because the promoted sidebar/avatar prefs triggers (aria-haspopup="dialog")
+	// and the ? / Cmd-K shortcuts must open the flyout on canonical pages too.
+	// Gating it to /next left those triggers dead and the ARIA lying about a
+	// dialog that never mounted. LayoutGlobalChrome emits SortableJS ahead of it,
+	// gated on PrefsDrawerJS being set.
+	a.PrefsDrawerJS = r.basePath + r.staticAssets.Path("/js/prefs-drawer.js")
+
+	// M55 #1757: tag the shell with the RESOLVED UX channel so the shared <main>
+	// hx-headers marker reflects the channel this page was actually rendered as,
+	// rather than a hardcoded "next" that would force every in-<main> HTMX
+	// sub-request on a stable page to the next channel in dual mode (swapping
+	// next fragments into a v1 page). Empty when no channel was resolved (e.g.
+	// unit renders), in which case the layout omits the marker entirely.
+	a.UXChannel = string(middleware.UXChannelFromContext(ctx))
 
 	return a
 }

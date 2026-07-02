@@ -204,6 +204,17 @@ func hxValsJSON(pairs map[string]string) string {
 	return string(b)
 }
 
+// uxHeaderJSON builds the hx-headers JSON that tags a page's in-<main> HTMX
+// sub-requests with the resolved UX channel, e.g. {"X-Stillwater-UX":"stable"}.
+// The UX middleware reads this request header so sub-requests resolve to the
+// same channel as the page that issued them (M55 #1757). Driven by
+// AssetPaths.UXChannel so the value is the RESOLVED channel, never a hardcoded
+// one -- a hardcoded "next" on the shared shell forced stable pages' sub-
+// requests to the next channel in dual mode.
+func uxHeaderJSON(channel string) string {
+	return hxValsJSON(map[string]string{"X-Stillwater-UX": channel})
+}
+
 // hxValsJSONAny is like hxValsJSON but accepts mixed-type values (strings,
 // ints, bools) for use in hx-vals attributes that need non-string JSON values.
 func hxValsJSONAny(pairs map[string]any) string {

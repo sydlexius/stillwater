@@ -37,9 +37,18 @@ func renderSidebar(t *testing.T, isAdmin bool) string {
 
 func TestSidebar_ReportsSection_AdminChildrenRender(t *testing.T) {
 	html := renderSidebar(t, true)
-	// Compliance is now an HTMX-hydrated count placeholder, not a static link.
+	// Admins get the HTMX-hydrated count placeholders (not static links).
 	if !strings.Contains(html, `id="sidebar-compliance-nav"`) {
 		t.Error("admin sidebar missing compliance count placeholder")
+	}
+	if !strings.Contains(html, `id="sidebar-duplicates-nav"`) {
+		t.Error("admin sidebar missing duplicates count placeholder")
+	}
+	if !strings.Contains(html, `hx-get="/api/v1/reports/duplicates/count?ch=next"`) {
+		t.Error("admin sidebar missing duplicates count hx-get URL (?ch=next)")
+	}
+	if !strings.Contains(html, `hx-trigger="load, every 60s"`) {
+		t.Error("admin sidebar missing duplicates hx-trigger (load + 60s poll)")
 	}
 	// Foreign Files child is always present for admins and uses the sub-nav class.
 	if !strings.Contains(html, `data-path="/reports/foreign-files"`) {
@@ -50,27 +59,29 @@ func TestSidebar_ReportsSection_AdminChildrenRender(t *testing.T) {
 	}
 }
 
-func TestSidebar_ReportsSection_AdminOnly(t *testing.T) {
-	adminHTML := renderSidebar(t, true)
-	if !strings.Contains(adminHTML, `id="sidebar-duplicates-nav"`) {
-		t.Error("admin sidebar missing duplicates placeholder element")
+// TestSidebar_ReportsSection_NonAdmin pins the #1757 fix-round restoration:
+// non-admins see the Reports section again -- the workspace link plus a PLAIN
+// Compliance link (both wrapOptionalAuth pages) -- but NOT the admin-only count
+// pills (compliance/duplicates) or the Foreign Files item, whose count
+// endpoints return 403 for non-admins (omitted to avoid a poll-and-403 and
+// markup that lies about a reachable route).
+func TestSidebar_ReportsSection_NonAdmin(t *testing.T) {
+	html := renderSidebar(t, false)
+	// Visible to non-admins.
+	if !strings.Contains(html, `data-path="/reports"`) {
+		t.Error("non-admin sidebar missing the Reports workspace link")
 	}
-	if !strings.Contains(adminHTML, `hx-get="/api/v1/reports/duplicates/count?ch=next"`) {
-		t.Error("admin sidebar missing duplicates count hx-get URL (?ch=next)")
+	if !strings.Contains(html, `data-path="/reports/compliance"`) {
+		t.Error("non-admin sidebar missing the plain Compliance link")
 	}
-	if !strings.Contains(adminHTML, `hx-trigger="load, every 60s"`) {
-		t.Error("admin sidebar missing duplicates hx-trigger (load + 60s poll)")
+	// Omitted for non-admins (admin-only count endpoints 403).
+	if strings.Contains(html, `id="sidebar-compliance-nav"`) {
+		t.Error("non-admin sidebar must omit the admin-only compliance count pill (poll-and-403)")
 	}
-
-	operatorHTML := renderSidebar(t, false)
-	// The entire Reports section is admin-only in the promoted nav.
-	if strings.Contains(operatorHTML, `id="sidebar-duplicates-nav"`) {
-		t.Error("non-admin sidebar should omit duplicates placeholder; would spawn a 60s poll-and-403")
+	if strings.Contains(html, `id="sidebar-duplicates-nav"`) {
+		t.Error("non-admin sidebar must omit the admin-only duplicates count pill (poll-and-403)")
 	}
-	if strings.Contains(operatorHTML, `id="sidebar-compliance-nav"`) {
-		t.Error("non-admin sidebar should omit the whole Reports section (compliance placeholder present)")
-	}
-	if strings.Contains(operatorHTML, `data-path="/reports/foreign-files"`) {
-		t.Error("non-admin sidebar should omit the foreign-files Reports child")
+	if strings.Contains(html, `data-path="/reports/foreign-files"`) {
+		t.Error("non-admin sidebar must omit the admin-only Foreign Files item")
 	}
 }

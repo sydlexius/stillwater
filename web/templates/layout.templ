@@ -102,6 +102,13 @@ type AssetPaths struct {
 	// CurrentPath is the request path with BasePath stripped. Used by the
 	// mobile bottom tab bar to highlight the active tab.
 	CurrentPath string
+	// UXChannel is the RESOLVED UI channel this page was rendered as ("stable"
+	// or "next"), stamped onto the shared <main>'s hx-headers X-Stillwater-UX
+	// marker so in-<main> HTMX sub-requests resolve to the SAME channel as the
+	// page that issued them (critical in dual mode, where a stable page must not
+	// tag its sub-requests "next"). Empty when no channel was resolved (unit
+	// renders), in which case the marker is omitted and cookie/path resolve it.
+	UXChannel string
 	// Username is the authenticated user's login name for the sidebar profile.
 	Username string
 	// DisplayName is the user's preferred display name. May differ from
@@ -154,7 +161,14 @@ templ Layout(title string, assets AssetPaths) {
 				if assets.IsAdmin {
 					@SharedFilesystemBar()
 				}
-				<main id="sw-main" tabindex="-1" class="w-full px-4 py-6 sm:px-6 lg:px-8" hx-headers='{"X-Stillwater-UX": "next"}'>
+				<main
+					id="sw-main"
+					tabindex="-1"
+					class="w-full px-4 py-6 sm:px-6 lg:px-8"
+					if assets.UXChannel != "" {
+						hx-headers={ uxHeaderJSON(assets.UXChannel) }
+					}
+				>
 					{ children... }
 				</main>
 			</div>
