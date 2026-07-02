@@ -279,7 +279,7 @@ func artworkIdentityTile(artistID string, kind string, exists bool, w int, h int
 			return templ_7745c5c3_Err
 		}
 		if exists {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<span class=\"inline-flex items-center text-gray-400 dark:text-gray-500\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<span class=\"inline-flex items-center text-gray-500 dark:text-gray-400\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -305,7 +305,7 @@ func artworkIdentityTile(artistID string, kind string, exists bool, w int, h int
 				return templ_7745c5c3_Err
 			}
 			if w > 0 && h > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<span class=\"font-mono text-xs text-gray-400 dark:text-gray-500\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<span class=\"font-mono text-xs text-gray-500 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -443,7 +443,7 @@ func artworkIdentityTile(artistID string, kind string, exists bool, w int, h int
 				return templ_7745c5c3_Err
 			}
 		} else {
-			var templ_7745c5c3_Var20 = []any{"sw-artwork-id-empty flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500",
+			var templ_7745c5c3_Var20 = []any{"sw-artwork-id-empty flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500",
 				artworkTileAspectClass(kind),
 			}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var20...)
@@ -784,7 +784,7 @@ func artworkBackdropsCarousel(artistID string, fanartCount int) templ.Component 
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<button type=\"button\" class=\"sw-artwork-bd-add flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500\" data-sw-artwork-open data-artwork-kind=\"backdrops\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<button type=\"button\" class=\"sw-artwork-bd-add flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500\" data-sw-artwork-open data-artwork-kind=\"backdrops\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -836,7 +836,7 @@ func artworkBackdropsCarousel(artistID string, fanartCount int) templ.Component 
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "   <button type=\"button\" class=\"sw-artwork-bd-add flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500\" data-sw-artwork-open data-artwork-kind=\"backdrops\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "   <button type=\"button\" class=\"sw-artwork-bd-add flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-blue-500 hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500\" data-sw-artwork-open data-artwork-kind=\"backdrops\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

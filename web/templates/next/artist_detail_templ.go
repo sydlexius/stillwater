@@ -1460,13 +1460,13 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var71 templ.SafeURL
 		templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/next/artists"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 458, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 465, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" class=\"inline-flex items-center gap-1 text-sm hover:underline\" style=\"color:var(--swd-ink-3)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" class=\"inline-flex items-center gap-1 text-sm hover:underline\" style=\"color:var(--swd-ink-3)\" tabindex=\"-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1477,7 +1477,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var72 string
 		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.artists"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 463, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 471, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 		if templ_7745c5c3_Err != nil {
@@ -1490,7 +1490,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 465, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 473, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
@@ -1508,7 +1508,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(nextTypeLabel(ctx, a.Type))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 467, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 475, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
@@ -1520,14 +1520,14 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 			}
 		}
 		if data.Detail.ViolationCount > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "<a href=\"#next-findings\" class=\"inline-flex items-center gap-1 text-xs hover:underline\" style=\"color:var(--swd-warn)\"><span class=\"inline-flex h-2 w-2 rounded-full\" style=\"background:var(--swd-warn)\" aria-hidden=\"true\"></span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "<a href=\"#next-findings\" class=\"inline-flex items-center gap-1 text-xs hover:underline\" style=\"color:var(--swd-warn)\" tabindex=\"-1\"><span class=\"inline-flex h-2 w-2 rounded-full\" style=\"background:var(--swd-warn)\" aria-hidden=\"true\"></span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.findings_count", data.Detail.ViolationCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 472, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 480, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1545,7 +1545,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 484, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 492, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
 		if templ_7745c5c3_Err != nil {
@@ -1558,13 +1558,13 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var77 string
 		templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.edit_done"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 485, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 493, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "\" aria-pressed=\"false\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "\" aria-pressed=\"false\" tabindex=\"-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1579,7 +1579,7 @@ func artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) 
 		var templ_7745c5c3_Var78 string
 		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 489, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 498, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 		if templ_7745c5c3_Err != nil {
@@ -1639,7 +1639,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 508, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 517, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
@@ -1660,7 +1660,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 515, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 524, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
 		if templ_7745c5c3_Err != nil {
@@ -1682,7 +1682,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.actions"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 518, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 527, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
@@ -1699,7 +1699,7 @@ func artistHeroActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var84 string
 		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 522, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 531, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
 		if templ_7745c5c3_Err != nil {
@@ -1757,7 +1757,7 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var86 string
 		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 542, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 551, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
 		if templ_7745c5c3_Err != nil {
@@ -1778,7 +1778,7 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var87 string
 		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 549, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 562, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var87)
 		if templ_7745c5c3_Err != nil {
@@ -1793,14 +1793,14 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" tabindex=\"-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var89 string
 		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.actions"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 552, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 566, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 		if templ_7745c5c3_Err != nil {
@@ -1817,7 +1817,7 @@ func artistStickyActions(data ArtistDetailPageData) templ.Component {
 		var templ_7745c5c3_Var90 string
 		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-" + menuID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 556, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 570, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
 		if templ_7745c5c3_Err != nil {
@@ -1875,7 +1875,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 		var templ_7745c5c3_Var92 string
 		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/run-rules")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 579, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 593, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var92)
 		if templ_7745c5c3_Err != nil {
@@ -1893,7 +1893,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var93 string
 			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 584, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 598, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var93)
 			if templ_7745c5c3_Err != nil {
@@ -1915,7 +1915,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 		var templ_7745c5c3_Var94 string
 		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.run_rules"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 588, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 602, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 		if templ_7745c5c3_Err != nil {
@@ -1928,7 +1928,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 		var templ_7745c5c3_Var95 string
 		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/reidentify")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 595, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 609, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95)
 		if templ_7745c5c3_Err != nil {
@@ -1946,7 +1946,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var96 string
 			templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.reidentify_confirm"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 599, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 613, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var96)
 			if templ_7745c5c3_Err != nil {
@@ -1969,7 +1969,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var97 string
 			templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.reidentify"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 605, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 619, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 			if templ_7745c5c3_Err != nil {
@@ -1979,7 +1979,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var98 string
 			templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.identify"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 607, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 621, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 			if templ_7745c5c3_Err != nil {
@@ -1998,7 +1998,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var99 string
 			templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.rename_directory_prompt"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 615, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 629, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var99)
 			if templ_7745c5c3_Err != nil {
@@ -2011,7 +2011,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var100 string
 			templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.ResolveAttributeValue(filepath.Base(a.Path))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 616, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 630, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var100)
 			if templ_7745c5c3_Err != nil {
@@ -2024,7 +2024,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var101 string
 			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/rename-directory")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 617, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 631, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var101)
 			if templ_7745c5c3_Err != nil {
@@ -2037,7 +2037,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var102 string
 			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.rename_directory_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 618, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 632, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var102)
 			if templ_7745c5c3_Err != nil {
@@ -2054,7 +2054,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var103 string
 			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.rename_directory"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 622, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 636, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 			if templ_7745c5c3_Err != nil {
@@ -2073,7 +2073,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var104 string
 			templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/lock")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 630, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 644, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var104)
 			if templ_7745c5c3_Err != nil {
@@ -2086,7 +2086,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var105 string
 			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.platform_action_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 632, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 646, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var105)
 			if templ_7745c5c3_Err != nil {
@@ -2103,7 +2103,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var106 string
 			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.unlock_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 636, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 650, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 			if templ_7745c5c3_Err != nil {
@@ -2121,7 +2121,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var107 string
 			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + a.ID + "/lock")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 643, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 657, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
 			if templ_7745c5c3_Err != nil {
@@ -2134,7 +2134,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var108 string
 			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.platform_action_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 645, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 659, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var108)
 			if templ_7745c5c3_Err != nil {
@@ -2151,7 +2151,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var109 string
 			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.lock_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 649, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 663, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 			if templ_7745c5c3_Err != nil {
@@ -2170,7 +2170,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var110 templ.SafeURL
 			templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(conn.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 654, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 668, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 			if templ_7745c5c3_Err != nil {
@@ -2187,7 +2187,7 @@ func artistActionItems(data ArtistDetailPageData, withShortcut bool) templ.Compo
 			var templ_7745c5c3_Var111 string
 			templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.view_on_platform", conn.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 661, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 675, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 			if templ_7745c5c3_Err != nil {
@@ -2246,7 +2246,7 @@ func sectionHead(headingID, bodyID, headingClass, title string, collapsed bool) 
 		var templ_7745c5c3_Var114 string
 		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(headingID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 682, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 696, Col: 20}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
 		if templ_7745c5c3_Err != nil {
@@ -2282,7 +2282,7 @@ func sectionHead(headingID, bodyID, headingClass, title string, collapsed bool) 
 		var templ_7745c5c3_Var116 string
 		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(!collapsed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 687, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 701, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var116)
 		if templ_7745c5c3_Err != nil {
@@ -2295,7 +2295,7 @@ func sectionHead(headingID, bodyID, headingClass, title string, collapsed bool) 
 		var templ_7745c5c3_Var117 string
 		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.ResolveAttributeValue(bodyID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 688, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 702, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var117)
 		if templ_7745c5c3_Err != nil {
@@ -2308,7 +2308,7 @@ func sectionHead(headingID, bodyID, headingClass, title string, collapsed bool) 
 		var templ_7745c5c3_Var118 string
 		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 693, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 707, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 		if templ_7745c5c3_Err != nil {
@@ -2365,7 +2365,7 @@ func artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var120 string
 		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.ResolveAttributeValue("next-metadata-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 710, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 724, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var120)
 		if templ_7745c5c3_Err != nil {
@@ -2378,7 +2378,7 @@ func artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var121 string
 		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.tab_overview"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 710, Col: 142}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 724, Col: 142}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var121)
 		if templ_7745c5c3_Err != nil {
@@ -2409,7 +2409,7 @@ func artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var122 string
 		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.section_identity"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 724, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 738, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
 		if templ_7745c5c3_Err != nil {
@@ -2438,7 +2438,7 @@ func artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var123 string
 		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue("gender-wrap-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 733, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 747, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 		if templ_7745c5c3_Err != nil {
@@ -2555,7 +2555,7 @@ func artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var128 string
 		templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.aliases"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 770, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 784, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 		if templ_7745c5c3_Err != nil {
@@ -2584,7 +2584,7 @@ func artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var129 string
 		templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tags"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 780, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 794, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
 		if templ_7745c5c3_Err != nil {
@@ -2652,7 +2652,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var131 string
 		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/" + artistID + "/aliases")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 804, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 818, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var131)
 		if templ_7745c5c3_Err != nil {
@@ -2665,7 +2665,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var132 string
 		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.alias_add_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 806, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 820, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var132)
 		if templ_7745c5c3_Err != nil {
@@ -2678,7 +2678,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var133 string
 		templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.ResolveAttributeValue("alias-input-label-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 809, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 823, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var133)
 		if templ_7745c5c3_Err != nil {
@@ -2691,7 +2691,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var134 string
 		templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.add_alias_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 809, Col: 98}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 823, Col: 98}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
 		if templ_7745c5c3_Err != nil {
@@ -2704,7 +2704,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var135 string
 		templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.add_alias_placeholder"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 812, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 826, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var135)
 		if templ_7745c5c3_Err != nil {
@@ -2717,7 +2717,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var136 string
 		templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.ResolveAttributeValue("alias-input-label-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 814, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 828, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var136)
 		if templ_7745c5c3_Err != nil {
@@ -2730,7 +2730,7 @@ func artistAliasAddForm(artistID string) templ.Component {
 		var templ_7745c5c3_Var137 string
 		templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.add"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 822, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 836, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
 		if templ_7745c5c3_Err != nil {
@@ -2781,7 +2781,7 @@ func artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var139 string
 		templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.other_findings"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 837, Col: 132}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 851, Col: 132}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var139)
 		if templ_7745c5c3_Err != nil {
@@ -2812,7 +2812,7 @@ func artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var140 string
 		templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.ResolveAttributeValue("artist-violations-tab-" + data.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 848, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 862, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var140)
 		if templ_7745c5c3_Err != nil {
@@ -2825,20 +2825,20 @@ func artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) tem
 		var templ_7745c5c3_Var141 string
 		templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.ResolveAttributeValue("/artists/" + data.Artist.ID + "/violations/tab")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 849, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 863, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var141)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\"><p class=\"text-sm text-gray-400 italic py-6 text-center\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\"><p class=\"text-sm text-gray-500 dark:text-gray-400 italic py-6 text-center\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var142 string
 		templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.loading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 853, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 867, Col: 106}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 		if templ_7745c5c3_Err != nil {
@@ -2886,7 +2886,7 @@ func artistIdentifiersSection(data *templates.ArtistDetailData, collapsed bool) 
 		var templ_7745c5c3_Var144 string
 		templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.ResolveAttributeValue("next-identifiers-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 867, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 881, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var144)
 		if templ_7745c5c3_Err != nil {
@@ -2899,7 +2899,7 @@ func artistIdentifiersSection(data *templates.ArtistDetailData, collapsed bool) 
 		var templ_7745c5c3_Var145 string
 		templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.provider_ids"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 867, Col: 179}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 881, Col: 179}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var145)
 		if templ_7745c5c3_Err != nil {
@@ -2994,7 +2994,7 @@ func artistDetailPageScript() templ.Component {
 		var templ_7745c5c3_Var147 string
 		templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.shortcuts.section_next"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 896, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 910, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var147)
 		if templ_7745c5c3_Err != nil {
@@ -3007,7 +3007,7 @@ func artistDetailPageScript() templ.Component {
 		var templ_7745c5c3_Var148 string
 		templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.shortcuts.section_prev"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 897, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 911, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var148)
 		if templ_7745c5c3_Err != nil {
@@ -3020,7 +3020,7 @@ func artistDetailPageScript() templ.Component {
 		var templ_7745c5c3_Var149 string
 		templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.shortcuts.field_edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 898, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 912, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var149)
 		if templ_7745c5c3_Err != nil {
@@ -3033,7 +3033,7 @@ func artistDetailPageScript() templ.Component {
 		var templ_7745c5c3_Var150 string
 		templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.shortcuts.field_fetch"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 899, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 913, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var150)
 		if templ_7745c5c3_Err != nil {
@@ -3046,7 +3046,7 @@ func artistDetailPageScript() templ.Component {
 		var templ_7745c5c3_Var151 string
 		templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist.next.shortcuts.close"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 900, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_detail.templ`, Line: 914, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var151)
 		if templ_7745c5c3_Err != nil {

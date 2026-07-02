@@ -4234,6 +4234,15 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
   font-family: var(--sw-font-mono);
   color: var(--swd-ink);
 }
+/* The Identifiers card is quieted with opacity:0.9 (the .opacity-90 utility on
+ * the section). That opacity composites the dt label's --swd-ink-3 down to
+ * ~3.86:1 in light theme, under AA 4.5 for this small uppercase text. Bump the
+ * identifiers dt to the darker --swd-ink-2 so it clears AA even after the 0.9
+ * opacity is applied, in both themes (#1784 a11y). Scoped to .sw-next-identifiers
+ * so the (full-opacity, already-passing) metadata-section labels are untouched. */
+.sw-next-artist-detail .sw-next-identifiers .sw-next-fields [id^="field-"] > dt {
+  color: var(--swd-ink-2);
+}
 
 /* Biography mirrors the field-value treatment (body size, muted ink, 1.6
  * line-height). The reused biographyDisplay <p> carries Tailwind
@@ -5386,7 +5395,9 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-next-artist-detail .sw-next-findings-empty {
   font-size: 13px;
   font-style: italic;
-  color: var(--swd-ink-3);
+  /* --swd-ink-3 renders at 4.35:1 on the dark card bg (just under AA 4.5 for
+   * this small text); --swd-ink-2 clears AA in both themes (#1784 a11y). */
+  color: var(--swd-ink-2);
   text-align: center;
   padding: 16px 0;
 }
