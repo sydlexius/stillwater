@@ -42,6 +42,7 @@ The table below is generated from the configuration definition; do not edit it b
 | `SW_TLS_CERT_FILE` | string | unset | Path to a PEM-encoded TLS certificate. When set together with SW_TLS_KEY_FILE Stillwater serves HTTPS directly instead of plain HTTP. |
 | `SW_TLS_KEY_FILE` | string | unset | Path to the PEM-encoded private key for SW_TLS_CERT_FILE. Both files must be readable by the Stillwater process. |
 | `SW_TLS_PORT` | integer | unset | Optional dedicated HTTPS port. When unset Stillwater serves HTTPS on SW_PORT (collapse semantics, single listener). Numeric values outside 1-65535 are rejected at startup. |
+| `SW_TRUSTED_PROXIES` | list (comma-separated) | (none) | Comma-separated CIDR ranges (for example 10.0.0.0/8,192.168.0.0/16) whose direct connections are trusted reverse proxies. Only requests arriving directly from one of these ranges have their X-Forwarded-For / X-Real-Ip header honored for login rate limiting; all other clients are rate-limited by their direct connection IP. Empty (the default) trusts no proxy and ignores forwarded headers. Whitespace around each entry is trimmed. |
 | `SW_UX` | string | `stable` | Web UI channel: stable (the current UI), next (the in-development preview UI), or dual (both served; defaults to stable, users opt into the preview via the sw_ux cookie or /next/ paths). Default stable means no behavior change. |
 <!-- END GENERATED: env-reference -->
 

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // setupTestService returns a new auth Service backed by a pre-migrated test
@@ -17,6 +19,14 @@ import (
 func setupTestService(t *testing.T) *Service {
 	t.Helper()
 	return NewService(newTestDB(t))
+}
+
+// sha256Hex returns the hex-encoded SHA-256 digest of s. Tests compute the
+// expected at-rest token hash independently of the production hashToken helper
+// so a bug in that helper cannot silently pass these assertions.
+func sha256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
 }
 
 // createTestUser creates an admin user via Setup and returns the service.
@@ -219,6 +229,67 @@ func TestLogin_UnknownUser(t *testing.T) {
 	}
 }
 
+// TestDummyHash_IsRealBcryptAtDefaultCost proves the timing-equalization fixture
+// is genuine bcrypt work at the same cost as real password hashes, so the
+// unknown-user compare in Login is not a cheap no-op (#2171). The package var is
+// computed eagerly at init and can never be nil, so an empty value here is a real
+// regression.
+func TestDummyHash_IsRealBcryptAtDefaultCost(t *testing.T) {
+	t.Parallel()
+	h := dummyHash
+	if len(h) == 0 {
+		t.Fatal("dummyHash is empty; constant-time compare would be a no-op")
+	}
+	cost, err := bcrypt.Cost(h)
+	if err != nil {
+		t.Fatalf("dummy hash is not a valid bcrypt hash: %v", err)
+	}
+	if cost != bcrypt.DefaultCost {
+		t.Errorf("dummy hash cost = %d, want DefaultCost %d (must match real hashes for equal timing)", cost, bcrypt.DefaultCost)
+	}
+}
+
+// TestLogin_ConstantTime asserts the unknown-user path spends comparable time to
+// the wrong-password path: both perform a bcrypt compare, closing the
+// username-enumeration timing side channel (#2171). A missing dummy compare
+// would make the unknown-user path return in microseconds while the
+// wrong-password path spends the full bcrypt cost (tens of ms), so a lenient
+// lower-bound ratio reliably distinguishes the two without flaking.
+func TestLogin_ConstantTime(t *testing.T) {
+	// Deliberately NOT parallel: this asserts a bcrypt timing ratio, and CPU
+	// contention from parallel tests skews the measurement and makes it flaky.
+	svc := createTestUser(t, "secret")
+	ctx := context.Background()
+
+	// Warm up: trigger the lazy dummy-hash init and prime caches so neither
+	// measurement pays one-time costs.
+	_, _ = svc.Login(ctx, "admin", "wrongpassword")
+	_, _ = svc.Login(ctx, "ghost-warmup", "wrongpassword")
+
+	const iters = 3
+	var wrongElapsed, unknownElapsed time.Duration
+	for i := 0; i < iters; i++ {
+		start := time.Now()
+		if _, err := svc.Login(ctx, "admin", "wrongpassword"); err == nil {
+			t.Fatal("expected error for wrong password")
+		}
+		wrongElapsed += time.Since(start)
+
+		start = time.Now()
+		if _, err := svc.Login(ctx, "nonexistent-user", "wrongpassword"); err == nil {
+			t.Fatal("expected error for unknown user")
+		}
+		unknownElapsed += time.Since(start)
+	}
+
+	// The unknown-user path must not be dramatically faster. Without the dummy
+	// compare the ratio would be far below 1/4 (near-zero vs full bcrypt cost).
+	if unknownElapsed < wrongElapsed/4 {
+		t.Errorf("unknown-user login too fast: unknown=%v wrong=%v (want unknown >= wrong/4; missing constant-time compare?)",
+			unknownElapsed, wrongElapsed)
+	}
+}
+
 func TestLogin_UniqueTokens(t *testing.T) {
 	t.Parallel()
 	svc := createTestUser(t, "secret")
@@ -285,8 +356,10 @@ func TestValidateSession_ExpiredSession(t *testing.T) {
 	}
 
 	// Manually set the session expiry to the past to simulate expiration.
+	// Session ids are stored hashed at rest (#2170), so key on the hash.
+	sessionHash := sha256Hex(token)
 	pastTime := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
-	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, token)
+	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, sessionHash)
 	if err != nil {
 		t.Fatalf("updating session expiry: %v", err)
 	}
@@ -301,11 +374,71 @@ func TestValidateSession_ExpiredSession(t *testing.T) {
 
 	// Expired session should be deleted (Logout is called internally).
 	var count int
-	if err := svc.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sessions WHERE id = ?", token).Scan(&count); err != nil {
+	if err := svc.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sessions WHERE id = ?", sessionHash).Scan(&count); err != nil {
 		t.Fatalf("counting sessions: %v", err)
 	}
 	if count != 0 {
 		t.Error("expired session should have been deleted")
+	}
+}
+
+// TestCreateSession_HashedAtRest proves session tokens reach parity with API
+// tokens (#2170): the raw token is returned to the caller (for the cookie) but
+// only its SHA-256 hash is persisted in sessions.id, and the raw token still
+// authenticates via ValidateSession (which hashes before the lookup).
+func TestCreateSession_HashedAtRest(t *testing.T) {
+	t.Parallel()
+	svc := createTestUser(t, "secret")
+	ctx := context.Background()
+
+	token, err := svc.Login(ctx, "admin", "secret")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	// (b) The persisted id must be the hash, never the raw token.
+	var storedID string
+	if err := svc.db.QueryRowContext(ctx,
+		"SELECT id FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = 'admin')").
+		Scan(&storedID); err != nil {
+		t.Fatalf("reading stored session id: %v", err)
+	}
+	if storedID == token {
+		t.Fatal("session token stored in cleartext; expected a hash")
+	}
+	if want := sha256Hex(token); storedID != want {
+		t.Errorf("stored id = %q, want sha256(token) = %q", storedID, want)
+	}
+	// No row should exist keyed on the raw token.
+	var rawCount int
+	if err := svc.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sessions WHERE id = ?", token).Scan(&rawCount); err != nil {
+		t.Fatalf("counting raw-token rows: %v", err)
+	}
+	if rawCount != 0 {
+		t.Errorf("found %d session row(s) keyed on the raw token; want 0", rawCount)
+	}
+
+	// (a) The raw token still authenticates through the hashing lookup.
+	userID, err := svc.ValidateSession(ctx, token)
+	if err != nil {
+		t.Fatalf("ValidateSession with raw token: %v", err)
+	}
+	if userID == "" {
+		t.Error("expected non-empty user ID from ValidateSession")
+	}
+
+	// (c) Logout hashes the raw token and deletes the correct (hashed) row.
+	if err := svc.Logout(ctx, token); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+	var remaining int
+	if err := svc.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sessions WHERE id = ?", sha256Hex(token)).Scan(&remaining); err != nil {
+		t.Fatalf("counting sessions after logout: %v", err)
+	}
+	if remaining != 0 {
+		t.Error("Logout did not delete the hashed session row")
 	}
 }
 
@@ -360,9 +493,10 @@ func TestCleanExpiredSessions(t *testing.T) {
 		t.Fatalf("Login 2: %v", err)
 	}
 
-	// Expire token1 but keep token2 valid.
+	// Expire token1 but keep token2 valid. Session ids are stored hashed at
+	// rest (#2170), so key on the hash.
 	pastTime := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
-	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, token1)
+	_, err = svc.db.ExecContext(ctx, "UPDATE sessions SET expires_at = ? WHERE id = ?", pastTime, sha256Hex(token1))
 	if err != nil {
 		t.Fatalf("expiring session: %v", err)
 	}

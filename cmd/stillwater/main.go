@@ -508,6 +508,7 @@ func (a *Application) buildServices() error {
 		I18nBundle:         a.i18nBundle,
 		Encryptor:          a.encryptor,
 		SessionSecret:      cfg.Auth.SessionSecret,
+		TrustedProxies:     cfg.Server.TrustedProxies,
 	})
 
 	// Wire the conflict gate into the publisher so the background artwork

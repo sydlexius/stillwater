@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,13 +49,21 @@ type Config struct {
 //     sentence is acceptable when it captures a constraint or runtime caveat
 //   - default: rendered default; "unset" or "" when there is no default
 type ServerConfig struct {
-	Port            int                `yaml:"port" toml:"port" env:"SW_PORT" default:"1973" desc:"TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup."`
-	BasePath        string             `yaml:"base_path" toml:"base_path" env:"SW_BASE_PATH" default:"/" desc:"URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only."`
-	BasePathFromEnv bool               `yaml:"-" toml:"-"`
-	UX              string             `yaml:"ux" toml:"ux" env:"SW_UX" default:"stable" desc:"Web UI channel: stable (the current UI), next (the in-development preview UI), or dual (both served; defaults to stable, users opt into the preview via the sw_ux cookie or /next/ paths). Default stable means no behavior change."`
-	TLS             TLSConfig          `yaml:"tls" toml:"tls"`
-	HTTPRedirect    HTTPRedirectConfig `yaml:"http_redirect" toml:"http_redirect"`
-	HTTP3           HTTP3Config        `yaml:"http3" toml:"http3"`
+	Port            int    `yaml:"port" toml:"port" env:"SW_PORT" default:"1973" desc:"TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup."`
+	BasePath        string `yaml:"base_path" toml:"base_path" env:"SW_BASE_PATH" default:"/" desc:"URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only."`
+	BasePathFromEnv bool   `yaml:"-" toml:"-"`
+	UX              string `yaml:"ux" toml:"ux" env:"SW_UX" default:"stable" desc:"Web UI channel: stable (the current UI), next (the in-development preview UI), or dual (both served; defaults to stable, users opt into the preview via the sw_ux cookie or /next/ paths). Default stable means no behavior change."`
+	// TrustedProxies is the set of CIDR ranges whose direct connections are
+	// trusted to set X-Forwarded-For / X-Real-Ip for login rate limiting. Only
+	// when the direct peer falls inside one of these prefixes is the forwarded
+	// client IP honored; otherwise the direct peer address is used. Empty means
+	// no proxy is trusted (forwarded headers are ignored). Stored as raw strings
+	// (parsed into netip.Prefix by the rate limiter) so config loading stays a
+	// pure string overlay; entries are validated as CIDRs at startup.
+	TrustedProxies []string           `yaml:"trusted_proxies" toml:"trusted_proxies" env:"SW_TRUSTED_PROXIES" default:"" desc:"Comma-separated CIDR ranges (for example 10.0.0.0/8,192.168.0.0/16) whose direct connections are trusted reverse proxies. Only requests arriving directly from one of these ranges have their X-Forwarded-For / X-Real-Ip header honored for login rate limiting; all other clients are rate-limited by their direct connection IP. Empty (the default) trusts no proxy and ignores forwarded headers. Whitespace around each entry is trimmed."`
+	TLS            TLSConfig          `yaml:"tls" toml:"tls"`
+	HTTPRedirect   HTTPRedirectConfig `yaml:"http_redirect" toml:"http_redirect"`
+	HTTP3          HTTP3Config        `yaml:"http3" toml:"http3"`
 }
 
 // TLSConfig holds direct (BYO certificate) TLS settings. When CertFile and
@@ -548,6 +557,7 @@ func (c *Config) loadFromEnv() error {
 		// Server
 		{Key: "SW_PORT", Apply: setInt("SW_PORT", &c.Server.Port)},
 		{Key: "SW_UX", Apply: setString(&c.Server.UX)},
+		{Key: "SW_TRUSTED_PROXIES", Apply: setCSV(&c.Server.TrustedProxies)},
 		{Key: "SW_DB_PATH", Apply: setString(&c.Database.Path)},
 		// Auth / encryption
 		{Key: "SW_SESSION_SECRET", Apply: setString(&c.Auth.SessionSecret)},
@@ -651,6 +661,20 @@ func validateACMEIP(ip string) error {
 	}
 	if !httpsafe.IsPublicIP(parsed) {
 		return fmt.Errorf("invalid SW_ACME_IP %q: must be a publicly routable address (not loopback, private, link-local, or reserved)", ip)
+	}
+	return nil
+}
+
+// validateTrustedProxies returns an error when any entry is not a valid CIDR
+// prefix. An empty slice is valid (no proxy trusted). The field is stored as
+// raw strings and re-parsed by the rate limiter (design choice: config stays a
+// pure string overlay), so this validator is the single startup gate that turns
+// a typo into a clear boot error rather than a silently-ignored proxy range.
+func validateTrustedProxies(entries []string) error {
+	for _, e := range entries {
+		if _, err := netip.ParsePrefix(e); err != nil {
+			return fmt.Errorf("invalid SW_TRUSTED_PROXIES %q: %w", e, err)
+		}
 	}
 	return nil
 }
@@ -800,6 +824,9 @@ func (c *Config) validate() error {
 		return err
 	}
 	if err := validateACMEIP(c.ACME.IP); err != nil {
+		return err
+	}
+	if err := validateTrustedProxies(c.Server.TrustedProxies); err != nil {
 		return err
 	}
 

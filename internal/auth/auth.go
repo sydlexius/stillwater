@@ -15,6 +15,29 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// dummyHash holds a bcrypt hash computed once at DefaultCost, used by Login to
+// perform a comparison on the unknown-user path so it takes the same time as
+// the wrong-password path (constant-time login; #2171 defeats username
+// enumeration via a timing side channel). It is derived from a fixed throwaway
+// password and is never a valid credential (no user's password_hash is set from
+// it). It is computed eagerly at package init so it can never be nil: a nil
+// dummy hash would make bcrypt reject the unknown-user compare almost instantly,
+// silently reopening the timing side channel this closes.
+var dummyHash = mustGenerateDummyHash()
+
+// mustGenerateDummyHash computes the constant-time-login dummy hash, panicking on
+// error. bcrypt.GenerateFromPassword only fails on an out-of-range cost, and
+// DefaultCost is always in range, so an error here is an unreachable invariant
+// violation; failing loudly at startup is correct and removes any path that
+// could leave the dummy hash nil at request time.
+func mustGenerateDummyHash() []byte {
+	h, err := bcrypt.GenerateFromPassword(PrehashPassword("stillwater-dummy-password"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("auth: failed to generate dummy bcrypt hash for constant-time login: %v", err))
+	}
+	return h
+}
+
 const sessionDuration = 24 * time.Hour
 
 // Sentinel errors for token operations.
@@ -132,6 +155,11 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		SELECT id, password_hash FROM users WHERE username = ?
 	`, username).Scan(&id, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
+		// Constant-time login: run a bcrypt compare against a dummy hash so the
+		// unknown-user path costs the same as the wrong-password path below.
+		// Without this, an attacker could distinguish "user exists" from "user
+		// unknown" by response latency (username enumeration; #2171).
+		_ = bcrypt.CompareHashAndPassword(dummyHash, PrehashPassword(password))
 		return "", errors.New("invalid credentials")
 	}
 	if err != nil {
@@ -157,10 +185,12 @@ func (s *Service) CreateSession(ctx context.Context, userID string) (string, err
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(sessionDuration).Format(time.RFC3339)
+	// Store only the hash at rest (parity with API tokens); the raw token is
+	// returned to the caller so setSessionCookie can write the usable cookie.
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO sessions (id, user_id, expires_at)
 		VALUES (?, ?, ?)
-	`, token, userID, expiresAt)
+	`, hashToken(token), userID, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("creating session: %w", err)
 	}
@@ -179,7 +209,7 @@ func (s *Service) ValidateSession(ctx context.Context, token string) (string, er
 	var userID, expiresAt string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT user_id, expires_at FROM sessions WHERE id = ?
-	`, token).Scan(&userID, &expiresAt)
+	`, hashToken(token)).Scan(&userID, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", errors.New("invalid session")
 	}
@@ -202,7 +232,7 @@ func (s *Service) ValidateSession(ctx context.Context, token string) (string, er
 
 // Logout deletes a session.
 func (s *Service) Logout(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?", token)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?", hashToken(token))
 	return err
 }
 
@@ -504,6 +534,14 @@ func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult
 	}
 
 	return s.CreateSession(ctx, id)
+}
+
+// hashToken computes the hex-encoded SHA-256 digest used to store session and
+// API tokens at rest. The recipe matches CreateAPIToken/ValidateAPIToken so
+// tokens are never persisted in cleartext.
+func hashToken(plaintext string) string {
+	hash := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(hash[:])
 }
 
 func generateToken() (string, error) {
