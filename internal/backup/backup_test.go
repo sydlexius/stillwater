@@ -197,14 +197,15 @@ func TestBackup_MkdirTempFailurePropagates(t *testing.T) {
 	}
 }
 
-// TestBackup_RenameFailurePropagates covers the error branch where moving
-// the finished snapshot into backupDir fails, injected via the osRename
-// hook.
-func TestBackup_RenameFailurePropagates(t *testing.T) {
-	orig := osRename
-	t.Cleanup(func() { osRename = orig })
-	osRename = func(oldpath, newpath string) error {
-		return errors.New("simulated rename failure")
+// TestBackup_LinkFailurePropagates covers the error branch where moving the
+// finished snapshot into backupDir fails, injected via the osLink hook. A
+// non-ErrExist failure (unlike a collision, which is retried with a suffix)
+// must propagate.
+func TestBackup_LinkFailurePropagates(t *testing.T) {
+	orig := osLink
+	t.Cleanup(func() { osLink = orig })
+	osLink = func(oldpath, newpath string) error {
+		return errors.New("simulated link failure")
 	}
 
 	db := setupTestDB(t)
@@ -214,10 +215,137 @@ func TestBackup_RenameFailurePropagates(t *testing.T) {
 
 	_, err := svc.Backup(context.Background())
 	if err == nil {
-		t.Fatal("expected error from simulated rename failure")
+		t.Fatal("expected error from simulated link failure")
 	}
 	if !strings.Contains(err.Error(), "moving backup into place") {
 		t.Errorf("error = %q, want it to contain 'moving backup into place'", err.Error())
+	}
+}
+
+// fixedClock always returns the same instant, forcing two Backup calls to
+// compute the identical base filename so they collide on the destination path.
+type fixedClock struct{ t time.Time }
+
+func (c fixedClock) Now() time.Time { return c.t }
+
+// TestBackup_SameSecondNoClobber is the regression test for the silent
+// backup-clobber data-loss bug (#2181 review). Two backups in the same
+// wall-clock second must both survive: the second must NOT overwrite the
+// first. Against the old plain-os.Rename code both calls computed the same
+// filename and the second silently clobbered the first (this test then sees
+// identical filenames / a single file and fails), so this is a red/green
+// regression guard.
+func TestBackup_SameSecondNoClobber(t *testing.T) {
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	fixed := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	svc := NewService(db, backupDir, 7, logger).WithClock(fixedClock{t: fixed})
+
+	first, err := svc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("first Backup: %v", err)
+	}
+	second, err := svc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("second Backup: %v", err)
+	}
+
+	if first.Filename == second.Filename {
+		t.Fatalf("both backups share filename %q; the second clobbered the first", first.Filename)
+	}
+
+	// Both snapshots must exist on disk, be non-empty, and be valid SQLite.
+	for _, info := range []*BackupInfo{first, second} {
+		path := filepath.Join(backupDir, info.Filename)
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat %s: %v", info.Filename, err)
+		}
+		if fi.Size() == 0 {
+			t.Errorf("backup %s is empty", info.Filename)
+		}
+		bdb, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatalf("open backup %s: %v", info.Filename, err)
+		}
+		var value string
+		err = bdb.QueryRowContext(context.Background(), "SELECT value FROM test WHERE id = 1").Scan(&value)
+		bdb.Close()
+		if err != nil {
+			t.Fatalf("query backup %s: %v", info.Filename, err)
+		}
+		if value != "hello" {
+			t.Errorf("backup %s content = %q, want 'hello'", info.Filename, value)
+		}
+	}
+
+	// ListBackups must report exactly two distinct backups.
+	backups, err := svc.ListBackups()
+	if err != nil {
+		t.Fatalf("ListBackups: %v", err)
+	}
+	if len(backups) != 2 {
+		t.Fatalf("expected 2 backups after two same-second Backup calls, got %d", len(backups))
+	}
+}
+
+// TestLinkIntoPlace_ConcurrentSameNameNoClobber exercises the collision
+// primitive directly under -race: many goroutines all try to move their own
+// staging file into the SAME base destination name at once. os.Link's atomic
+// ErrExist-on-collision guarantees every caller gets a distinct final name and
+// none clobbers another -- the property a stat-then-rename could not provide.
+// Testing linkIntoPlace directly (rather than full Backup) keeps this free of
+// SQLite VACUUM locking flakiness while still covering the concurrent path.
+func TestLinkIntoPlace_ConcurrentSameNameNoClobber(t *testing.T) {
+	dir := t.TempDir()
+	const n = 16
+	const base = "stillwater-20250101-120000.db"
+
+	var wg sync.WaitGroup
+	names := make([]string, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			staging := filepath.Join(dir, ".staging-"+string(rune('a'+i)))
+			if err := os.WriteFile(staging, []byte("snapshot"), 0o600); err != nil {
+				errs[i] = err
+				return
+			}
+			names[i], errs[i] = linkIntoPlace(staging, dir, base)
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]bool, n)
+	for i := 0; i < n; i++ {
+		if errs[i] != nil {
+			t.Errorf("goroutine %d: linkIntoPlace failed: %v", i, errs[i])
+			continue
+		}
+		if seen[names[i]] {
+			t.Errorf("duplicate final name %q -- a snapshot was clobbered", names[i])
+		}
+		seen[names[i]] = true
+		if _, err := os.Stat(filepath.Join(dir, names[i])); err != nil {
+			t.Errorf("final file %q missing: %v", names[i], err)
+		}
+	}
+	if len(seen) != n {
+		t.Errorf("expected %d distinct snapshots, got %d", n, len(seen))
+	}
+
+	// No staging files should remain; every link is followed by a remove.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".staging-") {
+			t.Errorf("leftover staging file: %s", e.Name())
+		}
 	}
 }
 
