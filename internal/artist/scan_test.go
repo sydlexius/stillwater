@@ -30,6 +30,21 @@ func TestBuildWhereClause_Search(t *testing.T) {
 	}
 }
 
+// TestBuildWhereClause_Search_EscapesWildcards verifies that LIKE metacharacters
+// in the search term are escaped and the clause carries the matching ESCAPE
+// clause, so a literal `%`/`_`/`\` in a search term cannot act as a wildcard.
+func TestBuildWhereClause_Search_EscapesWildcards(t *testing.T) {
+	t.Parallel()
+	clause, args := buildWhereClause(ListParams{Search: `100%_off\path`})
+	if !strings.Contains(clause, `LIKE ? ESCAPE '\'`) {
+		t.Errorf("expected ESCAPE clause, got %q", clause)
+	}
+	want := `%100\%\_off\\path%`
+	if len(args) != 1 || args[0] != want {
+		t.Errorf("unexpected args: %v, want [%q]", args, want)
+	}
+}
+
 // TestBuildWhereClause_LibraryID verifies single-library EXISTS clause.
 func TestBuildWhereClause_LibraryID(t *testing.T) {
 	t.Parallel()

@@ -490,8 +490,9 @@ func buildWhereClause(params ListParams) (string, []any) {
 	}
 
 	if params.Search != "" {
-		conditions = append(conditions, "name LIKE ?")
-		args = append(args, "%"+params.Search+"%")
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(params.Search)
+		conditions = append(conditions, `name LIKE ? ESCAPE '\'`)
+		args = append(args, "%"+escaped+"%")
 	}
 
 	if params.LibraryID != "" {
