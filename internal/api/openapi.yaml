@@ -6818,6 +6818,11 @@ paths:
         Returns the direct subdirectories of the given absolute path.
         Only directories are returned; files are excluded. Hidden directories
         (those whose names start with a dot) are also excluded.
+        Browsing is confined to the allowed browse roots: the configured
+        library roots (the default music library path plus the paths of
+        registered libraries) and each root's parent directory, so a new
+        library can be picked from a sibling location. The filesystem root
+        is never allowed; paths outside the allowed roots are rejected.
         Requires administrator role.
       parameters:
         - name: path
@@ -6846,7 +6851,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Forbidden (administrator role required)
+          description: Forbidden (administrator role required, path outside the allowed browse roots, or no library root configured)
           content:
             application/json:
               schema:

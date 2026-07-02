@@ -102,6 +102,11 @@ type RouterDeps struct {
 	// trusted to set X-Forwarded-For / X-Real-Ip for login rate limiting.
 	// Passed through to NewLoginRateLimiter. Empty trusts no proxy.
 	TrustedProxies []string
+	// MusicLibraryPath is the configured default music library root
+	// (SW_MUSIC_PATH / music.library_path). Together with the paths of
+	// libraries registered through the UI it forms the allowlist that
+	// confines the admin filesystem-browse endpoint.
+	MusicLibraryPath string
 }
 
 // Router sets up all HTTP routes for the application.
@@ -241,6 +246,9 @@ type Router struct {
 	// passed to NewLoginRateLimiter so forwarded client IPs are honored only
 	// from these direct peers.
 	trustedProxies []string
+	// musicLibraryPath is the configured default music library root; part of
+	// the filesystem-browse allowlist (see handleFilesystemBrowse).
+	musicLibraryPath string
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -302,6 +310,7 @@ func NewRouter(deps RouterDeps) *Router {
 		encryptor:                deps.Encryptor,
 		sessionSecret:            deps.SessionSecret,
 		trustedProxies:           deps.TrustedProxies,
+		musicLibraryPath:         deps.MusicLibraryPath,
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
