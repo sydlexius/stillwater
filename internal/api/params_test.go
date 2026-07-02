@@ -64,6 +64,25 @@ func TestDecodeJSON_Valid(t *testing.T) {
 	}
 }
 
+func TestDecodeJSON_TooLarge(t *testing.T) {
+	t.Parallel()
+	// One byte over the cap: a JSON string value padded past maxJSONBodyBytes.
+	oversized := `{"name":"` + strings.Repeat("a", maxJSONBodyBytes) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(oversized))
+	w := httptest.NewRecorder()
+
+	var target struct{ Name string }
+	if DecodeJSON(w, req, &target) {
+		t.Fatal("expected false for oversized body")
+	}
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "too large") {
+		t.Errorf("body %q does not contain expected error message", w.Body.String())
+	}
+}
+
 func TestDecodeJSON_Invalid(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`not-json`))
