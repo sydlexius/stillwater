@@ -73,7 +73,7 @@ func (r *sqliteAliasRepo) ListByArtistID(ctx context.Context, artistID string) (
 }
 
 func (r *sqliteAliasRepo) SearchWithAliases(ctx context.Context, query string) ([]Artist, error) {
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(query))
+	escaped := dbutil.EscapeLike(strings.ToLower(query))
 	pattern := "%" + escaped + "%"
 
 	rows, err := r.db.QueryContext(ctx, `

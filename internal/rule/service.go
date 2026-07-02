@@ -1118,7 +1118,7 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 	// SQL clause declares ESCAPE '\' so SQLite treats the escapes as
 	// literals at match time.
 	if p.Search != "" {
-		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(p.Search)
+		escaped := dbutil.EscapeLike(p.Search)
 		like := "%" + escaped + "%"
 		whereClauses = append(whereClauses, `(rv.artist_name LIKE ? ESCAPE '\' OR rv.message LIKE ? ESCAPE '\' OR rv.rule_id LIKE ? ESCAPE '\')`)
 		args = append(args, like, like, like)

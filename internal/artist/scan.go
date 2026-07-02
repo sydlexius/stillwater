@@ -490,7 +490,7 @@ func buildWhereClause(params ListParams) (string, []any) {
 	}
 
 	if params.Search != "" {
-		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(params.Search)
+		escaped := dbutil.EscapeLike(params.Search)
 		conditions = append(conditions, `name LIKE ? ESCAPE '\'`)
 		args = append(args, "%"+escaped+"%")
 	}

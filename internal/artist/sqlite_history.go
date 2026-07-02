@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 type sqliteHistoryRepo struct {
@@ -149,7 +151,7 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		}
 		for _, prefix := range filter.SourcePrefixes {
 			sourceClauses = append(sourceClauses, "mc.source LIKE ? ESCAPE '\\'")
-			escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+			escaped := dbutil.EscapeLike(prefix)
 			args = append(args, escaped+"%")
 		}
 		where = append(where, "("+strings.Join(sourceClauses, " OR ")+")")
@@ -260,7 +262,7 @@ func (r *sqliteHistoryRepo) listGlobalPerFieldCapped(ctx context.Context, filter
 		}
 		for _, prefix := range filter.SourcePrefixes {
 			sourceClauses = append(sourceClauses, "mc.source LIKE ? ESCAPE '\\'")
-			escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+			escaped := dbutil.EscapeLike(prefix)
 			args = append(args, escaped+"%")
 		}
 		where = append(where, "("+strings.Join(sourceClauses, " OR ")+")")
