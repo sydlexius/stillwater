@@ -17,10 +17,18 @@ import (
 // backupPattern matches backup filenames: stillwater-YYYYMMDD-HHMMSS.db
 var backupPattern = regexp.MustCompile(`^stillwater-\d{8}-\d{6}\.db$`)
 
-// osChmod is the chmod function used to restrict a snapshot's permissions
-// after VACUUM INTO. Overridable in tests to simulate a failure, following
-// the same injectable-hook pattern as osRename in internal/filesystem.
+// osChmod is the chmod function used to restrict a snapshot's permissions.
+// Overridable in tests to simulate a failure, following the same
+// injectable-hook pattern as osRename in internal/filesystem.
 var osChmod = os.Chmod
+
+// osMkdirTemp creates the per-backup staging directory. Overridable in tests
+// to simulate a failure.
+var osMkdirTemp = os.MkdirTemp
+
+// osRename moves the finished, permission-restricted snapshot into the
+// backup directory. Overridable in tests to simulate a failure.
+var osRename = os.Rename
 
 // BackupInfo describes a backup file.
 type BackupInfo struct {
@@ -73,6 +81,16 @@ func (s *Service) WithClock(c Clock) *Service {
 }
 
 // Backup creates a snapshot of the database using VACUUM INTO.
+//
+// The snapshot is written to a staging directory created 0700 (owner-only)
+// so it is never group/other-readable at rest, not even for the duration of
+// the VACUUM itself: VACUUM INTO creates its output file at the process
+// umask (typically 0644), so writing directly into backupDir and chmod-ing
+// afterward would leave the full database -- including encrypted secrets --
+// world/group-readable while the VACUUM runs. Once the snapshot is
+// permission-restricted, it is renamed into backupDir; the final chmod is a
+// belt-and-suspenders check in case rename ever lands on a filesystem that
+// doesn't preserve the mode.
 func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 	if err := os.MkdirAll(s.backupDir, 0o750); err != nil {
 		return nil, fmt.Errorf("creating backup directory: %w", err)
@@ -84,9 +102,24 @@ func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 
 	s.logger.Info("starting backup", slog.String("dest", dest))
 
-	_, err := s.db.ExecContext(ctx, "VACUUM INTO ?", dest)
+	stagingDir, err := osMkdirTemp(s.backupDir, ".vacuum-*")
 	if err != nil {
+		return nil, fmt.Errorf("creating staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stagingDir) }()
+
+	stagingPath := filepath.Join(stagingDir, filename)
+
+	if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", stagingPath); err != nil {
 		return nil, fmt.Errorf("VACUUM INTO: %w", err)
+	}
+
+	if err := osChmod(stagingPath, 0o600); err != nil {
+		return nil, fmt.Errorf("restricting backup permissions: %w", err)
+	}
+
+	if err := osRename(stagingPath, dest); err != nil {
+		return nil, fmt.Errorf("moving backup into place: %w", err)
 	}
 
 	if err := osChmod(dest, 0o600); err != nil {

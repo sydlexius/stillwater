@@ -799,6 +799,115 @@ func TestWriteFileAtomic_WriteTempFileFails(t *testing.T) {
 	}
 }
 
+// TestWriteFileAtomic_DoesNotUseThePredictableTempName is the effective
+// regression test for the O_EXCL/unique-name property: it plants a decoy
+// file at the OLD predictable "<target>.tmp" path before calling
+// WriteFileAtomic, then asserts (a) WriteFileAtomic never touches that
+// decoy and (b) the staging name it actually used (captured via the
+// writeTempFile hook) is not the predictable path. The concurrency test
+// above uses distinct targets per goroutine, so it passes even with the old
+// `tmpPath := target + ".tmp"` code -- it proves nothing about uniqueness.
+// This test is the one that must go red against that old code; see the
+// verification note in the PR description / commit message for the
+// revert-and-confirm-red check.
+func TestWriteFileAtomic_DoesNotUseThePredictableTempName(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+	predictableTmp := target + ".tmp"
+
+	decoy := []byte("decoy: must not be touched")
+	if err := os.WriteFile(predictableTmp, decoy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := writeTempFile
+	t.Cleanup(func() { writeTempFile = orig })
+	var capturedTmpName string
+	writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
+		capturedTmpName = f.Name()
+		return orig(f, data, perm)
+	}
+
+	data := []byte("real content")
+	if err := WriteFileAtomic(target, data, 0o644); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+
+	if capturedTmpName == "" {
+		t.Fatal("writeTempFile hook was never invoked; test did not observe the staging name")
+	}
+	if capturedTmpName == predictableTmp {
+		t.Errorf("staging temp name %q collided with the predictable <target>.tmp path", capturedTmpName)
+	}
+
+	// The decoy planted at the predictable path must be untouched.
+	got, err := os.ReadFile(predictableTmp)
+	if err != nil {
+		t.Fatalf("ReadFile decoy: %v", err)
+	}
+	if !bytes.Equal(got, decoy) {
+		t.Errorf("decoy at predictable path was modified: got %q, want %q", got, decoy)
+	}
+
+	// The real target must contain the new data, not the decoy.
+	got, err = os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile target: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("target content = %q, want %q", got, data)
+	}
+}
+
+// TestWriteFileAtomic_DoesNotClobberSymlinkAtPredictableTempName is the
+// symlink variant: a symlink sits at the predictable "<target>.tmp" path,
+// pointing at a victim file. If WriteFileAtomic ever regressed to writing
+// through that predictable name, it would write attacker-controlled content
+// through the symlink into the victim's target. Asserts the victim is
+// untouched and the symlink itself survives.
+func TestWriteFileAtomic_DoesNotClobberSymlinkAtPredictableTempName(t *testing.T) {
+	if !ProbeSymlinkSupport(t.TempDir()) {
+		t.Skip("symlinks not supported on this platform/configuration")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+	predictableTmp := target + ".tmp"
+	victim := filepath.Join(dir, "victim.txt")
+
+	victimData := []byte("do not touch")
+	if err := os.WriteFile(victim, victimData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateRelativeSymlink(victim, predictableTmp); err != nil {
+		t.Fatalf("CreateRelativeSymlink: %v", err)
+	}
+
+	data := []byte("real content")
+	if err := WriteFileAtomic(target, data, 0o644); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+
+	// The victim must be untouched.
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("ReadFile victim: %v", err)
+	}
+	if !bytes.Equal(got, victimData) {
+		t.Errorf("victim content = %q, want untouched %q", got, victimData)
+	}
+
+	// The symlink at the predictable path must still be a symlink (never
+	// replaced or written through).
+	fi, err := os.Lstat(predictableTmp)
+	if err != nil {
+		t.Fatalf("Lstat predictable path: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("symlink at predictable <target>.tmp path was replaced")
+	}
+}
+
 // TestWriteFileAtomic_ConcurrentWritesGetUniqueTemps runs many concurrent
 // WriteFileAtomic calls, each against its own target file but all sharing the
 // same parent directory, and verifies every write lands its complete payload

@@ -121,8 +121,9 @@ func TestBackup_SnapshotIsOwnerOnly(t *testing.T) {
 }
 
 // TestBackup_ChmodFailurePropagates covers the error branch where restricting
-// the snapshot's permissions fails after VACUUM INTO, injected via the
-// osChmod hook (same pattern as osRename in internal/filesystem).
+// the snapshot's permissions fails, injected via the osChmod hook (same
+// pattern as osRename in internal/filesystem). This hits the first (staging)
+// chmod call.
 func TestBackup_ChmodFailurePropagates(t *testing.T) {
 	orig := osChmod
 	t.Cleanup(func() { osChmod = orig })
@@ -141,6 +142,149 @@ func TestBackup_ChmodFailurePropagates(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "restricting backup permissions") {
 		t.Errorf("error = %q, want it to contain 'restricting backup permissions'", err.Error())
+	}
+}
+
+// TestBackup_FinalChmodFailurePropagates covers the second (belt-and-
+// suspenders) chmod call, made on dest after the rename, by letting the
+// first (staging) call through and only failing from the second call on.
+func TestBackup_FinalChmodFailurePropagates(t *testing.T) {
+	orig := osChmod
+	t.Cleanup(func() { osChmod = orig })
+	calls := 0
+	osChmod = func(name string, mode os.FileMode) error {
+		calls++
+		if calls == 1 {
+			return orig(name, mode)
+		}
+		return errors.New("simulated final chmod failure")
+	}
+
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger)
+
+	_, err := svc.Backup(context.Background())
+	if err == nil {
+		t.Fatal("expected error from simulated final chmod failure")
+	}
+	if !strings.Contains(err.Error(), "restricting backup permissions") {
+		t.Errorf("error = %q, want it to contain 'restricting backup permissions'", err.Error())
+	}
+}
+
+// TestBackup_MkdirTempFailurePropagates covers the error branch where the
+// staging directory cannot be created, injected via the osMkdirTemp hook.
+func TestBackup_MkdirTempFailurePropagates(t *testing.T) {
+	orig := osMkdirTemp
+	t.Cleanup(func() { osMkdirTemp = orig })
+	osMkdirTemp = func(dir, pattern string) (string, error) {
+		return "", errors.New("simulated mkdirtemp failure")
+	}
+
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger)
+
+	_, err := svc.Backup(context.Background())
+	if err == nil {
+		t.Fatal("expected error from simulated mkdirtemp failure")
+	}
+	if !strings.Contains(err.Error(), "creating staging directory") {
+		t.Errorf("error = %q, want it to contain 'creating staging directory'", err.Error())
+	}
+}
+
+// TestBackup_RenameFailurePropagates covers the error branch where moving
+// the finished snapshot into backupDir fails, injected via the osRename
+// hook.
+func TestBackup_RenameFailurePropagates(t *testing.T) {
+	orig := osRename
+	t.Cleanup(func() { osRename = orig })
+	osRename = func(oldpath, newpath string) error {
+		return errors.New("simulated rename failure")
+	}
+
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger)
+
+	_, err := svc.Backup(context.Background())
+	if err == nil {
+		t.Fatal("expected error from simulated rename failure")
+	}
+	if !strings.Contains(err.Error(), "moving backup into place") {
+		t.Errorf("error = %q, want it to contain 'moving backup into place'", err.Error())
+	}
+}
+
+// TestBackup_StagingDirIsOwnerOnly closes the TOCTOU window identified in
+// review: VACUUM INTO creates its output file at the process umask
+// (typically 0644), so writing directly into backupDir (created 0750, i.e.
+// group-traversable) and chmod-ing afterward would leave the full database
+// -- including encrypted secrets -- group/other-readable for the entire
+// VACUUM duration. This test captures the directory containing the snapshot
+// at the moment of the first chmod call (i.e. immediately after VACUUM INTO
+// completes, before anything is visible in backupDir) and asserts it is
+// 0700 (owner-only), and that nothing has appeared at the public dest path
+// yet.
+func TestBackup_StagingDirIsOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not meaningful on Windows")
+	}
+
+	orig := osChmod
+	t.Cleanup(func() { osChmod = orig })
+	var stagingDirPerm os.FileMode
+	var destExistedDuringVacuum bool
+	captured := false
+	osChmod = func(name string, mode os.FileMode) error {
+		if !captured {
+			captured = true
+			dir := filepath.Dir(name)
+			fi, err := os.Stat(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stagingDirPerm = fi.Mode().Perm()
+			if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "stillwater-20250101-120000.db")); err == nil {
+				destExistedDuringVacuum = true
+			}
+		}
+		return orig(name, mode)
+	}
+
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger).WithClock(newTestClock())
+
+	if _, err := svc.Backup(context.Background()); err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+
+	if !captured {
+		t.Fatal("osChmod was never called; test did not observe the staging window")
+	}
+	if stagingDirPerm != 0o700 {
+		t.Errorf("staging directory mode = %o, want 0700 (owner-only) so the snapshot is never group/other-readable during VACUUM", stagingDirPerm)
+	}
+	if destExistedDuringVacuum {
+		t.Error("dest path was visible in backupDir before the snapshot was permission-restricted and renamed into place")
+	}
+
+	// No staging directories should survive a successful backup.
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			t.Errorf("leftover staging directory in backupDir: %s", e.Name())
+		}
 	}
 }
 
