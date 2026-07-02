@@ -509,6 +509,7 @@ func (a *Application) buildServices() error {
 		Encryptor:          a.encryptor,
 		SessionSecret:      cfg.Auth.SessionSecret,
 		TrustedProxies:     cfg.Server.TrustedProxies,
+		MusicLibraryPath:   cfg.Music.LibraryPath,
 	})
 
 	// Wire the conflict gate into the publisher so the background artwork
@@ -1243,6 +1244,30 @@ func applyPersistedPositiveInt(ctx context.Context, db *sql.DB, logger *slog.Log
 	apply(n)
 }
 
+// keyFilePermsTooOpen reports whether an encryption key file's permission
+// bits grant any access to group or others (anything beyond 0o600-style
+// owner-only access). Extracted for testability.
+func keyFilePermsTooOpen(perm os.FileMode) bool {
+	return perm&0o077 != 0
+}
+
+// warnIfKeyFileTooOpen emits a startup warning when an operator-supplied
+// encryption key file is readable by group or others. Warn-only (never
+// refuse): a pre-existing deployment must keep starting, but the operator
+// should tighten the mode. The key contents are never logged. Best-effort:
+// a stat failure is ignored because the caller has already read the file.
+func warnIfKeyFileTooOpen(path string, logger *slog.Logger) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if perm := info.Mode().Perm(); keyFilePermsTooOpen(perm) {
+		logger.Warn(fmt.Sprintf("encryption key file is group/other-accessible (mode %04o); restrict it with: chmod 600", perm),
+			slog.String("path", path),
+			slog.String("mode", fmt.Sprintf("%04o", perm)))
+	}
+}
+
 // resolveEncryptionKey determines the encryption key to use.
 //
 // Priority, highest first:
@@ -1275,6 +1300,7 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 		if key == "" {
 			return "", fmt.Errorf("SW_ENCRYPTION_KEY_FILE %s is empty", cfg.Encryption.KeyFile)
 		}
+		warnIfKeyFileTooOpen(cfg.Encryption.KeyFile, logger)
 		logger.Debug("loaded encryption key from SW_ENCRYPTION_KEY_FILE", slog.String("path", cfg.Encryption.KeyFile))
 		return key, nil
 	}
@@ -1291,6 +1317,7 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 	case err == nil:
 		key := strings.TrimSpace(string(data))
 		if key != "" {
+			warnIfKeyFileTooOpen(keyFile, logger)
 			logger.Debug("loaded encryption key from file", slog.String("path", keyFile))
 			return key, nil
 		}
