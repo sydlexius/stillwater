@@ -165,7 +165,7 @@ echo "=== Vulnerability scan (govulncheck) ==="
 # so only actually-reachable vulnerabilities gate, and whole-module ./... scope
 # to match CI's authoritative behavior (no go.mod-diff gating).
 if ! go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; then
-  echo "FAIL: govulncheck found a reachable known vulnerability" >&2
+  echo "FAIL: govulncheck exited non-zero -- a reachable vulnerability, or a tool/download/run error; see the govulncheck output above" >&2
   exit 1
 fi
 echo "OK"

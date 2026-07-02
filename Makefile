@@ -222,7 +222,7 @@ audit:
 	  echo "[audit] grype not found on PATH; skipping (install: https://github.com/anchore/grype)"; \
 	  SBOM_RESULT="SKIP"; \
 	else \
-	  syft dir:. -o json 2>/dev/null | grype --fail-on high; \
+	  syft dir:. -o syft-json 2>/dev/null | grype --fail-on high sbom:-; \
 	  GRYPE_STATUS=$$?; \
 	  if [ "$$GRYPE_STATUS" -eq 0 ]; then SBOM_RESULT="PASS"; else SBOM_RESULT="FAIL"; OVERALL=1; fi; \
 	fi; \
