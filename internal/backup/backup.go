@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,8 +15,39 @@ import (
 	"time"
 )
 
-// backupPattern matches backup filenames: stillwater-YYYYMMDD-HHMMSS.db
-var backupPattern = regexp.MustCompile(`^stillwater-\d{8}-\d{6}\.db$`)
+// backupPattern matches backup filenames: stillwater-YYYYMMDD-HHMMSS.db, plus
+// an optional "-N" disambiguation suffix appended when two backups land in the
+// same wall-clock second (see linkIntoPlace).
+var backupPattern = regexp.MustCompile(`^stillwater-\d{8}-\d{6}(-\d+)?\.db$`)
+
+// tsLayoutLen is the length of the "20060102-150405" timestamp embedded in a
+// backup filename (8-digit date + '-' + 6-digit time = 15 chars). Anything
+// after it is the optional "-N" collision suffix.
+const tsLayoutLen = len("20060102-150405")
+
+// maxCollisionSuffix bounds the disambiguation search in linkIntoPlace. It is a
+// runaway backstop only: reaching it means thousands of backups share one
+// second, which never happens in practice.
+const maxCollisionSuffix = 10000
+
+// osChmod is the chmod function used to restrict a snapshot's permissions.
+// Overridable in tests to simulate a failure, following the same
+// injectable-hook pattern as osRename in internal/filesystem.
+var osChmod = os.Chmod
+
+// osMkdirTemp creates the per-backup staging directory. Overridable in tests
+// to simulate a failure.
+var osMkdirTemp = os.MkdirTemp
+
+// osLink hard-links the finished, permission-restricted snapshot into the
+// backup directory. It replaces a plain os.Rename because os.Link never
+// overwrites an existing file -- it fails with os.ErrExist if the target is
+// taken -- which makes same-second collision detection race-free between
+// concurrent Backup calls (a scheduled backup coinciding with a manual one).
+// A plain rename would silently clobber the earlier snapshot. Overridable in
+// tests to simulate a failure. The staging file lives inside backupDir, so the
+// link is always same-filesystem.
+var osLink = os.Link
 
 // BackupInfo describes a backup file.
 type BackupInfo struct {
@@ -68,20 +100,54 @@ func (s *Service) WithClock(c Clock) *Service {
 }
 
 // Backup creates a snapshot of the database using VACUUM INTO.
+//
+// The snapshot is written to a staging directory created 0700 (owner-only)
+// so it is never group/other-readable at rest, not even for the duration of
+// the VACUUM itself: VACUUM INTO creates its output file at the process
+// umask (typically 0644), so writing directly into backupDir and chmod-ing
+// afterward would leave the full database -- including encrypted secrets --
+// world/group-readable while the VACUUM runs. Once the snapshot is
+// permission-restricted, it is moved into backupDir via a no-clobber hard link
+// (see linkIntoPlace) so an earlier same-second snapshot is never silently
+// destroyed; the final chmod is a belt-and-suspenders check in case the move
+// ever lands on a filesystem that doesn't preserve the mode.
 func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 	if err := os.MkdirAll(s.backupDir, 0o750); err != nil {
 		return nil, fmt.Errorf("creating backup directory: %w", err)
 	}
 
 	now := s.clock.Now()
-	filename := fmt.Sprintf("stillwater-%s.db", now.Format("20060102-150405"))
+	baseFilename := fmt.Sprintf("stillwater-%s.db", now.Format("20060102-150405"))
+
+	s.logger.Info("starting backup", slog.String("dest", filepath.Join(s.backupDir, baseFilename)))
+
+	stagingDir, err := osMkdirTemp(s.backupDir, ".vacuum-*")
+	if err != nil {
+		return nil, fmt.Errorf("creating staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stagingDir) }()
+
+	stagingPath := filepath.Join(stagingDir, baseFilename)
+
+	if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", stagingPath); err != nil {
+		return nil, fmt.Errorf("VACUUM INTO: %w", err)
+	}
+
+	if err := osChmod(stagingPath, 0o600); err != nil {
+		return nil, fmt.Errorf("restricting backup permissions: %w", err)
+	}
+
+	// Move the snapshot into backupDir without ever overwriting an existing
+	// file. On a same-second collision this returns a distinct, disambiguated
+	// filename so both snapshots survive.
+	filename, err := linkIntoPlace(stagingPath, s.backupDir, baseFilename)
+	if err != nil {
+		return nil, err
+	}
 	dest := filepath.Join(s.backupDir, filename)
 
-	s.logger.Info("starting backup", slog.String("dest", dest))
-
-	_, err := s.db.ExecContext(ctx, "VACUUM INTO ?", dest)
-	if err != nil {
-		return nil, fmt.Errorf("VACUUM INTO: %w", err)
+	if err := osChmod(dest, 0o600); err != nil {
+		return nil, fmt.Errorf("restricting backup permissions: %w", err)
 	}
 
 	info, err := os.Stat(dest)
@@ -98,6 +164,38 @@ func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 		Size:      info.Size(),
 		CreatedAt: now,
 	}, nil
+}
+
+// linkIntoPlace moves stagingPath into backupDir under baseFilename (or a
+// disambiguated variant), then removes the staging link. It never overwrites
+// an existing snapshot: osLink fails with os.ErrExist when the target name is
+// already taken -- which is race-free against a concurrent Backup writing the
+// same second, unlike a stat-then-rename that both callers can pass before
+// either renames. On collision it appends an incrementing "-N" suffix
+// (stillwater-YYYYMMDD-HHMMSS-1.db, -2.db, ...) until it finds a free name, so
+// two backups in the same second both survive and neither call fails. Returns
+// the final filename actually used.
+func linkIntoPlace(stagingPath, backupDir, baseFilename string) (string, error) {
+	base := strings.TrimSuffix(baseFilename, ".db")
+	for i := 0; i <= maxCollisionSuffix; i++ {
+		name := baseFilename
+		if i > 0 {
+			name = fmt.Sprintf("%s-%d.db", base, i)
+		}
+		dest := filepath.Join(backupDir, name)
+		err := osLink(stagingPath, dest)
+		if err == nil {
+			if rmErr := os.Remove(stagingPath); rmErr != nil {
+				return "", fmt.Errorf("removing staging file after link: %w", rmErr)
+			}
+			return name, nil
+		}
+		if errors.Is(err, os.ErrExist) {
+			continue // name taken (possibly by a concurrent backup); try the next suffix
+		}
+		return "", fmt.Errorf("moving backup into place: %w", err)
+	}
+	return "", fmt.Errorf("moving backup into place: exhausted %d collision suffixes for %q", maxCollisionSuffix, baseFilename)
 }
 
 // ListBackups returns all backup files sorted by date descending.
@@ -120,8 +218,14 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 			continue
 		}
 
-		// Parse timestamp from filename: stillwater-YYYYMMDD-HHMMSS.db
+		// Parse timestamp from filename: stillwater-YYYYMMDD-HHMMSS[-N].db.
+		// The timestamp is always the first tsLayoutLen chars; a trailing
+		// "-N" collision suffix (added by linkIntoPlace on a same-second
+		// collision) is ignored so those snapshots still sort by their second.
 		name := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "stillwater-"), ".db")
+		if len(name) > tsLayoutLen {
+			name = name[:tsLayoutLen]
+		}
 		ts, err := time.Parse("20060102-150405", name)
 		if err != nil {
 			ts = info.ModTime()
