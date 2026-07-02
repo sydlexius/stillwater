@@ -52,8 +52,8 @@ func sortVis(data templates.ArtistListData, col, order string) string {
 // whole table/grid fragment, so the freshly rendered footer rides along with the
 // rows. Hence Swap = "outerHTML" and OOB stays false -- an out-of-band footer
 // would be redundant here and would in fact double-render the nav.
-func buildArtistsPagination(p components.PaginationData) NextPaginationData {
-	np := NewNextPagination(
+func buildArtistsPagination(p components.PaginationData) templates.NextPaginationData {
+	np := templates.NewNextPagination(
 		p.CurrentPage > 1,
 		p.CurrentPage < p.TotalPages,
 		p.PageURL(p.CurrentPage-1),
@@ -302,7 +302,7 @@ func ArtistsTable(data templates.ArtistListData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = NextPagination(buildArtistsPagination(data.Pagination)).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templates.NextPagination(buildArtistsPagination(data.Pagination)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -881,7 +881,7 @@ func ArtistsGrid(data templates.ArtistListData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = NextPagination(buildArtistsPagination(data.Pagination)).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templates.NextPagination(buildArtistsPagination(data.Pagination)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

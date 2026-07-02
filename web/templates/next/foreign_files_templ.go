@@ -605,7 +605,7 @@ func ForeignAllowlistBodyNext(view templates.ForeignAllowlistPageView) templ.Com
 			return templ_7745c5c3_Err
 		}
 		if view.Pagination.TotalPages > 1 {
-			templ_7745c5c3_Err = NextPagination(buildAllowlistPagination(view)).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = templates.NextPagination(buildAllowlistPagination(view)).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -636,7 +636,7 @@ func stableTablePagerSuppressed(view templates.ForeignAllowlistPageView) templat
 // into a NextPaginationData for the keyboard-wired next/ pagination controls.
 // Swap is set to "outerHTML" so Prev/Next replaces the entire
 // #foreign-allowlist-body fragment (table + pagination) as one unit.
-func buildAllowlistPagination(view templates.ForeignAllowlistPageView) NextPaginationData {
+func buildAllowlistPagination(view templates.ForeignAllowlistPageView) templates.NextPaginationData {
 	p := view.Pagination
 	prevURL := ""
 	nextURL := ""
@@ -646,7 +646,7 @@ func buildAllowlistPagination(view templates.ForeignAllowlistPageView) NextPagin
 	if p.CurrentPage < p.TotalPages {
 		nextURL = p.PageURL(p.CurrentPage + 1)
 	}
-	npd := NewNextPagination(
+	npd := templates.NewNextPagination(
 		p.CurrentPage > 1,
 		p.CurrentPage < p.TotalPages,
 		prevURL,

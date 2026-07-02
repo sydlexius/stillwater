@@ -11,7 +11,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
-	"github.com/sydlexius/stillwater/web/templates/next"
 )
 
 // dashboardFilterParams holds the parsed filter state from a dashboard request.
@@ -99,14 +98,6 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 
 	ctx := req.Context()
 
-	// Next channel: inject the channel-aware artist-detail base so the SHARED
-	// DashboardActionCard links resolve to /next/artists/<id> rather than leaking
-	// to the stable /artists/<id> screen (M55 #1852). renderTempl renders with
-	// req.Context(), so wrap req here; the local ctx (service calls) is unaffected.
-	if middleware.UXChannelFromContext(ctx) == middleware.UXNext {
-		req = req.WithContext(templates.WithArtistDetailBase(ctx, "/next/artists"))
-	}
-
 	filters := parseDashboardFilters(req)
 	limit := r.getUserPageSize(ctx, userID, intQuery(req, "limit", 0))
 	offset := intQuery(req, "offset", 0)
@@ -137,21 +128,17 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// A next-channel Prev/Next page-nav targets #action-queue-entries (innerHTML
-	// swap) and must return the page-replace fragment for ANY offset, INCLUDING 0
-	// (the Prev->page-1 case). Detect it by HX-Target rather than offset>0: the
-	// old offset>0 gate let a Prev-to-page-1 fall through to the FULL
-	// DashboardActionQueue fragment, which carries its own #action-queue-entries
-	// wrapper + inline footer; swapped into #action-queue-entries that nested a
-	// second pagination footer (the duplicate-footer bug, #1790). The stable
-	// channel's "Load more" only ever appends with offset>0 and is unaffected.
-	isNextChannel := middleware.UXChannelFromContext(req.Context()) == middleware.UXNext
-	isNextPageNav := isNextChannel && req.Header.Get("HX-Target") == "action-queue-entries"
+	// A Prev/Next page-nav targets #action-queue-entries (innerHTML swap) and
+	// must return the page-replace fragment for ANY offset, INCLUDING 0 (the
+	// Prev->page-1 case). Detect it by HX-Target rather than offset>0: an
+	// offset=0 page-nav answered with the FULL DashboardActionQueue fragment
+	// (which carries its own #action-queue-entries wrapper + inline footer)
+	// would nest a second pagination footer (the duplicate-footer bug, #1790).
+	isPageNav := req.Header.Get("HX-Target") == "action-queue-entries"
 
-	// Load-more (stable, offset>0) and next-channel page-nav (any offset) need
-	// only violations + pagination data -- skip the summary queries the
-	// header/flyout need.
-	if offset > 0 || isNextPageNav {
+	// Page-nav (any offset) and direct offset>0 requests need only violations
+	// + pagination data -- skip the summary queries the header/flyout need.
+	if offset > 0 || isPageNav {
 		data := templates.ActionQueueData{
 			Violations: violations,
 			Total:      total,
@@ -172,17 +159,12 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 			RuleFilter:     filters.RuleID,
 			FixableFilter:  filters.Fixable,
 		}
-		// The next channel pages in place (M55 #1790): a Prev/Next request swaps a
-		// fresh page of rows into #action-queue-entries (innerHTML) and re-renders
-		// the paging footer out-of-band, rather than the stable channel's
-		// beforeend "Load more" append. The page size is the same getUserPageSize
-		// limit the initial load used (carried in data.Limit), so no page-size
-		// constant is introduced here.
-		if isNextChannel {
-			renderTempl(w, req, next.DashboardActionQueuePage(data))
-			return
-		}
-		renderTempl(w, req, templates.DashboardActionMoreRows(data))
+		// The queue pages in place (M55 #1790): a Prev/Next request swaps a
+		// fresh page of rows into #action-queue-entries (innerHTML) and
+		// re-renders the paging footer out-of-band. The page size is the same
+		// getUserPageSize limit the initial load used (carried in data.Limit),
+		// so no page-size constant is introduced here.
+		renderTempl(w, req, templates.DashboardActionQueuePage(data))
 		return
 	}
 
@@ -286,30 +268,14 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	// at template render time. Only set on HTMX requests (non-HTMX callers
 	// already have the correct URL in their bar).
 	if req.Header.Get("HX-Request") == "true" {
-		// The push URL must track the user-facing screen URL, which differs by
-		// channel: the stable dashboard is the app root ("$basePath/"), but the
-		// next/ dashboard is "$basePath/next/dashboard". Without the channel
-		// branch the shared "$basePath/" push would rewrite the next address bar
-		// back to the root on the action-queue's load-time swap.
-		if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
-			// The next dashboard is the next channel's index at "/next/", so the
-			// address bar must track that root (with a trailing slash), not a
-			// "/next/dashboard" sub-path.
-			filterparams.WriteHXPushURLForPath(w, r.basePath+"/next/", urlValuesFromFilters(filters))
-		} else {
-			filterparams.WriteHXPushURL(w, r.basePath, urlValuesFromFilters(filters))
-		}
+		// The dashboard is the app index, so the address bar tracks the app
+		// root ("$basePath/") plus the active filter params.
+		filterparams.WriteHXPushURL(w, r.basePath, urlValuesFromFilters(filters))
 	}
 
-	// The next/ channel renders a slimmer fragment: the next dashboard page owns
-	// the header strip + sticky toolbar (search, filter trigger, run-rules) AND
-	// the persistent page-level filter flyout, so the next fragment omits the
-	// stable header/search bar/flyout to avoid duplicate chrome. Cards,
-	// active-filter chips, and load-more are reused.
-	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
-		renderTempl(w, req, next.DashboardActionQueue(data))
-		return
-	}
+	// The dashboard page (IndexPage) owns the header strip + sticky toolbar
+	// (search, filter trigger, run-rules) AND the persistent page-level filter
+	// flyout, so this fragment renders only the queue rows + paging footer.
 	renderTempl(w, req, templates.DashboardActionQueue(data))
 }
 
@@ -329,6 +295,34 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 func (r *Router) buildDashboardFlyoutData(req *http.Request) templates.ActionQueueData {
 	ctx := req.Context()
 	filters := parseDashboardFilters(req)
+
+	// Minimal routers (some integration tests) have no rule service; render the
+	// flyout with empty facet counts rather than panicking. The library list
+	// below has its own nil guard already.
+	if r.ruleService == nil {
+		r.logger.Warn("dashboard flyout counts unavailable", "error", "rule service not configured")
+		return templates.ActionQueueData{
+			BasePath: r.basePath,
+
+			Search:    filters.Search,
+			Severity:  firstInclude(filters.Severity),
+			Category:  firstInclude(filters.Category),
+			LibraryID: firstInclude(filters.LibraryID),
+			RuleID:    firstInclude(filters.RuleID),
+			Fixable:   firstInclude(filters.Fixable),
+
+			SeverityFilter: filters.Severity,
+			CategoryFilter: filters.Category,
+			LibraryFilter:  filters.LibraryID,
+			RuleFilter:     filters.RuleID,
+			FixableFilter:  filters.Fixable,
+
+			SeverityCounts: map[string]int{},
+			CategoryCounts: map[string]int{},
+			LibraryCounts:  map[string]int{},
+			RuleCounts:     []rule.RuleViolationCount{},
+		}
+	}
 
 	// Mirror the queue's count params (active status + current filter scope) so
 	// the page-load facet counts match what the first queue load computes. Limit
@@ -478,14 +472,8 @@ func (r *Router) handleDashboardActivityFeed(w http.ResponseWriter, req *http.Re
 		BasePath: r.basePath,
 	}
 
-	// The next/ channel's activity rail renders its own fragment whose row
-	// markup matches the live SSE-appended rows (so initial and live rows look
-	// identical), with an empty-on-boot idle hint instead of the stable
-	// "View all activity" footer.
-	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
-		renderTempl(w, req, next.DashboardActivityFeedNext(data))
-		return
-	}
-
+	// The activity rail fragment's row markup matches the live SSE-appended
+	// rows (so initial and live rows look identical), with an empty-on-boot
+	// idle hint.
 	renderTempl(w, req, templates.DashboardActivityFeed(data))
 }

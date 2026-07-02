@@ -891,14 +891,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// each renders the next template only when the resolved channel is "next"
 	// (otherwise it falls back to the stable page itself). M55 #1335: artists.
 	mux.HandleFunc("GET "+bp+"/next/artists", wrapOptionalAuth(r.handleNextArtistsPage, optAuthMw))
-	// M55 #1334: the next/ dashboard is the next channel's INDEX, mirroring how
-	// the stable dashboard is the site root ("/"). It is served at the next root
-	// "/next/" (and the no-slash "/next"), not a "/next/dashboard" sub-path, so
-	// there are no redirect shenanigans between the two. {$} matches the next
-	// root exactly; both registrations sit before the catch-all wildcard so Go's
-	// mux prefers them over /next/{path...}.
-	mux.HandleFunc("GET "+bp+"/next/{$}", wrapOptionalAuth(r.handleNextDashboardPage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/next", wrapOptionalAuth(r.handleNextDashboardPage, optAuthMw))
+	// M55 #1757 PR-2: the dashboard promoted to the canonical index ("/"), so
+	// the dedicated /next/ + /next dashboard routes are gone. "GET /next/"
+	// now reaches the /next/{path...} fallback below, which re-dispatches to
+	// the stable index -- i.e. the same promoted dashboard.
 	// M55 #1336: the next/ artist-detail page. More specific than the
 	// /next/{path...} fallback so Go's mux prefers it; renders the next template
 	// only when the resolved channel is "next" (otherwise it delegates to the

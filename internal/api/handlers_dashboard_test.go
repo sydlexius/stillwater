@@ -117,9 +117,11 @@ func TestHandleDashboardActionQueue_LimitCapping(t *testing.T) {
 		t.Errorf("expected 10 action cards with limit=10 and 15 seeded, got %d", cardCount)
 	}
 
-	// Should render a load-more button since total (15) > returned (10).
-	if !strings.Contains(body, "action-queue-load-more") {
-		t.Error("expected load-more button when total exceeds limit")
+	// Should render the Prev/Next pagination footer since total (15) >
+	// returned (10). The promoted queue (M55 #1757 PR-2) pages with the
+	// shared NextPagination control; the old "Load more" append is gone.
+	if !strings.Contains(body, `id="sw-pagination"`) {
+		t.Error("expected pagination footer when total exceeds limit")
 	}
 }
 
@@ -178,9 +180,10 @@ func TestHandleDashboardActionQueue_OffsetBranching(t *testing.T) {
 	if !strings.Contains(body0, "select-all-toggle") {
 		t.Error("offset=0 response should contain select-all-toggle (full fragment)")
 	}
-	// The offset>0 response should use OOB swap for appending rows.
+	// The offset>0 response is the page-replace fragment: it refreshes the
+	// queue-head meta and the pagination footer out-of-band.
 	if !strings.Contains(body1, "hx-swap-oob") {
-		t.Error("offset>0 response should contain hx-swap-oob for load-more appending")
+		t.Error("offset>0 response should contain hx-swap-oob (page fragment OOB refresh)")
 	}
 }
 
@@ -266,12 +269,12 @@ func TestHandleDashboardActivityFeed_WithHistoryService(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
 
-	// Should render the "no recent activity" empty state. The template uses
-	// t(ctx, "dashboard.no_recent_activity") which may render as the key or
+	// Should render the promoted rail's empty-on-boot idle hint. The template
+	// uses t(ctx, "dashboard.activity_idle") which may render as the key or
 	// the translated value depending on i18n bundle availability.
 	body := w.Body.String()
-	if !strings.Contains(body, "no_recent_activity") && !strings.Contains(body, "No recent activity") {
-		t.Fatalf("expected empty activity state text in response, got: %s", body)
+	if !strings.Contains(body, "activity_idle") && !strings.Contains(body, "Stillwater is idle") {
+		t.Fatalf("expected empty activity idle hint in response, got: %s", body)
 	}
 }
 
@@ -322,59 +325,55 @@ func TestHandleDashboardActivityFeed_EmptyResultSet(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	// With no history entries, the handler should render the empty state.
+	// With no history entries, the handler should render the idle empty state.
 	body := w.Body.String()
-	if !strings.Contains(body, "no_recent_activity") && !strings.Contains(body, "No recent activity") {
-		t.Errorf("expected empty activity state in response, got: %s", body)
+	if !strings.Contains(body, "activity_idle") && !strings.Contains(body, "Stillwater is idle") {
+		t.Errorf("expected empty activity idle hint in response, got: %s", body)
 	}
 }
 
-// TestHandleDashboardActivityFeed_NextChannelRendersRailFragment verifies that
-// when the resolved UI channel is "next", GET /dashboard/activity renders the
-// next/ rail fragment (DashboardActivityFeedNext) with its empty-on-boot idle
-// hint and run-rules affordance, not the stable "View all activity" feed. The
-// next/ rail's live SSE rows must match this fragment's row shape (M55 #1334).
-func TestHandleDashboardActivityFeed_NextChannelRendersRailFragment(t *testing.T) {
+// TestHandleDashboardActivityFeed_RendersRailFragment verifies that GET
+// /dashboard/activity renders the promoted rail fragment
+// (DashboardActivityFeed, M55 #1757 PR-2) with its empty-on-boot idle hint and
+// run-rules affordance, not the retired v1 "View all activity" feed fragment
+// (the page-level rail carries its own view-all footer). The rail's live SSE
+// rows must match this fragment's row shape (M55 #1334).
+func TestHandleDashboardActivityFeed_RendersRailFragment(t *testing.T) {
 	t.Parallel()
 	r := testDashboardRouter(t, true)
-
-	// Wrap the handler in the UX middleware in "next" mode so the request
-	// context carries UXNext, exactly as it would in production.
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActivityFeed))
 
 	req := httptest.NewRequest(http.MethodGet, "/dashboard/activity", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	r.handleDashboardActivityFeed(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
 	body := w.Body.String()
-	// The next/ empty-on-boot state shows the localized idle hint and a
-	// run-rules affordance, never the stable "View all activity" footer.
+	// The empty-on-boot state shows the localized idle hint and a run-rules
+	// affordance, never the retired v1 "View all activity" fragment footer.
 	if !strings.Contains(body, "activity_idle") && !strings.Contains(body, "Stillwater is idle") {
-		t.Errorf("expected next/ idle hint in response, got: %s", body)
+		t.Errorf("expected idle hint in response, got: %s", body)
 	}
 	if strings.Contains(body, "view_all_activity") || strings.Contains(body, "View all activity") {
-		t.Errorf("next/ rail must not render the stable view-all-activity footer, got: %s", body)
+		t.Errorf("rail fragment must not render the retired view-all-activity footer, got: %s", body)
 	}
 	// The run-rules affordance reuses the dashboard panels controller.
 	if !strings.Contains(body, "swDashboardPanels") {
-		t.Errorf("expected next/ idle hint to expose a run-rules affordance, got: %s", body)
+		t.Errorf("expected idle hint to expose a run-rules affordance, got: %s", body)
 	}
 }
 
-// TestHandleDashboardActionQueue_NextChannel verifies the next-channel branch
-// of handleDashboardActionQueue: when the resolved UI channel is "next" the
-// handler (a) renders the slimmer next/ fragment (DashboardActionQueue in the
-// next package, identified by the next-dash-count OOB span the stable fragment
-// never emits) and (b) sets an HX-Push-Url that tracks the next/ screen root
-// ("$basePath/next/"), not the stable app root, while round-tripping a tri-state
-// exclude filter (?severity=-error -> push contains severity=-error). This is
-// the channel branch the stable-channel tests do not exercise.
-func TestHandleDashboardActionQueue_NextChannel(t *testing.T) {
+// TestHandleDashboardActionQueue_PromotedFragment verifies the promoted queue
+// fragment (M55 #1757 PR-2): the handler (a) renders the promoted fragment
+// (templates.DashboardActionQueue, identified by the next-dash-count OOB span
+// and the roving-focus contract the retired v1 fragment never emitted) and (b)
+// sets an HX-Push-Url that tracks the app root ("$basePath/"), while
+// round-tripping a tri-state exclude filter (?severity=-error -> push contains
+// severity=-error).
+func TestHandleDashboardActionQueue_PromotedFragment(t *testing.T) {
 	t.Parallel()
 	r := testDashboardRouter(t, false)
 	ctx := context.Background()
@@ -399,34 +398,29 @@ func TestHandleDashboardActionQueue_NextChannel(t *testing.T) {
 		t.Fatalf("seeding violation: %v", err)
 	}
 
-	// Wrap the handler in the UX middleware in "next" mode so the request
-	// context carries UXNext exactly as it would in production.
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActionQueue))
-
 	// Request an exclude tri-state filter (?severity=-error) over HTMX so the
 	// push-URL branch fires.
 	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?severity=-error", nil)
 	req.Header.Set("HX-Request", "true")
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	r.handleDashboardActionQueue(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	// (a) The next/ fragment renders the next-dash-count OOB span; the stable
-	// DashboardActionQueue fragment never emits this id.
+	// (a) The promoted fragment renders the next-dash-count OOB span; the
+	// retired v1 fragment never emitted this id.
 	body := w.Body.String()
 	if !strings.Contains(body, "next-dash-count") {
-		t.Errorf("expected next/ fragment marker (next-dash-count) in body, got: %s", body)
+		t.Errorf("expected promoted fragment marker (next-dash-count) in body, got: %s", body)
 	}
 
-	// (a2) Roving-focus contract (#1790): the next fragment marks
+	// (a2) Roving-focus contract (#1790): the fragment marks
 	// #action-queue-entries as the roving list with the u contextual key, and
 	// wraps each card in a roving item keyed by the violation ID so the shared
-	// keyboard helper (#1789) can focus rows and restore focus across swaps. The
-	// stable DashboardActionQueue fragment carries none of these attributes.
+	// keyboard helper (#1789) can focus rows and restore focus across swaps.
 	for _, marker := range []string{
 		`data-sw-roving-list`,
 		`data-sw-scope="dashboard"`,
@@ -437,18 +431,21 @@ func TestHandleDashboardActionQueue_NextChannel(t *testing.T) {
 		`id="queue-item-` + v.ID + `"`,
 	} {
 		if !strings.Contains(body, marker) {
-			t.Errorf("expected roving marker %q in next fragment, got: %s", marker, body)
+			t.Errorf("expected roving marker %q in promoted fragment, got: %s", marker, body)
 		}
 	}
 
-	// (b) The push URL must track the next/ screen root and round-trip the
-	// exclude filter under the canonical tri-state contract.
+	// (b) The push URL must track the app root (not any /next/ path) and
+	// round-trip the exclude filter under the canonical tri-state contract.
 	push := w.Header().Get("HX-Push-Url")
 	if push == "" {
-		t.Fatalf("expected HX-Push-Url to be set on HTMX next-channel request")
+		t.Fatalf("expected HX-Push-Url to be set on HTMX request")
 	}
-	if !strings.HasPrefix(push, "/next/") {
-		t.Errorf("HX-Push-Url = %q, want it to start with /next/", push)
+	if strings.HasPrefix(push, "/next") {
+		t.Errorf("HX-Push-Url = %q, must track the app root, not /next", push)
+	}
+	if !strings.HasPrefix(push, "/") {
+		t.Errorf("HX-Push-Url = %q, want it rooted at the app root", push)
 	}
 	pushURL, err := url.Parse(push)
 	if err != nil {
@@ -489,9 +486,9 @@ func seedDashboardViolations(t *testing.T, r *Router, prefix string, n int) {
 	}
 }
 
-// TestHandleDashboardActionQueue_NextChannelPaging verifies the next-channel
-// PAGE-WISE Prev/Next footer (M55 #1790, shared NextPagination component) that
-// replaced the "Load more" append: a page-nav (offset>0) request returns the
+// TestHandleDashboardActionQueue_Paging verifies the queue's PAGE-WISE
+// Prev/Next footer (M55 #1790, shared NextPagination component) that replaced
+// the "Load more" append: a page-nav (offset>0) request returns the
 // page-replace fragment whose Prev/Next disabled states are pure RELATIONSHIPS
 // of the requested limit/offset/total (no hardcoded page size, no X-of-Y
 // counter), the offset links preserve filter/search params, and the roving list
@@ -500,7 +497,7 @@ func seedDashboardViolations(t *testing.T, r *Router, prefix string, n int) {
 //
 // limit is driven via the request (=10, PageSizeMin) exactly as the existing
 // handler tests do, so nothing here asserts a literal app page size.
-func TestHandleDashboardActionQueue_NextChannelPaging(t *testing.T) {
+func TestHandleDashboardActionQueue_Paging(t *testing.T) {
 	t.Parallel()
 	r := testDashboardRouter(t, false)
 	// Seed a known total of 25 so the three pages (with limit=10) are 1-10,
@@ -508,7 +505,7 @@ func TestHandleDashboardActionQueue_NextChannelPaging(t *testing.T) {
 	// enabled), and a last page (Next disabled).
 	seedDashboardViolations(t, r, "Page", 25)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActionQueue))
+	h := http.HandlerFunc(r.handleDashboardActionQueue)
 
 	// (1) Middle page: offset=10&limit=10 -> "11-20 of 25", both Prev+Next
 	// enabled (have hx-get nav), and the page fragment OOB-swaps the footer.
@@ -591,9 +588,9 @@ func TestHandleDashboardActionQueue_NextChannelPaging(t *testing.T) {
 			t.Errorf("first page: expected boundary marker %q, got: %s", marker, first)
 		}
 	}
-	// The retired "Load more" append motif must be gone from the next fragment.
+	// The retired "Load more" append motif must be gone from the fragment.
 	if strings.Contains(first, `hx-swap-oob="beforeend"`) {
-		t.Errorf("first page: next fragment should not use the beforeend load-more append, got: %s", first)
+		t.Errorf("first page: fragment should not use the beforeend load-more append, got: %s", first)
 	}
 
 	// (3) Last page (offset=20): counter "21-25 of 25", Next DISABLED, Prev
@@ -642,20 +639,20 @@ func TestHandleDashboardActionQueue_NextChannelPaging(t *testing.T) {
 	}
 }
 
-// TestHandleDashboardActionQueue_NextPrevToFirstPage is the regression guard for
-// the duplicate-footer bug (#1790): a next-channel Prev navigation back to page
-// 1 (offset=0) targets #action-queue-entries with innerHTML, so it MUST return
+// TestHandleDashboardActionQueue_PrevToFirstPage is the regression guard for
+// the duplicate-footer bug (#1790): a Prev navigation back to page 1
+// (offset=0) targets #action-queue-entries with innerHTML, so it MUST return
 // the page-replace fragment (rows + OOB #sw-pagination footer), NOT the full
 // DashboardActionQueue fragment (which carries its own #action-queue-entries
 // wrapper). If the full fragment were returned, swapping it into
 // #action-queue-entries would nest a second pagination footer. The page-nav is
 // distinguished from an initial/filter load by the HX-Target header, not by
 // offset>0 (the old gate that let offset=0 fall through to the full fragment).
-func TestHandleDashboardActionQueue_NextPrevToFirstPage(t *testing.T) {
+func TestHandleDashboardActionQueue_PrevToFirstPage(t *testing.T) {
 	t.Parallel()
 	r := testDashboardRouter(t, false)
 	seedDashboardViolations(t, r, "Page", 25)
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleDashboardActionQueue))
+	h := http.HandlerFunc(r.handleDashboardActionQueue)
 
 	// (1) Prev-to-page-1 page-nav: offset=0 WITH HX-Target=action-queue-entries.
 	// Must return the page fragment: it carries the OOB #sw-pagination footer and

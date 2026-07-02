@@ -14,12 +14,14 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
 	connEmby "github.com/sydlexius/stillwater/internal/connection/emby"
 	connJellyfin "github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/langpref"
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -1233,11 +1235,59 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Fetch health stats for the compact header strip. The empty library-ID
+	// argument returns aggregate stats across all libraries. Errors (and a
+	// missing service, which some minimal routers have) are non-fatal:
+	// healthStatsError=true makes the template render "---" placeholders
+	// rather than misleading zeros.
+	var stats artist.HealthStatsResult
+	healthStatsError := true
+	if r.artistService == nil {
+		r.logger.Warn("health stats unavailable for dashboard", "error", "artist service not configured")
+	} else if s, healthErr := r.artistService.GetHealthStats(req.Context(), ""); healthErr != nil {
+		r.logger.Warn("health stats unavailable for dashboard", "error", healthErr)
+	} else {
+		stats = s
+		healthStatsError = false
+	}
+
+	// Global fixable / non-fixable violation counts for the header's
+	// Auto-fixable and Needs-you bubbles. These are UNFILTERED active-status
+	// counts (empty TriFilters) so the header always reflects the whole
+	// library, not the current action-queue filter. Reuses the same
+	// CountActiveViolationsByFixable the filter flyout's badges use.
+	//
+	// On error the fixableCountsError flag drives a "---" placeholder for both
+	// bubbles (mirroring the health-error fallback) rather than misleading
+	// zeros or a crash.
+	var fixableCount, needsYouCount int
+	fixableCountsError := true
+	if r.ruleService == nil {
+		r.logger.Warn("fixable counts unavailable for dashboard", "error", "rule service not configured")
+	} else if fixableYes, fixableNo, fixableErr := r.ruleService.CountActiveViolationsByFixable(
+		req.Context(), rule.ViolationListParams{Status: "active"}); fixableErr != nil {
+		r.logger.Warn("fixable counts unavailable for dashboard", "error", fixableErr)
+	} else {
+		fixableCount = fixableYes
+		needsYouCount = fixableNo
+		fixableCountsError = false
+	}
+
 	// Forward filter query params into the initial HTMX load so a bookmark
 	// like /?severity=warning opens the dashboard with that filter already
 	// applied. Only known keys are forwarded.
 	initial := buildDashboardInitialQuery(req.URL.Query())
-	renderTempl(w, req, templates.IndexPage(r.assetsFor(req), initial))
+
+	// Build the filter-flyout state (parsed selection + facet counts + library
+	// list) so the page renders the flyout in a PERSISTENT, page-level
+	// container: #dashboard-filter-flyout exists from first paint (before the
+	// queue's first HTMX load) and survives the queue's error state (which
+	// only rewrites #action-queue's innerHTML).
+	flyoutData := r.buildDashboardFlyoutData(req)
+
+	renderTempl(w, req, templates.IndexPage(
+		r.assetsFor(req), stats, healthStatsError,
+		fixableCount, needsYouCount, fixableCountsError, initial, flyoutData))
 }
 
 // buildDashboardInitialQuery returns the query-string suffix (e.g.

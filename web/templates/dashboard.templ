@@ -3,16 +3,22 @@ package templates
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 )
+
+// This file holds the dashboard's SHARED building blocks (data structs, the
+// action card, the filter flyout, the empty state, and the undo toast). The
+// dashboard page itself (IndexPage) and its action-queue / activity-feed
+// fragments live in index.templ, promoted from the former next/ channel
+// (M55 #1757 PR-2). The v1-only fragments (the stable header strip, search
+// bar, active-filter chips, and the beforeend "Load more" append) were
+// deleted with that promotion.
 
 // ActionQueueData holds data for the dashboard action queue fragment.
 type ActionQueueData struct {
@@ -33,8 +39,8 @@ type ActionQueueData struct {
 	// Filter state (selected values). Empty string means "not filtering
 	// by this dimension". These scalar fields drive the current single-select
 	// chip UI and are populated best-effort from the first included value of
-	// the corresponding tri-state filter below. The tri-state flyout UI (a
-	// later chunk) will read the *Filter fields instead.
+	// the corresponding tri-state filter below. The tri-state flyout UI
+	// reads the *Filter fields instead.
 	Search    string
 	Severity  string
 	Category  string
@@ -44,7 +50,7 @@ type ActionQueueData struct {
 
 	// Tri-state filter state (full include/exclude sets per dimension). The
 	// backend filter contract is tri-state (rule.TriFilter); these fields carry
-	// the complete parsed state so the tri-state flyout UI chunk can render
+	// the complete parsed state so the tri-state flyout UI can render
 	// each pill's include / exclude / neutral position. The scalar fields above
 	// are a lossy single-value view kept for the existing chip UI.
 	SeverityFilter rule.TriFilter
@@ -124,422 +130,24 @@ func ruleIDToCategory(ruleID string) string {
 	return "other"
 }
 
-// DashboardActionQueue renders the full action queue fragment for GET /dashboard/actions.
-templ DashboardActionQueue(data ActionQueueData) {
-	@DashboardActionHeader(data)
-	@DashboardSearchBar(data)
-	@DashboardActiveFilters(data)
-	@DashboardFilterFlyout(data)
-	if len(data.Violations) == 0 && data.Offset == 0 {
-		@DashboardEmptyState(data.HealthScore, data.HealthStatsError)
-	} else {
-		// Select All / None toggle (visible in the card list header)
-		<div class="flex items-center gap-3 mt-3 mb-1 px-1">
-			<label class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
-				<input
-					type="checkbox"
-					id="select-all-toggle"
-					class="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-				/>
-				{ t(ctx, "dashboard.select_all") }
-			</label>
-		</div>
-		<div id="action-queue-entries" class="space-y-1.5">
-			for _, v := range data.Violations {
-				@DashboardActionCard(v, data.BasePath)
-			}
-		</div>
-		if data.Offset+len(data.Violations) < data.Total {
-			@DashboardLoadMoreButton(data)
-		}
-	}
-}
-
-// DashboardActionMoreRows renders additional violation cards for load-more appends.
-templ DashboardActionMoreRows(data ActionQueueData) {
-	if data.Offset+len(data.Violations) < data.Total {
-		@DashboardLoadMoreButton(data)
-	} else {
-		<div id="action-queue-load-more"></div>
-	}
-	<div id="action-queue-entries" hx-swap-oob="beforeend">
-		for _, v := range data.Violations {
-			@DashboardActionCard(v, data.BasePath)
-		}
-	</div>
-}
-
-// DashboardLoadMoreButton renders the load-more button for the action queue.
-// Uses outerHTML swap (not the shared LoadMore component which uses beforeend)
-// so the button replaces itself with the response from DashboardActionMoreRows.
-templ DashboardLoadMoreButton(data ActionQueueData) {
-	<div id="action-queue-load-more" class="flex justify-center py-3">
-		<button
-			type="button"
-			hx-get={ dashboardLoadMoreURL(data) }
-			hx-target="#action-queue-load-more"
-			hx-swap="outerHTML"
-			hx-indicator="this"
-			class="group inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 [&.htmx-request]:pointer-events-none"
-		>
-			<span class="[.htmx-request>&]:hidden">
-				{ tf(ctx, "dashboard.load_more", min(data.Limit, data.Total-data.Offset-len(data.Violations)), data.Total-data.Offset-len(data.Violations)) }
-			</span>
-			<span class="hidden [.htmx-request>&]:inline-flex items-center gap-2">
-				<svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-				</svg>
-				{ t(ctx, "common.loading") }
-			</span>
-		</button>
-	</div>
-}
-
-// dashboardLoadMoreURL builds the next-page URL preserving all active filter
-// and search params so load-more stays in-scope with what the user selected.
-// It emits the full tri-state (`+include` / `-exclude`) form for every filter
-// dimension via the shared rule.TriFilter.AppendURLValues emitter, so an
-// exclude or multi-value filter survives paging instead of being narrowed to
-// a single included value.
-func dashboardLoadMoreURL(data ActionQueueData) string {
-	nextOffset := data.Offset + len(data.Violations)
-	q := url.Values{}
-	q.Set("limit", fmt.Sprint(data.Limit))
-	q.Set("offset", fmt.Sprint(nextOffset))
-	addIfSet(q, "search", data.Search)
-	data.SeverityFilter.AppendURLValues(q, "severity")
-	data.CategoryFilter.AppendURLValues(q, "category")
-	data.LibraryFilter.AppendURLValues(q, "library_id")
-	data.RuleFilter.AppendURLValues(q, "rule")
-	data.FixableFilter.AppendURLValues(q, "fixable")
-	return "/dashboard/actions?" + q.Encode()
-}
-
-// dashboardFilterQuery returns the query-param string (without the leading
-// "?") representing the filter state after setting key to the single included
-// value. An empty value clears that key entirely (both include and exclude).
-// All OTHER dimensions are preserved in full tri-state (`+`/`-`) form via the
-// shared rule.TriFilter.AppendURLValues emitter, so editing one dimension
-// never silently drops another dimension's exclude or multi-value state.
-func dashboardFilterQuery(data ActionQueueData, key, value string) string {
-	q := url.Values{}
-	addIfSet(q, "search", data.Search)
-	if key != "severity" {
-		data.SeverityFilter.AppendURLValues(q, "severity")
-	}
-	if key != "category" {
-		data.CategoryFilter.AppendURLValues(q, "category")
-	}
-	if key != "library_id" {
-		data.LibraryFilter.AppendURLValues(q, "library_id")
-	}
-	if key != "rule" {
-		data.RuleFilter.AppendURLValues(q, "rule")
-	}
-	if key != "fixable" {
-		data.FixableFilter.AppendURLValues(q, "fixable")
-	}
-	if value != "" {
-		// Set as an explicit include using the flyout's "+" contract so the
-		// parsed value round-trips as include (a bare value also parses as
-		// include, but "+" keeps the wire form uniform with the other dims).
-		q.Set(key, "+"+value)
-	}
-	return q.Encode()
-}
-
-// dashboardFilterURL builds the HTMX fetch URL for /dashboard/actions with
-// the given filter key set to the given value.
-func dashboardFilterURL(data ActionQueueData, key, value string) string {
-	s := dashboardFilterQuery(data, key, value)
-	if s == "" {
-		return "/dashboard/actions"
-	}
-	return "/dashboard/actions?" + s
-}
-
-// dashboardPushURL builds the user-facing URL (rooted at basePath + "/")
-// with the given filter key set to the given value. Used with hx-push-url
-// so the browser history shows a bookmarkable "$base/?severity=warning"-style
-// URL instead of the internal "/dashboard/actions" fetch endpoint. Including
-// the base path matters when Stillwater is reverse-proxied under a sub-path.
-func dashboardPushURL(data ActionQueueData, key, value string) string {
-	s := dashboardFilterQuery(data, key, value)
-	base := data.BasePath + "/"
-	if s == "" {
-		return base
-	}
-	return base + "?" + s
-}
-
-// addIfSet appends key=value to q only when value is non-empty. Keeps URL
-// builders from emitting stray key= params.
-func addIfSet(q url.Values, key, value string) {
-	if value != "" {
-		q.Set(key, value)
-	}
-}
-
-// hasActiveFilters reports whether any chip-controllable filter dimension is
-// currently applied. Search is intentionally excluded -- it has its own input
-// above the chip row and is not represented as a removable chip, so counting
-// it would show an active-filter badge / clear-all affordance with nothing
-// individually removable (CR feedback on PR #1653).
-func hasActiveFilters(data ActionQueueData) bool {
-	return dashboardActiveFilterCount(data) > 0
-}
-
 // triFilterCount returns the number of active (include + exclude) values in a
 // single tri-state filter dimension.
 func triFilterCount(f rule.TriFilter) int {
 	return len(f.Include) + len(f.Exclude)
 }
 
-// dashboardActiveFilterCount returns the number of distinct chip-controllable
-// filter dimensions applied. Search is intentionally excluded from the count
-// (see hasActiveFilters) so the count, the badge, and the visible chips stay
-// aligned: every counted dimension has a corresponding chip the user can
-// dismiss individually.
+// dashboardActiveFilterCount returns the number of distinct filter values
+// applied across all five tri-state dimensions. Search is intentionally
+// excluded from the count -- it has its own input above the queue and is not
+// represented in the flyout, so counting it would inflate the flyout badge.
 func dashboardActiveFilterCount(data ActionQueueData) int {
 	// Tri-state: every included or excluded value across all five dimensions is
-	// one removable chip, so each counts toward the badge total.
+	// one flyout pill state, so each counts toward the badge total.
 	return triFilterCount(data.SeverityFilter) +
 		triFilterCount(data.CategoryFilter) +
 		triFilterCount(data.LibraryFilter) +
 		triFilterCount(data.RuleFilter) +
 		triFilterCount(data.FixableFilter)
-}
-
-// libraryNameByID returns a library's name, or its ID when the library is
-// unknown (e.g. deleted but violations still reference it).
-func libraryNameByID(libs []library.Library, id string) string {
-	for _, l := range libs {
-		if l.ID == id {
-			return l.Name
-		}
-	}
-	return id
-}
-
-// ruleNameByID returns a rule's display name from the rule count slice, or
-// the rule ID when no matching entry exists (e.g. disabled rule).
-func ruleNameByID(counts []rule.RuleViolationCount, id string) string {
-	for _, rc := range counts {
-		if rc.RuleID == id {
-			return rc.RuleName
-		}
-	}
-	return id
-}
-
-// fixableLabel returns a human-readable label for the Fixable filter value.
-func fixableLabel(ctx context.Context, value string) string {
-	switch value {
-	case "yes":
-		return t(ctx, "dashboard.filter.fixable_yes")
-	case "no":
-		return t(ctx, "dashboard.filter.fixable_no")
-	default:
-		return value
-	}
-}
-
-// severityLabel returns a human-readable label for a severity value.
-func severityLabel(ctx context.Context, value string) string {
-	switch value {
-	case "error":
-		return t(ctx, "common.severity_error")
-	case "warning":
-		return t(ctx, "common.severity_warning")
-	case "info":
-		return t(ctx, "common.severity_info")
-	default:
-		return value
-	}
-}
-
-// DashboardActionHeader renders the dashboard title bar with action count and compact metrics.
-templ DashboardActionHeader(data ActionQueueData) {
-	<div class="sw-card rounded-lg px-5 py-4 shadow-sm">
-		<div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-			<div class="flex items-center gap-3">
-				<h1 class="text-xl font-bold">{ t(ctx, "dashboard.title") }</h1>
-				if data.Total > 0 {
-					<span class="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2.5 py-0.5 text-sm font-semibold text-red-700 dark:text-red-300">
-						{ tn(ctx, "dashboard.actions_needed", data.Total) }
-					</span>
-				}
-			</div>
-			<div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-				if data.HealthStatsError {
-					// Stats failed to load -- show dashes so the user does not
-					// mistake a load failure for "zero artists / 0% health".
-					<span title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
-					<span class="text-gray-300 dark:text-gray-600">|</span>
-					<span class="text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
-				} else {
-					<span>{ tn(ctx, "dashboard.artist_count", data.TotalArtists) }</span>
-					<span class="text-gray-300 dark:text-gray-600">|</span>
-					<span
-						class={
-							templ.KV("text-green-600 dark:text-green-400", data.HealthScore >= 80),
-							templ.KV("text-amber-600 dark:text-amber-400", data.HealthScore >= 50 && data.HealthScore < 80),
-							templ.KV("text-red-600 dark:text-red-400", data.HealthScore < 50),
-						}
-					>
-						{ tf(ctx, "dashboard.health_compliant", data.HealthScore) }
-					</span>
-				}
-				<span class="text-gray-300 dark:text-gray-600">|</span>
-				<span id="last-evaluated-text" class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "common.loading") }</span>
-				<div class="flex items-center gap-1.5 ml-1">
-					<button
-						id="dashboard-filters-trigger"
-						type="button"
-						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						aria-expanded="false"
-						aria-controls="dashboard-filter-flyout"
-						data-badge-classes="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/40 px-1.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300 sw-filter-trigger-badge"
-						onclick="swDashboardPanels && swDashboardPanels.toggleFilters()"
-					>
-						<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z"></path>
-						</svg>
-						<span>{ t(ctx, "common.filters") }</span>
-						if dashboardActiveFilterCount(data) > 0 {
-							<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/40 px-1.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300" aria-label={ tf(ctx, "dashboard.active_filter_count", dashboardActiveFilterCount(data)) }>
-								{ fmt.Sprintf("%d", dashboardActiveFilterCount(data)) }
-							</span>
-						}
-					</button>
-					<button
-						id="activity-drawer-trigger"
-						type="button"
-						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						aria-expanded="false"
-						aria-controls="activity-drawer"
-						onclick="swDashboardPanels && swDashboardPanels.toggleActivity()"
-						aria-label={ t(ctx, "dashboard.recent_activity") }
-					>
-						<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"></path>
-						</svg>
-						<span class="hidden sm:inline">{ t(ctx, "dashboard.recent_activity") }</span>
-					</button>
-				</div>
-			</div>
-		</div>
-	</div>
-}
-
-// DashboardSearchBar renders the free-text search input above the action
-// queue. Debounced 300ms; submits on Enter as well. Filters by artist name,
-// message, and rule id.
-templ DashboardSearchBar(data ActionQueueData) {
-	<div class="mt-3 px-1">
-		<div class="relative">
-			<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-				<path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"></path>
-			</svg>
-			<input
-				id="dashboard-search-input"
-				type="search"
-				name="search"
-				value={ data.Search }
-				placeholder={ t(ctx, "dashboard.search_placeholder") }
-				aria-label={ t(ctx, "dashboard.search_placeholder") }
-				hx-get="/dashboard/actions"
-				hx-trigger="input changed delay:300ms, keyup[key=='Enter']"
-				hx-target="#action-queue"
-				hx-swap="innerHTML"
-				hx-include="[name='severity'],[name='category'],[name='library_id'],[name='rule'],[name='fixable']"
-				hx-preserve="true"
-				class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 py-1.5 pl-9 pr-8 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-			/>
-			// Hidden inputs carry the FULL tri-state filter state so the search
-			// box's hx-include above forwards every active filter value, not just
-			// the first included one. The flyout is tri-state (per #1334 it is the
-			// shared component used by this stable page too), so a single scalar
-			// input per dimension would drop every excluded value and every 2nd+
-			// included value when the user types in search. Emitting one hidden
-			// input per include (+value) and per exclude (-value) mirrors the same
-			// "+"/"-" wire contract TriFilter.AppendURLValues uses, so a search
-			// round-trips the complete multi-value set (e.g. ?severity=+error&
-			// severity=-warning).
-			@dashHiddenFilterInputs("severity", data.SeverityFilter)
-			@dashHiddenFilterInputs("category", data.CategoryFilter)
-			@dashHiddenFilterInputs("library_id", data.LibraryFilter)
-			@dashHiddenFilterInputs("rule", data.RuleFilter)
-			@dashHiddenFilterInputs("fixable", data.FixableFilter)
-		</div>
-	</div>
-}
-
-// dashHiddenFilterInputs renders one hidden form input per tri-state value of a
-// single filter dimension so the search box's hx-include forwards the COMPLETE
-// include/exclude set, not a lossy single scalar. Each included value is emitted
-// as "+value" and each excluded value as "-value" under the dimension's key,
-// matching TriFilter.AppendURLValues and the parseTriFilter reader, so the wire
-// form round-trips losslessly through a stable search.
-templ dashHiddenFilterInputs(key string, f rule.TriFilter) {
-	for _, v := range f.Include {
-		<input type="hidden" name={ key } value={ "+" + v }/>
-	}
-	for _, v := range f.Exclude {
-		<input type="hidden" name={ key } value={ "-" + v }/>
-	}
-}
-
-// DashboardActiveFilters renders a removable chip for each active filter so
-// users can clear individual filters without opening the flyout. Delegates
-// chip surface + dismiss behavior to the shared ActiveFilters component so
-// every page (dashboard, artists, reports) shows visually identical chips.
-templ DashboardActiveFilters(data ActionQueueData) {
-	@components.ActiveFilters("#action-queue", dashboardClearAllHref(data), t(ctx, "common.clear_all"), t(ctx, "dashboard.active_filters_label"), dashboardActiveChips(ctx, data))
-}
-
-// dashboardActiveChips returns the slice of FilterChipSpec entries that reflect
-// the currently active TRI-STATE dashboard filters. Each dimension can have
-// several included and excluded values, so each value becomes its own chip:
-// included values render as neutral blue chips, excluded values as red "Not X"
-// chips. Each chip's Key + Value let the per-value DismissFilterValueChip script
-// strip exactly that one +value / -value entry on click.
-func dashboardActiveChips(ctx context.Context, data ActionQueueData) []components.FilterChipSpec {
-	chips := make([]components.FilterChipSpec, 0, 8)
-	// labelFn maps a dimension value to its display label. One per family.
-	chips = appendTriChips(ctx, chips, "severity", data.SeverityFilter, func(v string) string { return severityLabel(ctx, v) })
-	chips = appendTriChips(ctx, chips, "category", data.CategoryFilter, func(v string) string { return dashboardCategoryLabel(ctx, v) })
-	chips = appendTriChips(ctx, chips, "library_id", data.LibraryFilter, func(v string) string { return libraryNameByID(data.Libraries, v) })
-	chips = appendTriChips(ctx, chips, "rule", data.RuleFilter, func(v string) string { return ruleNameByID(data.RuleCounts, v) })
-	chips = appendTriChips(ctx, chips, "fixable", data.FixableFilter, func(v string) string { return fixableLabel(ctx, v) })
-	return chips
-}
-
-// appendTriChips appends one chip per included value (blue) and one per excluded
-// value (red, "Not X" label) of a single tri-state dimension. labelFn resolves a
-// raw dimension value (e.g. a library ID) to its human-readable label.
-func appendTriChips(ctx context.Context, chips []components.FilterChipSpec, key string, f rule.TriFilter, labelFn func(string) string) []components.FilterChipSpec {
-	for _, v := range f.Include {
-		chips = append(chips, components.FilterChipSpec{Key: key, Value: v, Label: labelFn(v)})
-	}
-	for _, v := range f.Exclude {
-		// Excluded chips read "Not X" (localized) so the exclusion is legible
-		// even for users who do not perceive the red styling.
-		chips = append(chips, components.FilterChipSpec{Key: key, Value: v, Exclude: true, Label: tf(ctx, "common.filter_not_prefix", labelFn(v))})
-	}
-	return chips
-}
-
-// dashboardClearAllHref returns the href for the Clear All anchor in the
-// active-filters row. Empty (so the shared ActiveFilters component omits the
-// link) unless at least two filter values are active: with a single chip the
-// chip's own X already clears everything, so a separate Clear all is redundant.
-func dashboardClearAllHref(data ActionQueueData) string {
-	if dashboardActiveFilterCount(data) < 2 {
-		return ""
-	}
-	return data.BasePath + "/"
 }
 
 // dashFilterState returns the tri-state flyout state ("include", "exclude", or
@@ -708,77 +316,6 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 	</div>
 }
 
-// DashboardActivityFeed renders the recent activity sidebar section.
-templ DashboardActivityFeed(data ActivityFeedData) {
-	<div>
-		<h2 class="text-base font-semibold mb-3">{ t(ctx, "dashboard.recent_activity") }</h2>
-		if len(data.Changes) == 0 {
-			<div class="flex flex-col items-center py-8 text-center">
-				<svg class="h-8 w-8 text-gray-300 dark:text-gray-600 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-				</svg>
-				<p class="text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "dashboard.no_recent_activity") }</p>
-			</div>
-		} else {
-			<div class="space-y-0.5">
-				for _, c := range data.Changes {
-					@DashboardActivityRow(c, data.BasePath)
-				}
-			</div>
-			<div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/50">
-				<a
-					href={ templ.SafeURL(data.BasePath + "/activity") }
-					class="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-				>
-					{ t(ctx, "dashboard.view_all_activity") }
-					<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
-					</svg>
-				</a>
-			</div>
-		}
-	</div>
-}
-
-// DashboardActivityRow renders a compact activity entry for the dashboard sidebar.
-templ DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) {
-	<div class="group rounded-md px-2.5 py-2 bg-gray-50 dark:bg-gray-800/80 hover:bg-gray-100 dark:hover:bg-gray-700/90 transition-colors">
-		<div class="flex items-start justify-between gap-2">
-			<div class="flex-1 min-w-0">
-				<a
-					href={ templ.SafeURL(basePath + "/artists/" + c.ArtistID) }
-					class="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
-				>
-					{ c.ArtistName }
-				</a>
-				<p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-					<span class="font-medium">{ historyFieldLabel(ctx, c.Field) }</span>
-					<span class="mx-0.5">--</span>
-					if c.OldValue == "" && c.NewValue != "" {
-						<span class="text-green-600 dark:text-green-400">{ t(ctx, "dashboard.activity_set") }</span>
-					} else if c.OldValue != "" && c.NewValue == "" {
-						<span class="text-red-500 dark:text-red-400">{ t(ctx, "dashboard.activity_cleared") }</span>
-					} else if c.OldValue != "" && c.NewValue != "" {
-						<span class="text-blue-600 dark:text-blue-400">{ t(ctx, "dashboard.activity_changed") }</span>
-					}
-				</p>
-			</div>
-			<div class="flex items-center gap-1.5 shrink-0">
-				<span class={ "inline-block px-1.5 py-0.5 rounded text-[10px] font-medium leading-tight", dashboardSourceBadgeClass(c.Source) }>
-					{ historySourceLabel(ctx, c.Source) }
-				</span>
-				<time
-					datetime={ c.CreatedAt.Format(time.RFC3339) }
-					title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }
-					class="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums"
-				>
-					{ dashboardTimeAgo(ctx, c.CreatedAt) }
-				</time>
-			</div>
-		</div>
-	</div>
-}
-
 // DashboardEmptyState renders a celebratory empty state when no actions are needed.
 // When healthStatsError is true, the score is unreliable (defaults to 0) so
 // we show "---" instead of a misleading "0.0% compliant".
@@ -889,35 +426,6 @@ func severityBadgeClass(severity string) string {
 	default:
 		return "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30"
 	}
-}
-
-// dashboardTimeAgo returns a human-readable relative timestamp.
-func dashboardTimeAgo(ctx context.Context, ts time.Time) string {
-	dur := time.Since(ts)
-	switch {
-	case dur < time.Minute:
-		return t(ctx, "time.just_now")
-	case dur < time.Hour:
-		return tn(ctx, "time.minutes_ago", int(dur.Minutes()))
-	case dur < 24*time.Hour:
-		return tn(ctx, "time.hours_ago", int(dur.Hours()))
-	case dur < 7*24*time.Hour:
-		return tn(ctx, "time.days_ago", int(dur.Hours()/24))
-	default:
-		layout := t(ctx, "time.date_format_short")
-		if layout == "" || layout == "time.date_format_short" {
-			layout = "2006-01-02"
-		}
-		return ts.Format(layout)
-	}
-}
-
-// dashboardSourceBadgeClass returns Tailwind classes for a source badge in the dashboard sidebar.
-func dashboardSourceBadgeClass(source string) string {
-	if source == "revert" {
-		return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
-	}
-	return "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
 }
 
 // dashboardCategoryLabel returns the display name for a violation category on the dashboard.
