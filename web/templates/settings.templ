@@ -856,7 +856,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@components.ContextHelpScript()
 		@SettingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
 		<script src={ assets.SettingsSearchJS }></script>
-		<script src={ assets.SortableJS }></script>
+		// SortableJS is emitted by LayoutGlobalChrome (gated on PrefsDrawerJS, now set
+		// on every promoted-shell route incl. /settings), so it is not loaded again
+		// here -- a second tag would re-execute the vendor bundle.
 		<script src={ assets.SettingsNotifBadgesJS }></script>
 		<div class="sw-settings space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">

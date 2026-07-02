@@ -171,8 +171,10 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 	// hx-headers marker reflects the channel this page was actually rendered as,
 	// rather than a hardcoded "next" that would force every in-<main> HTMX
 	// sub-request on a stable page to the next channel in dual mode (swapping
-	// next fragments into a v1 page). Empty when no channel was resolved (e.g.
-	// unit renders), in which case the layout omits the marker entirely.
+	// next fragments into a v1 page). In the request path this is always a
+	// concrete channel -- UXChannelFromContext falls back to UXStable -- so it is
+	// never empty here; the layout's empty-guard only matters for zero-value
+	// AssetPaths in unit renders.
 	a.UXChannel = string(middleware.UXChannelFromContext(ctx))
 
 	return a

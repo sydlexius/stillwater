@@ -106,8 +106,10 @@ type AssetPaths struct {
 	// or "next"), stamped onto the shared <main>'s hx-headers X-Stillwater-UX
 	// marker so in-<main> HTMX sub-requests resolve to the SAME channel as the
 	// page that issued them (critical in dual mode, where a stable page must not
-	// tag its sub-requests "next"). Empty when no channel was resolved (unit
-	// renders), in which case the marker is omitted and cookie/path resolve it.
+	// tag its sub-requests "next"). In the request path this is always a concrete
+	// channel (the UX middleware resolves one, defaulting to "stable"); it is
+	// empty only for zero-value AssetPaths (unit renders), where the marker is
+	// omitted so cookie/path resolve the channel.
 	UXChannel string
 	// Username is the authenticated user's login name for the sidebar profile.
 	Username string
@@ -290,9 +292,10 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	<script src={ assets.FilterFlyoutJS }></script>
 	if assets.PrefsDrawerJS != "" {
 		// SortableJS must precede prefs-drawer.js: the prefs layout card
-		// feature-detects window.Sortable at wire time (#1774). Scoped to
-		// next/ pages (PrefsDrawerJS is only set there); the stable settings
-		// page loads Sortable itself in settings.templ.
+		// feature-detects window.Sortable at wire time (#1774). PrefsDrawerJS is
+		// set on every route that renders the promoted shell (M55 #1757), so this
+		// pair loads app-wide -- including /settings, which no longer emits its own
+		// SortableJS tag (the drag-reorder there reuses this one).
 		<script src={ assets.SortableJS }></script>
 		<script src={ assets.PrefsDrawerJS }></script>
 	}
