@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,29 +18,24 @@ import (
 // dummyHash holds a bcrypt hash computed once at DefaultCost, used by Login to
 // perform a comparison on the unknown-user path so it takes the same time as
 // the wrong-password path (constant-time login; #2171 defeats username
-// enumeration via a timing side channel). Lazily initialized via dummyHashOnce
-// so the ~cost bcrypt work happens on first login, not at package init.
-var (
-	dummyHashOnce sync.Once
-	dummyHash     []byte
-)
+// enumeration via a timing side channel). It is derived from a fixed throwaway
+// password and is never a valid credential (no user's password_hash is set from
+// it). It is computed eagerly at package init so it can never be nil: a nil
+// dummy hash would make bcrypt reject the unknown-user compare almost instantly,
+// silently reopening the timing side channel this closes.
+var dummyHash = mustGenerateDummyHash()
 
-// getDummyHash returns a package-level bcrypt hash for the timing-equalization
-// compare in Login. It is derived from a fixed throwaway password; the value is
-// never a valid credential (no user's password_hash is set from it).
-func getDummyHash() []byte {
-	dummyHashOnce.Do(func() {
-		// bcrypt.GenerateFromPassword only errors on an out-of-range cost, which
-		// DefaultCost never is; fall back to a precomputed constant if it ever does
-		// so the compare below still runs rather than panicking a login.
-		h, err := bcrypt.GenerateFromPassword(PrehashPassword("stillwater-dummy-password"), bcrypt.DefaultCost)
-		if err != nil {
-			slog.Error("auth: failed to generate dummy bcrypt hash for constant-time login", "err", err)
-			return
-		}
-		dummyHash = h
-	})
-	return dummyHash
+// mustGenerateDummyHash computes the constant-time-login dummy hash, panicking on
+// error. bcrypt.GenerateFromPassword only fails on an out-of-range cost, and
+// DefaultCost is always in range, so an error here is an unreachable invariant
+// violation; failing loudly at startup is correct and removes any path that
+// could leave the dummy hash nil at request time.
+func mustGenerateDummyHash() []byte {
+	h, err := bcrypt.GenerateFromPassword(PrehashPassword("stillwater-dummy-password"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("auth: failed to generate dummy bcrypt hash for constant-time login: %v", err))
+	}
+	return h
 }
 
 const sessionDuration = 24 * time.Hour
@@ -165,7 +159,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		// unknown-user path costs the same as the wrong-password path below.
 		// Without this, an attacker could distinguish "user exists" from "user
 		// unknown" by response latency (username enumeration; #2171).
-		_ = bcrypt.CompareHashAndPassword(getDummyHash(), PrehashPassword(password))
+		_ = bcrypt.CompareHashAndPassword(dummyHash, PrehashPassword(password))
 		return "", errors.New("invalid credentials")
 	}
 	if err != nil {

@@ -229,14 +229,16 @@ func TestLogin_UnknownUser(t *testing.T) {
 	}
 }
 
-// TestGetDummyHash_IsRealBcryptAtDefaultCost proves the timing-equalization
-// fixture is genuine bcrypt work at the same cost as real password hashes, so
-// the unknown-user compare in Login is not a cheap no-op (#2171).
-func TestGetDummyHash_IsRealBcryptAtDefaultCost(t *testing.T) {
+// TestDummyHash_IsRealBcryptAtDefaultCost proves the timing-equalization fixture
+// is genuine bcrypt work at the same cost as real password hashes, so the
+// unknown-user compare in Login is not a cheap no-op (#2171). The package var is
+// computed eagerly at init and can never be nil, so an empty value here is a real
+// regression.
+func TestDummyHash_IsRealBcryptAtDefaultCost(t *testing.T) {
 	t.Parallel()
-	h := getDummyHash()
+	h := dummyHash
 	if len(h) == 0 {
-		t.Fatal("getDummyHash returned empty; constant-time compare would be a no-op")
+		t.Fatal("dummyHash is empty; constant-time compare would be a no-op")
 	}
 	cost, err := bcrypt.Cost(h)
 	if err != nil {
@@ -254,7 +256,8 @@ func TestGetDummyHash_IsRealBcryptAtDefaultCost(t *testing.T) {
 // wrong-password path spends the full bcrypt cost (tens of ms), so a lenient
 // lower-bound ratio reliably distinguishes the two without flaking.
 func TestLogin_ConstantTime(t *testing.T) {
-	t.Parallel()
+	// Deliberately NOT parallel: this asserts a bcrypt timing ratio, and CPU
+	// contention from parallel tests skews the measurement and makes it flaky.
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 

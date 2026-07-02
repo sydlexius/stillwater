@@ -115,17 +115,33 @@ func (rl *LoginRateLimiter) clientIP(r *http.Request) string {
 		// Use the rightmost XFF IP (added by the nearest trusted proxy) to resist spoofing.
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
-			ip := strings.TrimSpace(parts[len(parts)-1])
-			if ip != "" {
-				return ip
+			if canon, ok := canonicalIP(strings.TrimSpace(parts[len(parts)-1])); ok {
+				return canon
 			}
 		}
 		if xri := r.Header.Get("X-Real-Ip"); xri != "" {
-			return xri
+			if canon, ok := canonicalIP(strings.TrimSpace(xri)); ok {
+				return canon
+			}
 		}
 	}
 
 	return remoteIP
+}
+
+// canonicalIP parses s as an IP address and returns its canonical string form,
+// or ok=false if s is not a valid IP. Canonicalizing collapses alternate
+// representations of the same address (e.g. the IPv4-mapped IPv6 "::ffff:1.2.3.4"
+// and "1.2.3.4") onto a single rate-limit bucket via Unmap. Rejecting non-IP
+// values makes the caller fall back to the direct peer address rather than
+// keying the limiter on attacker-controlled garbage, which would otherwise
+// fragment or pollute the bucket map.
+func canonicalIP(s string) (string, bool) {
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return "", false
+	}
+	return addr.Unmap().String(), true
 }
 
 // isTrustedProxy reports whether the direct-peer address falls inside any

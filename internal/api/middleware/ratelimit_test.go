@@ -148,7 +148,9 @@ func TestClientIP_DirectConnection(t *testing.T) {
 // range, the forwarded client IP is honored.
 func TestClientIP_TrustedProxyHonorsXFF(t *testing.T) {
 	t.Parallel()
-	rl := NewLoginRateLimiter(context.Background(), []string{"10.0.0.0/8"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, []string{"10.0.0.0/8"})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "10.0.0.5:1234"
 	req.Header.Set("X-Forwarded-For", "203.0.113.10")
@@ -163,7 +165,9 @@ func TestClientIP_TrustedProxyHonorsXFF(t *testing.T) {
 // that is NOT inside a trusted range cannot spoof XFF; its direct IP is used.
 func TestClientIP_UntrustedPeerIgnoresXFF(t *testing.T) {
 	t.Parallel()
-	rl := NewLoginRateLimiter(context.Background(), []string{"10.0.0.0/8"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, []string{"10.0.0.0/8"})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.168.1.9:1234" // not in 10.0.0.0/8
 	req.Header.Set("X-Forwarded-For", "203.0.113.10")
@@ -177,7 +181,9 @@ func TestClientIP_UntrustedPeerIgnoresXFF(t *testing.T) {
 // TestClientIP_XRealIPFromTrustedProxy: X-Real-Ip is honored from a trusted peer.
 func TestClientIP_XRealIPFromTrustedProxy(t *testing.T) {
 	t.Parallel()
-	rl := NewLoginRateLimiter(context.Background(), []string{"192.168.0.0/16"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, []string{"192.168.0.0/16"})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.168.1.1:1234"
 	req.Header.Set("X-Real-Ip", "203.0.113.20")
@@ -192,7 +198,9 @@ func TestClientIP_XRealIPFromTrustedProxy(t *testing.T) {
 // trusts no proxy, so forwarded headers are ignored even from loopback.
 func TestClientIP_NoTrustedProxiesIgnoresXFF(t *testing.T) {
 	t.Parallel()
-	rl := NewLoginRateLimiter(context.Background(), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, nil)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.Header.Set("X-Forwarded-For", "203.0.113.10")
@@ -203,9 +211,60 @@ func TestClientIP_NoTrustedProxiesIgnoresXFF(t *testing.T) {
 	}
 }
 
+// TestClientIP_CanonicalizesForwardedIP: two representations of the SAME address
+// forwarded by a trusted proxy (an IPv4-mapped IPv6 form and its plain IPv4 form)
+// must canonicalize to a single rate-limit key, so they share one bucket rather
+// than each getting an independent allowance. Without the parse/canonicalize step
+// the raw header strings differ and this returns two distinct keys.
+func TestClientIP_CanonicalizesForwardedIP(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, []string{"10.0.0.0/8"})
+
+	mapped := httptest.NewRequest(http.MethodGet, "/", nil)
+	mapped.RemoteAddr = "10.0.0.5:1234"
+	mapped.Header.Set("X-Forwarded-For", "::ffff:203.0.113.77")
+
+	plain := httptest.NewRequest(http.MethodGet, "/", nil)
+	plain.RemoteAddr = "10.0.0.5:1234"
+	plain.Header.Set("X-Forwarded-For", "203.0.113.77")
+
+	gotMapped := rl.clientIP(mapped)
+	gotPlain := rl.clientIP(plain)
+	if gotMapped != gotPlain {
+		t.Fatalf("clientIP not canonicalized: mapped=%q plain=%q (want equal so they share one bucket)", gotMapped, gotPlain)
+	}
+	if gotPlain != "203.0.113.77" {
+		t.Errorf("clientIP = %q, want %q (canonical IPv4 form)", gotPlain, "203.0.113.77")
+	}
+}
+
+// TestClientIP_GarbageForwardedIPFallsBackToPeer: a non-IP X-Forwarded-For value
+// from a trusted peer must NOT be used as a rate-limit key (attacker-controlled
+// garbage would fragment/pollute the bucket map); the direct peer IP is used
+// instead. Without the parse/validate step the raw "not-an-ip" string would be
+// returned as the key.
+func TestClientIP_GarbageForwardedIPFallsBackToPeer(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, []string{"10.0.0.0/8"})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.5:1234"
+	req.Header.Set("X-Forwarded-For", "not-an-ip")
+
+	got := rl.clientIP(req)
+	if got != "10.0.0.5" {
+		t.Errorf("clientIP = %q, want %q (garbage XFF must fall back to direct peer)", got, "10.0.0.5")
+	}
+}
+
 func TestIsTrustedProxy(t *testing.T) {
 	t.Parallel()
-	rl := NewLoginRateLimiter(context.Background(), []string{"10.0.0.0/8", "192.168.0.0/16", "::1/128"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, []string{"10.0.0.0/8", "192.168.0.0/16", "::1/128"})
 	tests := []struct {
 		ip   string
 		want bool
@@ -230,7 +289,9 @@ func TestIsTrustedProxy(t *testing.T) {
 // disabling limiting; the valid entries still take effect.
 func TestNewLoginRateLimiter_SkipsMalformedPrefix(t *testing.T) {
 	t.Parallel()
-	rl := NewLoginRateLimiter(context.Background(), []string{"not-a-cidr", "10.0.0.0/8"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rl := NewLoginRateLimiter(ctx, []string{"not-a-cidr", "10.0.0.0/8"})
 	if !rl.isTrustedProxy("10.0.0.1") {
 		t.Error("valid prefix 10.0.0.0/8 should be honored despite a malformed sibling entry")
 	}
