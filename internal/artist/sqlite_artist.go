@@ -515,7 +515,7 @@ func (r *sqliteArtistRepo) ListPathsByLibrary(ctx context.Context, libraryID str
 }
 
 func (r *sqliteArtistRepo) Search(ctx context.Context, query string) ([]Artist, error) {
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query)
+	escaped := dbutil.EscapeLike(query)
 	pattern := "%" + escaped + "%"
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT `+artistColumns+` FROM artists WHERE name LIKE ? ESCAPE '\' ORDER BY name LIMIT 20`, pattern)
