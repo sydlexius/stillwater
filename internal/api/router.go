@@ -98,6 +98,10 @@ type RouterDeps struct {
 	// SessionSecret is used to sign CSRF tokens. It must be at least 32 bytes;
 	// the CSRF middleware panics at startup if it is empty or too short.
 	SessionSecret string
+	// TrustedProxies is the set of CIDR ranges whose direct connections are
+	// trusted to set X-Forwarded-For / X-Real-Ip for login rate limiting.
+	// Passed through to NewLoginRateLimiter. Empty trusts no proxy.
+	TrustedProxies []string
 }
 
 // Router sets up all HTTP routes for the application.
@@ -233,6 +237,10 @@ type Router struct {
 	encryptor *encryption.Encryptor
 	// sessionSecret is the HMAC key used to sign and verify CSRF tokens.
 	sessionSecret string
+	// trustedProxies holds operator-configured trusted-proxy CIDR ranges,
+	// passed to NewLoginRateLimiter so forwarded client IPs are honored only
+	// from these direct peers.
+	trustedProxies []string
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -293,6 +301,7 @@ func NewRouter(deps RouterDeps) *Router {
 		webhookShutdownCancel:    webhookCancel,
 		encryptor:                deps.Encryptor,
 		sessionSecret:            deps.SessionSecret,
+		trustedProxies:           deps.TrustedProxies,
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
@@ -383,7 +392,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	authMw := middleware.Auth(r.authService)
 	optAuthMw := middleware.OptionalAuth(r.authService)
 	csrf := middleware.NewCSRF(r.sessionSecret)
-	loginRL := middleware.NewLoginRateLimiter(ctx)
+	loginRL := middleware.NewLoginRateLimiter(ctx, r.trustedProxies)
 	requireMultiUser := middleware.RequireMultiUser(r.getStringSetting)
 
 	// Start periodic expiry of stale undo entries so the store does not grow unbounded.

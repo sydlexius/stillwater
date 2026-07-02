@@ -85,6 +85,57 @@ func TestUX_DefaultEnvAndValidation(t *testing.T) {
 	})
 }
 
+func TestTrustedProxies_EnvAndValidation(t *testing.T) {
+	t.Run("default is empty", func(t *testing.T) {
+		clearSWEnv(t)
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if len(cfg.Server.TrustedProxies) != 0 {
+			t.Errorf("Server.TrustedProxies = %v, want empty", cfg.Server.TrustedProxies)
+		}
+	})
+
+	t.Run("valid CIDRs parse and split on commas", func(t *testing.T) {
+		clearSWEnv(t)
+		t.Setenv("SW_TRUSTED_PROXIES", "10.0.0.0/8, 192.168.0.0/16, ::1/128")
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load() with valid SW_TRUSTED_PROXIES error = %v", err)
+		}
+		want := []string{"10.0.0.0/8", "192.168.0.0/16", "::1/128"}
+		if len(cfg.Server.TrustedProxies) != len(want) {
+			t.Fatalf("TrustedProxies = %v, want %v", cfg.Server.TrustedProxies, want)
+		}
+		for i, w := range want {
+			if cfg.Server.TrustedProxies[i] != w {
+				t.Errorf("TrustedProxies[%d] = %q, want %q (whitespace should be trimmed)", i, cfg.Server.TrustedProxies[i], w)
+			}
+		}
+	})
+
+	t.Run("malformed CIDR is rejected", func(t *testing.T) {
+		clearSWEnv(t)
+		t.Setenv("SW_TRUSTED_PROXIES", "10.0.0.0/8, not-a-cidr")
+		_, err := Load("")
+		if err == nil {
+			t.Fatal("Load() with malformed SW_TRUSTED_PROXIES returned nil error, want validation failure")
+		}
+		if !strings.Contains(err.Error(), "invalid SW_TRUSTED_PROXIES") {
+			t.Errorf("error = %q, want it to contain 'invalid SW_TRUSTED_PROXIES'", err.Error())
+		}
+	})
+
+	t.Run("bare IP without mask is rejected", func(t *testing.T) {
+		clearSWEnv(t)
+		t.Setenv("SW_TRUSTED_PROXIES", "10.0.0.1")
+		if _, err := Load(""); err == nil {
+			t.Error("Load() with a bare IP (no /mask) returned nil error, want validation failure")
+		}
+	})
+}
+
 // clearSWEnv unsets all SW_* environment variables to prevent env overrides
 // from interfering with tests that assert YAML/default behavior.
 func clearSWEnv(t *testing.T) {
@@ -100,6 +151,7 @@ func clearSWEnv(t *testing.T) {
 		"SW_ACME_DOMAIN", "SW_ACME_EMAIL", "SW_ACME_CA",
 		"SW_ACME_EAB_KEY_ID", "SW_ACME_EAB_MAC_KEY",
 		"SW_ACME_IP", "SW_ACME_CACHE_DIR", "SW_UX",
+		"SW_TRUSTED_PROXIES",
 	} {
 		t.Setenv(key, "")
 	}
