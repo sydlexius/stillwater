@@ -189,7 +189,7 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 					<div class="flex flex-col">
 						<span class="sw-stat-label">{ t(ctx, "dashboard.bubble_health") }</span>
 						if healthStatsError {
-							<span class="sw-stat-val sw-stat-val--sm text-gray-500 dark:text-gray-400" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+							<span class="sw-stat-val sw-stat-val--sm text-gray-500 dark:text-gray-400" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") } role="img">---</span>
 						} else {
 							// Health score keeps its green/red status color. The
 							// .sw-stat-health-val class sizes it (28px tabular) without
@@ -248,7 +248,7 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 				>
 					<span class="sw-stat-label">{ t(ctx, "dashboard.bubble_auto_fixable") }</span>
 					if fixableCountsError {
-						<span class="sw-stat-val sw-stat-val--sm" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+						<span class="sw-stat-val sw-stat-val--sm" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") } role="img">---</span>
 					} else {
 						<span class="sw-stat-val">{ fmt.Sprintf("%d", autoFixableCount) }</span>
 					}
@@ -264,7 +264,7 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 				>
 					<span class="sw-stat-label">{ t(ctx, "dashboard.bubble_needs_you") }</span>
 					if fixableCountsError {
-						<span class="sw-stat-val sw-stat-val--sm" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+						<span class="sw-stat-val sw-stat-val--sm" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") } role="img">---</span>
 					} else {
 						<span class="sw-stat-val">{ fmt.Sprintf("%d", needsYouCount) }</span>
 					}
