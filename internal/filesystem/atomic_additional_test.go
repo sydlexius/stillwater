@@ -917,10 +917,8 @@ func TestWriteFileAtomic_DoesNotClobberSymlinkAtPredictableTempName(t *testing.T
 // from the target path, so this is the scenario -- many writers racing in one
 // directory -- where a fixed suffix risked collisions (e.g. if two targets
 // ever normalized to the same tmp path, or under future refactors reusing a
-// shared staging name). Writes to the *same* target are intentionally out of
-// scope here; WriteFileAtomic never guaranteed same-target concurrent-write
-// safety (the backup-then-rename sequence isn't mutex-protected), and this
-// change doesn't alter that pre-existing contract.
+// shared staging name). Writes to the *same* target are covered separately by
+// TestWriteFileAtomic_ConcurrentSameTargetSucceeds.
 func TestWriteFileAtomic_ConcurrentWritesGetUniqueTemps(t *testing.T) {
 	dir := t.TempDir()
 	const n = 50
@@ -969,6 +967,81 @@ func TestWriteFileAtomic_ConcurrentWritesGetUniqueTemps(t *testing.T) {
 			names[i] = e.Name()
 		}
 		t.Errorf("expected exactly %d target files, got %d: %v", n, len(entries), names)
+	}
+}
+
+// TestWriteFileAtomic_ConcurrentSameTargetSucceeds is the regression test for
+// the same-target concurrency gap (#2181 review). N goroutines all call
+// WriteFileAtomic on ONE shared target at once, with the target pre-existing so
+// the backup (.bak) path is exercised on every write. Each writer must get its
+// own unique staging temp (O_EXCL) AND its own unique .bak name, and a writer
+// whose target was moved out from under it by a concurrent writer must treat
+// that as benign (nothing to back up) rather than failing.
+//
+// This goes RED against the pre-fix code, which used a single shared
+// "<target>.bak" path and treated a vanished target as a hard error: several
+// writers reliably failed with "backing up existing file: ... no such file or
+// directory". After the fix every write succeeds, no *.tmp/*.bak leftovers
+// remain, and the final file is one writer's complete, untorn payload.
+func TestWriteFileAtomic_ConcurrentSameTargetSucceeds(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "shared.txt")
+
+	// Pre-create the target so the backup path runs on every write.
+	if err := os.WriteFile(target, []byte("initial-baseline-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 32
+	// Every writer's payload is the same fixed length so the final file, whichever
+	// writer wins, is trivially checkable for torn/partial writes.
+	payloads := make([][]byte, n)
+	valid := make(map[string]bool, n)
+	for i := 0; i < n; i++ {
+		p := []byte(fmt.Sprintf("writer-%03d-complete-payload!!", i))
+		payloads[i] = p
+		valid[string(p)] = true
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := WriteFileAtomic(target, payloads[i], 0o644); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent same-target WriteFileAtomic failed: %v", err)
+	}
+
+	// The final file must be exactly one writer's complete payload -- never
+	// torn, truncated, or a mix of two writers.
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile target: %v", err)
+	}
+	if !valid[string(got)] {
+		t.Errorf("final content %q is not any single writer's complete payload (torn write?)", got)
+	}
+
+	// Only the target itself should remain: no leftover *.tmp or *.bak files.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if name == "shared.txt" {
+			continue
+		}
+		t.Errorf("unexpected leftover file after concurrent writes: %s", name)
 	}
 }
 

@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,7 +40,6 @@ var writeTempFile = func(f *os.File, data []byte, perm os.FileMode) error {
 // If rename fails (e.g., cross-mount point), falls back to copy+delete with fsync.
 func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 	TraceFSWrite("WriteFileAtomic", target, 0)
-	bakPath := target + ".bak"
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(target)
@@ -55,15 +55,24 @@ func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
+	// The backup name is derived from the unique temp name (not the shared
+	// "<target>.bak") so two writers racing on the same target never collide
+	// on one .bak path -- otherwise the second writer would clobber or trip
+	// over the first's backup, leaving a leftover file or a spurious failure.
+	bakPath := tmpPath + ".bak"
 	if err := writeTempFile(tmpFile, data, perm); err != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing temp file: %w", err)
 	}
 
-	// Step 2: Backup existing file if it exists
+	// Step 2: Backup existing file if it exists. A concurrent writer racing on
+	// the same target may move or replace it between this Stat and the rename;
+	// if the target has vanished (os.ErrNotExist) there is nothing to back up
+	// and our own tmp->target rename below still installs our content
+	// atomically, so that race is benign. Any other backup failure is real.
 	if _, err := os.Stat(target); err == nil {
-		if err := renameSafe(target, bakPath, perm); err != nil {
+		if err := renameSafe(target, bakPath, perm); err != nil && !errors.Is(err, os.ErrNotExist) {
 			_ = os.Remove(tmpPath)
 			return fmt.Errorf("backing up existing file: %w", err)
 		}
@@ -101,6 +110,13 @@ func renameSafe(oldPath, newPath string, perm os.FileMode) error {
 	err := osRename(oldPath, newPath)
 	if err == nil {
 		return nil
+	}
+	// If the source vanished (e.g. a concurrent writer already moved it),
+	// there is nothing to copy; propagate the original error so callers can
+	// detect the race via errors.Is(err, os.ErrNotExist) instead of masking it
+	// behind a doomed copy-fallback attempt.
+	if errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	// Rename may fail on cross-device moves (EXDEV). Fall back to copy+delete.
 	if copyErr := copyFile(oldPath, newPath, perm); copyErr != nil {
