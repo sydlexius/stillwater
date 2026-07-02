@@ -123,6 +123,50 @@ func pathWithinRoot(root, path string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
+// browseCanonicalPath resolves cleaned (an absolute, filepath.Clean-ed path)
+// into a canonical absolute path suitable for the confinement boundary check,
+// and reports whether the path currently exists.
+//
+//   - When the path exists it is fully symlink-resolved via EvalSymlinks, so a
+//     symlink whose target escapes an allowed root is caught by the caller's
+//     boundary check (the symlink-escape defense is preserved).
+//   - When the path does NOT exist, EvalSymlinks fails; we instead resolve the
+//     nearest existing ancestor through symlinks and re-append the missing
+//     tail. This yields a canonical path the caller can boundary-check, so a
+//     nonexistent path outside every allowed root still fails closed (403)
+//     rather than leaking its (non-)existence via a 404.
+//
+// A non-not-exist resolution error (e.g. a permission error) is returned so the
+// caller can fail with 400 rather than guess.
+func browseCanonicalPath(cleaned string) (canonical string, existed bool, err error) {
+	if resolved, rerr := filepath.EvalSymlinks(cleaned); rerr == nil {
+		return resolved, true, nil
+	} else if !os.IsNotExist(rerr) {
+		return "", false, rerr
+	}
+
+	// The path does not exist. Walk up to the nearest existing ancestor,
+	// resolve it, and re-append the missing tail components.
+	dir := cleaned
+	var tail []string
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached the filesystem root without an existing ancestor
+			// (should not happen, since the root exists); fall back to the
+			// cleaned path so the caller can still boundary-check it.
+			return cleaned, false, nil
+		}
+		tail = append([]string{filepath.Base(dir)}, tail...)
+		if resolved, rerr := filepath.EvalSymlinks(parent); rerr == nil {
+			return filepath.Join(append([]string{resolved}, tail...)...), false, nil
+		} else if !os.IsNotExist(rerr) {
+			return "", false, rerr
+		}
+		dir = parent
+	}
+}
+
 // handleFilesystemBrowse lists direct subdirectories under a given path.
 // GET /api/v1/filesystem/browse?path=/some/dir
 //
@@ -149,29 +193,30 @@ func (r *Router) handleFilesystemBrowse(w http.ResponseWriter, req *http.Request
 
 	// Normalise the path. After filepath.Clean all ".." sequences are resolved
 	// into the canonical path; no further traversal check is needed here.
-	// filepath.EvalSymlinks below provides the authoritative absolute-path check.
 	cleaned := filepath.Clean(rawPath)
 
-	// Resolve symlinks and verify the resolved path is still absolute.
-	resolved, err := filepath.EvalSymlinks(cleaned)
+	// Resolve to a canonical absolute path for the confinement check. When the
+	// path exists it is fully symlink-resolved; when it does not exist we still
+	// derive a canonical form from its nearest existing ancestor so the
+	// confinement gate can run. EvalSymlinks alone fails on a nonexistent path,
+	// which is exactly why the confinement check must not depend on it.
+	canonical, existed, err := browseCanonicalPath(cleaned)
 	if err != nil {
-		if os.IsNotExist(err) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "path not found"})
-			return
-		}
 		r.logger.Error("resolving symlinks for filesystem browse", "path", cleaned, "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path could not be resolved"})
 		return
 	}
 
-	if !filepath.IsAbs(resolved) {
+	if !filepath.IsAbs(canonical) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "resolved path is not absolute"})
 		return
 	}
 
-	// Confine browsing to the allowed browse roots (library roots plus
-	// their parents). Without this an admin could enumerate the entire
-	// host filesystem tree.
+	// Confine browsing to the allowed browse roots (library roots plus their
+	// parents) FIRST, before any existence handling. A path outside every
+	// allowed root is rejected with 403 regardless of whether it exists, so the
+	// endpoint never leaks the existence of paths outside the allowlist. Without
+	// this an admin could enumerate the entire host filesystem tree.
 	roots := r.browseAllowedRoots(req.Context())
 	if len(roots) == 0 {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "no library root configured; filesystem browse is disabled"})
@@ -179,7 +224,7 @@ func (r *Router) handleFilesystemBrowse(w http.ResponseWriter, req *http.Request
 	}
 	allowed := false
 	for _, root := range roots {
-		if pathWithinRoot(root, resolved) {
+		if pathWithinRoot(root, canonical) {
 			allowed = true
 			break
 		}
@@ -188,6 +233,19 @@ func (r *Router) handleFilesystemBrowse(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "path is outside the allowed browse roots"})
 		return
 	}
+
+	// Confinement passed. A path that is within an allowed root but does not
+	// exist returns 404 -- the existence signal is only ever revealed for
+	// in-scope paths.
+	if !existed {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "path not found"})
+		return
+	}
+
+	// The path exists and is confined: canonical is its fully symlink-resolved
+	// absolute form, so any symlink escaping an allowed root was already caught
+	// by the confinement check above.
+	resolved := canonical
 
 	// Verify the target is a directory.
 	info, err := os.Stat(resolved)

@@ -1263,8 +1263,7 @@ func warnIfKeyFileTooOpen(path string, logger *slog.Logger) {
 	}
 	if perm := info.Mode().Perm(); keyFilePermsTooOpen(perm) {
 		logger.Warn(fmt.Sprintf("encryption key file is group/other-accessible (mode %04o); restrict it with: chmod 600", perm),
-			slog.String("path", path),
-			slog.String("mode", fmt.Sprintf("%04o", perm)))
+			slog.String("path", path))
 	}
 }
 

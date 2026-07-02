@@ -194,8 +194,12 @@ func TestHandleFilesystemBrowse_SymlinkResolvesToValidPath(t *testing.T) {
 	}
 }
 
-func TestHandleFilesystemBrowse_NonExistentPath(t *testing.T) {
+func TestHandleFilesystemBrowse_NonExistentPathOutsideRootForbidden(t *testing.T) {
 	t.Parallel()
+	// Confinement is enforced BEFORE existence handling: a nonexistent path
+	// outside every allowed root must return 403, never 404, so the endpoint
+	// does not leak whether out-of-scope paths exist. Here the allowlist is
+	// empty ("/" is skipped as the filesystem root), so any path is outside it.
 	r := newBrowseRouter(t, "/")
 	ctx := middleware.WithTestRole(context.Background(), "administrator")
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/filesystem/browse?path=/nonexistent/path/that/does/not/exist", nil)
@@ -203,8 +207,28 @@ func TestHandleFilesystemBrowse_NonExistentPath(t *testing.T) {
 
 	r.handleFilesystemBrowse(w, req)
 
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+func TestHandleFilesystemBrowse_NonExistentPathInsideRootNotFound(t *testing.T) {
+	t.Parallel()
+	// The legitimate 404: a path that IS within a configured allowed root but
+	// does not exist. Confinement passes, so returning 404 only reveals the
+	// existence of in-scope paths -- which is expected behavior.
+	root := t.TempDir()
+	missing := filepath.Join(root, "does", "not", "exist")
+
+	r := newBrowseRouter(t, root)
+	ctx := middleware.WithTestRole(context.Background(), "administrator")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/filesystem/browse?path="+missing, nil)
+	w := httptest.NewRecorder()
+
+	r.handleFilesystemBrowse(w, req)
+
 	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
