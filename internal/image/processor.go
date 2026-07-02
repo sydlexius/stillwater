@@ -169,9 +169,9 @@ func Resize(src io.Reader, maxWidth, maxHeight int) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	img, _, err := image.Decode(replay)
+	img, err := decodeWithLimit(replay)
 	if err != nil {
-		return nil, "", fmt.Errorf("decoding image: %w", err)
+		return nil, "", err
 	}
 
 	bounds := img.Bounds()
@@ -219,9 +219,9 @@ func ConvertFormat(src io.Reader) ([]byte, string, error) {
 	}
 
 	// WebP: decode and re-encode as PNG.
-	decoded, _, err := image.Decode(replay)
+	decoded, err := decodeWithLimit(replay)
 	if err != nil {
-		return nil, "", fmt.Errorf("decoding webp: %w", err)
+		return nil, "", err
 	}
 	data, err := encode(decoded, FormatPNG, 85)
 	if err != nil {
@@ -233,9 +233,9 @@ func ConvertFormat(src io.Reader) ([]byte, string, error) {
 // Optimize re-encodes the image at the given quality setting.
 // For JPEG, quality controls compression (1-100). For PNG, quality is ignored.
 func Optimize(src io.Reader, format string, quality int) ([]byte, error) {
-	img, _, err := image.Decode(src)
+	img, err := decodeWithLimit(src)
 	if err != nil {
-		return nil, fmt.Errorf("decoding image: %w", err)
+		return nil, err
 	}
 
 	return encode(img, format, quality)
@@ -248,7 +248,7 @@ func ConvertToFormat(src io.Reader, targetFormat string) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported target format: %s", targetFormat)
 	}
 
-	img, err := decodeWithLimit(src, maxDecodeBytes, maxDecodePixels)
+	img, err := decodeWithLimit(src)
 	if err != nil {
 		return nil, err
 	}
@@ -285,9 +285,9 @@ func TrimAlphaBounds(src io.Reader, threshold uint8) (content, original image.Re
 		return bounds, bounds, nil
 	}
 
-	decoded, _, decodeErr := image.Decode(replay)
+	decoded, decodeErr := decodeWithLimit(replay)
 	if decodeErr != nil {
-		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("decoding image: %w", decodeErr)
+		return image.Rectangle{}, image.Rectangle{}, decodeErr
 	}
 
 	bounds := decoded.Bounds()
@@ -381,9 +381,9 @@ func ContentBounds(src io.Reader) (content, original image.Rectangle, err error)
 		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("detecting format: %w", detectErr)
 	}
 
-	decoded, _, decodeErr := image.Decode(replay)
+	decoded, decodeErr := decodeWithLimit(replay)
 	if decodeErr != nil {
-		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("decoding image: %w", decodeErr)
+		return image.Rectangle{}, image.Rectangle{}, decodeErr
 	}
 
 	bounds := decoded.Bounds()
@@ -404,9 +404,9 @@ func TrimWithMargin(src io.Reader, margin int) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	decoded, _, err := image.Decode(replay)
+	decoded, err := decodeWithLimit(replay)
 	if err != nil {
-		return nil, "", fmt.Errorf("decoding image: %w", err)
+		return nil, "", err
 	}
 
 	bounds := decoded.Bounds()
@@ -472,9 +472,9 @@ func TrimAlpha(src io.Reader, threshold uint8) ([]byte, string, error) {
 		return data, format, readErr
 	}
 
-	decoded, _, err := image.Decode(replay)
+	decoded, err := decodeWithLimit(replay)
 	if err != nil {
-		return nil, "", fmt.Errorf("decoding image: %w", err)
+		return nil, "", err
 	}
 
 	bounds := decoded.Bounds()
@@ -536,9 +536,9 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	img, _, err := image.Decode(replay)
+	img, err := decodeWithLimit(replay)
 	if err != nil {
-		return nil, "", fmt.Errorf("decoding image: %w", err)
+		return nil, "", err
 	}
 
 	rect := image.Rect(x, y, x+w, y+h)
@@ -580,23 +580,20 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 const (
 	maxDecodeBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
 	maxDecodePixels int64 = 100_000_000 // 100 megapixels
-
-	maxPlaceholderBytes  = maxDecodeBytes
-	maxPlaceholderPixels = maxDecodePixels
 )
 
-// decodeWithLimit reads up to maxBytes from r, checks the declared pixel
-// dimensions via image.DecodeConfig (before any pixel buffer is allocated),
-// and only then fully decodes the image. This rejects decompression-bomb
-// style inputs (a small file declaring huge dimensions) before the expensive
-// allocation happens.
-func decodeWithLimit(r io.Reader, maxBytes, maxPixels int64) (image.Image, error) {
-	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+// decodeWithLimit reads up to maxDecodeBytes from r, checks the declared
+// pixel dimensions via image.DecodeConfig (before any pixel buffer is
+// allocated), and only then fully decodes the image. This rejects
+// decompression-bomb style inputs (a small file declaring huge dimensions)
+// before the expensive allocation happens.
+func decodeWithLimit(r io.Reader) (image.Image, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxDecodeBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading image data: %w", err)
 	}
-	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), maxBytes)
+	if int64(len(data)) > maxDecodeBytes {
+		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), maxDecodeBytes)
 	}
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
@@ -608,8 +605,8 @@ func decodeWithLimit(r io.Reader, maxBytes, maxPixels int64) (image.Image, error
 	if w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("invalid image dimensions (%dx%d)", cfg.Width, cfg.Height)
 	}
-	if h > maxPixels || w > maxPixels/h {
-		return nil, fmt.Errorf("image too many pixels (%dx%d, max %d)", cfg.Width, cfg.Height, maxPixels)
+	if h > maxDecodePixels || w > maxDecodePixels/h {
+		return nil, fmt.Errorf("image too many pixels (%dx%d, max %d)", cfg.Width, cfg.Height, maxDecodePixels)
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(data))
@@ -629,7 +626,7 @@ func GeneratePlaceholder(src io.Reader, imageType string) (string, error) {
 		return "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	decoded, err := decodeWithLimit(replay, maxPlaceholderBytes, maxPlaceholderPixels)
+	decoded, err := decodeWithLimit(replay)
 	if err != nil {
 		return "", err
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"hash/crc32"
 	"image"
@@ -842,5 +843,88 @@ func TestIsLowResolution(t *testing.T) {
 					tt.w, tt.h, tt.imageType, got, tt.want)
 			}
 		})
+	}
+}
+
+// oversizedWebPHeader builds a minimal RIFF/WEBP byte stream containing only
+// a VP8X chunk declaring width x height (no VP8/VP8L bitstream). The webp
+// package's DecodeConfig returns the declared dimensions directly off the
+// VP8X chunk, so this is sufficient to exercise decodeWithLimit's
+// declared-dimensions check without any real pixel data (a
+// decompression-bomb-style input: ~30 bytes on the wire, huge declared area).
+func oversizedWebPHeader(t *testing.T, width, height uint32) []byte {
+	t.Helper()
+	widthMinusOne := width - 1
+	heightMinusOne := height - 1
+
+	payload := make([]byte, 10)
+	// byte 0: flags (none set); bytes 1-3: reserved.
+	payload[4] = byte(widthMinusOne)
+	payload[5] = byte(widthMinusOne >> 8)
+	payload[6] = byte(widthMinusOne >> 16)
+	payload[7] = byte(heightMinusOne)
+	payload[8] = byte(heightMinusOne >> 8)
+	payload[9] = byte(heightMinusOne >> 16)
+
+	var buf bytes.Buffer
+	buf.WriteString("RIFF")
+	var sizeBuf [4]byte
+	binary.LittleEndian.PutUint32(sizeBuf[:], uint32(4+8+len(payload))) // "WEBP" + VP8X chunk header + payload
+	buf.Write(sizeBuf[:])
+	buf.WriteString("WEBP")
+	buf.WriteString("VP8X")
+	var chunkLenBuf [4]byte
+	binary.LittleEndian.PutUint32(chunkLenBuf[:], uint32(len(payload)))
+	buf.Write(chunkLenBuf[:])
+	buf.Write(payload)
+
+	return buf.Bytes()
+}
+
+// The oversized-declared-dimensions test fixtures below are deliberately
+// incomplete images (a header claiming huge dimensions with no matching
+// pixel/bitstream data). This means an *unguarded* raw image.Decode also
+// errors on them -- but for the wrong reason (malformed/truncated input),
+// not because of a pixel-count rejection. Asserting only "err != nil" would
+// pass whether or not decodeWithLimit's guard is actually wired in, so each
+// assertion below pins the guard's specific error text ("too many pixels")
+// to make sure it's the pixel check firing, not an incidental decode failure.
+const tooManyPixelsMsg = "too many pixels"
+
+func TestConvertFormat_RejectsOversizedWebPDeclaredDimensions(t *testing.T) {
+	// 20000 x 6000 = 120,000,000 declared pixels, over maxDecodePixels (100M),
+	// but the file is only the RIFF/VP8X header (~30 bytes).
+	data := oversizedWebPHeader(t, 20_000, 6_000)
+
+	_, _, err := ConvertFormat(bytes.NewReader(data))
+	if err == nil {
+		t.Fatal("expected error for oversized declared WebP dimensions, got nil")
+	}
+	if !strings.Contains(err.Error(), tooManyPixelsMsg) {
+		t.Errorf("error = %q, want it to mention %q (i.e. rejected by the pixel-count guard, not an incidental decode failure)", err.Error(), tooManyPixelsMsg)
+	}
+}
+
+func TestTrimAlpha_RejectsOversizedDeclaredDimensions(t *testing.T) {
+	data := oversizedPNGHeader(t, 50_000, 50_000)
+
+	_, _, err := TrimAlpha(bytes.NewReader(data), 10)
+	if err == nil {
+		t.Fatal("expected error for oversized declared dimensions, got nil")
+	}
+	if !strings.Contains(err.Error(), tooManyPixelsMsg) {
+		t.Errorf("error = %q, want it to mention %q (i.e. rejected by the pixel-count guard, not an incidental decode failure)", err.Error(), tooManyPixelsMsg)
+	}
+}
+
+func TestCrop_RejectsOversizedDeclaredDimensions(t *testing.T) {
+	data := oversizedPNGHeader(t, 50_000, 50_000)
+
+	_, _, err := Crop(bytes.NewReader(data), 0, 0, 10, 10)
+	if err == nil {
+		t.Fatal("expected error for oversized declared dimensions, got nil")
+	}
+	if !strings.Contains(err.Error(), tooManyPixelsMsg) {
+		t.Errorf("error = %q, want it to mention %q (i.e. rejected by the pixel-count guard, not an incidental decode failure)", err.Error(), tooManyPixelsMsg)
 	}
 }

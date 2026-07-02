@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 	"testing"
 )
 
@@ -214,10 +215,16 @@ func TestHashHex_RoundTrip(t *testing.T) {
 func TestPerceptualHash_RejectsOversizedDeclaredDimensions(t *testing.T) {
 	// 50000 x 50000 = 2.5 billion declared pixels, well over maxDecodePixels,
 	// but the file itself is only the PNG signature + IHDR chunk (~30 bytes).
+	// This fixture is also incomplete (no IDAT), so an unguarded image.Decode
+	// would error too, but for the wrong reason -- pin the guard's specific
+	// error text so the test actually proves the pixel-count check fired.
 	data := oversizedPNGHeader(t, 50_000, 50_000)
 
 	_, err := PerceptualHash(bytes.NewReader(data))
 	if err == nil {
 		t.Fatal("expected error for oversized declared dimensions, got nil")
+	}
+	if !strings.Contains(err.Error(), "too many pixels") {
+		t.Errorf("error = %q, want it to mention %q (i.e. rejected by the pixel-count guard, not an incidental decode failure)", err.Error(), "too many pixels")
 	}
 }
