@@ -227,10 +227,11 @@ fi
 # --------------------------------------------------------------------------
 # govulncheck scans the whole module against a network-fetched vuln DB, which
 # is too slow to run on every code commit. Its result can only change when the
-# dependency set changes, so gate it on staged go.mod / go.sum. CI's
-# security.yml runs govulncheck unconditionally against the live DB as the
-# authoritative backstop, and the pre-push gate deliberately skips it (see
-# reference_govulncheck_local_vs_ci), so nothing is lost by scoping here.
+# dependency set changes, so gate it on staged go.mod / go.sum. The pre-push
+# gate now runs govulncheck unconditionally (blocking) as a second, later
+# checkpoint, and CI's security.yml runs it again against the live DB as the
+# authoritative backstop (see reference_govulncheck_local_vs_ci), so nothing is
+# lost by scoping this earlier commit-time check to staged dependency changes.
 STAGED_GO_MOD=$(git diff --cached --name-only --diff-filter=ACM -- 'go.mod' 'go.sum' || true)
 if [ -n "$STAGED_GO_MOD" ]; then
     if ! command -v govulncheck &>/dev/null; then

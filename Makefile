@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan bruno-ci
+.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan audit bruno-ci
 
 # Use bash for all recipes so bash-only constructs (set -o pipefail) work even
 # where /bin/sh is dash (Debian/Ubuntu); plain sh lacks pipefail.
@@ -177,6 +177,68 @@ favicon:
 scan:
 	docker build --no-cache -f build/docker/Dockerfile -t ghcr.io/sydlexius/stillwater:scan .
 	grype ghcr.io/sydlexius/stillwater:scan --fail-on high
+
+## audit: Advisory local security pass (govulncheck + gosec + semgrep + syft/grype); govulncheck/grype gate, gosec/semgrep advisory-only
+# Runs each sub-tool sequentially, capturing each exit code into a shell var
+# instead of relying on `set -e` (mirrors the bruno-ci capture-then-decide
+# pattern), so one tool's failure doesn't abort the rest. gosec and semgrep
+# are purely advisory (gosec produced ~165 mostly-FP hits in #1929); semgrep,
+# syft, and grype are optional external binaries and soft-skip with an
+# install hint when absent. Only govulncheck failing, or grype finding a
+# High/Critical CVE (matching the `scan` target's --fail-on high cutoff),
+# fails the target.
+audit:
+	@set -uo pipefail; \
+	OVERALL=0; \
+	\
+	echo "[audit] === govulncheck (gating) ==="; \
+	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; \
+	GOVULN_STATUS=$$?; \
+	if [ "$$GOVULN_STATUS" -eq 0 ]; then GOVULN_RESULT="PASS"; else GOVULN_RESULT="FAIL"; OVERALL=1; fi; \
+	\
+	echo ""; \
+	echo "[audit] === gosec (advisory) ==="; \
+	go run github.com/securego/gosec/v2/cmd/gosec@v2.22.4 ./...; \
+	GOSEC_STATUS=$$?; \
+	if [ "$$GOSEC_STATUS" -eq 0 ]; then GOSEC_RESULT="PASS"; else GOSEC_RESULT="ADVISORY"; fi; \
+	\
+	echo ""; \
+	echo "[audit] === semgrep (advisory) ==="; \
+	if ! command -v semgrep >/dev/null 2>&1; then \
+	  echo "[audit] semgrep not found on PATH; skipping (install: https://semgrep.dev/docs/getting-started/)"; \
+	  SEMGREP_RESULT="SKIP"; \
+	else \
+	  semgrep --config=auto; \
+	  SEMGREP_STATUS=$$?; \
+	  if [ "$$SEMGREP_STATUS" -eq 0 ]; then SEMGREP_RESULT="PASS"; else SEMGREP_RESULT="ADVISORY"; fi; \
+	fi; \
+	\
+	echo ""; \
+	echo "[audit] === SBOM/CVE scan: syft -> grype (gating when present) ==="; \
+	if ! command -v syft >/dev/null 2>&1; then \
+	  echo "[audit] syft not found on PATH; skipping (install: https://github.com/anchore/syft)"; \
+	  SBOM_RESULT="SKIP"; \
+	elif ! command -v grype >/dev/null 2>&1; then \
+	  echo "[audit] grype not found on PATH; skipping (install: https://github.com/anchore/grype)"; \
+	  SBOM_RESULT="SKIP"; \
+	else \
+	  syft dir:. -o syft-json 2>/dev/null | grype --fail-on high sbom:-; \
+	  GRYPE_STATUS=$$?; \
+	  if [ "$$GRYPE_STATUS" -eq 0 ]; then SBOM_RESULT="PASS"; else SBOM_RESULT="FAIL"; OVERALL=1; fi; \
+	fi; \
+	\
+	echo ""; \
+	echo "[audit] === summary ==="; \
+	echo "[audit] govulncheck: $$GOVULN_RESULT (gating)"; \
+	echo "[audit] gosec:       $$GOSEC_RESULT (advisory)"; \
+	echo "[audit] semgrep:     $$SEMGREP_RESULT (advisory)"; \
+	echo "[audit] syft/grype:  $$SBOM_RESULT (gating when present)"; \
+	if [ "$$OVERALL" -eq 0 ]; then \
+	  echo "[audit] result: PASS"; \
+	else \
+	  echo "[audit] result: FAIL (govulncheck and/or grype High/Critical found)"; \
+	fi; \
+	exit "$$OVERALL"
 
 ## docker-build: Build Docker image
 docker-build:

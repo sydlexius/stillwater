@@ -23,6 +23,7 @@
 | `make migrate` | Run database migrations |
 | `make favicon` | Regenerate PNG favicons from logo design |
 | `make scan` | Build Docker image (no cache) and scan for CVEs (requires grype) |
+| `make audit` | Advisory local security pass (govulncheck + gosec + semgrep + syft/grype); govulncheck/grype gate, gosec/semgrep advisory-only |
 | `make docker-build` | Build Docker image |
 | `make docker-run` | Run Docker container |
 | `make docker-stop` | Stop Docker container |
