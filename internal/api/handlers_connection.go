@@ -479,7 +479,7 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 // connectionProbeResult captures the outcome of testing a single platform
 // connection: whether the test succeeded, any drift warnings surfaced, and
 // (for platforms that support it) the resolved platform user/server IDs to
-// persist. HasPlatformUserID/HasPlatformServerID distinguish "not applicable
+// persist. HasPlatformUserID/HasServerID distinguish "not applicable
 // to this platform" from "resolution failed" (the latter still requests a
 // persist call, preserving the original always-persist-on-attempt behavior
 // for the user ID and persist-only-on-success behavior for the server ID).

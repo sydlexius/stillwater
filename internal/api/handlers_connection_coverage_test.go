@@ -653,6 +653,29 @@ func TestHandleTestConnection_UnsupportedType(t *testing.T) {
 	}
 }
 
+// runTestConnection issues the connection-test request for c against router r,
+// asserts the probe returned 200 OK, and returns the decoded JSON response body
+// so each caller can make its own case-specific assertions (status/drift/
+// persistence). It only removes the shared request/serve/status/decode
+// boilerplate; it makes no assertions beyond the 200 status.
+func runTestConnection(t *testing.T, r *Router, c *connection.Connection) map[string]any {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/connections/"+c.ID+"/test", nil)
+	req.SetPathValue("id", c.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return resp
+}
+
 // TestHandleTestConnection_EmbyOK uses a stub server so the success branch
 // runs end-to-end, including drift detection (no conflicts on the stub).
 func TestHandleTestConnection_EmbyOK(t *testing.T) {
@@ -666,19 +689,7 @@ func TestHandleTestConnection_EmbyOK(t *testing.T) {
 	}
 	newConnectionTestConn(t, r, c)
 
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/connections/"+c.ID+"/test", nil)
-	req.SetPathValue("id", c.ID)
-
-	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	resp := runTestConnection(t, r, c)
 	if resp["status"] != "ok" {
 		t.Errorf("status = %v, want ok", resp["status"])
 	}
@@ -757,19 +768,7 @@ func TestHandleTestConnection_JellyfinOK(t *testing.T) {
 	}
 	newConnectionTestConn(t, r, c)
 
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/connections/"+c.ID+"/test", nil)
-	req.SetPathValue("id", c.ID)
-
-	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	resp := runTestConnection(t, r, c)
 	if resp["status"] != "ok" {
 		t.Errorf("status = %v, want ok", resp["status"])
 	}
@@ -804,19 +803,7 @@ func TestHandleTestConnection_EmbyDrift(t *testing.T) {
 	}
 	newConnectionTestConn(t, r, c)
 
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/connections/"+c.ID+"/test", nil)
-	req.SetPathValue("id", c.ID)
-
-	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	resp := runTestConnection(t, r, c)
 	if resp["status"] != "ok" {
 		t.Errorf("status = %v, want ok", resp["status"])
 	}
@@ -846,19 +833,7 @@ func TestHandleTestConnection_LidarrOK(t *testing.T) {
 	}
 	newConnectionTestConn(t, r, c)
 
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/connections/"+c.ID+"/test", nil)
-	req.SetPathValue("id", c.ID)
-
-	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	resp := runTestConnection(t, r, c)
 	if resp["status"] != "ok" {
 		t.Errorf("status = %v, want ok", resp["status"])
 	}
@@ -893,19 +868,7 @@ func TestHandleTestConnection_LidarrCleanNoDrift(t *testing.T) {
 	}
 	newConnectionTestConn(t, r, c)
 
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/connections/"+c.ID+"/test", nil)
-	req.SetPathValue("id", c.ID)
-
-	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	resp := runTestConnection(t, r, c)
 	if resp["status"] != "ok" {
 		t.Errorf("status = %v, want ok", resp["status"])
 	}
