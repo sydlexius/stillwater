@@ -2,7 +2,9 @@
 
 ## Pre-push gate
 
-Run `bash scripts/pre-push-gate.sh` before anything else. It runs tests, OpenAPI consistency check, and generated-file staleness check. The LLM is not needed for these -- they are deterministic.
+Run `bash scripts/pre-push-gate.sh` before anything else. It runs tests, OpenAPI consistency check, generated-file staleness check, and other deterministic checks (patch coverage, Bruno route parity, UI-preference coverage, and more). The LLM is not needed for these -- they are deterministic.
+
+The UI-preference coverage step (`scripts/prefs-coverage.py`, backed by `.prefs.toml`) is Layer 1 only, and it is REGRESSION-ONLY: for a changed surface file that matches a tracked preference's surface glob, it flags a failure only when the file referenced the preference's driving token/class at the base revision and no longer does at HEAD. It does not require every file matching a (possibly broad) surface glob to carry every preference's token -- a file that never carried it, including a brand-new file, is never flagged. It does not catch a CSS cascade-override (a more specific rule beating a preference-driven variable) -- confirming that requires rendered evidence (a computed-style assertion against the live page), which is out of scope for this static, diff-scoped check.
 
 Then run `/pr-review-toolkit:review-pr` for code review. Fix all critical/important findings before pushing.
 

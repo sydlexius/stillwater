@@ -3,9 +3,17 @@
 # Maps each user-configurable VISUAL preference to how a rendered surface is
 # verified to honor it. Consumed by (a) the orchestrate adversarial-review
 # charter's USER-PREFERENCE COVERAGE dimension, and (b)
-# ~/.claude/scripts/prefs-coverage.py, a deterministic prep-pr gate (NOT yet
-# wired into .gates.toml -- see the recommended snippet at the bottom of this
-# file's companion PR description).
+# scripts/prefs-coverage.py, a deterministic gate step run from
+# scripts/pre-push-gate.sh (the command .gates.toml's [prep_pr] gate invokes;
+# see #2195).
+#
+# prefs-coverage.py enforces REGRESSION-ONLY semantics: for a changed file
+# matching a pref's `surface` glob, it flags MISSING only when that file
+# matched `verify` at the base revision and no longer does at HEAD (a
+# surface that used to honor the pref and stopped). It does NOT require
+# every file matching a broad `surface` glob to carry every pref's token --
+# a surface that never carried the token (including a brand-new file) is
+# never flagged.
 #
 # This file POINTS at the authoritative pref list; it does not re-declare pref
 # values. Every [[pref]].verify below was confirmed with a real grep hit

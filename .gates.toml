@@ -1,5 +1,7 @@
 # Read by gate-runner.py (cc-orchestrator >= v0.49.0).
 [prep_pr]
+# pre-push-gate.sh now also runs scripts/prefs-coverage.py (.prefs.toml
+# UI-preference coverage, #2195) as one of its steps.
 gate = "bash scripts/pre-push-gate.sh"
 
 [merge_pr]
