@@ -13,12 +13,14 @@ flowchart TD
     build_matrix["Build Matrix (${{ matrix.goos }}, ${{ matrix.goarch }})"]
     cache_usage["Cache Usage Check"]
     changes["Detect Changes"]
-    coverage_floor["Coverage Floor"]
+    coverage_floor["Coverage Floor Check"]
+    coverage_floor_summary["Coverage Floor"]
     coverage_upload["Upload Coverage"]
     docker["Docker Build"]
     go_cache_primer["Go Cache Primer"]
     js_test["JS Unit Tests"]
-    lint["Lint"]
+    lint["Lint Check"]
+    lint_summary["Lint"]
     test["Test Shard"]
     test_summary["Test"]
 
@@ -30,6 +32,9 @@ flowchart TD
     coverage_floor --> build_matrix
     changes --> coverage_floor
     test --> coverage_floor
+    changes --> coverage_floor_summary
+    test --> coverage_floor_summary
+    coverage_floor --> coverage_floor_summary
     test --> coverage_upload
     changes --> docker
     lint --> docker
@@ -38,6 +43,8 @@ flowchart TD
     changes --> go_cache_primer
     changes --> js_test
     changes --> lint
+    changes --> lint_summary
+    lint --> lint_summary
     changes --> test
     go_cache_primer --> test
     changes --> test_summary

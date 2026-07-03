@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/version"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -63,6 +66,31 @@ func assertPasswordWrong(t *testing.T, ctx context.Context, db *sql.DB, username
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), auth.PrehashPassword(password)); err == nil {
 		t.Fatalf("expected password mismatch for %s but it matched", username)
+	}
+}
+
+// TestPrintVersion drives the "version" subcommand's underlying seam
+// directly (main() itself, which reads the real os.Args/os.Stdout, is not
+// exercised by unit tests). Simulates ldflags injection by swapping the
+// package-level version.Version var for the duration of the test, mirroring
+// the withVersion helper in internal/version's own test suite.
+func TestPrintVersion(t *testing.T) {
+	origVersion := version.Version
+	version.Version = "9.9.9-test"
+	t.Cleanup(func() { version.Version = origVersion })
+
+	var buf bytes.Buffer
+	printVersion(&buf)
+
+	got := strings.TrimSpace(buf.String())
+	if got == "" {
+		t.Fatal("printVersion wrote a blank string")
+	}
+	if !strings.Contains(got, "9.9.9-test") {
+		t.Errorf("printVersion output = %q, want it to contain the injected version %q", got, "9.9.9-test")
+	}
+	if got != version.String() {
+		t.Errorf("printVersion output = %q, want exactly version.String() = %q", got, version.String())
 	}
 }
 

@@ -69,11 +69,12 @@ import (
 )
 
 func main() {
-	// Handle subcommands before starting the server. The switch has only one
-	// case today but is shaped for adding future subcommands (reset-config,
-	// migrate-only, etc.) without rewriting the dispatch.
+	// Handle subcommands before starting the server.
 	if len(os.Args) > 1 {
-		switch os.Args[1] { //nolint:gocritic // singleCaseSwitch: shaped for future subcommand cases, see comment above
+		switch os.Args[1] {
+		case "version":
+			printVersion(os.Stdout)
+			return
 		case "reset-credentials":
 			if err := resetCredentials(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -1503,6 +1504,13 @@ func resolveSessionSecret(cfg *config.Config, logger *slog.Logger) (string, erro
 	logger.Warn("generated new CSRF session secret -- back up this file",
 		slog.String("path", secretFile))
 	return secret, nil
+}
+
+// printVersion writes the ldflags-injected version string to w. Extracted
+// from the "version" subcommand case so it has a seam a test can drive
+// without invoking main() or the process's real os.Stdout.
+func printVersion(w io.Writer) {
+	fmt.Fprintln(w, version.String()) //nolint:errcheck // stdout write; nothing actionable if it fails
 }
 
 // resetCredentials wipes all stored credentials from the database.

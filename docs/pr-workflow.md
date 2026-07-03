@@ -98,6 +98,19 @@ gh api "repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies" \
 
 Automatic re-review on push is **disabled** (`review_on_push: false`). Re-review must be triggered manually from the GitHub PR page. The GitHub API does not support re-requesting review from bot accounts (422 error).
 
+## Required-check x paths-filter invariant (#2199, #2200)
+
+`.github/workflows/ci.yml` gates most work on the `changes` job's `dorny/paths-filter` output (`code`, `js`, `a11y`) so docs-only PRs skip the expensive Go/Node jobs. The live "Protect main" branch-protection ruleset requires **five** status contexts: `Build`, `Test`, `Lint`, `Coverage Floor`, and `Bruno API Tests`. Every one of them must still report **success** (not skipped) on every PR, including docs-only ones, and must **fail closed** if the `changes` (or equivalent) detector job itself errors. Two defects motivated the current shape (issue #2199):
+
+- **D1 (skip instead of pass):** a required context produced by a job gated `if: needs.changes.outputs.code == 'true'` skips entirely on a non-code PR. GitHub never resolves a skipped required check to success, so the PR becomes permanently unmergeable.
+- **D2 (trusting outputs without checking result):** `needs.<job>.outputs` is empty both when the job's condition was `false` AND when the job crashed/was cancelled. A wrapper that reads `outputs.code != 'true'` as "safe to pass" also passes when the `changes` job itself failed, silently satisfying the gate without lint/test/build/coverage-floor ever running.
+
+The fix: every required context in `ci.yml` is owned by an always-running (`if: always()`) aggregator/wrapper job that (1) asserts `needs.changes.result == 'success'` before trusting `needs.changes.outputs.*` (fails closed on a crashed detector), (2) exits 0 if `code != 'true'` (docs-only PR: pass, not skip), and (3) otherwise mirrors the underlying worker job's result (and, for `build`/`coverage-floor-summary`, also fails closed if the worker was left `skipped` by an upstream dependency failure on an actual code change rather than genuinely running). See `lint`/`lint-summary`, `test`/`test-summary`, `coverage-floor`/`coverage-floor-summary`, and `build-matrix`/`build` in `ci.yml` for the pattern.
+
+`Bruno API Tests` (`.github/workflows/bruno-ci.yml`) is already compliant: its `bruno` job carries no job-level `if` at all (only individual steps are conditioned on `dorny/paths-filter`), so the job always runs and always reports a real result -- no wrapper needed. `gate.yml`'s required Pre-Push Gate jobs are the same shape (job never gated, only inner steps skipped) and also need no change.
+
+`JS Unit Tests` and `A11y Smoke Tests` are gated the same D1-prone way as the five above, but there is no in-repo evidence (no `.github/settings.yml` or ruleset-as-code; confirmed against the live ruleset, which lists only the five contexts above) that they are currently required. If either is promoted to required, it needs the same always-running wrapper treatment described above.
+
 ## Copilot instruction files
 
 Global instructions: `.github/copilot-instructions.md` (must stay under 4,000 characters). Domain-specific guidance in `.github/instructions/`:
