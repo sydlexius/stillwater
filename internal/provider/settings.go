@@ -344,6 +344,45 @@ func (fp FieldPriority) EnabledProviders() []ProviderName {
 	return result
 }
 
+// Contains reports whether name is present in the priority list.
+func (fp *FieldPriority) Contains(name ProviderName) bool {
+	for _, p := range fp.Providers {
+		if p == name {
+			return true
+		}
+	}
+	return false
+}
+
+// AddProvider appends name to the priority list if it is not already
+// present. It returns true if the list was modified.
+func (fp *FieldPriority) AddProvider(name ProviderName) bool {
+	if fp.Contains(name) {
+		return false
+	}
+	fp.Providers = append(fp.Providers, name)
+	return true
+}
+
+// RemoveProvider removes name from the priority list if present. It returns
+// true if the list was modified.
+func (fp *FieldPriority) RemoveProvider(name ProviderName) bool {
+	var filtered []ProviderName
+	removed := false
+	for _, p := range fp.Providers {
+		if p == name {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	if !removed {
+		return false
+	}
+	fp.Providers = filtered
+	return true
+}
+
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
