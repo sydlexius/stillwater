@@ -1,0 +1,25 @@
+meta {
+  name: List Log Files (auth gate)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{apiBase}}/logs/files
+  body: none
+  auth: none
+}
+
+docs {
+  GET /api/v1/logs/files lists rotated log files on disk. It is admin-gated
+  (wrapAuth -> RequireAdmin), so this smoke deliberately sends NO session
+  cookie and asserts a 401, proving the endpoint exists and is gated. The 200
+  response shape is covered by the Go unit tests in internal/api
+  (handleListLogFiles) and internal/logging (ListLogFiles).
+}
+
+tests {
+  test("unauthenticated request is rejected (admin-gated)", function() {
+    expect(res.status).to.equal(401);
+  });
+}

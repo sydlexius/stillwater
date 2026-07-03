@@ -1,0 +1,29 @@
+meta {
+  name: Rules Status
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{apiBase}}/rules/status
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response reports scheduler status fields", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body).to.have.property("last_evaluation_at");
+    expect(res.body).to.have.property("interval_minutes");
+    expect(res.body).to.have.property("next_evaluation_at");
+    expect(res.body.scheduler_enabled).to.be.a("boolean");
+  });
+}
