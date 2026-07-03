@@ -652,7 +652,11 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 
 	prober, err := r.newConnectionProber(conn.Type)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		// Log the underlying prober-selection error server-side but return a
+		// controlled generic message so no raw error text reaches the client
+		// (matches origin/main byte-for-byte; keeps the raw-error-leak gate clean).
+		r.logger.Warn("selecting connection prober", "type", conn.Type, "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type: " + conn.Type})
 		return
 	}
 
