@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"fmt"
@@ -46,7 +46,7 @@ templ SectionProviders(data ArtistDetailPageData) {
 	</section>
 }
 
-// SectionDiscography renders the Discography section for the next/ artist-detail
+// SectionDiscography renders the Discography section for the artist-detail
 // page (4C, M55 #1336). The album list is lazy-loaded on intersection via the
 // GET /artists/{id}/discography/tab endpoint, which accepts optional search/sort/
 // order query params for server-side filtering and sorting. A toolbar with a
@@ -170,7 +170,7 @@ script discographySetOrder(artistID string, dir string) {
 	});
 }
 
-// SectionDebug renders the Debug section for the next/ artist-detail page (4C,
+// SectionDebug renders the Debug section for the artist-detail page (4C,
 // M55 #1336). It is called ONLY when data.Detail.ShowPlatformDebug &&
 // data.Detail.HasDebugConnection (the gate lives in ArtistDetailPage's section
 // switch). Emby and Jellyfin connections each get a lazy read-only

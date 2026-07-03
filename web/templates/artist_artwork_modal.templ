@@ -1,25 +1,24 @@
-package next
+package templates
 
 import (
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // ArtworkModal is the in-page "Manage artwork" modal (M55 #1336, 4B) that
-// supersedes the /artists/{id}/images "Fetch Images" page for the next/ channel
+// supersedes the /artists/{id}/images "Fetch Images" page for this screen
 // (that route remains registered). It is rendered once on the artist-detail page
 // (hidden by default); data-sw-artwork-open triggers anywhere on the page open it
 // (artwork-modal.js) pre-selected to a kind. A kind switcher (Primary / Logo /
 // Banner / Backdrops) swaps the active kind WITHOUT closing the modal: the body
 // lazy-loads the reused ArtworkManageEditor fragment for that kind from
-// GET /next/artists/{id}/artwork-modal?kind=. The modal also surfaces the
+// GET /artists/{id}/artwork-modal?kind=. The modal also surfaces the
 // per-connection reconciliation status, a Revert-to-original affordance
 // (consumes #1837; shown only when a backup exists), and an in-modal conflict
 // gate banner for structured 409 responses.
 //
 // Cropper.js assets load once here so the lazily-loaded editor's crop functions
 // resolve the global Cropper; the editor fragment itself never re-includes them.
-templ ArtworkModal(assets templates.AssetPaths, data *templates.ArtistDetailData) {
+templ ArtworkModal(assets AssetPaths, data *ArtistDetailData) {
 	{{ a := &data.Artist }}
 	<link rel="stylesheet" href={ assets.CropperCSS }/>
 	<script src={ assets.CropperJS }></script>
@@ -51,7 +50,7 @@ templ ArtworkModal(assets templates.AssetPaths, data *templates.ArtistDetailData
 				</div>
 				// Kind switcher: a toggle-button group that swaps the active kind
 				// without closing the modal. Deliberately NOT role="tablist" -- the
-				// next/ detail page is single-scroll and must not render a tab strip.
+				// detail page is single-scroll and must not render a tab strip.
 				<div class="mt-3 flex flex-wrap gap-1.5" role="group" aria-label={ t(ctx, "artist.artwork.manage") }>
 					for _, kind := range []string{"primary", "logo", "banner", "backdrops"} {
 						// Styled (input.css) to match the hero Refresh / Edit / Actions

@@ -9,55 +9,9 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
-	"github.com/sydlexius/stillwater/web/templates/next"
 )
 
-// handleNextArtistDetailPage serves the next/ channel artist-detail page
-// (M55 #1336).
-//
-// In stable mode (SW_UX=stable) the UX middleware 404s any /next/* request
-// before this handler runs (decision 12 in architecture-decisions.md). The
-// in-handler channel guard below is therefore only reachable when the lane IS
-// enabled (next/dual mode) and the resolved channel is not "next" -- triggered
-// by an explicit X-Stillwater-UX: stable header. In that edge case it returns
-// 404 (decision 12: all handleNext* handlers return 404 on an explicit /next/
-// path with the stable opt-out; the path does not serve stable content).
-// Otherwise it assembles the shared ArtistDetailData, resolves prev/next-artist
-// neighbor ids (for the h/l shortcuts) from the filter-aware ListIDs ordering,
-// reads the section order/hidden prefs, and renders next.ArtistDetailPage.
-func (r *Router) handleNextArtistDetailPage(w http.ResponseWriter, req *http.Request) {
-	if !checkNextChannel(w, req) {
-		return
-	}
-
-	data, a, ok := r.buildArtistDetailData(w, req)
-	if !ok {
-		return
-	}
-
-	prevID, nextID := r.resolveArtistNeighbors(req, a.ID)
-
-	order := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailSectionOrder, ""))
-	hidden := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailHiddenSections, ""))
-	collapsed := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailCollapsedSections, ""))
-
-	pageData := next.ArtistDetailPageData{
-		Detail:       data,
-		PrevArtistID: prevID,
-		NextArtistID: nextID,
-		SectionOrder: order,
-		Hidden:       hidden,
-		Collapsed:    collapsed,
-	}
-
-	// Inject the field -> finding chips map so the metadata rows render an inline
-	// chip on each field a live violation touches (field-tag-on-rule; #1336). The
-	// stable channel never sets this, so its FieldDisplay rows stay chip-free.
-	ctx := templates.WithFieldFindings(req.Context(), r.buildFieldFindings(req.Context(), a.ID))
-	renderTempl(w, req.WithContext(ctx), next.ArtistDetailPage(r.assetsFor(req), pageData))
-}
-
-// artworkKindToType maps a next/ Manage-artwork modal kind (the plain-language
+// artworkKindToType maps a Manage-artwork modal kind (the plain-language
 // switcher label) to the API image-type segment the editor uses.
 // NOTE: tests/unit/artwork-modal.test.js mirrors these constants in GO_KIND_TO_TYPE;
 // keep both in sync when adding or changing cases.
@@ -74,18 +28,15 @@ func artworkKindToType(kind string) string {
 	}
 }
 
-// handleNextArtworkModal renders the reusable image editor (ArtworkManageEditor)
-// as a fragment for the next/ in-page Manage-artwork modal, scoped to the
-// requested kind. It reuses the same ImageSearchData the stable image page
-// builds (handleArtistImagesPage). The modal supersedes the stable
-// /artists/{id}/images page for the next/ channel; that route remains
-// registered. Capability deltas vs the stable page: this handler hardcodes
-// AutoCrop:false and SelectedIndex:-1 (the modal does not pre-select a slot).
-// The modal shell lazy-loads this fragment per active kind.
-func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request) {
-	if !checkNextChannel(w, req) {
-		return
-	}
+// handleArtworkModal renders the reusable image editor (ArtworkManageEditor)
+// as a fragment for the artist-detail page's in-page Manage-artwork modal,
+// scoped to the requested kind (promoted from the next/ channel in #1757
+// PR-3b). It reuses the same ImageSearchData the /artists/{id}/images page
+// builds (handleArtistImagesPage); that route remains registered. Capability
+// deltas vs the images page: this handler hardcodes AutoCrop:false and
+// SelectedIndex:-1 (the modal does not pre-select a slot). The modal shell
+// lazy-loads this fragment per active kind.
+func (r *Router) handleArtworkModal(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
 		r.renderLoginPage(w, req)
@@ -99,7 +50,7 @@ func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request
 			http.Error(w, "artist not found", http.StatusNotFound)
 			return
 		}
-		r.logger.Error("handleNextArtworkModal: GetByID", "artist_id", id, "error", err)
+		r.logger.Error("handleArtworkModal: GetByID", "artist_id", id, "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -121,7 +72,7 @@ func (r *Router) handleNextArtworkModal(w http.ResponseWriter, req *http.Request
 		var wsErr error
 		webSearchEnabled, wsErr = r.providerSettings.AnyWebSearchEnabled(req.Context())
 		if wsErr != nil {
-			r.logger.Warn("handleNextArtworkModal: AnyWebSearchEnabled", "error", wsErr)
+			r.logger.Warn("handleArtworkModal: AnyWebSearchEnabled", "error", wsErr)
 			// webSearchEnabled stays false: degraded but non-fatal
 		}
 	}

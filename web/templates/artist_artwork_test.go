@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"bytes"
@@ -7,15 +7,14 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // renderArtworkSection renders ArtworkSection for the given detail data and
 // returns the HTML, failing the test on a render error.
-func renderArtworkSection(t *testing.T, data *templates.ArtistDetailData) string {
+func renderArtworkSection(t *testing.T, data *ArtistDetailData) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := ArtworkSection(data, false).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtworkSection(data, false).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render artwork section: %v", err)
 	}
 	return buf.String()
@@ -26,7 +25,7 @@ func renderArtworkSection(t *testing.T, data *templates.ArtistDetailData) string
 // "Manage artwork" trigger (default kind = primary).
 func TestArtworkSection_SectionChrome(t *testing.T) {
 	t.Parallel()
-	data := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Chrome Test"}}
+	data := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Chrome Test"}}
 	out := renderArtworkSection(t, data)
 
 	for label, want := range map[string]string{
@@ -51,7 +50,7 @@ func TestArtworkSection_IdentityTiles(t *testing.T) {
 
 	// All three single-slot kinds present so the logo checker + per-tile
 	// affordances render.
-	data := &templates.ArtistDetailData{Artist: artist.Artist{
+	data := &ArtistDetailData{Artist: artist.Artist{
 		ID:           "art-1",
 		Name:         "Tiles",
 		ThumbExists:  true,
@@ -82,7 +81,7 @@ func TestArtworkSection_IdentityTiles(t *testing.T) {
 
 	// A missing kind must render an add-state that opens the modal (not a link to
 	// the retired image page).
-	missing := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Tiles", LogoExists: false}}
+	missing := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Tiles", LogoExists: false}}
 	missingOut := renderArtworkSection(t, missing)
 	if !strings.Contains(missingOut, `data-artwork-kind="logo"`) {
 		t.Error("missing-logo tile should open the modal pre-selected to logo")
@@ -103,7 +102,7 @@ func TestArtworkSection_IdentityTiles(t *testing.T) {
 func TestArtworkSection_BackdropsCarousel(t *testing.T) {
 	t.Parallel()
 
-	withFanart := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "BD", FanartCount: 3}}
+	withFanart := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "BD", FanartCount: 3}}
 	out := renderArtworkSection(t, withFanart)
 	for label, want := range map[string]string{
 		"tile grid":           "sw-artwork-bd-grid",
@@ -134,7 +133,7 @@ func TestArtworkSection_BackdropsCarousel(t *testing.T) {
 		t.Errorf("the [+] add-tile must render immediately after the last backdrop (idx add=%d last=%d)", addTileIdx, lastBackdropIdx)
 	}
 
-	noFanart := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "BD", FanartCount: 0}}
+	noFanart := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "BD", FanartCount: 0}}
 	emptyOut := renderArtworkSection(t, noFanart)
 	if !strings.Contains(emptyOut, `data-artwork-kind="backdrops"`) {
 		t.Error("empty backdrops state should open the modal's Backdrops kind")
@@ -147,9 +146,9 @@ func TestArtworkSection_BackdropsCarousel(t *testing.T) {
 func TestArtworkSection_ReconciliationStatus(t *testing.T) {
 	t.Parallel()
 
-	data := &templates.ArtistDetailData{
+	data := &ArtistDetailData{
 		Artist: artist.Artist{ID: "art-1", Name: "Recon"},
-		Connections: []templates.ArtistDetailConnection{
+		Connections: []ArtistDetailConnection{
 			{ID: "c1", Name: "Managed Emby", Type: "emby", Managed: true},
 			{ID: "c2", Name: "Unmanaged Jellyfin", Type: "jellyfin", Managed: false},
 			{ID: "c3", Name: "Lidarr", Type: "lidarr", Managed: false},
@@ -174,7 +173,7 @@ func TestArtworkSection_ReconciliationStatus(t *testing.T) {
 // the section states the local folder is the only source of truth.
 func TestArtworkSection_ReconciliationLocalOnly(t *testing.T) {
 	t.Parallel()
-	data := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Local"}}
+	data := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Local"}}
 	out := renderArtworkSection(t, data)
 	if !strings.Contains(out, "only source of truth") {
 		t.Error("with no connections the section should state local-only source of truth")
@@ -189,7 +188,7 @@ func TestArtworkSection_ReconciliationLocalOnly(t *testing.T) {
 func TestArtistDetailPage_RendersLightboxOverlay(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, detailPageData(nil, nil)).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, detailPageData(nil, nil)).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render page: %v", err)
 	}
 	if !strings.Contains(buf.String(), `id="sw-lightbox"`) {
@@ -203,7 +202,7 @@ func TestArtistDetailPage_RendersLightboxOverlay(t *testing.T) {
 // [+] add in a populated Backdrops carousel.
 func TestArtworkSection_MaintainerFeedback(t *testing.T) {
 	t.Parallel()
-	data := &templates.ArtistDetailData{Artist: artist.Artist{
+	data := &ArtistDetailData{Artist: artist.Artist{
 		ID: "art-1", Name: "FB",
 		ThumbExists: true, ThumbWidth: 600, ThumbHeight: 600, ThumbLowRes: true,
 		FanartCount: 3,
@@ -240,9 +239,9 @@ func TestArtworkSection_MaintainerFeedback(t *testing.T) {
 // hides the section body via the HTML hidden attribute.
 func TestArtworkSection_CollapsedState(t *testing.T) {
 	t.Parallel()
-	data := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Collapsed"}}
+	data := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Collapsed"}}
 	var buf bytes.Buffer
-	if err := ArtworkSection(data, true).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtworkSection(data, true).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render collapsed artwork section: %v", err)
 	}
 	out := buf.String()
@@ -259,10 +258,10 @@ func TestArtworkSection_CollapsedState(t *testing.T) {
 }
 
 // renderArtworkModal renders ArtworkModal and returns the HTML.
-func renderArtworkModal(t *testing.T, data *templates.ArtistDetailData) string {
+func renderArtworkModal(t *testing.T, data *ArtistDetailData) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := ArtworkModal(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtworkModal(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render artwork modal: %v", err)
 	}
 	return buf.String()
@@ -273,7 +272,7 @@ func renderArtworkModal(t *testing.T, data *templates.ArtistDetailData) string {
 // banner, the revert affordance, and the reconciliation panel.
 func TestArtworkModal_ShellAndKindSwitcher(t *testing.T) {
 	t.Parallel()
-	data := &templates.ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Modal"}}
+	data := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "Modal"}}
 	out := renderArtworkModal(t, data)
 
 	for label, want := range map[string]string{

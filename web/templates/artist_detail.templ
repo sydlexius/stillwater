@@ -2,17 +2,20 @@ package templates
 
 import (
 	"fmt"
-	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/connection"
-	img "github.com/sydlexius/stillwater/internal/image"
-	"github.com/sydlexius/stillwater/web/components"
 	"net/url"
-	"sort"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
-// ArtistDetailData holds the data for the artist detail page.
+// ArtistDetailData holds the shared data the artist-detail page renders. Since
+// the promotion (#1757 PR-3b) it feeds the canonical ArtistDetailPage (the
+// section-based screen formerly in web/templates/next/) via
+// ArtistDetailPageData.Detail.
 type ArtistDetailData struct {
 	Artist             artist.Artist
 	Members            []artist.BandMember
@@ -21,14 +24,12 @@ type ArtistDetailData struct {
 	LibraryName        string
 	LibrarySource      string
 	ProfileName        string                   // Active platform profile name for image terminology
-	ActiveTab          string                   // "overview", "images", "providers", "discography", "history", "violations" (default: "overview")
 	Connections        []ArtistDetailConnection // Platform connections with external URLs
-	ShowPlatformDebug  bool                     // Whether to show the Debug tab (from settings)
+	ShowPlatformDebug  bool                     // Whether to show the Debug section (per-user preference)
 	HasDebugConnection bool                     // Whether at least one Emby/Jellyfin connection exists
-	ViolationCount     int                      // Active violation count for the badge on the Violations tab
+	ViolationCount     int                      // Active violation count for the hero's findings summary
 	// ViolationsBySeverity holds the active-violation counts keyed by severity
-	// ("error"/"warning"/"info"), for the next/ hero's finding-severity summary.
-	// Empty/nil for the stable page (which uses the total ViolationCount only).
+	// ("error"/"warning"/"info"), for the hero's finding-severity summary.
 	ViolationsBySeverity map[string]int
 }
 
@@ -48,1442 +49,1479 @@ type ArtistDetailConnection struct {
 	Managed bool
 }
 
-templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
-	@Layout(data.Artist.Name, assets) {
-		<div class="space-y-6" data-sw-violations-sync data-artist-id={ data.Artist.ID }>
-			if data.Artist.FanartCount > 1 {
-				<div id="fanart-slideshow" class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true" data-fanart-count={ strconv.Itoa(data.Artist.FanartCount) } data-artist-id={ data.Artist.ID } data-fanart-path-template={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/{index}/file", data.Artist.ID) }>
-					<img
-						id="fanart-a"
-						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/0/file", assets.BasePath, data.Artist.ID) }
-						alt=""
-						class="absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-[2000ms]"
-					/>
-					<img
-						id="fanart-b"
-						src=""
-						alt=""
-						class="absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-[2000ms] opacity-0"
-					/>
-					<div class="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/55 dark:from-black/70 dark:via-black/50 dark:to-black/70"></div>
-				</div>
-			} else if data.Artist.FanartExists {
-				<div class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true">
-					<img
-						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/file", assets.BasePath, data.Artist.ID) }
-						alt=""
-						class="h-full w-full object-cover object-center"
-						onerror="this.style.display='none'"
-					/>
-					<div class="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/55 dark:from-black/70 dark:via-black/50 dark:to-black/70"></div>
-				</div>
+// ArtistDetailPageData is the render input for the artist-detail page
+// (M55 #1336, 4A). Detail carries the shared data both channels render; the
+// neighbor ids drive the hero's h/l prev/next-artist shortcuts; SectionOrder /
+// Hidden / Collapsed drive section reorder/visibility/collapsed-state (nil =
+// default order, nothing hidden, nothing collapsed) per #1774/#2065.
+type ArtistDetailPageData struct {
+	Detail       ArtistDetailData
+	PrevArtistID string
+	NextArtistID string
+	SectionOrder []string
+	Hidden       []string
+	Collapsed    []string
+}
+
+// isCollapsed reports whether sectionID is in the collapsed list. Mirrors
+// isHiddenSection (prefs_drawer.templ); used to seed the section bodies'
+// initial hidden state and the disclosure button's aria-expanded.
+func isCollapsed(sectionID string, collapsed []string) bool {
+	return slices.Contains(collapsed, sectionID)
+}
+
+// defaultSectionOrder is the design's section taxonomy (section 3). Hero is
+// rendered separately and pinned first (NOT in this reorderable list). 4A
+// renders metadata + findings + history + identifiers itself and leaves
+// stable-id mount points for artwork (4B) and providers/discography/debug (4C).
+var defaultSectionOrder = []string{
+	"metadata", "artwork", "findings", "providers", "discography", "debug", "identifiers",
+}
+
+// orderedSections returns the section ids to render in order, applying the user
+// pref (unknown ids dropped, missing-from-pref ids appended in default order)
+// and removing hidden ids. Hero is never in this list.
+func orderedSections(pref, hidden []string) []string {
+	hide := map[string]bool{}
+	for _, h := range hidden {
+		hide[h] = true
+	}
+	known := map[string]bool{}
+	for _, s := range defaultSectionOrder {
+		known[s] = true
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range pref {
+		if known[s] && !hide[s] && !seen[s] {
+			out = append(out, s)
+			seen[s] = true
+		}
+	}
+	for _, s := range defaultSectionOrder {
+		if !hide[s] && !seen[s] {
+			out = append(out, s)
+			seen[s] = true
+		}
+	}
+	return out
+}
+
+// ArtistDetailPage is the artist-detail page (promoted-by-move from the next/
+// channel in #1757 PR-3b): a single-scroll, tool-forward source-of-truth
+// reconciliation editor wrapped in @Layout. The
+// Hero is pinned first; sections 2-8 render in the user's pref order. 4A builds
+// metadata/findings/history/identifiers and leaves labeled stable-id mount
+// points for artwork (4B) and providers/discography (4C).
+templ ArtistDetailPage(assets AssetPaths, data ArtistDetailPageData) {
+	@Layout(data.Detail.Artist.Name, assets) {
+		<div
+			class="sw-next-artist-detail space-y-4"
+			data-sw-violations-sync
+			data-artist-id={ data.Detail.Artist.ID }
+			data-sw-fanart-base={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/fanart/", data.Detail.Artist.ID) }
+			data-sw-edit-all-url={ fmt.Sprintf("/api/v1/artists/%s/fields/edit-all", data.Detail.Artist.ID) }
+			data-sw-msg-save-failed={ t(ctx, "artist.save_failed_some") }
+			data-sw-msg-edit-partial={ t(ctx, "artist.edit_partial") }
+			data-sw-msg-session-expired={ t(ctx, "common.session_expired") }
+			data-sw-section-nav
+			if data.PrevArtistID != "" {
+				data-sw-prev-artist={ assets.BasePath + "/artists/" + data.PrevArtistID }
 			}
-			<div
-				class={
-					"pb-4",
-					templ.KV("border-b border-gray-200 dark:border-gray-700", !data.Artist.FanartExists),
-					templ.KV("border-b border-white/20", data.Artist.FanartExists),
-				}
-			>
-				<div class="flex items-center gap-2">
-					<a
-						href={ templ.SafeURL(artistsBackURL(data.Artist.LibraryID)) }
-						class={
-							"text-sm",
-							templ.KV("text-gray-800 dark:text-gray-300 hover:text-black dark:hover:text-white", !data.Artist.FanartExists),
-							templ.KV("text-white/75 hover:text-white drop-shadow", data.Artist.FanartExists),
-						}
-					>
-						{ t(ctx, "common.artists") }
-					</a>
-					<span
-						class={
-							templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
-							templ.KV("text-white/50", data.Artist.FanartExists),
-						}
-					>/</span>
-				</div>
-				<div class="flex items-center justify-between mt-2">
-					<div class="flex items-center gap-3">
-						if data.Artist.ThumbExists {
-							<img
-								src={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", data.Artist.ID) }
-								alt={ data.Artist.Name }
-								class={
-									"h-20 w-20 rounded-lg object-cover object-center flex-shrink-0",
-									templ.KV("ring-1 ring-gray-200 dark:ring-gray-700", !data.Artist.FanartExists),
-									templ.KV("ring-1 ring-white/20 drop-shadow-lg", data.Artist.FanartExists),
-								}
-								onerror="this.style.display='none'"
-							/>
-						}
-						<div>
-							if data.Artist.LogoExists {
-								<h1
-									id="artist-logo-fallback"
-									class={
-										"sr-only",
-										templ.KV("text-2xl font-bold", data.Artist.FanartExists),
-										templ.KV("text-white drop-shadow-md", data.Artist.FanartExists),
-									}
-								>{ data.Artist.Name }</h1>
-								<img
-									src={ fmt.Sprintf("%s/api/v1/artists/%s/images/logo/file", assets.BasePath, data.Artist.ID) }
-									alt={ data.Artist.Name }
-									class={
-										"max-h-20 max-w-[300px] object-contain object-left",
-										templ.KV("drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]", data.Artist.FanartExists),
-									}
-									onerror="this.style.display='none';document.getElementById('artist-logo-fallback').classList.remove('sr-only')"
-								/>
-							} else {
-								<h1
-									class={
-										"text-2xl font-bold",
-										templ.KV("text-white drop-shadow-md", data.Artist.FanartExists),
-									}
-								>{ data.Artist.Name }</h1>
+			if data.NextArtistID != "" {
+				data-sw-next-artist={ assets.BasePath + "/artists/" + data.NextArtistID }
+			}
+		>
+			@artistStickyHeader(assets, data)
+			@artistHero(assets, data)
+			@artistFieldLocksPanel(data)
+			// Reorderable region (#2065): SortableJS (section-layout.js) mounts on
+			// [data-sw-sortable-section] and drags its direct-child <section>s by the
+			// .sw-section-drag-handle. The hero + sticky header stay outside so they
+			// are never reorderable. space-y-4 keeps the inter-card rhythm the outer
+			// container would otherwise give these as direct children.
+			<div class="space-y-4" data-sw-sortable-section>
+				for _, section := range orderedSections(data.SectionOrder, data.Hidden) {
+					switch section {
+						case "metadata":
+							@artistMetadataSection(&data.Detail, isCollapsed("metadata", data.Collapsed))
+						case "artwork":
+							@ArtworkSection(&data.Detail, isCollapsed("artwork", data.Collapsed))
+						case "findings":
+							@artistFindingsSection(&data.Detail, isCollapsed("findings", data.Collapsed))
+						case "providers":
+							@SectionProviders(data)
+						case "discography":
+							@SectionDiscography(data)
+						case "debug":
+							// Conditional: only render when the debug setting is on AND at least one
+							// Emby/Jellyfin connection exists (mirrors the stable-channel gate:
+							// ShowPlatformDebug && HasDebugConnection). Keeping "debug" in
+							// defaultSectionOrder lets it slot back into the user's chosen position
+							// without reflow when the gate opens.
+							if data.Detail.ShowPlatformDebug && data.Detail.HasDebugConnection {
+								@SectionDebug(data)
 							}
-							if data.Artist.SortName != "" && data.Artist.SortName != data.Artist.Name {
-								<p
-									class={
-										"text-sm mt-1",
-										templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
-										templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
-									}
-								>{ tf(ctx, "artist.sort_prefix", data.Artist.SortName) }</p>
-							}
-							if data.Artist.Disambiguation != "" {
-								<p
-									class={
-										"mt-1 text-sm",
-										templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
-										templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
-									}
-								>{ data.Artist.Disambiguation }</p>
-							}
-							if data.LibraryName != "" {
-								<p
-									class={
-										"mt-1 text-xs",
-										templ.KV("text-gray-400 dark:text-gray-500", !data.Artist.FanartExists),
-										templ.KV("text-white/60 drop-shadow", data.Artist.FanartExists),
-									}
-								>
-									{ tf(ctx, "artist.library_label", data.LibraryName) }
-									if data.LibrarySource != "" && data.LibrarySource != "manual" {
-										<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">
-											<img src={ logoSrc(data.LibrarySource) } class="h-3.5 w-3.5" alt=""/>
-											{ sourceDisplayName(data.LibrarySource) }
-										</span>
-									}
-								</p>
-							}
-						</div>
-					</div>
-					<div class="flex items-center gap-3 mr-4">
-						if data.Artist.Locked {
-							<span
-								class={
-									"inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
-									templ.KV("bg-amber-100/80 text-amber-700", !data.Artist.FanartExists),
-									templ.KV("bg-amber-500/20 text-amber-200 drop-shadow", data.Artist.FanartExists),
-								}
-							>
-								@components.IconLockClosed("h-3.5 w-3.5")
-								{ t(ctx, "common.locked") }
-								if data.Artist.LockSource != "" {
-									<span class="opacity-70">({ data.Artist.LockSource })</span>
-								}
-							</span>
-							@components.ContextHelp(
-								"help-locked-chip-"+data.Artist.ID,
-								t(ctx, "artist.help.locked_chip.label"),
-								t(ctx, "artist.help.locked_chip"),
-								"core-concepts/field-locks#layer-1-artist-lock-the-big-switch",
-							)
-						}
-						// Actions dropdown button
-						<div class="relative inline-flex" data-context-menu={ "artist-actions-" + data.Artist.ID }>
-							<button
-								type="button"
-								class={
-									"inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-									templ.KV("border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600", !data.Artist.FanartExists),
-									templ.KV("border border-white/30 bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm drop-shadow", data.Artist.FanartExists),
-								}
-								aria-haspopup="true"
-								aria-expanded="false"
-								aria-controls={ "ctx-panel-artist-actions-" + data.Artist.ID }
-								onclick={ components.ToggleContextMenu("artist-actions-" + data.Artist.ID) }
-							>
-								{ t(ctx, "common.actions") }
-								@components.IconChevronDown("h-4 w-4")
-							</button>
-							<div
-								id={ "ctx-panel-artist-actions-" + data.Artist.ID }
-								class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
-								role="menu"
-							>
-								// Help icons in this menu are siblings (not children) of their
-								// HTMX buttons, so clicking ? does not fire the hx-post. The
-								// sw-help-no-tab class on the wrapper span suppresses the inner
-								// button's tab stop (post-applied by ContextHelpScript) so
-								// keyboard menu navigation goes Run rules -> Refresh metadata
-								// without interleaving help icons. ARIA role=menu requires only
-								// menuitem descendants; this keeps the focus order coherent
-								// without restructuring the menu DOM.
-								<div class="flex items-center">
-									<button
-										type="button"
-										role="menuitem"
-										class="flex flex-1 items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/run-rules" }
-										hx-target="#refresh-panel"
-										hx-swap="innerHTML"
-										hx-indicator="#rules-spinner"
-									>
-										@components.IconPlay("h-4 w-4 text-gray-400")
-										{ t(ctx, "artist.run_rules") }
-									</button>
-									<span class="pr-2 sw-help-no-tab">
-										@components.ContextHelp(
-											"help-run-rules-"+data.Artist.ID,
-											t(ctx, "artist.help.run_rules.label"),
-											t(ctx, "artist.help.run_rules"),
-											"core-concepts/rules#how-evaluation-runs",
-										)
-									</span>
-								</div>
-								<div class="flex items-center">
-									<button
-										type="button"
-										role="menuitem"
-										class="flex flex-1 items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
-										hx-target="#refresh-panel"
-										hx-swap="innerHTML"
-										hx-indicator="#refresh-spinner"
-									>
-										@components.IconArrowPath("h-4 w-4 text-gray-400")
-										{ t(ctx, "artist.refresh_metadata") }
-									</button>
-									<span class="pr-2 sw-help-no-tab">
-										@components.ContextHelp(
-											"help-refresh-metadata-"+data.Artist.ID,
-											t(ctx, "artist.help.refresh_metadata.label"),
-											t(ctx, "artist.help.refresh_metadata"),
-											"how-to/refresh-metadata#what-a-refresh-does",
-										)
-									</span>
-								</div>
-								<button
-									type="button"
-									role="menuitem"
-									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
-									hx-target="#refresh-panel"
-									hx-swap="innerHTML"
-									if data.Artist.MusicBrainzID != "" {
-										hx-confirm={ t(ctx, "artist.reidentify_confirm") }
-										hx-vals='{"clear_ids": "true"}'
-									}
-									hx-indicator="#reidentify-spinner"
-								>
-									@components.IconMagnifyingGlass("h-4 w-4 text-gray-400")
-									if data.Artist.MusicBrainzID != "" {
-										{ t(ctx, "artist.reidentify") }
-									} else {
-										{ t(ctx, "artist.identify") }
-									}
-								</button>
-								<a
-									href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images", assets.BasePath, data.Artist.ID)) }
-									role="menuitem"
-									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-								>
-									@components.IconPhoto("h-4 w-4 text-gray-400")
-									{ t(ctx, "artist.fetch_all_images") }
-								</a>
-								<!-- Explicit "Rename Directory" action. Decoupled from
-									 the Name field edit so users opt in. Prompts for
-									 the new leaf name (default = current basename) and
-									 posts JSON; success reloads the page so the new
-									 path is reflected throughout the UI. The inline
-									 fetch must prepend basePath() and include the
-									 X-CSRF-Token header explicitly because hand-rolled
-									 fetch() bypasses the global htmx:configRequest hook
-									 that wires both for hx-* requests. Only render
-									 when the artist has an on-disk path and is not
-									 locked: the server returns 409 in those cases, so
-									 surfacing the action would dead-end at an alert. -->
-								if data.Artist.Path != "" && !data.Artist.Locked {
-									<button
-										type="button"
-										role="menuitem"
-										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										data-rename-prompt={ t(ctx, "artist.rename_directory_prompt") }
-										data-rename-current={ artistDirBasename(data.Artist.Path) }
-										data-rename-url={ "/api/v1/artists/" + data.Artist.ID + "/rename-directory" }
-										data-rename-failed-prefix={ t(ctx, "artist.rename_directory_failed") }
-										onclick="(function(btn){var newName=window.prompt(btn.dataset.renamePrompt, btn.dataset.renameCurrent);if(!newName)return;var bpEl=document.querySelector('meta[name=&quot;htmx-base-path&quot;]');var bp=bpEl?bpEl.content:'';var csrfMatch=document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);var csrf=csrfMatch?csrfMatch[1]:'';fetch(bp+btn.dataset.renameUrl,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},credentials:'same-origin',body:JSON.stringify({new_dirname:newName})}).then(function(resp){if(resp.ok){window.location.reload();return;}return resp.text().then(function(t){var msg=t;try{msg=JSON.parse(t).error||t;}catch(e){}window.alert(btn.dataset.renameFailedPrefix+msg);});}).catch(function(e){window.alert(btn.dataset.renameFailedPrefix+e.message);});})(this)"
-									>
-										@components.IconArrowPath("h-4 w-4 text-gray-400")
-										{ t(ctx, "artist.rename_directory") }
-									</button>
-								}
-								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
-								if data.Artist.Locked {
-									<button
-										type="button"
-										role="menuitem"
-										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/lock" }
-										hx-swap="none"
-										data-error-prefix={ t(ctx, "artist.platform_action_failed") }
-										hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
-									>
-										@components.IconLockOpen("h-4 w-4 text-gray-400")
-										{ t(ctx, "artist.unlock_artist") }
-									</button>
-								} else {
-									<button
-										type="button"
-										role="menuitem"
-										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/lock" }
-										hx-swap="none"
-										data-error-prefix={ t(ctx, "artist.platform_action_failed") }
-										hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
-									>
-										@components.IconLockClosed("h-4 w-4 text-gray-400")
-										{ t(ctx, "artist.lock_artist") }
-									</button>
-								}
-								if len(data.Connections) > 0 {
-									<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
-									for _, conn := range data.Connections {
-										<a
-											href={ templ.SafeURL(conn.URL) }
-											target="_blank"
-											rel="noopener noreferrer"
-											role="menuitem"
-											class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										>
-											@components.IconArrowTopRightOnSquare("h-4 w-4 text-gray-400")
-											{ tf(ctx, "artist.view_on_platform", conn.Name) }
-										</a>
-									}
-								}
-							</div>
-						</div>
-					</div>
-				</div>
-				<div id="refresh-panel" class="mt-3"></div>
-				<span
-					id="rules-spinner"
-					class={
-						"htmx-indicator text-sm",
-						templ.KV("text-gray-500", !data.Artist.FanartExists),
-						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
+						case "identifiers":
+							@artistIdentifiersSection(&data.Detail, isCollapsed("identifiers", data.Collapsed))
 					}
-				>{ t(ctx, "artist.running_rules") }</span>
-				<span
-					id="refresh-spinner"
-					class={
-						"htmx-indicator text-sm",
-						templ.KV("text-gray-500", !data.Artist.FanartExists),
-						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
-					}
-				>{ t(ctx, "artist.fetching_metadata") }</span>
-				<span
-					id="reidentify-spinner"
-					class={
-						"htmx-indicator text-sm",
-						templ.KV("text-gray-500", !data.Artist.FanartExists),
-						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
-					}
-				>{ t(ctx, "artist.fetching_metadata") }</span>
-			</div>
-			// Lock banner
-			if data.Artist.Locked {
-				<div class="rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
-					@components.IconLockClosed("h-4 w-4 flex-shrink-0")
-					{ t(ctx, "artist.locked_banner") }
-				</div>
-			}
-			// Field-level locks panel. Shown only when at least one field is
-			// locked so the UI stays quiet for the common case. Individual
-			// rows expose a small delete button that unlocks the field via
-			// HTMX; the response body is not rendered (hx-swap="none") and
-			// the chip is removed from the DOM client-side after a successful
-			// DELETE. If the final chip is removed the whole panel is hidden
-			// to avoid an empty amber card; a failed request leaves the chip
-			// in place and surfaces the error to the user.
-			if len(data.Artist.LockedFields) > 0 {
-				<div id={ "field-locks-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow">
-					<div class="flex items-center gap-2 mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-						@components.IconLockClosed("h-4 w-4")
-						<span>{ t(ctx, "artist.locked_fields") }</span>
-						@components.ContextHelp(
-							"help-locked-fields-panel-"+data.Artist.ID,
-							t(ctx, "artist.help.locked_fields_panel.label"),
-							t(ctx, "artist.help.locked_fields_panel"),
-							"core-concepts/field-locks#layer-2-field-locks-per-field-protection",
-						)
-					</div>
-					<div class="flex flex-wrap gap-2">
-						for _, f := range data.Artist.LockedFields {
-							<span class="field-chip inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">
-								{ f }
-								<button
-									type="button"
-									class="ml-1 text-amber-700 dark:text-amber-400 hover:text-amber-900"
-									hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/field-locks/" + url.PathEscape(f) }
-									hx-swap="none"
-									hx-trigger="click"
-									hx-on::after-request="(function(btn, ev){ if (ev.detail.successful) { var chip = btn.closest('.field-chip'); var panel = btn.closest('[id^=\'field-locks-\']'); chip.remove(); if (panel && !panel.querySelector('.field-chip')) { panel.remove(); } } else { alert(btn.getAttribute('data-unlock-error') || 'Unlock failed. Please try again.'); } })(this, event)"
-									data-unlock-error={ t(ctx, "artist.unlock_field_failed") }
-									aria-label={ t(ctx, "artist.unlock_field") }
-								>x</button>
-							</span>
-						}
-					</div>
-				</div>
-			}
-			// Tab bar
-			@artistDetailTabBar(normalizeTab(data.ActiveTab), data.ShowPlatformDebug && data.HasDebugConnection, data.ViolationCount)
-			// Tab panels
-			// -- Overview --
-			<div
-				id="panel-overview"
-				role="tabpanel"
-				aria-labelledby="tab-overview"
-				data-tab-panel="overview"
-				class={
-					"space-y-6",
-					templ.KV("hidden", normalizeTab(data.ActiveTab) != "overview"),
-				}
-			>
-				<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
-					<div class="md:col-span-2 space-y-6">
-						@FieldDisplay(&data.Artist, "biography", data.FieldProviders["biography"])
-						<section id={ "artist-tags-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.tags") }</h2>
-							@FieldDisplay(&data.Artist, "genres", data.FieldProviders["genres"])
-							@FieldDisplay(&data.Artist, "styles", data.FieldProviders["styles"])
-							@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
-						</section>
-						@MembersSection(data.Artist.ID, data.Members, data.FieldProviders["members"])
-					</div>
-					<div class="space-y-6">
-						<section id={ "artist-details-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<div class="flex items-center justify-between mb-3">
-								<h2 class="text-lg font-semibold">{ t(ctx, "artist.details") }</h2>
-								<button
-									type="button"
-									class="inline-flex items-center gap-1 rounded p-1 text-gray-600 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
-									title={ t(ctx, "artist.refresh_details") }
-									aria-label={ t(ctx, "artist.refresh_details") }
-									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
-									hx-target="#refresh-panel"
-									hx-swap="innerHTML"
-									hx-indicator={ "#details-refresh-spinner-" + data.Artist.ID }
-								>
-									@components.IconArrowPath("h-4 w-4")
-									<span class="text-xs font-medium">{ t(ctx, "common.refresh") }</span>
-									<span id={ "details-refresh-spinner-" + data.Artist.ID } class="htmx-indicator">
-										<svg class="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-										</svg>
-									</span>
-								</button>
-							</div>
-							<dl class="space-y-2 text-sm">
-								@FieldDisplay(&data.Artist, "name", data.FieldProviders["name"])
-								@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
-								@FieldDisplay(&data.Artist, "disambiguation", data.FieldProviders["disambiguation"])
-								@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
-								<div id={ "gender-wrap-" + data.Artist.ID }>
-									if !isGroupType(data.Artist.Type) {
-										@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
-									}
-								</div>
-								@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
-								@FieldDisplay(&data.Artist, "born", data.FieldProviders["born"])
-								@FieldDisplay(&data.Artist, "disbanded", data.FieldProviders["disbanded"])
-								@FieldDisplay(&data.Artist, "died", data.FieldProviders["died"])
-								@FieldDisplay(&data.Artist, "years_active", data.FieldProviders["years_active"])
-								@FieldDisplay(&data.Artist, "origin", data.FieldProviders["origin"])
-							</dl>
-						</section>
-						<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.aliases") }</h2>
-							@AliasesList(data.Artist.ID, data.Aliases)
-							<form
-								class="flex items-center gap-2"
-								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
-								hx-swap="none"
-								data-error-prefix={ t(ctx, "artist.alias_add_failed") }
-								hx-on::after-request="if(event.detail.successful){this.reset();window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
-							>
-								<input
-									name="alias"
-									placeholder={ t(ctx, "artist.add_alias_placeholder") }
-									required
-									class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-								/>
-								<input type="hidden" name="source" value="manual"/>
-								<button
-									type="submit"
-									class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-								>
-									{ t(ctx, "common.add") }
-								</button>
-							</form>
-						</section>
-					</div>
-				</div>
-			</div>
-			// -- Images --
-			<div
-				id="panel-images"
-				role="tabpanel"
-				aria-labelledby="tab-images"
-				data-tab-panel="images"
-				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "images"), }
-			>
-				@ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName, assets.BasePath)
-			</div>
-			// -- Providers --
-			<div
-				id="panel-providers"
-				role="tabpanel"
-				aria-labelledby="tab-providers"
-				data-tab-panel="providers"
-				class={
-					"space-y-6",
-					templ.KV("hidden", normalizeTab(data.ActiveTab) != "providers"),
-				}
-			>
-				<section id={ "artist-providers-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-					<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.provider_ids") }</h2>
-					<dl class="space-y-2 text-sm">
-						@FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
-						@FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"])
-						@FieldDisplay(&data.Artist, "discogs_id", data.FieldProviders["discogs_id"])
-						@FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"])
-						@FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"])
-					</dl>
-				</section>
-				// Platform state cards load lazily per connection
-				if len(data.Connections) > 0 {
-					<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow space-y-4">
-						<h2 class="text-lg font-semibold">{ t(ctx, "artist.platform_state") }</h2>
-						for _, conn := range data.Connections {
-							<div
-								id={ "platform-state-" + conn.ID }
-								hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s", data.Artist.ID, conn.ID) }
-								hx-trigger="revealed"
-								hx-swap="outerHTML"
-							>
-								<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-									<div class="flex items-center gap-2">
-										<div class="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-										<div class="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
-									</div>
-								</div>
-							</div>
-						}
-					</section>
 				}
 			</div>
-			// -- Discography --
-			<div
-				id="panel-discography"
-				role="tabpanel"
-				aria-labelledby="tab-discography"
-				data-tab-panel="discography"
-				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "discography"), }
-			>
-				<div
-					id={ "artist-discography-tab-" + data.Artist.ID }
-					hx-get={ "/artists/" + data.Artist.ID + "/discography/tab" }
-					hx-trigger="intersect once"
-					hx-swap="innerHTML"
-				>
-					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "discography.loading") }</p>
-				</div>
-			</div>
-			// -- History --
-			<div
-				id="panel-history"
-				role="tabpanel"
-				aria-labelledby="tab-history"
-				data-tab-panel="history"
-				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "history"), }
-			>
-				<div
-					id={ "artist-history-tab-" + data.Artist.ID }
-					hx-get={ "/artists/" + data.Artist.ID + "/history/tab" }
-					hx-trigger="intersect once"
-					hx-swap="innerHTML"
-				>
-					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "artist.loading_history") }</p>
-				</div>
-			</div>
-			// -- Violations --
-			<div
-				id="panel-violations"
-				role="tabpanel"
-				aria-labelledby="tab-violations"
-				data-tab-panel="violations"
-				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "violations"), }
-			>
-				<div
-					id={ "artist-violations-tab-" + data.Artist.ID }
-					hx-get={ "/artists/" + data.Artist.ID + "/violations/tab" }
-					hx-trigger="intersect once"
-					hx-swap="innerHTML"
-				>
-					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "common.loading") }</p>
-				</div>
-			</div>
-			// -- Debug --
-			if data.ShowPlatformDebug && data.HasDebugConnection {
-				<div
-					id="panel-debug"
-					role="tabpanel"
-					aria-labelledby="tab-debug"
-					data-tab-panel="debug"
-					class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "debug"), }
-				>
-					// Platform state cards (lazy loaded, read-only).
-					// Only Emby and Jellyfin connections support platform-state;
-					// Lidarr connections are skipped to avoid broken placeholders.
-					<div class="space-y-4">
-						for _, conn := range data.Connections {
-							if conn.Type == connection.TypeEmby || conn.Type == connection.TypeJellyfin {
-								<div
-									id={ "debug-platform-state-" + conn.ID }
-									hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", data.Artist.ID, conn.ID) }
-									hx-trigger="revealed"
-									hx-swap="outerHTML"
-								>
-									<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-										<div class="flex items-center gap-2">
-											<div class="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-											<div class="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
-										</div>
-									</div>
-								</div>
-							}
-						}
-					</div>
-					// Field Provenance section (server-rendered, not lazy)
-					@fieldProvenanceSection(data.FieldProviders)
-				</div>
+			// Keyboard legend: keycap-chip convention matching the dashboard (M55 #1336 UAT).
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "artist.next.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">h</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.prev_artist") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">l</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.next_artist") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.section_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.section_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">r</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.refresh") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">R</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.run_rules") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Esc</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.close") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">e</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.field_edit") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "artist.next.shortcuts.field_fetch") }</span></span>
+			</p>
+			// The Manage-artwork modal is rendered once (hidden); data-sw-artwork-open
+			// triggers in the Artwork section open it. Suppressed when the artwork
+			// section is hidden so its triggers and the modal stay consistent.
+			if !slices.Contains(data.Hidden, "artwork") {
+				@ArtworkModal(assets, &data.Detail)
+				// Full-size lightbox overlay (shared) for the Artwork tiles + carousel;
+				// window.openLightbox (lightbox.js) needs this DOM present on the page.
+				@LightboxOverlay()
 			}
-			@artistDetailTabScript(data.Artist.ID)
+			@artistDetailPageScript()
+			// Wire the ContextHelp (?) icons on this page. The dedicated History section
+			// was removed; history is now surfaced per-field via the "Prior values" undo
+			// affordance (clock icon). ContextHelp icons elsewhere on the page still need
+			// swContextHelpToggle defined -- Layout does not mount it globally.
+			// Rendered once; the component's script self-guards re-injection.
 			@components.ContextHelpScript()
 		</div>
 	}
 }
 
-// artistDetailTabBar renders the horizontal tab bar for the artist detail page.
-templ artistDetailTabBar(activeTab string, showDebug bool, violationCount int) {
-	<nav class="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1" role="tablist">
-		@artistDetailTab("overview", t(ctx, "artist.tab_overview"), activeTab)
-		@artistDetailTab("images", t(ctx, "artist.tab_images"), activeTab)
-		@artistDetailTab("providers", t(ctx, "artist.tab_providers"), activeTab)
-		@artistDetailTab("discography", t(ctx, "artist.tab_discography"), activeTab)
-		@artistDetailTab("history", t(ctx, "artist.tab_history"), activeTab)
-		@artistDetailTabWithBadge("violations", t(ctx, "artist.tab_violations"), activeTab, violationCount)
-		if showDebug {
-			@artistDetailTab("debug", t(ctx, "artist.tab_debug"), activeTab)
-		}
-	</nav>
-}
-
-templ artistDetailTab(id string, label string, activeTab string) {
-	<button
-		type="button"
-		role="tab"
-		id={ "tab-" + id }
-		data-tab={ id }
-		aria-controls={ "panel-" + id }
-		class={
-			"flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
-			templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", activeTab == id),
-			templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", activeTab != id),
-		}
-		aria-selected={ strconv.FormatBool(activeTab == id) }
-		onclick="switchArtistTab(event, this)"
-	>
-		{ label }
-	</button>
-}
-
-// artistDetailTabWithBadge renders a tab button with an optional numeric badge.
-// The badge is shown only when count > 0.
-templ artistDetailTabWithBadge(id string, label string, activeTab string, count int) {
-	<button
-		type="button"
-		role="tab"
-		id={ "tab-" + id }
-		data-tab={ id }
-		aria-controls={ "panel-" + id }
-		class={
-			"flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5",
-			templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", activeTab == id),
-			templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", activeTab != id),
-		}
-		aria-selected={ strconv.FormatBool(activeTab == id) }
-		onclick="switchArtistTab(event, this)"
-	>
-		{ label }
-		if count > 0 {
-			<span id={ id + "-tab-badge" } class="inline-flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-xs font-semibold min-w-[1.25rem] h-5 px-1.5">
-				{ strconv.Itoa(count) }
-			</span>
-		} else {
-			<span id={ id + "-tab-badge" } class="hidden"></span>
-		}
-	</button>
-}
-
-// artistDetailTabScript handles client-side tab switching with URL updates.
-// It also listens for violation-state changes (fix, dismiss, metadata refresh,
-// run-rules) and refreshes the violations tab content and badge count.
-templ artistDetailTabScript(artistID string) {
-	<script>
-		function switchArtistTab(event, el) {
-			event.preventDefault();
-			var tabId = el.dataset.tab;
-			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
-				p.classList.add('hidden');
-			});
-			var panel = null;
-			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
-				if (p.dataset.tabPanel === tabId) {
-					panel = p;
-				}
-			});
-			if (panel) panel.classList.remove('hidden');
-			document.querySelectorAll('[data-tab]').forEach(function(t) {
-				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
-				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
-				t.setAttribute('aria-selected', 'false');
-			});
-			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
-			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
-			el.setAttribute('aria-selected', 'true');
-			var url = new URL(window.location);
-			if (tabId === 'overview') {
-				url.searchParams.delete('tab');
+// artistHero is the FIXED first card (not reorderable): fanart as the card-header
+// background with a contrast scrim, artistlogo preferred over the H1 (reserved
+// height to avoid layout shift), thumb, provider deep-link pills (presence +
+// deep-link via buildPlatformArtistURL), the on-disk path with a copy button,
+// type/library/last-scan, the lock badge + source, the compliance summary, the
+// primary actions (Run rules / Refresh / Edit all) plus a kebab overflow, and
+// the #refresh-panel mount. h/l prev/next-artist links carry data-sw-shortcut.
+templ artistHero(assets AssetPaths, data ArtistDetailPageData) {
+	{{ a := data.Detail.Artist }}
+	<section id={ "next-hero-" + a.ID } class="sw-dash-card sw-next-hero" aria-labelledby="next-hero-name">
+		<div class="body">
+			// Portrait: the thumb (the artist's primary square image), else the name
+			// initial. The artistlogo is NOT shown here -- it gets its own prominent
+			// treatment as the hero name (below), per design section 6.
+			if a.ThumbExists {
+				<img
+					class="sw-next-hero-portrait"
+					src={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", a.ID) }
+					alt={ a.Name }
+					onerror="this.style.visibility='hidden'"
+				/>
 			} else {
-				url.searchParams.set('tab', tabId);
+				<div class="sw-next-hero-portrait flex items-center justify-center text-2xl font-bold" style="color:var(--swd-ink-3)" aria-hidden="true">{ heroInitial(a.Name) }</div>
 			}
-			history.replaceState(null, '', url);
-		}
-	</script>
-}
-
-// ArtistHistorySection renders a collapsible history card that loads its
-// content lazily via HTMX when the section is first expanded.
-templ ArtistHistorySection(artistID string) {
-	<section id={ "artist-history-" + artistID } class="sw-card rounded-lg bg-white dark:bg-gray-800 shadow">
-		<button
-			type="button"
-			class="w-full flex items-center justify-between px-6 py-4 text-left"
-			aria-expanded="false"
-			aria-controls={ "artist-history-body-" + artistID }
-			onclick="
-				var btn = this;
-				var body = document.getElementById(btn.getAttribute('aria-controls'));
-				var expanded = btn.getAttribute('aria-expanded') === 'true';
-				btn.setAttribute('aria-expanded', String(!expanded));
-				body.classList.toggle('hidden', expanded);
-			"
-			hx-get={ "/artists/" + artistID + "/history/tab" }
-			hx-target={ "#artist-history-body-" + artistID }
-			hx-swap="innerHTML"
-			hx-trigger="click once"
-		>
-			<h2 class="text-lg font-semibold">{ t(ctx, "artist.tab_history") }</h2>
-			<svg class="h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-			</svg>
-		</button>
-		<div id={ "artist-history-body-" + artistID } class="hidden px-6 pb-6">
-			<p class="text-sm text-gray-400 italic">{ t(ctx, "common.loading") }</p>
-		</div>
-	</section>
-}
-
-// ImagePreviewCard renders an image preview card for the artist detail page.
-// Exported so the delete handler can return it as an HTMX fragment.
-templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fanartCount int) {
-	<div
-		id={ "image-preview-" + imageType + "-" + artistID }
-		class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
-	>
-		if exists {
-			<div class="relative group">
-				<div
-					class={
-						"aspect-square flex items-center justify-center overflow-hidden",
-						templ.KV("checkered-bg", imageType == "logo"),
-						templ.KV("bg-gray-100 dark:bg-gray-900", imageType != "logo"),
+			// Meta: pills, name, on-disk path, compliance summary, provider links.
+			<div class="sw-next-hero-meta">
+				<div class="flex flex-wrap items-center gap-2 text-xs" style="color:var(--swd-ink-3)">
+					if a.Type != "" {
+						<span class="rounded-full px-2 py-0.5 tracking-wide" style="border:1px solid var(--swd-line)">{ ArtistTypeLabel(ctx, a.Type) }</span>
 					}
-				>
-					<img
-						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", basePath(), artistID, imageType) }
-						alt={ label }
-						class="max-w-full max-h-full object-contain"
-						loading="lazy"
-					/>
-				</div>
-				if fanartCount > 1 {
-					<span class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full pointer-events-none">
-						{ tn(ctx, "artist.image_count", fanartCount) }
-					</span>
-				}
-				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
-					<a
-						href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)) }
-						class="rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors"
-						title={ t(ctx, "artist.edit_image") }
-						aria-label={ tf(ctx, "artist.edit_image_type", label) }
-					>
-						@components.IconPencilSquare("h-5 w-5")
-					</a>
-					if imageType == "logo" {
-						<button
-							type="button"
-							class="rounded-full bg-white/20 p-2 text-white hover:bg-blue-500/80 transition-colors"
-							title={ t(ctx, "artist.trim_transparent_border") }
-							aria-label={ t(ctx, "artist.trim_transparent_border") }
-							hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
-							hx-swap="none"
-							data-error-prefix={ t(ctx, "artist.platform_action_failed") }
-							hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
-						>
-							@components.IconScissors("h-5 w-5")
-						</button>
+					if data.Detail.LibraryName != "" {
+						<span>{ tf(ctx, "artist.library_label", data.Detail.LibraryName) }</span>
 					}
-					<button
-						type="button"
-						class="rounded-full bg-white/20 p-2 text-white hover:bg-red-500/80 transition-colors"
-						title={ t(ctx, "artist.delete_image") }
-						aria-label={ tf(ctx, "artist.delete_image_type", label) }
-						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
-						hx-target={ "#image-preview-" + imageType + "-" + artistID }
-						hx-swap="outerHTML"
-						hx-confirm={ tf(ctx, "artist.delete_image_confirm", label) }
-						data-confirm-key="image-delete"
-					>
-						@components.IconTrash("h-5 w-5")
-					</button>
-				</div>
-			</div>
-			<div class="p-1.5 text-center">
-				<span class="text-xs font-medium text-gray-600 dark:text-gray-400">{ label }</span>
-				<div
-					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/%s/info", artistID, imageType) }
-					hx-trigger="load"
-					hx-swap="innerHTML"
-				></div>
-			</div>
-		} else {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)) }
-				class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add"
-				title={ tf(ctx, "artist.add_image_type", label) }
-			>
-				<div class="text-center text-gray-400 group-hover/add:text-blue-500 dark:group-hover/add:text-blue-400 transition-colors">
-					@components.IconPlusCircle("mx-auto h-8 w-8")
-					<span class="text-xs mt-1 block">{ label }</span>
-				</div>
-			</a>
-			<div class="p-1.5 text-center">
-				<span class="text-xs font-medium text-gray-600 dark:text-gray-400">{ label }</span>
-			</div>
-		}
-	</div>
-}
-
-// ImageInfoBadge renders dimensions and file size as a small text badge.
-// Used as an HTMX partial loaded by the image preview card.
-templ ImageInfoBadge(width, height int, size int64) {
-	<span class="text-xs text-gray-500 dark:text-gray-400">
-		if width > 0 && height > 0 {
-			{ strconv.Itoa(width) + "x" + strconv.Itoa(height) + " " }
-		}
-		{ formatFileSizeTempl(size) }
-	</span>
-}
-
-// FanartGalleryItem holds metadata for a single fanart image in the gallery.
-type FanartGalleryItem struct {
-	Index    int    `json:"index"`
-	Filename string `json:"filename"`
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
-	Size     int64  `json:"size"`
-}
-
-// FanartGallery renders the fanart gallery management panel as an HTMX partial.
-// profileName controls image terminology (e.g. "backdrop" for Emby vs "fanart" for Kodi).
-templ FanartGallery(artistID string, items []FanartGalleryItem, profileName string) {
-	<div
-		id="fanart-gallery"
-		class="space-y-4"
-		data-sw-fanart-gallery
-		data-artist-id={ artistID }
-		data-label-delete-n-one={ t(ctx, "artist.delete_n_selected.one") }
-		data-label-delete-n-other={ t(ctx, "artist.delete_n_selected.other") }
-		data-confirm-delete-n-one={ t(ctx, "artist.delete_n_fanart_confirm.one") }
-		data-confirm-delete-n-other={ t(ctx, "artist.delete_n_fanart_confirm.other") }
-		data-session-expired={ t(ctx, "common.session_expired") }
-		data-toast-delete-failed={ t(ctx, "artist.delete_selected_failed") }
-		data-toast-delete-network={ t(ctx, "artist.delete_selected_network") }
-	>
-		<div class="flex items-center justify-between">
-			<h3 class="text-sm font-semibold">{ tn(ctx, "image.fanart_count", len(items)) }</h3>
-			<button
-				type="button"
-				id="fanart-delete-selected"
-				class="hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
-			>
-				{ t(ctx, "artist.delete_selected") }
-			</button>
-		</div>
-		if len(items) > 0 {
-			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-				for _, item := range items {
-					<div class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group">
-						// Batch-select checkbox (top-left, above overlay).
-						<input
-							type="checkbox"
-							class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-							value={ strconv.Itoa(item.Index) }
-							aria-label={ "Select " + item.Filename }
-						/>
-						// Primary badge (top-right).
-						if item.Index == 0 {
-							<span class="absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/90 text-white shadow-sm">
-								@components.IconStar("w-3 h-3")
-								{ t(ctx, "common.primary") }
-							</span>
-						}
-						<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
-							<img
-								src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
-								alt={ item.Filename }
-								class="max-w-full max-h-full object-cover"
-								loading="lazy"
-							/>
-						</div>
-						// Hover overlay with action buttons.
-						<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
-							// View full-size (opens lightbox; openLightbox is defined in
-							// artist_images_tab.templ and is always present on this page).
-							<button
-								type="button"
-								class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-								title={ t(ctx, "artist.view_full_size") }
-								aria-label={ tf(ctx, "artist.view_full_size_name", item.Filename) }
-								data-lightbox-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
-								data-lightbox-alt={ item.Filename }
-								onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
-							>
-								@components.IconArrowsPointingOut("w-5 h-5")
-							</button>
-							// Set as Primary (non-primary images only)
-							if item.Index > 0 {
-								<button
-									type="button"
-									class="p-2 rounded-full bg-black/40 hover:bg-amber-500/80 text-white transition-colors shadow-sm"
-									title={ t(ctx, "artist.set_as_primary") }
-									aria-label={ tf(ctx, "artist.set_as_primary_name", item.Filename) }
-									data-set-primary-index={ strconv.Itoa(item.Index) }
-									data-set-primary-count={ strconv.Itoa(len(items)) }
-									data-set-primary-artist={ artistID }
-									data-confirm={ t(ctx, "artist.set_as_primary_confirm") }
-									data-reorder-error={ t(ctx, "artist.set_primary_reorder_error") }
-									data-session-expired={ t(ctx, "common.session_expired") }
-									data-set-primary-failed={ t(ctx, "artist.set_primary_failed") }
-									data-set-primary-network={ t(ctx, "artist.set_primary_network") }
-								>
-									@components.IconStar("w-5 h-5")
-								</button>
+					if a.LastScannedAt != nil {
+						<span>{ tf(ctx, "artist.last_scan", a.LastScannedAt.Format("2006-01-02")) }</span>
+					}
+					if a.Locked {
+						<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5" style="background:var(--swd-warn-soft);color:var(--swd-warn)">
+							@components.IconLockClosed("h-3 w-3")
+							{ t(ctx, "common.locked") }
+							if a.LockSource != "" {
+								<span class="opacity-70">({ a.LockSource })</span>
 							}
-							// Delete
-							<button
-								hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index) }
-								hx-confirm={ t(ctx, "artist.delete_fanart_confirm") }
-								hx-swap="none"
-								data-error-prefix={ t(ctx, "artist.platform_action_failed") }
-								hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
-								class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
-								title={ t(ctx, "common.delete") }
-								aria-label={ tf(ctx, "artist.delete_filename", item.Filename) }
+						</span>
+					}
+				</div>
+				// Name: the artistlogo (clearlogo) is preferred over the text H1 when
+				// present (design section 6; item 12 -- Adele has a logo that the hero
+				// never rendered). The text name is the alt + the on-error fallback so
+				// the name is always available to assistive tech and when the logo 404s.
+				<h1 id="next-hero-name" class="sw-next-hero-name">
+					if a.LogoExists {
+						<img
+							class="sw-next-hero-logo"
+							src={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/logo/file", a.ID) }
+							alt={ a.Name }
+							onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='inline'"
+						/>
+						<span class="sw-next-hero-name-text" style="display:none">{ a.Name }</span>
+					} else {
+						{ a.Name }
+					}
+				</h1>
+				// On-disk path (monospace) -- important for a fix-it tool. The
+				// external-link "open" icon button was removed (4A typography pass,
+				// #1853): the glyph misread as a navigable link and the path text
+				// stands on its own.
+				if a.Path != "" {
+					<div class="flex items-center gap-2 text-xs">
+						<code class="font-mono break-all text-gray-500 dark:text-gray-400">{ a.Path }</code>
+					</div>
+				}
+				// Compliance summary bar: health score + findings + ID coverage.
+				// Compliance bar: the SAME Sources/Coverage/Score box-bar as the
+				// artists list (shared coverage.templ) + the finding-severity summary,
+				// matching the prototype's hero bar vocabulary.
+				<div class="sw-next-summary">
+					<span class="sw-next-score-badge" title={ t(ctx, "artists.col.score") }>
+						@scoreCell(a)
+					</span>
+					<span class="sw-next-summary-divider" aria-hidden="true"></span>
+					@coverageCell(a, data.Detail.ProfileName)
+					<span class="sw-next-summary-divider" aria-hidden="true"></span>
+					@artistFindingSeverity(data.Detail)
+				</div>
+				// Provider deep-link pills (presence + deep-link via buildPlatformArtistURL).
+				if len(data.Detail.Connections) > 0 {
+					<div class="flex flex-wrap items-center gap-2">
+						for _, conn := range data.Detail.Connections {
+							<a
+								href={ templ.SafeURL(conn.URL) }
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs hover:underline"
+								style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+								title={ tf(ctx, "artist.view_on_platform", conn.Name) }
 							>
-								@components.IconTrash("w-5 h-5")
-							</button>
-						</div>
-						<div class="p-1.5 text-center">
-							<span class="text-xs text-gray-500 dark:text-gray-400 font-mono">
-								if item.Width > 0 && item.Height > 0 {
-									{ strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height) }
-								}
-								{ " " + formatFileSizeTempl(item.Size) }
-							</span>
-						</div>
+								{ conn.Name }
+								@components.IconArrowTopRightOnSquare("h-3 w-3")
+							</a>
+						}
 					</div>
 				}
 			</div>
-		} else {
-			<p class="text-sm text-gray-400 italic">{ t(ctx, "artist.no_fanart_images") }</p>
-		}
-	</div>
-}
-
-// isGroupType reports whether the artist type is a group-like type where
-// the Gender field is not applicable (groups, orchestras, choirs).
-func isGroupType(artistType string) bool {
-	// TrimSpace so a stray-whitespace type from a sloppy NFO (" group") gates the
-	// same as "group" -- matching isPersonType and ArtistTypeLabel, which both
-	// trim. Without it the hero label (trimmed) and field-gating (untrimmed)
-	// disagree.
-	switch strings.ToLower(strings.TrimSpace(artistType)) {
-	case "group", "orchestra", "choir":
-		return true
-	default:
-		return false
-	}
-}
-
-// normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
-func normalizeTab(tab string) string {
-	switch tab {
-	case "overview", "images", "providers", "discography", "history", "violations", "debug":
-		return tab
-	default:
-		return "overview"
-	}
-}
-
-// formatFileSizeTempl formats a byte count as a human-readable string for templates.
-func formatFileSizeTempl(bytes int64) string {
-	switch {
-	case bytes >= 1<<20:
-		mb := float64(bytes) / float64(1<<20)
-		return strconv.FormatFloat(mb, 'f', 1, 64) + " MB"
-	case bytes >= 1<<10:
-		kb := bytes / (1 << 10)
-		return strconv.FormatInt(kb, 10) + " KB"
-	default:
-		return strconv.FormatInt(bytes, 10) + " B"
-	}
-}
-
-// artistsBackURL returns the URL for the "Artists" breadcrumb link.
-// When a library filter is active, it preserves the filter in the back-nav.
-func artistsBackURL(libraryID string) string {
-	if libraryID != "" {
-		return basePath() + "/artists?library_id=" + url.QueryEscape(libraryID)
-	}
-	return basePath() + "/artists"
-}
-
-// MembersSection renders the band members card with a contextual menu for
-// Fetch from providers and Clear all members. Exported so the clear handler
-// can return it as an HTMX fragment.
-templ MembersSection(artistID string, members []artist.BandMember, providers []string) {
-	<section id={ "members-section-" + artistID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-lg font-semibold">{ t(ctx, "artist.members") }</h2>
-			<span class="inline-flex items-center gap-1">
-				// Direct re-fetch (circling-arrows) + clear, no kebab (maintainer).
-				if len(providers) > 0 {
-					<button
-						type="button"
-						class="inline-flex items-center justify-center rounded p-1 text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
-						title={ t(ctx, "artist.fetch_members_from_providers") }
-						aria-label={ t(ctx, "artist.fetch_members_from_providers") }
-						hx-get={ "/api/v1/artists/" + artistID + "/fields/members/providers" }
-						hx-target="#field-provider-modal-body"
-						hx-swap="innerHTML"
-						hx-indicator={ "#members-spinner-" + artistID }
-					>
-						@components.IconArrowPath("h-4 w-4")
-					</button>
+			// Actions column: prev/next nav, Run rules, Refresh, Edit all, kebab.
+			<div class="sw-next-hero-actions">
+				if data.PrevArtistID != "" || data.NextArtistID != "" {
+					<div class="flex items-center justify-end gap-1">
+						if data.PrevArtistID != "" {
+							<a
+								href={ templ.SafeURL(assets.BasePath + "/artists/" + data.PrevArtistID) }
+								class="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5"
+								style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+								data-sw-shortcut="h"
+								data-sw-shortcut-label={ t(ctx, "artist.next.prev_artist") }
+								aria-label={ t(ctx, "artist.next.prev_artist") }
+							>
+								@components.IconChevronDown("h-4 w-4 rotate-90")
+							</a>
+						}
+						if data.NextArtistID != "" {
+							<a
+								href={ templ.SafeURL(assets.BasePath + "/artists/" + data.NextArtistID) }
+								class="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5"
+								style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+								data-sw-shortcut="l"
+								data-sw-shortcut-label={ t(ctx, "artist.next.next_artist") }
+								aria-label={ t(ctx, "artist.next.next_artist") }
+							>
+								@components.IconChevronDown("h-4 w-4 -rotate-90")
+							</a>
+						}
+					</div>
 				}
-				if len(members) > 0 {
-					<button
-						type="button"
-						class="inline-flex items-center justify-center rounded p-1 text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors"
-						title={ t(ctx, "artist.clear_all_members") }
-						aria-label={ t(ctx, "artist.clear_all_members") }
-						hx-delete={ "/api/v1/artists/" + artistID + "/members" }
-						hx-target={ "#members-section-" + artistID }
-						hx-swap="outerHTML"
-						hx-confirm={ t(ctx, "artist.clear_all_members_confirm") }
-						data-confirm-key="members-clear"
-					>
-						@components.IconTrash("h-4 w-4")
-					</button>
-				}
-				<span id={ "members-spinner-" + artistID } class="htmx-indicator">
-					<svg class="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-					</svg>
-				</span>
-			</span>
+				// Toolbar (maintainer spec): Refresh / Edit All / Actions dropdown.
+				// Run rules now lives inside the Actions dropdown as its first item.
+				// Refresh hits providers and can run for several seconds. Without an
+				// in-flight indicator it looked like "nothing happens" (UAT). hx-indicator
+				// reveals a spinner and hx-disabled-elt disables the button for the
+				// duration; failures surface via the global htmx:responseError toast.
+				<button
+					id="next-hero-refresh-btn"
+					type="button"
+					class="sw-next-refresh-btn inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
+					style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+					hx-post={ "/api/v1/artists/" + a.ID + "/refresh" }
+					hx-target="#refresh-panel"
+					hx-swap="innerHTML"
+					hx-indicator={ "#refresh-spinner-" + a.ID }
+					hx-disabled-elt="this"
+					data-sw-shortcut="r"
+					data-sw-shortcut-label={ t(ctx, "artist.refresh_metadata") }
+				>
+					@components.IconArrowPath("sw-next-refresh-icon h-4 w-4")
+					{ t(ctx, "common.refresh") }
+					<span id={ "refresh-spinner-" + a.ID } class="htmx-indicator">
+						<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+					</span>
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+					data-sw-edit-all
+					data-label-edit={ t(ctx, "artist.edit") }
+					data-label-done={ t(ctx, "artist.edit_done") }
+					aria-pressed="false"
+				>
+					@components.IconPencilSquare("h-4 w-4")
+					<span data-sw-edit-label>{ t(ctx, "artist.edit") }</span>
+				</button>
+				@artistHeroActions(data)
+				<div id="refresh-panel" class="mt-1"></div>
+			</div>
 		</div>
-		@MembersList(members)
 	</section>
 }
 
-// pushMetadata sends a JSON POST to push artist metadata to a platform connection.
-
-script pushMetadata(artistID string, connectionID string) {
-	var bpEl = document.querySelector('meta[name="htmx-base-path"]');
-	var bp = bpEl ? bpEl.content : '';
-	var csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-	var csrf = csrfMatch ? csrfMatch[1] : '';
-	fetch(bp + '/api/v1/artists/' + artistID + '/push', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
-		body: JSON.stringify({connection_id: connectionID})
-	}).then(function(resp) {
-		if (resp.ok) { window.location.reload(); return; }
-		return resp.json().then(function(data) { alert('Push failed: ' + (data.error || 'unknown error')); });
-	}).catch(function(err) { alert('Push failed: ' + err.message); });
+// artistFieldLocksPanel is the v1-parity field-locks summary card (#1754):
+// every individually pinned field (Artist.LockedFields), each removable via
+// an inline unlock control. Fixed after the hero, NOT part of the
+// reorderable section list (mirrors v1's placement ahead of the tab bar).
+// Hidden entirely when nothing is locked, matching v1's "stay quiet for the
+// common case" behavior; the last chip's removal removes the card from the
+// DOM client-side so an empty amber card never lingers.
+templ artistFieldLocksPanel(data ArtistDetailPageData) {
+	{{ a := data.Detail.Artist }}
+	if len(a.LockedFields) > 0 {
+		<section id={ "next-field-locks-" + a.ID } class="sw-dash-card" aria-labelledby={ "next-field-locks-heading-" + a.ID }>
+			<div class="body">
+				<div class="flex items-center gap-2 mb-2">
+					<h2 id={ "next-field-locks-heading-" + a.ID } class="sw-next-subhead" style="margin:0">
+						{ t(ctx, "artist.locked_fields") }
+					</h2>
+					@components.ContextHelp(
+						"next-help-locked-fields-panel-"+a.ID,
+						t(ctx, "artist.help.locked_fields_panel.label"),
+						t(ctx, "artist.help.locked_fields_panel"),
+						"core-concepts/field-locks#layer-2-field-locks-per-field-protection",
+					)
+				</div>
+				<div class="flex flex-wrap gap-2">
+					for _, f := range a.LockedFields {
+						<span class="sw-next-field-lock-chip inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" style="background:var(--swd-warn-soft);color:var(--swd-warn)">
+							{ f }
+							<button
+								type="button"
+								class="ml-1 hover:opacity-75"
+								style="color:var(--swd-warn)"
+								hx-delete={ "/api/v1/artists/" + a.ID + "/field-locks/" + url.PathEscape(f) }
+								hx-swap="none"
+								hx-trigger="click"
+								hx-on::after-request="(function(btn, ev){ if (ev.detail.successful) { var chip = btn.closest('.sw-next-field-lock-chip'); var panel = btn.closest('[id^=\'next-field-locks-\']'); chip.remove(); if (panel && !panel.querySelector('.sw-next-field-lock-chip')) { panel.remove(); } } else { alert(btn.getAttribute('data-unlock-error') || 'Unlock failed. Please try again.'); } })(this, event)"
+								data-unlock-error={ t(ctx, "artist.unlock_field_failed") }
+								aria-label={ t(ctx, "artist.unlock_field") }
+							>x</button>
+						</span>
+					}
+				</div>
+			</div>
+		</section>
+	}
 }
 
-// PlatformStateCard renders the platform state comparison card for one connection.
-// Returned as an HTMX outerHTML swap to replace the loading placeholder.
-// profileName is the active platform profile name used for Stillwater-side image labels.
-templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
-	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-		@PlatformStateCardBody(a, conn, state, profileName)
-	</div>
+// heroInitial returns the uppercased first letter of an artist name for the
+// portrait placeholder when no thumb/logo exists.
+func heroInitial(name string) string {
+	for _, r := range name {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
 }
 
-// PlatformStateError renders an error card when platform state fetch fails.
-templ PlatformStateError(conn *connection.Connection, errMsg string) {
-	<div class="rounded-lg border border-red-200 dark:border-red-800 p-4">
-		<div class="flex items-center gap-2 text-red-600 dark:text-red-400">
-			<span class="font-medium text-sm">{ conn.Name }</span>
-			<span class="text-xs">{ tf(ctx, "artist.platform_state_error", errMsg) }</span>
+// artistFindingSeverity renders the hero bar's finding-severity summary, matching
+// the prototype's richer treatment: per-severity dots with the SPELLED-OUT,
+// pluralized counts ("3 errors", "2 warnings", "1 info") rather than bare
+// numbers, so the hero conveys what is wrong at a glance and links into the Open
+// Findings section. It reuses data.ViolationsBySeverity (already fetched for the
+// hero -- no extra query). Falls back to the total count when the per-severity
+// breakdown is unavailable, and to a muted "No open findings" when there are
+// none.
+templ artistFindingSeverity(data ArtistDetailData) {
+	{{ sev := data.ViolationsBySeverity }}
+	if data.ViolationCount > 0 {
+		<a href="#next-findings" class="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs hover:underline" style="color:inherit" title={ tn(ctx, "artist.findings_count", data.ViolationCount) }>
+			if sev["error"] > 0 {
+				<span class="inline-flex items-center gap-1 tabular-nums">
+					<span class="inline-flex h-2 w-2 rounded-full" style="background:var(--swd-err)" aria-hidden="true"></span>
+					<span style="color:var(--swd-err)">{ tn(ctx, "artist.severity_count.error", sev["error"]) }</span>
+				</span>
+			}
+			if sev["warning"] > 0 {
+				<span class="inline-flex items-center gap-1 tabular-nums">
+					<span class="inline-flex h-2 w-2 rounded-full" style="background:var(--swd-warn)" aria-hidden="true"></span>
+					<span style="color:var(--swd-warn)">{ tn(ctx, "artist.severity_count.warning", sev["warning"]) }</span>
+				</span>
+			}
+			if sev["info"] > 0 {
+				<span class="inline-flex items-center gap-1 tabular-nums">
+					<span class="inline-flex h-2 w-2 rounded-full" style="background:var(--swd-info)" aria-hidden="true"></span>
+					<span style="color:var(--swd-info)">{ tn(ctx, "artist.severity_count.info", sev["info"]) }</span>
+				</span>
+			}
+			if sev["error"]+sev["warning"]+sev["info"] == 0 {
+				{ tn(ctx, "artist.findings_count", data.ViolationCount) }
+			}
+		</a>
+	} else {
+		<span class="text-xs" style="color:var(--swd-ink-3)">{ t(ctx, "artist.open_findings_none") }</span>
+	}
+}
+
+// artistStickyHeader is the mini-header that slides in once the hero scrolls out
+// of view (design section 6). It keeps the back link, artist name + type, a
+// findings chip, and Run rules / Edit shortcuts reachable while scrolled deep
+// into the page. Visibility is toggled by the IntersectionObserver in
+// artistDetailPageScript (adds .is-stuck when the hero leaves the top).
+templ artistStickyHeader(assets AssetPaths, data ArtistDetailPageData) {
+	{{ a := data.Detail.Artist }}
+	<div class="sw-next-stickhdr" data-sw-stickhdr aria-hidden="true">
+		<div class="sw-next-stickhdr-inner">
+			// The sticky header is aria-hidden (a scroll-activated VISUAL duplicate of
+			// the hero toolbar; hiding it stops screen readers double-announcing). It
+			// stays MOUSE-clickable when stuck, so `inert` (which also kills pointer
+			// interaction) is wrong here. Instead every focusable descendant carries
+			// tabindex="-1" so keyboard users tab through the canonical hero controls
+			// and never land inside aria-hidden content (WCAG aria-hidden-focus, #1784;
+			// same aria-hidden + tabindex="-1" pattern as dashboard.templ select-all).
+			<a
+				href={ templ.SafeURL(assets.BasePath + "/artists") }
+				class="inline-flex items-center gap-1 text-sm hover:underline"
+				style="color:var(--swd-ink-3)"
+				tabindex="-1"
+			>
+				@components.IconChevronDown("h-3.5 w-3.5 rotate-90")
+				{ t(ctx, "nav.artists") }
+			</a>
+			<span class="sw-next-stickhdr-name">{ a.Name }</span>
+			if a.Type != "" {
+				<span class="text-xs" style="color:var(--swd-ink-3)">{ ArtistTypeLabel(ctx, a.Type) }</span>
+			}
+			if data.Detail.ViolationCount > 0 {
+				<a href="#next-findings" class="inline-flex items-center gap-1 text-xs hover:underline" style="color:var(--swd-warn)" tabindex="-1">
+					<span class="inline-flex h-2 w-2 rounded-full" style="background:var(--swd-warn)" aria-hidden="true"></span>
+					{ tn(ctx, "artist.findings_count", data.Detail.ViolationCount) }
+				</a>
+			}
+			// Action cluster mirrors the hero toolbar: Edit + Actions dropdown
+			// (Run Rules lives inside Actions, not as a standalone button), so the
+			// floating bar stays consistent with the hero once scrolled.
+			<div class="ml-auto flex items-center gap-2">
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium hover:bg-white/5"
+					style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+					data-sw-edit-all
+					data-label-edit={ t(ctx, "artist.edit") }
+					data-label-done={ t(ctx, "artist.edit_done") }
+					aria-pressed="false"
+					tabindex="-1"
+				>
+					@components.IconPencilSquare("h-3.5 w-3.5")
+					<span data-sw-edit-label>{ t(ctx, "artist.edit") }</span>
+				</button>
+				@artistStickyActions(data)
+			</div>
 		</div>
 	</div>
 }
 
-// PlatformStateCardReadOnly renders a read-only platform state comparison card
-// for the Debug tab. No action buttons or hx-post attributes are present.
-templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
-	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-		// Header: connection name + type badge + lock badge. No action buttons.
-		<div class="flex items-center px-4 py-3">
-			@platformStateHeaderBadges(conn, state)
+// artistHeroActions is the hero's labeled "Actions" dropdown (maintainer spec,
+// replacing the bare ellipsis kebab). Run Rules is the first item; the rest
+// reuse the stable detail page's action wiring verbatim (Identify/Re-identify
+// swap on MBID presence, Rename directory when a path is set and the artist is
+// unlocked, Lock/Unlock, and a View-on-platform deep link per connection). The
+// retired "Fetch all images" entry is intentionally omitted (4B's modal
+// supersedes it). The dropdown uses the shared ContextMenuGlobalJS toggle/close.
+// The menu body is shared with the sticky mini-header via artistActionItems.
+templ artistHeroActions(data ArtistDetailPageData) {
+	{{ a := data.Detail.Artist }}
+	{{ menuID := "next-artist-actions-" + a.ID }}
+	<div class="relative flex w-full" data-context-menu={ menuID }>
+		<button
+			type="button"
+			class="inline-flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+			style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+			aria-haspopup="menu"
+			aria-expanded="false"
+			aria-controls={ "ctx-panel-" + menuID }
+			onclick={ components.ToggleContextMenu(menuID) }
+		>
+			{ t(ctx, "common.actions") }
+			@components.IconChevronDown("h-4 w-4")
+		</button>
+		<div
+			id={ "ctx-panel-" + menuID }
+			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+			role="menu"
+		>
+			// withShortcut=true: this hero copy owns the "R" Run Rules shortcut so
+			// keyboard.js resolves to exactly one element (the sticky copy omits it).
+			@artistActionItems(data, true)
 		</div>
-		@platformStateTable(a, conn, state, profileName, conn.Name, true)
 	</div>
 }
 
-// platformStateHeaderBadges renders the connection name, type badge, and lock
-// badge shared by both PlatformStateCard and PlatformStateCardReadOnly.
-// The platform SVG logo is rendered before the connection name; emby uses a
-// PNG variant with srcset for multi-DPI displays.
-templ platformStateHeaderBadges(conn *connection.Connection, state *connection.ArtistPlatformState) {
-	<div class="flex items-center gap-2">
-		if logoSrcSet(conn.Type) != "" {
-			<img
-				src={ logoSrc(conn.Type) }
-				srcset={ logoSrcSet(conn.Type) }
-				alt={ sourceDisplayName(conn.Type) }
-				class="h-5 w-5 shrink-0"
-			/>
+// artistStickyActions is the compact "Actions" dropdown for the sticky
+// mini-header. It mirrors the hero's Actions menu (same items, same wiring) so
+// the floating bar stays consistent with the hero toolbar once the page is
+// scrolled. It uses a distinct menuID ("...-sticky-...") so its toggle/panel
+// IDs never collide with the hero copy, and renders the shared items with
+// withShortcut=false so the "R" keyboard shortcut is not duplicated in the DOM.
+templ artistStickyActions(data ArtistDetailPageData) {
+	{{ a := data.Detail.Artist }}
+	{{ menuID := "next-artist-sticky-actions-" + a.ID }}
+	<div class="relative flex" data-context-menu={ menuID }>
+		// tabindex="-1": this dropdown lives inside the aria-hidden sticky header, so
+		// its trigger must stay out of the keyboard tab order (the hero's identical
+		// Actions menu is the keyboard-reachable one). The panel below is display:none
+		// until mouse-opened, so its menu items are not focusable at rest (#1784).
+		<button
+			type="button"
+			class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+			style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
+			aria-haspopup="menu"
+			aria-expanded="false"
+			aria-controls={ "ctx-panel-" + menuID }
+			onclick={ components.ToggleContextMenu(menuID) }
+			tabindex="-1"
+		>
+			{ t(ctx, "common.actions") }
+			@components.IconChevronDown("h-3.5 w-3.5")
+		</button>
+		<div
+			id={ "ctx-panel-" + menuID }
+			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+			role="menu"
+		>
+			@artistActionItems(data, false)
+		</div>
+	</div>
+}
+
+// artistActionItems renders the shared body of the Actions menu (Run Rules,
+// Identify/Re-identify, Rename directory, Lock/Unlock, View-on-platform). Both
+// the hero dropdown and the sticky mini-header dropdown embed this so the two
+// stay in lock-step. withShortcut gates the Run Rules data-sw-shortcut="R"
+// attributes: only ONE element on the page may advertise a given key (keyboard.js
+// resolves shortcuts via a single querySelector), so the hero copy passes true
+// and the sticky copy passes false.
+templ artistActionItems(data ArtistDetailPageData, withShortcut bool) {
+	{{ a := data.Detail.Artist }}
+	// Run Rules: moved out of the primary buttons into the dropdown (first item).
+	<button
+		type="button"
+		role="menuitem"
+		class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+		hx-post={ "/api/v1/artists/" + a.ID + "/run-rules" }
+		hx-target="#refresh-panel"
+		hx-swap="innerHTML"
+		if withShortcut {
+			data-sw-shortcut="R"
+			data-sw-shortcut-label={ t(ctx, "artist.run_rules") }
+		}
+	>
+		@components.IconPlay("h-4 w-4 text-gray-400")
+		{ t(ctx, "artist.run_rules") }
+	</button>
+	<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+	<button
+		type="button"
+		role="menuitem"
+		class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+		hx-post={ "/api/v1/artists/" + a.ID + "/reidentify" }
+		hx-target="#field-provider-modal-body"
+		hx-swap="innerHTML"
+		if a.MusicBrainzID != "" {
+			hx-confirm={ t(ctx, "artist.reidentify_confirm") }
+			hx-vals='{"clear_ids": "true"}'
+		}
+	>
+		@components.IconMagnifyingGlass("h-4 w-4 text-gray-400")
+		if a.MusicBrainzID != "" {
+			{ t(ctx, "artist.reidentify") }
 		} else {
-			<img
-				src={ logoSrc(conn.Type) }
-				alt={ sourceDisplayName(conn.Type) }
-				class="h-5 w-5 shrink-0"
-			/>
+			{ t(ctx, "artist.identify") }
 		}
-		<span class="font-medium text-sm">{ conn.Name }</span>
-		if state.IsLocked {
-			<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
-		}
+	</button>
+	if a.Path != "" && !a.Locked {
+		<button
+			type="button"
+			role="menuitem"
+			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+			data-rename-prompt={ t(ctx, "artist.rename_directory_prompt") }
+			data-rename-current={ filepath.Base(a.Path) }
+			data-rename-url={ "/api/v1/artists/" + a.ID + "/rename-directory" }
+			data-rename-failed-prefix={ t(ctx, "artist.rename_directory_failed") }
+			onclick="(function(btn){var newName=window.prompt(btn.dataset.renamePrompt, btn.dataset.renameCurrent);if(!newName)return;var bpEl=document.querySelector('meta[name=&quot;htmx-base-path&quot;]');var bp=bpEl?bpEl.content:'';var csrf=(typeof window.swCsrfToken==='function')?window.swCsrfToken():'';fetch(bp+btn.dataset.renameUrl,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},credentials:'same-origin',body:JSON.stringify({new_dirname:newName})}).then(function(resp){if(resp.ok){window.location.reload();return;}return resp.text().then(function(t){var msg='';try{msg=JSON.parse(t).error||'';}catch(e){}window.alert(msg?btn.dataset.renameFailedPrefix+msg:btn.dataset.renameFailedPrefix);});}).catch(function(e){window.alert(btn.dataset.renameFailedPrefix+e.message);});})(this)"
+		>
+			@components.IconArrowPath("h-4 w-4 text-gray-400")
+			{ t(ctx, "artist.rename_directory") }
+		</button>
+	}
+	if a.Locked {
+		<button
+			type="button"
+			role="menuitem"
+			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+			hx-delete={ "/api/v1/artists/" + a.ID + "/lock" }
+			hx-swap="none"
+			data-error-prefix={ t(ctx, "artist.platform_action_failed") }
+			hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
+		>
+			@components.IconLockOpen("h-4 w-4 text-gray-400")
+			{ t(ctx, "artist.unlock_artist") }
+		</button>
+	} else {
+		<button
+			type="button"
+			role="menuitem"
+			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+			hx-post={ "/api/v1/artists/" + a.ID + "/lock" }
+			hx-swap="none"
+			data-error-prefix={ t(ctx, "artist.platform_action_failed") }
+			hx-on::after-request="if(event.detail.successful){window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
+		>
+			@components.IconLockClosed("h-4 w-4 text-gray-400")
+			{ t(ctx, "artist.lock_artist") }
+		</button>
+	}
+	for _, conn := range data.Detail.Connections {
+		<a
+			href={ templ.SafeURL(conn.URL) }
+			target="_blank"
+			rel="noopener noreferrer"
+			role="menuitem"
+			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+		>
+			@components.IconArrowTopRightOnSquare("h-4 w-4 text-gray-400")
+			{ tf(ctx, "artist.view_on_platform", conn.Name) }
+		</a>
+	}
+}
+
+// sectionHead renders the shared collapsible/sortable header chrome for a next/
+// artist-detail section (#2065). It is the SortableJS drag target (the left
+// .sw-section-drag-handle grip, matching prefsLayoutRow) plus a disclosure
+// button nested in the heading (WAI-ARIA accordion pattern) that toggles the
+// section body. headingID stays the section's aria-labelledby target; bodyID is
+// the button's aria-controls target and must equal the body div's id. The
+// chevron rotates off aria-expanded (CSS), so the JS only flips that attribute.
+templ sectionHead(headingID, bodyID, headingClass, title string, collapsed bool) {
+	<div class="head sw-section-head">
+		<span class="sw-section-drag-handle" data-sw-section-handle aria-hidden="true">
+			<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+				<circle cx="9" cy="5" r="1.5"></circle><circle cx="15" cy="5" r="1.5"></circle>
+				<circle cx="9" cy="12" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle>
+				<circle cx="9" cy="19" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
+			</svg>
+		</span>
+		<h2 id={ headingID } if headingClass != "" { class={ headingClass } }>
+			<button
+				type="button"
+				class="sw-section-collapse-btn"
+				data-sw-section-toggle
+				aria-expanded={ strconv.FormatBool(!collapsed) }
+				aria-controls={ bodyID }
+			>
+				<svg class="sw-section-chevron h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"></path>
+				</svg>
+				<span class="sw-section-title-text">{ title }</span>
+			</button>
+		</h2>
+		// Trailing head content (e.g. the Artwork "Manage" trigger). Rendered after
+		// the disclosure button so the section's own toolbar keeps its place.
+		{ children... }
 	</div>
 }
 
-// platformStateTable renders the comparison table shared by PlatformStateCard
-// and PlatformStateCardReadOnly. The platformLabel is the column header for the
-// platform side ("Platform" for the Providers tab, the connection name for Debug).
-// When readonly is true, extra debug-only rows (sort name, tags, backdrop count,
-// locked, locked fields) are included.
-templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName, platformLabel string, readonly bool) {
-	<div class="overflow-x-auto">
-		<table class="w-full text-sm table-fixed">
-			<thead>
-				<tr class="border-b border-gray-200 dark:border-gray-700">
-					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide text-xs w-44">{ t(ctx, "common.field") }</th>
-					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
-					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ platformLabel }</th>
-					<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
-				</tr>
-			</thead>
-			<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-				@platformStateRow(t(ctx, "artist.biography"),
-					truncate(a.Biography, 80),
-					truncate(state.Biography, 80),
-					fieldMatch(a.Biography, state.Biography),
-					a.Biography == "" && state.Biography == "",
-					false)
-				@platformStateRow(t(ctx, "artist.genres"),
-					strings.Join(a.Genres, ", "),
-					strings.Join(state.Genres, ", "),
-					sliceMatch(a.Genres, state.Genres),
-					len(a.Genres) == 0 && len(state.Genres) == 0,
-					false)
-				@platformStateRow(t(ctx, "artist.formed_premiere_date"),
-					firstNonEmpty(a.Formed, a.Born),
-					state.PremiereDate,
-					fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
-					firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "",
-					false)
-				@platformStateRow(t(ctx, "artist.disbanded_end_date"),
-					firstNonEmpty(a.Disbanded, a.Died),
-					state.EndDate,
-					fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
-					firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "",
-					false)
-				@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
-					a.MusicBrainzID,
-					state.MusicBrainzID,
-					fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
-					a.MusicBrainzID == "" && state.MusicBrainzID == "",
-					true)
-				if readonly {
-					@platformStateRow(t(ctx, "artist.platform_state.sort_name"),
-						a.SortName,
-						state.SortName,
-						fieldMatch(a.SortName, state.SortName),
-						a.SortName == "" && state.SortName == "",
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.tags"),
-						"--",
-						strings.Join(state.Tags, ", "),
-						false,
-						true,
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.backdrop_count"),
-						"--",
-						strconv.Itoa(state.BackdropCount),
-						false,
-						true,
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.locked"),
-						"--",
-						t(ctx, boolDisplay(state.IsLocked)),
-						false,
-						true,
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.locked_fields"),
-						"--",
-						strings.Join(state.LockedFields, ", "),
-						false,
-						true,
-						false)
-				}
-				<tr>
-					<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
-					<td class="px-4 py-2">
-						@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
-						@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
-						@platformImageBadge(img.ImageTermFor("logo", profileName), a.LogoExists)
-						@platformImageBadge(img.ImageTermFor("banner", profileName), a.BannerExists)
-					</td>
-					<td class="px-4 py-2">
-						@platformImageBadge(img.ImageTermFor("thumb", conn.Type), state.HasThumb)
-						@platformImageBadge(img.ImageTermFor("fanart", conn.Type), state.HasFanart)
-						@platformImageBadge(img.ImageTermFor("logo", conn.Type), state.HasLogo)
-						@platformImageBadge(img.ImageTermFor("banner", conn.Type), state.HasBanner)
-					</td>
-					<td class="px-4 py-2 text-center">
-						<span class="text-gray-300 dark:text-gray-600">--</span>
-					</td>
-				</tr>
-			</tbody>
-		</table>
-	</div>
-}
-
-templ platformStateRow(field, swValue, platValue string, match, bothEmpty, mono bool) {
-	<tr>
-		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ field }</td>
-		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
-			if swValue != "" {
-				if mono {
-					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ swValue }</code>
-				} else {
-					{ swValue }
-				}
-			} else {
-				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
-			}
-		</td>
-		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
-			if platValue != "" {
-				if mono {
-					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ platValue }</code>
-				} else {
-					{ platValue }
-				}
-			} else {
-				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
-			}
-		</td>
-		<td class="px-4 py-2 text-center align-top">
-			if bothEmpty {
-				<span class="text-gray-300 dark:text-gray-600">--</span>
-			} else if match {
-				<span class="text-green-500" title={ t(ctx, "common.match") }>
-					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-					</svg>
-				</span>
-			} else {
-				<span class="text-amber-500" title={ t(ctx, "common.mismatch") }>
-					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z"></path>
-					</svg>
-				</span>
-			}
-		</td>
-	</tr>
-}
-
-templ platformImageBadge(label string, present bool) {
-	<span
-		class={
-			"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
-			templ.KV("bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", present),
-			templ.KV("bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500", !present),
-		}
-	>{ label }</span>
-}
-
-// truncate shortens a string to at most n runes, appending "..." if truncated.
-func truncate(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	return string(runes[:n]) + "..."
-}
-
-// firstNonEmpty returns the first non-empty string from the arguments.
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// fieldMatch reports whether two string values are equal after trimming
-// whitespace and normalizing case.
-func fieldMatch(a, b string) bool {
-	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
-}
-
-// sliceMatch reports whether two string slices have the same elements
-// (case-insensitive, order-independent).
-func sliceMatch(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	ac := make([]string, len(a))
-	bc := make([]string, len(b))
-	for i, v := range a {
-		ac[i] = strings.ToLower(strings.TrimSpace(v))
-	}
-	for i, v := range b {
-		bc[i] = strings.ToLower(strings.TrimSpace(v))
-	}
-	sortStrings(ac)
-	sortStrings(bc)
-	for i := range ac {
-		if ac[i] != bc[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// sortStrings sorts a slice of strings in place.
-func sortStrings(s []string) {
-	sort.Strings(s)
-}
-
-// boolDisplay returns the i18n key for a boolean value.
-// Render the returned key with t(ctx, ...) in template markup.
-func boolDisplay(v bool) string {
-	if v {
-		return "common.yes"
-	}
-	return "common.no"
-}
-
-// sortedKeys returns the keys of a map sorted alphabetically.
-func sortedKeys(m map[string][]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// fieldProvenanceSection renders a table of field-to-provider mappings for the Debug tab.
-templ fieldProvenanceSection(providers map[string][]string) {
-	if len(providers) > 0 {
-		<div class="mt-4 sw-card bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-			<div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-				<h3 class="text-sm font-medium">{ t(ctx, "artist.field_provenance") }</h3>
-			</div>
-			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
-					<thead>
-						<tr class="border-b border-gray-200 dark:border-gray-700">
-							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-40">{ t(ctx, "common.field") }</th>
-							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "artist.field_provenance.providers") }</th>
-						</tr>
-					</thead>
-					<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-						for _, key := range sortedKeys(providers) {
-							<tr>
-								<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium">{ key }</td>
-								if len(providers[key]) > 0 {
-									<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ strings.Join(providers[key], ", ") }</td>
-								} else {
-									<td class="px-4 py-2 text-gray-400 italic">{ t(ctx, "common.none") }</td>
+// artistMetadataSection is the tool-forward source-of-truth editor: the full v1
+// field set, each row reusing FieldDisplay (per-field lock/edit/fetch/
+// clear visible by default). Gender is conditional on type via the preserved
+// gender-wrap OOB container. Genres/Styles/Moods are kept as distinct slice
+// fields. Aliases (shared list + add form) and Members (groups; shared section)
+// ride as sub-cards. This is a reconciliation EDITOR, not a multi-source picker.
+templ artistMetadataSection(data *ArtistDetailData, collapsed bool) {
+	{{ a := &data.Artist }}
+	<section id={ "next-metadata-" + a.ID } class="sw-dash-card" data-sw-section="metadata" data-sw-section-label={ t(ctx, "artist.tab_overview") } aria-labelledby="next-metadata-heading">
+		@sectionHead("next-metadata-heading", "next-metadata-body", "", t(ctx, "artist.details"), collapsed)
+		<div id="next-metadata-body" class="body sw-next-meta-body" hidden?={ collapsed }>
+			// Reflowable layout (UAT 4A item 9): on wide cards the Details/Identity
+			// scalars + Members + Aliases + Tags occupy the LEFT column and the
+			// Biography fills the RIGHT column. It collapses to a single-column
+			// Details (with Tags) -> Bio stack at the narrow breakpoint via the
+			// grid-template-areas swap in input.css.
+			<div class="sw-next-meta-grid">
+				// LEFT column: identity scalars, members (groups), aliases.
+				<div class="sw-next-meta-col sw-next-meta-col--details">
+					// Identity group: scalar key-value rows (label | value). Gender is
+					// conditional on type via the gender-wrap OOB.
+					<div class="sw-next-meta-group">
+						<h3 class="sw-next-subhead">{ t(ctx, "artist.section_identity") }</h3>
+						<dl class="sw-next-fields">
+							@FieldDisplay(a, "name", data.FieldProviders["name"])
+							@FieldDisplay(a, "sort_name", data.FieldProviders["sort_name"])
+							@FieldDisplay(a, "type", data.FieldProviders["type"])
+							// Type-applicability (item 6): gender/born/died are person-only
+							// (hidden for groups); formed/disbanded are group-only (hidden for
+							// solo acts). Gender keeps the gender-wrap OOB container so the
+							// type-edit flow can still toggle it.
+							<div id={ "gender-wrap-" + a.ID }>
+								if FieldAppliesToArtistType("gender", a.Type) {
+									@FieldDisplay(a, "gender", data.FieldProviders["gender"])
 								}
-							</tr>
-						}
-					</tbody>
-				</table>
+							</div>
+							@FieldDisplay(a, "disambiguation", data.FieldProviders["disambiguation"])
+							@FieldDisplay(a, "origin", data.FieldProviders["origin"])
+							if FieldAppliesToArtistType("formed", a.Type) {
+								@FieldDisplay(a, "formed", data.FieldProviders["formed"])
+							}
+							if FieldAppliesToArtistType("born", a.Type) {
+								@FieldDisplay(a, "born", data.FieldProviders["born"])
+							}
+							if FieldAppliesToArtistType("disbanded", a.Type) {
+								@FieldDisplay(a, "disbanded", data.FieldProviders["disbanded"])
+							}
+							if FieldAppliesToArtistType("died", a.Type) {
+								@FieldDisplay(a, "died", data.FieldProviders["died"])
+							}
+							@FieldDisplay(a, "years_active", data.FieldProviders["years_active"])
+						</dl>
+					</div>
+					// Members group (group types only; hidden for solo acts -- item 6).
+					// When empty it is marked sw-next-empty so the read view omits it
+					// entirely (no "No members" placeholder); Edit mode still reveals it
+					// so the fetch-members control is reachable.
+					if FieldAppliesToArtistType("members", a.Type) {
+						<div class={ "sw-next-meta-group", templ.KV("sw-next-empty", len(data.Members) == 0) }>
+							@MembersSection(a.ID, data.Members, data.FieldProviders["members"])
+						</div>
+					}
+					// Aliases group. The add-alias form + per-row remove are actionable,
+					// so they are gated behind Edit mode (read view = values only). When
+					// there are no aliases the group is marked sw-next-empty so the read
+					// view omits it (no "No aliases" placeholder); Edit mode reveals it
+					// so the Add control is reachable.
+					<div class={ "sw-next-meta-group", templ.KV("sw-next-empty", len(data.Aliases) == 0) }>
+						<h3 class="sw-next-subhead">{ t(ctx, "artist.aliases") }</h3>
+						@AliasesList(a.ID, data.Aliases)
+						<div class="sw-next-alias-add">
+							@artistAliasAddForm(a.ID)
+						</div>
+					</div>
+					// Tags group (Genres / Styles / Moods): maintainer asked for this
+					// directly below Aliases, so it rides at the end of the left Details
+					// column rather than as a separate full-width row.
+					<div class="sw-next-meta-group">
+						<h3 class="sw-next-subhead">{ t(ctx, "artist.tags") }</h3>
+						<div class="space-y-2">
+							@FieldDisplay(a, "genres", data.FieldProviders["genres"])
+							@FieldDisplay(a, "styles", data.FieldProviders["styles"])
+							@FieldDisplay(a, "moods", data.FieldProviders["moods"])
+						</div>
+					</div>
+				</div>
+				// RIGHT column: Biography (multiline; biographyDisplay carries its own heading).
+				<div class="sw-next-meta-col sw-next-meta-col--bio">
+					<div class="sw-next-meta-group">
+						@FieldDisplay(a, "biography", data.FieldProviders["biography"])
+					</div>
+				</div>
 			</div>
 		</div>
-	}
+	</section>
+}
+
+// artistAliasAddForm is the alias add form, copied from the stable aliases card
+// (the rows + empty state come from the shared AliasesList).
+templ artistAliasAddForm(artistID string) {
+	<form
+		class="flex items-center gap-2"
+		hx-post={ "/api/v1/artists/" + artistID + "/aliases" }
+		hx-swap="none"
+		data-error-prefix={ t(ctx, "artist.alias_add_failed") }
+		hx-on::after-request="if(event.detail.successful){this.reset();window.location.reload();return;} var p=this.getAttribute('data-error-prefix'); var m=''; try{m=JSON.parse(event.detail.xhr.responseText).error||'';}catch(e){} window.alert(m?p+': '+m:p);"
+	>
+		<label id={ "alias-input-label-" + artistID } class="sr-only">{ t(ctx, "artist.add_alias_label") }</label>
+		<input
+			name="alias"
+			placeholder={ t(ctx, "artist.add_alias_placeholder") }
+			required
+			aria-labelledby={ "alias-input-label-" + artistID }
+			class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+		/>
+		<input type="hidden" name="source" value="manual"/>
+		<button
+			type="submit"
+			class="sw-next-flat-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+		>
+			{ t(ctx, "common.add") }
+		</button>
+	</form>
+}
+
+// artistFindingsSection is the "Other findings" section: the residual home for
+// findings that do NOT map to a single metadata field (#1860). Field-mapped rules
+// now render as inline chips on their field (with their own Fix/Dismiss popover),
+// and the violations fragment filters them out server-side
+// (renderArtistViolations), so this card lists only the image + whole-record
+// (structural) findings. It lazy-loads that fragment so violations-sync.js
+// refreshes it on fix/dismiss/refresh/SSE. id="next-findings" is the hero's
+// scroll target and id="artist-violations-tab-{id}" is the sync module's fallback
+// swap target.
+templ artistFindingsSection(data *ArtistDetailData, collapsed bool) {
+	<section id="next-findings" class="sw-dash-card" data-sw-section="findings" data-sw-section-label={ t(ctx, "artist.other_findings") } aria-labelledby="next-findings-heading">
+		// OOB landing pad: the reused violations-tab fragment emits an
+		// hx-swap-oob targeting #violations-tab-badge (the stable tab pill). The
+		// promoted page has no tab bar, so this catches the swap to prevent
+		// htmx:oobErrorNoTarget. The swap replaces the inner span's outerHTML
+		// (dropping its class), so the badge is kept hidden by the OUTER wrapper
+		// (otherwise the swapped-in count, e.g. "2", leaks into the card corner).
+		<span class="hidden" aria-hidden="true"><span id="violations-tab-badge"></span></span>
+		@sectionHead("next-findings-heading", "next-findings-body", "", t(ctx, "artist.other_findings"), collapsed)
+		<div id="next-findings-body" class="body" hidden?={ collapsed }>
+			<div
+				id={ "artist-violations-tab-" + data.Artist.ID }
+				hx-get={ "/artists/" + data.Artist.ID + "/violations/tab" }
+				hx-trigger="load"
+				hx-swap="innerHTML"
+			>
+				<p class="text-sm text-gray-500 dark:text-gray-400 italic py-6 text-center">{ t(ctx, "common.loading") }</p>
+			</div>
+		</div>
+	</section>
+}
+
+
+// artistIdentifiersSection renders the provider-id fields last and
+// de-emphasized (quiet styling). Each id reuses FieldDisplay (which
+// routes provider-id fields through external links). MusicBrainz match-by-name
+// stays the existing identify flow in the hero kebab; no per-row match hooks in
+// 4A (section 13 decision).
+templ artistIdentifiersSection(data *ArtistDetailData, collapsed bool) {
+	{{ a := &data.Artist }}
+	<section id={ "next-identifiers-" + a.ID } class="sw-dash-card sw-next-identifiers opacity-90" data-sw-section="identifiers" data-sw-section-label={ t(ctx, "artist.provider_ids") } aria-labelledby="next-ids-heading">
+		@sectionHead("next-ids-heading", "next-ids-body", "", t(ctx, "artist.provider_ids"), collapsed)
+		<div id="next-ids-body" class="body" hidden?={ collapsed }>
+			<dl class="sw-next-fields">
+				@FieldDisplay(a, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
+				@FieldDisplay(a, "audiodb_id", data.FieldProviders["audiodb_id"])
+				@FieldDisplay(a, "discogs_id", data.FieldProviders["discogs_id"])
+				@FieldDisplay(a, "wikidata_id", data.FieldProviders["wikidata_id"])
+				@FieldDisplay(a, "deezer_id", data.FieldProviders["deezer_id"])
+			</dl>
+		</div>
+	</section>
+}
+
+// artistDetailPageScript wires the page-specific behaviors not covered by the
+// shared modules: "Edit all" toggle, h/l prev/next-artist + j/k section-nav,
+// Esc panel/edit-mode dismiss, e edit-mode toggle, and f focused-field fetch.
+// keyboard.js (global) owns r/R (data-sw-shortcut) and f on filter-flyout
+// pages; this listener is complementary and does not conflict.
+//
+// Keyboard registry: j/k/e/f/Esc are handled by the inline script and cannot
+// be discovered from data-sw-shortcut attributes. The data-holder span below
+// carries their server-localized labels; the script calls
+// swKeyboardShortcuts.register() so the help overlay (list()) sees all
+// shortcuts alongside the DOM-discovered h/l/r/R entries.
+templ artistDetailPageScript() {
+	<span
+		id="sw-artist-kbdhints"
+		hidden
+		data-j={ t(ctx, "artist.next.shortcuts.section_next") }
+		data-k={ t(ctx, "artist.next.shortcuts.section_prev") }
+		data-e={ t(ctx, "artist.next.shortcuts.field_edit") }
+		data-f={ t(ctx, "artist.next.shortcuts.field_fetch") }
+		data-esc={ t(ctx, "artist.next.shortcuts.close") }
+	></span>
+	<script>
+		(function () {
+			'use strict';
+			// Edit-all: bidirectional toggle and the SOLE entry into edit mode (the
+			// per-field edit pencils are removed from the metadata rows). Bound on every
+			// data-sw-edit-all trigger (hero + sticky). First activation opens every
+			// field editor; second closes them. It drives the editors DIRECTLY via
+			// htmx.ajax rather than clicking visible buttons: the open path reads each
+			// field's edit endpoint (the hidden hx-get .../edit control kept only as
+			// the canonical URL/target source), the close path reads each open
+			// editor's Cancel (hx-get .../display). Selectors key off the hx-get suffix
+			// so they are i18n-independent. State reflects on every trigger via
+			// aria-pressed (+ .is-active).
+			var pageRoot = document.querySelector('.sw-next-artist-detail');
+			var editTriggers = document.querySelectorAll('[data-sw-edit-all]');
+			var editing = false;
+			var editBusy = false;
+			var heroObserver = null;
+
+			// Ambient backdrop: on the artist-detail page, rotate through THIS
+			// artist's OWN fanart/backdrops instead of the shared random one the
+			// global chrome set. Random START index + random NO-REPEAT order (never
+			// two of the same in a row), a calm ~18s cadence, and a subtle ~1.2s
+			// CROSSFADE via two stacked layers (skipped for prefers-reduced-motion).
+			// If the artist has no backdrops (or the list errors), hide the layers so
+			// the fixed login-background (-z-20 in LayoutBackdrop) shows through.
+			(function () {
+				var box = document.getElementById('ambient-backdrop');
+				var layerA = document.getElementById('ambient-backdrop-img');
+				if (!box || !layerA || !pageRoot) return;
+				// base is provided as a data attribute on the page root so the path
+				// honors the configured base path without hardcoding /api/v1 in JS
+				// (mirrors the #1858 fanart-slideshow.js fix).
+				var base = pageRoot.getAttribute('data-sw-fanart-base');
+				if (!base) return;
+				var SHARP = 'brightness(0.7) saturate(1.4)';
+				var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+				function styleLayer(el) {
+					el.style.position = 'absolute';
+					el.style.inset = '0';
+					el.style.width = '100%';
+					el.style.height = '100%';
+					el.style.objectFit = 'cover';
+					el.style.filter = SHARP;
+					el.style.transform = 'scale(1.03)';
+					el.style.transition = reduce ? 'none' : 'opacity 1200ms ease';
+				}
+				function fallbackToLogin() { layerA.style.display = 'none'; layerA.removeAttribute('src'); }
+				fetch(base + 'list', { credentials: 'same-origin' })
+					.then(function (r) {
+						if (r.ok) { return r.json(); }
+						// Distinguish "endpoint is erroring" from "artist has no fanart"
+						// (the empty-list branch below): both fall back to the login bg,
+						// but only the former is a problem worth a console signal.
+						if (window.console) { console.warn('ambient backdrop list failed', base + 'list', r.status); }
+						return null;
+					})
+					.then(function (items) {
+						if (!Array.isArray(items) || items.length === 0) { fallbackToLogin(); return; }
+						var urls = items.map(function (it, i) {
+							var idx = (it && typeof it.index === 'number') ? it.index : i;
+							return base + idx + '/file';
+						});
+						var layerB = layerA.cloneNode(false);
+						layerB.removeAttribute('id');
+						layerB.removeAttribute('src');
+						box.appendChild(layerB);
+						styleLayer(layerA);
+						styleLayer(layerB);
+						var layers = [layerA, layerB];
+						var active = 0;
+						var cur = Math.floor(Math.random() * urls.length); // random start
+						layerA.style.opacity = '1';
+						layerB.style.opacity = '0';
+						layerA.src = urls[cur];
+						function nextIndex() {
+							if (urls.length < 2) return cur;
+							var n;
+							do { n = Math.floor(Math.random() * urls.length); } while (n === cur);
+							return n;
+						}
+						function rotate() {
+							var n = nextIndex();
+							var incoming = layers[1 - active];
+							var outgoing = layers[active];
+							incoming.onload = function () {
+								incoming.style.opacity = '1';
+								outgoing.style.opacity = '0';
+								active = 1 - active;
+								cur = n;
+							};
+							incoming.src = urls[n];
+						}
+						if (urls.length > 1) { setInterval(rotate, 18000); }
+					})
+					.catch(function (e) {
+						if (window.console) { console.warn('ambient backdrop list error', e); }
+						fallbackToLogin();
+					});
+			})();
+			// "Edit" opens every field editor in ONE request. The batch endpoint
+			// GET /api/v1/artists/{id}/fields/edit-all returns all field edit
+			// fragments as hx-swap-oob="outerHTML" elements; htmx v2 distributes
+			// them to their individual DOM targets in a single round-trip, replacing
+			// the previous N sequential per-field htmx.ajax calls that each issued
+			// their own DB history query (N+1 fix, #1919).
+			function openAllEditorsFallback() {
+				// Click the hidden per-field edit buttons when the batch path is
+				// unavailable or fails (htmx absent, artist ID missing, or request error).
+				Array.prototype.forEach.call(
+					document.querySelectorAll('.sw-next-artist-detail button[hx-get$="/edit"]'),
+					function (b) { b.click(); }
+				);
+			}
+			function openAllEditors() {
+				// Root-relative path from DOM; htmx:configRequest auto-prepends basePath.
+				var batchUrl = pageRoot ? pageRoot.getAttribute('data-sw-edit-all-url') : '';
+				var tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-edit-partial')) ||
+					'Some fields could not be opened for editing. Reload and try again.';
+				if (!batchUrl || typeof htmx === 'undefined') {
+					// htmx unavailable or URL missing: degrade to per-field opens.
+					openAllEditorsFallback();
+					return Promise.resolve();
+				}
+				// swap: 'none' -- all real content is in OOB fragments; htmx
+				// processes those regardless of the main swap target/mode.
+				return htmx.ajax('GET', batchUrl, { swap: 'none' })
+					.catch(function (e) {
+						if (window.console) { console.error('batch field edit-all failed', batchUrl, e); }
+						openAllEditorsFallback();
+						swNotify(tpl);
+					});
+			}
+			// "Done" is the SOLE commit (the per-field save/cancel controls are removed
+			// in this channel). It PATCHes every field whose value CHANGED, in turn,
+			// then reloads so the read view reflects the persisted state. We use plain
+			// fetch() rather than htmx.ajax here: htmx.ajax's promise resolves before
+			// the swap settles, so chaining it raced (only the first/last field saved);
+			// awaited fetch + a final reload is deterministic. Only changed fields are
+			// written so an unchanged Done does not spam each field's history. Each
+			// field editor is a form[hx-patch] with one name="value" control; the alias
+			// add form is a form[hx-post] and is intentionally not committed here.
+			function fieldChanged(input) {
+				if (!input) return false;
+				var tag = (input.tagName || '').toLowerCase();
+				if (tag === 'select') {
+					var orig = Array.prototype.slice.call(input.options).filter(function (o) { return o.defaultSelected; });
+					return input.value !== (orig.length ? orig[0].value : '');
+				}
+				return input.value !== input.defaultValue;
+			}
+			function swBasePath() {
+				var el = document.querySelector('meta[name="htmx-base-path"]');
+				return el ? el.content : '';
+			}
+			function swCsrf() {
+				if (typeof window.swCsrfToken === 'function') { return window.swCsrfToken(); }
+				var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+				return m ? m[1] : '';
+			}
+			// Toast helper (red error toast when present, alert() fallback) -- mirrors
+			// members-apply.js so save/edit failures are never swallowed silently.
+			function swNotify(msg) {
+				if (typeof window.showToast === 'function') { window.showToast(msg); } else { alert(msg); }
+			}
+			// Human label for a field PATCH URL (.../fields/<slug>) for failure
+			// messages: "sort_name" -> "Sort Name", "biography" -> "Biography".
+			function swFieldLabel(url) {
+				var seg = (url || '').split('/').filter(Boolean).pop() || 'field';
+				return seg.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+			}
+			// Extract a human-readable error from a non-2xx body: prefer a JSON
+			// { "error": ... } envelope, else strip HTML tags, else the status code.
+			function swErrorFromBody(body, status) {
+				var trimmed = (body || '').trim();
+				if (trimmed.charAt(0) === '{') {
+					try { var p = JSON.parse(trimmed); if (p && typeof p.error === 'string') { return p.error.trim(); } } catch (e) { /* not JSON */ }
+				}
+				if (trimmed) {
+					var s = trimmed.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+					if (s && s.length < 500) { return s; }
+				}
+				return 'HTTP ' + status;
+			}
+			// Mark a saved input as committed so a retry (after a sibling field
+			// failed) does not re-PATCH an already-persisted value.
+			function swMarkCommitted(input) {
+				if (!input) return;
+				if ((input.tagName || '').toLowerCase() === 'select') {
+					Array.prototype.forEach.call(input.options, function (o) { o.defaultSelected = o.selected; });
+				} else {
+					input.defaultValue = input.value;
+				}
+			}
+			// Refresh the two editable sections (Details + Provider IDs) in place from
+			// current server state. Each htmx GET re-fetches the page but SELECTS one
+			// section node and swaps just that node, avoiding the full reload that
+			// flickered (it repainted the hero/backdrop and re-fired the hx-trigger=load
+			// findings/history fragments). Used both after a save commits and after a
+			// history undo (revert) so the impacted field row reflects the new value.
+			// The hero, ambient backdrop, Open Findings, and History are untouched (the
+			// hero carries the edit-all/observer bindings; re-swapping it would detach
+			// them). Falls back to a full reload if htmx is absent or a swap errors.
+			function refreshEditableSections() {
+				var aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';
+				if (typeof htmx === 'undefined' || !aid) {
+					window.location.reload();
+					return Promise.resolve();
+				}
+				var sels = ['#next-metadata-' + aid, '#next-identifiers-' + aid];
+				return sels.reduce(function (chain, sel) {
+					if (!document.querySelector(sel)) return chain;
+					return chain.then(function () {
+						return htmx.ajax('GET', window.location.pathname, { target: sel, swap: 'outerHTML', select: sel })
+							.catch(function () { window.location.reload(); });
+					});
+				}, Promise.resolve());
+			}
+			// Swap the hero section in place so a name/type History-undo reflects
+			// immediately in the H1/portrait/type pill without a full reload (#1850).
+			// Uses the same select-swap pattern as refreshEditableSections.
+			function refreshHero() {
+				var aid = pageRoot ? pageRoot.getAttribute('data-artist-id') : '';
+				var sel = '#next-hero-' + aid;
+				if (typeof htmx === 'undefined' || !aid || !document.querySelector(sel)) {
+					return Promise.resolve();
+				}
+				return htmx.ajax('GET', window.location.pathname, { target: sel, swap: 'outerHTML', select: sel })
+					.catch(function () { window.location.reload(); });
+			}
+			// Re-establish the IntersectionObserver and edit-all bindings on the
+			// hero after a DOM swap replaces the hero node (#1850). Re-queries
+			// fresh DOM nodes so detached listeners from the old node are never
+			// called and the sticky header continues to work correctly.
+			function rebindHero() {
+				var stick = document.querySelector('[data-sw-stickhdr]');
+				var hero = document.querySelector('.sw-next-hero');
+				if (stick && hero && 'IntersectionObserver' in window) {
+					// Disconnect the previous observer before creating a new one so
+					// rebindHero() calls after a hero DOM swap do not stack observers.
+					if (heroObserver) { heroObserver.disconnect(); }
+					heroObserver = new IntersectionObserver(function (entries) {
+						var stuck = !entries[0].isIntersecting;
+						stick.classList.toggle('is-stuck', stuck);
+						stick.setAttribute('aria-hidden', stuck ? 'false' : 'true');
+					}, { rootMargin: '-48px 0px 0px 0px', threshold: 0 });
+					heroObserver.observe(hero);
+				}
+				// Re-query editTriggers to include the fresh hero button and
+				// re-attach the click handler so the hero Edit button works after
+				// a hero DOM swap. The dataset guard keeps the binding idempotent:
+				// the sticky-header trigger survives hero swaps, and without the
+				// guard each rebindHero() call would stack another listener on it.
+				editTriggers = document.querySelectorAll('[data-sw-edit-all]');
+				editTriggers.forEach(function (trigger) {
+					if (trigger.dataset.swEditBound) return;
+					trigger.dataset.swEditBound = '1';
+					trigger.addEventListener('click', function () { setEditAll(!editing); });
+				});
+				// Sync the visual state of the new hero button with the current edit mode.
+				reflectEditState(editing);
+			}
+			// swStageHistoryValue stages a prior field value from the per-field undo
+			// clock popover into the field's live input/select/textarea. The existing
+			// fieldChanged() dirty detection marks it for save automatically because
+			// input.value will differ from input.defaultValue after staging.
+			window.swStageHistoryValue = function (btn) {
+				var v = btn.getAttribute('data-sw-stage-value') || '';
+				var sel = btn.getAttribute('data-sw-container-sel');
+				var menuID = btn.getAttribute('data-sw-menu-id');
+				if (sel) {
+					var container = document.querySelector(sel);
+					if (container) {
+						var input = container.querySelector('[name="value"]');
+						if (input) {
+							input.value = v;
+							input.dispatchEvent(new Event('input', { bubbles: true }));
+						}
+					}
+				}
+				// Close the dropdown (mirrors CloseContextMenu templ script logic).
+				var panel = document.getElementById('ctx-panel-' + menuID);
+				var sheet = document.getElementById('ctx-sheet-' + menuID);
+				var trigger = document.querySelector('[aria-controls="ctx-panel-' + menuID + '"]');
+				if (panel) { panel.classList.add('hidden'); }
+				if (sheet) {
+					sheet.classList.remove('ctx-sheet-open');
+					sheet.setAttribute('aria-hidden', 'true');
+					sheet.setAttribute('inert', '');
+					document.body.classList.remove('ctx-sheet-body-lock');
+				}
+				if (trigger) { trigger.setAttribute('aria-expanded', 'false'); trigger.focus(); }
+			};
+			// Returns a Promise resolving to { failedCount }. CRITICAL: each PATCH is
+			// checked for r.ok -- a rejected save (400/409 conflict-gate/422/500) is a
+			// FAILURE, not a silent success. Because these are raw fetch() calls (not
+			// htmx) they bypass the global htmx:responseError toast, so we surface
+			// failures ourselves: collect the failed field labels, toast once, and do
+			// NOT swap those editors back to read view (the user's input is preserved
+			// for retry). Only when every changed field saved do we refresh the
+			// editable sections back to their read view.
+			function saveAllEditors() {
+				var forms = Array.prototype.slice.call(
+					document.querySelectorAll('.sw-next-artist-detail form[hx-patch]')
+				);
+				var bp = swBasePath();
+				var csrf = swCsrf();
+				var jobs = [];
+				// Collect dirty fields first so we can check CSRF only when
+				// there is actually something to save (mirrors the guard in
+				// fanart-manage.js / artwork-modal.js).
+				forms.forEach(function (form) {
+					var url = form.getAttribute('hx-patch');
+					var input = form.querySelector('[name="value"]');
+					if (url && fieldChanged(input)) {
+						jobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input });
+					}
+				});
+				// Nothing dirty, but every editor is still open: swap the sections
+				// back to their read view so Done always returns the page to its
+				// pre-Edit state. Without this, an Edit -> Done round-trip with no
+				// changes left all field editors mounted (pre-existing since the
+				// #1895 edit-mode rebuild; surfaced in 4D-1 UAT).
+				if (jobs.length === 0) {
+					return refreshEditableSections().then(function () { return { failedCount: 0 }; });
+				}
+				if (!csrf) {
+					var expiredMsg = (pageRoot && pageRoot.getAttribute('data-sw-msg-session-expired')) ||
+						'Session expired. Please reload the page and try again.';
+					swNotify(expiredMsg);
+					// Return failedCount > 0 to keep edit mode open so the user
+					// can reload and retry without losing their typed values.
+					return Promise.resolve({ failedCount: jobs.length });
+				}
+				var failed = [];
+				return jobs.reduce(function (chain, job) {
+					return chain.then(function () {
+						return fetch(job.url, {
+							method: 'PATCH',
+							headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },
+							credentials: 'same-origin',
+							body: 'value=' + encodeURIComponent(job.value)
+						}).then(function (r) {
+							if (r.ok) { swMarkCommitted(job.input); return undefined; }
+							return r.text().then(function (body) {
+								if (window.console) { console.error('field save failed', job.rawUrl, r.status, swErrorFromBody(body, r.status)); }
+								failed.push(swFieldLabel(job.rawUrl));
+							});
+						}).catch(function (e) {
+							if (window.console) { console.error('field save network error', job.rawUrl, e); }
+							failed.push(swFieldLabel(job.rawUrl));
+						});
+					});
+				}, Promise.resolve()).then(function () {
+					if (failed.length > 0) {
+						var tpl = (pageRoot && pageRoot.getAttribute('data-sw-msg-save-failed')) || 'Could not save: %s. Your changes were kept so you can retry.';
+						swNotify(tpl.replace('%s', failed.join(', ')));
+						// Keep the open editors (incl. the failed fields' unsaved input)
+						// so the user can fix and retry; do NOT refresh to read view.
+						return { failedCount: failed.length };
+					}
+					// All changed fields saved -> refresh the editable regions back to
+					// their read view, in place (see refreshEditableSections).
+					return refreshEditableSections().then(function () { return { failedCount: 0 }; });
+				});
+			}
+			function reflectEditState(on) {
+				if (pageRoot) pageRoot.classList.toggle('is-editing', on);
+				editTriggers.forEach(function (t) {
+					t.setAttribute('aria-pressed', on ? 'true' : 'false');
+					t.classList.toggle('is-active', on);
+					var label = t.querySelector('[data-sw-edit-label]');
+					if (label) {
+						var next = on ? t.getAttribute('data-label-done') : t.getAttribute('data-label-edit');
+						if (next) label.textContent = next;
+					}
+				});
+			}
+			function setEditAll(on) {
+				if (editBusy) return;
+				editBusy = true;
+				if (on) {
+					editing = true;
+					reflectEditState(true);
+					openAllEditors().then(function () { editBusy = false; });
+				} else {
+					// Commit all fields first (controls still visible), then drop to read.
+					// If any field failed to save, STAY in edit mode so the user can fix
+					// and retry (saveAllEditors already toasted + preserved their input).
+					saveAllEditors().then(function (res) {
+						if (!res || res.failedCount === 0) {
+							editing = false;
+							reflectEditState(false);
+						}
+						editBusy = false;
+					});
+				}
+			}
+			// History undo (revert): the revert button (in the lazily-loaded history
+			// fragment) POSTs to /history/{id}/revert and swaps only the history list,
+			// so the reverted value stayed stale in the Details / Provider IDs rows
+			// until a manual reload (maintainer request). Listen for a successful
+			// revert and refresh those editable sections and the hero in place so the
+			// impacted field reflects the new value (no full reload, no flicker, scroll
+			// kept). rebindHero() re-establishes the observer and click handlers on the
+			// swapped-in hero node. Skipped while editing so an open editor's unsaved
+			// input is never clobbered.
+			document.body.addEventListener('htmx:afterRequest', function (evt) {
+				var d = evt.detail;
+				if (!d || !d.successful) return;
+				var cfg = d.requestConfig;
+				if (!cfg) return;
+				var verb = (cfg.verb || '').toLowerCase();
+				var path = cfg.path || '';
+				// Match the revert endpoint regardless of base-path prefix or query.
+				if (verb === 'post' && /\/history\/[^/]+\/revert(?:[?]|$)/.test(path) && !editing) {
+					// Refresh the field rows then the hero, so a name/type undo
+					// updates the H1 and type pill in place (#1850).
+					refreshEditableSections().then(refreshHero).then(rebindHero);
+				}
+			});
+
+			// Inline finding chips (#1860): a Fix/Dismiss from a field chip's popover
+			// resolves the violation and dispatches dashboard:action-resolved (the same
+			// event violations-sync.js uses to refresh the "Other findings" card). The
+			// chip lives in the metadata/identifiers sections, NOT that card, so refresh
+			// those sections in place too -- otherwise the resolved chip lingers until a
+			// reload. Skipped while editing so an open editor's unsaved input is never
+			// clobbered (the chip then clears on the next non-edit refresh / Done).
+			document.body.addEventListener('dashboard:action-resolved', function () {
+				if (editing) return;
+				refreshEditableSections();
+			});
+
+			// Sticky mini-header: initial bind (runs once at page load). After a
+			// hero DOM swap the revert handler calls rebindHero() to re-attach
+			// the observer and edit-all listener on the fresh node (#1850).
+			rebindHero();
+
+			var root = document.querySelector('[data-sw-section-nav]');
+			if (!root) return;
+			var sections = Array.prototype.slice.call(root.querySelectorAll('[data-sw-section]'));
+			var idx = -1;
+
+			function handle(key) {
+				if (key === 'h') { var p = root.getAttribute('data-sw-prev-artist'); if (p) { window.location.assign(p); return true; } return false; }
+				if (key === 'l') { var n = root.getAttribute('data-sw-next-artist'); if (n) { window.location.assign(n); return true; } return false; }
+				if (key === 'j' || key === 'k') {
+					if (!sections.length) return false;
+					idx = key === 'j' ? Math.min(sections.length - 1, idx + 1) : Math.max(0, idx - 1);
+					sections[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+					sections[idx].setAttribute('tabindex', '-1');
+					sections[idx].focus({ preventScroll: true });
+					return true;
+				}
+				return false;
+			}
+
+			// isTyping: mirrors keyboard.js's guard -- INPUT only counts as typing
+			// when text-like; a focused checkbox/radio must NOT swallow shortcuts.
+			function isTyping(el) {
+				if (!el) return false;
+				var tag = el.tagName;
+				if (tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return true;
+				if (tag === 'INPUT') {
+					var nonText = ['checkbox','radio','button','submit','reset','file','image','range','color'];
+					var itype = (el.getAttribute('type') || 'text').toLowerCase();
+					return nonText.indexOf(itype) === -1;
+				}
+				return false;
+			}
+
+			// Track the most-recently-hovered field row so 'f' has a target.
+			// closest() walks up from any pointer target inside the row container
+			// (value text, lock icon, etc.) to reach the wrapping div, e.g.
+			// <div id="field-biography-123">.
+			var focusedFieldEl = null;
+			document.addEventListener('mouseover', function (mv) {
+				var el = mv.target.closest('div[id^="field-"]');
+				if (el) focusedFieldEl = el;
+			});
+
+			// Detail-page keyboard handler. keyboard.js (global) handles r/R via
+			// data-sw-shortcut and owns 'f'/'F' on filter-flyout pages; this listener
+			// is complementary. The onContext hook from keyboard.js targets roving-list
+			// pages and is NOT used here (artist-detail has no data-sw-roving-list).
+			document.addEventListener('keydown', function (ev) {
+				if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+				if (isTyping(ev.target)) return;
+
+				// When the artwork modal is open, its own keydown handler (registered by
+				// artwork-modal.js while open) owns Escape and Tab. All other keys
+				// (h/l/j/k/e/f) must NOT navigate the page behind the dialog.
+				var artworkModal = document.getElementById('artwork-modal');
+				if (artworkModal && !artworkModal.classList.contains('hidden')) return;
+
+				// Esc: layered dismiss in priority order.
+				// (a) Lightbox + (b) artwork-modal: each registers its keydown handler
+				//     only while open (added on open, removed on close) and calls
+				//     e.preventDefault() -- the defaultPrevented guard above handles
+				//     those before we reach this block.
+				// (c) Dismiss the refresh-panel when it has content.
+				// (d) Exit page edit mode when active (same as clicking Done).
+				if (ev.key === 'Escape') {
+					var panel = document.getElementById('refresh-panel');
+					if (panel && panel.innerHTML.trim() !== '') {
+						ev.preventDefault();
+						panel.innerHTML = '';
+						return;
+					}
+					if (editing) {
+						ev.preventDefault();
+						setEditAll(false);
+						return;
+					}
+					return;
+				}
+
+				// e: toggle page-level Edit mode (same as clicking the Edit / Done hero
+				// button). The page uses page-wide edit-all, not per-field pencils.
+				if (ev.key === 'e') {
+					ev.preventDefault();
+					setEditAll(!editing);
+					return;
+				}
+
+				// f: open the provider-fetch panel for the focused field. keyboard.js
+				// handles 'f'/'F' on pages that use a filter flyout; it returns without
+				// calling preventDefault when no data-sw-shortcut="f" element exists,
+				// so this handler still fires on the detail page.
+				if (ev.key === 'f') {
+					if (focusedFieldEl) {
+						var fetchBtn = focusedFieldEl.querySelector('button[hx-get$="/providers"]');
+						if (fetchBtn) { ev.preventDefault(); fetchBtn.click(); }
+					}
+					return;
+				}
+
+				// h/l/j/k: prev/next artist and section nav (handled by handle()).
+				if (handle(ev.key)) ev.preventDefault();
+			});
+		})();
+
+		// Register the inline-handled shortcuts with the shared keyboard registry
+		// so the help overlay exposes them alongside the DOM-discovered h/l/r/R
+		// entries. h/l/r/R are already in the registry via data-sw-shortcut.
+		// Must run after the IIFE above so the keydown handler is wired first.
+		(function () {
+			if (!window.swKeyboardShortcuts ||
+					typeof window.swKeyboardShortcuts.register !== 'function') {
+				if (window.console && console.error) {
+					console.error('[swKbd] register API missing on artist-detail page');
+				}
+				return;
+			}
+			var h = document.getElementById('sw-artist-kbdhints');
+			if (!h && window.console && console.error) {
+				console.error('[swKbd] sw-artist-kbdhints span not found on artist-detail page');
+			}
+			if (!h) return;
+			if (typeof window.swKeyboardShortcuts.unregister === 'function') {
+				window.swKeyboardShortcuts.unregister('artist-detail');
+			}
+			var ds = h.dataset;
+			window.swKeyboardShortcuts.register('artist-detail', [
+				{ key: 'j',      label: ds.j   || '' },
+				{ key: 'k',      label: ds.k   || '' },
+				{ key: 'e',      label: ds.e   || '' },
+				{ key: 'f',      label: ds.f   || '' },
+				{ key: 'Escape', label: ds.esc || '' }
+			]);
+		})();
+	</script>
 }

@@ -21,9 +21,9 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-// artworkDetailRequest issues GET /next/artists/{id} with both an authed user
+// artworkDetailRequest issues GET /artists/{id} with both an authed user
 // and the embedded English translator in context, so the rendered page contains
-// real i18n copy (not the empty fallback). Mirrors nextDetailRequest but adds
+// real i18n copy (not the empty fallback). Mirrors detailRequest but adds
 // the translator the reconciliation status strings need.
 func artworkDetailRequest(t *testing.T, r *Router, id string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -33,15 +33,15 @@ func artworkDetailRequest(t *testing.T, r *Router, id string) *httptest.Response
 	}
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
 	ctx = i18n.WithTranslator(ctx, bundle.Translator("en"))
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id, nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+id, nil)
 	req.SetPathValue("id", id)
 	w := httptest.NewRecorder()
-	middleware.UX("next", "")(http.HandlerFunc(r.handleNextArtistDetailPage)).ServeHTTP(w, req)
+	r.handleArtistDetailPage(w, req)
 	return w
 }
 
 // artworkTestRouter builds a Router wired with the connection + provider
-// services that the next/ Artwork section needs: connectionService (so the
+// services that the Artwork section needs: connectionService (so the
 // reconciliation status line resolves per-connection managed/mirror state) and
 // providerSettings (buildArtistDetailData reads provider priorities). The
 // conflict detector/gate are the no-op test variants so connection fixtures
@@ -106,11 +106,11 @@ func seedArtworkConnection(t *testing.T, r *Router, artistSvc *artist.Service, a
 	}
 }
 
-// TestHandleNextArtistDetailPage_ArtworkSection verifies the next/ page renders
+// TestHandleArtistDetailPage_ArtworkSection verifies the detail page renders
 // the 4B Artwork section end to end from real SQLite: the section card, identity
 // tiles, the single Manage trigger, and -- with no connections -- the local-only
 // reconciliation status.
-func TestHandleNextArtistDetailPage_ArtworkSection(t *testing.T) {
+func TestHandleArtistDetailPage_ArtworkSection(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := artworkTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Artwork Probe")
@@ -134,10 +134,10 @@ func TestHandleNextArtistDetailPage_ArtworkSection(t *testing.T) {
 	}
 }
 
-// TestHandleNextArtistDetailPage_ArtworkReconciliation verifies the per-connection
+// TestHandleArtistDetailPage_ArtworkReconciliation verifies the per-connection
 // reconciliation status reflects each connection's managed flag: a managed Emby
 // reads "Managed by Stillwater"; an unmanaged Lidarr reads as a plain mirror.
-func TestHandleNextArtistDetailPage_ArtworkReconciliation(t *testing.T) {
+func TestHandleArtistDetailPage_ArtworkReconciliation(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := artworkTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Recon Probe")
@@ -166,20 +166,19 @@ func TestHandleNextArtistDetailPage_ArtworkReconciliation(t *testing.T) {
 	}
 }
 
-// TestHandleNextArtworkModal_RendersEditorPerKind verifies the modal-body
+// TestHandleArtworkModal_RendersEditorPerKind verifies the modal-body
 // fragment endpoint renders the reused ArtworkManageEditor scoped to the
 // requested kind (primary -> thumb), including the crop modal the editor hosts.
-func TestHandleNextArtworkModal_RendersEditorPerKind(t *testing.T) {
+func TestHandleArtworkModal_RendersEditorPerKind(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := artworkTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Modal Editor")
 
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+id+"/artwork-modal?kind=primary", nil)
 	req.SetPathValue("id", id)
 	w := httptest.NewRecorder()
-	r.handleNextArtworkModal(w, req)
+	r.handleArtworkModal(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
@@ -201,16 +200,15 @@ func TestHandleNextArtworkModal_RendersEditorPerKind(t *testing.T) {
 	}
 }
 
-// TestHandleNextArtworkModal_UnknownArtist verifies a missing artist 404s.
-func TestHandleNextArtworkModal_UnknownArtist(t *testing.T) {
+// TestHandleArtworkModal_UnknownArtist verifies a missing artist 404s.
+func TestHandleArtworkModal_UnknownArtist(t *testing.T) {
 	t.Parallel()
 	r, _ := artworkTestRouter(t)
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/nope/artwork-modal?kind=primary", nil)
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/nope/artwork-modal?kind=primary", nil)
 	req.SetPathValue("id", "nope")
 	w := httptest.NewRecorder()
-	r.handleNextArtworkModal(w, req)
+	r.handleArtworkModal(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}

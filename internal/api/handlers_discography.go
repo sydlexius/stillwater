@@ -128,9 +128,6 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 		ArtistID:      artistID,
 		MusicBrainzID: a.MusicBrainzID,
 		Albums:        albums,
-		Search:        search,
-		Sort:          sortBy,
-		Order:         order,
 	}))
 }
 

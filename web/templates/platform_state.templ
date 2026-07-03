@@ -1,0 +1,291 @@
+package templates
+
+import (
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
+	img "github.com/sydlexius/stillwater/internal/image"
+)
+
+// Platform-state comparison partials, shared by the artist-detail Providers
+// section (via PlatformStateCardBody in shared_artist_detail.templ) and the
+// Debug section's read-only cards. Extracted from artist_detail.templ with the
+// artist-detail promotion (#1757 PR-3b) so the promoted page template could
+// take over that file without disturbing these consumers
+// (handlers_platform_state.go renders the cards as HTMX fragments).
+
+// PlatformStateCard renders the platform state comparison card for one connection.
+// Returned as an HTMX outerHTML swap to replace the loading placeholder.
+// profileName is the active platform profile name used for Stillwater-side image labels.
+templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+		@PlatformStateCardBody(a, conn, state, profileName)
+	</div>
+}
+
+// PlatformStateError renders an error card when platform state fetch fails.
+templ PlatformStateError(conn *connection.Connection, errMsg string) {
+	<div class="rounded-lg border border-red-200 dark:border-red-800 p-4">
+		<div class="flex items-center gap-2 text-red-600 dark:text-red-400">
+			<span class="font-medium text-sm">{ conn.Name }</span>
+			<span class="text-xs">{ tf(ctx, "artist.platform_state_error", errMsg) }</span>
+		</div>
+	</div>
+}
+
+// PlatformStateCardReadOnly renders a read-only platform state comparison card
+// for the Debug tab. No action buttons or hx-post attributes are present.
+templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+		// Header: connection name + type badge + lock badge. No action buttons.
+		<div class="flex items-center px-4 py-3">
+			@platformStateHeaderBadges(conn, state)
+		</div>
+		@platformStateTable(a, conn, state, profileName, conn.Name, true)
+	</div>
+}
+
+// platformStateHeaderBadges renders the connection name, type badge, and lock
+// badge shared by both PlatformStateCard and PlatformStateCardReadOnly.
+// The platform SVG logo is rendered before the connection name; emby uses a
+// PNG variant with srcset for multi-DPI displays (the srcset attribute is
+// emitted only when the type has a srcset variant; #2101).
+templ platformStateHeaderBadges(conn *connection.Connection, state *connection.ArtistPlatformState) {
+	<div class="flex items-center gap-2">
+		<img
+			src={ logoSrc(conn.Type) }
+			if logoSrcSet(conn.Type) != "" {
+				srcset={ logoSrcSet(conn.Type) }
+			}
+			alt={ sourceDisplayName(conn.Type) }
+			class="h-5 w-5 shrink-0"
+		/>
+		<span class="font-medium text-sm">{ conn.Name }</span>
+		if state.IsLocked {
+			<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
+		}
+	</div>
+}
+
+// platformStateTable renders the comparison table shared by PlatformStateCard
+// and PlatformStateCardReadOnly. The platformLabel is the column header for the
+// platform side ("Platform" for the Providers tab, the connection name for Debug).
+// When readonly is true, extra debug-only rows (sort name, tags, backdrop count,
+// locked, locked fields) are included.
+templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName, platformLabel string, readonly bool) {
+	<div class="overflow-x-auto">
+		<table class="w-full text-sm table-fixed">
+			<thead>
+				<tr class="border-b border-gray-200 dark:border-gray-700">
+					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide text-xs w-44">{ t(ctx, "common.field") }</th>
+					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
+					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ platformLabel }</th>
+					<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+				@platformStateRow(t(ctx, "artist.biography"),
+					truncate(a.Biography, 80),
+					truncate(state.Biography, 80),
+					fieldMatch(a.Biography, state.Biography),
+					a.Biography == "" && state.Biography == "",
+					false)
+				@platformStateRow(t(ctx, "artist.genres"),
+					strings.Join(a.Genres, ", "),
+					strings.Join(state.Genres, ", "),
+					sliceMatch(a.Genres, state.Genres),
+					len(a.Genres) == 0 && len(state.Genres) == 0,
+					false)
+				@platformStateRow(t(ctx, "artist.formed_premiere_date"),
+					firstNonEmpty(a.Formed, a.Born),
+					state.PremiereDate,
+					fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
+					firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "",
+					false)
+				@platformStateRow(t(ctx, "artist.disbanded_end_date"),
+					firstNonEmpty(a.Disbanded, a.Died),
+					state.EndDate,
+					fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
+					firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "",
+					false)
+				@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
+					a.MusicBrainzID,
+					state.MusicBrainzID,
+					fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
+					a.MusicBrainzID == "" && state.MusicBrainzID == "",
+					true)
+				if readonly {
+					@platformStateRow(t(ctx, "artist.platform_state.sort_name"),
+						a.SortName,
+						state.SortName,
+						fieldMatch(a.SortName, state.SortName),
+						a.SortName == "" && state.SortName == "",
+						false)
+					@platformStateRow(t(ctx, "artist.platform_state.tags"),
+						"--",
+						strings.Join(state.Tags, ", "),
+						false,
+						true,
+						false)
+					@platformStateRow(t(ctx, "artist.platform_state.backdrop_count"),
+						"--",
+						strconv.Itoa(state.BackdropCount),
+						false,
+						true,
+						false)
+					@platformStateRow(t(ctx, "artist.platform_state.locked"),
+						"--",
+						t(ctx, boolDisplay(state.IsLocked)),
+						false,
+						true,
+						false)
+					@platformStateRow(t(ctx, "artist.platform_state.locked_fields"),
+						"--",
+						strings.Join(state.LockedFields, ", "),
+						false,
+						true,
+						false)
+				}
+				<tr>
+					<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
+					<td class="px-4 py-2">
+						@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
+						@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
+						@platformImageBadge(img.ImageTermFor("logo", profileName), a.LogoExists)
+						@platformImageBadge(img.ImageTermFor("banner", profileName), a.BannerExists)
+					</td>
+					<td class="px-4 py-2">
+						@platformImageBadge(img.ImageTermFor("thumb", conn.Type), state.HasThumb)
+						@platformImageBadge(img.ImageTermFor("fanart", conn.Type), state.HasFanart)
+						@platformImageBadge(img.ImageTermFor("logo", conn.Type), state.HasLogo)
+						@platformImageBadge(img.ImageTermFor("banner", conn.Type), state.HasBanner)
+					</td>
+					<td class="px-4 py-2 text-center">
+						<span class="text-gray-300 dark:text-gray-600">--</span>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+}
+
+templ platformStateRow(field, swValue, platValue string, match, bothEmpty, mono bool) {
+	<tr>
+		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ field }</td>
+		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
+			if swValue != "" {
+				if mono {
+					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ swValue }</code>
+				} else {
+					{ swValue }
+				}
+			} else {
+				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
+			}
+		</td>
+		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
+			if platValue != "" {
+				if mono {
+					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ platValue }</code>
+				} else {
+					{ platValue }
+				}
+			} else {
+				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
+			}
+		</td>
+		<td class="px-4 py-2 text-center align-top">
+			if bothEmpty {
+				<span class="text-gray-300 dark:text-gray-600">--</span>
+			} else if match {
+				<span class="text-green-500" title={ t(ctx, "common.match") }>
+					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+					</svg>
+				</span>
+			} else {
+				<span class="text-amber-500" title={ t(ctx, "common.mismatch") }>
+					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z"></path>
+					</svg>
+				</span>
+			}
+		</td>
+	</tr>
+}
+
+templ platformImageBadge(label string, present bool) {
+	<span
+		class={
+			"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
+			templ.KV("bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", present),
+			templ.KV("bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500", !present),
+		}
+	>{ label }</span>
+}
+
+// truncate shortens a string to at most n runes, appending "..." if truncated.
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "..."
+}
+
+// firstNonEmpty returns the first non-empty string from the arguments.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// fieldMatch reports whether two string values are equal after trimming
+// whitespace and normalizing case.
+func fieldMatch(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+// sliceMatch reports whether two string slices have the same elements
+// (case-insensitive, order-independent).
+func sliceMatch(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	ac := make([]string, len(a))
+	bc := make([]string, len(b))
+	for i, v := range a {
+		ac[i] = strings.ToLower(strings.TrimSpace(v))
+	}
+	for i, v := range b {
+		bc[i] = strings.ToLower(strings.TrimSpace(v))
+	}
+	sortStrings(ac)
+	sortStrings(bc)
+	for i := range ac {
+		if ac[i] != bc[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// sortStrings sorts a slice of strings in place.
+func sortStrings(s []string) {
+	sort.Strings(s)
+}
+
+// boolDisplay returns the i18n key for a boolean value.
+// Render the returned key with t(ctx, ...) in template markup.
+func boolDisplay(v bool) string {
+	if v {
+		return "common.yes"
+	}
+	return "common.no"
+}

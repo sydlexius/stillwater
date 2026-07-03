@@ -38,98 +38,59 @@ func seedDetailArtist(t *testing.T, svc *artist.Service, name string) string {
 	return a.ID
 }
 
-// nextDetailRequest builds a GET /next/artists/{id} request with an authed user
-// context and the path value set, wrapped in the UX middleware for the given
-// channel ("next" or "stable").
-func nextDetailRequest(t *testing.T, r *Router, channel, id string) *httptest.ResponseRecorder {
+// detailRequest builds a GET /artists/{id} request with an authed user context
+// and the path value set, and runs the canonical detail handler.
+func detailRequest(t *testing.T, r *Router, id string) *httptest.ResponseRecorder {
 	t.Helper()
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id, nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+id, nil)
 	req.SetPathValue("id", id)
 	w := httptest.NewRecorder()
-	middleware.UX(channel, "")(http.HandlerFunc(r.handleNextArtistDetailPage)).ServeHTTP(w, req)
+	r.handleArtistDetailPage(w, req)
 	return w
 }
 
-// TestHandleNextArtistDetailPage_NextChannel verifies the next channel renders
-// the single-scroll next/ detail page (not the stable tab bar).
-func TestHandleNextArtistDetailPage_NextChannel(t *testing.T) {
+// TestHandleArtistDetailPage_RendersPromotedPage verifies the canonical route
+// renders the promoted single-scroll detail page (not the retired v1 tab bar).
+func TestHandleArtistDetailPage_RendersPromotedPage(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Aaa Artist")
 
-	w := nextDetailRequest(t, r, "next", id)
+	w := detailRequest(t, r, id)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "sw-next-artist-detail") {
-		t.Errorf("next page missing the next-channel marker class")
+		t.Errorf("promoted page missing the sw-next-artist-detail marker class")
 	}
 	if strings.Contains(body, `role="tablist"`) {
-		t.Errorf("next page must be single-scroll, not the stable tab bar")
+		t.Errorf("promoted page must be single-scroll, not the retired v1 tab bar")
 	}
 }
 
-// TestHandleNextArtistDetailPage_StableMode404 verifies that GET /next/artists/{id}
-// in stable mode returns 404. The /next/* lane is gated by the UX middleware so
-// it is completely unreachable when the lane is disabled.
-func TestHandleNextArtistDetailPage_StableMode404(t *testing.T) {
-	t.Parallel()
-	r, artistSvc := detailTestRouter(t)
-	id := seedDetailArtist(t, artistSvc, "Bbb Artist")
-
-	w := nextDetailRequest(t, r, "stable", id)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 (stable mode must 404 /next/ routes): %s", w.Code, w.Body.String())
-	}
-}
-
-// TestHandleNextArtistDetailPage_OptOutHeader404 verifies the handler-level
-// decision-12 guard: when the lane IS enabled (next/dual mode) but the
-// per-request X-Stillwater-UX: stable header opts back to the stable channel,
-// the handler returns 404. The channel is injected directly via
-// WithTestUXChannel, simulating the header opt-out scenario without relying on
-// the middleware-level gate (which is tested by
-// TestHandleNextArtistDetailPage_StableMode404).
-func TestHandleNextArtistDetailPage_OptOutHeader404(t *testing.T) {
-	t.Parallel()
-	r, artistSvc := detailTestRouter(t)
-	id := seedDetailArtist(t, artistSvc, "Opt-Out Artist")
-
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id, nil)
-	req.SetPathValue("id", id)
-	w := httptest.NewRecorder()
-	r.handleNextArtistDetailPage(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("opt-out header: status = %d, want 404 (decision 12)", w.Code)
-	}
-}
-
-// TestHandleNextArtistDetailPage_Neighbors verifies prev/next-artist neighbor
+// TestHandleArtistDetailPage_Neighbors verifies prev/next-artist neighbor
 // ids are resolved from the sort_name-ascending ListIDs order and linked in the
 // hero's h/l navigation.
-func TestHandleNextArtistDetailPage_Neighbors(t *testing.T) {
+func TestHandleArtistDetailPage_Neighbors(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 	a := seedDetailArtist(t, artistSvc, "Aaa")
 	b := seedDetailArtist(t, artistSvc, "Bbb")
 	c := seedDetailArtist(t, artistSvc, "Ccc")
 
-	w := nextDetailRequest(t, r, "next", b)
+	w := detailRequest(t, r, b)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
 	// The middle artist (default name-ASC order Aaa < Bbb < Ccc) must link
 	// prev=Aaa, next=Ccc via the hero nav shortcuts (data-sw-shortcut h/l).
-	if !strings.Contains(body, "/next/artists/"+a) {
+	if !strings.Contains(body, "/artists/"+a) {
 		t.Errorf("missing prev-artist link to %s", a)
 	}
-	if !strings.Contains(body, "/next/artists/"+c) {
+	if !strings.Contains(body, "/artists/"+c) {
 		t.Errorf("missing next-artist link to %s", c)
 	}
 }
@@ -137,7 +98,7 @@ func TestHandleNextArtistDetailPage_Neighbors(t *testing.T) {
 // TestResolveArtistNeighbors_ListIDsErrorDegrades verifies the neighbor resolver
 // degrades cleanly (returns empty prev/next so the h/l shortcuts no-op) when the
 // underlying ListIDs query errors, rather than panicking or surfacing the error.
-// The error is logged, not swallowed (handlers_next_artist_detail.go). A closed
+// The error is logged, not swallowed (handlers_artist_detail.go). A closed
 // DB forces ListIDs to error deterministically.
 func TestResolveArtistNeighbors_ListIDsErrorDegrades(t *testing.T) {
 	r, artistSvc := detailTestRouter(t)
@@ -149,20 +110,20 @@ func TestResolveArtistNeighbors_ListIDsErrorDegrades(t *testing.T) {
 	}
 
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id, nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+id, nil)
 	prev, next := r.resolveArtistNeighbors(req, id)
 	if prev != "" || next != "" {
 		t.Errorf("resolveArtistNeighbors on DB error = (%q, %q), want empty pair", prev, next)
 	}
 }
 
-// TestHandleNextArtistDetailPage_FieldFindingChips locks the field-tag-on-rule
+// TestHandleArtistDetailPage_FieldFindingChips locks the field-tag-on-rule
 // feature (M55 #1336) end to end at the handler level: a field-tagged open
 // violation (bio_exists -> biography) renders an inline finding chip on that
 // field's row, while an untagged whole-record rule (nfo_exists) produces NO
 // inline chip -- it surfaces only in the lazily-loaded Open Findings list, which
 // is not part of the initial page HTML.
-func TestHandleNextArtistDetailPage_FieldFindingChips(t *testing.T) {
+func TestHandleArtistDetailPage_FieldFindingChips(t *testing.T) {
 	t.Parallel()
 	// testRouterWithPipelineFull wires both the rule service (with SeedDefaults,
 	// so the GetViolationsForArtists JOIN has rule rows) and provider settings
@@ -182,7 +143,7 @@ func TestHandleNextArtistDetailPage_FieldFindingChips(t *testing.T) {
 		}
 	}
 
-	w := nextDetailRequest(t, r, "next", id)
+	w := detailRequest(t, r, id)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
@@ -205,33 +166,30 @@ func TestHandleNextArtistDetailPage_FieldFindingChips(t *testing.T) {
 	}
 }
 
-// TestHandleNextArtistDetailPage_NotFound verifies an unknown id returns 404.
-func TestHandleNextArtistDetailPage_NotFound(t *testing.T) {
+// TestHandleArtistDetailPage_NotFound verifies an unknown id returns 404.
+func TestHandleArtistDetailPage_NotFound(t *testing.T) {
 	t.Parallel()
 	r, _ := detailTestRouter(t)
 
-	w := nextDetailRequest(t, r, "next", "nope")
+	w := detailRequest(t, r, "nope")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
 }
 
-// TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin closes the authz
+// TestHandleArtworkModal_UnauthenticatedRedirectsToLogin closes the authz
 // boundary on the editor fragment: a request without a user ID in context must
-// render the login page, not the artwork editor. This covers the 12.5% of
-// handleNextArtworkModal that the unauthenticated arm previously had no test for.
-func TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
+// render the login page, not the artwork editor.
+func TestHandleArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Auth Gate Artist")
 
-	// Build a request with NO user ID in context (empty context = unauthenticated)
-	// but with the UX channel set so the auth check is reached.
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
+	// Build a request with NO user ID in context (empty context = unauthenticated).
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/artists/"+id+"/artwork-modal?kind=primary", nil)
 	req.SetPathValue("id", id)
 	w := httptest.NewRecorder()
-	r.handleNextArtworkModal(w, req)
+	r.handleArtworkModal(w, req)
 
 	body := w.Body.String()
 	// The login page must be rendered, not the artwork editor fragment.
@@ -240,25 +198,6 @@ func TestHandleNextArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
 	}
 	if strings.Contains(body, "artwork-modal-body") {
 		t.Errorf("unauthenticated request must not render the artwork editor body")
-	}
-}
-
-// TestHandleNextArtworkModal_StableChannel404 verifies the Phase 2 channel guard:
-// when UXStable is in context the modal returns 404 immediately.
-func TestHandleNextArtworkModal_StableChannel404(t *testing.T) {
-	t.Parallel()
-	r, artistSvc := detailTestRouter(t)
-	id := seedDetailArtist(t, artistSvc, "Channel Gate Artist")
-
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/artists/"+id+"/artwork-modal?kind=primary", nil)
-	req.SetPathValue("id", id)
-	w := httptest.NewRecorder()
-	r.handleNextArtworkModal(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("stable channel: status = %d, want 404", w.Code)
 	}
 }
 
@@ -283,10 +222,10 @@ func seedConn(t *testing.T, r *Router, artistSvc *artist.Service, artistID, conn
 	}
 }
 
-// TestNextArtistDetail_ProvidersSectionLazyMounts verifies the rendered next/
+// TestArtistDetail_ProvidersSectionLazyMounts verifies the rendered
 // artist-detail page contains lazy-load placeholder divs for each connection in
 // the Providers section, with the correct HTMX intersect once trigger.
-func TestNextArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
+func TestArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Mount Test Artist")
@@ -295,7 +234,7 @@ func TestNextArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
 	seedConn(t, r, artistSvc, id, "conn-emby", connection.TypeEmby)
 	seedConn(t, r, artistSvc, id, "conn-lidarr", connection.TypeLidarr)
 
-	w := nextDetailRequest(t, r, "next", id)
+	w := detailRequest(t, r, id)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
@@ -322,10 +261,10 @@ func TestNextArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
 	}
 }
 
-// TestNextArtistDetail_DebugSectionGating verifies the debug section rendering
+// TestArtistDetail_DebugSectionGating verifies the debug section rendering
 // follows the ShowPlatformDebug && HasDebugConnection gate through the full
 // handler + template path (not just a template unit test).
-func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
+func TestArtistDetail_DebugSectionGating(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 
@@ -343,7 +282,7 @@ func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
 	// Case (a): setting disabled, no connections -- no debug section.
 	t.Run("setting_disabled", func(t *testing.T) {
 		id := seedDetailArtist(t, artistSvc, "Debug Gate A")
-		w := nextDetailRequest(t, r, "next", id)
+		w := detailRequest(t, r, id)
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 		}
@@ -357,7 +296,7 @@ func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
 		enableDebug()
 		id := seedDetailArtist(t, artistSvc, "Debug Gate B")
 		seedConn(t, r, artistSvc, id, "dbg-lidarr", connection.TypeLidarr)
-		w := nextDetailRequest(t, r, "next", id)
+		w := detailRequest(t, r, id)
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 		}
@@ -372,7 +311,7 @@ func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
 		enableDebug()
 		id := seedDetailArtist(t, artistSvc, "Debug Gate C")
 		seedConn(t, r, artistSvc, id, "dbg-emby", connection.TypeEmby)
-		w := nextDetailRequest(t, r, "next", id)
+		w := detailRequest(t, r, id)
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 		}
@@ -389,13 +328,13 @@ func TestNextArtistDetail_DebugSectionGating(t *testing.T) {
 	})
 }
 
-// TestNextArtistDetail_PlatformStateEndpointReachable verifies the platform-state
+// TestArtistDetail_PlatformStateEndpointReachable verifies the platform-state
 // endpoint (the URL the providers-section intersect once mounts fire) is registered and
 // returns an HTML partial when called as an HTMX request. Without a real Emby
 // server the getter fails, so the response is a PlatformStateError partial
 // (200 + text/html). This confirms the endpoint is wired and returns HTML that
 // HTMX can swap into the intersect once placeholder.
-func TestNextArtistDetail_PlatformStateEndpointReachable(t *testing.T) {
+func TestArtistDetail_PlatformStateEndpointReachable(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Platform State Reach")
@@ -422,10 +361,10 @@ func TestNextArtistDetail_PlatformStateEndpointReachable(t *testing.T) {
 	}
 }
 
-// TestNextArtistDetail_DiscographyTabReachable verifies the discography/tab
+// TestArtistDetail_DiscographyTabReachable verifies the discography/tab
 // endpoint (the URL the discography-section mount fires) returns an HTML
 // fragment for the seeded artist.
-func TestNextArtistDetail_DiscographyTabReachable(t *testing.T) {
+func TestArtistDetail_DiscographyTabReachable(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := detailTestRouter(t)
 	id := seedDetailArtist(t, artistSvc, "Disco Reach")
