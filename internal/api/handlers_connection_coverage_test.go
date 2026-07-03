@@ -653,6 +653,29 @@ func TestHandleTestConnection_UnsupportedType(t *testing.T) {
 	}
 }
 
+// runTestConnection issues the connection-test request for c against router r,
+// asserts the probe returned 200 OK, and returns the decoded JSON response body
+// so each caller can make its own case-specific assertions (status/drift/
+// persistence). It only removes the shared request/serve/status/decode
+// boilerplate; it makes no assertions beyond the 200 status.
+func runTestConnection(t *testing.T, r *Router, c *connection.Connection) map[string]any {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/connections/"+c.ID+"/test", nil)
+	req.SetPathValue("id", c.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return resp
+}
+
 // TestHandleTestConnection_EmbyOK uses a stub server so the success branch
 // runs end-to-end, including drift detection (no conflicts on the stub).
 func TestHandleTestConnection_EmbyOK(t *testing.T) {
@@ -666,21 +689,191 @@ func TestHandleTestConnection_EmbyOK(t *testing.T) {
 	}
 	newConnectionTestConn(t, r, c)
 
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/connections/"+c.ID+"/test", nil)
-	req.SetPathValue("id", c.ID)
-
-	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	resp := runTestConnection(t, r, c)
 	if resp["status"] != "ok" {
 		t.Errorf("status = %v, want ok", resp["status"])
+	}
+}
+
+// newConnectionStubEmbyConflictServer returns an Emby stub whose single music
+// library reports an active metadata saver, so GetLibrarySettings computes
+// HasConflicts=true and the prober's drift-detection branch appends a warning.
+func newConnectionStubEmbyConflictServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Authorization") == "" &&
+			req.Header.Get("X-Emby-Token") == "" &&
+			req.URL.Query().Get("api_key") == "" {
+			http.Error(w, "missing auth material", http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case strings.HasPrefix(req.URL.Path, "/System/Info"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"ServerName": "test-emby", "Version": "1.0", "Id": "server-1"})
+		case strings.HasPrefix(req.URL.Path, "/Users"):
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"Id": "user-1", "Name": "admin"}})
+		case strings.HasPrefix(req.URL.Path, "/Library/VirtualFolders"):
+			// An active MetadataSaver ("Nfo") makes GetLibrarySettings flag the
+			// library as conflicting.
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"Name": "Music", "CollectionType": "music", "ItemId": "lib-music",
+					"LibraryOptions": map[string]any{"SaveLocalMetadata": true, "MetadataSavers": []string{"Nfo"}}},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// newConnectionStubLidarrServer returns an httptest.Server satisfying the two
+// Lidarr endpoints the prober exercises: GET /api/v1/system/status (connection
+// test) and GET /api/v1/config/metadataprovider (drift detection). When
+// enabledConsumer is non-empty the metadata-provider config reports that
+// consumer as enabled, driving the drift-warning branch.
+func newConnectionStubLidarrServer(t *testing.T, enabledConsumer string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertLidarrContract(t, req, http.MethodGet)
+		switch {
+		case strings.HasPrefix(req.URL.Path, "/api/v1/system/status"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.0"})
+		case strings.HasPrefix(req.URL.Path, "/api/v1/config/metadataprovider"):
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"id": 1, "metadataType": "artist", "consumerId": 7,
+					"consumerName": enabledConsumer, "enable": enabledConsumer != ""},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestHandleTestConnection_JellyfinOK exercises the jellyfinProber happy path
+// end-to-end: TestConnection -> GetFirstUserID -> GetServerID -> drift detect.
+// Jellyfin reuses the Emby endpoint surface (/System/Info, /Users,
+// /Library/VirtualFolders), so the shared Emby stub serves it. The resolved
+// user/server IDs must be persisted on the connection record.
+func TestHandleTestConnection_JellyfinOK(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+	srv := newConnectionStubEmbyServer(t, "")
+
+	c := &connection.Connection{
+		Name: "OK Jellyfin", Type: connection.TypeJellyfin,
+		URL: srv.URL, APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	resp := runTestConnection(t, r, c)
+	if resp["status"] != "ok" {
+		t.Errorf("status = %v, want ok", resp["status"])
+	}
+	// The stub's non-conflicting library must not raise drift warnings.
+	if _, ok := resp["drift_warnings"]; ok {
+		t.Errorf("unexpected drift_warnings on clean library: %v", resp["drift_warnings"])
+	}
+	// The prober must persist the resolved platform identity so deep links work.
+	got, err := r.connectionService.GetByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.GetPlatformUserID() != "user-1" {
+		t.Errorf("persisted platform user id = %q, want user-1", got.GetPlatformUserID())
+	}
+	if got.GetPlatformServerID() != "server-1" {
+		t.Errorf("persisted platform server id = %q, want server-1", got.GetPlatformServerID())
+	}
+}
+
+// TestHandleTestConnection_EmbyDrift covers the embyProber drift-detection
+// branch: a library reporting an active metadata saver must surface a
+// drift warning in the response.
+func TestHandleTestConnection_EmbyDrift(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+	srv := newConnectionStubEmbyConflictServer(t)
+
+	c := &connection.Connection{
+		Name: "Drift Emby", Type: connection.TypeEmby,
+		URL: srv.URL, APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	resp := runTestConnection(t, r, c)
+	if resp["status"] != "ok" {
+		t.Errorf("status = %v, want ok", resp["status"])
+	}
+	warnings, ok := resp["drift_warnings"].([]any)
+	if !ok || len(warnings) == 0 {
+		t.Fatalf("expected drift_warnings, got %v", resp["drift_warnings"])
+	}
+	// The warning must name the specific conflicting library, not a generic
+	// "could not inspect" fallback (which would mean the settings call failed).
+	first, _ := warnings[0].(string)
+	if !strings.Contains(first, "Music") || !strings.Contains(first, "overwrite") {
+		t.Errorf("drift warning = %q, want it to name the Music library and mention overwrite", first)
+	}
+}
+
+// TestHandleTestConnection_LidarrOK exercises the lidarrProber happy path:
+// TestConnection succeeds and an enabled metadata consumer surfaces a drift
+// warning. Lidarr resolves no platform user/server ID, so none is persisted.
+func TestHandleTestConnection_LidarrOK(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+	srv := newConnectionStubLidarrServer(t, "Kodi")
+
+	c := &connection.Connection{
+		Name: "OK Lidarr", Type: connection.TypeLidarr,
+		URL: srv.URL, APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	resp := runTestConnection(t, r, c)
+	if resp["status"] != "ok" {
+		t.Errorf("status = %v, want ok", resp["status"])
+	}
+	warnings, ok := resp["drift_warnings"].([]any)
+	if !ok || len(warnings) == 0 {
+		t.Fatalf("expected drift_warnings for enabled consumer, got %v", resp["drift_warnings"])
+	}
+	first, _ := warnings[0].(string)
+	if !strings.Contains(first, "Kodi") || !strings.Contains(first, "NFO") {
+		t.Errorf("drift warning = %q, want it to name the Kodi consumer and mention NFO", first)
+	}
+	// Lidarr does not resolve a platform user id; the record must stay empty.
+	got, err := r.connectionService.GetByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.GetPlatformUserID() != "" {
+		t.Errorf("lidarr must not persist a platform user id, got %q", got.GetPlatformUserID())
+	}
+}
+
+// TestHandleTestConnection_LidarrCleanNoDrift covers the lidarrProber path
+// where no consumer is enabled: the connection tests OK with no drift warnings.
+func TestHandleTestConnection_LidarrCleanNoDrift(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+	srv := newConnectionStubLidarrServer(t, "")
+
+	c := &connection.Connection{
+		Name: "Clean Lidarr", Type: connection.TypeLidarr,
+		URL: srv.URL, APIKey: "k", Enabled: true,
+	}
+	newConnectionTestConn(t, r, c)
+
+	resp := runTestConnection(t, r, c)
+	if resp["status"] != "ok" {
+		t.Errorf("status = %v, want ok", resp["status"])
+	}
+	if _, ok := resp["drift_warnings"]; ok {
+		t.Errorf("unexpected drift_warnings when no consumer enabled: %v", resp["drift_warnings"])
 	}
 }
 
