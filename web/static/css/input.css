@@ -3731,29 +3731,23 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
   --swd-surface-elev: var(--swd-surface-floor);
 }
 
-/* #1784 contrast floor: pin the dashboard's legibility-critical surfaces to the
- * clamped 0.92 scrim by overriding the surface tokens on the surface element
- * itself (higher specificity than the .sw-next-dashboard scope that sets them, so
- * the existing `background: var(--swd-surface)` rules pick up the floored value
- * with no change to those rules). Covered:
- *   - .sw-stat-bubble       -- the five header-strip stat pills (value + label).
- *   - .sw-dash-card         -- the action-queue card and the activity-rail card
- *                              (the only two .sw-dash-cards the dashboard renders;
- *                              their JS-injected empty/error/loading rows render
- *                              INSIDE these cards, so they inherit the floor -- no
- *                              bare-backdrop JS state exists to back separately).
- * -elev is floored too so the bubble hover state stays above the floor.
- * NOTE: the .sw-next-header-strip container is a bare CSS grid with no background
- * and no direct text -- its contrast floor is carried entirely by the floored
- * .sw-stat-bubble children, so no band is painted on the strip itself (adding one
- * would be an invented affordance). The artist-detail HERO is floored in the
- * artist-detail section below; the rest of artist-detail's cards are out of the
- * #1784 remediation scope and keep the pref-driven surface. */
-.sw-next-dashboard .sw-stat-bubble,
-.sw-next-dashboard .sw-dash-card {
-  --swd-surface: var(--swd-surface-floor);
-  --swd-surface-elev: var(--swd-surface-floor);
-}
+/* #1757 PR-2 cutover (supersedes the #1784 floor here): the promoted dashboard's
+ * stat bubbles and cards FOLLOW the user's Background Opacity preference via the
+ * shared --sw-glass-bg token, exactly like the canonical sidebar
+ * (background: var(--sw-glass-bg)) and every other next/ glass surface (cf. the
+ * .sw-log-viewer precedent above). A prior #1784 remediation pinned
+ * --swd-surface(-elev) on .sw-stat-bubble / .sw-dash-card to the 0.92
+ * --swd-surface-floor, which (a) hardcoded the opacity so the pref had no effect
+ * on the dashboard, and (b) painted a different base color (--swd-bg-raised
+ * #111a2e dark / #ffffff light) than the sidebar's --sw-glass-bg
+ * (rgba(30,41,59,a) dark / rgba(255,255,255,a) light) -- both maintainer-UAT
+ * defects on the promoted `/`. With no override here, the surfaces resolve the
+ * .sw-next-dashboard scope defaults: --swd-surface = var(--sw-glass-bg) (same
+ * color token AND pref-driven alpha as the sidebar, both themes) and
+ * --swd-surface-elev = its color-mix hover raise. At low opacity the reduced
+ * contrast is the user's deliberate glass tradeoff, consistent with all other
+ * surfaces. The artist-detail HERO keeps its own #1784 floor in the
+ * artist-detail section below (out of this cutover's scope). */
 
 /* -- Layered card (.sw-dash-card): the prototype's `.sw-card` look (raised
  * surface, hairline border, 14px radius, soft shadow). A bespoke class (not

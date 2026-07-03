@@ -998,6 +998,14 @@ func fieldFindingsFor(ctx context.Context, field string) []FieldFinding {
 	return m[field]
 }
 
+// glassButton is the single shared class-string for glass/outline buttons in
+// the promoted (former next/) screens: a thin swd-line border, ink-2 text, and
+// a subtle hover, per the no-solid-blue principle (#32). Promoted with the
+// dashboard cutover (M55 #1757 PR-2); the next/ package keeps its own copy
+// until the remaining screens promote, after which that copy is deleted with
+// the lane teardown.
+const glassButton = "rounded-md border border-[var(--swd-line)] text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+
 // normalizeGenderDisplay returns the gender value in canonical Title case for
 // display (UAT 4A item 7). Providers often store "female"/"male" lowercase,
 // which read inconsistently next to the other Title/Sentence-cased field

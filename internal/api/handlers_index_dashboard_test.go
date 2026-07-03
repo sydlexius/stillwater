@@ -7,14 +7,31 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-// markOnboardingComplete writes the onboarding.completed=true setting so the
-// next/ dashboard handler passes its onboarding guard and renders the page
-// instead of redirecting to the setup wizard.
+// These tests cover handleIndex rendering the canonical dashboard page
+// (templates.IndexPage, promoted from the former next/ channel in M55 #1757
+// PR-2). They were retargeted from the deleted handleNextDashboardPage tests:
+// the same guard paths (auth, onboarding) and the same header-bubble
+// fallbacks now apply to GET /.
+
+// seedIndexAdmin creates a local admin user so handleIndex's HasUsers gate
+// passes and the handler proceeds to the auth/onboarding checks instead of
+// rendering the first-run setup page.
+func seedIndexAdmin(t *testing.T, r *Router) {
+	t.Helper()
+	if _, err := r.authService.CreateLocalUser(context.Background(),
+		"indexadmin", "password123", "Index Admin", "administrator", ""); err != nil {
+		t.Fatalf("seeding admin user: %v", err)
+	}
+}
+
+// markOnboardingComplete writes the onboarding.completed=true setting so
+// handleIndex passes its onboarding guard and renders the dashboard instead
+// of redirecting to the setup wizard.
 func markOnboardingComplete(t *testing.T, r *Router) {
 	t.Helper()
 	if _, err := r.db.ExecContext(context.Background(),
@@ -58,47 +75,55 @@ func seedFixableViolations(t *testing.T, r *Router, fixCount, manualCount int) {
 	seed("man", manualCount, false, rule.RuleThumbExists, "warning")
 }
 
-// nextDashboardHandler wraps handleNextDashboardPage in the UX middleware in
-// "next" mode so a request to /next/ resolves to the UXNext channel exactly as
-// production does (the /next lane is a path opt-in). Returns the composed
-// handler ready for httptest.
-func nextDashboardHandler(r *Router) http.Handler {
-	return middleware.UX("next", "")(http.HandlerFunc(r.handleNextDashboardPage))
+// indexDashboardRouter builds the dashboard test router with the HasUsers gate
+// satisfied, ready for handleIndex requests.
+func indexDashboardRouter(t *testing.T) *Router {
+	t.Helper()
+	r := testDashboardRouter(t, false)
+	seedIndexAdmin(t, r)
+	return r
 }
 
-// TestHandleNextDashboardPage_HappyPath verifies that on the "next" channel
-// with onboarding complete and seeded violations, GET /next/ returns 200, sets
-// the next-channel response header, and renders the dashboard with the REAL
-// Auto-fixable / Needs-you counts (not placeholders) plus the bubble links that
-// scope the queue to fixable=yes / fixable=no.
-func TestHandleNextDashboardPage_HappyPath(t *testing.T) {
+// TestHandleIndex_HappyPath verifies that with onboarding complete and seeded
+// violations, GET / returns 200 and renders the promoted dashboard with the
+// REAL Auto-fixable / Needs-you counts (not placeholders) plus the bubble
+// links that scope the queue to fixable=yes / fixable=no on the CANONICAL
+// root path (no /next/ URLs remain in the promoted page, #1894).
+func TestHandleIndex_HappyPath(t *testing.T) {
 	t.Parallel()
-	r := testDashboardRouter(t, false)
+	r := indexDashboardRouter(t)
 	markOnboardingComplete(t, r)
 	// 3 fixable, 2 non-fixable so the rendered counts are unambiguous and not
 	// equal to each other (guards against a swapped fixable/needs-you wiring).
 	seedFixableViolations(t, r, 3, 2)
 
-	req := httptest.NewRequest(http.MethodGet, "/next/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
-	nextDashboardHandler(r).ServeHTTP(w, req)
+	r.handleIndex(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	if got := w.Header().Get("X-Stillwater-UX"); got != "next" {
-		t.Fatalf("X-Stillwater-UX = %q, want next", got)
-	}
 	body := w.Body.String()
 
-	// The header bubbles link to the queue scoped by fixable state; these are
-	// next/-specific markers that only DashboardPageNext renders.
-	if !strings.Contains(body, "/next/?fixable=yes") {
-		t.Errorf("expected Auto-fixable bubble link (/next/?fixable=yes) in body")
+	// The header bubbles link to the queue scoped by fixable state, on the
+	// canonical root (the promoted page must carry NO /next/ hrefs).
+	if !strings.Contains(body, `/?fixable=yes`) {
+		t.Errorf("expected Auto-fixable bubble link (/?fixable=yes) in body")
 	}
-	if !strings.Contains(body, "/next/?fixable=no") {
-		t.Errorf("expected Needs-you bubble link (/next/?fixable=no) in body")
+	if !strings.Contains(body, `/?fixable=no`) {
+		t.Errorf("expected Needs-you bubble link (/?fixable=no) in body")
+	}
+	// #1894 fold: the promoted DASHBOARD templates carry no /next/ hrefs (the
+	// artist links, bubble links, and JS URL builders were all retargeted to
+	// canonical paths). The page shell (sidebar/layout, promoted in PR-1) still
+	// links /next/ for screens that have not yet cut over (foreign-files, logs,
+	// preferences-drawer), so a full-body assertion would false-fail; the
+	// dashboard-owned assertions above (canonical /?fixable links) plus the
+	// artist-link check below cover the dashboard's own surface.
+	if strings.Contains(body, "/next/artists") {
+		t.Errorf("promoted dashboard must not link artist rows to /next/artists (#1894)")
 	}
 	// The bubble labels (rendered as i18n keys or their translations).
 	if !strings.Contains(body, "dashboard.bubble_auto_fixable") && !strings.Contains(body, "Auto-fixable") {
@@ -107,15 +132,25 @@ func TestHandleNextDashboardPage_HappyPath(t *testing.T) {
 	if !strings.Contains(body, "dashboard.bubble_needs_you") && !strings.Contains(body, "Needs you") {
 		t.Errorf("expected Needs-you bubble label in body")
 	}
-	// On the happy path the counts are real numbers, so the fixable-counts
-	// placeholder must NOT appear in a bubble value slot. We assert the rendered
-	// counts >span>3</span> and >span>2</span> are present by checking the
-	// numeric text appears in the body.
-	if !strings.Contains(body, ">3<") {
-		t.Errorf("expected Auto-fixable count 3 in rendered body")
+	// On the happy path the counts are real numbers rendered inside each
+	// bubble's <a> element. Scope each count assertion to ITS bubble by slicing
+	// the anchor's HTML (from its unique href to the closing </a>), so a swapped
+	// fixable/needs-you wiring (2 in the Auto-fixable bubble, 3 in Needs-you)
+	// FAILS: a whole-body Contains(">3<") && Contains(">2<") check would still
+	// pass on a swap because both numbers appear somewhere in the page.
+	fixableBubble := htmlBetween(body, `/?fixable=yes`, "</a>")
+	if fixableBubble == "" {
+		t.Fatalf("could not locate the Auto-fixable bubble (/?fixable=yes .. </a>) in body")
 	}
-	if !strings.Contains(body, ">2<") {
-		t.Errorf("expected Needs-you count 2 in rendered body")
+	if !strings.Contains(fixableBubble, ">3<") {
+		t.Errorf("expected Auto-fixable count 3 inside the /?fixable=yes bubble; got: %s", fixableBubble)
+	}
+	needsYouBubble := htmlBetween(body, `/?fixable=no`, "</a>")
+	if needsYouBubble == "" {
+		t.Fatalf("could not locate the Needs-you bubble (/?fixable=no .. </a>) in body")
+	}
+	if !strings.Contains(needsYouBubble, ">2<") {
+		t.Errorf("expected Needs-you count 2 inside the /?fixable=no bubble; got: %s", needsYouBubble)
 	}
 
 	// Keyboard action-key adoption (#1790): the page wires the / f r action keys
@@ -141,15 +176,15 @@ func TestHandleNextDashboardPage_HappyPath(t *testing.T) {
 	}
 }
 
-// TestHandleNextDashboardPage_FixableCountsError verifies the fixable-counts
-// fallback: when the rule service's database is closed (so
-// CountActiveViolationsByFixable errors) the handler still returns 200 and the
-// template renders the "---" placeholder for the count bubbles rather than a
-// misleading 0 or a 500. The artist service keeps its own open connection so
-// health stats still succeed, isolating the failure to the counts query.
-func TestHandleNextDashboardPage_FixableCountsError(t *testing.T) {
+// TestHandleIndex_FixableCountsError verifies the fixable-counts fallback:
+// when the rule service's database is closed (so CountActiveViolationsByFixable
+// errors) the handler still returns 200 and the template renders the "---"
+// placeholder for the count bubbles rather than a misleading 0 or a 500. The
+// artist service keeps its own open connection so health stats still succeed,
+// isolating the failure to the counts query.
+func TestHandleIndex_FixableCountsError(t *testing.T) {
 	t.Parallel()
-	r := testDashboardRouter(t, false)
+	r := indexDashboardRouter(t)
 	markOnboardingComplete(t, r)
 
 	// Replace the rule service with one backed by a database we then close,
@@ -161,17 +196,17 @@ func TestHandleNextDashboardPage_FixableCountsError(t *testing.T) {
 		t.Fatalf("closing rule test db: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/next/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
-	nextDashboardHandler(r).ServeHTTP(w, req)
+	r.handleIndex(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	body := w.Body.String()
 	// The bubble links still render (only the values fall back).
-	if !strings.Contains(body, "/next/?fixable=yes") {
+	if !strings.Contains(body, `/?fixable=yes`) {
 		t.Errorf("expected Auto-fixable bubble link even on counts error")
 	}
 	// Scope the placeholder assertion to the Auto-fixable AND Needs-you bubbles
@@ -180,22 +215,22 @@ func TestHandleNextDashboardPage_FixableCountsError(t *testing.T) {
 	// JS fills it in client-side). Each bubble is an <a> element whose href is
 	// unique, so we slice out that bubble's HTML (from its href to the closing
 	// </a>) and assert "---" lives INSIDE the fixable-counts bubbles.
-	if !widgetContainsPlaceholder(body, "/next/?fixable=yes") {
+	if !widgetContainsPlaceholder(body, "/?fixable=yes") {
 		t.Errorf("expected count-unavailable placeholder (---) inside the Auto-fixable bubble when counts error")
 	}
-	if !widgetContainsPlaceholder(body, "/next/?fixable=no") {
+	if !widgetContainsPlaceholder(body, "/?fixable=no") {
 		t.Errorf("expected count-unavailable placeholder (---) inside the Needs-you bubble when counts error")
 	}
 }
 
-// TestHandleNextDashboardPage_HealthStatsError verifies the health-stats
-// fallback path: when the artist service's database is closed (so
-// GetHealthStats errors) the handler still returns 200 and renders the page.
-// The rule service keeps its open connection so the count bubbles still render
-// real numbers; only the health bubble falls back to its placeholder.
-func TestHandleNextDashboardPage_HealthStatsError(t *testing.T) {
+// TestHandleIndex_HealthStatsError verifies the health-stats fallback path:
+// when the artist service's database is closed (so GetHealthStats errors) the
+// handler still returns 200 and renders the page. The rule service keeps its
+// open connection so the count bubbles still render real numbers; only the
+// health bubble falls back to its placeholder.
+func TestHandleIndex_HealthStatsError(t *testing.T) {
 	t.Parallel()
-	r := testDashboardRouter(t, false)
+	r := indexDashboardRouter(t)
 	markOnboardingComplete(t, r)
 
 	artistDB := newTestDB(t)
@@ -204,10 +239,10 @@ func TestHandleNextDashboardPage_HealthStatsError(t *testing.T) {
 		t.Fatalf("closing artist test db: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/next/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
-	nextDashboardHandler(r).ServeHTTP(w, req)
+	r.handleIndex(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -218,10 +253,11 @@ func TestHandleNextDashboardPage_HealthStatsError(t *testing.T) {
 	// always renders "---" initially, and on a health-stats error the Artists
 	// bubble ALSO falls back to "---". The health bubble is the only one carrying
 	// the unique "health-ring" SVG class, and it ends where the Artists bubble's
-	// link begins, so we slice that window and assert "---" lives inside it.
-	healthWidget := htmlBetween(body, "health-ring", "/next/artists")
+	// link begins ("/artists"), so we slice that window and assert "---" lives
+	// inside it.
+	healthWidget := htmlBetween(body, "health-ring", "/artists")
 	if healthWidget == "" {
-		t.Fatalf("could not locate the health bubble (health-ring .. /next/artists) in body")
+		t.Fatalf("could not locate the health bubble (health-ring .. /artists) in body")
 	}
 	if !strings.Contains(healthWidget, "---") {
 		t.Errorf("expected health-unavailable placeholder (---) inside the health bubble when health stats error")
@@ -258,38 +294,38 @@ func htmlBetween(body, start, end string) string {
 	return rest[:j]
 }
 
-// TestHandleNextDashboardPage_Unauthorized verifies that on the "next" channel
-// with no authenticated user in context the handler renders the login page
-// rather than the dashboard.
-func TestHandleNextDashboardPage_Unauthorized(t *testing.T) {
+// TestHandleIndex_Unauthorized verifies that with no authenticated user in
+// context (but users existing, so the setup page is not shown) the handler
+// renders the login page rather than the dashboard.
+func TestHandleIndex_Unauthorized(t *testing.T) {
 	t.Parallel()
-	r := testDashboardRouter(t, false)
+	r := indexDashboardRouter(t)
 	markOnboardingComplete(t, r)
 
 	// No withTestUser: the auth check sees an empty user ID.
-	req := httptest.NewRequest(http.MethodGet, "/next/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	nextDashboardHandler(r).ServeHTTP(w, req)
+	r.handleIndex(w, req)
 
 	// renderLoginPage returns 200 with the login form, not the dashboard.
 	body := w.Body.String()
-	if strings.Contains(body, "/next/?fixable=yes") {
+	if strings.Contains(body, `/?fixable=yes`) {
 		t.Errorf("unauthenticated request must not render the dashboard bubbles")
 	}
 }
 
-// TestHandleNextDashboardPage_OnboardingIncomplete verifies that when
-// onboarding is not complete the handler redirects to the setup wizard instead
-// of rendering the dashboard.
-func TestHandleNextDashboardPage_OnboardingIncomplete(t *testing.T) {
+// TestHandleIndex_OnboardingIncomplete verifies that when onboarding is not
+// complete the handler redirects to the setup wizard instead of rendering the
+// dashboard.
+func TestHandleIndex_OnboardingIncomplete(t *testing.T) {
 	t.Parallel()
-	r := testDashboardRouter(t, false)
+	r := indexDashboardRouter(t)
 	// Deliberately do NOT mark onboarding complete.
 
-	req := httptest.NewRequest(http.MethodGet, "/next/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
-	nextDashboardHandler(r).ServeHTTP(w, req)
+	r.handleIndex(w, req)
 
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d (redirect to wizard)", w.Code, http.StatusSeeOther)
@@ -299,62 +335,61 @@ func TestHandleNextDashboardPage_OnboardingIncomplete(t *testing.T) {
 	}
 }
 
-// TestHandleNextDashboardPage_StableMode404 verifies that GET /next/ in stable
-// mode returns 404 (the lane is off -- /next/* is not reachable when disabled).
-func TestHandleNextDashboardPage_StableMode404(t *testing.T) {
+// TestBuildDashboardFlyoutData_NilRuleServiceStillPopulatesLibraries verifies
+// that when a router is configured with a libraryService but NO ruleService,
+// the flyout builder's rule-service-nil early-return branch still fetches and
+// populates the Libraries field. Before the fix that branch returned an
+// ActionQueueData without Libraries, so the flyout's Library filter dimension
+// rendered empty even though the library data was available. The assertion is
+// specific: it fails against the pre-fix code (empty Libraries) and against a
+// swapped/misnamed field, because it checks both the count and the concrete
+// library name/ID round-tripped from the seeded row.
+func TestBuildDashboardFlyoutData_NilRuleServiceStillPopulatesLibraries(t *testing.T) {
 	t.Parallel()
 	r := testDashboardRouter(t, false)
-	markOnboardingComplete(t, r)
 
-	h := middleware.UX("stable", "")(http.HandlerFunc(r.handleNextDashboardPage))
-	req := httptest.NewRequest(http.MethodGet, "/next/", nil)
+	// Give the router a real library service and seed exactly one library, then
+	// remove the rule service so buildDashboardFlyoutData takes the early-return
+	// branch under test.
+	libSvc := library.NewService(r.db)
+	r.libraryService = libSvc
+	lib := &library.Library{Name: "Flyout Lib", Path: t.TempDir(), Type: "regular"}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	r.ruleService = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = withTestUser(req)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d (stable mode must 404 /next/ routes); body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	data := r.buildDashboardFlyoutData(req)
+
+	if len(data.Libraries) != 1 {
+		t.Fatalf("Libraries length = %d, want 1 (nil-ruleService branch must still fetch libraries); Libraries=%+v", len(data.Libraries), data.Libraries)
+	}
+	if got := data.Libraries[0].Name; got != "Flyout Lib" {
+		t.Errorf("Libraries[0].Name = %q, want %q", got, "Flyout Lib")
+	}
+	if got := data.Libraries[0].ID; got != lib.ID {
+		t.Errorf("Libraries[0].ID = %q, want %q (seeded library id)", got, lib.ID)
 	}
 }
 
-// TestHandleNextDashboardPage_OptOutHeader404 verifies the handler-level
-// decision-12 guard: when the lane IS enabled (next/dual mode) but the per-request
-// X-Stillwater-UX: stable header opts back to the stable channel, the handler
-// returns 404. This is distinct from the middleware-level stable-mode 404
-// (TestHandleNextDashboardPage_StableMode404) which fires before the handler runs.
-// Here the channel is injected directly via WithTestUXChannel, simulating the
-// header opt-out scenario.
-func TestHandleNextDashboardPage_OptOutHeader404(t *testing.T) {
+// TestHandleIndex_InitialQueryForwarded verifies that recognized filter query
+// params are forwarded into the initial HTMX load so a bookmarked
+// /?severity=warning opens with that filter applied. The forwarded query is
+// embedded in the rendered page (buildDashboardInitialQuery), so the encoded
+// severity value appears in the body.
+func TestHandleIndex_InitialQueryForwarded(t *testing.T) {
 	t.Parallel()
-	r := testDashboardRouter(t, false)
-	markOnboardingComplete(t, r)
-
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/", nil)
-	w := httptest.NewRecorder()
-	r.handleNextDashboardPage(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("opt-out header: status = %d, want 404 (decision 12)", w.Code)
-	}
-}
-
-// TestHandleNextDashboardPage_InitialQueryForwarded verifies that recognized
-// filter query params are forwarded into the initial HTMX load so a bookmarked
-// /next/?severity=warning opens with that filter applied. The forwarded query
-// is embedded in the rendered page (buildDashboardInitialQuery shared with
-// handleIndex), so the encoded severity value appears in the body.
-func TestHandleNextDashboardPage_InitialQueryForwarded(t *testing.T) {
-	t.Parallel()
-	r := testDashboardRouter(t, false)
+	r := indexDashboardRouter(t)
 	markOnboardingComplete(t, r)
 	seedFixableViolations(t, r, 1, 1)
 
-	req := httptest.NewRequest(http.MethodGet, "/next/?severity=warning", nil)
+	req := httptest.NewRequest(http.MethodGet, "/?severity=warning", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
-	nextDashboardHandler(r).ServeHTTP(w, req)
+	r.handleIndex(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())

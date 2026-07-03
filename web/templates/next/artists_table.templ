@@ -38,8 +38,8 @@ func sortVis(data templates.ArtistListData, col, order string) string {
 // whole table/grid fragment, so the freshly rendered footer rides along with the
 // rows. Hence Swap = "outerHTML" and OOB stays false -- an out-of-band footer
 // would be redundant here and would in fact double-render the nav.
-func buildArtistsPagination(p components.PaginationData) NextPaginationData {
-	np := NewNextPagination(
+func buildArtistsPagination(p components.PaginationData) templates.NextPaginationData {
+	np := templates.NewNextPagination(
 		p.CurrentPage > 1,
 		p.CurrentPage < p.TotalPages,
 		p.PageURL(p.CurrentPage-1),
@@ -109,7 +109,7 @@ templ ArtistsTable(data templates.ArtistListData) {
 				</tbody>
 			</table>
 		</div>
-		@NextPagination(buildArtistsPagination(data.Pagination))
+		@templates.NextPagination(buildArtistsPagination(data.Pagination))
 	</div>
 }
 
@@ -209,7 +209,7 @@ templ ArtistsGrid(data templates.ArtistListData) {
 				}
 			</div>
 		}
-		@NextPagination(buildArtistsPagination(data.Pagination))
+		@templates.NextPagination(buildArtistsPagination(data.Pagination))
 	</div>
 }
 
