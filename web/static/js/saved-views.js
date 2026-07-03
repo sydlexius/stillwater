@@ -73,7 +73,13 @@
   // putSavedViews replaces the entire saved_views preference with views (array).
   // Calls callback(ok) when the write settles.
   function putSavedViews(views, callback) {
-    var csrf = typeof window.swCsrfToken === 'function' ? window.swCsrfToken() : '';
+    var csrf;
+    if (typeof window.swCsrfToken === 'function') {
+      csrf = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrf = '';
+    }
     var body = JSON.stringify({ value: JSON.stringify(views) });
     fetch(prefURL(), {
       method: 'PUT',

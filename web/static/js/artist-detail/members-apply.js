@@ -34,7 +34,13 @@
     // Canonical CSRF reader from preferences.js (loaded by Layout before any
     // click reaches here); fall back to empty so a missing helper degrades to a
     // server-side CSRF rejection rather than a JS error.
-    var csrf = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+    var csrf;
+    if (typeof window.swCsrfToken === 'function') {
+      csrf = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrf = '';
+    }
     var bp = (document.querySelector('meta[name="htmx-base-path"]') || { content: '' }).content;
     var notify = function (msg) {
       if (typeof window.showToast === 'function') { window.showToast(msg); } else { alert(msg); }
