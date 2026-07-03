@@ -11,6 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
@@ -76,7 +77,7 @@ func coverageCell(a artist.Artist, profileName string) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.Tooltip)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 24, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 25, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -89,7 +90,7 @@ func coverageCell(a artist.Artist, profileName string) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.Tooltip)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 24, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 25, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -102,7 +103,7 @@ func coverageCell(a artist.Artist, profileName string) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(c.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 24, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 25, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -120,7 +121,7 @@ func coverageCell(a artist.Artist, profileName string) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(idCountTitle(ctx, a))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 27, Col: 102}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 28, Col: 102}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
@@ -133,7 +134,7 @@ func coverageCell(a artist.Artist, profileName string) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(idCountText(a))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 27, Col: 121}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 28, Col: 121}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -218,7 +219,7 @@ func scoreCell(a artist.Artist) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(scorePercent(a.HealthScore))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 37, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 38, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -236,7 +237,7 @@ func scoreCell(a artist.Artist) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.score.unrated"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 40, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 41, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
@@ -249,7 +250,7 @@ func scoreCell(a artist.Artist) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs("-")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 40, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/coverage.templ`, Line: 41, Col: 104}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -267,7 +268,7 @@ func scoreCell(a artist.Artist) templ.Component {
 // coverageItem is one metadata/image presence bubble in the Coverage cell.
 type coverageItem struct {
 	Label   string // single-letter glyph (M / T / F / L)
-	State   string // "present" | "low" | "missing"
+	State   string // "present" | "partial" | "low" | "missing"
 	Tooltip string // localized "<term>: <state>" hover text
 }
 
@@ -383,15 +384,18 @@ func providerIDCount(a artist.Artist) (have, total int) {
 
 // scoreText / scoreDot map a 0-100 health score to tone classes, mirroring the
 // prototype ScoreCell thresholds (100 ok, >=70 info, >=40 warn, else err).
+// Both band on the whole-number score (math.Round) so the color matches the
+// displayed percent from scorePercent ("%.0f"); banding on the raw float would
+// color e.g. 99.6 as blue while it renders as "100%".
 func scoreText(score float64) string {
-	switch {
-	case score >= 100:
+	switch r := math.Round(score); {
+	case r >= 100:
 		// green-700 (not -600): white-bg contrast 4.94:1 vs green-600's 3.22:1
 		// (fails AA); dark keeps green-400 (7.83:1). #1784 contrast floor.
 		return "text-green-700 dark:text-green-400"
-	case score >= 70:
+	case r >= 70:
 		return "text-blue-600 dark:text-blue-400"
-	case score >= 40:
+	case r >= 40:
 		// yellow-700 (not -600): white-bg contrast 4.92:1 vs yellow-600's 2.93:1
 		// (fails AA); dark keeps yellow-400 (8.86:1). #1784 contrast floor.
 		return "text-yellow-700 dark:text-yellow-400"
@@ -401,12 +405,12 @@ func scoreText(score float64) string {
 }
 
 func scoreDot(score float64) string {
-	switch {
-	case score >= 100:
+	switch r := math.Round(score); {
+	case r >= 100:
 		return "bg-green-500"
-	case score >= 70:
+	case r >= 70:
 		return "bg-blue-500"
-	case score >= 40:
+	case r >= 40:
 		return "bg-yellow-500"
 	default:
 		return "bg-red-500"

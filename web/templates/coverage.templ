@@ -3,6 +3,7 @@ package templates
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
@@ -44,7 +45,7 @@ templ scoreCell(a artist.Artist) {
 // coverageItem is one metadata/image presence bubble in the Coverage cell.
 type coverageItem struct {
 	Label   string // single-letter glyph (M / T / F / L)
-	State   string // "present" | "low" | "missing"
+	State   string // "present" | "partial" | "low" | "missing"
 	Tooltip string // localized "<term>: <state>" hover text
 }
 
@@ -160,15 +161,18 @@ func providerIDCount(a artist.Artist) (have, total int) {
 
 // scoreText / scoreDot map a 0-100 health score to tone classes, mirroring the
 // prototype ScoreCell thresholds (100 ok, >=70 info, >=40 warn, else err).
+// Both band on the whole-number score (math.Round) so the color matches the
+// displayed percent from scorePercent ("%.0f"); banding on the raw float would
+// color e.g. 99.6 as blue while it renders as "100%".
 func scoreText(score float64) string {
-	switch {
-	case score >= 100:
+	switch r := math.Round(score); {
+	case r >= 100:
 		// green-700 (not -600): white-bg contrast 4.94:1 vs green-600's 3.22:1
 		// (fails AA); dark keeps green-400 (7.83:1). #1784 contrast floor.
 		return "text-green-700 dark:text-green-400"
-	case score >= 70:
+	case r >= 70:
 		return "text-blue-600 dark:text-blue-400"
-	case score >= 40:
+	case r >= 40:
 		// yellow-700 (not -600): white-bg contrast 4.92:1 vs yellow-600's 2.93:1
 		// (fails AA); dark keeps yellow-400 (8.86:1). #1784 contrast floor.
 		return "text-yellow-700 dark:text-yellow-400"
@@ -178,12 +182,12 @@ func scoreText(score float64) string {
 }
 
 func scoreDot(score float64) string {
-	switch {
-	case score >= 100:
+	switch r := math.Round(score); {
+	case r >= 100:
 		return "bg-green-500"
-	case score >= 70:
+	case r >= 70:
 		return "bg-blue-500"
-	case score >= 40:
+	case r >= 40:
 		return "bg-yellow-500"
 	default:
 		return "bg-red-500"

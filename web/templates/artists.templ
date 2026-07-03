@@ -63,8 +63,8 @@ type ArtistListData struct {
 	// (>1 page) keeps the filter active.
 	IDs []string
 	// SavedViews is the user's saved filter snapshots (M55 #1777). Loaded
-	// from the "saved_views" user preference on the next/ artists page only;
-	// empty for the stable channel.
+	// from the "saved_views" user preference for the canonical /artists page
+	// (always-on since the #1757 PR-3a promotion; empty when the user has none).
 	SavedViews []SavedView
 }
 
@@ -443,6 +443,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 						hx-vals='{"view":"table","page":"1"}'
 						onclick="setView('table')"
+						data-view="table"
+						data-active-classes={ glassButtonHalo }
 						class={ "p-2 transition-colors text-[var(--swd-ink-2)] hover:bg-white/5", templ.KV(glassButtonHalo, data.View == "table") }
 					>
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -460,6 +462,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 						hx-vals='{"view":"grid","page":"1"}'
 						onclick="setView('grid')"
+						data-view="grid"
+						data-active-classes={ glassButtonHalo }
 						class={ "p-2 transition-colors text-[var(--swd-ink-2)] hover:bg-white/5", templ.KV(glassButtonHalo, data.View == "grid") }
 					>
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -860,16 +864,24 @@ templ ArtistsPageScripts() {
 			}
 
 			// Update view toggle button classes to reflect the active view.
-			// Mirrors the server-side templ.KV classes on the #view-toggle buttons.
-			var _viewActiveClass = 'p-2 transition-colors bg-blue-600 text-white';
-			var _viewInactiveClass = 'p-2 transition-colors bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700';
+			// Mirror the server-side templ.KV(glassButtonHalo, active) rendering:
+			// keep each button's base classes and only toggle the glass halo
+			// (read from data-active-classes on the button), like the filter
+			// trigger. Hard-coding blue/gray here would overwrite the glass
+			// styling on setView()/history restore (and reintroduce solid blue).
 			function updateViewToggleUI(view) {
 				var toggle = document.getElementById('view-toggle');
 				if (!toggle) return;
-				var tableBtn = toggle.querySelector('button[onclick="setView(\'table\')"]');
-				var gridBtn = toggle.querySelector('button[onclick="setView(\'grid\')"]');
-				if (tableBtn) tableBtn.className = view === 'table' ? _viewActiveClass : _viewInactiveClass;
-				if (gridBtn) gridBtn.className = view === 'grid' ? _viewActiveClass : _viewInactiveClass;
+				var btns = toggle.querySelectorAll('button[data-view]');
+				for (var i = 0; i < btns.length; i++) {
+					var btn = btns[i];
+					var active = btn.getAttribute('data-view') === view;
+					var halo = (btn.getAttribute('data-active-classes') || '').split(/\s+/);
+					for (var j = 0; j < halo.length; j++) {
+						if (halo[j]) btn.classList.toggle(halo[j], active);
+					}
+					btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+				}
 			}
 
 			function setView(view) {

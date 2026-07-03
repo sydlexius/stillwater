@@ -159,6 +159,9 @@ func TestScoreTextAndDot(t *testing.T) {
 		dotColor  string
 	}{
 		{100, "green", "bg-green-500"},
+		// 99.6 rounds to "100%" via scorePercent, so the band must round too
+		// (else it colors blue while the text reads 100%). Regression guard.
+		{99.6, "green", "bg-green-500"},
 		{99, "blue", "bg-blue-500"}, // just below the 100 ok threshold
 		{85, "blue", "bg-blue-500"},
 		{70, "blue", "bg-blue-500"}, // exact >=70 info boundary

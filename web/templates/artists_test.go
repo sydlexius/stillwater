@@ -614,7 +614,6 @@ func TestLibraryName(t *testing.T) {
 		{"unresolvable", artist.Artist{LibraryID: "missing"}, ""},
 	}
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			if got := libraryName(c.a, libs); got != c.want {
