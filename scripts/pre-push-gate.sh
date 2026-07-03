@@ -516,12 +516,13 @@ echo "=== UI-preference coverage (prefs-coverage) ==="
 # hard failure) when python3 is missing or too old, matching the
 # oasdiff/a11y-toolchain optional-tool tolerance elsewhere in this gate.
 #
-# BASE is intentionally not forwarded, mirroring the patch-coverage.sh call
-# site above: prefs-coverage.py's own resolve_base() already resolves
-# against main/origin main via rev-parse (see scripts/prefs-coverage.py),
-# which is at least as strict as this script's silent HEAD~1 fallback, so
-# letting the child resolve its own BASE avoids narrowing the diff to only
-# the tip commit on a branch whose base ref isn't reachable here.
+# BASE is forwarded here (unlike the patch-coverage.sh call site) for CI /
+# shallow-clone robustness: this gate has already resolved and rev-parse-
+# validated $BASE (the merge-base SHA, above). In a shallow CI checkout that
+# never fetched `origin/main`, prefs-coverage.py's own resolve_base() ladder
+# would miss that ref and diverge from the base the rest of the gate uses;
+# passing the validated SHA keeps them in lockstep. prefs-coverage.py honors
+# $BASE first and fails CLOSED (exit 2) if a forwarded BASE won't resolve.
 #
 # Prefer the repo-vendored copy so a fresh clone / CI works without any
 # user-local install. Fall back to ~/.claude/scripts/prefs-coverage.py only
@@ -539,7 +540,7 @@ elif ! python3 -c 'import tomllib' >/dev/null 2>&1; then
   echo "pre-push-gate: python3 lacks tomllib (need 3.11+) -- skipping prefs-coverage (CI still gates this)"
 else
   prefs_status=0
-  python3 "$PREFS_COVERAGE_HELPER" || prefs_status=$?
+  BASE="$BASE" python3 "$PREFS_COVERAGE_HELPER" || prefs_status=$?
   case "$prefs_status" in
     0)
       :

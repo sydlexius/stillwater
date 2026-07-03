@@ -34,7 +34,8 @@ verify is necessary-not-sufficient; absent-manifest self-skip.
 
 Exit codes: 0 = pass, self-skip, or nothing-in-scope; 1 = un-exempted
 regression (a surface dropped a pref token it had at base); 2 = config /
-parse error (fails closed).
+parse / setup error, including any git failure (fails CLOSED -- a git error
+must never degrade to a silent PASS).
 """
 import sys
 import os
@@ -49,6 +50,17 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
     sys.exit(2)
 
 
+class GitError(Exception):
+    """A git subprocess errored or timed out.
+
+    This is a GATE whose whole job is to catch a regression; silently treating
+    a git failure as "nothing changed" or "file absent at base" would let a
+    real regression slip through (fail OPEN). So any unexpected git failure is
+    surfaced as this exception and the caller must FAIL CLOSED (exit 2 --
+    setup/config error), never degrade to a PASS.
+    """
+
+
 def sh(args, timeout=120):
     # Bounded so a hung git op fails fast (rc 124) instead of burning the job budget.
     try:
@@ -59,16 +71,20 @@ def sh(args, timeout=120):
 
 def resolve_base():
     # Honor an explicit BASE override first, same env var patch-coverage.sh
-    # reads. pre-push-gate.sh does NOT currently forward its own $BASE (see
-    # the "BASE is intentionally not forwarded" comment next to the
-    # patch-coverage.sh call site) because this script's own ladder below is
-    # already at least as strict -- it resolves against main via
-    # rev-parse/merge-base rather than silently falling back to HEAD~1. The
-    # env var stays here so a caller (CI matrix, ad-hoc local run) can still
-    # pin BASE explicitly without editing this file.
+    # reads. pre-push-gate.sh forwards its own already-validated $BASE (the
+    # merge-base SHA it computed and rev-parse-verified) so that in a
+    # shallow-clone / CI context where `origin/main` is not fetched, the gate
+    # and this script agree on the diff base instead of this script's ladder
+    # silently diverging. A caller (CI matrix, ad-hoc local run) can likewise
+    # pin BASE explicitly.
     env_base = os.environ.get("BASE", "").strip()
-    if env_base and sh(["git", "rev-parse", "--verify", "-q", env_base]).returncode == 0:
-        return env_base
+    if env_base:
+        if sh(["git", "rev-parse", "--verify", "-q", env_base]).returncode == 0:
+            return env_base
+        # An EXPLICIT BASE that doesn't resolve is a setup error, not something
+        # to paper over by silently falling through to origin/main (which could
+        # widen or narrow the diff without the caller knowing). Fail CLOSED.
+        raise GitError(f"explicit BASE {env_base!r} does not resolve to a git object")
     # Mirror patch-coverage.sh's BASE fallback chain. If NONE of these refs exist
     # (fresh / unrelated history), returns None -> changed_files falls back to
     # `git diff HEAD` (working-tree only), so the gate fails OPEN rather than
@@ -80,37 +96,95 @@ def resolve_base():
 
 
 def changed_files(base):
-    # Returns (files, base_sha) -- base_sha is the merge-base commit used for
-    # the diff range, needed later to read each surface's BASE-revision
-    # content (`git show <base_sha>:<path>`) for the regression check. None
-    # when there's no usable base (see resolve_base's fail-open comment).
+    # Returns (entries, base_sha) where each entry is (head_path, base_path):
+    #   head_path -- the path at HEAD (matched against the surface glob and
+    #                read for the HEAD-revision content).
+    #   base_path -- the path to read BASE-revision content from, or None when
+    #                the file has no base (an Added file). For a Rename this is
+    #                the OLD path, so a rename+edit that drops a token is still
+    #                compared against the token it had under its former name.
+    # base_sha is the merge-base commit the diff ranges against (None when
+    # there's no usable base -- see resolve_base's fail-open comment).
+    #
+    # FAIL CLOSED on any git error: a git diff that times out or errors must
+    # NOT degrade to "0 files changed" (a false PASS that suppresses the whole
+    # gate). Only a clean rc==0 with empty output is a legitimate "no changes".
     if base:
-        mb = sh(["git", "merge-base", base, "HEAD"]).stdout.strip()
+        mb_res = sh(["git", "merge-base", base, "HEAD"])
+        # rc 1 == no common ancestor (unrelated histories): legitimate, fall
+        # back to a working-tree diff. rc 124 (timeout) / 128 (bad rev) / etc.
+        # are real failures -> fail closed.
+        if mb_res.returncode not in (0, 1):
+            raise GitError(f"git merge-base {base} HEAD failed "
+                           f"(rc={mb_res.returncode}): {mb_res.stderr.strip()}")
+        mb = mb_res.stdout.strip()
         rng = f"{mb}..HEAD" if mb else "HEAD"
         base_sha = mb or None
     else:
         rng = "HEAD"
         base_sha = None
-    out = sh(["git", "diff", "--name-only", rng]).stdout
-    return [f for f in out.splitlines() if f.strip()], base_sha
+    # --name-status -M: get the change status + old/new paths so a Rename (R)
+    # maps base<-old, head<-new. --diff-filter=AMR drops Deletions (a removed
+    # file can't regress a token) and Copies. core.quotePath=false keeps
+    # non-ASCII paths literal so the downstream os.path.isfile / git show
+    # resolve the real filename instead of a C-quoted octal escape.
+    res = sh(["git", "-c", "core.quotePath=false", "diff",
+              "--name-status", "-M", "--diff-filter=AMR", rng])
+    if res.returncode != 0:
+        raise GitError(f"git diff --name-status {rng} failed "
+                       f"(rc={res.returncode}): {res.stderr.strip()}")
+    entries = []
+    for line in res.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        code = parts[0][:1]
+        if code == "R" and len(parts) >= 3:
+            old_path, new_path = parts[1], parts[2]
+            entries.append((new_path, old_path))
+        elif code == "A" and len(parts) >= 2:
+            entries.append((parts[1], None))          # added -- no base revision
+        elif code == "M" and len(parts) >= 2:
+            entries.append((parts[1], parts[1]))      # modified -- same path both sides
+    return entries, base_sha
 
 
 def base_content(base_sha, path):
     # Returns the file's content at base_sha, or None if it did not exist
-    # there (new file in this range -- never a regression, so callers must
-    # treat None as "no prior state to regress from"). Decodes leniently
-    # (errors="replace"), matching the HEAD-content read below -- a stray
-    # non-UTF8 byte must not crash the gate.
-    if not base_sha:
+    # there (an Added file, or the pre-rename name -- never a regression, so
+    # callers treat None as "no prior state to regress from"). Decodes
+    # leniently (errors="replace"), matching the HEAD-content read below -- a
+    # stray non-UTF8 byte must not crash the gate.
+    #
+    # A git-show TIMEOUT or unexpected ERROR must NOT be conflated with
+    # "absent at base": doing so silently suppresses a real regression. Only a
+    # genuine object-not-found (git's "does not exist in <rev>") is the
+    # non-regression None case; anything else raises GitError -> fail closed.
+    if not base_sha or path is None:
         return None
     try:
         res = subprocess.run(["git", "show", f"{base_sha}:{path}"],
                               capture_output=True, timeout=120)
     except subprocess.TimeoutExpired:
-        return None
-    if res.returncode != 0:
-        return None
-    return res.stdout.decode("utf-8", errors="replace")
+        raise GitError(f"git show {base_sha}:{path} timed out after 120s")
+    if res.returncode == 0:
+        return res.stdout.decode("utf-8", errors="replace")
+    stderr = res.stderr.decode("utf-8", errors="replace")
+    low = stderr.lower()
+    # git reports a path absent from a tree with one of these fatals. But the
+    # SAME "exists on disk, but not in <rev>" message is also emitted for a
+    # bogus/unfetched base rev (a 40-hex object git can't resolve) -- so the
+    # message alone cannot tell "file legitimately absent at a real base"
+    # (benign -> None) from "base rev is garbage" (must fail closed). Confirm
+    # base_sha actually resolves to a commit before trusting the benign path;
+    # otherwise a bad base would silently suppress every regression.
+    if "does not exist in" in low or "exists on disk, but not in" in low:
+        if sh(["git", "rev-parse", "--verify", "-q", f"{base_sha}^{{commit}}"]).returncode == 0:
+            return None  # path genuinely did not exist at a valid base -- not a regression
+        raise GitError(f"base rev {base_sha!r} does not resolve to a commit "
+                       f"(git show reported: {stderr.strip()})")
+    raise GitError(f"git show {base_sha}:{path} failed "
+                   f"(rc={res.returncode}): {stderr.strip()}")
 
 
 def main():
@@ -147,7 +221,11 @@ def main():
     # CI is an RCE vector, and the drift check is optional; it can return later behind
     # a trusted-context gate. The enumeration-from-authoritative-source discipline
     # stays a reviewer concern (the adversarial-review charter), not a shell exec here.
-    changed, base_sha = changed_files(resolve_base())
+    try:
+        changed, base_sha = changed_files(resolve_base())
+    except GitError as e:
+        print(f"prefs-coverage: SETUP -- git failure, failing closed: {e}", file=sys.stderr)
+        return 2
     if not changed:
         print("prefs-coverage: no changed files in range -- nothing to check.")
         return 0
@@ -189,39 +267,57 @@ def main():
             print(f"prefs-coverage: CONFIG -- bad verify regex for pref {key!r}: {e}",
                   file=sys.stderr)
             return 2
-        for path in changed:
-            if not fnmatch.fnmatch(path, surf):
+        for head_path, base_path in changed:
+            if not fnmatch.fnmatch(head_path, surf):
                 continue
-            full = os.path.join(root, path)
+            full = os.path.join(root, head_path)
             if not os.path.isfile(full):
                 continue  # deleted/renamed-away in the range
-            with open(full, encoding="utf-8", errors="replace") as fh:
-                head_body = fh.read()
+            try:
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    head_body = fh.read()
+            except OSError as e:
+                # TOCTOU: the file passed os.path.isfile but vanished / became
+                # unreadable before this read (deleted, renamed, or a
+                # permission error between the diff and now). A file that
+                # isn't there can't be regressing a token -- SKIP with a
+                # warning rather than crashing the gate (exit 1 would
+                # masquerade as a MISSING finding).
+                print(f"  [SKIP   ] {head_path}  ({key}) -- unreadable ({e}); "
+                      "not treated as a regression", file=sys.stderr)
+                continue
             has = bool(rx.search(head_body))
 
             # REGRESSION-ONLY: a surface is only required to keep a token it
-            # already had. base_content() returns None for a file that did
-            # not exist at base_sha (a brand-new file in this range) -- that
-            # is never a regression, so it's treated the same as "never
-            # carried the token" below (skip, no flag).
-            base_body = base_content(base_sha, path)
+            # already had. base_content() returns None for a file with no base
+            # revision (a brand-new/Added file, or a rename's former name that
+            # is looked up under base_path) -- that is never a regression, so
+            # it's treated the same as "never carried the token" below (skip,
+            # no flag). A git error while reading base content raises GitError
+            # and fails the whole gate closed (exit 2).
+            try:
+                base_body = base_content(base_sha, base_path)
+            except GitError as e:
+                print(f"prefs-coverage: SETUP -- git failure reading base content, "
+                      f"failing closed: {e}", file=sys.stderr)
+                return 2
             had = bool(base_body is not None and rx.search(base_body))
 
             if has:
                 honored += 1
-                print(f"  [HONORS ] {path}  ({key})")
+                print(f"  [HONORS ] {head_path}  ({key})")
             elif had:
                 # Dropped a token the file had at base -- a genuine regression.
-                reason = exemption(path, key)
+                reason = exemption(head_path, key)
                 if reason is not None:
-                    print(f"  [EXEMPT ] {path}  ({key}) -- {reason}")
+                    print(f"  [EXEMPT ] {head_path}  ({key}) -- {reason}")
                 else:
-                    missing.append((path, key))
-                    print(f"  [MISSING] {path}  ({key}) -- dropped /{verify}/ present at base")
+                    missing.append((head_path, key))
+                    print(f"  [MISSING] {head_path}  ({key}) -- dropped /{verify}/ present at base")
             else:
                 # Never carried the token (incl. brand-new files) -- not a
                 # regression, nothing to flag.
-                print(f"  [OK     ] {path}  ({key}) -- never carried /{verify}/, no regression")
+                print(f"  [OK     ] {head_path}  ({key}) -- never carried /{verify}/, no regression")
 
     if missing:
         print(f"\nprefs-coverage: {len(missing)} un-exempted regression(s) (surface x pref "
