@@ -531,6 +531,88 @@ func TestEnabledProvidersNoDisabled(t *testing.T) {
 	}
 }
 
+func TestFieldPriorityContains(t *testing.T) {
+	fp := FieldPriority{
+		Field:     "biography",
+		Providers: []ProviderName{NameMusicBrainz, NameAudioDB},
+	}
+
+	if !fp.Contains(NameMusicBrainz) {
+		t.Error("expected Contains(musicbrainz) to be true")
+	}
+	if !fp.Contains(NameAudioDB) {
+		t.Error("expected Contains(audiodb) to be true")
+	}
+	if fp.Contains(NameDiscogs) {
+		t.Error("expected Contains(discogs) to be false")
+	}
+	// Case-sensitive: a differently-cased name must not match.
+	if fp.Contains(ProviderName(strings.ToUpper(string(NameMusicBrainz)))) {
+		t.Error("expected Contains to be case-sensitive")
+	}
+}
+
+func TestFieldPriorityAddProvider(t *testing.T) {
+	fp := FieldPriority{
+		Field:     "biography",
+		Providers: []ProviderName{NameMusicBrainz},
+	}
+
+	if modified := fp.AddProvider(NameAudioDB); !modified {
+		t.Error("expected AddProvider to report modified=true for a new provider")
+	}
+	if len(fp.Providers) != 2 || fp.Providers[1] != NameAudioDB {
+		t.Fatalf("expected providers to be [musicbrainz audiodb], got %v", fp.Providers)
+	}
+
+	// Adding an already-present provider is a no-op.
+	if modified := fp.AddProvider(NameAudioDB); modified {
+		t.Error("expected AddProvider to report modified=false when already present")
+	}
+	if len(fp.Providers) != 2 {
+		t.Fatalf("expected providers to remain length 2, got %v", fp.Providers)
+	}
+}
+
+func TestFieldPriorityRemoveProvider(t *testing.T) {
+	fp := FieldPriority{
+		Field:     "biography",
+		Providers: []ProviderName{NameMusicBrainz, NameAudioDB, NameDiscogs},
+	}
+
+	if modified := fp.RemoveProvider(NameAudioDB); !modified {
+		t.Error("expected RemoveProvider to report modified=true when present")
+	}
+	want := []ProviderName{NameMusicBrainz, NameDiscogs}
+	if !reflect.DeepEqual(fp.Providers, want) {
+		t.Fatalf("expected providers %v, got %v", want, fp.Providers)
+	}
+
+	// Removing an absent provider is a no-op and leaves the list untouched.
+	if modified := fp.RemoveProvider(NameWikidata); modified {
+		t.Error("expected RemoveProvider to report modified=false when absent")
+	}
+	if !reflect.DeepEqual(fp.Providers, want) {
+		t.Fatalf("expected providers unchanged at %v, got %v", want, fp.Providers)
+	}
+}
+
+func TestFieldPriorityRemoveProviderAllOccurrences(t *testing.T) {
+	// RemoveProvider strips every occurrence of name, not just the first.
+	fp := FieldPriority{
+		Field:     "biography",
+		Providers: []ProviderName{NameMusicBrainz, NameAudioDB, NameMusicBrainz, NameDiscogs},
+	}
+
+	if modified := fp.RemoveProvider(NameMusicBrainz); !modified {
+		t.Error("expected RemoveProvider to report modified=true")
+	}
+	want := []ProviderName{NameAudioDB, NameDiscogs}
+	if !reflect.DeepEqual(fp.Providers, want) {
+		t.Fatalf("expected providers %v, got %v", want, fp.Providers)
+	}
+}
+
 func TestAPIKeyContextOverride(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)

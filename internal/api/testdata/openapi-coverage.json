@@ -1572,7 +1572,7 @@
     "method": "PUT",
     "path": "/providers/websearch/{name}/toggle",
     "handler": "handleSetWebSearchEnabled",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "setup",
