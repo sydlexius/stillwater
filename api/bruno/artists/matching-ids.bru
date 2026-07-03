@@ -1,0 +1,30 @@
+meta {
+  name: Artist Matching IDs
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{apiBase}}/artists/matching-ids
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response reports ids, total, capped", function() {
+    expect(res.body).to.be.an("object");
+    var ids = res.body.ids;
+    var ok = ids === null || Array.isArray(ids);
+    expect(ok).to.equal(true);
+    expect(res.body.total).to.be.a("number");
+    expect(res.body.capped).to.be.a("boolean");
+  });
+}

@@ -84,14 +84,6 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
-    "route": "GET /api/v1/artists/locked",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/artists/matching-ids",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
     "route": "GET /api/v1/artists/{}/audiodb/identify",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
@@ -168,19 +160,7 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
-    "route": "GET /api/v1/logs",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/logs/files",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
     "route": "GET /api/v1/rules/run-all/status",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/rules/status",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
@@ -189,10 +169,6 @@
   },
   {
     "route": "GET /api/v1/shared-filesystem/status",
-    "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
-  },
-  {
-    "route": "GET /api/v1/users",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
