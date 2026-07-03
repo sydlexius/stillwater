@@ -502,6 +502,61 @@ if [ "$run_a11y" -eq 1 ]; then
   echo "OK"
 fi
 
+echo "=== UI-preference coverage (prefs-coverage) ==="
+# Enforces .prefs.toml (#2195): for each changed surface file matching a
+# [[pref]] surface glob, asserts the pref's verify token/class is still
+# referenced. Layer 1 only -- it catches a surface edit that silently drops
+# the token/class wiring a preference to its rendered effect (the #2194
+# Background-Opacity regression class). It does NOT catch a CSS
+# cascade-override (a more specific rule beating a pref-driven var); that
+# needs a rendered getComputedStyle assertion (Layer 2, tracked separately),
+# not this static grep.
+#
+# Requires python3 with tomllib (3.11+). Degrades to a SKIP + warning (not a
+# hard failure) when python3 is missing or too old, matching the
+# oasdiff/a11y-toolchain optional-tool tolerance elsewhere in this gate.
+#
+# BASE is intentionally not forwarded, mirroring the patch-coverage.sh call
+# site above: prefs-coverage.py's own resolve_base() already resolves
+# against main/origin main via rev-parse (see scripts/prefs-coverage.py),
+# which is at least as strict as this script's silent HEAD~1 fallback, so
+# letting the child resolve its own BASE avoids narrowing the diff to only
+# the tip commit on a branch whose base ref isn't reachable here.
+#
+# Prefer the repo-vendored copy so a fresh clone / CI works without any
+# user-local install. Fall back to ~/.claude/scripts/prefs-coverage.py only
+# if the repo copy is missing (e.g. mid-rebase against a commit that
+# pre-dates the vendoring), same fallback pattern as patch-coverage.sh above.
+PREFS_COVERAGE_HELPER="$SCRIPT_DIR/prefs-coverage.py"
+if [ ! -f "$PREFS_COVERAGE_HELPER" ]; then
+  PREFS_COVERAGE_HELPER="$HOME/.claude/scripts/prefs-coverage.py"
+fi
+if [ ! -f "$PREFS_COVERAGE_HELPER" ]; then
+  echo "pre-push-gate: prefs-coverage.py not found in scripts/ or ~/.claude/scripts/ -- skipping (advisory tool missing)"
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "pre-push-gate: python3 not found -- skipping prefs-coverage (install python3.11+ to enable locally; CI still gates this)"
+elif ! python3 -c 'import tomllib' >/dev/null 2>&1; then
+  echo "pre-push-gate: python3 lacks tomllib (need 3.11+) -- skipping prefs-coverage (CI still gates this)"
+else
+  prefs_status=0
+  python3 "$PREFS_COVERAGE_HELPER" || prefs_status=$?
+  case "$prefs_status" in
+    0)
+      :
+      ;;
+    1)
+      echo ""
+      echo "FAIL: prefs-coverage reported an un-exempted MISSING (see output above)."
+      exit 1
+      ;;
+    *)
+      echo ""
+      echo "FAIL: prefs-coverage config/parse error (exit $prefs_status; see output above)."
+      exit 1
+      ;;
+  esac
+fi
+
 echo "=== Bruno route parity check ==="
 # Verify every /api/v1 route registered in internal/api/router.go is either
 # exercised by a Bruno request (api/bruno/**/*.bru) or explicitly recorded in
