@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	neturl "net/url"
 	"strings"
@@ -474,10 +476,169 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// connectionProbeResult captures the outcome of testing a single platform
+// connection: whether the test succeeded, any drift warnings surfaced, and
+// (for platforms that support it) the resolved platform user/server IDs to
+// persist. HasPlatformUserID/HasPlatformServerID distinguish "not applicable
+// to this platform" from "resolution failed" (the latter still requests a
+// persist call, preserving the original always-persist-on-attempt behavior
+// for the user ID and persist-only-on-success behavior for the server ID).
+type connectionProbeResult struct {
+	TestErr           error
+	DriftWarnings     []string
+	PlatformName      string
+	HasPlatformUserID bool
+	PlatformUserID    string
+	HasServerID       bool
+	PlatformServerID  string
+}
+
+// connectionProber abstracts the per-connection-type test/resolve/drift-detect
+// sequence so handleTestConnection can dispatch without inlining each
+// platform's branch.
+type connectionProber interface {
+	Probe(ctx context.Context, id string, conn *connection.Connection) *connectionProbeResult
+}
+
+// embyProber tests an Emby connection.
+type embyProber struct {
+	logger *slog.Logger
+}
+
+func (p *embyProber) Probe(ctx context.Context, id string, conn *connection.Connection) *connectionProbeResult {
+	result := &connectionProbeResult{PlatformName: "emby"}
+	client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), p.logger)
+	result.TestErr = client.TestConnection(ctx)
+	if result.TestErr != nil {
+		return result
+	}
+
+	uid, uidErr := client.GetFirstUserID(ctx)
+	if uidErr != nil {
+		p.logger.Warn("could not resolve emby platform user id", "error", uidErr)
+	}
+	result.HasPlatformUserID = true
+	result.PlatformUserID = uid
+
+	// Capture the server identity for deep-link URL building. A missing
+	// server ID is non-fatal: the link will simply be built without
+	// the ?serverId= parameter and the web client will fall back to
+	// its default behavior (works for single-server setups).
+	if sid, sidErr := client.GetServerID(ctx); sidErr != nil {
+		p.logger.Warn("could not resolve emby platform server id", "error", sidErr)
+	} else {
+		result.HasServerID = true
+		result.PlatformServerID = sid
+	}
+
+	// Drift detection: check for conflicting platform settings.
+	if settings, settingsErr := client.GetLibrarySettings(ctx); settingsErr == nil {
+		for _, s := range settings {
+			if s.HasConflicts {
+				warning := "library " + s.LibraryName + " has active fetchers/savers that may overwrite Stillwater-managed metadata"
+				result.DriftWarnings = append(result.DriftWarnings, warning)
+				p.logger.Warn("emby platform settings drift detected", "connection_id", id, "library", s.LibraryName)
+			}
+		}
+	} else {
+		p.logger.Warn("could not inspect emby platform settings for drift", "connection_id", id, "error", settingsErr)
+		result.DriftWarnings = append(result.DriftWarnings, "could not inspect platform settings for drift")
+	}
+	return result
+}
+
+// jellyfinProber tests a Jellyfin connection.
+type jellyfinProber struct {
+	logger *slog.Logger
+}
+
+func (p *jellyfinProber) Probe(ctx context.Context, id string, conn *connection.Connection) *connectionProbeResult {
+	result := &connectionProbeResult{PlatformName: "jellyfin"}
+	client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), p.logger)
+	result.TestErr = client.TestConnection(ctx)
+	if result.TestErr != nil {
+		return result
+	}
+
+	uid, uidErr := client.GetFirstUserID(ctx)
+	if uidErr != nil {
+		p.logger.Warn("could not resolve jellyfin platform user id", "error", uidErr)
+	}
+	result.HasPlatformUserID = true
+	result.PlatformUserID = uid
+
+	// Capture the server identity for deep-link URL building. See
+	// the equivalent Emby branch above for the no-id fallback rationale.
+	if sid, sidErr := client.GetServerID(ctx); sidErr != nil {
+		p.logger.Warn("could not resolve jellyfin platform server id", "error", sidErr)
+	} else {
+		result.HasServerID = true
+		result.PlatformServerID = sid
+	}
+
+	// Drift detection: check for conflicting platform settings.
+	if settings, settingsErr := client.GetLibrarySettings(ctx); settingsErr == nil {
+		for _, s := range settings {
+			if s.HasConflicts {
+				warning := "library " + s.LibraryName + " has active fetchers that may overwrite Stillwater-managed metadata"
+				result.DriftWarnings = append(result.DriftWarnings, warning)
+				p.logger.Warn("jellyfin platform settings drift detected", "connection_id", id, "library", s.LibraryName)
+			}
+		}
+	} else {
+		p.logger.Warn("could not inspect jellyfin platform settings for drift", "connection_id", id, "error", settingsErr)
+		result.DriftWarnings = append(result.DriftWarnings, "could not inspect platform settings for drift")
+	}
+	return result
+}
+
+// lidarrProber tests a Lidarr connection. Lidarr does not resolve a platform
+// user/server ID, so those result fields remain unset.
+type lidarrProber struct {
+	logger *slog.Logger
+}
+
+func (p *lidarrProber) Probe(ctx context.Context, id string, conn *connection.Connection) *connectionProbeResult {
+	result := &connectionProbeResult{PlatformName: "lidarr"}
+	client := lidarr.New(conn.URL, conn.APIKey, p.logger)
+	result.TestErr = client.TestConnection(ctx)
+	if result.TestErr != nil {
+		return result
+	}
+
+	// Drift detection: check for enabled metadata consumers.
+	if consumers, consumersErr := client.GetMetadataConsumers(ctx); consumersErr == nil {
+		for _, c := range consumers {
+			if c.Enabled {
+				warning := "metadata consumer " + c.ConsumerName + " is enabled and may write NFO files"
+				result.DriftWarnings = append(result.DriftWarnings, warning)
+				p.logger.Warn("lidarr platform settings drift detected", "connection_id", id, "consumer", c.ConsumerName)
+			}
+		}
+	} else {
+		p.logger.Warn("could not inspect lidarr platform settings for drift", "connection_id", id, "error", consumersErr)
+		result.DriftWarnings = append(result.DriftWarnings, "could not inspect platform settings for drift")
+	}
+	return result
+}
+
+// newConnectionProber returns the connectionProber for connType, or an error
+// if the type is not supported.
+func (r *Router) newConnectionProber(connType string) (connectionProber, error) {
+	switch connType {
+	case connection.TypeEmby:
+		return &embyProber{logger: r.logger}, nil
+	case connection.TypeJellyfin:
+		return &jellyfinProber{logger: r.logger}, nil
+	case connection.TypeLidarr:
+		return &lidarrProber{logger: r.logger}, nil
+	default:
+		return nil, errors.New("unsupported connection type: " + connType)
+	}
+}
+
 // handleTestConnection tests connectivity to a platform and updates its status.
 // POST /api/v1/connections/{id}/test
-//
-//nolint:gocognit // Per-connection-type test dispatch (cog 71): Emby/Jellyfin/Lidarr each with TLS, auth, capability, library-listing probes and a unified status-update + SSE-emit tail. The size warrants extracting per-type probe helpers behind a small interface while preserving per-failure error-message specificity for troubleshooting. Refactor tracked in #1544.
 func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -489,113 +650,44 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	testCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-	defer cancel()
-
-	var testErr error
-	var driftWarnings []string
-	switch conn.Type {
-	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
-		testErr = client.TestConnection(testCtx)
-		if testErr == nil {
-			uid, uidErr := client.GetFirstUserID(testCtx)
-			if uidErr != nil {
-				r.logger.Warn("could not resolve emby platform user id", "error", uidErr)
-			}
-			if updErr := r.connectionService.UpdatePlatformUserID(testCtx, id, uid); updErr != nil {
-				r.logger.Error("persisting emby platform user id", "error", updErr)
-			}
-			// Capture the server identity for deep-link URL building. A missing
-			// server ID is non-fatal: the link will simply be built without
-			// the ?serverId= parameter and the web client will fall back to
-			// its default behavior (works for single-server setups).
-			if sid, sidErr := client.GetServerID(testCtx); sidErr != nil {
-				r.logger.Warn("could not resolve emby platform server id", "error", sidErr)
-			} else if updErr := r.connectionService.UpdatePlatformServerID(testCtx, id, sid); updErr != nil {
-				r.logger.Error("persisting emby platform server id", "error", updErr)
-			}
-			// Drift detection: check for conflicting platform settings.
-			if settings, settingsErr := client.GetLibrarySettings(testCtx); settingsErr == nil {
-				for _, s := range settings {
-					if s.HasConflicts {
-						warning := "library " + s.LibraryName + " has active fetchers/savers that may overwrite Stillwater-managed metadata"
-						driftWarnings = append(driftWarnings, warning)
-						r.logger.Warn("emby platform settings drift detected", "connection_id", id, "library", s.LibraryName)
-					}
-				}
-			} else {
-				r.logger.Warn("could not inspect emby platform settings for drift", "connection_id", id, "error", settingsErr)
-				driftWarnings = append(driftWarnings, "could not inspect platform settings for drift")
-			}
-		}
-	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, conn.GetPlatformUserID(), r.logger)
-		testErr = client.TestConnection(testCtx)
-		if testErr == nil {
-			uid, uidErr := client.GetFirstUserID(testCtx)
-			if uidErr != nil {
-				r.logger.Warn("could not resolve jellyfin platform user id", "error", uidErr)
-			}
-			if updErr := r.connectionService.UpdatePlatformUserID(testCtx, id, uid); updErr != nil {
-				r.logger.Error("persisting jellyfin platform user id", "error", updErr)
-			}
-			// Capture the server identity for deep-link URL building. See
-			// the equivalent Emby branch above for the no-id fallback rationale.
-			if sid, sidErr := client.GetServerID(testCtx); sidErr != nil {
-				r.logger.Warn("could not resolve jellyfin platform server id", "error", sidErr)
-			} else if updErr := r.connectionService.UpdatePlatformServerID(testCtx, id, sid); updErr != nil {
-				r.logger.Error("persisting jellyfin platform server id", "error", updErr)
-			}
-			// Drift detection: check for conflicting platform settings.
-			if settings, settingsErr := client.GetLibrarySettings(testCtx); settingsErr == nil {
-				for _, s := range settings {
-					if s.HasConflicts {
-						warning := "library " + s.LibraryName + " has active fetchers that may overwrite Stillwater-managed metadata"
-						driftWarnings = append(driftWarnings, warning)
-						r.logger.Warn("jellyfin platform settings drift detected", "connection_id", id, "library", s.LibraryName)
-					}
-				}
-			} else {
-				r.logger.Warn("could not inspect jellyfin platform settings for drift", "connection_id", id, "error", settingsErr)
-				driftWarnings = append(driftWarnings, "could not inspect platform settings for drift")
-			}
-		}
-	case connection.TypeLidarr:
-		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
-		testErr = client.TestConnection(testCtx)
-		if testErr == nil {
-			// Drift detection: check for enabled metadata consumers.
-			if consumers, consumersErr := client.GetMetadataConsumers(testCtx); consumersErr == nil {
-				for _, c := range consumers {
-					if c.Enabled {
-						warning := "metadata consumer " + c.ConsumerName + " is enabled and may write NFO files"
-						driftWarnings = append(driftWarnings, warning)
-						r.logger.Warn("lidarr platform settings drift detected", "connection_id", id, "consumer", c.ConsumerName)
-					}
-				}
-			} else {
-				r.logger.Warn("could not inspect lidarr platform settings for drift", "connection_id", id, "error", consumersErr)
-				driftWarnings = append(driftWarnings, "could not inspect platform settings for drift")
-			}
-		}
-	default:
+	prober, err := r.newConnectionProber(conn.Type)
+	if err != nil {
+		// Log the underlying prober-selection error server-side but return a
+		// controlled generic message so no raw error text reaches the client
+		// (matches origin/main byte-for-byte; keeps the raw-error-leak gate clean).
+		r.logger.Warn("selecting connection prober", "type", conn.Type, "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type: " + conn.Type})
 		return
 	}
 
+	testCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+	defer cancel()
+
+	result := prober.Probe(testCtx, id, conn)
+
+	if result.HasPlatformUserID {
+		if updErr := r.connectionService.UpdatePlatformUserID(testCtx, id, result.PlatformUserID); updErr != nil {
+			r.logger.Error("persisting "+result.PlatformName+" platform user id", "error", updErr)
+		}
+	}
+	if result.HasServerID {
+		if updErr := r.connectionService.UpdatePlatformServerID(testCtx, id, result.PlatformServerID); updErr != nil {
+			r.logger.Error("persisting "+result.PlatformName+" platform server id", "error", updErr)
+		}
+	}
+
 	status := "ok"
 	msg := ""
-	if testErr != nil {
+	if result.TestErr != nil {
 		status = "error"
-		msg = testErr.Error()
+		msg = result.TestErr.Error()
 	}
 	if updateErr := r.connectionService.UpdateStatus(req.Context(), id, status, msg); updateErr != nil {
 		r.logger.Error("updating connection status", "error", updateErr)
 	}
 	resp := map[string]any{"status": status, "message": msg}
-	if len(driftWarnings) > 0 {
-		resp["drift_warnings"] = driftWarnings
+	if len(result.DriftWarnings) > 0 {
+		resp["drift_warnings"] = result.DriftWarnings
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
