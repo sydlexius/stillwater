@@ -187,8 +187,29 @@ def base_content(base_sha, path):
                    f"(rc={res.returncode}): {stderr.strip()}")
 
 
+def repo_root():
+    # Resolve the repo root so every later git op anchors there. A git failure
+    # here must FAIL CLOSED (GitError -> exit 2), never fall back to os.getcwd():
+    # a wrong root would run the gate against the wrong tree, and a self-skip
+    # (no .prefs.toml found at the bogus root) would silently suppress every
+    # regression -- exactly the fail-open a fail-closed gate must not have.
+    res = sh(["git", "rev-parse", "--show-toplevel"])
+    if res.returncode != 0:
+        raise GitError(f"git rev-parse --show-toplevel failed "
+                       f"(rc={res.returncode}): {res.stderr.strip()}")
+    root = res.stdout.strip()
+    if not root:
+        raise GitError("git rev-parse --show-toplevel returned empty output")
+    return root
+
+
 def main():
-    root = sh(["git", "rev-parse", "--show-toplevel"]).stdout.strip() or os.getcwd()
+    try:
+        root = repo_root()
+    except GitError as e:
+        print(f"prefs-coverage: SETUP -- git failure resolving repo root, "
+              f"failing closed: {e}", file=sys.stderr)
+        return 2
     os.chdir(root)  # anchor all subsequent git ops to the repo root (robust from nested cwd)
     manifest = os.path.join(root, ".prefs.toml")
     if not os.path.isfile(manifest):
