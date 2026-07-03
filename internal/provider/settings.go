@@ -662,23 +662,47 @@ func isWebSearchImageField(field string) bool {
 }
 
 // SetWebSearchEnabledAndSyncPriorities persists the enabled state for a web
-// search provider and, in the same critical section, adds (enabled) or removes
-// (disabled) it from every image-field priority list. The whole read-modify-
-// write runs under webSearchMu, so concurrent enable/disable calls are
-// serialized and cannot overwrite each other's priority updates (the
-// "equivalent lock" alternative to a single DB transaction; the writes still
-// land row-by-row, but no two toggles interleave).
+// search provider and adds (enabled) or removes (disabled) it from every
+// image-field priority list. The enabled-flag write and every priority write
+// commit inside a single DB transaction, so the update is all-or-nothing: a
+// failure part-way through rolls back and never leaves the flag set with the
+// provider missing from some image fields (or vice versa). webSearchMu
+// additionally serializes the read + transaction so two concurrent toggles
+// cannot base their writes on each other's stale reads.
+//
+// Cross-process atomicity is not a concern here: Stillwater runs a single
+// process against an embedded SQLite database, so there are no replicas to
+// interleave.
 func (s *SettingsService) SetWebSearchEnabledAndSyncPriorities(ctx context.Context, name ProviderName, enabled bool) error {
 	s.webSearchMu.Lock()
 	defer s.webSearchMu.Unlock()
 
-	if err := s.SetWebSearchEnabled(ctx, name, enabled); err != nil {
-		return err
-	}
+	// Read current priorities first (mutex-guarded, so no concurrent toggle
+	// interferes). The writes below then commit atomically.
 	priorities, err := s.GetPriorities(ctx)
 	if err != nil {
 		return err
 	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning web search toggle transaction for %s: %w", name, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
+
+	// Persist the enabled flag.
+	enabledVal := "false"
+	if enabled {
+		enabledVal = "true"
+	}
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		webSearchEnabledKey(name), enabledVal, enabledVal,
+	); err != nil {
+		return fmt.Errorf("storing web search enabled for %s: %w", name, err)
+	}
+
+	// Add/remove the provider in every image-field priority list it changes.
 	for _, pri := range priorities {
 		if !isWebSearchImageField(pri.Field) {
 			continue
@@ -692,9 +716,20 @@ func (s *SettingsService) SetWebSearchEnabledAndSyncPriorities(ctx context.Conte
 		if !changed {
 			continue
 		}
-		if err := s.SetPriority(ctx, pri.Field, pri.Providers); err != nil {
-			return err
+		data, err := json.Marshal(pri.Providers)
+		if err != nil {
+			return fmt.Errorf("marshaling priority for %s: %w", pri.Field, err)
 		}
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+			prioritySettingKey(pri.Field), string(data), string(data),
+		); err != nil {
+			return fmt.Errorf("storing priority for %s: %w", pri.Field, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing web search toggle for %s: %w", name, err)
 	}
 	return nil
 }
