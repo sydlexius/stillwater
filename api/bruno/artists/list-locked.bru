@@ -1,0 +1,34 @@
+meta {
+  name: List Locked Artists
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{apiBase}}/artists/locked
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is a paginated envelope (page, page_size, total)", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.page).to.be.a("number");
+    expect(res.body.page_size).to.be.a("number");
+    expect(res.body.total).to.be.a("number");
+  });
+
+  test("artists field is either an array or null when no rows match", function() {
+    var artists = res.body.artists;
+    var ok = artists === null || Array.isArray(artists);
+    expect(ok).to.equal(true);
+  });
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Get Logs (auth gate)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{apiBase}}/logs
+  body: none
+  auth: none
+}
+
+docs {
+  GET /api/v1/logs returns the in-memory log ring buffer, filtered by the
+  search/component/level/limit query params. It is admin-gated (wrapAuth ->
+  RequireAdmin), so this smoke deliberately sends NO session cookie and
+  asserts a 401, proving the endpoint exists and is gated. The 200 response
+  shape and filter semantics are covered by the Go unit tests in
+  internal/api (handleGetLogs) and internal/logging.
+}
+
+tests {
+  test("unauthenticated request is rejected (admin-gated)", function() {
+    expect(res.status).to.equal(401);
+  });
+}

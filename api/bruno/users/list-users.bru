@@ -1,0 +1,36 @@
+meta {
+  name: List Users (multi-user gate)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/users
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  GET /api/v1/users lists registered users. It requires both an admin
+  session and multi_user.enabled=true (RequireMultiUser gates before
+  RequireAdmin runs). The CI fixture DB ships with multi_user.enabled=false
+  (001_initial_schema.sql), so an authenticated admin request deterministically
+  hits the feature gate and gets 404, proving the route exists and is
+  multi-user-gated. The 200 response shape is covered by the Go unit tests in
+  internal/api (handleListUsers) and internal/auth (ListUsers).
+}
+
+tests {
+  test("multi-user disabled: feature-gated as not found", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.match(/not found/i);
+  });
+}
