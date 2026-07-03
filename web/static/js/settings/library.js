@@ -269,13 +269,9 @@
       }
 
       function pollLibraryOp(libID, operation, btn, spinner, label) {
-        var csrfToken;
-        if (typeof window.swCsrfToken === 'function') {
-          csrfToken = window.swCsrfToken();
-        } else {
-          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
-          csrfToken = '';
-        }
+        // Status polling is a GET (pollAsyncStatus sends no CSRF token), so this
+        // function needs no swCsrfToken; the previously-computed-but-unused token
+        // block was removed to avoid a false-alarm console.error (#2109 review).
         function resetUI() {
           if (btn) btn.disabled = false;
           if (spinner) spinner.classList.add('hidden');
