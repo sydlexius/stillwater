@@ -69,11 +69,12 @@ import (
 )
 
 func main() {
-	// Handle subcommands before starting the server. The switch has only one
-	// case today but is shaped for adding future subcommands (reset-config,
-	// migrate-only, etc.) without rewriting the dispatch.
+	// Handle subcommands before starting the server.
 	if len(os.Args) > 1 {
-		switch os.Args[1] { //nolint:gocritic // singleCaseSwitch: shaped for future subcommand cases, see comment above
+		switch os.Args[1] {
+		case "version":
+			fmt.Println(version.String())
+			return
 		case "reset-credentials":
 			if err := resetCredentials(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)

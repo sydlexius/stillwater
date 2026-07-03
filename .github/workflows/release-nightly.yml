@@ -150,6 +150,13 @@ jobs:
           set -euo pipefail
           git checkout --detach "refs/tags/${TAG}"
 
+      # Guards against a silently-drifted -X ldflags symbol path before
+      # GoReleaser runs (Go's linker treats an unresolved -X target as a
+      # no-op, not an error). See scripts/smoke-version-injection.sh.
+      - name: Run version injection smoke test
+        if: steps.guard.outputs.skip != 'true'
+        run: bash scripts/smoke-version-injection.sh
+
       - name: Run GoReleaser
         if: steps.guard.outputs.skip != 'true'
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7

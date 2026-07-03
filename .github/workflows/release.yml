@@ -8,6 +8,31 @@ on:
 permissions: {}
 
 jobs:
+  # Guards against a silently-drifted -X ldflags symbol path (Go's linker
+  # treats an unresolved -X target as a no-op, not an error): builds a probe
+  # binary with the exact symbol path this repo uses and asserts the
+  # injected token actually surfaces. Blocks build-binaries so a broken
+  # symbol path stops the release before any artifact is produced.
+  version-injection-smoke:
+    name: Version Injection Smoke Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run version injection smoke test
+        run: bash scripts/smoke-version-injection.sh
+
   # Run templ generate + Tailwind CSS build once; fan out to all binary/Docker
   # jobs via a 1-day artifact. Avoids repeating slow asset generation per runner.
   prepare:
@@ -65,7 +90,7 @@ jobs:
   # ubuntu-latest (CGO_ENABLED=0 makes pure-Go cross-compile trivial).
   build-binaries:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    needs: [prepare]
+    needs: [prepare, version-injection-smoke]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read

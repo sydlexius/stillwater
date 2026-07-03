@@ -147,8 +147,11 @@ jobs:
       - name: Warm Go build cache (race-instrumented)
         run: go test -race -count=1 -run='^$' ./...
 
+  # Worker job: does the real lint work, gated on code changes. The always-
+  # running lint-summary wrapper below owns the required "Lint" check name so
+  # docs-only PRs report success rather than a permanently-skipped context.
   lint:
-    name: Lint
+    name: Lint Check
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
@@ -187,6 +190,31 @@ jobs:
 
       - name: Validate OpenAPI spec
         run: npx --yes @stoplight/spectral-cli@6.15.0 lint internal/api/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+
+  # Aggregate gate that owns the "Lint" check name. Always runs so the required
+  # context reports success (not skipped) on non-code PRs, and fails closed if
+  # the `changes` detector itself failed/was cancelled before trusting its
+  # `code` output.
+  lint-summary:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: [changes, lint]
+    if: always()
+    steps:
+      - name: Verify lint check succeeded
+        run: |
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.code }}" != "true" ]; then
+            echo "No code changes; Lint Check was skipped."
+            exit 0
+          fi
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "Lint Check did not succeed: ${{ needs.lint.result }}"
+            exit 1
+          fi
 
   js-test:
     name: JS Unit Tests
@@ -521,10 +549,18 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     needs: [changes, test]
-    if: always() && needs.changes.outputs.code == 'true'
+    if: always()
     steps:
       - name: Verify all shards succeeded
         run: |
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.code }}" != "true" ]; then
+            echo "No code changes; Test shards were skipped."
+            exit 0
+          fi
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "One or more Test shards did not succeed: ${{ needs.test.result }}"
             exit 1
@@ -691,6 +727,10 @@ jobs:
     steps:
       - name: Check matrix results
         run: |
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+            exit 1
+          fi
           result="${{ needs.build-matrix.result }}"
           if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
             echo "Build matrix failed or was cancelled: $result"

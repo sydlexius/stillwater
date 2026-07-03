@@ -18,7 +18,8 @@ flowchart TD
     docker["Docker Build"]
     go_cache_primer["Go Cache Primer"]
     js_test["JS Unit Tests"]
-    lint["Lint"]
+    lint["Lint Check"]
+    lint_summary["Lint"]
     test["Test Shard"]
     test_summary["Test"]
 
@@ -38,6 +39,8 @@ flowchart TD
     changes --> go_cache_primer
     changes --> js_test
     changes --> lint
+    changes --> lint_summary
+    lint --> lint_summary
     changes --> test
     go_cache_primer --> test
     changes --> test_summary

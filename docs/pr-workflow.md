@@ -98,6 +98,17 @@ gh api "repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies" \
 
 Automatic re-review on push is **disabled** (`review_on_push: false`). Re-review must be triggered manually from the GitHub PR page. The GitHub API does not support re-requesting review from bot accounts (422 error).
 
+## Required-check x paths-filter invariant (#2199, #2200)
+
+`.github/workflows/ci.yml` gates most work on the `changes` job's `dorny/paths-filter` output (`code`, `js`, `a11y`) so docs-only PRs skip the expensive Go/Node jobs. Branch protection's three required contexts -- `Lint`, `Test`, `Build` -- must still report **success** (not skipped) on every PR, including docs-only ones, and must **fail closed** if the `changes` detector job itself errors. Two defects motivated the current shape (issue #2199):
+
+- **D1 (skip instead of pass):** a required context produced by a job gated `if: needs.changes.outputs.code == 'true'` skips entirely on a non-code PR. GitHub never resolves a skipped required check to success, so the PR becomes permanently unmergeable.
+- **D2 (trusting outputs without checking result):** `needs.<job>.outputs` is empty both when the job's condition was `false` AND when the job crashed/was cancelled. A wrapper that reads `outputs.code != 'true'` as "safe to pass" also passes when the `changes` job itself failed, silently satisfying the gate without lint/test/build ever running.
+
+The fix: every required context is owned by an always-running (`if: always()`) aggregator/wrapper job that (1) asserts `needs.changes.result == 'success'` before trusting `needs.changes.outputs.*` (fails closed on a crashed detector), (2) exits 0 if `code != 'true'` (docs-only PR: pass, not skip), and (3) otherwise mirrors the underlying worker job's result. See `lint`/`lint-summary`, `test`/`test-summary`, and `build-matrix`/`build` in `ci.yml` for the pattern. `gate.yml`'s required Pre-Push Gate jobs already run unconditionally (only inner steps are skipped) and need no change.
+
+`Coverage Floor`, `JS Unit Tests`, and `A11y Smoke Tests` are gated the same way but there is no in-repo evidence (no `.github/settings.yml` or ruleset-as-code) that they are currently required branch-protection contexts. If any is promoted to required, it needs the same always-running wrapper treatment described above.
+
 ## Copilot instruction files
 
 Global instructions: `.github/copilot-instructions.md` (must stay under 4,000 characters). Domain-specific guidance in `.github/instructions/`:
