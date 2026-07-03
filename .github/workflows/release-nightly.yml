@@ -155,7 +155,10 @@ jobs:
       # no-op, not an error). See scripts/smoke-version-injection.sh.
       - name: Run version injection smoke test
         if: steps.guard.outputs.skip != 'true'
-        run: bash scripts/smoke-version-injection.sh
+        # This path runs goreleaser against .goreleaser.nightly.yml, so the
+        # smoke must guard that config, not .goreleaser.yml (which neither
+        # release path invokes).
+        run: bash scripts/smoke-version-injection.sh --source .goreleaser.nightly.yml
 
       - name: Run GoReleaser
         if: steps.guard.outputs.skip != 'true'

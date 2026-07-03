@@ -8,18 +8,27 @@
 # var path would ship a binary reporting a blank/default version with no
 # build-time signal.
 #
-# This script extracts the `-X ...version.Version=` symbol path from
-# .goreleaser.yml (single source of truth), rebuilds the real binary with
-# that exact symbol path set to a distinctive test token, and asserts the
-# built binary's `version` subcommand output actually contains that token.
+# This script extracts the `-X ...version.Version=` symbol path from a
+# caller-supplied source file, rebuilds the real binary with that exact
+# symbol path set to a distinctive test token, and asserts the built
+# binary's `version` subcommand output actually contains that token.
+#
+# The symbol path is duplicated across multiple release-path configs that
+# do NOT share a single file (stable release.yml builds with an inline
+# shell -ldflags string; nightly builds via goreleaser reading
+# .goreleaser.nightly.yml; .goreleaser.yml is not invoked by either CI path
+# today). Each caller must therefore point this script at the file it
+# actually builds from, via --source, so the smoke test actually guards
+# the config it is meant to guard rather than an unrelated one.
 #
 # Usage:
-#   bash scripts/smoke-version-injection.sh
+#   bash scripts/smoke-version-injection.sh --source <path>
+#   bash scripts/smoke-version-injection.sh   # defaults to .goreleaser.yml
 #
 # Exit codes:
 #   0 -- version injection verified working
 #   1 -- injected version did not surface (blank output or drifted symbol)
-#   2 -- setup/infrastructure failure (build failed, goreleaser config unreadable)
+#   2 -- setup/infrastructure failure (build failed, source file unreadable)
 
 set -euo pipefail
 
@@ -27,8 +36,35 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/run-paths.sh"
 
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-GORELEASER_FILE="$REPO_ROOT/.goreleaser.yml"
+SOURCE_FILE="$REPO_ROOT/.goreleaser.yml"
 TEST_TOKEN="9.9.9-test"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --source)
+      SOURCE_FILE="$2"
+      shift 2
+      ;;
+    --source=*)
+      SOURCE_FILE="${1#--source=}"
+      shift
+      ;;
+    -h | --help)
+      sed -n '/^# Usage:/,/^# *$/p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "smoke-version-injection.sh: unknown argument '$1' (try --source <path> or --help)" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# Resolve relative --source values against the repo root so the script works
+# the same whether invoked from the repo root (CI) or elsewhere.
+if [[ "$SOURCE_FILE" != /* ]]; then
+  SOURCE_FILE="$REPO_ROOT/$SOURCE_FILE"
+fi
 
 PASS=0
 FAIL=0
@@ -47,30 +83,31 @@ assert_fail() {
 
 echo "======================================================="
 echo "  Version Injection Smoke Test"
+echo "  Source: $SOURCE_FILE"
 echo "======================================================="
 echo ""
 
 # ---------------------------------------------------------------------------
-# Extract the -X symbol path for version.Version from .goreleaser.yml, the
-# single source of truth this smoke test guards. Matching the extraction
-# style already used by scripts/check-tool-versions.sh (grep -oE / sed, no
-# YAML parser dependency).
+# Extract the -X symbol path for version.Version from the source file this
+# invocation is guarding. Matching the extraction style already used by
+# scripts/check-tool-versions.sh (grep -oE / sed, no YAML parser dependency).
+# Tolerant of "-X path=val", "-X=path=val", and quoted forms so a benign
+# reformat of the ldflags line does not false-fail a release.
 # ---------------------------------------------------------------------------
 
-if [[ ! -f "$GORELEASER_FILE" ]]; then
-  echo "FATAL: $GORELEASER_FILE not found." >&2
+if [[ ! -f "$SOURCE_FILE" ]]; then
+  echo "FATAL: $SOURCE_FILE not found." >&2
   exit 2
 fi
 
-SYMBOL_TOKEN=$(grep -oE -- '-X [A-Za-z0-9./_-]+\.Version=' "$GORELEASER_FILE" | head -1 || true)
+SYMBOL_TOKEN=$(grep -oE -- '-X[[:space:]=]+"?[A-Za-z0-9./_-]+\.Version=' "$SOURCE_FILE" | head -1 || true)
 if [[ -z "$SYMBOL_TOKEN" ]]; then
-  echo "FATAL: could not find a '-X <symbol>.Version=' ldflags entry in $GORELEASER_FILE." >&2
+  echo "FATAL: could not find a '-X <symbol>.Version=' ldflags entry in $SOURCE_FILE." >&2
   echo "       This itself indicates the release config has drifted from expectations." >&2
   exit 2
 fi
 
-SYMBOL="${SYMBOL_TOKEN#-X }"
-SYMBOL="${SYMBOL%=}"
+SYMBOL=$(printf '%s' "$SYMBOL_TOKEN" | sed -E 's/^-X[[:space:]=]+"?//; s/=$//')
 echo "Extracted symbol path: $SYMBOL"
 echo ""
 

@@ -623,8 +623,12 @@ jobs:
           fail_ci_if_error: false
           use_oidc: true
 
+  # Worker job: does the real coverage-floor enforcement, gated on code
+  # changes + a successful Test run. The always-running coverage-floor-summary
+  # wrapper below owns the required "Coverage Floor" check name so docs-only
+  # PRs report success rather than a permanently-skipped context.
   coverage-floor:
-    name: Coverage Floor
+    name: Coverage Floor Check
     runs-on: ubuntu-latest
     needs: [changes, test]
     if: always() && needs.changes.outputs.code == 'true' && needs.test.result == 'success'
@@ -665,6 +669,36 @@ jobs:
             exit 1
           }
           echo "$output"
+
+  # Aggregate gate that owns the "Coverage Floor" check name. Always runs so
+  # the required context reports success (not skipped) on non-code PRs, and
+  # fails closed if the `changes` detector itself failed/was cancelled before
+  # trusting its `code` output, or if Test failed (which leaves the worker
+  # skipped rather than failed).
+  coverage-floor-summary:
+    name: Coverage Floor
+    runs-on: ubuntu-latest
+    needs: [changes, test, coverage-floor]
+    if: always()
+    steps:
+      - name: Verify coverage floor check succeeded
+        run: |
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.code }}" != "true" ]; then
+            echo "No code changes; Coverage Floor Check was skipped."
+            exit 0
+          fi
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Test did not succeed, so Coverage Floor Check did not run: ${{ needs.test.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.coverage-floor.result }}" != "success" ]; then
+            echo "Coverage Floor Check did not succeed: ${{ needs.coverage-floor.result }}"
+            exit 1
+          fi
 
   build-matrix:
     # Per-target display names render as "Build Matrix (linux, amd64)", etc.
@@ -734,6 +768,15 @@ jobs:
           result="${{ needs.build-matrix.result }}"
           if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
             echo "Build matrix failed or was cancelled: $result"
+            exit 1
+          fi
+          # build-matrix's own `if:` skips it (result=skipped) when code == 'true'
+          # but an upstream dependency (lint/coverage-floor) failed -- that is a
+          # real code change for which nothing was actually built, so "skipped"
+          # must not silently pass here the way it correctly does for a
+          # docs-only PR (code != 'true').
+          if [ "${{ needs.changes.outputs.code }}" = "true" ] && [ "$result" = "skipped" ]; then
+            echo "Build matrix was skipped for a code change (an upstream dependency did not succeed): $result"
             exit 1
           fi
           echo "Build matrix result: $result"

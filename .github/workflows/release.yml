@@ -31,7 +31,10 @@ jobs:
           cache: true
 
       - name: Run version injection smoke test
-        run: bash scripts/smoke-version-injection.sh
+        # release.yml's own build-binaries job below injects the ldflags
+        # inline (no goreleaser invocation on the stable path), so the smoke
+        # must guard THIS file, not .goreleaser.yml.
+        run: bash scripts/smoke-version-injection.sh --source .github/workflows/release.yml
 
   # Run templ generate + Tailwind CSS build once; fan out to all binary/Docker
   # jobs via a 1-day artifact. Avoids repeating slow asset generation per runner.
