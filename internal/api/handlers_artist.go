@@ -467,12 +467,10 @@ func (r *Router) handleArtistMatchingIDs(w http.ResponseWriter, req *http.Reques
 	})
 }
 
-// buildArtistDetailData assembles the shared ArtistDetailData for both the
-// stable handleArtistDetailPage and the next/ handleNextArtistDetailPage so the
-// two channels never diverge on connections, violation counts, the field
-// providers map, or library metadata. It returns the assembled data, the loaded
-// artist (callers need *a for neighbor lookups), and ok=false after it has
-// already written an error/login response to w.
+// buildArtistDetailData assembles the ArtistDetailData the artist-detail page
+// renders. It returns the assembled data, the loaded artist (callers need *a
+// for neighbor lookups), and ok=false after it has already written an
+// error/login response to w.
 func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request) (templates.ArtistDetailData, *artist.Artist, bool) {
 	if !r.requireAuth(w, req) {
 		return templates.ArtistDetailData{}, nil, false
@@ -514,15 +512,6 @@ func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request)
 	// longer read at request time.
 	showPlatformDebug := r.getUserBoolPreference(req.Context(), PrefShowPlatformDebug, false)
 
-	// Read the active tab from query params, defaulting to "overview".
-	activeTab := req.URL.Query().Get("tab")
-	switch activeTab {
-	case "overview", "images", "providers", "discography", "history", "violations", "debug":
-		// valid tab, keep it
-	default:
-		activeTab = "overview"
-	}
-
 	// Build platform connection list for "View on Platform" links.
 	// Cap at len(pids); per-row connection fetches may error and skip,
 	// so final length can be smaller but never larger.
@@ -554,11 +543,6 @@ func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request)
 		}
 	}
 
-	// Reject tab=debug when the feature is disabled or no debug-capable connections exist.
-	if activeTab == "debug" && (!showPlatformDebug || !hasDebugConnection) {
-		activeTab = "overview"
-	}
-
 	// Active violation count (tab badge) + per-severity breakdown (next/ hero).
 	violationCount, violationsBySeverity := r.artistViolationCounts(req.Context(), id)
 
@@ -570,7 +554,6 @@ func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request)
 		LibraryName:          libraryName,
 		LibrarySource:        librarySource,
 		ProfileName:          r.getActiveProfileName(req.Context()),
-		ActiveTab:            activeTab,
 		Connections:          connections,
 		ShowPlatformDebug:    showPlatformDebug,
 		HasDebugConnection:   hasDebugConnection,
@@ -610,14 +593,37 @@ func (r *Router) artistViolationCounts(ctx context.Context, id string) (total in
 	return total, bySeverity
 }
 
-// handleArtistDetailPage renders the artist detail HTML page.
+// handleArtistDetailPage renders the artist detail HTML page (promoted-by-move
+// from the next/ channel in #1757 PR-3b). It assembles the shared
+// ArtistDetailData, resolves prev/next-artist neighbor ids (for the hero's h/l
+// shortcuts) from the filter-aware ListIDs ordering, reads the section
+// order/hidden/collapsed prefs, and injects the field -> finding chips map so
+// the metadata rows render an inline chip on each field a live violation
+// touches (field-tag-on-rule; #1336).
 // GET /artists/{id}
 func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request) {
-	data, _, ok := r.buildArtistDetailData(w, req)
+	data, a, ok := r.buildArtistDetailData(w, req)
 	if !ok {
 		return
 	}
-	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
+
+	prevID, nextID := r.resolveArtistNeighbors(req, a.ID)
+
+	order := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailSectionOrder, ""))
+	hidden := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailHiddenSections, ""))
+	collapsed := parseSectionList(r.getUserStringPreference(req.Context(), PrefArtistDetailCollapsedSections, ""))
+
+	pageData := templates.ArtistDetailPageData{
+		Detail:       data,
+		PrevArtistID: prevID,
+		NextArtistID: nextID,
+		SectionOrder: order,
+		Hidden:       hidden,
+		Collapsed:    collapsed,
+	}
+
+	ctx := templates.WithFieldFindings(req.Context(), r.buildFieldFindings(req.Context(), a.ID))
+	renderTempl(w, req.WithContext(ctx), templates.ArtistDetailPage(r.assetsFor(req), pageData))
 }
 
 // buildPlatformArtistURL constructs the external URL to view an artist on

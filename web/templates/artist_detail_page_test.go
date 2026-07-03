@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"bytes"
@@ -8,13 +8,12 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // detailPageData builds a minimal ArtistDetailPageData for render tests.
 func detailPageData(sectionOrder, hidden []string) ArtistDetailPageData {
 	return ArtistDetailPageData{
-		Detail: templates.ArtistDetailData{
+		Detail: ArtistDetailData{
 			Artist: artist.Artist{
 				ID:   "art-1",
 				Name: "Render Test Artist",
@@ -36,7 +35,7 @@ func detailPageData(sectionOrder, hidden []string) ArtistDetailPageData {
 func TestArtistDetailPage_RendersHeroAndSections(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, detailPageData(nil, nil)).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, detailPageData(nil, nil)).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -84,7 +83,7 @@ func TestArtistDetailPage_RendersHeroAndSections(t *testing.T) {
 func TestArtistDetailPage_ChipRefreshOnActionResolved(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, detailPageData(nil, nil)).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, detailPageData(nil, nil)).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -130,7 +129,7 @@ func TestArtistDetailPage_PrototypeChrome(t *testing.T) {
 	data.Detail.Artist.HealthScore = 62
 
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -198,7 +197,7 @@ func TestArtistDetailPage_FindingSeverity(t *testing.T) {
 	data.Detail.ViolationsBySeverity = map[string]int{"error": 1, "warning": 4, "info": 0}
 
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -221,7 +220,7 @@ func TestArtistDetailPage_FindingSeverity(t *testing.T) {
 func TestArtistDetailPage_GenderHiddenForGroups(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, detailPageData(nil, nil)).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, detailPageData(nil, nil)).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -241,7 +240,7 @@ func TestArtistDetailPage_SectionOrderHonored(t *testing.T) {
 	data := detailPageData([]string{"identifiers", "metadata"}, []string{"discography"})
 
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -268,13 +267,13 @@ func TestArtistDetailPage_Neighbors(t *testing.T) {
 	data.NextArtistID = "next-id"
 
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"/next/artists/prev-id",
-		"/next/artists/next-id",
+		"/artists/prev-id",
+		"/artists/next-id",
 		`data-sw-shortcut="h"`,
 		`data-sw-shortcut="l"`,
 		`data-sw-prev-artist`,
@@ -291,10 +290,10 @@ func TestArtistDetailPage_Neighbors(t *testing.T) {
 // derive its API path from the DOM instead of hardcoding /api/v1 (#1861).
 func TestArtistDetailPage_FanartBase(t *testing.T) {
 	t.Parallel()
-	assets := templates.AssetPaths{BasePath: "/app"}
+	assets := AssetPaths{BasePath: "/app"}
 	data := detailPageData(nil, nil)
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(assets, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(assets, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -317,7 +316,7 @@ func TestArtistDetailPage_HeroID(t *testing.T) {
 	t.Parallel()
 	data := detailPageData(nil, nil)
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -335,7 +334,7 @@ func TestArtistDetailPage_HeroTypePillNoUppercase(t *testing.T) {
 	data := detailPageData(nil, nil)
 	data.Detail.Artist.Type = "group"
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -399,7 +398,7 @@ func TestArtistDetailPage_CollapsibleSortableChrome(t *testing.T) {
 	data.Collapsed = []string{"metadata"}
 
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()

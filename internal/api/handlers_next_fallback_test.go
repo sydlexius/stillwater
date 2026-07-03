@@ -21,6 +21,9 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 	mux.HandleFunc("GET /artists/{id}", func(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte("V1 ARTIST " + req.PathValue("id")))
 	})
+	mux.HandleFunc("GET /artists/{id}/artwork-modal", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("MODAL " + req.PathValue("id") + " q=" + req.URL.RawQuery))
+	})
 	// Bare /artists echoes the forwarded query string so we can assert the
 	// fallback preserves it for bookmarked /next/artists?view=... URLs.
 	mux.HandleFunc("GET /artists", func(w http.ResponseWriter, req *http.Request) {
@@ -38,6 +41,10 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 		{"/next/artists", "V1 ARTISTS q="},
 		// ...and the query string (view/page/sort/etc.) is forwarded intact.
 		{"/next/artists?view=grid&page=2", "V1 ARTISTS q=view=grid&page=2"},
+		// #1757 PR-3b: the dedicated /next/artists/{id} detail + artwork-modal
+		// routes are gone; both re-dispatch to the promoted canonical pages,
+		// query string (the modal's kind param) intact.
+		{"/next/artists/42/artwork-modal?kind=logo", "MODAL 42 q=kind=logo"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

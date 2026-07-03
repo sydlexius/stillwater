@@ -133,7 +133,7 @@
     // identifier for the SCREEN_STEPS registry, or null for unrecognized paths.
     //   'dashboard'   -- /next or /next/
     //   'artists'     -- /next/artists or /artists (both channels)
-    //   'artistDetail'-- /next/artists/{id}
+    //   'artistDetail'-- /artists/{id} (or legacy /next/artists/{id})
     //   null          -- any other path
     function getCurrentScreen() {
         var bp = basePath();
@@ -144,7 +144,11 @@
         }
         if (path === '/next' || path === '/next/') { return 'dashboard'; }
         // Artist detail must be checked before the artists list pattern.
-        if (/^\/next\/artists\/[^/]+/.test(path)) { return 'artistDetail'; }
+        // Both the canonical /artists/{id} (promoted in #1757 PR-3b) and the
+        // legacy /next/artists/{id} (still reachable via the /next/* fallback
+        // re-dispatch) count, but the list pages and the /artists/{id}/images
+        // page must not.
+        if (/^\/(?:next\/)?artists\/[^/]+$/.test(path)) { return 'artistDetail'; }
         if (path === '/next/artists' || path === '/next/artists/') { return 'artists'; }
         if (path === '/artists' || path === '/artists/') { return 'artists'; }
         return null;
@@ -181,13 +185,15 @@
     }
 
     // pickFirstArtistUrl scans the current page for the first artist-detail
-    // link (href matching /next/artists/<single-segment>) and returns the href,
-    // or null when no artists are present (empty library guard).
+    // link (href matching /artists/<single-segment>, the canonical detail URL
+    // since #1757 PR-3b; a legacy /next/artists/<id> href also matches) and
+    // returns the href, or null when no artists are present (empty library
+    // guard).
     function pickFirstArtistUrl() {
         var links = document.querySelectorAll('a[href]');
         for (var i = 0; i < links.length; i++) {
             var href = links[i].getAttribute('href');
-            if (/\/next\/artists\/[^/]+$/.test(href)) {
+            if (/\/artists\/[^/]+$/.test(href)) {
                 return href;
             }
         }

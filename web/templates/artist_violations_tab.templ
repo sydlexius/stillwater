@@ -3,7 +3,6 @@ package templates
 import (
 	"fmt"
 	"github.com/sydlexius/stillwater/internal/rule"
-	"github.com/sydlexius/stillwater/web/components"
 	"strconv"
 )
 
@@ -13,80 +12,13 @@ type ArtistViolationsTabData struct {
 	Violations []rule.RuleViolation
 }
 
-// ArtistViolationsTab renders the violations list inside the artist detail
-// violations tab. Loaded lazily via HTMX when the tab is first shown.
-templ ArtistViolationsTab(data ArtistViolationsTabData) {
-	<div id={ "violations-content-" + data.ArtistID } class="space-y-4">
-		<div class="flex items-center gap-2">
-			<h2 class="text-lg font-semibold">
-				{ t(ctx, "artist.violations_title") }
-				if len(data.Violations) > 0 {
-					<span class="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-						({ strconv.Itoa(len(data.Violations)) })
-					</span>
-				}
-			</h2>
-			@components.ContextHelp(
-				"help-violations-overview",
-				t(ctx, "artist.help.violations_overview.label"),
-				t(ctx, "artist.help.violations_overview"),
-				"core-concepts/rules#what-rules-check",
-			)
-		</div>
-		if len(data.Violations) == 0 {
-			// Empty state
-			<div class="sw-card rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-8 text-center">
-				<p class="text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "artist.violations_empty") }</p>
-			</div>
-		} else {
-			// Violation table
-			<div class="sw-card rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-					<thead class="bg-gray-50 dark:bg-gray-800">
-						<tr>
-							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.rule") }</th>
-							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-								<span class="inline-flex items-center gap-1">
-									{ t(ctx, "common.severity") }
-									// Empty docAnchor: the severity-bucket taxonomy is described in the
-									// tooltip body; no docs section currently covers it specifically.
-									// core-concepts/rules#what-rules-check is about rule categories
-									// (NFO/Image/Metadata), not severity buckets, so a Read-more link
-									// would misdirect. Same pattern as history.help.sources.
-									@components.ContextHelp(
-										"help-severity-column",
-										t(ctx, "artist.help.severity_column.label"),
-										t(ctx, "artist.help.severity_column"),
-										"",
-									)
-								</span>
-							</th>
-							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.message") }</th>
-							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.age") }</th>
-							<th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.actions") }</th>
-						</tr>
-					</thead>
-					<tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
-						for _, v := range data.Violations {
-							@artistViolationRow(v, data.ArtistID)
-						}
-					</tbody>
-				</table>
-			</div>
-		}
-	</div>
-	// OOB swap: update the tab badge count so it stays in sync with the
-	// violation list. The badge element lives inside the tab bar button,
-	// outside this template's normal swap target.
-	@violationsTabBadgeOOB(len(data.Violations))
-}
-
-// ArtistFindingsList is the next/ channel's readable findings list (M55 #1336):
-// severity badge + rule + message + age + fix/dismiss, replacing the stable
-// ArtistViolationsTab table. It shares the SAME #violations-content-{id} wrapper
-// and the OOB tab-badge swap, so violations-sync.js refreshes it identically,
-// and reuses the row's fix/dismiss wiring (artistViolationFix/Dismiss + the
-// data-* localized strings). The handler picks this vs the table by UX channel.
+// ArtistFindingsList is the artist-detail page's readable findings list (M55
+// #1336): severity badge + rule + message + age + fix/dismiss. It replaced the
+// v1 ArtistViolationsTab table outright with the artist-detail promotion
+// (#1757 PR-3b). It renders the #violations-content-{id} wrapper and the OOB
+// tab-badge swap, so violations-sync.js refreshes it in place, and carries the
+// fix/dismiss wiring (artistViolationFix/Dismiss + the data-* localized
+// strings).
 templ ArtistFindingsList(data ArtistViolationsTabData) {
 	<div id={ "violations-content-" + data.ArtistID }>
 		if len(data.Violations) == 0 {
@@ -102,13 +34,13 @@ templ ArtistFindingsList(data ArtistViolationsTabData) {
 	@violationsTabBadgeOOB(len(data.Violations))
 }
 
-// artistFindingListItem renders one finding as a list row in the next/ channel's
-// token chrome (sw-next-findings CSS in input.css), matching the next/ dashboard's
-// activity-row aesthetic: a per-severity dot + severity word, the rule id, a mono
-// tabular age, the message, and the fix/dismiss actions -- on the flat card
-// surface (a row-hover tint only, no per-severity row backdrop). The id +
-// data-* attributes match artistViolationRow so the shared fix/dismiss scripts
-// (which look up #artist-violation-{id}) work unchanged.
+// artistFindingListItem renders one finding as a list row in the token chrome
+// (sw-next-findings CSS in input.css; unscoping tracked for #1757 PR-7),
+// matching the dashboard's activity-row aesthetic: a per-severity dot +
+// severity word, the rule id, a mono tabular age, the message, and the
+// fix/dismiss actions -- on the flat card surface (a row-hover tint only, no
+// per-severity row backdrop). The #artist-violation-{id} id + data-* attributes
+// feed the fix/dismiss scripts below.
 templ artistFindingListItem(v rule.RuleViolation, artistID string) {
 	<li
 		id={ "artist-violation-" + v.ID }
@@ -173,61 +105,6 @@ templ violationsTabBadgeOOB(count int) {
 	}
 }
 
-// artistViolationRow renders a single violation row for the per-artist violations tab.
-// It omits the artist name column (redundant on the artist detail page) and the
-// bulk-select checkbox, keeping the UI focused on the violation itself.
-//
-// The data-* attributes carry localized text for the JS handlers (alert
-// messages on fix/dismiss failure). Storing them on the row keeps the
-// strings near their use site and avoids a per-button data-attr explosion.
-templ artistViolationRow(v rule.RuleViolation, artistID string) {
-	<tr
-		id={ "artist-violation-" + v.ID }
-		class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-		data-fix-failed={ t(ctx, "notifications.fix_failed") }
-		data-fix-network={ t(ctx, "notifications.fix_network") }
-		data-dismiss-failed={ t(ctx, "notifications.dismiss_failed") }
-		data-dismiss-network={ t(ctx, "notifications.dismiss_network") }
-	>
-		<td class="px-4 py-4 text-sm text-gray-600 dark:text-gray-400">{ v.RuleID }</td>
-		<td class="px-4 py-4 text-sm">
-			<span class={ "inline-block px-2 py-0.5 rounded text-xs font-semibold", severityClass(v.Severity) }>
-				{ v.Severity }
-			</span>
-		</td>
-		<td class="px-4 py-4 text-sm text-gray-600 dark:text-gray-300">{ v.Message }</td>
-		<td class="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
-			{ formatAge(v.CreatedAt) }
-		</td>
-		<td class="px-4 py-4 text-right text-sm">
-			<div class="flex items-center justify-end gap-3">
-				if v.Fixable && v.Status == rule.ViolationStatusOpen {
-					<button
-						type="button"
-						data-violation-id={ v.ID }
-						data-artist-id={ artistID }
-						onclick={ artistViolationFix(v.ID, artistID) }
-						aria-label={ fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(ctx, v.RuleID)) }
-						class="font-semibold text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 disabled:opacity-60 disabled:cursor-not-allowed"
-					>
-						{ fixButtonLabel(ctx, v.RuleID) }
-					</button>
-				}
-				<button
-					type="button"
-					data-violation-id={ v.ID }
-					data-artist-id={ artistID }
-					data-confirm={ t(ctx, "notifications.dismiss_confirm") }
-					onclick={ artistViolationDismiss(v.ID, artistID) }
-					class="font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-60 disabled:cursor-not-allowed"
-				>
-					{ t(ctx, "common.dismiss") }
-				</button>
-			</div>
-		</td>
-	</tr>
-}
-
 // artistViolationFix triggers a fix for a violation and refreshes the violations tab.
 
 script artistViolationFix(violationID string, artistID string) {
@@ -283,7 +160,7 @@ script artistViolationFix(violationID string, artistID string) {
 
 script artistViolationDismiss(violationID string, artistID string) {
 	// Localized prompt sourced from the dismiss button's data-confirm attribute
-	// (set in artistViolationRow). The [data-confirm] filter is required: the
+	// (set in artistFindingListItem). The [data-confirm] filter is required: the
 	// Fix and Dismiss buttons on a fixable/open row share data-violation-id and
 	// data-artist-id, so a selector without it would return the Fix button
 	// first and the localized prompt would silently fall back to English.

@@ -1,4 +1,4 @@
-package next
+package templates
 
 // artist_detail_field_locks_golden_test.go -- golden test for
 // artistFieldLocksPanel (M55 #1754 parity-gate: port the v1 field-locks
@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 var updateFieldLocksGolden = flag.Bool("update-field-locks-golden", false, "regenerate field-locks golden files")
@@ -83,7 +82,7 @@ func TestArtistFieldLocksPanel_HasLockedFields_Golden(t *testing.T) {
 	data := fieldLocksPageData([]string{"biography", "genres"})
 
 	var buf bytes.Buffer
-	if err := artistFieldLocksPanel(data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := artistFieldLocksPanel(data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -109,7 +108,7 @@ func TestArtistFieldLocksPanel_NoLockedFields_Golden(t *testing.T) {
 	data := fieldLocksPageData(nil)
 
 	var buf bytes.Buffer
-	if err := artistFieldLocksPanel(data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := artistFieldLocksPanel(data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -127,7 +126,7 @@ func TestArtistDetailPage_FieldLocksPanelMounted(t *testing.T) {
 	data := fieldLocksPageData([]string{"name"})
 
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()

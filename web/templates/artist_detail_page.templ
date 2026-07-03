@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"fmt"
@@ -9,16 +9,15 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// ArtistDetailPageData is the render input for the next/ artist-detail page
+// ArtistDetailPageData is the render input for the artist-detail page
 // (M55 #1336, 4A). Detail carries the shared data both channels render; the
 // neighbor ids drive the hero's h/l prev/next-artist shortcuts; SectionOrder /
 // Hidden / Collapsed drive section reorder/visibility/collapsed-state (nil =
 // default order, nothing hidden, nothing collapsed) per #1774/#2065.
 type ArtistDetailPageData struct {
-	Detail       templates.ArtistDetailData
+	Detail       ArtistDetailData
 	PrevArtistID string
 	NextArtistID string
 	SectionOrder []string
@@ -70,13 +69,14 @@ func orderedSections(pref, hidden []string) []string {
 	return out
 }
 
-// ArtistDetailPage is the next/ channel artist-detail page: a single-scroll,
-// tool-forward source-of-truth reconciliation editor wrapped in @LayoutNext. The
+// ArtistDetailPage is the artist-detail page (promoted-by-move from the next/
+// channel in #1757 PR-3b): a single-scroll, tool-forward source-of-truth
+// reconciliation editor wrapped in @Layout. The
 // Hero is pinned first; sections 2-8 render in the user's pref order. 4A builds
 // metadata/findings/history/identifiers and leaves labeled stable-id mount
 // points for artwork (4B) and providers/discography (4C).
-templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
-	@LayoutNext(data.Detail.Artist.Name, assets) {
+templ ArtistDetailPage(assets AssetPaths, data ArtistDetailPageData) {
+	@Layout(data.Detail.Artist.Name, assets) {
 		<div
 			class="sw-next-artist-detail space-y-4"
 			data-sw-violations-sync
@@ -88,10 +88,10 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 			data-sw-msg-session-expired={ t(ctx, "common.session_expired") }
 			data-sw-section-nav
 			if data.PrevArtistID != "" {
-				data-sw-prev-artist={ assets.BasePath + "/next/artists/" + data.PrevArtistID }
+				data-sw-prev-artist={ assets.BasePath + "/artists/" + data.PrevArtistID }
 			}
 			if data.NextArtistID != "" {
-				data-sw-next-artist={ assets.BasePath + "/next/artists/" + data.NextArtistID }
+				data-sw-next-artist={ assets.BasePath + "/artists/" + data.NextArtistID }
 			}
 		>
 			@artistStickyHeader(assets, data)
@@ -157,13 +157,13 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 				@ArtworkModal(assets, &data.Detail)
 				// Full-size lightbox overlay (shared) for the Artwork tiles + carousel;
 				// window.openLightbox (lightbox.js) needs this DOM present on the page.
-				@templates.LightboxOverlay()
+				@LightboxOverlay()
 			}
 			@artistDetailPageScript()
 			// Wire the ContextHelp (?) icons on this page. The dedicated History section
 			// was removed; history is now surfaced per-field via the "Prior values" undo
 			// affordance (clock icon). ContextHelp icons elsewhere on the page still need
-			// swContextHelpToggle defined -- LayoutNext does not mount it globally.
+			// swContextHelpToggle defined -- Layout does not mount it globally.
 			// Rendered once; the component's script self-guards re-injection.
 			@components.ContextHelpScript()
 		</div>
@@ -177,7 +177,7 @@ templ ArtistDetailPage(assets templates.AssetPaths, data ArtistDetailPageData) {
 // type/library/last-scan, the lock badge + source, the compliance summary, the
 // primary actions (Run rules / Refresh / Edit all) plus a kebab overflow, and
 // the #refresh-panel mount. h/l prev/next-artist links carry data-sw-shortcut.
-templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
+templ artistHero(assets AssetPaths, data ArtistDetailPageData) {
 	{{ a := data.Detail.Artist }}
 	<section id={ "next-hero-" + a.ID } class="sw-dash-card sw-next-hero" aria-labelledby="next-hero-name">
 		<div class="body">
@@ -198,7 +198,7 @@ templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 			<div class="sw-next-hero-meta">
 				<div class="flex flex-wrap items-center gap-2 text-xs" style="color:var(--swd-ink-3)">
 					if a.Type != "" {
-						<span class="rounded-full px-2 py-0.5 tracking-wide" style="border:1px solid var(--swd-line)">{ nextTypeLabel(ctx, a.Type) }</span>
+						<span class="rounded-full px-2 py-0.5 tracking-wide" style="border:1px solid var(--swd-line)">{ ArtistTypeLabel(ctx, a.Type) }</span>
 					}
 					if data.Detail.LibraryName != "" {
 						<span>{ tf(ctx, "artist.library_label", data.Detail.LibraryName) }</span>
@@ -248,10 +248,10 @@ templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 				// matching the prototype's hero bar vocabulary.
 				<div class="sw-next-summary">
 					<span class="sw-next-score-badge" title={ t(ctx, "artists.col.score") }>
-						@nextScoreCell(a)
+						@scoreCell(a)
 					</span>
 					<span class="sw-next-summary-divider" aria-hidden="true"></span>
-					@nextCoverageCell(a, data.Detail.ProfileName)
+					@coverageCell(a, data.Detail.ProfileName)
 					<span class="sw-next-summary-divider" aria-hidden="true"></span>
 					@artistFindingSeverity(data.Detail)
 				</div>
@@ -280,7 +280,7 @@ templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 					<div class="flex items-center justify-end gap-1">
 						if data.PrevArtistID != "" {
 							<a
-								href={ templ.SafeURL(assets.BasePath + "/next/artists/" + data.PrevArtistID) }
+								href={ templ.SafeURL(assets.BasePath + "/artists/" + data.PrevArtistID) }
 								class="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5"
 								style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
 								data-sw-shortcut="h"
@@ -292,7 +292,7 @@ templ artistHero(assets templates.AssetPaths, data ArtistDetailPageData) {
 						}
 						if data.NextArtistID != "" {
 							<a
-								href={ templ.SafeURL(assets.BasePath + "/next/artists/" + data.NextArtistID) }
+								href={ templ.SafeURL(assets.BasePath + "/artists/" + data.NextArtistID) }
 								class="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5"
 								style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
 								data-sw-shortcut="l"
@@ -414,7 +414,7 @@ func heroInitial(name string) string {
 // hero -- no extra query). Falls back to the total count when the per-severity
 // breakdown is unavailable, and to a muted "No open findings" when there are
 // none.
-templ artistFindingSeverity(data templates.ArtistDetailData) {
+templ artistFindingSeverity(data ArtistDetailData) {
 	{{ sev := data.ViolationsBySeverity }}
 	if data.ViolationCount > 0 {
 		<a href="#next-findings" class="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs hover:underline" style="color:inherit" title={ tn(ctx, "artist.findings_count", data.ViolationCount) }>
@@ -450,7 +450,7 @@ templ artistFindingSeverity(data templates.ArtistDetailData) {
 // findings chip, and Run rules / Edit shortcuts reachable while scrolled deep
 // into the page. Visibility is toggled by the IntersectionObserver in
 // artistDetailPageScript (adds .is-stuck when the hero leaves the top).
-templ artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData) {
+templ artistStickyHeader(assets AssetPaths, data ArtistDetailPageData) {
 	{{ a := data.Detail.Artist }}
 	<div class="sw-next-stickhdr" data-sw-stickhdr aria-hidden="true">
 		<div class="sw-next-stickhdr-inner">
@@ -462,7 +462,7 @@ templ artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData)
 			// and never land inside aria-hidden content (WCAG aria-hidden-focus, #1784;
 			// same aria-hidden + tabindex="-1" pattern as dashboard.templ select-all).
 			<a
-				href={ templ.SafeURL(assets.BasePath + "/next/artists") }
+				href={ templ.SafeURL(assets.BasePath + "/artists") }
 				class="inline-flex items-center gap-1 text-sm hover:underline"
 				style="color:var(--swd-ink-3)"
 				tabindex="-1"
@@ -472,7 +472,7 @@ templ artistStickyHeader(assets templates.AssetPaths, data ArtistDetailPageData)
 			</a>
 			<span class="sw-next-stickhdr-name">{ a.Name }</span>
 			if a.Type != "" {
-				<span class="text-xs" style="color:var(--swd-ink-3)">{ nextTypeLabel(ctx, a.Type) }</span>
+				<span class="text-xs" style="color:var(--swd-ink-3)">{ ArtistTypeLabel(ctx, a.Type) }</span>
 			}
 			if data.Detail.ViolationCount > 0 {
 				<a href="#next-findings" class="inline-flex items-center gap-1 text-xs hover:underline" style="color:var(--swd-warn)" tabindex="-1">
@@ -714,12 +714,12 @@ templ sectionHead(headingID, bodyID, headingClass, title string, collapsed bool)
 }
 
 // artistMetadataSection is the tool-forward source-of-truth editor: the full v1
-// field set, each row reusing templates.FieldDisplay (per-field lock/edit/fetch/
+// field set, each row reusing FieldDisplay (per-field lock/edit/fetch/
 // clear visible by default). Gender is conditional on type via the preserved
 // gender-wrap OOB container. Genres/Styles/Moods are kept as distinct slice
 // fields. Aliases (shared list + add form) and Members (groups; shared section)
 // ride as sub-cards. This is a reconciliation EDITOR, not a multi-source picker.
-templ artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) {
+templ artistMetadataSection(data *ArtistDetailData, collapsed bool) {
 	{{ a := &data.Artist }}
 	<section id={ "next-metadata-" + a.ID } class="sw-dash-card" data-sw-section="metadata" data-sw-section-label={ t(ctx, "artist.tab_overview") } aria-labelledby="next-metadata-heading">
 		@sectionHead("next-metadata-heading", "next-metadata-body", "", t(ctx, "artist.details"), collapsed)
@@ -737,42 +737,42 @@ templ artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) {
 					<div class="sw-next-meta-group">
 						<h3 class="sw-next-subhead">{ t(ctx, "artist.section_identity") }</h3>
 						<dl class="sw-next-fields">
-							@templates.FieldDisplay(a, "name", data.FieldProviders["name"])
-							@templates.FieldDisplay(a, "sort_name", data.FieldProviders["sort_name"])
-							@templates.FieldDisplay(a, "type", data.FieldProviders["type"])
+							@FieldDisplay(a, "name", data.FieldProviders["name"])
+							@FieldDisplay(a, "sort_name", data.FieldProviders["sort_name"])
+							@FieldDisplay(a, "type", data.FieldProviders["type"])
 							// Type-applicability (item 6): gender/born/died are person-only
 							// (hidden for groups); formed/disbanded are group-only (hidden for
 							// solo acts). Gender keeps the gender-wrap OOB container so the
 							// type-edit flow can still toggle it.
 							<div id={ "gender-wrap-" + a.ID }>
-								if templates.FieldAppliesToArtistType("gender", a.Type) {
-									@templates.FieldDisplay(a, "gender", data.FieldProviders["gender"])
+								if FieldAppliesToArtistType("gender", a.Type) {
+									@FieldDisplay(a, "gender", data.FieldProviders["gender"])
 								}
 							</div>
-							@templates.FieldDisplay(a, "disambiguation", data.FieldProviders["disambiguation"])
-							@templates.FieldDisplay(a, "origin", data.FieldProviders["origin"])
-							if templates.FieldAppliesToArtistType("formed", a.Type) {
-								@templates.FieldDisplay(a, "formed", data.FieldProviders["formed"])
+							@FieldDisplay(a, "disambiguation", data.FieldProviders["disambiguation"])
+							@FieldDisplay(a, "origin", data.FieldProviders["origin"])
+							if FieldAppliesToArtistType("formed", a.Type) {
+								@FieldDisplay(a, "formed", data.FieldProviders["formed"])
 							}
-							if templates.FieldAppliesToArtistType("born", a.Type) {
-								@templates.FieldDisplay(a, "born", data.FieldProviders["born"])
+							if FieldAppliesToArtistType("born", a.Type) {
+								@FieldDisplay(a, "born", data.FieldProviders["born"])
 							}
-							if templates.FieldAppliesToArtistType("disbanded", a.Type) {
-								@templates.FieldDisplay(a, "disbanded", data.FieldProviders["disbanded"])
+							if FieldAppliesToArtistType("disbanded", a.Type) {
+								@FieldDisplay(a, "disbanded", data.FieldProviders["disbanded"])
 							}
-							if templates.FieldAppliesToArtistType("died", a.Type) {
-								@templates.FieldDisplay(a, "died", data.FieldProviders["died"])
+							if FieldAppliesToArtistType("died", a.Type) {
+								@FieldDisplay(a, "died", data.FieldProviders["died"])
 							}
-							@templates.FieldDisplay(a, "years_active", data.FieldProviders["years_active"])
+							@FieldDisplay(a, "years_active", data.FieldProviders["years_active"])
 						</dl>
 					</div>
 					// Members group (group types only; hidden for solo acts -- item 6).
 					// When empty it is marked sw-next-empty so the read view omits it
 					// entirely (no "No members" placeholder); Edit mode still reveals it
 					// so the fetch-members control is reachable.
-					if templates.FieldAppliesToArtistType("members", a.Type) {
+					if FieldAppliesToArtistType("members", a.Type) {
 						<div class={ "sw-next-meta-group", templ.KV("sw-next-empty", len(data.Members) == 0) }>
-							@templates.MembersSection(a.ID, data.Members, data.FieldProviders["members"])
+							@MembersSection(a.ID, data.Members, data.FieldProviders["members"])
 						</div>
 					}
 					// Aliases group. The add-alias form + per-row remove are actionable,
@@ -782,7 +782,7 @@ templ artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) {
 					// so the Add control is reachable.
 					<div class={ "sw-next-meta-group", templ.KV("sw-next-empty", len(data.Aliases) == 0) }>
 						<h3 class="sw-next-subhead">{ t(ctx, "artist.aliases") }</h3>
-						@templates.AliasesList(a.ID, data.Aliases)
+						@AliasesList(a.ID, data.Aliases)
 						<div class="sw-next-alias-add">
 							@artistAliasAddForm(a.ID)
 						</div>
@@ -793,16 +793,16 @@ templ artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) {
 					<div class="sw-next-meta-group">
 						<h3 class="sw-next-subhead">{ t(ctx, "artist.tags") }</h3>
 						<div class="space-y-2">
-							@templates.FieldDisplay(a, "genres", data.FieldProviders["genres"])
-							@templates.FieldDisplay(a, "styles", data.FieldProviders["styles"])
-							@templates.FieldDisplay(a, "moods", data.FieldProviders["moods"])
+							@FieldDisplay(a, "genres", data.FieldProviders["genres"])
+							@FieldDisplay(a, "styles", data.FieldProviders["styles"])
+							@FieldDisplay(a, "moods", data.FieldProviders["moods"])
 						</div>
 					</div>
 				</div>
 				// RIGHT column: Biography (multiline; biographyDisplay carries its own heading).
 				<div class="sw-next-meta-col sw-next-meta-col--bio">
 					<div class="sw-next-meta-group">
-						@templates.FieldDisplay(a, "biography", data.FieldProviders["biography"])
+						@FieldDisplay(a, "biography", data.FieldProviders["biography"])
 					</div>
 				</div>
 			</div>
@@ -811,7 +811,7 @@ templ artistMetadataSection(data *templates.ArtistDetailData, collapsed bool) {
 }
 
 // artistAliasAddForm is the alias add form, copied from the stable aliases card
-// (the rows + empty state come from the shared templates.AliasesList).
+// (the rows + empty state come from the shared AliasesList).
 templ artistAliasAddForm(artistID string) {
 	<form
 		class="flex items-center gap-2"
@@ -841,17 +841,17 @@ templ artistAliasAddForm(artistID string) {
 // artistFindingsSection is the "Other findings" section: the residual home for
 // findings that do NOT map to a single metadata field (#1860). Field-mapped rules
 // now render as inline chips on their field (with their own Fix/Dismiss popover),
-// and the next/ violations fragment filters them out server-side
+// and the violations fragment filters them out server-side
 // (renderArtistViolations), so this card lists only the image + whole-record
 // (structural) findings. It lazy-loads that fragment so violations-sync.js
 // refreshes it on fix/dismiss/refresh/SSE. id="next-findings" is the hero's
 // scroll target and id="artist-violations-tab-{id}" is the sync module's fallback
 // swap target.
-templ artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) {
+templ artistFindingsSection(data *ArtistDetailData, collapsed bool) {
 	<section id="next-findings" class="sw-dash-card" data-sw-section="findings" data-sw-section-label={ t(ctx, "artist.other_findings") } aria-labelledby="next-findings-heading">
 		// OOB landing pad: the reused violations-tab fragment emits an
 		// hx-swap-oob targeting #violations-tab-badge (the stable tab pill). The
-		// next/ page has no tab bar, so this catches the swap to prevent
+		// promoted page has no tab bar, so this catches the swap to prevent
 		// htmx:oobErrorNoTarget. The swap replaces the inner span's outerHTML
 		// (dropping its class), so the badge is kept hidden by the OUTER wrapper
 		// (otherwise the swapped-in count, e.g. "2", leaks into the card corner).
@@ -872,21 +872,21 @@ templ artistFindingsSection(data *templates.ArtistDetailData, collapsed bool) {
 
 
 // artistIdentifiersSection renders the provider-id fields last and
-// de-emphasized (quiet styling). Each id reuses templates.FieldDisplay (which
+// de-emphasized (quiet styling). Each id reuses FieldDisplay (which
 // routes provider-id fields through external links). MusicBrainz match-by-name
 // stays the existing identify flow in the hero kebab; no per-row match hooks in
 // 4A (section 13 decision).
-templ artistIdentifiersSection(data *templates.ArtistDetailData, collapsed bool) {
+templ artistIdentifiersSection(data *ArtistDetailData, collapsed bool) {
 	{{ a := &data.Artist }}
 	<section id={ "next-identifiers-" + a.ID } class="sw-dash-card sw-next-identifiers opacity-90" data-sw-section="identifiers" data-sw-section-label={ t(ctx, "artist.provider_ids") } aria-labelledby="next-ids-heading">
 		@sectionHead("next-ids-heading", "next-ids-body", "", t(ctx, "artist.provider_ids"), collapsed)
 		<div id="next-ids-body" class="body" hidden?={ collapsed }>
 			<dl class="sw-next-fields">
-				@templates.FieldDisplay(a, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
-				@templates.FieldDisplay(a, "audiodb_id", data.FieldProviders["audiodb_id"])
-				@templates.FieldDisplay(a, "discogs_id", data.FieldProviders["discogs_id"])
-				@templates.FieldDisplay(a, "wikidata_id", data.FieldProviders["wikidata_id"])
-				@templates.FieldDisplay(a, "deezer_id", data.FieldProviders["deezer_id"])
+				@FieldDisplay(a, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
+				@FieldDisplay(a, "audiodb_id", data.FieldProviders["audiodb_id"])
+				@FieldDisplay(a, "discogs_id", data.FieldProviders["discogs_id"])
+				@FieldDisplay(a, "wikidata_id", data.FieldProviders["wikidata_id"])
+				@FieldDisplay(a, "deezer_id", data.FieldProviders["deezer_id"])
 			</dl>
 		</div>
 	</section>
@@ -917,7 +917,7 @@ templ artistDetailPageScript() {
 		(function () {
 			'use strict';
 			// Edit-all: bidirectional toggle and the SOLE entry into edit mode (the
-			// per-field edit pencils are removed from the next/ rows). Bound on every
+			// per-field edit pencils are removed from the metadata rows). Bound on every
 			// data-sw-edit-all trigger (hero + sticky). First activation opens every
 			// field editor; second closes them. It drives the editors DIRECTLY via
 			// htmx.ajax rather than clicking visible buttons: the open path reads each
@@ -1432,7 +1432,7 @@ templ artistDetailPageScript() {
 				}
 
 				// e: toggle page-level Edit mode (same as clicking the Edit / Done hero
-				// button). next/ uses page-wide edit-all, not per-field pencils.
+				// button). The page uses page-wide edit-all, not per-field pencils.
 				if (ev.key === 'e') {
 					ev.preventDefault();
 					setEditAll(!editing);

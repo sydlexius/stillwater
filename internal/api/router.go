@@ -813,6 +813,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 
 	// Web routes (optional auth populates user context for login redirect)
 	mux.HandleFunc("GET "+bp+"/artists/{id}/images", wrapOptionalAuth(r.handleArtistImagesPage, optAuthMw))
+	// Manage-artwork modal body fragment (M55 #1336, 4B; promoted with the
+	// artist-detail page in #1757 PR-3b). Renders ArtworkManageEditor scoped to
+	// ?kind= for the in-page modal's active kind.
+	mux.HandleFunc("GET "+bp+"/artists/{id}/artwork-modal", wrapOptionalAuth(r.handleArtworkModal, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}", wrapOptionalAuth(r.handleArtistDetailPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists", wrapOptionalAuth(r.handleArtistsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/reports/compliance", wrapOptionalAuth(r.handleCompliancePage, optAuthMw))
@@ -897,15 +901,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// M55 #1757 PR-3a: the artists list promoted to the canonical /artists, so
 	// the dedicated /next/artists route is gone; "GET /next/artists" reaches
 	// the fallback and re-dispatches to the promoted canonical list.
-	// M55 #1336: the next/ artist-detail page. More specific than the
-	// /next/{path...} fallback so Go's mux prefers it; renders the next template
-	// only when the resolved channel is "next" (otherwise it delegates to the
-	// stable tabbed detail page).
-	mux.HandleFunc("GET "+bp+"/next/artists/{id}", wrapOptionalAuth(r.handleNextArtistDetailPage, optAuthMw))
-	// Manage-artwork modal body fragment (M55 #1336, 4B): more specific than the
-	// /next/{path...} fallback, so Go's mux prefers it. Renders ArtworkManageEditor
-	// scoped to ?kind= for the in-page modal's active kind.
-	mux.HandleFunc("GET "+bp+"/next/artists/{id}/artwork-modal", wrapOptionalAuth(r.handleNextArtworkModal, optAuthMw))
+	// M55 #1757 PR-3b: the artist-detail page promoted to the canonical
+	// /artists/{id} (and its Manage-artwork modal fragment to
+	// /artists/{id}/artwork-modal), so the dedicated /next/artists/{id} routes
+	// are gone; those paths reach the fallback and re-dispatch to the promoted
+	// canonical detail page.
 	// M55 #1774: preferences flyout drawer. Two routes:
 	//   /next/preferences        - standalone page for direct-URL / bookmark access.
 	//   /next/preferences-drawer - HTMX fragment; returns only the drawer body so

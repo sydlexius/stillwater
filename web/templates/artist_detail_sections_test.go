@@ -1,18 +1,16 @@
-package next
+package templates
 
 import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // detailDataWithConnections builds an ArtistDetailPageData that includes two
 // connections: one Emby and one Lidarr.
 func detailDataWithConnections() ArtistDetailPageData {
 	data := detailPageData(nil, nil)
-	data.Detail.Connections = []templates.ArtistDetailConnection{
+	data.Detail.Connections = []ArtistDetailConnection{
 		{ID: "conn-emby", Name: "My Emby", Type: "emby", URL: "http://emby:8096/artist/123"},
 		{ID: "conn-lidarr", Name: "My Lidarr", Type: "lidarr", URL: "http://lidarr:7878/artist/456"},
 	}
@@ -27,7 +25,7 @@ func TestSectionProviders_RendersLazyPlatformMounts(t *testing.T) {
 	data := detailDataWithConnections()
 
 	var buf bytes.Buffer
-	if err := SectionProviders(data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := SectionProviders(data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render SectionProviders: %v", err)
 	}
 	out := buf.String()
@@ -78,7 +76,7 @@ func TestSectionProviders_EmptyConnections(t *testing.T) {
 	data := detailPageData(nil, nil) // no connections
 
 	var buf bytes.Buffer
-	if err := SectionProviders(data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := SectionProviders(data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render SectionProviders (empty): %v", err)
 	}
 	out := buf.String()
@@ -101,7 +99,7 @@ func TestSectionDiscography_RendersLazyMount(t *testing.T) {
 	data := detailPageData(nil, nil)
 
 	var buf bytes.Buffer
-	if err := SectionDiscography(data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := SectionDiscography(data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render SectionDiscography: %v", err)
 	}
 	out := buf.String()
@@ -142,12 +140,12 @@ func TestSectionDebug_GatingAndContent(t *testing.T) {
 	t.Run("emby_connection_gets_readonly_mount", func(t *testing.T) {
 		t.Parallel()
 		data := detailPageData(nil, nil)
-		data.Detail.Connections = []templates.ArtistDetailConnection{
+		data.Detail.Connections = []ArtistDetailConnection{
 			{ID: "conn-emby", Name: "My Emby", Type: "emby", URL: "http://emby:8096"},
 		}
 
 		var buf bytes.Buffer
-		if err := SectionDebug(data).Render(nextTestCtx(t), &buf); err != nil {
+		if err := SectionDebug(data).Render(testCtx(t), &buf); err != nil {
 			t.Fatalf("render SectionDebug: %v", err)
 		}
 		out := buf.String()
@@ -172,12 +170,12 @@ func TestSectionDebug_GatingAndContent(t *testing.T) {
 	t.Run("lidarr_only_no_platform_state_mount", func(t *testing.T) {
 		t.Parallel()
 		data := detailPageData(nil, nil)
-		data.Detail.Connections = []templates.ArtistDetailConnection{
+		data.Detail.Connections = []ArtistDetailConnection{
 			{ID: "conn-lidarr", Name: "My Lidarr", Type: "lidarr", URL: "http://lidarr:7878"},
 		}
 
 		var buf bytes.Buffer
-		if err := SectionDebug(data).Render(nextTestCtx(t), &buf); err != nil {
+		if err := SectionDebug(data).Render(testCtx(t), &buf); err != nil {
 			t.Fatalf("render SectionDebug: %v", err)
 		}
 		out := buf.String()
@@ -191,12 +189,12 @@ func TestSectionDebug_GatingAndContent(t *testing.T) {
 	t.Run("jellyfin_gets_readonly_mount", func(t *testing.T) {
 		t.Parallel()
 		data := detailPageData(nil, nil)
-		data.Detail.Connections = []templates.ArtistDetailConnection{
+		data.Detail.Connections = []ArtistDetailConnection{
 			{ID: "conn-jf", Name: "My Jellyfin", Type: "jellyfin", URL: "http://jf:8096"},
 		}
 
 		var buf bytes.Buffer
-		if err := SectionDebug(data).Render(nextTestCtx(t), &buf); err != nil {
+		if err := SectionDebug(data).Render(testCtx(t), &buf); err != nil {
 			t.Fatalf("render SectionDebug: %v", err)
 		}
 		out := buf.String()
@@ -217,7 +215,7 @@ func TestSectionDebug_GatingAndContent(t *testing.T) {
 func TestArtistDetailLegend_AdvertisesShortcuts(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, detailPageData(nil, nil)).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, detailPageData(nil, nil)).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -257,7 +255,7 @@ func TestArtistDetailPage_4CSectionsRender(t *testing.T) {
 	data := detailDataWithConnections()
 
 	var buf bytes.Buffer
-	if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+	if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -277,10 +275,10 @@ func TestArtistDetailPage_4CSectionsRender(t *testing.T) {
 func TestArtistDetailPage_DebugSectionGatedOnDataFlags(t *testing.T) {
 	t.Parallel()
 
-	embyConn := templates.ArtistDetailConnection{
+	embyConn := ArtistDetailConnection{
 		ID: "conn-emby", Name: "Emby", Type: "emby", URL: "http://emby:8096",
 	}
-	lidarrConn := templates.ArtistDetailConnection{
+	lidarrConn := ArtistDetailConnection{
 		ID: "conn-lidarr", Name: "Lidarr", Type: "lidarr", URL: "http://lidarr:7878",
 	}
 
@@ -288,12 +286,12 @@ func TestArtistDetailPage_DebugSectionGatedOnDataFlags(t *testing.T) {
 		name         string
 		showDebug    bool
 		hasDebugConn bool
-		conns        []templates.ArtistDetailConnection
+		conns        []ArtistDetailConnection
 		wantDebug    bool
 	}{
 		{"debug_off", false, false, nil, false},
-		{"debug_on_no_conn", true, false, []templates.ArtistDetailConnection{lidarrConn}, false},
-		{"debug_on_with_emby", true, true, []templates.ArtistDetailConnection{embyConn}, true},
+		{"debug_on_no_conn", true, false, []ArtistDetailConnection{lidarrConn}, false},
+		{"debug_on_with_emby", true, true, []ArtistDetailConnection{embyConn}, true},
 	}
 
 	for _, tc := range cases {
@@ -305,7 +303,7 @@ func TestArtistDetailPage_DebugSectionGatedOnDataFlags(t *testing.T) {
 			data.Detail.Connections = tc.conns
 
 			var buf bytes.Buffer
-			if err := ArtistDetailPage(templates.AssetPaths{}, data).Render(nextTestCtx(t), &buf); err != nil {
+			if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
 				t.Fatalf("render: %v", err)
 			}
 			out := buf.String()
