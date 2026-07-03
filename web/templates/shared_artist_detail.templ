@@ -140,6 +140,10 @@ templ PlatformStateCardBody(a *artist.Artist, conn *connection.Connection, state
 			<button
 				type="button"
 				class="sw-next-flat-btn inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+				data-push-artist={ a.ID }
+				data-push-connection={ conn.ID }
+				data-push-failed-prefix={ t(ctx, "artist.platform_action_failed") }
+				data-push-unknown-error={ t(ctx, "artist.push_unknown_error") }
 				onclick={ pushMetadata(a.ID, conn.ID) }
 			>
 				{ t(ctx, "artist.push_all") }
@@ -306,7 +310,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 							type="checkbox"
 							class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
 							value={ strconv.Itoa(item.Index) }
-							aria-label={ "Select " + item.Filename }
+							aria-label={ tf(ctx, "artist.select_fanart_name", item.Filename) }
 						/>
 						// Primary badge (top-right).
 						if item.Index == 0 {
@@ -470,6 +474,14 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 // pushMetadata sends a JSON POST to push artist metadata to a platform connection.
 
 script pushMetadata(artistID string, connectionID string) {
+	// Localized error strings sourced from data-* on the triggering button, with
+	// English fallback as defense-in-depth (matches the established pattern from
+	// artistViolationFix in artist_violations_tab.templ).
+	var btn = document.querySelector(
+		'button[data-push-artist="' + artistID + '"][data-push-connection="' + connectionID + '"]'
+	);
+	var failedPrefix = (btn && btn.dataset.pushFailedPrefix) || 'Push failed';
+	var unknownError = (btn && btn.dataset.pushUnknownError) || 'unknown error';
 	var bpEl = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpEl ? bpEl.content : '';
 	var csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
@@ -481,6 +493,6 @@ script pushMetadata(artistID string, connectionID string) {
 		body: JSON.stringify({connection_id: connectionID})
 	}).then(function(resp) {
 		if (resp.ok) { window.location.reload(); return; }
-		return resp.json().then(function(data) { alert('Push failed: ' + (data.error || 'unknown error')); });
-	}).catch(function(err) { alert('Push failed: ' + err.message); });
+		return resp.json().then(function(data) { alert(failedPrefix + ': ' + (data.error || unknownError)); });
+	}).catch(function(err) { alert(failedPrefix + ': ' + err.message); });
 }
