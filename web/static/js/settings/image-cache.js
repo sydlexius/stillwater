@@ -60,7 +60,13 @@
   }
 
   function saveCacheMaxSize(value) {
-    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+    var csrfToken;
+    if (typeof window.swCsrfToken === 'function') {
+      csrfToken = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrfToken = '';
+    }
     fetch(cacheBasePath + '/api/v1/settings', {
       method: 'PUT',
       headers: {
@@ -84,7 +90,13 @@
 
   function clearCache() {
     if (!confirm('Clear all cached images? Pathless artists will lose their local image copies.')) return;
-    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+    var csrfToken;
+    if (typeof window.swCsrfToken === 'function') {
+      csrfToken = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrfToken = '';
+    }
     fetch(cacheBasePath + '/api/v1/settings/cache', {
       method: 'DELETE',
       headers: { 'X-CSRF-Token': csrfToken }

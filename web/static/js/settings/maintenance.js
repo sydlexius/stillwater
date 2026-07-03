@@ -19,7 +19,13 @@
       var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 
       function updateMaintSchedule(sel) {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         var status = document.getElementById('maint-schedule-status');
         fetch(bp + '/api/v1/settings/maintenance/schedule', {
           method: 'PUT',
@@ -59,7 +65,13 @@
       });
 
       function saveBackupSettings() {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         var retention = parseInt(document.getElementById('backup-retention').value, 10);
         var maxAge = parseInt(document.getElementById('backup-max-age').value, 10);
         var status = document.getElementById('backup-retention-status');

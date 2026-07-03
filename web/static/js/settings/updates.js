@@ -522,7 +522,11 @@
 	}
 
 	function getCSRFToken() {
-		return (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+		if (typeof window.swCsrfToken !== 'function') {
+			console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+			return '';
+		}
+		return window.swCsrfToken();
 	}
 
 	// Parse a non-ok fetch response's JSON body and throw a useful error,

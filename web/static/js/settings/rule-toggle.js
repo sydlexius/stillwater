@@ -46,7 +46,13 @@
   // call site (automation-mode select) uses the window.patchRule wrapper below
   // instead, which swallows the rejection with a toast.
   function patchRuleStrict(ruleID, changes) {
-    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+    var csrfToken;
+    if (typeof window.swCsrfToken === 'function') {
+      csrfToken = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrfToken = '';
+    }
     return fetch(bp + '/api/v1/rules/' + ruleID, {
       method: 'PUT',
       headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
@@ -109,7 +115,13 @@
     btn.dataset.running = 'true';
     btn.disabled = true;
     btn.textContent = 'Running...';
-    var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+    var csrfToken;
+    if (typeof window.swCsrfToken === 'function') {
+      csrfToken = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrfToken = '';
+    }
     fetch(bp + '/api/v1/rules/' + ruleID + '/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},

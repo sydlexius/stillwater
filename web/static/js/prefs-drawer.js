@@ -172,7 +172,13 @@
       var el = document.querySelector('meta[name="htmx-base-path"]');
       return el ? el.content : '';
     })();
-    var csrf = typeof window.swCsrfToken === 'function' ? window.swCsrfToken() : '';
+    var csrf;
+    if (typeof window.swCsrfToken === 'function') {
+      csrf = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrf = '';
+    }
 
     fetch(bp + '/api/v1/preferences', {
       method: 'PATCH',
@@ -532,7 +538,13 @@
       var el = document.querySelector('meta[name="htmx-base-path"]');
       return el ? el.content : '';
     })();
-    var csrf = typeof window.swCsrfToken === 'function' ? window.swCsrfToken() : '';
+    var csrf;
+    if (typeof window.swCsrfToken === 'function') {
+      csrf = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrf = '';
+    }
 
     // Default section order - mirrors defaultPrefsLayoutSections in prefs_drawer.templ.
     var DEFAULT_ORDER = ['metadata', 'artwork', 'findings', 'providers', 'discography', 'identifiers'];
@@ -604,7 +616,13 @@
       var el = document.querySelector('meta[name="htmx-base-path"]');
       return el ? el.content : '';
     })();
-    var csrf = typeof window.swCsrfToken === 'function' ? window.swCsrfToken() : '';
+    var csrf;
+    if (typeof window.swCsrfToken === 'function') {
+      csrf = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      csrf = '';
+    }
 
     // Apply visual/CSS defaults immediately (theme, font, density, etc.).
     window.swPreferences.applyAll(DEFAULTS);
