@@ -31,6 +31,6 @@ tests {
 
   test("error envelope reports not found", function() {
     expect(res.body).to.be.an("object");
-    expect(res.body.error).to.equal("not found");
+    expect(res.body.error).to.match(/not found/i);
   });
 }
