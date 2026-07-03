@@ -1,32 +1,32 @@
-package next
+package templates
 
 import (
+	"net/url"
 	"strconv"
-
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// Bulk-selection UI for the next/ artists list (M55 #1335). The maintainer
-// dissolved the single stable BulkActionBar into three placements:
+// Bulk-selection UI for the artists list (M55 #1335, promoted-by-move from the
+// next/ channel in #1757 PR-3a). The maintainer dissolved the single legacy
+// BulkActionBar into three placements:
 //   - the page select-all -> a checkbox in the TABLE HEADER (left of Name),
 //     rendered by artists_table.templ; the grid view (no header) hosts it in
 //     the strip below instead;
-//   - the action dropdown + Apply -> the toolbar (left of Scan), nextBulkActions;
+//   - the action dropdown + Apply -> the toolbar (left of Scan), bulkActions;
 //   - the count + "Show selected" + "Select all N matching" -> a contextual
-//     strip at the top of #artist-content, nextBulkStrip.
+//     strip at the top of #artist-content, bulkStrip.
 //
-// The shared bulk controller (templates.ArtistsPageScripts) binds every element
-// by GLOBAL id (document.getElementById), so the pieces work wherever they sit
+// The shared bulk controller (ArtistsPageScripts) binds every element by
+// GLOBAL id (document.getElementById), so the pieces work wherever they sit
 // as long as the ids are preserved. The strip keeps id="bulk-action-bar" and
 // all the data-* attributes the controller reads. The selection bookkeeping is
 // NOT forked -- the controller stamps data-selection-active on the bar and the
 // contextual strip hides via CSS when it is "false".
 
-// nextBulkActions renders the bulk action dropdown + Apply for the toolbar,
+// bulkActions renders the bulk action dropdown + Apply for the toolbar,
 // positioned left of Scan Library. Same ids the controller binds
 // (#bulk-action-select, #bulk-action-apply); both stay disabled until a
 // selection exists (the controller manages the disabled state).
-templ nextBulkActions(data templates.ArtistListData) {
+templ bulkActions(data ArtistListData) {
 	<select
 		id="bulk-action-select"
 		class="rounded-md border border-[var(--swd-line)] bg-white dark:bg-gray-800 px-3 py-2 text-sm text-[var(--swd-ink-2)] focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
@@ -52,7 +52,7 @@ templ nextBulkActions(data templates.ArtistListData) {
 	</button>
 }
 
-// nextBulkStrip renders the contextual selection strip at the top of
+// bulkStrip renders the contextual selection strip at the top of
 // #artist-content. It IS the #bulk-action-bar element (carrying the data-*
 // attrs the shared controller reads), restyled as a thin strip.
 //
@@ -61,7 +61,7 @@ templ nextBulkActions(data templates.ArtistListData) {
 // select-all lives in the table header instead, so it is omitted here.
 // contextual=false (grid view, which has no table header): the strip is always
 // visible and hosts the page select-all.
-templ nextBulkStrip(data templates.ArtistListData, contextual bool) {
+templ bulkStrip(data ArtistListData, contextual bool) {
 	<div
 		id="bulk-action-bar"
 		class={ "sw-next-bulk-strip flex flex-wrap items-center gap-3 mb-3 rounded-md px-3 py-2", templ.KV("sw-next-bulk-strip-contextual", contextual) }
@@ -125,8 +125,8 @@ templ nextBulkStrip(data templates.ArtistListData, contextual bool) {
 			<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-2.5 py-0.5 text-xs font-medium">
 				{ tn(ctx, "artists.bulk.showing_selected", len(data.IDs)) }
 				<a
-					href={ templ.SafeURL(templates.BasePath() + nextShowAllPath(data)) }
-					hx-get={ nextShowAllPath(data) }
+					href={ templ.SafeURL(BasePath() + showAllPath(data)) }
+					hx-get={ showAllPath(data) }
 					hx-target="#artist-content"
 					hx-swap="outerHTML"
 					hx-push-url="true"
@@ -142,4 +142,48 @@ templ nextBulkStrip(data templates.ArtistListData, contextual bool) {
 			</span>
 		</div>
 	}
+}
+
+// showAllPath rebuilds the list URL without the ids= filter so the "Show all"
+// affordance (shown while a show-selected view is active) drops the selection
+// filter and returns to the full list, preserving search/sort/order/filter/
+// library/view. Uses data.Pagination.BaseURL (set by buildArtistListData),
+// which is always the canonical /artists after the #1757 PR-3a cutover.
+func showAllPath(data ArtistListData) string {
+	v := url.Values{}
+	if data.Search != "" {
+		v.Set("search", data.Search)
+	}
+	if data.Sort != "" {
+		v.Set("sort", data.Sort)
+	}
+	if data.Order != "" {
+		v.Set("order", data.Order)
+	}
+	if data.Filter != "" {
+		v.Set("filter", data.Filter)
+	}
+	if data.LibraryID != "" {
+		v.Set("library_id", data.LibraryID)
+	}
+	if data.View != "" {
+		v.Set("view", data.View)
+	}
+	for k, state := range data.Filters {
+		switch state {
+		case "include":
+			v.Set("filter_"+k, "+y")
+		case "exclude":
+			v.Set("filter_"+k, "-y")
+		}
+	}
+	base := data.Pagination.BaseURL
+	if base == "" {
+		base = "/artists"
+	}
+	enc := v.Encode()
+	if enc == "" {
+		return base
+	}
+	return base + "?" + enc
 }

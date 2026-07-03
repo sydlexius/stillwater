@@ -11,8 +11,8 @@ import (
 
 // TestArtistFilterFlyout_RendersAllFamilies verifies the flyout partial
 // extracted from ArtistsPage (M55 #1335) still renders every tri-state filter
-// family. The next/ channel composes this exact partial, so its content is the
-// single source of truth for filter behavior on both channels.
+// family. The promoted (former next/) page composes this exact partial, so its
+// content is the single source of truth for filter behavior.
 func TestArtistFilterFlyout_RendersAllFamilies(t *testing.T) {
 	t.Parallel()
 	// Two libraries so the per-library filter section renders (the v1 page
@@ -43,7 +43,7 @@ func TestArtistFilterFlyout_RendersAllFamilies(t *testing.T) {
 
 // TestArtistsPageScripts_CarriesBehavior verifies the page-behavior script
 // extracted from ArtistsPage (M55 #1335) still carries the selection, sort,
-// view, and off-page-selection hooks the list depends on. The next/ channel
+// view, and off-page-selection hooks the list depends on. The promoted page
 // composes this same script so its behavior is identical, not forked.
 func TestArtistsPageScripts_CarriesBehavior(t *testing.T) {
 	t.Parallel()
@@ -66,10 +66,10 @@ func TestArtistsPageScripts_CarriesBehavior(t *testing.T) {
 	}
 }
 
-// TestArtistsPage_StillComposesExtractedPartials guards the stable page after
-// the extraction: ArtistsPage must still emit the flyout panel, the behavior
-// script, and the bulk-progress-pill (now via the shared partials), so the
-// stable channel is unregressed by the #1335 refactor.
+// TestArtistsPage_StillComposesExtractedPartials guards the promoted page
+// (canonical ArtistsPage since #1757 PR-3a): it must still emit the flyout
+// panel, the behavior script, and the bulk-progress-pill via the shared
+// partials, so the list is unregressed by the #1335 extraction + promotion.
 func TestArtistsPage_StillComposesExtractedPartials(t *testing.T) {
 	t.Parallel()
 	data := ArtistListData{
@@ -87,7 +87,7 @@ func TestArtistsPage_StillComposesExtractedPartials(t *testing.T) {
 		`id="bulk-progress-pill"`,
 	} {
 		if !strings.Contains(out, marker) {
-			t.Errorf("stable ArtistsPage missing %q after extraction", marker)
+			t.Errorf("ArtistsPage missing %q after extraction", marker)
 		}
 	}
 }

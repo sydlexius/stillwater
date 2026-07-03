@@ -21,6 +21,11 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 	mux.HandleFunc("GET /artists/{id}", func(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte("V1 ARTIST " + req.PathValue("id")))
 	})
+	// Bare /artists echoes the forwarded query string so we can assert the
+	// fallback preserves it for bookmarked /next/artists?view=... URLs.
+	mux.HandleFunc("GET /artists", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("V1 ARTISTS q=" + req.URL.RawQuery))
+	})
 	mux.HandleFunc("GET /next/{path...}", r.nextFallback(mux))
 
 	tests := []struct {
@@ -29,6 +34,10 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 	}{
 		{"/next/dashboard", "V1 DASHBOARD"},
 		{"/next/artists/42", "V1 ARTIST 42"},
+		// #1757 PR-3a: bare /next/artists re-dispatches to the promoted list...
+		{"/next/artists", "V1 ARTISTS q="},
+		// ...and the query string (view/page/sort/etc.) is forwarded intact.
+		{"/next/artists?view=grid&page=2", "V1 ARTISTS q=view=grid&page=2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

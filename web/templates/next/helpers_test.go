@@ -1,15 +1,25 @@
 package next
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/library"
-	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
+	"github.com/sydlexius/stillwater/internal/i18n"
 )
+
+// nextTestCtx returns a context with the embedded English translator loaded so
+// i18n lookups in the next/ templates resolve to real strings during tests.
+func nextTestCtx(tb testing.TB) context.Context {
+	tb.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		tb.Fatalf("loading i18n bundle: %v", err)
+	}
+	return i18n.WithTranslator(context.Background(), bundle.Translator("en"))
+}
 
 // TestTranslationHelpers exercises the small i18n wrappers t / tn / tf,
 // including the tf passthrough when a key is missing. Named tt to avoid
@@ -42,102 +52,6 @@ func TestTranslationHelpers(tt *testing.T) {
 	}
 }
 
-// TestActiveFilterCount covers include/exclude counting and neutral skips.
-func TestActiveFilterCount(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		in   map[string]string
-		want int
-	}{
-		{"nil", nil, 0},
-		{"empty", map[string]string{}, 0},
-		{"all neutral", map[string]string{"a": "neutral", "b": ""}, 0},
-		{"mixed", map[string]string{"a": "include", "b": "exclude", "c": "neutral"}, 2},
-	}
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			if got := activeFilterCount(c.in); got != c.want {
-				t.Errorf("activeFilterCount(%v) = %d, want %d", c.in, got, c.want)
-			}
-		})
-	}
-}
-
-// TestSortLabel covers every sort branch including the default.
-func TestSortLabel(t *testing.T) {
-	t.Parallel()
-	ctx := nextTestCtx(t)
-	for _, sort := range []string{
-		"sort_name", "type", "origin", "health_score",
-		"updated_at", "created_at", "name", "bogus", "",
-	} {
-		if got := sortLabel(ctx, sort); got == "" {
-			t.Errorf("sortLabel(%q) returned empty", sort)
-		}
-	}
-}
-
-// TestOrderLabel covers asc and desc.
-func TestOrderLabel(t *testing.T) {
-	t.Parallel()
-	ctx := nextTestCtx(t)
-	asc := orderLabel(ctx, "asc")
-	desc := orderLabel(ctx, "desc")
-	if asc == "" || desc == "" {
-		t.Fatalf("orderLabel empty: asc=%q desc=%q", asc, desc)
-	}
-	if asc == desc {
-		t.Errorf("orderLabel asc and desc should differ: %q", asc)
-	}
-	// Unknown order falls through to asc.
-	if got := orderLabel(ctx, "weird"); got != asc {
-		t.Errorf("orderLabel(weird) = %q, want asc %q", got, asc)
-	}
-}
-
-// TestSortDropdownItem covers the active and inactive class branches.
-func TestSortDropdownItem(t *testing.T) {
-	t.Parallel()
-	active := sortDropdownItem(true)
-	inactive := sortDropdownItem(false)
-	if active == inactive {
-		t.Fatalf("active and inactive sort-dropdown classes should differ")
-	}
-	if !contains(active, "font-semibold") {
-		t.Errorf("active item missing font-semibold: %q", active)
-	}
-	if contains(inactive, "font-semibold") {
-		t.Errorf("inactive item should not be bold: %q", inactive)
-	}
-}
-
-// TestNextLibraryName covers the empty-id, hit, and miss branches.
-func TestNextLibraryName(t *testing.T) {
-	t.Parallel()
-	libs := []library.Library{{ID: "l1", Name: "Lib One"}, {ID: "l2", Name: "Lib Two"}}
-	cases := []struct {
-		name string
-		a    artist.Artist
-		want string
-	}{
-		{"no library id", artist.Artist{}, ""},
-		{"resolves", artist.Artist{LibraryID: "l2"}, "Lib Two"},
-		{"unresolvable", artist.Artist{LibraryID: "missing"}, ""},
-	}
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			if got := nextLibraryName(c.a, libs); got != c.want {
-				t.Errorf("nextLibraryName = %q, want %q", got, c.want)
-			}
-		})
-	}
-}
-
 // TestNextTypeLabel covers all facet groupings and the default catch-all.
 func TestNextTypeLabel(t *testing.T) {
 	t.Parallel()
@@ -159,117 +73,6 @@ func TestNextTypeLabel(t *testing.T) {
 	}
 	if got := nextTypeLabel(ctx, "wat"); got != other {
 		t.Errorf("nextTypeLabel(wat) = %q, want other %q", got, other)
-	}
-}
-
-// TestNextShowAllPath covers the full and empty query permutations.
-func TestNextShowAllPath(t *testing.T) {
-	t.Parallel()
-
-	// All fields set -> every param plus the include/exclude filters.
-	full := templates.ArtistListData{
-		Search:     "bach",
-		Sort:       "type",
-		Order:      "desc",
-		Filter:     "incomplete",
-		LibraryID:  "l1",
-		View:       "grid",
-		Filters:    map[string]string{"type_person": "include", "type_group": "exclude", "noise": "neutral"},
-		Pagination: components.PaginationData{BaseURL: "/next/artists"},
-	}
-	got := nextShowAllPath(full)
-	for _, want := range []string{
-		"/next/artists?", "search=bach", "sort=type", "order=desc",
-		"filter=incomplete", "library_id=l1", "view=grid",
-		"filter_type_person=%2By", "filter_type_group=-y",
-	} {
-		if !contains(got, want) {
-			t.Errorf("nextShowAllPath full missing %q in %q", want, got)
-		}
-	}
-	if contains(got, "noise") {
-		t.Errorf("neutral filter should not appear: %q", got)
-	}
-
-	// No fields and no BaseURL -> default base, no query string.
-	if got := nextShowAllPath(templates.ArtistListData{}); got != "/next/artists" {
-		t.Errorf("nextShowAllPath empty = %q, want /next/artists", got)
-	}
-}
-
-// TestNextIsFilterActive covers each predicate branch.
-func TestNextIsFilterActive(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		data templates.ArtistListData
-		want bool
-	}{
-		{"none", templates.ArtistListData{}, false},
-		{"facet", templates.ArtistListData{Filters: map[string]string{"x": "include"}}, true},
-		{"search", templates.ArtistListData{Search: "q"}, true},
-		{"library", templates.ArtistListData{LibraryID: "l1"}, true},
-		{"filter", templates.ArtistListData{Filter: "incomplete"}, true},
-	}
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			if got := nextIsFilterActive(c.data); got != c.want {
-				t.Errorf("nextIsFilterActive = %v, want %v", got, c.want)
-			}
-		})
-	}
-}
-
-// TestNextComplianceAvailable covers nil vs non-nil maps.
-func TestNextComplianceAvailable(t *testing.T) {
-	t.Parallel()
-	if nextComplianceAvailable(nil) {
-		t.Errorf("nil map should be unavailable")
-	}
-	if !nextComplianceAvailable(map[string]artist.ComplianceStatus{}) {
-		t.Errorf("non-nil map should be available")
-	}
-}
-
-// TestNextArtistCompliance covers present and absent lookups.
-func TestNextArtistCompliance(t *testing.T) {
-	t.Parallel()
-	m := map[string]artist.ComplianceStatus{"a1": artist.ComplianceError}
-	if got := nextArtistCompliance("a1", m); got != artist.ComplianceError {
-		t.Errorf("present lookup = %q, want error", got)
-	}
-	if got := nextArtistCompliance("missing", m); got != artist.ComplianceCompliant {
-		t.Errorf("absent lookup = %q, want compliant default", got)
-	}
-}
-
-// TestNextComplianceDotClassAndTitle covers all three severity branches.
-func TestNextComplianceDotClassAndTitle(t *testing.T) {
-	t.Parallel()
-	ctx := nextTestCtx(t)
-	cases := []struct {
-		status    artist.ComplianceStatus
-		wantClass string
-	}{
-		{artist.ComplianceError, "bg-red-500"},
-		{artist.ComplianceWarning, "bg-yellow-500"},
-		{artist.ComplianceCompliant, "bg-green-500"},
-	}
-	titles := map[string]bool{}
-	for _, c := range cases {
-		if got := nextComplianceDotClass(c.status); got != c.wantClass {
-			t.Errorf("nextComplianceDotClass(%q) = %q, want %q", c.status, got, c.wantClass)
-		}
-		title := nextComplianceDotTitle(ctx, c.status)
-		if title == "" {
-			t.Errorf("nextComplianceDotTitle(%q) empty", c.status)
-		}
-		titles[title] = true
-	}
-	if len(titles) != 3 {
-		t.Errorf("expected 3 distinct compliance titles, got %d: %v", len(titles), titles)
 	}
 }
 

@@ -1,0 +1,214 @@
+package templates
+
+import (
+	"context"
+	"fmt"
+	"math"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
+)
+
+// Shared "box-bar" coverage + score components (M55 #1336), promoted from the
+// next/ channel with the artists list (#1757 PR-3a) so the canonical table and
+// grid speak the prototype's Sources / Coverage / Score vocabulary. The next/
+// package keeps its own copy (next/coverage.templ + the next* helpers) until
+// the artist-detail screen promotes in PR-3b, after which that copy is deleted
+// with the lane teardown (PR-6).
+
+// coverageCell renders the consolidated metadata/image coverage bubbles plus
+// the provider-ID count, replacing the legacy page's separate badge columns.
+templ coverageCell(a artist.Artist, profileName string) {
+	<div class="flex items-center gap-2">
+		<div class="flex items-center gap-0.5">
+			for _, c := range coverageItems(ctx, a, profileName) {
+				<span class={ coverageBubbleClass(c.State) } title={ c.Tooltip } aria-label={ c.Tooltip } role="img">{ c.Label }</span>
+			}
+		</div>
+		<span class="text-[11px] tabular-nums text-gray-500 dark:text-gray-400" title={ idCountTitle(ctx, a) }>{ idCountText(a) }</span>
+	</div>
+}
+
+// scoreCell renders the compliance/health score as a tone-colored dot + the
+// percentage, or a muted placeholder when the artist has not been scored yet.
+templ scoreCell(a artist.Artist) {
+	if artistScored(a) {
+		<span class={ "inline-flex items-center justify-end gap-1.5 text-xs font-semibold tabular-nums", scoreText(a.HealthScore) }>
+			<span class={ "h-1.5 w-1.5 rounded-full", scoreDot(a.HealthScore) }></span>
+			{ scorePercent(a.HealthScore) }
+		</span>
+	} else {
+		<span class="text-xs text-gray-300 dark:text-gray-600" title={ t(ctx, "artists.score.unrated") }>{ "-" }</span>
+	}
+}
+
+// coverageItem is one metadata/image presence bubble in the Coverage cell.
+type coverageItem struct {
+	Label   string // single-letter glyph (M / T / F / L)
+	State   string // "present" | "partial" | "low" | "missing"
+	Tooltip string // localized "<term>: <state>" hover text
+}
+
+// coverageItems consolidates the legacy page's Metadata / Thumb / Fanart /
+// Logo badge columns into one compact set of bubbles. Image bubbles keep the
+// three-state distinction (present / low-res / missing) so no signal is lost;
+// tooltips reuse the active profile's image terminology.
+func coverageItems(ctx context.Context, a artist.Artist, profileName string) []coverageItem {
+	mk := func(label, term, state string) coverageItem {
+		return coverageItem{Label: label, State: state, Tooltip: term + ": " + t(ctx, "artists.coverage."+state)}
+	}
+	imgState := func(exists, low bool) string {
+		switch {
+		case exists && low:
+			return "low"
+		case exists:
+			return "present"
+		default:
+			return "missing"
+		}
+	}
+	// M = metadata completeness, GRADED by how many applicable descriptive fields
+	// are populated. Per the maintainer: users care about metadata completeness,
+	// not NFO-file presence -- so M is a fraction (full/partial/empty), not a
+	// binary flag. T/F/L are the three image slots (amber = low-res). Images and
+	// provider IDs have their own indicators and are excluded from the metadata
+	// tally to avoid double-counting; overall rule compliance is the Score column.
+	have, total := metadataFields(a)
+	mState := "missing"
+	if total > 0 {
+		switch {
+		case have == total:
+			mState = "present"
+		case have > 0:
+			mState = "partial"
+		}
+	}
+	return []coverageItem{
+		{Label: "M", State: mState, Tooltip: tf(ctx, "artists.coverage.metadata_fields", have, total)},
+		mk("T", img.ImageTermFor("thumb", profileName), imgState(a.ThumbExists, a.ThumbLowRes)),
+		mk("F", img.ImageTermFor("fanart", profileName), imgState(a.FanartExists, a.FanartLowRes)),
+		mk("L", img.ImageTermFor("logo", profileName), imgState(a.LogoExists, a.LogoLowRes)),
+	}
+}
+
+// metadataFields counts how many applicable descriptive metadata fields the
+// artist has populated, and how many apply, for the graded Coverage "M" bubble.
+// The TYPE-APPLICABILITY guards follow internal/artist/completeness.go (born/
+// died/gender for person|solo|character; formed/disbanded for group|orchestra|
+// choir and the empty default). The descriptive FIELD SET, however, is chosen
+// independently for this coverage bubble and is NOT the completeness report's
+// field set: it adds Moods/Origin/YearsActive/Gender and excludes NFO presence,
+// the MBID, and the image slots (images and provider IDs have their own
+// indicators here, so they are deliberately left out of the metadata tally).
+func metadataFields(a artist.Artist) (have, total int) {
+	isPerson := a.Type == "person" || a.Type == "solo" || a.Type == "character"
+	isEnsemble := a.Type == "group" || a.Type == "orchestra" || a.Type == "choir" || a.Type == ""
+	fields := []struct {
+		applicable bool
+		present    bool
+	}{
+		{true, a.Biography != ""},
+		{true, len(a.Genres) > 0},
+		{true, len(a.Styles) > 0},
+		{true, len(a.Moods) > 0},
+		{true, a.Origin != ""},
+		{true, a.YearsActive != ""},
+		{isEnsemble, a.Formed != ""},
+		{isEnsemble, a.Disbanded != ""},
+		{isPerson, a.Born != ""},
+		{isPerson, a.Died != ""},
+		{isPerson, a.Gender != ""},
+	}
+	for _, f := range fields {
+		if !f.applicable {
+			continue
+		}
+		total++
+		if f.present {
+			have++
+		}
+	}
+	return have, total
+}
+
+// coverageBubbleClass returns the Tailwind classes for a coverage bubble in
+// the given state: present = filled green, low = filled amber, missing = muted
+// outline. The .sw-cov hook lets the scoped CSS refine these.
+func coverageBubbleClass(state string) string {
+	base := "sw-cov inline-flex h-4 w-4 items-center justify-center rounded-[3px] text-[9px] font-bold leading-none "
+	switch state {
+	case "present":
+		return base + "bg-green-500/20 text-green-600 dark:text-green-400 ring-1 ring-inset ring-green-500/50"
+	case "low", "partial":
+		return base + "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 ring-1 ring-inset ring-yellow-500/50"
+	default:
+		return base + "text-gray-400 dark:text-gray-600 ring-1 ring-inset ring-gray-300/60 dark:ring-gray-600/60"
+	}
+}
+
+// providerIDCount returns how many provider IDs are set and the total
+// checked, for the Coverage cell's "h / t IDs" count.
+func providerIDCount(a artist.Artist) (have, total int) {
+	ids := []string{a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.SpotifyID, a.DeezerID, a.WikidataID}
+	total = len(ids)
+	for _, id := range ids {
+		if id != "" {
+			have++
+		}
+	}
+	return have, total
+}
+
+// scoreText / scoreDot map a 0-100 health score to tone classes, mirroring the
+// prototype ScoreCell thresholds (100 ok, >=70 info, >=40 warn, else err).
+// Both band on the whole-number score (math.Round) so the color matches the
+// displayed percent from scorePercent ("%.0f"); banding on the raw float would
+// color e.g. 99.6 as blue while it renders as "100%".
+func scoreText(score float64) string {
+	switch r := math.Round(score); {
+	case r >= 100:
+		// green-700 (not -600): white-bg contrast 4.94:1 vs green-600's 3.22:1
+		// (fails AA); dark keeps green-400 (7.83:1). #1784 contrast floor.
+		return "text-green-700 dark:text-green-400"
+	case r >= 70:
+		return "text-blue-600 dark:text-blue-400"
+	case r >= 40:
+		// yellow-700 (not -600): white-bg contrast 4.92:1 vs yellow-600's 2.93:1
+		// (fails AA); dark keeps yellow-400 (8.86:1). #1784 contrast floor.
+		return "text-yellow-700 dark:text-yellow-400"
+	default:
+		return "text-red-600 dark:text-red-400"
+	}
+}
+
+func scoreDot(score float64) string {
+	switch r := math.Round(score); {
+	case r >= 100:
+		return "bg-green-500"
+	case r >= 70:
+		return "bg-blue-500"
+	case r >= 40:
+		return "bg-yellow-500"
+	default:
+		return "bg-red-500"
+	}
+}
+
+// artistScored reports whether the artist has an evaluated health score, so
+// the Score cell shows a muted placeholder instead of a misleading 0%.
+func artistScored(a artist.Artist) bool { return a.HealthEvaluatedAt != nil }
+
+// scorePercent formats the health score as a whole-number percent.
+func scorePercent(score float64) string { return fmt.Sprintf("%.0f%%", score) }
+
+// idCountText / idCountTitle render the Coverage cell's provider-ID
+// coverage ("h/t" with a localized hover label).
+func idCountText(a artist.Artist) string {
+	have, total := providerIDCount(a)
+	return fmt.Sprintf("%d/%d", have, total)
+}
+
+func idCountTitle(ctx context.Context, a artist.Artist) string {
+	have, total := providerIDCount(a)
+	return tf(ctx, "artists.coverage.ids", have, total)
+}

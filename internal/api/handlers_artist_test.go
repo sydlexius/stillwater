@@ -11,6 +11,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
 )
 
@@ -673,5 +674,240 @@ func TestHandleArtistImagesPage_AuthRendersArtistImages(t *testing.T) {
 	}
 	if !strings.Contains(body, a.Name) {
 		t.Errorf("artist images page must include the artist name (%q)", a.Name)
+	}
+}
+
+// The tests below were consolidated from handlers_next_artists_test.go when
+// the artists list promoted-by-move into the canonical handler (#1757 PR-3a).
+// The channel-gating cases (StableMode404 / OptOutHeader404 / stable-fallback)
+// are moot with the /next/artists route removed; the fragment-dispatch,
+// base-URL, saved-views, and sort-validation coverage carries over against
+// handleArtistsPage.
+
+// TestHandleArtistsPage_WiresCanonicalBaseURL verifies buildArtistListData
+// stamps the canonical /artists BaseURL unconditionally since the promotion,
+// so the rendered toolbar/pagination hx-get targets /artists and never the
+// removed /next/artists route.
+func TestHandleArtistsPage_WiresCanonicalBaseURL(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithLibrary(t)
+	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Alpha Artist"}); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `hx-get="/artists"`) {
+		t.Errorf("promoted page must wire the canonical /artists BaseURL (hx-get=\"/artists\" absent)")
+	}
+	if strings.Contains(body, `hx-get="/next/artists"`) {
+		t.Errorf("promoted page must not target the removed /next/artists endpoint")
+	}
+}
+
+// TestHandleArtistsPage_HTMXFragmentDispatch verifies that an HTMX request
+// (HX-Request: true) renders only the table or grid FRAGMENT, not the full
+// page shell, and that ?view= selects the right fragment. The table fragment
+// carries the consolidated Sources/Coverage columns; the grid fragment carries
+// the card grid layout. Neither must emit the full-page <html>/sidebar chrome.
+func TestHandleArtistsPage_HTMXFragmentDispatch(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		view        string
+		wantMarkers []string
+		denyMarkers []string
+	}{
+		{
+			name:        "table",
+			view:        "table",
+			wantMarkers: []string{`data-col="sources"`, `data-col="coverage"`, `id="artists-table"`},
+			denyMarkers: []string{"grid-cols"},
+		},
+		{
+			name:        "grid",
+			view:        "grid",
+			wantMarkers: []string{"grid-cols"},
+			denyMarkers: []string{`id="artists-table"`},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, _, artistSvc := testRouterWithLibrary(t)
+			if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Alpha Artist"}); err != nil {
+				t.Fatalf("creating artist: %v", err)
+			}
+
+			ctx := middleware.WithTestUserID(context.Background(), "test-user")
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists?view="+tc.view, nil)
+			req.Header.Set("HX-Request", "true")
+			w := httptest.NewRecorder()
+			r.handleArtistsPage(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", w.Code)
+			}
+			body := w.Body.String()
+
+			// A fragment must NOT carry the full-page shell: no <html> document
+			// element and no page scoping chrome.
+			for _, deny := range []string{"<html", "sw-next-artists"} {
+				if strings.Contains(body, deny) {
+					t.Errorf("%s fragment must not render full-page chrome (found %q)", tc.name, deny)
+				}
+			}
+			// The fragment is the #artist-content swap target, not the whole page.
+			if !strings.Contains(body, `id="artist-content"`) {
+				t.Errorf("%s fragment must render the #artist-content swap target", tc.name)
+			}
+			for _, want := range tc.wantMarkers {
+				if !strings.Contains(body, want) {
+					t.Errorf("%s fragment missing marker %q", tc.name, want)
+				}
+			}
+			for _, deny := range tc.denyMarkers {
+				if strings.Contains(body, deny) {
+					t.Errorf("%s fragment must not contain %q (wrong view selected)", tc.name, deny)
+				}
+			}
+		})
+	}
+}
+
+// TestBuildArtistListData_LoadsSavedViews verifies that a stored saved_views
+// preference renders the saved-views chips row (M55 #1777). The load was
+// next-channel-gated before #1757 PR-3a; it is always-on since the promotion,
+// so no UX middleware or channel context is involved.
+func TestBuildArtistListData_LoadsSavedViews(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithLibrary(t)
+	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Test Artist"}); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Create a real user to satisfy the FK constraint on user_preferences.
+	authSvc := auth.NewService(r.db)
+	if _, err := authSvc.Setup(context.Background(), "viewuser", "testpassword"); err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	var userID string
+	if err := r.db.QueryRowContext(context.Background(),
+		`SELECT id FROM users WHERE username = 'viewuser'`).Scan(&userID); err != nil {
+		t.Fatalf("looking up user id: %v", err)
+	}
+
+	// Seed a valid saved_views preference row directly so the handler's read
+	// path has data to load.
+	savedViewsJSON := `[{"name":"My Saved View","params":"filter=complete","created_at":"2024-01-01T00:00:00Z"}]`
+	if _, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+		userID, PrefSavedViews, savedViewsJSON); err != nil {
+		t.Fatalf("seeding saved_views preference: %v", err)
+	}
+
+	ctx := middleware.WithTestUserID(context.Background(), userID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	// The template renders #saved-views-row unconditionally (hidden when
+	// empty); the seeded view's chip must be present.
+	if !strings.Contains(body, `saved-views-row`) {
+		t.Errorf("saved-views-row not rendered")
+	}
+	if !strings.Contains(body, "My Saved View") {
+		t.Errorf("saved view name %q not found in rendered output", "My Saved View")
+	}
+}
+
+// TestBuildArtistListData_NoSavedViewsRendersNoChips is the negative sibling
+// of TestBuildArtistListData_LoadsSavedViews: with no saved_views preference
+// row for the user, the page must render ZERO saved-view chips and the
+// #saved-views-row container must carry the "hidden" class. A regression that
+// always injects a spurious chip row (or unhides the empty row) fails here.
+func TestBuildArtistListData_NoSavedViewsRendersNoChips(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithLibrary(t)
+	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Test Artist"}); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Create a real user (as in the positive test) but deliberately do NOT
+	// seed a saved_views preference row: this exercises the absent/empty
+	// preference path of the always-on saved-views load.
+	authSvc := auth.NewService(r.db)
+	if _, err := authSvc.Setup(context.Background(), "noviewuser", "testpassword"); err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	var userID string
+	if err := r.db.QueryRowContext(context.Background(),
+		`SELECT id FROM users WHERE username = 'noviewuser'`).Scan(&userID); err != nil {
+		t.Fatalf("looking up user id: %v", err)
+	}
+
+	ctx := middleware.WithTestUserID(context.Background(), userID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+
+	// The chip buttons are the ONLY places these JS calls render (the
+	// save-view modal button uses swSavedViews.openSaveViewModal, a different
+	// call); the positive test asserts their presence via the chip name.
+	if strings.Contains(body, "swSavedViews.applySavedView") {
+		t.Errorf("saved-view apply chip rendered despite no saved views")
+	}
+	if strings.Contains(body, "swSavedViews.deleteSavedView") {
+		t.Errorf("saved-view delete button rendered despite no saved views")
+	}
+
+	// The row div itself renders unconditionally (JS updates it in place) but
+	// must be hidden when there are no saved views: assert the "hidden" class
+	// appears within the row's opening tag.
+	idx := strings.Index(body, `id="saved-views-row"`)
+	if idx < 0 {
+		t.Fatalf("saved-views-row not rendered")
+	}
+	openTag := body[idx:]
+	if end := strings.Index(openTag, ">"); end >= 0 {
+		openTag = openTag[:end]
+	}
+	if !strings.Contains(openTag, "hidden") {
+		t.Errorf("saved-views-row is not hidden with no saved views; opening tag: %s", openTag)
+	}
+}
+
+func TestHandleArtistsPage_InvalidSortReturnsBadRequest(t *testing.T) {
+	t.Parallel()
+
+	r, _, _ := testRouterWithLibrary(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists?sort=invalid_sort_key", nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handleArtistsPage(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
 	}
 }

@@ -3,12 +3,10 @@ package next
 import (
 	"context"
 	"fmt"
-	"net/url"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
-	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -66,88 +64,16 @@ const glassButton = "rounded-md border border-[var(--swd-line)] text-[var(--swd-
 // is distinguishable from the always-on halo (WCAG 2.4.7).
 const glassButtonHalo = "ring-2 ring-blue-500 ring-inset focus:ring-4 focus:ring-blue-700"
 
-// Filter-trigger class sets for the next/ toolbar. The glass base is already
-// on the element (glassButton); these constants only carry the toggled overlays
-// the JS data-active-classes / data-neutral-classes swap switches between.
-const (
-	filterTriggerActive  = glassButtonHalo
-	filterTriggerNeutral = "hover:bg-white/5"
-	filterTriggerBadge   = "sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
-)
+// filterTriggerBadge is the count badge overlay for filter-trigger buttons
+// (identical to the promoted templates copy; the logs screen still renders it
+// from this package until it promotes).
+const filterTriggerBadge = "sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
 
-// activeFilterCount counts include/exclude (non-neutral) filter facets.
-func activeFilterCount(filters map[string]string) int {
-	count := 0
-	for _, v := range filters {
-		if v == "include" || v == "exclude" {
-			count++
-		}
-	}
-	return count
-}
-
-// sortLabel returns a short display label for the active sort field.
-func sortLabel(ctx context.Context, sort string) string {
-	switch sort {
-	case "sort_name":
-		return t(ctx, "artists.sort.sort_name")
-	case "type":
-		return t(ctx, "artists.sort.type")
-	case "origin":
-		return t(ctx, "artists.sort.origin")
-	case "health_score":
-		return t(ctx, "artists.sort.health_score")
-	case "updated_at":
-		return t(ctx, "artists.sort.last_updated")
-	case "created_at":
-		return t(ctx, "artists.sort.date_added")
-	default:
-		return t(ctx, "artists.sort.name")
-	}
-}
-
-// orderLabel returns a short label for the sort order.
-func orderLabel(ctx context.Context, order string) string {
-	if order == "desc" {
-		return t(ctx, "artists.order.desc")
-	}
-	return t(ctx, "artists.order.asc")
-}
-
-// sortDropdownItem returns the class string for a sort-dropdown menu item,
-// highlighting the active selection.
-func sortDropdownItem(active bool) string {
-	base := "w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 "
-	if active {
-		return base + "font-semibold text-blue-600 dark:text-blue-400"
-	}
-	return base + "text-gray-700 dark:text-gray-200"
-}
-
-// -- next/ artists table cells (M55 #1335) -----------------------------------
-// The next/ table forks the ROW rendering to adopt the prototype's
-// Sources / Coverage / Score cells, so it needs a few presentation helpers the
-// stable package keeps unexported. These are deliberate, low-risk
-// reimplementations of trivial class/label logic (the pre-promotion parity gate
-// re-checks them against the stable originals). The behavior-bearing pieces
-// (platform badges, active-filter chips, bulk bar, pagination) are REUSED from
-// the exported templates.* / components.* partials, never duplicated.
-
-// nextLibraryName returns the display name of the artist's primary library
-// (Artist.LibraryID, hydrated from the M:N membership table), or "" when the
-// artist has no resolvable library. Drives the next/ table's Library column,
-// which the prototype surfaces but the stable page exposes only via the filter.
-func nextLibraryName(a artist.Artist, libs []library.Library) string {
-	if a.LibraryID == "" {
-		return ""
-	}
-	for i := range libs {
-		if libs[i].ID == a.LibraryID {
-			return libs[i].Name
-		}
-	}
-	return ""
-}
+// -- next/ artist-detail presentation helpers (M55 #1335/#1336) ---------------
+// The artists LIST promoted to the canonical templates package in #1757 PR-3a;
+// the helpers below remain only for the not-yet-promoted next/ artist-detail
+// screen (coverage.templ + artist_detail.templ) and are deleted with PR-3b /
+// the PR-6 lane teardown. The canonical package carries its own copies.
 
 // nextTypeLabel maps a raw artist type to the localized filter-flyout facet
 // label (Person / Group / Orchestra / Other) so the Type column reads with the
@@ -161,94 +87,6 @@ func nextTypeLabel(ctx context.Context, rawType string) string {
 	// Delegate to the shared templates helper so the artists list, the
 	// artist-detail hero tag, and the metadata Type row can never diverge.
 	return templates.ArtistTypeLabel(ctx, rawType)
-}
-
-// nextShowAllPath mirrors the stable showAllPath: it rebuilds the list URL
-// without the ids= filter so the "Show all" affordance (shown while a
-// show-selected view is active) drops the selection filter and returns to the
-// full list, preserving search/sort/order/filter/library/view. Channel-aware
-// via data.Pagination.BaseURL (set by buildArtistListData), so in next/ it
-// targets /next/artists, not the stable /artists.
-func nextShowAllPath(data templates.ArtistListData) string {
-	v := url.Values{}
-	if data.Search != "" {
-		v.Set("search", data.Search)
-	}
-	if data.Sort != "" {
-		v.Set("sort", data.Sort)
-	}
-	if data.Order != "" {
-		v.Set("order", data.Order)
-	}
-	if data.Filter != "" {
-		v.Set("filter", data.Filter)
-	}
-	if data.LibraryID != "" {
-		v.Set("library_id", data.LibraryID)
-	}
-	if data.View != "" {
-		v.Set("view", data.View)
-	}
-	for k, state := range data.Filters {
-		switch state {
-		case "include":
-			v.Set("filter_"+k, "+y")
-		case "exclude":
-			v.Set("filter_"+k, "-y")
-		}
-	}
-	base := data.Pagination.BaseURL
-	if base == "" {
-		base = "/next/artists"
-	}
-	enc := v.Encode()
-	if enc == "" {
-		return base
-	}
-	return base + "?" + enc
-}
-
-// nextIsFilterActive mirrors templates.isFilterActive: it reports whether a
-// narrowing filter/search/library is active, which gates the bulk-action safety
-// rail via the #artist-content data-filter-active flag.
-func nextIsFilterActive(data templates.ArtistListData) bool {
-	return activeFilterCount(data.Filters) > 0 || data.Search != "" || data.LibraryID != "" || data.Filter != ""
-}
-
-// nextComplianceAvailable mirrors templates.complianceAvailable: a nil map means
-// compliance could not be loaded, so the dot is suppressed (no grey placeholder).
-func nextComplianceAvailable(m map[string]artist.ComplianceStatus) bool { return m != nil }
-
-// nextArtistCompliance looks up an artist's compliance status, defaulting to
-// compliant when absent (the artist has no active violations).
-func nextArtistCompliance(id string, m map[string]artist.ComplianceStatus) artist.ComplianceStatus {
-	if s, ok := m[id]; ok {
-		return s
-	}
-	return artist.ComplianceCompliant
-}
-
-// nextComplianceDotClass / nextComplianceDotTitle mirror the stable dot mapping.
-func nextComplianceDotClass(status artist.ComplianceStatus) string {
-	switch status {
-	case artist.ComplianceError:
-		return "bg-red-500"
-	case artist.ComplianceWarning:
-		return "bg-yellow-500"
-	default:
-		return "bg-green-500"
-	}
-}
-
-func nextComplianceDotTitle(ctx context.Context, status artist.ComplianceStatus) string {
-	switch status {
-	case artist.ComplianceError:
-		return t(ctx, "artists.compliance.error")
-	case artist.ComplianceWarning:
-		return t(ctx, "artists.compliance.warning")
-	default:
-		return t(ctx, "artists.compliance.compliant")
-	}
 }
 
 // nextCoverageItem is one metadata/image presence bubble in the Coverage cell.

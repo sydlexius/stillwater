@@ -1,21 +1,21 @@
-package next
+package templates
 
 import (
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // setSortColumnScript invokes the global setSortColumn (defined in the shared
-// ArtistsPageScripts) so the next/ sortable headers drive the exact same sort
-// behaviour as the stable table -- no forked sort logic.
+// ArtistsPageScripts) so the sortable headers drive the exact same sort
+// behaviour as the pre-promotion table -- no forked sort logic.
 script setSortColumnScript(col string) {
 	setSortColumn(col)
 }
 
 // sortVis returns "" when the given column+order is the active sort (so its
-// caret shows), else "display:none". Mirrors the stable table's inline check.
-func sortVis(data templates.ArtistListData, col, order string) string {
+// caret shows), else "display:none". Mirrors the pre-promotion table's inline check.
+func sortVis(data ArtistListData, col, order string) string {
 	if data.Sort == col && data.Order == order {
 		return ""
 	}
@@ -23,8 +23,8 @@ func sortVis(data templates.ArtistListData, col, order string) string {
 }
 
 // buildArtistsPagination maps the artists list's page-based PaginationData into
-// the shared NextPagination component (M55 #1791), the next-channel analogue of
-// the dashboard's buildDashPagination. It routes through NewNextPagination so it
+// the shared NextPagination component (M55 #1791), the analogue of the
+// dashboard's buildDashPagination. It routes through NewNextPagination so it
 // inherits the same coherence invariants (a disabled side carries no URL; the
 // target is normalized to a "#"-prefixed selector). HasPrev/HasNext come from
 // the 1-based CurrentPage vs TotalPages; the URLs reuse PaginationData.PageURL
@@ -38,8 +38,8 @@ func sortVis(data templates.ArtistListData, col, order string) string {
 // whole table/grid fragment, so the freshly rendered footer rides along with the
 // rows. Hence Swap = "outerHTML" and OOB stays false -- an out-of-band footer
 // would be redundant here and would in fact double-render the nav.
-func buildArtistsPagination(p components.PaginationData) templates.NextPaginationData {
-	np := templates.NewNextPagination(
+func buildArtistsPagination(p components.PaginationData) NextPaginationData {
+	np := NewNextPagination(
 		p.CurrentPage > 1,
 		p.CurrentPage < p.TotalPages,
 		p.PageURL(p.CurrentPage-1),
@@ -51,14 +51,31 @@ func buildArtistsPagination(p components.PaginationData) templates.NextPaginatio
 	return np
 }
 
-// ArtistsTable is the next/ channel table fragment (M55 #1335). It REUSES the
-// shared wrapper -- the #artist-content swap target, the BulkActionBar safety
-// rail, the active-filter chips, and Pagination -- and forks only the ROW
-// rendering to adopt the prototype's Sources / Coverage / Score cells. Every
-// JS-hook id/class/attribute (sw-bulk-select, data-artist-id, data-col,
-// setSortColumn, #artist-content, data-filter-active) matches the stable table
-// so the shared ArtistsPageScripts bind identically.
-templ ArtistsTable(data templates.ArtistListData) {
+// libraryName returns the display name of the artist's primary library
+// (Artist.LibraryID, hydrated from the M:N membership table), or "" when the
+// artist has no resolvable library. Drives the table's Library column, which
+// the prototype surfaces but the pre-promotion page exposed only via the
+// filter. Promoted from the next/ channel with the artists list (#1757 PR-3a).
+func libraryName(a artist.Artist, libs []library.Library) string {
+	if a.LibraryID == "" {
+		return ""
+	}
+	for i := range libs {
+		if libs[i].ID == a.LibraryID {
+			return libs[i].Name
+		}
+	}
+	return ""
+}
+
+// ArtistsTable is the canonical table fragment, promoted-by-move from the
+// next/ channel (M55 #1335, #1757 PR-3a). It REUSES the shared wrapper -- the
+// #artist-content swap target, the bulkStrip safety rail, and NextPagination --
+// and carries the prototype's Sources / Coverage / Score cells. Every JS-hook
+// id/class/attribute (sw-bulk-select, data-artist-id, data-col, setSortColumn,
+// #artist-content, data-filter-active) matches the pre-promotion table so the
+// shared ArtistsPageScripts bind identically.
+templ ArtistsTable(data ArtistListData) {
 	<div id="artist-content"
 		data-sw-roving-list
 		data-sw-bulk-scope
@@ -70,12 +87,11 @@ templ ArtistsTable(data templates.ArtistListData) {
 		data-sw-roving-label-l={ t(ctx, "artists.shortcuts.page_next") }
 		data-sw-roving-boundary-next="#sw-page-next"
 		data-sw-roving-boundary-prev="#sw-page-prev"
-		data-filter-active?={ nextIsFilterActive(data) }>
-		@nextBulkStrip(data, true)
+		data-filter-active?={ isFilterActive(data) }>
+		@bulkStrip(data, true)
 		<!-- Active-filter chips row removed (M55 #1335, maintainer 2026-05-30): it
 		     duplicated the filter flyout, which already surfaces active filters via
 		     its trigger state + count badge. Filters are managed solely in the flyout. -->
-
 		<div class="overflow-x-auto">
 			<table id="artists-table" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
@@ -90,13 +106,13 @@ templ ArtistsTable(data templates.ArtistListData) {
 							/>
 							<span id="bulk-select-all-label" class="sr-only">{ t(ctx, "artists.bulk.select_all") }</span>
 						</th>
-						@nextSortTh("name", "name", t(ctx, "artists.col.name"), t(ctx, "artists.sort_by_name"), false, data)
+						@sortTh("name", "name", t(ctx, "artists.col.name"), t(ctx, "artists.sort_by_name"), false, data)
 						<th scope="col" data-col="library" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.library") }</th>
-						@nextSortTh("type", "type", t(ctx, "artists.sort.type"), t(ctx, "artists.sort_by_type"), false, data)
-						@nextSortTh("origin", "origin", t(ctx, "artists.sort.origin"), t(ctx, "artists.sort_by_origin"), false, data)
+						@sortTh("type", "type", t(ctx, "artists.sort.type"), t(ctx, "artists.sort_by_type"), false, data)
+						@sortTh("origin", "origin", t(ctx, "artists.sort.origin"), t(ctx, "artists.sort_by_origin"), false, data)
 						<th scope="col" data-col="sources" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.sources") }</th>
 						<th scope="col" data-col="coverage" class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.col.coverage") }</th>
-						@nextSortTh("score", "health_score", t(ctx, "artists.col.score"), t(ctx, "artists.sort.health_score"), true, data)
+						@sortTh("score", "health_score", t(ctx, "artists.col.score"), t(ctx, "artists.sort.health_score"), true, data)
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
@@ -104,20 +120,20 @@ templ ArtistsTable(data templates.ArtistListData) {
 						<tr><td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "artists.empty_state") }</td></tr>
 					}
 					for _, a := range data.Artists {
-						@nextArtistRow(a, data)
+						@artistRow(a, data)
 					}
 				</tbody>
 			</table>
 		</div>
-		@templates.NextPagination(buildArtistsPagination(data.Pagination))
+		@NextPagination(buildArtistsPagination(data.Pagination))
 	</div>
 }
 
-// nextSortTh renders a sortable column header that matches the stable table's
-// three-state sort cycle and caret hooks. dataCol is the column-toggle key;
-// sortCol is the sort param (e.g. health_score for the Score column); rightAlign
-// right-aligns the numeric Score header.
-templ nextSortTh(dataCol, sortCol, label, title string, rightAlign bool, data templates.ArtistListData) {
+// sortTh renders a sortable column header that matches the pre-promotion
+// table's three-state sort cycle and caret hooks. dataCol is the column-toggle
+// key; sortCol is the sort param (e.g. health_score for the Score column);
+// rightAlign right-aligns the numeric Score header.
+templ sortTh(dataCol, sortCol, label, title string, rightAlign bool, data ArtistListData) {
 	<th scope="col" data-col={ dataCol } data-sort-col={ sortCol } class={ "px-4 py-3 text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400", templ.KV("text-right", rightAlign), templ.KV("text-left", !rightAlign) }>
 		<button
 			type="button"
@@ -132,9 +148,9 @@ templ nextSortTh(dataCol, sortCol, label, title string, rightAlign bool, data te
 	</th>
 }
 
-// nextArtistRow renders one table row with the prototype's Sources / Coverage /
+// artistRow renders one table row with the prototype's Sources / Coverage /
 // Score cells over the reused selection contract.
-templ nextArtistRow(a artist.Artist, data templates.ArtistListData) {
+templ artistRow(a artist.Artist, data ArtistListData) {
 	<tr data-sw-roving-item data-sw-roving-key={ a.ID } class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
 		<td class="px-3 py-3 w-8 align-middle">
 			<input
@@ -146,43 +162,44 @@ templ nextArtistRow(a artist.Artist, data templates.ArtistListData) {
 		</td>
 		<td data-col="name" class="px-4 py-3 text-sm">
 			<div class="flex items-center gap-1.5">
-				if nextComplianceAvailable(data.ComplianceMap) {
+				if complianceAvailable(data.ComplianceMap) {
 					<span
-						class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", nextComplianceDotClass(nextArtistCompliance(a.ID, data.ComplianceMap)) }
-						title={ nextComplianceDotTitle(ctx, nextArtistCompliance(a.ID, data.ComplianceMap)) }
-						aria-label={ nextComplianceDotTitle(ctx, nextArtistCompliance(a.ID, data.ComplianceMap)) }
+						class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, data.ComplianceMap)) }
+						title={ complianceDotTitle(ctx, artistCompliance(a.ID, data.ComplianceMap)) }
+						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, data.ComplianceMap)) }
 						role="img"
 					></span>
 				}
-				<a href={ templ.SafeURL(templates.BasePath() + "/next/artists/" + a.ID) } data-sw-roving-activate class="font-medium text-blue-600 dark:text-blue-400 hover:underline">{ a.Name }</a>
+				<a href={ templ.SafeURL(BasePath() + "/artists/" + a.ID) } data-sw-roving-activate class="font-medium text-blue-600 dark:text-blue-400 hover:underline">{ a.Name }</a>
 				if a.IsExcluded {
 					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "artists.excluded") }</span>
 				}
 			</div>
 		</td>
-		<td data-col="library" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{ nextLibraryName(a, data.Libraries) }</td>
-		<td data-col="type" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{ nextTypeLabel(ctx, a.Type) }</td>
+		<td data-col="library" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{ libraryName(a, data.Libraries) }</td>
+		<td data-col="type" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{ ArtistTypeLabel(ctx, a.Type) }</td>
 		<td data-col="origin" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{ a.Origin }</td>
 		<td data-col="sources" class="px-4 py-3">
-			@templates.ArtistPlatformBadges(a, data.LibrarySources, data.PlatformPresence)
+			@ArtistPlatformBadges(a, data.LibrarySources, data.PlatformPresence)
 		</td>
 		<td data-col="coverage" class="px-4 py-3">
-			@nextCoverageCell(a, data.ProfileName)
+			@coverageCell(a, data.ProfileName)
 		</td>
 		<td data-col="score" class="px-4 py-3 text-right">
-			@nextScoreCell(a)
+			@scoreCell(a)
 		</td>
 	</tr>
 }
 
-// nextCoverageCell + nextScoreCell were extracted to coverage.templ (M55 #1336)
-// so the artist-detail hero can reuse the identical Sources/Coverage/Score
-// box-bar. The call sites below are unchanged (same package).
+// coverageCell + scoreCell live in coverage.templ (M55 #1336) so the
+// artist-detail hero can reuse the identical Sources/Coverage/Score box-bar
+// when it promotes (#1757 PR-3b).
 
-// ArtistsGrid is the next/ channel grid fragment. No grid prototype exists, so
-// the cards carry the same Sources / Coverage / Score vocabulary as the table,
-// over the spec's card layout (cover, name + dot, platform badges, status).
-templ ArtistsGrid(data templates.ArtistListData) {
+// ArtistsGrid is the canonical grid fragment, promoted-by-move from the next/
+// channel (#1757 PR-3a). No grid prototype exists, so the cards carry the same
+// Sources / Coverage / Score vocabulary as the table, over the spec's card
+// layout (cover, name + dot, platform badges, status).
+templ ArtistsGrid(data ArtistListData) {
 	<div id="artist-content"
 		data-sw-roving-list
 		data-sw-bulk-scope
@@ -194,29 +211,28 @@ templ ArtistsGrid(data templates.ArtistListData) {
 		data-sw-roving-label-l={ t(ctx, "artists.shortcuts.page_next") }
 		data-sw-roving-boundary-next="#sw-page-next"
 		data-sw-roving-boundary-prev="#sw-page-prev"
-		data-filter-active?={ nextIsFilterActive(data) }>
-		@nextBulkStrip(data, false)
+		data-filter-active?={ isFilterActive(data) }>
+		@bulkStrip(data, false)
 		<!-- Active-filter chips row removed (M55 #1335, maintainer 2026-05-30): it
 		     duplicated the filter flyout, which already surfaces active filters via
 		     its trigger state + count badge. Filters are managed solely in the flyout. -->
-
 		if len(data.Artists) == 0 {
 			<div class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "artists.empty_state") }</div>
 		} else {
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
 				for _, a := range data.Artists {
-					@nextArtistCard(a, data)
+					@artistCard(a, data)
 				}
 			</div>
 		}
-		@templates.NextPagination(buildArtistsPagination(data.Pagination))
+		@NextPagination(buildArtistsPagination(data.Pagination))
 	</div>
 }
 
-// nextArtistCard renders one grid card. The cover carries the compliance dot and
+// artistCard renders one grid card. The cover carries the compliance dot and
 // platform badges (Sources); the footer adds the Coverage bubbles + Score so the
 // grid reads in the same vocabulary as the table.
-templ nextArtistCard(a artist.Artist, data templates.ArtistListData) {
+templ artistCard(a artist.Artist, data ArtistListData) {
 	<div data-sw-roving-item data-sw-roving-key={ a.ID } class="relative">
 		<label
 			class="absolute top-1.5 right-1.5 z-10 flex items-center justify-center rounded-full bg-white/90 dark:bg-gray-900/90 p-0.5 shadow cursor-pointer"
@@ -232,14 +248,14 @@ templ nextArtistCard(a artist.Artist, data templates.ArtistListData) {
 			/>
 		</label>
 		<a
-			href={ templ.SafeURL(templates.BasePath() + "/next/artists/" + a.ID) }
+			href={ templ.SafeURL(BasePath() + "/artists/" + a.ID) }
 			data-sw-roving-activate
 			class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
 		>
 			<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
 				if a.ThumbExists {
 					<img
-						src={ templates.BasePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file" }
+						src={ BasePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file" }
 						alt={ a.Name }
 						loading="lazy"
 						class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
@@ -252,21 +268,21 @@ templ nextArtistCard(a artist.Artist, data templates.ArtistListData) {
 						</svg>
 					</div>
 				}
-				if nextComplianceAvailable(data.ComplianceMap) {
+				if complianceAvailable(data.ComplianceMap) {
 					<span
-						class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", nextComplianceDotClass(nextArtistCompliance(a.ID, data.ComplianceMap)) }
-						title={ nextComplianceDotTitle(ctx, nextArtistCompliance(a.ID, data.ComplianceMap)) }
-						aria-label={ nextComplianceDotTitle(ctx, nextArtistCompliance(a.ID, data.ComplianceMap)) }
+						class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, data.ComplianceMap)) }
+						title={ complianceDotTitle(ctx, artistCompliance(a.ID, data.ComplianceMap)) }
+						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, data.ComplianceMap)) }
 						role="img"
 					></span>
 				}
-				@templates.NextArtistCardSources(a, data.LibrarySources, data.PlatformPresence)
+				@NextArtistCardSources(a, data.LibrarySources, data.PlatformPresence)
 			</div>
 			<div class="px-2 py-2 space-y-1">
 				<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={ a.Name }>{ a.Name }</p>
 				<div class="flex items-center justify-between gap-2">
-					@nextCoverageCell(a, data.ProfileName)
-					@nextScoreCell(a)
+					@coverageCell(a, data.ProfileName)
+					@scoreCell(a)
 				</div>
 			</div>
 		</a>

@@ -11,13 +11,10 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -74,8 +71,8 @@ type ArtistListData struct {
 	// (>1 page) keeps the filter active.
 	IDs []string
 	// SavedViews is the user's saved filter snapshots (M55 #1777). Loaded
-	// from the "saved_views" user preference on the next/ artists page only;
-	// empty for the stable channel.
+	// from the "saved_views" user preference for the canonical /artists page
+	// (always-on since the #1757 PR-3a promotion; empty when the user has none).
 	SavedViews []SavedView
 }
 
@@ -228,11 +225,11 @@ func sortLabel(ctx context.Context, sort string) string {
 	case "origin":
 		return t(ctx, "artists.sort.origin")
 	case "health_score":
-		return t(ctx, "artists.sort.health")
+		return t(ctx, "artists.sort.health_score")
 	case "updated_at":
-		return t(ctx, "artists.sort.updated")
+		return t(ctx, "artists.sort.last_updated")
 	case "created_at":
-		return t(ctx, "artists.sort.added")
+		return t(ctx, "artists.sort.date_added")
 	default:
 		return t(ctx, "artists.sort.name")
 	}
@@ -289,140 +286,6 @@ func activeFilterCount(filters map[string]string) int {
 	return count
 }
 
-// filterChipLabel returns the display label for an active filter chip.
-func filterChipLabel(ctx context.Context, key, state string) string {
-	var name string
-	switch key {
-	// Legacy / composite filters.
-	case "missing_meta":
-		name = t(ctx, "artists.filter.missing_metadata")
-	case "missing_images":
-		name = t(ctx, "artists.filter.missing_images")
-	case "missing_mbid":
-		name = t(ctx, "artists.filter.missing_mbid")
-	case "excluded":
-		name = t(ctx, "artists.filter.excluded")
-	case "locked":
-		name = t(ctx, "artists.filter.locked")
-	// Artist-type filters.
-	case "type_person":
-		name = t(ctx, "artists.filter.person")
-	case "type_group":
-		name = t(ctx, "artists.filter.group")
-	case "type_orchestra":
-		name = t(ctx, "artists.filter.orchestra")
-	case "type_other":
-		name = t(ctx, "artists.filter.other")
-	// Metadata field presence filters.
-	case "has_biography":
-		name = t(ctx, "artists.filter.has_biography")
-	case "has_years_active":
-		name = t(ctx, "artists.filter.has_years_active")
-	case "has_formed":
-		name = t(ctx, "artists.filter.has_formed")
-	case "has_disbanded":
-		name = t(ctx, "artists.filter.has_disbanded")
-	case "has_born":
-		name = t(ctx, "artists.filter.has_born")
-	case "has_died":
-		name = t(ctx, "artists.filter.has_died")
-	case "has_gender":
-		name = t(ctx, "artists.filter.has_gender")
-	case "has_type":
-		name = t(ctx, "artists.filter.has_type")
-	case "has_country":
-		name = t(ctx, "artists.filter.has_country")
-	case "has_genres":
-		name = t(ctx, "artists.filter.has_genres")
-	case "has_styles":
-		name = t(ctx, "artists.filter.has_styles")
-	case "has_moods":
-		name = t(ctx, "artists.filter.has_moods")
-	case "has_members":
-		name = t(ctx, "artists.filter.has_members")
-	case "has_discography":
-		name = t(ctx, "artists.filter.has_discography")
-	// Per-image-type presence filters.
-	case "has_thumb":
-		name = t(ctx, "artists.filter.has_thumb")
-	case "has_fanart":
-		name = t(ctx, "artists.filter.has_fanart")
-	case "has_logo":
-		name = t(ctx, "artists.filter.has_logo")
-	case "has_banner":
-		name = t(ctx, "artists.filter.has_banner")
-	// Platform membership filters.
-	case "in_emby":
-		name = t(ctx, "artists.filter.in_emby")
-	case "in_jellyfin":
-		name = t(ctx, "artists.filter.in_jellyfin")
-	case "has_lidarr":
-		name = t(ctx, "artists.filter.has_lidarr")
-	// Rule violation filter.
-	case "has_violations":
-		name = t(ctx, "artists.filter.has_violations")
-	default:
-		if strings.HasPrefix(key, "library_") {
-			name = t(ctx, "artists.filter.library")
-		} else {
-			name = key
-		}
-	}
-	if state == "exclude" {
-		return tf(ctx, "artists.filter.not_prefix", name)
-	}
-	return name
-}
-
-// filterChipLabelFromData returns the display label for an active filter chip,
-// resolving library names from the provided slice when the key is a library filter.
-// sources is used to append the connection name for imported libraries.
-func filterChipLabelFromData(ctx context.Context, key, state string, libs []library.Library, sources map[string]LibrarySourceInfo) string {
-	if strings.HasPrefix(key, "library_") {
-		libID := key[len("library_"):]
-		for _, lib := range libs {
-			if lib.ID == libID {
-				label := libraryDropdownLabel(lib, sources)
-				if state == "exclude" {
-					return tf(ctx, "artists.filter.not_prefix", label)
-				}
-				return label
-			}
-		}
-	}
-	return filterChipLabel(ctx, key, state)
-}
-
-// ArtistActiveChips returns the slice of FilterChipSpec entries for the
-// active filters in `data.Filters`. Each chip dismisses to "#artist-content"
-// via the shared FilterChip; keys carry the "filter_" prefix to match the
-// tri-state URL encoding the artists handler reads.
-func ArtistActiveChips(ctx context.Context, data ArtistListData) []components.FilterChipSpec {
-	chips := make([]components.FilterChipSpec, 0, len(data.Filters))
-	for _, key := range sortedFilterKeys(data.Filters) {
-		state := data.Filters[key]
-		if state != "include" && state != "exclude" {
-			continue
-		}
-		chips = append(chips, components.FilterChipSpec{
-			Key:   "filter_" + key,
-			Label: filterChipLabelFromData(ctx, key, state, data.Libraries, data.LibrarySources),
-		})
-	}
-	return chips
-}
-
-// sortedFilterKeys returns the keys of a filter map in sorted order for
-// deterministic chip rendering.
-func sortedFilterKeys(filters map[string]string) []string {
-	keys := make([]string, 0, len(filters))
-	for k := range filters {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // sortDropdownItem returns the CSS classes for a sort dropdown item, with active highlighting.
 func sortDropdownItem(active bool) string {
 	base := "w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 "
@@ -432,6 +295,36 @@ func sortDropdownItem(active bool) string {
 	return base + "text-gray-700 dark:text-gray-200"
 }
 
+// Glass filter-trigger class sets for the promoted artists toolbar (#1757
+// PR-3a). The legacy filterTriggerActive/filterTriggerNeutral consts above keep
+// the pre-promotion blue style for the not-yet-promoted screens (activity);
+// these carry the promoted glass style. The JS swaps between them via the
+// data-active-classes / data-neutral-classes attributes. filterTriggerBadge is
+// shared (identical in both styles).
+const (
+	glassFilterTriggerActive  = glassButtonHalo
+	glassFilterTriggerNeutral = "hover:bg-white/5"
+)
+
+// ArtistsPage is the canonical artists list, promoted-by-move from the next/
+// channel (M55 #1335, promoted in #1757 PR-3a): a compact header and a
+// single-row sticky toolbar, wrapped in the .sw-next-artists scope so the
+// (still sw-next-prefixed until PR-7) CSS can restyle the reused row/badge
+// markup without forking it. The page composes the promoted body partials and
+// the shared chrome/behaviour partials:
+//
+//   - the table / grid body: @ArtistsTable / @ArtistsGrid (artists_table.templ),
+//     with the bulkStrip / bulkActions split (bulk.templ). It carries the
+//     off-page-selection #1227 contract and the sortable Type/Origin/Score
+//     columns.
+//   - the tri-state filter flyout is REUSED: @ArtistFilterFlyout.
+//   - the bulk-progress-pill i18n carrier is REUSED: @BulkProgressPill.
+//   - the page behaviour JS (selection, sort, filter-sync, keyboard nav) is
+//     REUSED: @ArtistsPageScripts.
+//
+// All element ids, hx-* attributes, and onclick handler names match the
+// pre-promotion page verbatim so the shared JS binds identically; only the
+// hx-get/link targets moved from /next/artists to the canonical /artists.
 func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -465,247 +358,129 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between\"><div><h1 class=\"text-2xl font-bold\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"sw-next-artists space-y-2\" data-density=\"comfy\"><!-- Header ditched (M55 #1335, maintainer 2026-05-30): a separate PageHead block\n\t\t\t     sat bare on the photographic backdrop and read poorly in light mode. The\n\t\t\t     title is redundant with the active sidebar nav + document <title>, and the\n\t\t\t     \"N of M\" count duplicates the pagination footer, so both are dropped. The\n\t\t\t     Scan action moves into the toolbar row below. A visually-hidden h1 preserves\n\t\t\t     the document outline for assistive tech. --><h1 class=\"sr-only\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 432, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 329, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h1><input type=\"hidden\" name=\"view\" id=\"artist-view-input\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
-			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artists.in_library", data.Pagination.TotalItems))
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.View)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 434, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 330, Col: 76}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p></div><button id=\"scan-btn\" hx-post=\"/api/v1/scanner/run\" hx-swap=\"none\" data-label-scan=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"> <input type=\"hidden\" name=\"sort\" id=\"artist-sort-input\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
-			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.scan_library"))
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Sort)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 441, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 331, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" data-label-scanning=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <input type=\"hidden\" name=\"order\" id=\"artist-order-input\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.scanning"))
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Order)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 442, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 332, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed\"><span id=\"scan-spinner\" class=\"hidden\"><svg class=\"animate-spin h-4 w-4\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle> <path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z\"></path></svg></span> <span id=\"scan-label\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><!-- Single-row sticky toolbar (search · library · filters · sort · columns · view). --><div class=\"sw-next-toolbar sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-lg bg-gray-50/80 px-1 py-2 backdrop-blur dark:bg-gray-900/80\"><!-- The \"/\" focus-search shortcut is advertised once in the tip-line\n\t\t\t\t     legend below and surfaced via the data-sw-shortcut attribute the\n\t\t\t\t     #1789 keyboard registry reads; no inline sw-kbd keycap is pinned in\n\t\t\t\t     the search box here (matches the next/ dashboard and avoids\n\t\t\t\t     duplicating the hint; charter rule 2, hints owned by the registry). --><div class=\"relative min-w-[12rem] flex-1\"><input id=\"artist-search\" type=\"search\" name=\"search\" data-sw-shortcut=\"/\" data-sw-shortcut-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.scan_library"))
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.shortcuts.search"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 451, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 346, Col: 65}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</span></button></div><input type=\"hidden\" name=\"view\" id=\"artist-view-input\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.View)
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Search)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 454, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 347, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"> <input type=\"hidden\" name=\"sort\" id=\"artist-sort-input\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" placeholder=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Sort)
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.search_placeholder"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 455, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 348, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"> <input type=\"hidden\" name=\"order\" id=\"artist-order-input\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Order)
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.search_placeholder"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 456, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 349, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"><div class=\"flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between\"><div class=\"relative flex-1 max-w-sm\"><input id=\"artist-search\" type=\"search\" name=\"search\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" hx-get=\"/artists\" hx-trigger=\"keyup changed delay:300ms\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-include=\"[name='library_id'],[name='view'],[name='sort'],[name='order']\" class=\"block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-3 pr-8 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div><!-- Library dropdown ditched (M55 #1335, maintainer 2026-05-30): the filter\n\t\t\t\t     flyout already exposes every library as a tri-state pill (the \"library\"\n\t\t\t\t     FilterSection / filter_library_<id>), so a single-select toolbar dropdown\n\t\t\t\t     was duplicative. Library filtering now lives solely in the flyout. The\n\t\t\t\t     hidden library_id input below preserves the param for shared script /\n\t\t\t\t     hx-include selectors that reference it. --><input type=\"hidden\" name=\"library_id\" id=\"artist-library-input\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Search)
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.LibraryID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 463, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 364, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" placeholder=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var12 string
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.search_placeholder"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 464, Col: 56}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var13 string
-			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.search_placeholder"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 465, Col: 55}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" hx-get=\"/artists\" hx-trigger=\"keyup changed delay:300ms\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-include=\"[name='library_id'],[name='view'],[name='sort'],[name='order']\" class=\"block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div><div class=\"flex items-center gap-3\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if len(data.Libraries) > 1 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<select name=\"library_id\" hx-get=\"/artists\" hx-trigger=\"change\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-include=\"[name='search'],[name='view'],[name='sort'],[name='order']\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\" aria-label=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var14 string
-				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.filter_by_library"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 484, Col: 55}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\"><option value=\"\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				if data.LibraryID == "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, " selected")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, ">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var15 string
-				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.all_libraries"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 486, Col: 92}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</option> ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				for _, lib := range data.Libraries {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<option value=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var16 string
-					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(lib.ID)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 488, Col: 30}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					if data.LibraryID == lib.ID {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " selected")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, ">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var17 string
-					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(libraryDropdownLabel(lib, data.LibrarySources))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 488, Col: 120}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</option>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</select>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<!-- Filters flyout trigger button -->")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var18 = []any{"inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activeFilterCount(data.Filters) > 0), templ.KV(filterTriggerNeutral, activeFilterCount(data.Filters) == 0)}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var18...)
+			var templ_7745c5c3_Var12 = []any{"inline-flex items-center gap-1.5 px-3 py-2 text-sm transition-colors " + glassButton, templ.KV(glassFilterTriggerActive, activeFilterCount(data.Filters) > 0), templ.KV(glassFilterTriggerNeutral, activeFilterCount(data.Filters) == 0)}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var12...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -713,224 +488,380 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<button id=\"artist-filter-trigger\" type=\"button\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button id=\"artist-filter-trigger\" type=\"button\" data-sw-shortcut=\"f\" data-sw-shortcut-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var13 string
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.shortcuts.tip_filters"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 369, Col: 69}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var14 string
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var12).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-active-classes=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var15 string
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(glassFilterTriggerActive)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 371, Col: 51}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" data-neutral-classes=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var16 string
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(glassFilterTriggerNeutral)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 372, Col: 53}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" data-badge-classes=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterTriggerBadge)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 373, Col: 44}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var18 string
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.open_filter_panel"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 374, Col: 52}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" aria-pressed=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var19 string
-			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var18).String())
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(activeFilterCount(data.Filters) > 0))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 375, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" data-active-classes=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" aria-expanded=\"false\" aria-controls=\"artist-filters-flyout\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var20 string
-			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterTriggerActive)
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 497, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 378, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" data-neutral-classes=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var21 string
-			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterTriggerNeutral)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 498, Col: 49}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
+			var templ_7745c5c3_Var21 templ.ComponentScript = components.OpenFilterFlyout("artist-filters-flyout")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-badge-classes=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var22 string
-			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(filterTriggerBadge)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 499, Col: 45}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var23 string
-			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.open_filter_panel"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 500, Col: 53}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" aria-expanded=\"false\" aria-controls=\"artist-filters-flyout\" onclick=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var24 templ.ComponentScript = components.OpenFilterFlyout("artist-filters-flyout")
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24.Call)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"><!-- Heroicons: funnel (mini) --><svg class=\"h-4 w-4\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z\" clip-rule=\"evenodd\"></path></svg> <span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var25 string
-			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.filters"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 509, Col: 38}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><svg class=\"h-4 w-4\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z\" clip-rule=\"evenodd\"></path></svg><!-- Label is tooltip-only (M55 #1335, maintainer 2026-05-30): the funnel\n\t\t\t\t\t     icon carries the meaning and \"Filters\" moves to the title tooltip\n\t\t\t\t\t     to save toolbar width. The \"f\" shortcut is advertised once in the\n\t\t\t\t\t     tip-line legend below and via the data-sw-shortcut attribute the\n\t\t\t\t\t     #1789 registry reads; no inline sw-kbd keycap here (matches the\n\t\t\t\t\t     next/ dashboard and avoids duplicating the hint; charter rule 2). -->")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if activeFilterCount(data.Filters) > 0 {
-				var templ_7745c5c3_Var26 = []any{filterTriggerBadge}
-				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var26...)
+				var templ_7745c5c3_Var22 = []any{filterTriggerBadge}
+				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var22...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span class=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<span class=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var27 string
-				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var26).String())
+				var templ_7745c5c3_Var23 string
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var22).String())
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" aria-label=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var28 string
-				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(func() string {
-					n := activeFilterCount(data.Filters)
-					if n == 1 {
-						return t(ctx, "common.active_filter_one")
-					}
-					return tf(ctx, "common.active_filter_other", n)
-				}())
+				var templ_7745c5c3_Var24 string
+				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", activeFilterCount(data.Filters)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 511, Col: 217}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 392, Col: 59}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var29 string
-				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", activeFilterCount(data.Filters)))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 512, Col: 60}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</button> <details id=\"sort-dropdown\" class=\"relative\"><summary class=\"list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</button><!-- Sort dropdown is hidden in TABLE view (M55 #1335, maintainer 2026-05-30):\n\t\t\t\t     the clickable column headers own sorting there. It is surfaced in GRID\n\t\t\t\t     view (no headers); setView toggles .hidden, scoped to next/ via the\n\t\t\t\t     .sw-next-artists marker so the stable channel is untouched. -->")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var25 = []any{"relative", templ.KV("hidden", data.View == "table")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var25...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<details id=\"sort-dropdown\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var26 string
+			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var25).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var27 = []any{"list-none cursor-pointer inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var27...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<summary class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var28 string
+			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var27).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var29 string
+			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.sort"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 401, Col: 146}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5\"></path></svg> <span id=\"sort-field-label\" class=\"hidden sm:inline\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var30 string
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.sort"))
+			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(sortLabel(ctx, data.Sort))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 517, Col: 334}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 405, Col: 86}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5\"></path></svg> <span id=\"sort-field-label\" class=\"hidden sm:inline\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</span> <span id=\"sort-order-label\" class=\"hidden sm:inline text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var31 string
-			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(sortLabel(ctx, data.Sort))
+			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(orderLabel(ctx, data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 521, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 406, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</span> <span id=\"sort-order-label\" class=\"hidden sm:inline text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</span></summary><div class=\"absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1\"><div class=\"px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var32 string
-			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(orderLabel(ctx, data.Order))
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort_by"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 522, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 409, Col: 138}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</span></summary><div class=\"absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1\"><div class=\"px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var33 string
-			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort_by"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 525, Col: 139}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+			var templ_7745c5c3_Var33 = []any{sortDropdownItem(data.Sort == "name")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var33...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<button type=\"button\" onclick=\"setSort('name')\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var34 = []any{sortDropdownItem(data.Sort == "name")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var34...)
+			var templ_7745c5c3_Var34 string
+			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var33).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<button type=\"button\" onclick=\"setSort('name')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var35 string
-			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var34).String())
+			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.name"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 410, Col: 131}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</button> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var36 = []any{sortDropdownItem(data.Sort == "sort_name")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var36...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" onclick=\"setSort('sort_name')\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var37 string
+			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var36).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var38 string
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.sort_name"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 411, Col: 146}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</button> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var39 = []any{sortDropdownItem(data.Sort == "type")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var39...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<button type=\"button\" onclick=\"setSort('type')\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var40 string
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var39).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var41 string
+			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.type"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 412, Col: 131}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</button> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var42 = []any{sortDropdownItem(data.Sort == "origin")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var42...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<button type=\"button\" onclick=\"setSort('origin')\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var42).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -938,12 +869,12 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var36 string
-			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.name"))
+			var templ_7745c5c3_Var44 string
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.origin"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 526, Col: 132}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 413, Col: 137}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -951,21 +882,21 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var37 = []any{sortDropdownItem(data.Sort == "sort_name")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var37...)
+			var templ_7745c5c3_Var45 = []any{sortDropdownItem(data.Sort == "health_score")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var45...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<button type=\"button\" onclick=\"setSort('sort_name')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<button type=\"button\" onclick=\"setSort('health_score')\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var38 string
-			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var37).String())
+			var templ_7745c5c3_Var46 string
+			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var45).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -973,12 +904,12 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var39 string
-			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.sort_name"))
+			var templ_7745c5c3_Var47 string
+			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.health_score"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 527, Col: 147}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 414, Col: 155}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -986,21 +917,21 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var40 = []any{sortDropdownItem(data.Sort == "type")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var40...)
+			var templ_7745c5c3_Var48 = []any{sortDropdownItem(data.Sort == "updated_at")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var48...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<button type=\"button\" onclick=\"setSort('type')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<button type=\"button\" onclick=\"setSort('updated_at')\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var41 string
-			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var40).String())
+			var templ_7745c5c3_Var49 string
+			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var48).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1008,12 +939,12 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var42 string
-			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.type"))
+			var templ_7745c5c3_Var50 string
+			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.last_updated"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 528, Col: 132}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 415, Col: 151}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1021,21 +952,21 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var43 = []any{sortDropdownItem(data.Sort == "origin")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var43...)
+			var templ_7745c5c3_Var51 = []any{sortDropdownItem(data.Sort == "created_at")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var51...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<button type=\"button\" onclick=\"setSort('origin')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<button type=\"button\" onclick=\"setSort('created_at')\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var44 string
-			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var43).String())
+			var templ_7745c5c3_Var52 string
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var51).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1043,343 +974,620 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var45 string
-			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.origin"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 529, Col: 138}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</button> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var46 = []any{sortDropdownItem(data.Sort == "health_score")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var46...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<button type=\"button\" onclick=\"setSort('health_score')\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var47 string
-			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var46).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var48 string
-			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.health_score"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 530, Col: 156}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</button> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var49 = []any{sortDropdownItem(data.Sort == "updated_at")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var49...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<button type=\"button\" onclick=\"setSort('updated_at')\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var50 string
-			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var49).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var51 string
-			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.last_updated"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 531, Col: 152}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</button> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var52 = []any{sortDropdownItem(data.Sort == "created_at")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var52...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<button type=\"button\" onclick=\"setSort('created_at')\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
 			var templ_7745c5c3_Var53 string
-			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var52).String())
+			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.date_added"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 416, Col: 149}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</button><div class=\"my-1 border-t border-gray-100 dark:border-gray-700\"></div><div class=\"px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var54 string
-			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.date_added"))
+			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.direction"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 532, Col: 150}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 418, Col: 140}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button><div class=\"my-1 border-t border-gray-100 dark:border-gray-700\"></div><div class=\"px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var55 string
-			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.direction"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 534, Col: 141}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
+			var templ_7745c5c3_Var55 = []any{sortDropdownItem(data.Order == "asc")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var55...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<button type=\"button\" onclick=\"setOrder('asc')\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var56 = []any{sortDropdownItem(data.Order == "asc")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var56...)
+			var templ_7745c5c3_Var56 string
+			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var55).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<button type=\"button\" onclick=\"setOrder('asc')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var57 string
-			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var56).String())
+			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.ascending"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 419, Col: 136}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</button> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var58 = []any{sortDropdownItem(data.Order == "desc")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var58...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<button type=\"button\" onclick=\"setOrder('desc')\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var59 string
+			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var58).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var58 string
-			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.ascending"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 535, Col: 137}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</button> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var59 = []any{sortDropdownItem(data.Order == "desc")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var59...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<button type=\"button\" onclick=\"setOrder('desc')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var60 string
-			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var59).String())
+			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.descending"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 420, Col: 139}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</button></div></details>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var61 = []any{templ.KV("hidden", data.View != "table")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var61...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<div id=\"col-toggle-wrapper\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var62 string
+			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var61).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var61 string
-			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.descending"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 536, Col: 140}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</button></div></details>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = components.ContextHelp("help-artists-sort", t(ctx, "artists.help.sort.label"), t(ctx, "artists.help.sort"), "").Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var62 = []any{templ.KV("hidden", data.View != "table")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var62...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<div id=\"col-toggle-wrapper\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var63 string
-			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var62).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = components.ColumnToggle("artists", "artists-table", t(ctx, "common.columns"), false, []components.ColumnDef{
+			templ_7745c5c3_Err = components.ColumnToggle("artists", "artists-table", t(ctx, "common.columns"), true, []components.ColumnDef{
 				{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
+				{Key: "library", Label: t(ctx, "artists.col.library")},
 				{Key: "type", Label: t(ctx, "artists.sort.type")},
 				{Key: "origin", Label: t(ctx, "artists.sort.origin")},
-				{Key: "metadata", Label: t(ctx, "artists.col.metadata")},
-				{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
-				{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
-				{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
-				{Key: "mbid", Label: t(ctx, "artists.col.mbid")},
+				{Key: "sources", Label: t(ctx, "artists.col.sources")},
+				{Key: "coverage", Label: t(ctx, "artists.col.coverage")},
+				{Key: "score", Label: t(ctx, "artists.col.score")},
 			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</div><div id=\"view-toggle\" class=\"flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</div><div id=\"view-toggle\" class=\"ml-auto flex rounded-md overflow-hidden border border-[var(--swd-line)]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var64 = []any{"p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var64...)
+			var templ_7745c5c3_Var63 = []any{"p-2 transition-colors text-[var(--swd-ink-2)] hover:bg-white/5", templ.KV(glassButtonHalo, data.View == "table")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var63...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<button type=\"button\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<button type=\"button\" title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var64 string
+			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.view.table"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 437, Col: 42}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.view.table"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 555, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 438, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\" aria-pressed=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var66 string
-			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.view.table"))
+			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(data.View == "table"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 556, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 439, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" hx-get=\"/artists\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-include=\"[name='search'],[name='library_id'],[name='sort'],[name='order']\" hx-vals='{\"view\":\"table\",\"page\":\"1\"}' onclick=\"setView('table')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\" hx-get=\"/artists\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-include=\"[name='search'],[name='library_id'],[name='sort'],[name='order']\" hx-vals='{\"view\":\"table\",\"page\":\"1\"}' onclick=\"setView('table')\" data-view=\"table\" data-active-classes=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var67 string
-			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var64).String())
+			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(glassButtonHalo)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 447, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var67)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5\"></path></svg></button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var68 = []any{"p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid")}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var68...)
+			var templ_7745c5c3_Var68 string
+			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var63).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<button type=\"button\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5\"></path></svg></button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var69 string
-			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.view.grid"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 571, Col: 42}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
+			var templ_7745c5c3_Var69 = []any{"p-2 transition-colors text-[var(--swd-ink-2)] hover:bg-white/5", templ.KV(glassButtonHalo, data.View == "grid")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var69...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<button type=\"button\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.view.grid"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 572, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 456, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" hx-get=\"/artists\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-include=\"[name='search'],[name='library_id'],[name='sort'],[name='order']\" hx-vals='{\"view\":\"grid\",\"page\":\"1\"}' onclick=\"setView('grid')\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var71 string
-			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var68).String())
+			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.view.grid"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 457, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z\"></path></svg></button></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\" aria-pressed=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var72 string
+			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(data.View == "grid"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 458, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\" hx-get=\"/artists\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-include=\"[name='search'],[name='library_id'],[name='sort'],[name='order']\" hx-vals='{\"view\":\"grid\",\"page\":\"1\"}' onclick=\"setView('grid')\" data-view=\"grid\" data-active-classes=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var73 string
+			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue(glassButtonHalo)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 466, Col: 43}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var74 string
+			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var69).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z\"></path></svg></button></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = bulkActions(data).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var75 = []any{"inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed " + glassButton}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var75...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<button id=\"scan-btn\" data-sw-shortcut=\"r\" data-sw-shortcut-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var76 string
+			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.scan_library"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 478, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\" hx-post=\"/api/v1/scanner/run\" hx-swap=\"none\" data-label-scan=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var77 string
+			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.scan_library"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 481, Col: 53}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" data-label-scanning=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var78 string
+			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.scanning"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 482, Col: 53}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var79 string
+			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var75).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\"><span id=\"scan-spinner\" class=\"hidden\"><svg class=\"animate-spin h-4 w-4\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle> <path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z\"></path></svg></span> <span id=\"scan-label\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var80 string
+			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.scan_library"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 491, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</span></button><!-- Save view button (M55 #1777): saves the current search + filter\n\t\t\t\t     state as a named chip. Always visible so users can save \"no filters\"\n\t\t\t\t     as a view too. -->")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var81 = []any{"inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var81...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<button type=\"button\" title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var82 string
+			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.saved_views.save_button_aria"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 498, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var83 string
+			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.saved_views.save_button_aria"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 499, Col: 64}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var83)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\" onclick=\"if(window.swSavedViews)swSavedViews.openSaveViewModal()\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var84 string
+			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var81).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z\"></path></svg> <span class=\"hidden sm:inline\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var85 string
+			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.saved_views.save_button"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 506, Col: 79}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</span></button></div><!-- Saved view chips row (M55 #1777): always in the DOM so JS can update\n\t\t\t     it in place without insertion. Hidden via \"hidden\" when there are no\n\t\t\t     saved views. JS (saved-views.js renderChipsRow) adds/removes chips\n\t\t\t     client-side after save/delete without a full HTMX content swap. -->")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var86 = []any{"flex flex-wrap items-center gap-2 px-1 py-1", templ.KV("hidden", len(data.SavedViews) == 0)}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var86...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<div id=\"saved-views-row\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var87 string
+			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var86).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var87)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\" data-label-apply-title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var88 string
+			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.saved_views.apply_title"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 516, Col: 70}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var88)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\" data-label-apply-aria=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var89 string
+			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.saved_views.apply_aria"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 517, Col: 68}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "\" data-label-delete-title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var90 string
+			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.saved_views.delete_title"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 518, Col: 72}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\" data-label-delete-aria=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var91 string
+			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.saved_views.delete_aria"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 519, Col: 70}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var91)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\"><span class=\"text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var92 string
+			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.saved_views.saved_label"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 521, Col: 123}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "</span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, sv := range data.SavedViews {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<span class=\"group relative inline-flex items-center\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.JSFuncCall("swSavedViews.applySavedView", sv.Params))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "<button type=\"button\" title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var93 string
+				templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artists.saved_views.apply_title", sv.Name))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 526, Col: 66}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var93)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" aria-label=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var94 string
+				templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artists.saved_views.apply_aria", sv.Name))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 527, Col: 70}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var94)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\" onclick=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var95 templ.ComponentScript = templ.JSFuncCall("swSavedViews.applySavedView", sv.Params)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95.Call)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" class=\"inline-flex items-center gap-1 rounded-l-full rounded-r-none border border-[var(--swd-line)] bg-white/5 px-3 py-1 text-xs text-[var(--swd-ink-2)] hover:bg-white/10 transition-colors\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var96 string
+				templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(sv.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 531, Col: 16}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</button> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.JSFuncCall("swSavedViews.deleteSavedView", sv.Name))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<button type=\"button\" title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var97 string
+				templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artists.saved_views.delete_title", sv.Name))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 535, Col: 67}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var97)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\" aria-label=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var98 string
+				templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artists.saved_views.delete_aria", sv.Name))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 536, Col: 71}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var98)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "\" onclick=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var99 templ.ComponentScript = templ.JSFuncCall("swSavedViews.deleteSavedView", sv.Name)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var99.Call)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "\" class=\"inline-flex items-center rounded-l-none rounded-r-full border border-l-0 border-[var(--swd-line)] bg-white/5 px-1.5 py-1 text-xs text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100\"><svg class=\"h-3 w-3\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z\"></path></svg></button></span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1388,17 +1596,147 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if data.View == "grid" {
-				templ_7745c5c3_Err = ArtistGrid(data).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = ArtistsGrid(data).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = ArtistTable(data).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = ArtistsTable(data).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "<!-- Keyboard tip line (M55 #1789): discoverability hint for the shared\n\t\t\t     vendored helper (web/static/js/keyboard.js), which reads the page's\n\t\t\t     data-sw-* contract and also swaps .sw-mod-key to the Cmd glyph on\n\t\t\t     macOS. Sits outside #artist-content so it persists across HTMX table\n\t\t\t     swaps. --><p class=\"sw-list-tips\" role=\"note\"><span class=\"font-medium\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var100 string
+			templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.tip_label"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 559, Col: 69}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, ":</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">/</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var101 string
+			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.search"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 560, Col: 137}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">f</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var102 string
+			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.tip_filters"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 562, Col: 142}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">j</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var103 string
+			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.tip_next"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 564, Col: 139}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">k</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var104 string
+			templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.tip_prev"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 566, Col: 139}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">h</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var105 string
+			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.page_prev"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 568, Col: 140}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">l</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var106 string
+			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.page_next"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 570, Col: 140}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">Enter</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var107 string
+			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.tip_open"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 572, Col: 143}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var107))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center gap-0.5\"><kbd class=\"sw-kbd sw-mod-key inline-flex\">Ctrl</kbd><kbd class=\"sw-kbd inline-flex\">A</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var108 string
+			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.tip_select_all"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 574, Col: 206}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">Esc</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var109 string
+			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.shortcuts.tip_clear"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 576, Col: 142}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "</span></span></p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1406,7 +1744,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1414,15 +1752,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, " ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = ArtistsKeyboardShortcuts().Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1430,1653 +1760,44 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, " <!-- Save view modal (M55 #1777): opened by the \"Save view\" toolbar button. --> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = components.SaveViewModal().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, " ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if assets.SavedViewsJS != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "<script src=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var110 string
+				templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.SavedViewsJS)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 585, Col: 36}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var110)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "\"></script>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, " <!-- Density auto-flip REMOVED (M55 #1335, maintainer 2026-05-30): the list\n\t\t     previously flipped data-density comfy->compact while a selection was active,\n\t\t     which shrank row height on checkbox select. That \"compactify on selection\"\n\t\t     motif is unexpected and unwanted, so density is now static \"comfy\". The\n\t\t     data-density attribute + scoped CSS are kept so a future user-controlled\n\t\t     \"coziness\" appearance preference can drive density deliberately. --> <!-- Freeze offset (M55 #1335): publish the live toolbar height as the\n\t\t\t     sw-next-toolbar-h custom property so the sticky selection strip pins\n\t\t\t     directly below the sticky toolbar, even when the toolbar wraps to two\n\t\t\t     rows at narrow widths. --> <script>\n\t\t\t\t(function () {\n\t\t\t\t\tif (window.__swNextStickyOffset) return;\n\t\t\t\t\twindow.__swNextStickyOffset = true;\n\t\t\t\t\tvar root = document.querySelector('.sw-next-artists');\n\t\t\t\t\tvar toolbar = root && root.querySelector('.sw-next-toolbar');\n\t\t\t\t\tif (!root || !toolbar) return;\n\t\t\t\t\tfunction setOffset() {\n\t\t\t\t\t\troot.style.setProperty('--sw-next-toolbar-h', toolbar.offsetHeight + 'px');\n\t\t\t\t\t}\n\t\t\t\t\tsetOffset();\n\t\t\t\t\tif (window.ResizeObserver) {\n\t\t\t\t\t\tnew ResizeObserver(setOffset).observe(toolbar);\n\t\t\t\t\t} else {\n\t\t\t\t\t\twindow.addEventListener('resize', setOffset);\n\t\t\t\t\t}\n\t\t\t\t})();\n\t\t\t</script>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 			return nil
 		})
 		templ_7745c5c3_Err = Layout(t(ctx, "artists.title"), assets).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-// ArtistTable is the HTMX-swappable table fragment.
-// BulkActionBar renders the Select-All control, "N selected" indicator, and
-// bulk action dropdown. It is only rendered when a filter is active so the
-// user cannot accidentally select the entire library in one click. The bar
-// is wired to a small client-side controller (initialized in ArtistsPage)
-// that manages checkbox state, Select-All indeterminate, and POSTs the
-// selected IDs to /api/v1/artists/bulk-actions.
-//
-// When a sort change moves selected artists off the current page, the toolbar
-// renders an "X selected (Y on this page, Z elsewhere)" form computed by the
-// JS controller, and exposes a "Show selected" button that filters the list
-// to only the selection (issue #1227). When the selection-filter is active
-// (data.IDs non-empty) the bar instead renders a dismissible chip with a
-// "Show all" link that clears the filter.
-func BulkActionBar(data ArtistListData) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var72 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var72 == nil {
-			templ_7745c5c3_Var72 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<div id=\"bulk-action-bar\" class=\"flex flex-wrap items-center gap-3 mb-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2\" role=\"toolbar\" aria-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var73 string
-		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.toolbar"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 621, Col: 45}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\" data-i18n-none=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var74 string
-		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.none_selected"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 622, Col: 55}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "\" data-i18n-selected-one=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var75 string
-		templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.selected.one"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 623, Col: 62}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\" data-i18n-selected-other=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var76 string
-		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.selected.other"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 624, Col: 66}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\" data-i18n-selected-split-one=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var77 string
-		templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.selected.split.one"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 625, Col: 74}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "\" data-i18n-selected-split-other=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var78 string
-		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.selected.split.other"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 626, Col: 78}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\" data-i18n-busy=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var79 string
-		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.busy"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 627, Col: 46}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\" data-i18n-failed=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var80 string
-		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.failed"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 628, Col: 50}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "\" data-i18n-select-all=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var81 string
-		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.select_all"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 629, Col: 58}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" data-i18n-deselect-all=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var82 string
-		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.deselect_all"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 630, Col: 62}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\" data-i18n-selection-cap=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var83 string
-		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.selection_cap"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 631, Col: 64}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var83)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" data-i18n-select-all-matching=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var84 string
-		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.select_all_matching"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 632, Col: 76}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\" data-i18n-select-all-matching-aria=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var85 string
-		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.select_all_matching.aria"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 633, Col: 86}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var85)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" data-i18n-select-all-matching-capped=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var86 string
-		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.select_all_matching.capped"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 634, Col: 90}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "\" data-i18n-select-all-matching-failed=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var87 string
-		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.select_all_matching.failed"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 635, Col: 90}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var87)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "\" data-total-matching=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var88 string
-		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(data.Pagination.TotalItems))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 636, Col: 64}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var88)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\" data-total-pages=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var89 string
-		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(data.Pagination.TotalPages))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 637, Col: 61}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "\"><label class=\"inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200\"><input id=\"bulk-select-all\" type=\"checkbox\" class=\"h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1\" aria-controls=\"artist-content\" aria-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var90 string
-		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.select_all"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 645, Col: 50}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "\"> <span id=\"bulk-select-all-label\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var91 string
-		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.select_all"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 647, Col: 71}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</span></label> <span id=\"bulk-selected-count\" class=\"text-sm text-gray-500 dark:text-gray-400\" aria-live=\"polite\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var92 string
-		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.none_selected"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 650, Col: 41}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</span><button id=\"bulk-show-selected\" type=\"button\" class=\"hidden ml-1 items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed\" aria-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var93 string
-		templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.show_selected.aria"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 663, Col: 57}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var93)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "\" disabled>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var94 string
-		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.show_selected"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 666, Col: 41}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</button><button id=\"bulk-select-all-matching\" type=\"button\" class=\"hidden ml-1 items-center rounded-md border border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed\" aria-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var95 string
-		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.select_all_matching.aria"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 678, Col: 63}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "\" disabled>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var96 string
-		templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.select_all_matching"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 681, Col: 47}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</button><div class=\"ml-auto inline-flex items-center gap-2\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ContextHelp("help-artists-bulk-action", t(ctx, "artists.help.bulk_action.label"), t(ctx, "artists.help.bulk_action"), "").Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "<select id=\"bulk-action-select\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50\" disabled aria-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var97 string
-		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.action_label"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 695, Col: 52}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var97)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "\"><option value=\"\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var98 string
-		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.choose_action"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 697, Col: 59}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "</option> <option value=\"run_rules\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var99 string
-		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.action.run_rules"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 698, Col: 71}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "</option> <option value=\"re_identify_auto\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var100 string
-		templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.action.re_identify_auto"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 699, Col: 85}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</option> <option value=\"re_identify_review\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var101 string
-		templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.action.re_identify_review"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 700, Col: 89}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "</option> <option value=\"scan\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var102 string
-		templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.action.scan"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 701, Col: 61}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</option> <option value=\"fetch_images\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var103 string
-		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.action.fetch_images"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 702, Col: 77}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "</option> <option value=\"lock\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var104 string
-		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.action.lock"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 703, Col: 61}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</option> <option value=\"unlock\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var105 string
-		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.action.unlock"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 704, Col: 65}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "</option></select> <button id=\"bulk-action-apply\" type=\"button\" class=\"ml-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed\" disabled>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var106 string
-		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.apply"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 712, Col: 34}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "</button></div></div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if len(data.IDs) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "     <div class=\"flex flex-wrap items-center gap-2 mb-3\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var107 string
-			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.toolbar"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 722, Col: 97}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\"><span class=\"inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-2.5 py-0.5 text-xs font-medium\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var108 string
-			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artists.bulk.showing_selected", len(data.IDs)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 724, Col: 61}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, " <a href=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var109 templ.SafeURL
-			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath() + showAllPath(data)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 726, Col: 57}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "\" hx-get=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var110 string
-			templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.ResolveAttributeValue(showAllPath(data))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 727, Col: 31}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var110)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "\" hx-target=\"#artist-content\" hx-swap=\"outerHTML\" hx-push-url=\"true\" data-clear-ids=\"true\" class=\"ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var111 string
-			templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.show_all.aria"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 733, Col: 54}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var111)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "\" title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var112 string
-			templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.show_all"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 734, Col: 44}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var112)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "\"><svg class=\"h-3 w-3\" viewBox=\"0 0 12 12\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M4 4l4 4m0-4L4 8\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path></svg></a></span></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		return nil
-	})
-}
-
-// showAllPath returns the current artist-list path with the IDs filter
-// removed. Used by the "Show all" affordance on the selection chip to
-// clear the #1227 filter without losing the user's view, sort, search,
-// or other filter state. Returns a root-relative path so the
-// document-level htmx:configRequest hook can prepend basePath() once
-// for HTMX requests; callers wrap with basePath() themselves for
-// non-HTMX href values.
-func showAllPath(data ArtistListData) string {
-	v := url.Values{}
-	if data.Search != "" {
-		v.Set("search", data.Search)
-	}
-	if data.Sort != "" {
-		v.Set("sort", data.Sort)
-	}
-	if data.Order != "" {
-		v.Set("order", data.Order)
-	}
-	if data.Filter != "" {
-		v.Set("filter", data.Filter)
-	}
-	if data.LibraryID != "" {
-		v.Set("library_id", data.LibraryID)
-	}
-	if data.View != "" {
-		v.Set("view", data.View)
-	}
-	for k, state := range data.Filters {
-		if state == "include" {
-			v.Set("filter_"+k, "+y")
-		} else if state == "exclude" {
-			v.Set("filter_"+k, "-y")
-		}
-	}
-	// Base the path on the channel-aware Pagination.BaseURL (set by
-	// buildArtistListData) so the next/ "Show all" chip clears the ids filter
-	// against /next/artists, not the stable /artists table (M55 #1335).
-	base := data.Pagination.BaseURL
-	if base == "" {
-		base = "/artists"
-	}
-	enc := v.Encode()
-	if enc == "" {
-		return base
-	}
-	return base + "?" + enc
-}
-
-func ArtistTable(data ArtistListData) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var113 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var113 == nil {
-			templ_7745c5c3_Var113 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "<div id=\"artist-content\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if isFilterActive(data) {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, " data-filter-active")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, ">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = BulkActionBar(data).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ActiveFilters("#artist-content", "", "", t(ctx, "common.active_filters"), ArtistActiveChips(ctx, data)).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "<div class=\"overflow-x-auto\"><table id=\"artists-table\" class=\"min-w-full divide-y divide-gray-200 dark:divide-gray-700\"><thead class=\"bg-gray-50 dark:bg-gray-800\"><tr><th scope=\"col\" class=\"px-3 py-3 w-8\"><span class=\"sr-only\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var114 string
-		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.bulk.select_column"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 802, Col: 67}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "</span></th><!-- Name column: three-state sort cycle (asc -> desc -> off) --><th scope=\"col\" data-col=\"name\" data-sort-col=\"name\" class=\"px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\"><button type=\"button\" onclick=\"setSortColumn('name')\" class=\"inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200\" title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var115 string
-		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.sort_by_name"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 810, Col: 46}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var116 string
-		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.col.name"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 812, Col: 36}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, " <svg class=\"sw-sort-asc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var117 string
-		templ_7745c5c3_Var117, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(func() string {
-			if data.Sort == "name" && data.Order == "asc" {
-				return ""
-			}
-			return "display:none"
-		}())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 813, Col: 222}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 15.75l7.5-7.5 7.5 7.5\"></path></svg> <svg class=\"sw-sort-desc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var118 string
-		templ_7745c5c3_Var118, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(func() string {
-			if data.Sort == "name" && data.Order == "desc" {
-				return ""
-			}
-			return "display:none"
-		}())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 814, Col: 224}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 8.25l-7.5 7.5-7.5-7.5\"></path></svg></button></th><!-- Type column: sortable, hidden by default via column toggle --><th scope=\"col\" data-col=\"type\" data-sort-col=\"type\" class=\"px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\"><button type=\"button\" onclick=\"setSortColumn('type')\" class=\"inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200\" title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var119 string
-		templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.sort_by_type"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 823, Col: 46}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var119)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var120 string
-		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.type"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 825, Col: 37}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, " <svg class=\"sw-sort-asc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var121 string
-		templ_7745c5c3_Var121, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(func() string {
-			if data.Sort == "type" && data.Order == "asc" {
-				return ""
-			}
-			return "display:none"
-		}())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 826, Col: 222}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 15.75l7.5-7.5 7.5 7.5\"></path></svg> <svg class=\"sw-sort-desc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var122 string
-		templ_7745c5c3_Var122, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(func() string {
-			if data.Sort == "type" && data.Order == "desc" {
-				return ""
-			}
-			return "display:none"
-		}())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 827, Col: 224}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 8.25l-7.5 7.5-7.5-7.5\"></path></svg></button></th><!-- Origin/Country column: sortable, hidden by default via column toggle --><th scope=\"col\" data-col=\"origin\" data-sort-col=\"origin\" class=\"px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\"><button type=\"button\" onclick=\"setSortColumn('origin')\" class=\"inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200\" title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var123 string
-		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.sort_by_origin"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 836, Col: 48}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var124 string
-		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.sort.origin"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 838, Col: 39}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, " <svg class=\"sw-sort-asc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var125 string
-		templ_7745c5c3_Var125, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(func() string {
-			if data.Sort == "origin" && data.Order == "asc" {
-				return ""
-			}
-			return "display:none"
-		}())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 839, Col: 224}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var125))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 15.75l7.5-7.5 7.5 7.5\"></path></svg> <svg class=\"sw-sort-desc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var126 string
-		templ_7745c5c3_Var126, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(func() string {
-			if data.Sort == "origin" && data.Order == "desc" {
-				return ""
-			}
-			return "display:none"
-		}())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 840, Col: 226}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 8.25l-7.5 7.5-7.5-7.5\"></path></svg></button></th><th scope=\"col\" data-col=\"metadata\" class=\"px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var127 string
-		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.col.metadata"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 844, Col: 39}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</th><th scope=\"col\" data-col=\"thumb\" class=\"px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var128 string
-		templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("thumb", data.ProfileName))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 847, Col: 52}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "</th><th scope=\"col\" data-col=\"fanart\" class=\"px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var129 string
-		templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("fanart", data.ProfileName))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 850, Col: 53}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "</th><th scope=\"col\" data-col=\"logo\" class=\"px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var130 string
-		templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("logo", data.ProfileName))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 853, Col: 51}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "</th><th scope=\"col\" data-col=\"mbid\" class=\"px-4 py-3 text-center text-xs font-medium tracking-wider text-gray-500 dark:text-gray-400\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var131 string
-		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.col.mbid"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 856, Col: 35}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var131))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if len(data.Artists) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "<tr><td colspan=\"9\" class=\"px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var132 string
-			templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.empty_state"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 864, Col: 39}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "</td></tr>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		for _, a := range data.Artists {
-			templ_7745c5c3_Err = ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName, true).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "</tbody></table></div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.Pagination(data.Pagination).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "</div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, profileName string, selectable bool) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var133 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var133 == nil {
-			templ_7745c5c3_Var133 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var134 = []any{"hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var134...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "<tr class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var135 string
-		templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var134).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var135)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if selectable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "<td class=\"px-3 py-3 w-8 align-middle\"><input type=\"checkbox\" class=\"sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1\" data-artist-id=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var136 string
-			templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.ResolveAttributeValue(a.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 885, Col: 26}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var136)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var137 string
-			templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artists.bulk.select_artist", a.Name))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 886, Col: 63}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var137)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "\"></td>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "<td data-col=\"name\" class=\"px-4 py-3 text-sm\"><div class=\"flex items-center gap-1.5\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if complianceAvailable(compliance) {
-			var templ_7745c5c3_Var138 = []any{"inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, compliance))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var138...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "<span class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var139 string
-			templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var138).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var139)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "\" title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var140 string
-			templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.ResolveAttributeValue(complianceDotTitle(ctx, artistCompliance(a.ID, compliance)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 895, Col: 73}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var140)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var141 string
-			templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.ResolveAttributeValue(complianceDotTitle(ctx, artistCompliance(a.ID, compliance)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 896, Col: 78}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var141)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "\" role=\"img\"></span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = ArtistPlatformBadges(a, sources, platforms).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "<a href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var142 templ.SafeURL
-		templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath() + "/artists/" + a.ID))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 902, Col: 58}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "\" class=\"font-medium text-blue-600 dark:text-blue-400 hover:underline\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var143 string
-		templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 905, Col: 13}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "</a> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if a.SortName != "" && a.SortName != a.Name {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "<span class=\"ml-1 text-xs text-gray-400\">(")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var144 string
-			templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(a.SortName)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 908, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, ")</span> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if a.IsExcluded {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "<span class=\"ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var145 string
-			templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.excluded"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 911, Col: 184}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "</div></td><td data-col=\"type\" class=\"px-4 py-3 text-sm text-gray-700 dark:text-gray-300\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var146 string
-		templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(ArtistTypeLabel(ctx, a.Type))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 916, Col: 33}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "</td><td data-col=\"origin\" class=\"px-4 py-3 text-sm text-gray-700 dark:text-gray-300\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var147 string
-		templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(a.Origin)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 919, Col: 13}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "</td><td data-col=\"metadata\" class=\"px-4 py-3 text-center\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.StatusBadge(a.NFOExists, t(ctx, "artists.col.metadata")).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "</td><td data-col=\"thumb\" class=\"px-4 py-3 text-center\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, img.ImageTermFor("thumb", profileName)).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "</td><td data-col=\"fanart\" class=\"px-4 py-3 text-center\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, img.ImageTermFor("fanart", profileName)).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "</td><td data-col=\"logo\" class=\"px-4 py-3 text-center\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, img.ImageTermFor("logo", profileName)).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "</td><td data-col=\"mbid\" class=\"px-4 py-3 text-center\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.StatusBadge(a.MusicBrainzID != "", t(ctx, "artists.col.mbid")).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "</td></tr>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-// ArtistGrid is the HTMX-swappable grid fragment.
-func ArtistGrid(data ArtistListData) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var148 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var148 == nil {
-			templ_7745c5c3_Var148 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "<div id=\"artist-content\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if isFilterActive(data) {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, " data-filter-active")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, ">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = BulkActionBar(data).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = components.ActiveFilters("#artist-content", "", "", t(ctx, "common.active_filters"), ArtistActiveChips(ctx, data)).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if len(data.Artists) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "<div class=\"px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var149 string
-			templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artists.empty_state"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 946, Col: 35}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "</div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "<div class=\"grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			for _, a := range data.Artists {
-				templ_7745c5c3_Err = ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, true).Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "</div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = components.Pagination(data.Pagination).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "</div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, selectable bool) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var150 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var150 == nil {
-			templ_7745c5c3_Var150 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "<div class=\"relative\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if selectable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 188, "<label class=\"absolute top-1.5 right-1.5 z-10 flex items-center justify-center rounded-full bg-white/90 dark:bg-gray-900/90 p-0.5 shadow cursor-pointer\" onclick=\"event.stopPropagation();\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var151 string
-			templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artists.bulk.select_artist", a.Name))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 965, Col: 62}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var151)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, "\"><input type=\"checkbox\" class=\"sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500\" data-artist-id=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var152 string
-			templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.ResolveAttributeValue(a.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 970, Col: 26}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var152)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 190, "\" onclick=\"event.stopPropagation();\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var153 string
-			templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "artists.bulk.select_artist", a.Name))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 972, Col: 63}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var153)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "\"></label> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		var templ_7745c5c3_Var154 = []any{"group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var154...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "<a href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var155 templ.SafeURL
-		templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath() + "/artists/" + a.ID))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 977, Col: 56}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var156 string
-		templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var154).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var156)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "\"><div class=\"aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if a.ThumbExists {
-			if a.ThumbPlaceholder != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "<div class=\"lqip-placeholder\" style=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var157 string
-				templ_7745c5c3_Var157, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 983, Col: 111}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var157))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 196, "\" aria-hidden=\"true\"></div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, " <img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var158 string
-			templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.ResolveAttributeValue(basePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file")
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 986, Col: 73}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var158)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 198, "\" alt=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var159 string
-			templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.ResolveAttributeValue(a.Name)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 987, Col: 18}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var159)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 199, "\" loading=\"lazy\" class=\"absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200\" onerror=\"this.style.display='none'\"> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else if a.ThumbPlaceholder != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "<div class=\"lqip-placeholder\" style=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var160 string
-			templ_7745c5c3_Var160, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 993, Col: 110}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var160))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 201, "\" aria-hidden=\"true\"></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 202, "<div class=\"h-full w-full flex items-center justify-center\"><svg class=\"h-12 w-12 text-gray-300 dark:text-gray-600\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z\"></path></svg></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if complianceAvailable(compliance) {
-			var templ_7745c5c3_Var161 = []any{"absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var161...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 203, "<span class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var162 string
-			templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var161).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var162)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 204, "\" title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var163 string
-			templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.ResolveAttributeValue(complianceDotTitle(ctx, artistCompliance(a.ID, compliance)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1004, Col: 73}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var163)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 205, "\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var164 string
-			templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.ResolveAttributeValue(complianceDotTitle(ctx, artistCompliance(a.ID, compliance)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1005, Col: 78}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var164)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 206, "\" role=\"img\"></span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = ArtistCardPlatformBadges(a, sources, platforms).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 207, "</div><div class=\"px-2 py-2\"><p class=\"text-sm font-medium text-gray-900 dark:text-gray-100 truncate\" title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var165 string
-		templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.ResolveAttributeValue(a.Name)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1012, Col: 91}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var165)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 208, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var166 string
-		templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1013, Col: 13}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 209, "</p>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var167 = []any{"mt-0.5 text-xs font-medium", components.HealthScoreClass(a.HealthScore)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var167...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 210, "<p class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var168 string
-		templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var167).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var168)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 211, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var169 string
-		templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f%%", a.HealthScore))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1016, Col: 43}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var169))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 212, "</p></div></a></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3101,13 +1822,13 @@ func ArtistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo,
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var170 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var170 == nil {
-			templ_7745c5c3_Var170 = templ.NopComponent
+		templ_7745c5c3_Var111 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var111 == nil {
+			templ_7745c5c3_Var111 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 213, "<span class=\"inline-flex items-center gap-0.5 shrink-0\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "<span class=\"inline-flex items-center gap-0.5 shrink-0\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3117,58 +1838,7 @@ func ArtistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo,
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 214, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		return nil
-	})
-}
-
-// ArtistCardPlatformBadges renders overlay platform badges for the grid card view.
-// Badges are positioned in the bottom-right corner of the card image area.
-func ArtistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var171 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var171 == nil {
-			templ_7745c5c3_Var171 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 215, "<div class=\"absolute bottom-1 right-1 flex items-center gap-0.5\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			for _, b := range badges {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 216, "<span class=\"rounded-full bg-black/60 p-0.5\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = components.PlatformBadge(b.Platform, b.Tooltip).Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "</span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 218, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3204,13 +1874,13 @@ func NextArtistCardSources(a artist.Artist, sources map[string]LibrarySourceInfo
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var172 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var172 == nil {
-			templ_7745c5c3_Var172 = templ.NopComponent
+		templ_7745c5c3_Var112 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var112 == nil {
+			templ_7745c5c3_Var112 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 219, "<div class=\"absolute bottom-1 right-1 inline-flex items-center gap-0.5 rounded-full bg-black p-0.5 shadow-sm\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "<div class=\"absolute bottom-1 right-1 inline-flex items-center gap-0.5 rounded-full bg-black p-0.5 shadow-sm\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3220,7 +1890,7 @@ func NextArtistCardSources(a artist.Artist, sources map[string]LibrarySourceInfo
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 220, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3253,230 +1923,194 @@ func BulkProgressPill() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var173 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var173 == nil {
-			templ_7745c5c3_Var173 = templ.NopComponent
+		templ_7745c5c3_Var113 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var113 == nil {
+			templ_7745c5c3_Var113 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 221, "<div id=\"bulk-progress-pill\" hidden data-i18n-verb-run-rules=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "<div id=\"bulk-progress-pill\" hidden data-i18n-verb-run-rules=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var174 string
-		templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.run_rules"))
+		var templ_7745c5c3_Var114 string
+		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.run_rules"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1081, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 662, Col: 70}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var174)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 222, "\" data-i18n-verb-re-identify=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var175 string
-		templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.re_identify"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1082, Col: 74}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var175)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "\" data-i18n-verb-re-identify=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 223, "\" data-i18n-verb-re-identify-auto=\"")
+		var templ_7745c5c3_Var115 string
+		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.re_identify"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 663, Col: 74}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var176 string
-		templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.re_identify_auto"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1083, Col: 84}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var176)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "\" data-i18n-verb-re-identify-auto=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 224, "\" data-i18n-verb-re-identify-review=\"")
+		var templ_7745c5c3_Var116 string
+		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.re_identify_auto"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 664, Col: 84}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var116)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var177 string
-		templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.re_identify_review"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1084, Col: 88}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var177)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "\" data-i18n-verb-re-identify-review=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 225, "\" data-i18n-verb-scan=\"")
+		var templ_7745c5c3_Var117 string
+		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.re_identify_review"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 665, Col: 88}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var117)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var178 string
-		templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.scan"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1085, Col: 60}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var178)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "\" data-i18n-verb-scan=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 226, "\" data-i18n-verb-fetch-images=\"")
+		var templ_7745c5c3_Var118 string
+		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.scan"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 666, Col: 60}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var118)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var179 string
-		templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.fetch_images"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1086, Col: 76}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var179)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "\" data-i18n-verb-fetch-images=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 227, "\" data-i18n-verb-lock=\"")
+		var templ_7745c5c3_Var119 string
+		templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.fetch_images"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 667, Col: 76}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var119)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var180 string
-		templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.lock"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1087, Col: 60}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var180)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "\" data-i18n-verb-lock=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 228, "\" data-i18n-verb-unlock=\"")
+		var templ_7745c5c3_Var120 string
+		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.lock"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 668, Col: 60}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var120)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var181 string
-		templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.unlock"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1088, Col: 64}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var181)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "\" data-i18n-verb-unlock=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 229, "\" data-i18n-template=\"")
+		var templ_7745c5c3_Var121 string
+		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.unlock"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 669, Col: 64}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var121)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var182 string
-		templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.template"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1089, Col: 63}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var182)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "\" data-i18n-template=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 230, "\" data-i18n-single=\"")
+		var templ_7745c5c3_Var122 string
+		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.template"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 670, Col: 63}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var122)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var183 string
-		templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.single"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1090, Col: 59}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var183)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "\" data-i18n-single=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 231, "\" data-i18n-summary=\"")
+		var templ_7745c5c3_Var123 string
+		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.progress.single"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 671, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var184 string
-		templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.summary"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1091, Col: 52}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var184)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "\" data-i18n-summary=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 232, "\" data-i18n-reidentify-summary=\"")
+		var templ_7745c5c3_Var124 string
+		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.summary"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 672, Col: 52}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var124)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var185 string
-		templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.reidentify.summary"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1092, Col: 74}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var185)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "\" data-i18n-reidentify-summary=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 233, "\" data-i18n-confirm-small=\"")
+		var templ_7745c5c3_Var125 string
+		templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.reidentify.summary"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 673, Col: 74}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var125)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var186 string
-		templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.confirm.small"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1093, Col: 64}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var186)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" data-i18n-confirm-small=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 234, "\" data-i18n-confirm-large=\"")
+		var templ_7745c5c3_Var126 string
+		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.confirm.small"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 674, Col: 64}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var187 string
-		templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.confirm.large"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 1094, Col: 64}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var187)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\" data-i18n-confirm-large=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 235, "\"></div>")
+		var templ_7745c5c3_Var127 string
+		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artists.bulk.confirm.large"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 675, Col: 64}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var127)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		return nil
-	})
-}
-
-// ArtistsKeyboardShortcuts wires the artists-list keyboard surface shared by
-// both channels (M55 #1335): "/" focuses search, Cmd/Ctrl+A selects every
-// visible row, and Esc clears the selection. Shortcuts are ignored while the
-// user is typing in a field. Selection is driven by dispatching change events
-// on the existing .sw-bulk-select checkboxes, so the shared selection
-// bookkeeping stays the single source of truth -- no forked state. The
-// window guard makes a second render (e.g. an HTMX-boosted nav) idempotent.
-func ArtistsKeyboardShortcuts() templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var188 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var188 == nil {
-			templ_7745c5c3_Var188 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 236, "<script>\n\t\t(function () {\n\t\t\tif (window.__swArtistsKbd) return;\n\t\t\twindow.__swArtistsKbd = true;\n\t\t\t// Show the platform-appropriate select-all modifier in any kbd tip\n\t\t\t// chips (next/ tip line). The handler itself is cross-platform\n\t\t\t// (metaKey || ctrlKey); only the DISPLAY differs: Cmd glyph on macOS,\n\t\t\t// \"Ctrl\" elsewhere. No-op on the stable channel (no .sw-mod-key chips).\n\t\t\ttry {\n\t\t\t\tvar plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';\n\t\t\t\tif (/Mac|iPhone|iPad|iPod/i.test(plat)) {\n\t\t\t\t\tdocument.querySelectorAll('.sw-mod-key').forEach(function (k) { k.textContent = '⌘'; });\n\t\t\t\t}\n\t\t\t} catch (e) { /* non-fatal: chip keeps its \"Ctrl\" default */ }\n\t\t\tdocument.addEventListener('keydown', function (e) {\n\t\t\t\tvar el = document.activeElement;\n\t\t\t\tvar tag = el && el.tagName;\n\t\t\t\t// Only TEXT-ENTRY focus suppresses the shortcuts. A focused row\n\t\t\t\t// checkbox is an <input type=checkbox>, which Firefox focuses on\n\t\t\t\t// click (Safari does not) -- treating every INPUT as \"typing\" let a\n\t\t\t\t// focused checkbox swallow ALL shortcuts (/, Cmd/Ctrl+A, Esc, f), not\n\t\t\t\t// just one (M55 #1335, maintainer 2026-05-30). Narrow the guard: an\n\t\t\t\t// INPUT counts as typing only for text-like types, never for\n\t\t\t\t// checkbox/radio/button/etc.\n\t\t\t\tvar typing = tag === 'TEXTAREA' || tag === 'SELECT' || (el && el.isContentEditable);\n\t\t\t\tif (tag === 'INPUT') {\n\t\t\t\t\tvar nonText = ['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'image', 'range', 'color'];\n\t\t\t\t\tvar itype = (el.getAttribute('type') || 'text').toLowerCase();\n\t\t\t\t\tif (nonText.indexOf(itype) === -1) typing = true;\n\t\t\t\t}\n\t\t\t\tif (typing) return;\n\t\t\t\tif (e.key === '/') {\n\t\t\t\t\tvar search = document.getElementById('artist-search');\n\t\t\t\t\tif (search) { e.preventDefault(); search.focus(); }\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif ((e.key === 'a' || e.key === 'A') && (e.metaKey || e.ctrlKey)) {\n\t\t\t\t\tvar boxes = document.querySelectorAll('#artist-content .sw-bulk-select');\n\t\t\t\t\tif (boxes.length) {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tboxes.forEach(function (b) {\n\t\t\t\t\t\t\tif (!b.checked) { b.checked = true; b.dispatchEvent(new Event('change', { bubbles: true })); }\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (e.key === 'f' || e.key === 'F') {\n\t\t\t\t\t// \"f\" toggles the filter flyout (prototype-only affordance; the\n\t\t\t\t\t// 02-artists.md keyboard table omits it). The trigger's\n\t\t\t\t\t// aria-expanded is the open-state contract maintained by\n\t\t\t\t\t// swFilterFlyout.open/close, so the toggle round-trips correctly.\n\t\t\t\t\tvar fTrigger = document.getElementById('artist-filter-trigger');\n\t\t\t\t\tif (fTrigger && window.swFilterFlyout) {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tvar fPanel = fTrigger.getAttribute('aria-controls') || 'artist-filters-flyout';\n\t\t\t\t\t\tif (fTrigger.getAttribute('aria-expanded') === 'true') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.close(fPanel);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\twindow.swFilterFlyout.open(fPanel);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\tvar checked = document.querySelectorAll('#artist-content .sw-bulk-select:checked');\n\t\t\t\t\tchecked.forEach(function (b) { b.checked = false; b.dispatchEvent(new Event('change', { bubbles: true })); });\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3504,12 +2138,12 @@ func ArtistsPageScripts() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var189 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var189 == nil {
-			templ_7745c5c3_Var189 = templ.NopComponent
+		templ_7745c5c3_Var128 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var128 == nil {
+			templ_7745c5c3_Var128 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 237, "<script>\n\t\t\tvar _artistsBp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t// _artistsPath returns the current artist-list path (channel-aware:\n\t\t\t\t// /artists or /next/artists) with the deployment base path stripped,\n\t\t\t\t// so the document-level htmx:configRequest hook re-prepends basePath\n\t\t\t\t// exactly once. Hardcoding '/artists' here swapped the STABLE table\n\t\t\t\t// into the next/ page on every sort/selection action (M55 #1335\n\t\t\t\t// routing fix); stable is unaffected because its pathname is /artists.\n\t\t\t\tfunction _artistsPath() {\n\t\t\t\t\tvar p = window.location.pathname;\n\t\t\t\t\tif (_artistsBp && p.indexOf(_artistsBp) === 0) {\n\t\t\t\t\t\tp = p.slice(_artistsBp.length) || '/';\n\t\t\t\t\t}\n\t\t\t\t\treturn p || '/artists';\n\t\t\t\t}\n\t\t\t// Inject flyout filter params from the URL into HTMX requests that\n\t\t\t// target #artist-content. The flyout stores state in the URL only\n\t\t\t// (not in named form elements), so hx-include cannot pick it up.\n\t\t\tdocument.body.addEventListener('htmx:configRequest', function(evt) {\n\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\tvar urlParams = new URLSearchParams(window.location.search);\n\t\t\t\t\t// Declarative hx-get flows (search, library dropdown,\n\t\t\t\t\t// view-toggle buttons) drive their request URL purely\n\t\t\t\t\t// from hx-include'd form fields, so the off-page\n\t\t\t\t\t// selection scope (ids, #1227) is not carried unless\n\t\t\t\t\t// this hook re-injects it. The \"Show all\" chip\n\t\t\t\t\t// intentionally drops ids and opts out via the\n\t\t\t\t\t// data-clear-ids attribute on its hx-get element.\n\t\t\t\t\tvar elt = evt.detail.elt;\n\t\t\t\t\tvar clearIDs = !!(elt && elt.getAttribute && elt.getAttribute('data-clear-ids') === 'true');\n\t\t\t\t\turlParams.forEach(function(val, key) {\n\t\t\t\t\t\tif (key.indexOf('filter_') === 0 && !(key in evt.detail.parameters)) {\n\t\t\t\t\t\t\tevt.detail.parameters[key] = val;\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (key === 'ids' && !clearIDs && !('ids' in evt.detail.parameters)) {\n\t\t\t\t\t\t\tevt.detail.parameters.ids = val;\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tvar _sortActiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold text-blue-600 dark:text-blue-400';\n\t\t\tvar _sortInactiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200';\n\n\t\t\t// All sortable field keys -- used by updateSortUI to refresh dropdown\n\t\t\t// and column header indicators in one sweep.\n\t\t\tvar _sortFields = ['name', 'sort_name', 'type', 'origin', 'health_score', 'updated_at', 'created_at'];\n\n\t\t\tfunction updateSortUI(sort, order) {\n\t\t\t\tvar fieldLabel = document.getElementById('sort-field-label');\n\t\t\t\tvar orderLabel = document.getElementById('sort-order-label');\n\t\t\t\tif (fieldLabel) {\n\t\t\t\t\tvar activeBtn = document.querySelector('#sort-dropdown button[onclick=\"setSort(\\'' + sort + '\\')\"]');\n\t\t\t\t\tfieldLabel.textContent = activeBtn ? activeBtn.textContent.trim() : sort;\n\t\t\t\t}\n\t\t\t\tif (orderLabel) {\n\t\t\t\t\tvar activeOrder = document.querySelector('#sort-dropdown button[onclick=\"setOrder(\\'' + order + '\\')\"]');\n\t\t\t\t\torderLabel.textContent = activeOrder ? activeOrder.textContent.trim() : order;\n\t\t\t\t}\n\t\t\t\t_sortFields.forEach(function(f) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setSort(\\'' + f + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = f === sort ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t\t['asc', 'desc'].forEach(function(d) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setOrder(\\'' + d + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = d === order ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t\t// Update column header sort indicators. Each sortable <th> has a\n\t\t\t\t// data-sort-col attribute matching the sort key. The active column\n\t\t\t\t// shows an arrow (data-dir=\"asc\" or \"desc\"); all others are hidden.\n\t\t\t\tdocument.querySelectorAll('th[data-sort-col]').forEach(function(th) {\n\t\t\t\t\tvar col = th.getAttribute('data-sort-col');\n\t\t\t\t\tvar asc = th.querySelector('.sw-sort-asc');\n\t\t\t\t\tvar desc = th.querySelector('.sw-sort-desc');\n\t\t\t\t\tif (!asc || !desc) return;\n\t\t\t\t\tif (col === sort) {\n\t\t\t\t\t\tasc.style.display = order === 'asc' ? '' : 'none';\n\t\t\t\t\t\tdesc.style.display = order === 'desc' ? '' : 'none';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tasc.style.display = 'none';\n\t\t\t\t\t\tdesc.style.display = 'none';\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// setSortColumn is called by table column header buttons. It implements\n\t\t\t// a three-state cycle: off -> asc -> desc -> off (revert to name asc).\n\t\t\t// The first click on an inactive column activates it ascending; a second\n\t\t\t// click on the same column flips to descending; a third click removes\n\t\t\t// the explicit sort and returns to the default (name, asc).\n\t\t\tfunction setSortColumn(field) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!sortInput || !orderInput) return;\n\t\t\t\tvar newSort, newOrder;\n\t\t\t\tif (sortInput.value === field) {\n\t\t\t\t\tif (orderInput.value === 'asc') {\n\t\t\t\t\t\t// Second click: flip to descending.\n\t\t\t\t\t\tnewSort = field;\n\t\t\t\t\t\tnewOrder = 'desc';\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Third click: remove explicit sort, revert to default.\n\t\t\t\t\t\tnewSort = 'name';\n\t\t\t\t\t\tnewOrder = 'asc';\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\t// First click on this column: activate ascending.\n\t\t\t\t\tnewSort = field;\n\t\t\t\t\tnewOrder = 'asc';\n\t\t\t\t}\n\t\t\t\tsortInput.value = newSort;\n\t\t\t\torderInput.value = newOrder;\n\t\t\t\tupdateSortUI(newSort, newOrder);\n\t\t\t\thtmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setSort(field) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!sortInput || !orderInput) return;\n\t\t\t\tif (sortInput.value === field) {\n\t\t\t\t\torderInput.value = (orderInput.value === 'asc') ? 'desc' : 'asc';\n\t\t\t\t} else {\n\t\t\t\t\tsortInput.value = field;\n\t\t\t\t\torderInput.value = 'asc';\n\t\t\t\t}\n\t\t\t\tupdateSortUI(sortInput.value, orderInput.value);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setOrder(dir) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!orderInput) return;\n\t\t\t\torderInput.value = dir;\n\t\t\t\tupdateSortUI(sortInput ? sortInput.value : '', dir);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction closeSortDropdown() {\n\t\t\t\tvar d = document.getElementById('sort-dropdown');\n\t\t\t\tif (d) d.removeAttribute('open');\n\t\t\t}\n\n\t\t\tfunction buildArtistParams(overrides) {\n\t\t\t\tvar params = {};\n\t\t\t\t// Collect form-based params from named elements.\n\t\t\t\t['search', 'library_id', 'view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\tvar el = document.querySelector('[name=\"' + name + '\"]');\n\t\t\t\t\tif (el) params[name] = el.value;\n\t\t\t\t});\n\t\t\t\t// Carry all flyout filter params from the current URL dynamically.\n\t\t\t\tvar urlParams = new URLSearchParams(window.location.search);\n\t\t\t\turlParams.forEach(function(val, key) {\n\t\t\t\t\tif (key.indexOf('filter_') === 0) {\n\t\t\t\t\t\tparams[key] = val;\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Preserve the off-page selection scope (#1227) across\n\t\t\t\t// search / sort / view rebuilds. Without this, the URL\n\t\t\t\t// rebuild in afterSwap drops ids and the user's \"Show\n\t\t\t\t// selected\" view collapses on the next interaction.\n\t\t\t\tvar ids = urlParams.get('ids');\n\t\t\t\tif (ids) params.ids = ids;\n\t\t\t\treturn Object.assign(params, overrides);\n\t\t\t}\n\n\t\t\t// Update view toggle button classes to reflect the active view.\n\t\t\t// Mirrors the server-side templ.KV classes on the #view-toggle buttons.\n\t\t\tvar _viewActiveClass = 'p-2 transition-colors bg-blue-600 text-white';\n\t\t\tvar _viewInactiveClass = 'p-2 transition-colors bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700';\n\t\t\tfunction updateViewToggleUI(view) {\n\t\t\t\tvar toggle = document.getElementById('view-toggle');\n\t\t\t\tif (!toggle) return;\n\t\t\t\tvar tableBtn = toggle.querySelector('button[onclick=\"setView(\\'table\\')\"]');\n\t\t\t\tvar gridBtn = toggle.querySelector('button[onclick=\"setView(\\'grid\\')\"]');\n\t\t\t\tif (tableBtn) tableBtn.className = view === 'table' ? _viewActiveClass : _viewInactiveClass;\n\t\t\t\tif (gridBtn) gridBtn.className = view === 'grid' ? _viewActiveClass : _viewInactiveClass;\n\t\t\t}\n\n\t\t\tfunction setView(view) {\n\t\t\t\tvar input = document.getElementById('artist-view-input');\n\t\t\t\tif (input) input.value = view;\n\t\t\t\tupdateViewToggleUI(view);\n\t\t\t\t// Show/hide column toggle based on view\n\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\tif (colToggle) {\n\t\t\t\t\tif (view === 'table') {\n\t\t\t\t\t\tcolToggle.classList.remove('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tcolToggle.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// next/ channel: in table view, sorting is driven by the clickable\n\t\t\t\t// column headers, so hide the toolbar sort dropdown there; surface it\n\t\t\t\t// in grid view (which has no headers). Scoped to next/ via the\n\t\t\t\t// .sw-next-artists marker so the stable channel's dropdown is untouched.\n\t\t\t\tvar sortDd = document.getElementById('sort-dropdown');\n\t\t\t\tif (sortDd && document.querySelector('.sw-next-artists')) {\n\t\t\t\t\tif (view === 'table') {\n\t\t\t\t\t\tsortDd.classList.add('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tsortDd.classList.remove('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// Fire-and-forget save preference\n\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\tfetch(_artistsBp + '/api/v1/settings', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\tbody: JSON.stringify({\"ui.artists_view\": view})\n\t\t\t\t}).catch(function() {});\n\t\t\t}\n\n\t\t\t// After HTMX swaps artist content, push the current filter/sort state\n\t\t\t// into the URL so browser back-navigation restores the correct view.\n\t\t\t// Uses window.location.pathname (not hardcoded '/artists') for basePath\n\t\t\t// support, and carries over the page param from the HTMX request URL.\n\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\t// Re-sync flyout state from URL after any swap (including chip dismissals\n\t\t\t\t\t// via DismissFilterChip, which bypass the sw:filter-applied event).\n\t\t\t\t\tif (window.swFilterFlyout) {\n\t\t\t\t\t\tswFilterFlyout.initFromURL('artist-filters-flyout');\n\t\t\t\t\t}\n\n\t\t\t\t\tvar params = buildArtistParams({});\n\t\t\t\t\t// Extract page and the off-page selection scope (#1227)\n\t\t\t\t\t// from the HTMX request URL. The \"Show selected\" click\n\t\t\t\t\t// adds ids; the \"Show all\" click drops it. The history\n\t\t\t\t\t// rebuild must mirror whichever the request actually\n\t\t\t\t\t// carried so back-navigation restores the right view.\n\t\t\t\t\ttry {\n\t\t\t\t\t\t// Use documented HTMX 2.x afterSwap fields. Priority order:\n\t\t\t\t\t\t//   1. evt.detail.pathInfo.finalRequestPath (canonical 2.x; reflects\n\t\t\t\t\t\t//      htmx-side hx-push-url rewrites)\n\t\t\t\t\t\t//   2. evt.detail.pathInfo.requestPath (initial request path)\n\t\t\t\t\t\t//   3. evt.detail.requestConfig.path (legacy fallback)\n\t\t\t\t\t\t//   4. evt.detail.xhr.responseURL (post-HTTP-redirect URL)\n\t\t\t\t\t\t// Migrated to pathInfo per #1228 to match the htmx 2.x event\n\t\t\t\t\t\t// contract. The legacy 2-level fallback (requestConfig.path,\n\t\t\t\t\t\t// xhr.responseURL) is preserved below as a defensive\n\t\t\t\t\t\t// belt-and-braces against runtime event-shape drift.\n\t\t\t\t\t\tvar pi = evt.detail.pathInfo;\n\t\t\t\t\t\tvar rc = evt.detail.requestConfig;\n\t\t\t\t\t\tvar xhr = evt.detail.xhr;\n\t\t\t\t\t\tvar rawPath = (pi && (pi.finalRequestPath || pi.requestPath)) ||\n\t\t\t\t\t\t\t(rc && rc.path) ||\n\t\t\t\t\t\t\t(xhr && xhr.responseURL);\n\t\t\t\t\t\tif (!rawPath) {\n\t\t\t\t\t\t\t// Surface silent-fail in the console so future htmx event-shape\n\t\t\t\t\t\t\t// regressions show up during dev/UAT instead of presenting as a\n\t\t\t\t\t\t\t// stale URL bar with no other symptom.\n\t\t\t\t\t\t\tif (window.console && console.debug) {\n\t\t\t\t\t\t\t\tconsole.debug('[artists] htmx:afterSwap missing pathInfo/requestConfig; URL state not updated', evt.detail);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t// Bail out of the entire handler so history.replaceState below\n\t\t\t\t\t\t\t// does not rewrite the URL from the stale params snapshot.\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar reqUrl = new URL(rawPath, window.location.origin);\n\t\t\t\t\t\tvar ids = reqUrl.searchParams.get('ids');\n\t\t\t\t\t\tif (ids) {\n\t\t\t\t\t\t\tparams.ids = ids;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdelete params.ids;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar page = reqUrl.searchParams.get('page');\n\t\t\t\t\t\tif (page && page !== '1') params.page = page;\n\t\t\t\t\t\tvar pageSize = reqUrl.searchParams.get('page_size');\n\t\t\t\t\t\tif (pageSize) params.page_size = pageSize;\n\t\t\t\t\t} catch(e) {\n\t\t\t\t\t\t// Mirror the no-rawPath path's debug log so a malformed\n\t\t\t\t\t\t// URL/event regression surfaces in the console during\n\t\t\t\t\t\t// dev/UAT instead of presenting as a stale URL bar.\n\t\t\t\t\t\tif (window.console && console.debug) {\n\t\t\t\t\t\t\tconsole.debug('[artists] htmx:afterSwap URL parse failed; URL state not updated', e, evt.detail);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Same reasoning as the no-rawPath bail-out: if URL parse\n\t\t\t\t\t\t// fails for any reason, the params snapshot is stale and\n\t\t\t\t\t\t// rewriting history with it would clobber the user URL bar.\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {\n\t\t\t\t\t\treturn encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);\n\t\t\t\t\t}).join('&');\n\t\t\t\t\thistory.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Reload artist content when the filter flyout applies filters.\n\t\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\t\tif (evt.target && evt.target.id === 'artist-content') {\n\t\t\t\t\t// Strip the base path from location.pathname before passing to htmx.ajax\n\t\t\t\t\t// to avoid a double-prefix from the htmx:configRequest hook.\n\t\t\t\t\tvar bpMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\tvar bp = bpMeta ? bpMeta.content : '';\n\t\t\t\t\tvar path = window.location.pathname;\n\t\t\t\t\tif (bp && path.startsWith(bp)) {\n\t\t\t\t\t\tpath = path.slice(bp.length) || '/';\n\t\t\t\t\t}\n\t\t\t\t\thtmx.ajax('GET', path + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Initialise the flyout from URL params on first page load.\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tif (window.swFilterFlyout) {\n\t\t\t\t\tswFilterFlyout.initFromURL('artist-filters-flyout');\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// restoreStateFromURL syncs all filter controls, hidden inputs,\n\t\t\t// sort labels, and view toggle from the current URL query params,\n\t\t\t// then triggers an HTMX content reload so the artist list matches\n\t\t\t// the URL state. Used by both pageshow (bfcache) and popstate\n\t\t\t// (history back/forward) handlers.\n\t\t\t//\n\t\t\t// A debounce guard prevents duplicate calls when bfcache restore\n\t\t\t// fires both pageshow and popstate in quick succession.\n\t\t\tvar _restoreLastRun = 0;\n\t\t\tvar _restoreLastHref = '';\n\t\t\tfunction restoreStateFromURL() {\n\t\t\t\tvar now = Date.now();\n\t\t\t\tvar href = window.location.href;\n\t\t\t\tif (href === _restoreLastHref && now - _restoreLastRun < 100) return;\n\t\t\t\t_restoreLastHref = href;\n\t\t\t\t_restoreLastRun = now;\n\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t// Re-sync flyout chip states from URL.\n\t\t\t\tif (window.swFilterFlyout) {\n\t\t\t\t\tswFilterFlyout.initFromURL('artist-filters-flyout');\n\t\t\t\t}\n\t\t\t\t// Sync the search input from URL params.\n\t\t\t\tvar searchEl = document.getElementById('artist-search');\n\t\t\t\tif (searchEl) searchEl.value = params.get('search') || '';\n\t\t\t\t// Sync select elements from URL params.\n\t\t\t\t['library_id'].forEach(function(name) {\n\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\tvar el = document.querySelector('select[name=\"' + name + '\"]');\n\t\t\t\t\tif (el) el.value = (val !== null) ? val : '';\n\t\t\t\t});\n\t\t\t\t// Sync hidden inputs from URL params, resetting to markup\n\t\t\t\t// defaults when a param is absent so browser history\n\t\t\t\t// restoration cannot retain stale values from a newer state.\n\t\t\t\t['view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\tvar el = document.getElementById('artist-' + name + '-input');\n\t\t\t\t\tif (el) el.value = (val !== null) ? val : el.defaultValue;\n\t\t\t\t});\n\t\t\t\t// Update visible sort labels and view toggle to match restored state.\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);\n\t\t\t\tvar viewInput = document.getElementById('artist-view-input');\n\t\t\t\tif (viewInput) {\n\t\t\t\t\tupdateViewToggleUI(viewInput.value);\n\t\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\t\tif (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');\n\t\t\t\t}\n\t\t\t\tvar _rsMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar _rsBp = _rsMeta ? _rsMeta.content : '';\n\t\t\t\tvar _rsPath = window.location.pathname;\n\t\t\t\tif (_rsBp && _rsPath.startsWith(_rsBp)) { _rsPath = _rsPath.slice(_rsBp.length) || '/'; }\n\t\t\t\thtmx.ajax('GET', _rsPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t}\n\n\t\t\t// When the page is restored from bfcache (browser back/forward navigation),\n\t\t\t// sync filter controls from the URL query params and reload content so\n\t\t\t// status badges reflect the latest state.\n\t\t\twindow.addEventListener('pageshow', function(evt) {\n\t\t\t\tif (evt.persisted) {\n\t\t\t\t\trestoreStateFromURL();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Handle browser back/forward navigation between pushState entries\n\t\t\t// (e.g. filter changes, pagination). Without this, pressing back after\n\t\t\t// applying filters and navigating away would show stale content even\n\t\t\t// though the URL contains the correct filter params. Works in Firefox\n\t\t\t// and all major browsers.\n\t\t\twindow.addEventListener('popstate', function() {\n\t\t\t\trestoreStateFromURL();\n\t\t\t});\n\n\t\t\t(function() {\n\t\t\t\tvar btn = document.getElementById('scan-btn');\n\t\t\t\tif (!btn) return;\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\n\t\t\t\t\tif (evt.detail.elt !== btn) return;\n\t\t\t\t\tif (!evt.detail.successful) return;\n\n\t\t\t\t\tvar spinner = document.getElementById('scan-spinner');\n\t\t\t\t\tvar label = document.getElementById('scan-label');\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tspinner.classList.remove('hidden');\n\t\t\t\t\tlabel.textContent = btn.dataset.labelScanning || 'Scanning...';\n\n\t\t\t\t\tfunction resetScanUI() {\n\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\tspinner.classList.add('hidden');\n\t\t\t\t\t\tlabel.textContent = btn.dataset.labelScan || 'Scan Library';\n\t\t\t\t\t}\n\t\t\t\t\tpollAsyncStatus(_artistsBp + '/api/v1/scanner/status', {\n\t\t\t\t\t\tonData: function(data) {\n\t\t\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {\n\t\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t\t\tvar _scMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\tvar _scBp = _scMeta ? _scMeta.content : '';\n\t\t\t\t\t\t\t\tvar _scPath = window.location.pathname;\n\t\t\t\t\t\t\t\tif (_scBp && _scPath.startsWith(_scBp)) { _scPath = _scPath.slice(_scBp.length) || '/'; }\n\t\t\t\t\t\t\t\thtmx.ajax('GET', _scPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t\t\t\t\treturn true;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn false;\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonHTTPError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonNetworkError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\n\t\t\t// Bulk-action controller. Wires the Select-All checkbox, per-row\n\t\t\t// checkboxes, the \"N selected\" indicator, and the action dropdown\n\t\t\t// to the /api/v1/artists/bulk-actions endpoint. The controller is\n\t\t\t// idempotent: it attaches listeners via event delegation so it\n\t\t\t// works across HTMX swaps of #artist-content without re-binding.\n\t\t\t(function() {\n\t\t\t\t// Selection state persists across HTMX swaps of the list so\n\t\t\t\t// the user can paginate while keeping earlier selections.\n\t\t\t\tvar selected = new Set();\n\t\t\t\t// Matches the backend cap in handlers_bulk_actions.go; keeps\n\t\t\t\t// the UI in sync so we never POST a payload the server will\n\t\t\t\t// reject with a generic \"failed to start\" toast.\n\t\t\t\tvar MAX_BULK_SELECTION = 1000;\n\t\t\t\tvar capWarned = false;\n\t\t\t\t// Tracks the last checkbox clicked for shift-click range\n\t\t\t\t// selection (Gmail/GitHub-style). Reset on scope change.\n\t\t\t\tvar lastClickedId = null;\n\t\t\t\t// Polling handle for the in-flight bulk action status. Non-null\n\t\t\t\t// while a bulk or single-artist run-rules action is running.\n\t\t\t\tvar progressPoll = null;\n\t\t\t\t// Tracks whether a bulk action is running end-to-end. Gates the\n\t\t\t\t// Apply button so checkbox/dropdown changes cannot re-enable it\n\t\t\t\t// mid-flight and queue a second POST (which would 409-loop).\n\t\t\t\tvar bulkActionRunning = false;\n\n\t\t\t\tfunction warnCap() {\n\t\t\t\t\tif (capWarned) return;\n\t\t\t\t\tcapWarned = true;\n\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\tvar tpl = (bar && bar.getAttribute('data-i18n-selection-cap')) || 'You can select up to {count} artists at a time.';\n\t\t\t\t\talert(tpl.replace('{count}', String(MAX_BULK_SELECTION)));\n\t\t\t\t}\n\n\t\t\t\tfunction tryAdd(id) {\n\t\t\t\t\tif (selected.has(id)) return true;\n\t\t\t\t\tif (selected.size >= MAX_BULK_SELECTION) {\n\t\t\t\t\t\twarnCap();\n\t\t\t\t\t\treturn false;\n\t\t\t\t\t}\n\t\t\t\t\tselected.add(id);\n\t\t\t\t\treturn true;\n\t\t\t\t}\n\n\t\t\t\tfunction updateBar() {\n\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\tif (!bar) return;\n\t\t\t\t\tvar countEl = document.getElementById('bulk-selected-count');\n\t\t\t\t\tvar applyBtn = document.getElementById('bulk-action-apply');\n\t\t\t\t\tvar selectEl = document.getElementById('bulk-action-select');\n\t\t\t\t\tvar selectAll = document.getElementById('bulk-select-all');\n\t\t\t\t\tvar showSelectedBtn = document.getElementById('bulk-show-selected');\n\t\t\t\t\tvar boxes = document.querySelectorAll('#artist-content .sw-bulk-select');\n\t\t\t\t\tvar i18nNone = bar.getAttribute('data-i18n-none') || 'None selected';\n\t\t\t\t\tvar i18nSelectedOne = bar.getAttribute('data-i18n-selected-one') || '1 selected';\n\t\t\t\t\tvar i18nSelectedOther = bar.getAttribute('data-i18n-selected-other') || '{count} selected';\n\t\t\t\t\tvar i18nSplitOne = bar.getAttribute('data-i18n-selected-split-one') || '{total} selected ({onpage} on this page, 1 elsewhere)';\n\t\t\t\t\tvar i18nSplitOther = bar.getAttribute('data-i18n-selected-split-other') || '{total} selected ({onpage} on this page, {offpage} elsewhere)';\n\t\t\t\t\t// Sync per-row checkboxes with persisted selection state and\n\t\t\t\t\t// count the on-page hits in the same pass so the toolbar\n\t\t\t\t\t// count can name how many of the selection are visible vs\n\t\t\t\t\t// off-page (issue #1227). visibleChecked counts checked\n\t\t\t\t\t// boxes among rows currently in the DOM; offPage is the\n\t\t\t\t\t// remainder of the selection that lives on other pages.\n\t\t\t\t\tvar visibleChecked = 0;\n\t\t\t\t\tboxes.forEach(function(cb) {\n\t\t\t\t\t\tvar id = cb.getAttribute('data-artist-id');\n\t\t\t\t\t\tcb.checked = selected.has(id);\n\t\t\t\t\t\tif (cb.checked) visibleChecked++;\n\t\t\t\t\t});\n\t\t\t\t\tvar offPage = selected.size - visibleChecked;\n\t\t\t\t\tif (offPage < 0) offPage = 0;\n\t\t\t\t\tif (countEl) {\n\t\t\t\t\t\tif (selected.size === 0) {\n\t\t\t\t\t\t\tcountEl.textContent = i18nNone;\n\t\t\t\t\t\t} else if (offPage === 0) {\n\t\t\t\t\t\t\tif (selected.size === 1) {\n\t\t\t\t\t\t\t\tcountEl.textContent = i18nSelectedOne;\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tcountEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tvar tpl = offPage === 1 ? i18nSplitOne : i18nSplitOther;\n\t\t\t\t\t\t\tcountEl.textContent = tpl\n\t\t\t\t\t\t\t\t.replace('{total}', String(selected.size))\n\t\t\t\t\t\t\t\t.replace('{onpage}', String(visibleChecked))\n\t\t\t\t\t\t\t\t.replace('{offpage}', String(offPage));\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tif (applyBtn) applyBtn.disabled = bulkActionRunning || selected.size === 0 || !selectEl || !selectEl.value;\n\t\t\t\t\tif (selectEl) selectEl.disabled = bulkActionRunning || selected.size === 0;\n\t\t\t\t\t// Stamp selection state on the bar so a channel that wants a\n\t\t\t\t\t// contextual strip (next/) can hide it via CSS when the selection\n\t\t\t\t\t// is empty. The stable bar ignores this attribute. Single source\n\t\t\t\t\t// of truth -- the selection bookkeeping is never forked.\n\t\t\t\t\tbar.dataset.selectionActive = selected.size > 0 ? 'true' : 'false';\n\t\t\t\t\t// Toggle the \"Show selected\" affordance: hidden when no\n\t\t\t\t\t// selection exists; visible (as inline-flex) once at least\n\t\t\t\t\t// one item is in the selection store. We use a single\n\t\t\t\t\t// display utility per state to avoid the \"two display\n\t\t\t\t\t// classes co-applied, later one wins\" cascade trap (memory\n\t\t\t\t\t// feedback_css_cascade_display_utilities).\n\t\t\t\t\tif (showSelectedBtn) {\n\t\t\t\t\t\tif (selected.size === 0) {\n\t\t\t\t\t\t\tshowSelectedBtn.classList.add('hidden');\n\t\t\t\t\t\t\tshowSelectedBtn.classList.remove('inline-flex');\n\t\t\t\t\t\t\tshowSelectedBtn.disabled = true;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tshowSelectedBtn.classList.remove('hidden');\n\t\t\t\t\t\t\tshowSelectedBtn.classList.add('inline-flex');\n\t\t\t\t\t\t\tshowSelectedBtn.disabled = bulkActionRunning;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Select-All indeterminate state.\n\t\t\t\t\tvar allChecked = false;\n\t\t\t\t\tif (selectAll) {\n\t\t\t\t\t\tif (boxes.length === 0) {\n\t\t\t\t\t\t\tselectAll.checked = false;\n\t\t\t\t\t\t\tselectAll.indeterminate = false;\n\t\t\t\t\t\t} else if (visibleChecked === 0) {\n\t\t\t\t\t\t\tselectAll.checked = false;\n\t\t\t\t\t\t\tselectAll.indeterminate = false;\n\t\t\t\t\t\t} else if (visibleChecked === boxes.length) {\n\t\t\t\t\t\t\tselectAll.checked = true;\n\t\t\t\t\t\t\tselectAll.indeterminate = false;\n\t\t\t\t\t\t\tallChecked = true;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tselectAll.checked = false;\n\t\t\t\t\t\t\tselectAll.indeterminate = true;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Swap the checkbox label between Select all / Deselect all\n\t\t\t\t\t// so screen readers and sighted users both see the action\n\t\t\t\t\t// that a click will perform next.\n\t\t\t\t\tvar labelEl = document.getElementById('bulk-select-all-label');\n\t\t\t\t\tif (labelEl) {\n\t\t\t\t\t\tvar i18nSelectAll = bar.getAttribute('data-i18n-select-all') || 'Select all on page';\n\t\t\t\t\t\tvar i18nDeselectAll = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';\n\t\t\t\t\t\tlabelEl.textContent = allChecked ? i18nDeselectAll : i18nSelectAll;\n\t\t\t\t\t}\n\t\t\t\t\tif (selectAll) {\n\t\t\t\t\t\tvar i18nSelectAllAria = bar.getAttribute('data-i18n-select-all') || 'Select all on page';\n\t\t\t\t\t\tvar i18nDeselectAllAria = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';\n\t\t\t\t\t\tselectAll.setAttribute('aria-label', allChecked ? i18nDeselectAllAria : i18nSelectAllAria);\n\t\t\t\t\t}\n\t\t\t\t\t// \"Select all N matching\" affordance: show only when every\n\t\t\t\t\t// visible row is checked AND the result spans more than one\n\t\t\t\t\t// page (i.e. there are artists off-screen that could also be\n\t\t\t\t\t// selected). Hide it when fewer than all visible rows are\n\t\t\t\t\t// checked, when only one page exists, or when a bulk action\n\t\t\t\t\t// is running.\n\t\t\t\t\tvar selectAllMatchingBtn = document.getElementById('bulk-select-all-matching');\n\t\t\t\t\tif (selectAllMatchingBtn) {\n\t\t\t\t\t\tvar totalPages = parseInt(bar.getAttribute('data-total-pages') || '1', 10);\n\t\t\t\t\t\tvar totalMatching = parseInt(bar.getAttribute('data-total-matching') || '0', 10);\n\t\t\t\t\t\t// Show if: all visible rows checked, more than one page, no\n\t\t\t\t\t\t// bulk action running, and at least one visible row exists.\n\t\t\t\t\t\tvar showMatchingBtn = allChecked && totalPages > 1 && !bulkActionRunning && boxes.length > 0;\n\t\t\t\t\t\tif (showMatchingBtn) {\n\t\t\t\t\t\t\t// Update label and aria to reflect the true total.\n\t\t\t\t\t\t\tvar matchingTpl = bar.getAttribute('data-i18n-select-all-matching') || 'Select all {total} matching';\n\t\t\t\t\t\t\tvar matchingAria = bar.getAttribute('data-i18n-select-all-matching-aria') || 'Select all {total} artists matching the current filters';\n\t\t\t\t\t\t\tselectAllMatchingBtn.textContent = matchingTpl.replace('{total}', String(totalMatching));\n\t\t\t\t\t\t\tselectAllMatchingBtn.setAttribute('aria-label', matchingAria.replace('{total}', String(totalMatching)));\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.remove('hidden');\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.add('inline-flex');\n\t\t\t\t\t\t\tselectAllMatchingBtn.disabled = false;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.add('hidden');\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.remove('inline-flex');\n\t\t\t\t\t\t\tselectAllMatchingBtn.disabled = true;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Shift-click range selection: capture on click (before the\n\t\t\t\t// change event) so we can see event.shiftKey. If shift is\n\t\t\t\t// held and we have a prior lastClickedId, select/deselect\n\t\t\t\t// every checkbox between the two anchors in DOM order.\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || !t.classList || !t.classList.contains('sw-bulk-select')) return;\n\t\t\t\t\tvar id = t.getAttribute('data-artist-id');\n\t\t\t\t\tif (!id) return;\n\t\t\t\t\t// Keyboard Shift+Space triggers a click with shiftKey.\n\t\t\t\t\tif (ev.shiftKey && lastClickedId && lastClickedId !== id) {\n\t\t\t\t\t\tvar boxes = Array.prototype.slice.call(\n\t\t\t\t\t\t\tdocument.querySelectorAll('#artist-content .sw-bulk-select')\n\t\t\t\t\t\t);\n\t\t\t\t\t\tvar idx1 = -1, idx2 = -1;\n\t\t\t\t\t\tfor (var i = 0; i < boxes.length; i++) {\n\t\t\t\t\t\t\tvar bid = boxes[i].getAttribute('data-artist-id');\n\t\t\t\t\t\t\tif (bid === lastClickedId) idx1 = i;\n\t\t\t\t\t\t\tif (bid === id) idx2 = i;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (idx1 >= 0 && idx2 >= 0) {\n\t\t\t\t\t\t\tvar lo = Math.min(idx1, idx2), hi = Math.max(idx1, idx2);\n\t\t\t\t\t\t\t// Target state follows the just-clicked checkbox's\n\t\t\t\t\t\t\t// post-click state (which the browser has already\n\t\t\t\t\t\t\t// set by the time this click handler runs).\n\t\t\t\t\t\t\tvar target = t.checked;\n\t\t\t\t\t\t\tfor (var j = lo; j <= hi; j++) {\n\t\t\t\t\t\t\t\tvar cb = boxes[j];\n\t\t\t\t\t\t\t\tvar cid = cb.getAttribute('data-artist-id');\n\t\t\t\t\t\t\t\tif (!cid) continue;\n\t\t\t\t\t\t\t\tif (target) {\n\t\t\t\t\t\t\t\t\tif (!tryAdd(cid)) { cb.checked = false; continue; }\n\t\t\t\t\t\t\t\t\tcb.checked = true;\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tselected.delete(cid);\n\t\t\t\t\t\t\t\t\tcb.checked = false;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (!target) capWarned = false;\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tlastClickedId = id;\n\t\t\t\t}, true);\n\n\t\t\t\tdocument.body.addEventListener('change', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t) return;\n\t\t\t\t\tif (t.classList && t.classList.contains('sw-bulk-select')) {\n\t\t\t\t\t\tvar id = t.getAttribute('data-artist-id');\n\t\t\t\t\t\tif (!id) return;\n\t\t\t\t\t\tif (t.checked) {\n\t\t\t\t\t\t\tif (!tryAdd(id)) { t.checked = false; }\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tselected.delete(id);\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t} else if (t.id === 'bulk-select-all') {\n\t\t\t\t\t\tvar boxes = document.querySelectorAll('#artist-content .sw-bulk-select');\n\t\t\t\t\t\tboxes.forEach(function(cb) {\n\t\t\t\t\t\t\tvar id = cb.getAttribute('data-artist-id');\n\t\t\t\t\t\t\tif (!id) return;\n\t\t\t\t\t\t\tif (t.checked) {\n\t\t\t\t\t\t\t\tcb.checked = tryAdd(id);\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tcb.checked = false;\n\t\t\t\t\t\t\t\tselected.delete(id);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t\tif (!t.checked) capWarned = false;\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t} else if (t.id === 'bulk-action-select') {\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Build the localized verb label for a bulk action from the\n\t\t\t\t// data attributes on the progress pill data carrier. Falls\n\t\t\t\t// back to the raw action key if a verb is missing.\n\t\t\t\tfunction actionVerb(action) {\n\t\t\t\t\tvar pill = document.getElementById('bulk-progress-pill');\n\t\t\t\t\tif (!pill) return action;\n\t\t\t\t\tvar key = 'data-i18n-verb-' + action.replace(/_/g, '-');\n\t\t\t\t\treturn pill.getAttribute(key) || action;\n\t\t\t\t}\n\n\t\t\t\t// Render delegates to the layout-level ProgressPill so this\n\t\t\t\t// page-level controller no longer owns the pill DOM. The\n\t\t\t\t// server publishes operation.progress SSE events from\n\t\t\t\t// runBulkAction which the pill already handles; the local\n\t\t\t\t// fallback push covers the 202-response-before-first-SSE\n\t\t\t\t// window and the DOMContentLoaded recovery path so a page\n\t\t\t\t// reload mid-action still surfaces the pill from the next\n\t\t\t\t// /status snapshot.\n\t\t\t\tfunction renderProgressPill(action, processed, total) {\n\t\t\t\t\tif (window.swProgressPill && typeof window.swProgressPill.push === 'function') {\n\t\t\t\t\t\twindow.swProgressPill.push({\n\t\t\t\t\t\t\top_id: 'bulk_action',\n\t\t\t\t\t\t\t// Pass the localized verb (e.g. \"Running rules\")\n\t\t\t\t\t\t\t// rather than the raw action key (\"run_rules\") so\n\t\t\t\t\t\t\t// the fallback pill push reads consistently with\n\t\t\t\t\t\t\t// the SSE-driven path, which already runs every\n\t\t\t\t\t\t\t// label through the pill's data-i18n-verb-* map.\n\t\t\t\t\t\t\tlabel: actionVerb(action),\n\t\t\t\t\t\t\tprocessed: processed,\n\t\t\t\t\t\t\ttotal: total,\n\t\t\t\t\t\t\tstatus: 'running',\n\t\t\t\t\t\t\tcancel_url: '/api/v1/artists/bulk-actions/cancel'\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction hideProgressPill() {\n\t\t\t\t\t// Local poll drives terminal state directly; the layout\n\t\t\t\t\t// pill's de-dup by op_id makes a duplicate terminal push\n\t\t\t\t\t// from SSE harmless. Without this push, a server crash\n\t\t\t\t\t// mid-op (no terminal SSE event ever fires) or the SSE\n\t\t\t\t\t// path lagging the local poll leaves a stale pill on\n\t\t\t\t\t// screen indefinitely.\n\t\t\t\t\tif (window.swProgressPill && typeof window.swProgressPill.push === 'function') {\n\t\t\t\t\t\twindow.swProgressPill.push({op_id: 'bulk_action', status: 'canceled', processed: 0, total: 0});\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Start polling bulk-actions/status every 2s. Stops on terminal\n\t\t\t\t// status and surfaces an outcome-breakdown toast. Page reloads\n\t\t\t\t// mid-action re-attach by calling this on DOMContentLoaded.\n\t\t\t\t// Process one /status snapshot. Returns true when the status\n\t\t\t\t// is terminal (idle/completed/failed) so callers know to stop\n\t\t\t\t// polling and do not need to start one. Shared between the\n\t\t\t\t// active poll callback and the DOMContentLoaded recovery\n\t\t\t\t// path so a page reload near the end of a bulk job still\n\t\t\t\t// surfaces the summary toast from the terminal snapshot.\n\t\t\t\tfunction handleProgressSnapshot(data, initialAction) {\n\t\t\t\t\tif (!data || data.status === 'idle') {\n\t\t\t\t\t\t// Only synthesize the terminal-canceled push when we\n\t\t\t\t\t\t// previously observed a running action. Without this\n\t\t\t\t\t\t// guard, every page load that hits an idle /status\n\t\t\t\t\t\t// (the normal no-op state) fires a synthetic canceled\n\t\t\t\t\t\t// event, which can produce false cancel-state UI in\n\t\t\t\t\t\t// future consumers that latch on the canceled status.\n\t\t\t\t\t\tif (bulkActionRunning) {\n\t\t\t\t\t\t\thideProgressPill();\n\t\t\t\t\t\t}\n\t\t\t\t\t\tbulkActionRunning = false;\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\trenderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);\n\t\t\t\t\t// The global ProgressPill renders its own Cancel button\n\t\t\t\t\t// when the operation.progress event carries cancel_url;\n\t\t\t\t\t// the local controller no longer needs to toggle one.\n\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {\n\t\t\t\t\t\t// Push the matching terminal state to the layout pill\n\t\t\t\t\t\t// directly: the local /status poll observes terminal\n\t\t\t\t\t\t// status before the next throttled SSE tick lands, and\n\t\t\t\t\t\t// on a server crash mid-op the SSE terminal event may\n\t\t\t\t\t\t// never fire at all. The pill de-dupes by op_id, so a\n\t\t\t\t\t\t// subsequent duplicate terminal SSE push is harmless.\n\t\t\t\t\t\tif (window.swProgressPill && typeof window.swProgressPill.push === 'function') {\n\t\t\t\t\t\t\twindow.swProgressPill.push({\n\t\t\t\t\t\t\t\top_id: 'bulk_action',\n\t\t\t\t\t\t\t\t// Same localization as the running-state push\n\t\t\t\t\t\t\t\t// above: the layout pill's data-i18n-verb-*\n\t\t\t\t\t\t\t\t// map only fires on its own SSE path, so the\n\t\t\t\t\t\t\t\t// fallback push must hand it a localized\n\t\t\t\t\t\t\t\t// string directly.\n\t\t\t\t\t\t\t\tlabel: actionVerb(data.action || initialAction || ''),\n\t\t\t\t\t\t\t\tprocessed: data.processed || 0,\n\t\t\t\t\t\t\t\ttotal: data.total || 0,\n\t\t\t\t\t\t\t\tstatus: data.status\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tbulkActionRunning = false;\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\tvar pill = document.getElementById('bulk-progress-pill');\n\t\t\t\t\t\t// Re-identify auto breaks out auto_linked/queued/\n\t\t\t\t\t\t// no_match counters so the toast can say \"3 auto-\n\t\t\t\t\t\t// linked, 2 queued, 1 no match\" instead of the\n\t\t\t\t\t\t// generic succeeded/skipped triad. Other actions\n\t\t\t\t\t\t// keep the existing summary text.\n\t\t\t\t\t\tvar msg;\n\t\t\t\t\t\tif ((data.action === 're_identify_auto' || data.action === 're_identify') &&\n\t\t\t\t\t\t\t((data.auto_linked || 0) + (data.queued || 0) + (data.no_match || 0) + (data.failed || 0) > 0)) {\n\t\t\t\t\t\t\tvar rtpl = (pill && pill.getAttribute('data-i18n-reidentify-summary')) ||\n\t\t\t\t\t\t\t\t'{auto_linked} auto-linked, {queued} queued, {no_match} no match';\n\t\t\t\t\t\t\tmsg = rtpl\n\t\t\t\t\t\t\t\t.replace('{auto_linked}', String(data.auto_linked || 0))\n\t\t\t\t\t\t\t\t.replace('{queued}', String(data.queued || 0))\n\t\t\t\t\t\t\t\t.replace('{no_match}', String(data.no_match || 0))\n\t\t\t\t\t\t\t\t.replace('{failed}', String(data.failed || 0));\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tvar tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';\n\t\t\t\t\t\t\tmsg = tpl\n\t\t\t\t\t\t\t\t.replace('{succeeded}', String(data.succeeded || 0))\n\t\t\t\t\t\t\t\t.replace('{failed}', String(data.failed || 0))\n\t\t\t\t\t\t\t\t.replace('{skipped}', String(data.skipped || 0));\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function' && (data.failed || 0) === 0) {\n\t\t\t\t\t\t\twindow.showSuccessToast(msg);\n\t\t\t\t\t\t} else if (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\twindow.showToast(msg);\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\treturn false;\n\t\t\t\t}\n\n\t\t\t\tfunction startProgressPoll(initialAction) {\n\t\t\t\t\tif (progressPoll) { progressPoll.stop(); progressPoll = null; }\n\t\t\t\t\tbulkActionRunning = true;\n\t\t\t\t\tupdateBar();\n\t\t\t\t\tprogressPoll = pollAsyncStatus(_artistsBp + '/api/v1/artists/bulk-actions/status', {\n\t\t\t\t\t\tonData: function(data) {\n\t\t\t\t\t\t\treturn handleProgressSnapshot(data, initialAction);\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonHTTPError: function() {\n\t\t\t\t\t\t\t// Transport/HTTP errors are non-terminal: the backend\n\t\t\t\t\t\t\t// job may still be running. Keep bulkActionRunning set\n\t\t\t\t\t\t\t// so Apply stays disabled; a later idle/completed/\n\t\t\t\t\t\t\t// failed snapshot from the polling retry will clear\n\t\t\t\t\t\t\t// the lock. Releasing here would reopen the duplicate-\n\t\t\t\t\t\t\t// submit window and reintroduce the 409 loop.\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonNetworkError: function() {\n\t\t\t\t\t\t\t// Same rationale as onHTTPError: the status endpoint\n\t\t\t\t\t\t\t// may be transiently unreachable while the action is\n\t\t\t\t\t\t\t// still running. Do not clear the lock on an unknown\n\t\t\t\t\t\t\t// status.\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\t// Expose so other controllers (single-artist run-rules on the\n\t\t\t\t// artist detail page) can attach to an in-flight action.\n\t\t\t\twindow.swBulkProgress = {\n\t\t\t\t\tstart: startProgressPoll,\n\t\t\t\t\trender: renderProgressPill,\n\t\t\t\t\thide: hideProgressPill\n\t\t\t\t};\n\n\t\t\t\t// Cancel the in-flight bulk action. The layout-level\n\t\t\t\t// ProgressPill renders its own Cancel button driven by the\n\t\t\t\t// cancel_url on each operation.progress SSE event, so this\n\t\t\t\t// programmatic entrypoint is retained only for callers\n\t\t\t\t// (tests, the artist-detail run-rules controller) that\n\t\t\t\t// still trigger cancellation explicitly.\n\t\t\t\twindow.swCancelBulkAction = function() {\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/bulk-actions/cancel', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken}\n\t\t\t\t\t});\n\t\t\t\t};\n\n\t\t\t\t// Size-aware confirm dialog. <=50: no dialog; >50 and <=500:\n\t\t\t\t// simple confirm with action + count; >500: stronger warning\n\t\t\t\t// that names external API impact for re-identify and\n\t\t\t\t// fetch_images. Returns true when the user confirmed.\n\t\t\t\tfunction confirmBulkAction(action, count) {\n\t\t\t\t\tif (count <= 50) return true;\n\t\t\t\t\tvar pill = document.getElementById('bulk-progress-pill');\n\t\t\t\t\t// Use the action-dropdown's selected option label so the\n\t\t\t\t\t// confirm text reads naturally (e.g. \"Apply Run rules to\n\t\t\t\t\t// 100 artists?\") rather than the progress-verb form.\n\t\t\t\t\tvar selectEl = document.getElementById('bulk-action-select');\n\t\t\t\t\tvar verb = action;\n\t\t\t\t\tif (selectEl && selectEl.selectedOptions && selectEl.selectedOptions[0]) {\n\t\t\t\t\t\tverb = selectEl.selectedOptions[0].textContent || action;\n\t\t\t\t\t}\n\t\t\t\t\t// The large-count copy names external provider APIs, so\n\t\t\t\t\t// only use it for actions that actually hit them. Local\n\t\t\t\t\t// actions (scan, run_rules) get the plain small template\n\t\t\t\t\t// regardless of count to avoid misleading warnings.\n\t\t\t\t\tvar usesExternalProviders = action === 're_identify_auto' || action === 're_identify_review' || action === 'fetch_images';\n\t\t\t\t\tvar tpl;\n\t\t\t\t\tif (count > 500 && usesExternalProviders) {\n\t\t\t\t\t\ttpl = (pill && pill.getAttribute('data-i18n-confirm-large')) || 'You are about to apply {action} to {count} artists. This may take a while and will hit external provider APIs (MusicBrainz, Fanart.tv, etc.). Continue?';\n\t\t\t\t\t} else {\n\t\t\t\t\t\ttpl = (pill && pill.getAttribute('data-i18n-confirm-small')) || 'Apply {action} to {count} artists?';\n\t\t\t\t\t}\n\t\t\t\t\tvar msg = tpl.replace('{action}', verb).replace('{count}', String(count));\n\t\t\t\t\treturn window.confirm(msg);\n\t\t\t\t}\n\n\t\t\t\t// \"Show selected\" affordance (#1227): when sort moves selected\n\t\t\t\t// artists off the current page, the toolbar count names how\n\t\t\t\t// many are on this page vs elsewhere. Clicking \"Show selected\"\n\t\t\t\t// issues an htmx GET to /artists with the current selection\n\t\t\t\t// as `ids=` so the user can review the entire selection in\n\t\t\t\t// one place. We reuse htmx.ajax (rather than a plain anchor)\n\t\t\t\t// so the swap target stays #artist-content and the existing\n\t\t\t\t// afterSwap URL listener pushes the new state onto history.\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || t.id !== 'bulk-show-selected') return;\n\t\t\t\t\tif (selected.size === 0) return;\n\t\t\t\t\tvar ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);\n\t\t\t\t\tvar params = buildArtistParams({page: '1', ids: ids.join(',')});\n\t\t\t\t\tif (window.htmx) {\n\t\t\t\t\t\t// Root-relative path here -- the document-level\n\t\t\t\t\t\t// htmx:configRequest hook prepends basePath, so\n\t\t\t\t\t\t// embedding _artistsBp would double-prefix on\n\t\t\t\t\t\t// sub-path deployments.\n\t\t\t\t\t\twindow.htmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\t\t\tvalues: params\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// \"Select all N matching\" click handler: fetch the full cross-page\n\t\t\t\t// ID list from GET /api/v1/artists/matching-ids using the same\n\t\t\t\t// filter params currently in the URL, then load all returned IDs\n\t\t\t\t// into the `selected` Set (up to MAX_BULK_SELECTION). Captures\n\t\t\t\t// the scope token at the moment of the fetch so a filter change\n\t\t\t\t// that races the response causes the stale result to be discarded.\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || t.id !== 'bulk-select-all-matching') return;\n\t\t\t\t\tt.disabled = true;\n\n\t\t\t\t\t// Snapshot the scope token so we can detect a filter change\n\t\t\t\t\t// that races the async fetch. Capture the current URL params\n\t\t\t\t\t// to forward as query-string on the matching-ids request.\n\t\t\t\t\tvar scopeAtFetch = currentScopeToken();\n\t\t\t\t\tvar currentParams = new URLSearchParams(window.location.search);\n\n\t\t\t\t\t// Build the matching-ids URL, forwarding all filter params\n\t\t\t\t\t// that parseFlyoutFilters and handleArtistMatchingIDs understand.\n\t\t\t\t\tvar idsURL = _artistsBp + '/api/v1/artists/matching-ids';\n\t\t\t\t\tvar forwardKeys = ['search', 'filter', 'library_id'];\n\t\t\t\t\tvar fwd = new URLSearchParams();\n\t\t\t\t\tcurrentParams.forEach(function(v, k) {\n\t\t\t\t\t\tif (forwardKeys.indexOf(k) >= 0 || k.indexOf('filter_') === 0) {\n\t\t\t\t\t\t\tfwd.set(k, v);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\tvar qs = fwd.toString();\n\t\t\t\t\tif (qs) idsURL += '?' + qs;\n\n\t\t\t\t\tfetch(idsURL, {credentials: 'same-origin'})\n\t\t\t\t\t\t.then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })\n\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t// Discard the response if a filter change has happened since\n\t\t\t\t\t\t\t// the fetch started (scope-token drift). The user is now\n\t\t\t\t\t\t\t// looking at a different result set.\n\t\t\t\t\t\t\tif (currentScopeToken() !== scopeAtFetch) { if (t) t.disabled = false; return; }\n\n\t\t\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\t\tif (!data || !Array.isArray(data.ids)) {\n\t\t\t\t\t\t\t\talert((bar && bar.getAttribute('data-i18n-select-all-matching-failed')) || 'Could not load the full matching list. Please try again.');\n\t\t\t\t\t\t\t\tif (t) t.disabled = false;\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// Load returned IDs into the selection, up to the hard cap.\n\t\t\t\t\t\t\tselected.clear();\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t\tfor (var i = 0; i < data.ids.length; i++) {\n\t\t\t\t\t\t\t\tif (!tryAdd(data.ids[i])) break;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// Warn the user if the server returned a capped result.\n\t\t\t\t\t\t\tif (data.capped) {\n\t\t\t\t\t\t\t\tvar cappedTpl = (bar && bar.getAttribute('data-i18n-select-all-matching-capped')) || 'Loaded {count} of {total} matching artists (limit reached). Actions will apply to these {count} only.';\n\t\t\t\t\t\t\t\talert(cappedTpl\n\t\t\t\t\t\t\t\t\t.replace(/{count}/g, String(selected.size))\n\t\t\t\t\t\t\t\t\t.replace('{total}', String(data.total)));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(function() {\n\t\t\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\t\talert((bar && bar.getAttribute('data-i18n-select-all-matching-failed')) || 'Could not load the full matching list. Please try again.');\n\t\t\t\t\t\t\tif (t) t.disabled = false;\n\t\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || t.id !== 'bulk-action-apply') return;\n\t\t\t\t\tvar selectEl = document.getElementById('bulk-action-select');\n\t\t\t\t\tif (!selectEl || !selectEl.value || selected.size === 0) return;\n\t\t\t\t\tvar action = selectEl.value;\n\t\t\t\t\t// Defensive truncation: the UI cap should already prevent\n\t\t\t\t\t// this, but guard against any drift so we never hit the\n\t\t\t\t\t// backend's hard 1000-ID rejection with a generic toast.\n\t\t\t\t\tvar ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);\n\t\t\t\t\tif (!confirmBulkAction(action, ids.length)) return;\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tt.disabled = true;\n\t\t\t\t\t// Re-identify (review) dispatches to the wizard flow\n\t\t\t\t\t// rather than the bulk-actions endpoint: the wizard is\n\t\t\t\t\t// interactive and owns its own session state, so routing\n\t\t\t\t\t// it through the singleton bulk-action slot would be\n\t\t\t\t\t// misleading. Start the wizard then redirect the user to\n\t\t\t\t\t// its first step.\n\t\t\t\t\tif (action === 're_identify_review') {\n\t\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/re-identify/wizard', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\t\t\tbody: JSON.stringify({ids: ids})\n\t\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t\tif (!r.ok) {\n\t\t\t\t\t\t\t\tvar bar3 = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\t\t\talert((bar3 && bar3.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.');\n\t\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\t\tif (!data || !data.session_id) return;\n\t\t\t\t\t\t\twindow.location.href = _artistsBp + '/artists/re-identify/wizard/' + data.session_id + '/step/0';\n\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t});\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/bulk-actions', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\t\tbody: JSON.stringify({action: action, ids: ids})\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\tvar i18nBusy = (bar && bar.getAttribute('data-i18n-busy')) || 'A bulk action is already running. Please wait for it to finish.';\n\t\t\t\t\t\tvar i18nFailed = (bar && bar.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.';\n\t\t\t\t\t\tif (r.status === 409) {\n\t\t\t\t\t\t\talert(i18nBusy);\n\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t} else if (!r.ok) {\n\t\t\t\t\t\t\talert(i18nFailed);\n\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Render an immediate 0-of-total pill so the user sees\n\t\t\t\t\t\t\t// feedback before the first poll tick lands, then\n\t\t\t\t\t\t\t// start polling. Apply-disabled stays true until the\n\t\t\t\t\t\t\t// poll observes a terminal status.\n\t\t\t\t\t\t\trenderProgressPill(action, 0, ids.length);\n\t\t\t\t\t\t\tselected.clear();\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t\tstartProgressPoll(action);\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tvar bar2 = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\talert((bar2 && bar2.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.');\n\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\t// Scope token: filter-identifying params only. If any of\n\t\t\t\t// these change across an htmx swap, the user is looking\n\t\t\t\t// at a different result set and the previous selection is\n\t\t\t\t// no longer meaningful. Pagination, sort, order, and view\n\t\t\t\t// do NOT reset selection so the user can re-sort, paginate,\n\t\t\t\t// or switch table/grid while preserving their selection.\n\t\t\t\t//\n\t\t\t\t// Prefer the explicit URLSearchParams source over\n\t\t\t\t// window.location.search so the same routine works whether\n\t\t\t\t// we are reacting to an htmx swap (where the URL has\n\t\t\t\t// already been updated by the listener at line 638) or\n\t\t\t\t// computing the initial token at IIFE init.\n\t\t\t\tfunction tokenFromParams(p) {\n\t\t\t\t\tvar keys = [];\n\t\t\t\t\tp.forEach(function(_v, k) {\n\t\t\t\t\t\tif (k === 'search' || k === 'library_id' || k === 'filter' || k.indexOf('filter_') === 0) {\n\t\t\t\t\t\t\tkeys.push(k);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\tkeys.sort();\n\t\t\t\t\treturn keys.map(function(k) { return k + '=' + p.get(k); }).join('&');\n\t\t\t\t}\n\t\t\t\tfunction currentScopeToken() {\n\t\t\t\t\treturn tokenFromParams(new URLSearchParams(window.location.search));\n\t\t\t\t}\n\t\t\t\t// Compute the scope token from an htmx request URL. Used in\n\t\t\t\t// the afterSwap handler to derive the new scope without\n\t\t\t\t// depending on whether the URL-update listener has run yet.\n\t\t\t\t// htmx 2.0.8 exposes the request configuration on\n\t\t\t\t// evt.detail.requestConfig.path (the path htmx issued the\n\t\t\t\t// request to) and the resolved URL on evt.detail.xhr.responseURL\n\t\t\t\t// (post-redirect). We try requestConfig.path first because it\n\t\t\t\t// reflects what htmx asked for, fall back to xhr.responseURL,\n\t\t\t\t// then finally to window.location if neither is present.\n\t\t\t\tfunction scopeTokenFromRequest(evt) {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar rc = evt && evt.detail && evt.detail.requestConfig;\n\t\t\t\t\t\tvar xhr = evt && evt.detail && evt.detail.xhr;\n\t\t\t\t\t\tvar path = (rc && rc.path) || (xhr && xhr.responseURL);\n\t\t\t\t\t\tif (path) {\n\t\t\t\t\t\t\tvar u = new URL(path, window.location.origin);\n\t\t\t\t\t\t\treturn tokenFromParams(u.searchParams);\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (e) { /* fall through */ }\n\t\t\t\t\treturn currentScopeToken();\n\t\t\t\t}\n\t\t\t\tvar lastScopeToken = currentScopeToken();\n\n\t\t\t\t// Re-sync on initial load and after every HTMX swap of the\n\t\t\t\t// artist content (pagination, filter change, etc.). Also\n\t\t\t\t// probe the bulk-actions/status endpoint on load so a page\n\t\t\t\t// reload mid-action re-attaches the progress pill.\n\t\t\t\t// Seed the `selected` Set from the active `?ids=` URL param.\n\t\t\t\t// Mirrors the server-side parseIDsParam canonical ID shape\n\t\t\t\t// (^[A-Za-z0-9_-]{1,64}$, see handlers_artist.go) so the\n\t\t\t\t// client store stays consistent with what the server rendered:\n\t\t\t\t// a hand-crafted URL like ?ids=valid,@@ otherwise lets the\n\t\t\t\t// bulk-action POST submit @@ and earn a 400 wholesale rejection.\n\t\t\t\t// Capped to MAX_BULK_SELECTION to match the in-memory contract.\n\t\t\t\t// Idempotent: safe to call after `selected.clear()` on a\n\t\t\t\t// scope-token change so the toolbar re-syncs with the\n\t\t\t\t// server-rendered chip when ids= survives the swap.\n\t\t\t\tfunction seedSelectedFromURL() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar idRe = /^[A-Za-z0-9_-]{1,64}$/;\n\t\t\t\t\t\tvar initialIDs = new URLSearchParams(window.location.search).get('ids');\n\t\t\t\t\t\tif (!initialIDs) return;\n\t\t\t\t\t\tvar parts = initialIDs.split(',');\n\t\t\t\t\t\tfor (var i = 0; i < parts.length && selected.size < MAX_BULK_SELECTION; i++) {\n\t\t\t\t\t\t\tvar pid = parts[i].trim();\n\t\t\t\t\t\t\tif (idRe.test(pid)) selected.add(pid);\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (e) { /* ignore */ }\n\t\t\t\t}\n\n\t\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\t\t// Seed from any `ids=` URL param so a reload or\n\t\t\t\t\t// shareable-link revisit of /artists?ids=a,b,c keeps the\n\t\t\t\t\t// toolbar count, the \"Show selected\" affordance, and the\n\t\t\t\t\t// per-row checkboxes consistent with the chip the server\n\t\t\t\t\t// already rendered (#1227).\n\t\t\t\t\tseedSelectedFromURL();\n\t\t\t\t\tupdateBar();\n\t\t\t\t\t// Fire-and-forget status probe. If an action is in flight\n\t\t\t\t\t// the poll attaches; otherwise the pill stays hidden.\n\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/bulk-actions/status', {credentials: 'same-origin'})\n\t\t\t\t\t\t.then(function(r) { return r.ok ? r.json() : null; })\n\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t// Terminal snapshots (completed/failed/idle) are\n\t\t\t\t\t\t\t// handled in-place so the summary toast is not\n\t\t\t\t\t\t\t// dropped on reload-near-end. Non-terminal returns\n\t\t\t\t\t\t\t// false and we start the normal poll.\n\t\t\t\t\t\t\tif (!data) return;\n\t\t\t\t\t\t\tif (handleProgressSnapshot(data, data.action || '')) return;\n\t\t\t\t\t\t\tstartProgressPoll(data.action || '');\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(function(){ /* ignore */ });\n\t\t\t\t});\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\t\t// Derive the new scope from the htmx request URL so\n\t\t\t\t\t\t// the comparison does not depend on the URL-update\n\t\t\t\t\t\t// listener (line 638) having fired first. This keeps\n\t\t\t\t\t\t// selection stable across sort/order/page/view swaps\n\t\t\t\t\t\t// (issue #1081 F1) regardless of listener ordering.\n\t\t\t\t\t\tvar currentToken = scopeTokenFromRequest(evt);\n\t\t\t\t\t\tif (currentToken !== lastScopeToken) {\n\t\t\t\t\t\t\tselected.clear();\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t\tlastScopeToken = currentToken;\n\t\t\t\t\t\t\t// Re-seed from the post-swap URL: if the new\n\t\t\t\t\t\t\t// URL still carries an ids param, the scope-clear\n\t\t\t\t\t\t\t// above would otherwise leave the toolbar\n\t\t\t\t\t\t\t// reporting an empty selection while the\n\t\t\t\t\t\t\t// server-rendered selection chip is still\n\t\t\t\t\t\t\t// present (search/library/view changes preserve\n\t\t\t\t\t\t\t// ids via buildArtistParams + the configRequest\n\t\t\t\t\t\t\t// hook, but change other scope keys).\n\t\t\t\t\t\t\tseedSelectedFromURL();\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Reset the shift-click anchor on every swap: after\n\t\t\t\t\t\t// pagination or sort the prior DOM ordering no longer\n\t\t\t\t\t\t// applies, so an old anchor could select an unintended\n\t\t\t\t\t\t// range on the next shift-click.\n\t\t\t\t\t\tlastClickedId = null;\n\t\t\t\t\t\t// Re-derive every checkbox's checked state from the\n\t\t\t\t\t\t// `selected` Set. The freshly-swapped HTML never\n\t\t\t\t\t\t// includes a `checked` attribute, so this is what\n\t\t\t\t\t\t// keeps checkmarks attached to artist IDs (not row\n\t\t\t\t\t\t// positions) across sort changes (issue #1081 F2).\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "<script>\n\t\t\tvar _artistsBp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t// _artistsPath returns the current artist-list path (/artists)\n\t\t\t\t// with the deployment base path stripped,\n\t\t\t\t// so the document-level htmx:configRequest hook re-prepends basePath\n\t\t\t\t// exactly once. Hardcoding '/artists' here swapped the STABLE table\n\t\t\t\t// into the next/ page on every sort/selection action (M55 #1335\n\t\t\t\t// routing fix); stable is unaffected because its pathname is /artists.\n\t\t\t\tfunction _artistsPath() {\n\t\t\t\t\tvar p = window.location.pathname;\n\t\t\t\t\tif (_artistsBp && p.indexOf(_artistsBp) === 0) {\n\t\t\t\t\t\tp = p.slice(_artistsBp.length) || '/';\n\t\t\t\t\t}\n\t\t\t\t\treturn p || '/artists';\n\t\t\t\t}\n\t\t\t// Inject flyout filter params from the URL into HTMX requests that\n\t\t\t// target #artist-content. The flyout stores state in the URL only\n\t\t\t// (not in named form elements), so hx-include cannot pick it up.\n\t\t\tdocument.body.addEventListener('htmx:configRequest', function(evt) {\n\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\tvar urlParams = new URLSearchParams(window.location.search);\n\t\t\t\t\t// Declarative hx-get flows (search, library dropdown,\n\t\t\t\t\t// view-toggle buttons) drive their request URL purely\n\t\t\t\t\t// from hx-include'd form fields, so the off-page\n\t\t\t\t\t// selection scope (ids, #1227) is not carried unless\n\t\t\t\t\t// this hook re-injects it. The \"Show all\" chip\n\t\t\t\t\t// intentionally drops ids and opts out via the\n\t\t\t\t\t// data-clear-ids attribute on its hx-get element.\n\t\t\t\t\tvar elt = evt.detail.elt;\n\t\t\t\t\tvar clearIDs = !!(elt && elt.getAttribute && elt.getAttribute('data-clear-ids') === 'true');\n\t\t\t\t\turlParams.forEach(function(val, key) {\n\t\t\t\t\t\tif (key.indexOf('filter_') === 0 && !(key in evt.detail.parameters)) {\n\t\t\t\t\t\t\tevt.detail.parameters[key] = val;\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (key === 'ids' && !clearIDs && !('ids' in evt.detail.parameters)) {\n\t\t\t\t\t\t\tevt.detail.parameters.ids = val;\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tvar _sortActiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold text-blue-600 dark:text-blue-400';\n\t\t\tvar _sortInactiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200';\n\n\t\t\t// All sortable field keys -- used by updateSortUI to refresh dropdown\n\t\t\t// and column header indicators in one sweep.\n\t\t\tvar _sortFields = ['name', 'sort_name', 'type', 'origin', 'health_score', 'updated_at', 'created_at'];\n\n\t\t\tfunction updateSortUI(sort, order) {\n\t\t\t\tvar fieldLabel = document.getElementById('sort-field-label');\n\t\t\t\tvar orderLabel = document.getElementById('sort-order-label');\n\t\t\t\tif (fieldLabel) {\n\t\t\t\t\tvar activeBtn = document.querySelector('#sort-dropdown button[onclick=\"setSort(\\'' + sort + '\\')\"]');\n\t\t\t\t\tfieldLabel.textContent = activeBtn ? activeBtn.textContent.trim() : sort;\n\t\t\t\t}\n\t\t\t\tif (orderLabel) {\n\t\t\t\t\tvar activeOrder = document.querySelector('#sort-dropdown button[onclick=\"setOrder(\\'' + order + '\\')\"]');\n\t\t\t\t\torderLabel.textContent = activeOrder ? activeOrder.textContent.trim() : order;\n\t\t\t\t}\n\t\t\t\t_sortFields.forEach(function(f) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setSort(\\'' + f + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = f === sort ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t\t['asc', 'desc'].forEach(function(d) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setOrder(\\'' + d + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = d === order ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t\t// Update column header sort indicators. Each sortable <th> has a\n\t\t\t\t// data-sort-col attribute matching the sort key. The active column\n\t\t\t\t// shows an arrow (data-dir=\"asc\" or \"desc\"); all others are hidden.\n\t\t\t\tdocument.querySelectorAll('th[data-sort-col]').forEach(function(th) {\n\t\t\t\t\tvar col = th.getAttribute('data-sort-col');\n\t\t\t\t\tvar asc = th.querySelector('.sw-sort-asc');\n\t\t\t\t\tvar desc = th.querySelector('.sw-sort-desc');\n\t\t\t\t\tif (!asc || !desc) return;\n\t\t\t\t\tif (col === sort) {\n\t\t\t\t\t\tasc.style.display = order === 'asc' ? '' : 'none';\n\t\t\t\t\t\tdesc.style.display = order === 'desc' ? '' : 'none';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tasc.style.display = 'none';\n\t\t\t\t\t\tdesc.style.display = 'none';\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// setSortColumn is called by table column header buttons. It implements\n\t\t\t// a three-state cycle: off -> asc -> desc -> off (revert to name asc).\n\t\t\t// The first click on an inactive column activates it ascending; a second\n\t\t\t// click on the same column flips to descending; a third click removes\n\t\t\t// the explicit sort and returns to the default (name, asc).\n\t\t\tfunction setSortColumn(field) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!sortInput || !orderInput) return;\n\t\t\t\tvar newSort, newOrder;\n\t\t\t\tif (sortInput.value === field) {\n\t\t\t\t\tif (orderInput.value === 'asc') {\n\t\t\t\t\t\t// Second click: flip to descending.\n\t\t\t\t\t\tnewSort = field;\n\t\t\t\t\t\tnewOrder = 'desc';\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Third click: remove explicit sort, revert to default.\n\t\t\t\t\t\tnewSort = 'name';\n\t\t\t\t\t\tnewOrder = 'asc';\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\t// First click on this column: activate ascending.\n\t\t\t\t\tnewSort = field;\n\t\t\t\t\tnewOrder = 'asc';\n\t\t\t\t}\n\t\t\t\tsortInput.value = newSort;\n\t\t\t\torderInput.value = newOrder;\n\t\t\t\tupdateSortUI(newSort, newOrder);\n\t\t\t\thtmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setSort(field) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!sortInput || !orderInput) return;\n\t\t\t\tif (sortInput.value === field) {\n\t\t\t\t\torderInput.value = (orderInput.value === 'asc') ? 'desc' : 'asc';\n\t\t\t\t} else {\n\t\t\t\t\tsortInput.value = field;\n\t\t\t\t\torderInput.value = 'asc';\n\t\t\t\t}\n\t\t\t\tupdateSortUI(sortInput.value, orderInput.value);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setOrder(dir) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!orderInput) return;\n\t\t\t\torderInput.value = dir;\n\t\t\t\tupdateSortUI(sortInput ? sortInput.value : '', dir);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction closeSortDropdown() {\n\t\t\t\tvar d = document.getElementById('sort-dropdown');\n\t\t\t\tif (d) d.removeAttribute('open');\n\t\t\t}\n\n\t\t\tfunction buildArtistParams(overrides) {\n\t\t\t\tvar params = {};\n\t\t\t\t// Collect form-based params from named elements.\n\t\t\t\t['search', 'library_id', 'view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\tvar el = document.querySelector('[name=\"' + name + '\"]');\n\t\t\t\t\tif (el) params[name] = el.value;\n\t\t\t\t});\n\t\t\t\t// Carry all flyout filter params from the current URL dynamically.\n\t\t\t\tvar urlParams = new URLSearchParams(window.location.search);\n\t\t\t\turlParams.forEach(function(val, key) {\n\t\t\t\t\tif (key.indexOf('filter_') === 0) {\n\t\t\t\t\t\tparams[key] = val;\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Preserve the off-page selection scope (#1227) across\n\t\t\t\t// search / sort / view rebuilds. Without this, the URL\n\t\t\t\t// rebuild in afterSwap drops ids and the user's \"Show\n\t\t\t\t// selected\" view collapses on the next interaction.\n\t\t\t\tvar ids = urlParams.get('ids');\n\t\t\t\tif (ids) params.ids = ids;\n\t\t\t\treturn Object.assign(params, overrides);\n\t\t\t}\n\n\t\t\t// Update view toggle button classes to reflect the active view.\n\t\t\t// Mirror the server-side templ.KV(glassButtonHalo, active) rendering:\n\t\t\t// keep each button's base classes and only toggle the glass halo\n\t\t\t// (read from data-active-classes on the button), like the filter\n\t\t\t// trigger. Hard-coding blue/gray here would overwrite the glass\n\t\t\t// styling on setView()/history restore (and reintroduce solid blue).\n\t\t\tfunction updateViewToggleUI(view) {\n\t\t\t\tvar toggle = document.getElementById('view-toggle');\n\t\t\t\tif (!toggle) return;\n\t\t\t\tvar btns = toggle.querySelectorAll('button[data-view]');\n\t\t\t\tfor (var i = 0; i < btns.length; i++) {\n\t\t\t\t\tvar btn = btns[i];\n\t\t\t\t\tvar active = btn.getAttribute('data-view') === view;\n\t\t\t\t\tvar halo = (btn.getAttribute('data-active-classes') || '').split(/\\s+/);\n\t\t\t\t\tfor (var j = 0; j < halo.length; j++) {\n\t\t\t\t\t\tif (halo[j]) btn.classList.toggle(halo[j], active);\n\t\t\t\t\t}\n\t\t\t\t\tbtn.setAttribute('aria-pressed', active ? 'true' : 'false');\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction setView(view) {\n\t\t\t\tvar input = document.getElementById('artist-view-input');\n\t\t\t\tif (input) input.value = view;\n\t\t\t\tupdateViewToggleUI(view);\n\t\t\t\t// Show/hide column toggle based on view\n\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\tif (colToggle) {\n\t\t\t\t\tif (view === 'table') {\n\t\t\t\t\t\tcolToggle.classList.remove('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tcolToggle.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// next/ channel: in table view, sorting is driven by the clickable\n\t\t\t\t// column headers, so hide the toolbar sort dropdown there; surface it\n\t\t\t\t// in grid view (which has no headers). Scoped to next/ via the\n\t\t\t\t// .sw-next-artists marker so the stable channel's dropdown is untouched.\n\t\t\t\tvar sortDd = document.getElementById('sort-dropdown');\n\t\t\t\tif (sortDd && document.querySelector('.sw-next-artists')) {\n\t\t\t\t\tif (view === 'table') {\n\t\t\t\t\t\tsortDd.classList.add('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tsortDd.classList.remove('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// Fire-and-forget save preference\n\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\tfetch(_artistsBp + '/api/v1/settings', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\tbody: JSON.stringify({\"ui.artists_view\": view})\n\t\t\t\t}).catch(function() {});\n\t\t\t}\n\n\t\t\t// After HTMX swaps artist content, push the current filter/sort state\n\t\t\t// into the URL so browser back-navigation restores the correct view.\n\t\t\t// Uses window.location.pathname (not hardcoded '/artists') for basePath\n\t\t\t// support, and carries over the page param from the HTMX request URL.\n\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\t// Re-sync flyout state from URL after any swap (including chip dismissals\n\t\t\t\t\t// via DismissFilterChip, which bypass the sw:filter-applied event).\n\t\t\t\t\tif (window.swFilterFlyout) {\n\t\t\t\t\t\tswFilterFlyout.initFromURL('artist-filters-flyout');\n\t\t\t\t\t}\n\n\t\t\t\t\tvar params = buildArtistParams({});\n\t\t\t\t\t// Extract page and the off-page selection scope (#1227)\n\t\t\t\t\t// from the HTMX request URL. The \"Show selected\" click\n\t\t\t\t\t// adds ids; the \"Show all\" click drops it. The history\n\t\t\t\t\t// rebuild must mirror whichever the request actually\n\t\t\t\t\t// carried so back-navigation restores the right view.\n\t\t\t\t\ttry {\n\t\t\t\t\t\t// Use documented HTMX 2.x afterSwap fields. Priority order:\n\t\t\t\t\t\t//   1. evt.detail.pathInfo.finalRequestPath (canonical 2.x; reflects\n\t\t\t\t\t\t//      htmx-side hx-push-url rewrites)\n\t\t\t\t\t\t//   2. evt.detail.pathInfo.requestPath (initial request path)\n\t\t\t\t\t\t//   3. evt.detail.requestConfig.path (legacy fallback)\n\t\t\t\t\t\t//   4. evt.detail.xhr.responseURL (post-HTTP-redirect URL)\n\t\t\t\t\t\t// Migrated to pathInfo per #1228 to match the htmx 2.x event\n\t\t\t\t\t\t// contract. The legacy 2-level fallback (requestConfig.path,\n\t\t\t\t\t\t// xhr.responseURL) is preserved below as a defensive\n\t\t\t\t\t\t// belt-and-braces against runtime event-shape drift.\n\t\t\t\t\t\tvar pi = evt.detail.pathInfo;\n\t\t\t\t\t\tvar rc = evt.detail.requestConfig;\n\t\t\t\t\t\tvar xhr = evt.detail.xhr;\n\t\t\t\t\t\tvar rawPath = (pi && (pi.finalRequestPath || pi.requestPath)) ||\n\t\t\t\t\t\t\t(rc && rc.path) ||\n\t\t\t\t\t\t\t(xhr && xhr.responseURL);\n\t\t\t\t\t\tif (!rawPath) {\n\t\t\t\t\t\t\t// Surface silent-fail in the console so future htmx event-shape\n\t\t\t\t\t\t\t// regressions show up during dev/UAT instead of presenting as a\n\t\t\t\t\t\t\t// stale URL bar with no other symptom.\n\t\t\t\t\t\t\tif (window.console && console.debug) {\n\t\t\t\t\t\t\t\tconsole.debug('[artists] htmx:afterSwap missing pathInfo/requestConfig; URL state not updated', evt.detail);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t// Bail out of the entire handler so history.replaceState below\n\t\t\t\t\t\t\t// does not rewrite the URL from the stale params snapshot.\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar reqUrl = new URL(rawPath, window.location.origin);\n\t\t\t\t\t\tvar ids = reqUrl.searchParams.get('ids');\n\t\t\t\t\t\tif (ids) {\n\t\t\t\t\t\t\tparams.ids = ids;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdelete params.ids;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar page = reqUrl.searchParams.get('page');\n\t\t\t\t\t\tif (page && page !== '1') params.page = page;\n\t\t\t\t\t\tvar pageSize = reqUrl.searchParams.get('page_size');\n\t\t\t\t\t\tif (pageSize) params.page_size = pageSize;\n\t\t\t\t\t} catch(e) {\n\t\t\t\t\t\t// Mirror the no-rawPath path's debug log so a malformed\n\t\t\t\t\t\t// URL/event regression surfaces in the console during\n\t\t\t\t\t\t// dev/UAT instead of presenting as a stale URL bar.\n\t\t\t\t\t\tif (window.console && console.debug) {\n\t\t\t\t\t\t\tconsole.debug('[artists] htmx:afterSwap URL parse failed; URL state not updated', e, evt.detail);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Same reasoning as the no-rawPath bail-out: if URL parse\n\t\t\t\t\t\t// fails for any reason, the params snapshot is stale and\n\t\t\t\t\t\t// rewriting history with it would clobber the user URL bar.\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {\n\t\t\t\t\t\treturn encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);\n\t\t\t\t\t}).join('&');\n\t\t\t\t\thistory.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Reload artist content when the filter flyout applies filters.\n\t\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\t\tif (evt.target && evt.target.id === 'artist-content') {\n\t\t\t\t\t// Strip the base path from location.pathname before passing to htmx.ajax\n\t\t\t\t\t// to avoid a double-prefix from the htmx:configRequest hook.\n\t\t\t\t\tvar bpMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\tvar bp = bpMeta ? bpMeta.content : '';\n\t\t\t\t\tvar path = window.location.pathname;\n\t\t\t\t\tif (bp && path.startsWith(bp)) {\n\t\t\t\t\t\tpath = path.slice(bp.length) || '/';\n\t\t\t\t\t}\n\t\t\t\t\thtmx.ajax('GET', path + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Initialise the flyout from URL params on first page load.\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tif (window.swFilterFlyout) {\n\t\t\t\t\tswFilterFlyout.initFromURL('artist-filters-flyout');\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// restoreStateFromURL syncs all filter controls, hidden inputs,\n\t\t\t// sort labels, and view toggle from the current URL query params,\n\t\t\t// then triggers an HTMX content reload so the artist list matches\n\t\t\t// the URL state. Used by both pageshow (bfcache) and popstate\n\t\t\t// (history back/forward) handlers.\n\t\t\t//\n\t\t\t// A debounce guard prevents duplicate calls when bfcache restore\n\t\t\t// fires both pageshow and popstate in quick succession.\n\t\t\tvar _restoreLastRun = 0;\n\t\t\tvar _restoreLastHref = '';\n\t\t\tfunction restoreStateFromURL() {\n\t\t\t\tvar now = Date.now();\n\t\t\t\tvar href = window.location.href;\n\t\t\t\tif (href === _restoreLastHref && now - _restoreLastRun < 100) return;\n\t\t\t\t_restoreLastHref = href;\n\t\t\t\t_restoreLastRun = now;\n\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t// Re-sync flyout chip states from URL.\n\t\t\t\tif (window.swFilterFlyout) {\n\t\t\t\t\tswFilterFlyout.initFromURL('artist-filters-flyout');\n\t\t\t\t}\n\t\t\t\t// Sync the search input from URL params.\n\t\t\t\tvar searchEl = document.getElementById('artist-search');\n\t\t\t\tif (searchEl) searchEl.value = params.get('search') || '';\n\t\t\t\t// Sync select elements from URL params.\n\t\t\t\t['library_id'].forEach(function(name) {\n\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\tvar el = document.querySelector('select[name=\"' + name + '\"]');\n\t\t\t\t\tif (el) el.value = (val !== null) ? val : '';\n\t\t\t\t});\n\t\t\t\t// Sync hidden inputs from URL params, resetting to markup\n\t\t\t\t// defaults when a param is absent so browser history\n\t\t\t\t// restoration cannot retain stale values from a newer state.\n\t\t\t\t['view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\tvar el = document.getElementById('artist-' + name + '-input');\n\t\t\t\t\tif (el) el.value = (val !== null) ? val : el.defaultValue;\n\t\t\t\t});\n\t\t\t\t// Update visible sort labels and view toggle to match restored state.\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);\n\t\t\t\tvar viewInput = document.getElementById('artist-view-input');\n\t\t\t\tif (viewInput) {\n\t\t\t\t\tupdateViewToggleUI(viewInput.value);\n\t\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\t\tif (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');\n\t\t\t\t}\n\t\t\t\tvar _rsMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar _rsBp = _rsMeta ? _rsMeta.content : '';\n\t\t\t\tvar _rsPath = window.location.pathname;\n\t\t\t\tif (_rsBp && _rsPath.startsWith(_rsBp)) { _rsPath = _rsPath.slice(_rsBp.length) || '/'; }\n\t\t\t\thtmx.ajax('GET', _rsPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t}\n\n\t\t\t// When the page is restored from bfcache (browser back/forward navigation),\n\t\t\t// sync filter controls from the URL query params and reload content so\n\t\t\t// status badges reflect the latest state.\n\t\t\twindow.addEventListener('pageshow', function(evt) {\n\t\t\t\tif (evt.persisted) {\n\t\t\t\t\trestoreStateFromURL();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Handle browser back/forward navigation between pushState entries\n\t\t\t// (e.g. filter changes, pagination). Without this, pressing back after\n\t\t\t// applying filters and navigating away would show stale content even\n\t\t\t// though the URL contains the correct filter params. Works in Firefox\n\t\t\t// and all major browsers.\n\t\t\twindow.addEventListener('popstate', function() {\n\t\t\t\trestoreStateFromURL();\n\t\t\t});\n\n\t\t\t(function() {\n\t\t\t\tvar btn = document.getElementById('scan-btn');\n\t\t\t\tif (!btn) return;\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\n\t\t\t\t\tif (evt.detail.elt !== btn) return;\n\t\t\t\t\tif (!evt.detail.successful) return;\n\n\t\t\t\t\tvar spinner = document.getElementById('scan-spinner');\n\t\t\t\t\tvar label = document.getElementById('scan-label');\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tspinner.classList.remove('hidden');\n\t\t\t\t\tlabel.textContent = btn.dataset.labelScanning || 'Scanning...';\n\n\t\t\t\t\tfunction resetScanUI() {\n\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\tspinner.classList.add('hidden');\n\t\t\t\t\t\tlabel.textContent = btn.dataset.labelScan || 'Scan Library';\n\t\t\t\t\t}\n\t\t\t\t\tpollAsyncStatus(_artistsBp + '/api/v1/scanner/status', {\n\t\t\t\t\t\tonData: function(data) {\n\t\t\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {\n\t\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t\t\tvar _scMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\tvar _scBp = _scMeta ? _scMeta.content : '';\n\t\t\t\t\t\t\t\tvar _scPath = window.location.pathname;\n\t\t\t\t\t\t\t\tif (_scBp && _scPath.startsWith(_scBp)) { _scPath = _scPath.slice(_scBp.length) || '/'; }\n\t\t\t\t\t\t\t\thtmx.ajax('GET', _scPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t\t\t\t\treturn true;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn false;\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonHTTPError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonNetworkError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\n\t\t\t// Bulk-action controller. Wires the Select-All checkbox, per-row\n\t\t\t// checkboxes, the \"N selected\" indicator, and the action dropdown\n\t\t\t// to the /api/v1/artists/bulk-actions endpoint. The controller is\n\t\t\t// idempotent: it attaches listeners via event delegation so it\n\t\t\t// works across HTMX swaps of #artist-content without re-binding.\n\t\t\t(function() {\n\t\t\t\t// Selection state persists across HTMX swaps of the list so\n\t\t\t\t// the user can paginate while keeping earlier selections.\n\t\t\t\tvar selected = new Set();\n\t\t\t\t// Matches the backend cap in handlers_bulk_actions.go; keeps\n\t\t\t\t// the UI in sync so we never POST a payload the server will\n\t\t\t\t// reject with a generic \"failed to start\" toast.\n\t\t\t\tvar MAX_BULK_SELECTION = 1000;\n\t\t\t\tvar capWarned = false;\n\t\t\t\t// Tracks the last checkbox clicked for shift-click range\n\t\t\t\t// selection (Gmail/GitHub-style). Reset on scope change.\n\t\t\t\tvar lastClickedId = null;\n\t\t\t\t// Polling handle for the in-flight bulk action status. Non-null\n\t\t\t\t// while a bulk or single-artist run-rules action is running.\n\t\t\t\tvar progressPoll = null;\n\t\t\t\t// Tracks whether a bulk action is running end-to-end. Gates the\n\t\t\t\t// Apply button so checkbox/dropdown changes cannot re-enable it\n\t\t\t\t// mid-flight and queue a second POST (which would 409-loop).\n\t\t\t\tvar bulkActionRunning = false;\n\n\t\t\t\tfunction warnCap() {\n\t\t\t\t\tif (capWarned) return;\n\t\t\t\t\tcapWarned = true;\n\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\tvar tpl = (bar && bar.getAttribute('data-i18n-selection-cap')) || 'You can select up to {count} artists at a time.';\n\t\t\t\t\talert(tpl.replace('{count}', String(MAX_BULK_SELECTION)));\n\t\t\t\t}\n\n\t\t\t\tfunction tryAdd(id) {\n\t\t\t\t\tif (selected.has(id)) return true;\n\t\t\t\t\tif (selected.size >= MAX_BULK_SELECTION) {\n\t\t\t\t\t\twarnCap();\n\t\t\t\t\t\treturn false;\n\t\t\t\t\t}\n\t\t\t\t\tselected.add(id);\n\t\t\t\t\treturn true;\n\t\t\t\t}\n\n\t\t\t\tfunction updateBar() {\n\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\tif (!bar) return;\n\t\t\t\t\tvar countEl = document.getElementById('bulk-selected-count');\n\t\t\t\t\tvar applyBtn = document.getElementById('bulk-action-apply');\n\t\t\t\t\tvar selectEl = document.getElementById('bulk-action-select');\n\t\t\t\t\tvar selectAll = document.getElementById('bulk-select-all');\n\t\t\t\t\tvar showSelectedBtn = document.getElementById('bulk-show-selected');\n\t\t\t\t\tvar boxes = document.querySelectorAll('#artist-content .sw-bulk-select');\n\t\t\t\t\tvar i18nNone = bar.getAttribute('data-i18n-none') || 'None selected';\n\t\t\t\t\tvar i18nSelectedOne = bar.getAttribute('data-i18n-selected-one') || '1 selected';\n\t\t\t\t\tvar i18nSelectedOther = bar.getAttribute('data-i18n-selected-other') || '{count} selected';\n\t\t\t\t\tvar i18nSplitOne = bar.getAttribute('data-i18n-selected-split-one') || '{total} selected ({onpage} on this page, 1 elsewhere)';\n\t\t\t\t\tvar i18nSplitOther = bar.getAttribute('data-i18n-selected-split-other') || '{total} selected ({onpage} on this page, {offpage} elsewhere)';\n\t\t\t\t\t// Sync per-row checkboxes with persisted selection state and\n\t\t\t\t\t// count the on-page hits in the same pass so the toolbar\n\t\t\t\t\t// count can name how many of the selection are visible vs\n\t\t\t\t\t// off-page (issue #1227). visibleChecked counts checked\n\t\t\t\t\t// boxes among rows currently in the DOM; offPage is the\n\t\t\t\t\t// remainder of the selection that lives on other pages.\n\t\t\t\t\tvar visibleChecked = 0;\n\t\t\t\t\tboxes.forEach(function(cb) {\n\t\t\t\t\t\tvar id = cb.getAttribute('data-artist-id');\n\t\t\t\t\t\tcb.checked = selected.has(id);\n\t\t\t\t\t\tif (cb.checked) visibleChecked++;\n\t\t\t\t\t});\n\t\t\t\t\tvar offPage = selected.size - visibleChecked;\n\t\t\t\t\tif (offPage < 0) offPage = 0;\n\t\t\t\t\tif (countEl) {\n\t\t\t\t\t\tif (selected.size === 0) {\n\t\t\t\t\t\t\tcountEl.textContent = i18nNone;\n\t\t\t\t\t\t} else if (offPage === 0) {\n\t\t\t\t\t\t\tif (selected.size === 1) {\n\t\t\t\t\t\t\t\tcountEl.textContent = i18nSelectedOne;\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tcountEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tvar tpl = offPage === 1 ? i18nSplitOne : i18nSplitOther;\n\t\t\t\t\t\t\tcountEl.textContent = tpl\n\t\t\t\t\t\t\t\t.replace('{total}', String(selected.size))\n\t\t\t\t\t\t\t\t.replace('{onpage}', String(visibleChecked))\n\t\t\t\t\t\t\t\t.replace('{offpage}', String(offPage));\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tif (applyBtn) applyBtn.disabled = bulkActionRunning || selected.size === 0 || !selectEl || !selectEl.value;\n\t\t\t\t\tif (selectEl) selectEl.disabled = bulkActionRunning || selected.size === 0;\n\t\t\t\t\t// Stamp selection state on the bar so a channel that wants a\n\t\t\t\t\t// contextual strip (next/) can hide it via CSS when the selection\n\t\t\t\t\t// is empty. The stable bar ignores this attribute. Single source\n\t\t\t\t\t// of truth -- the selection bookkeeping is never forked.\n\t\t\t\t\tbar.dataset.selectionActive = selected.size > 0 ? 'true' : 'false';\n\t\t\t\t\t// Toggle the \"Show selected\" affordance: hidden when no\n\t\t\t\t\t// selection exists; visible (as inline-flex) once at least\n\t\t\t\t\t// one item is in the selection store. We use a single\n\t\t\t\t\t// display utility per state to avoid the \"two display\n\t\t\t\t\t// classes co-applied, later one wins\" cascade trap (memory\n\t\t\t\t\t// feedback_css_cascade_display_utilities).\n\t\t\t\t\tif (showSelectedBtn) {\n\t\t\t\t\t\tif (selected.size === 0) {\n\t\t\t\t\t\t\tshowSelectedBtn.classList.add('hidden');\n\t\t\t\t\t\t\tshowSelectedBtn.classList.remove('inline-flex');\n\t\t\t\t\t\t\tshowSelectedBtn.disabled = true;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tshowSelectedBtn.classList.remove('hidden');\n\t\t\t\t\t\t\tshowSelectedBtn.classList.add('inline-flex');\n\t\t\t\t\t\t\tshowSelectedBtn.disabled = bulkActionRunning;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Select-All indeterminate state.\n\t\t\t\t\tvar allChecked = false;\n\t\t\t\t\tif (selectAll) {\n\t\t\t\t\t\tif (boxes.length === 0) {\n\t\t\t\t\t\t\tselectAll.checked = false;\n\t\t\t\t\t\t\tselectAll.indeterminate = false;\n\t\t\t\t\t\t} else if (visibleChecked === 0) {\n\t\t\t\t\t\t\tselectAll.checked = false;\n\t\t\t\t\t\t\tselectAll.indeterminate = false;\n\t\t\t\t\t\t} else if (visibleChecked === boxes.length) {\n\t\t\t\t\t\t\tselectAll.checked = true;\n\t\t\t\t\t\t\tselectAll.indeterminate = false;\n\t\t\t\t\t\t\tallChecked = true;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tselectAll.checked = false;\n\t\t\t\t\t\t\tselectAll.indeterminate = true;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Swap the checkbox label between Select all / Deselect all\n\t\t\t\t\t// so screen readers and sighted users both see the action\n\t\t\t\t\t// that a click will perform next.\n\t\t\t\t\tvar labelEl = document.getElementById('bulk-select-all-label');\n\t\t\t\t\tif (labelEl) {\n\t\t\t\t\t\tvar i18nSelectAll = bar.getAttribute('data-i18n-select-all') || 'Select all on page';\n\t\t\t\t\t\tvar i18nDeselectAll = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';\n\t\t\t\t\t\tlabelEl.textContent = allChecked ? i18nDeselectAll : i18nSelectAll;\n\t\t\t\t\t}\n\t\t\t\t\tif (selectAll) {\n\t\t\t\t\t\tvar i18nSelectAllAria = bar.getAttribute('data-i18n-select-all') || 'Select all on page';\n\t\t\t\t\t\tvar i18nDeselectAllAria = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';\n\t\t\t\t\t\tselectAll.setAttribute('aria-label', allChecked ? i18nDeselectAllAria : i18nSelectAllAria);\n\t\t\t\t\t}\n\t\t\t\t\t// \"Select all N matching\" affordance: show only when every\n\t\t\t\t\t// visible row is checked AND the result spans more than one\n\t\t\t\t\t// page (i.e. there are artists off-screen that could also be\n\t\t\t\t\t// selected). Hide it when fewer than all visible rows are\n\t\t\t\t\t// checked, when only one page exists, or when a bulk action\n\t\t\t\t\t// is running.\n\t\t\t\t\tvar selectAllMatchingBtn = document.getElementById('bulk-select-all-matching');\n\t\t\t\t\tif (selectAllMatchingBtn) {\n\t\t\t\t\t\tvar totalPages = parseInt(bar.getAttribute('data-total-pages') || '1', 10);\n\t\t\t\t\t\tvar totalMatching = parseInt(bar.getAttribute('data-total-matching') || '0', 10);\n\t\t\t\t\t\t// Show if: all visible rows checked, more than one page, no\n\t\t\t\t\t\t// bulk action running, and at least one visible row exists.\n\t\t\t\t\t\tvar showMatchingBtn = allChecked && totalPages > 1 && !bulkActionRunning && boxes.length > 0;\n\t\t\t\t\t\tif (showMatchingBtn) {\n\t\t\t\t\t\t\t// Update label and aria to reflect the true total.\n\t\t\t\t\t\t\tvar matchingTpl = bar.getAttribute('data-i18n-select-all-matching') || 'Select all {total} matching';\n\t\t\t\t\t\t\tvar matchingAria = bar.getAttribute('data-i18n-select-all-matching-aria') || 'Select all {total} artists matching the current filters';\n\t\t\t\t\t\t\tselectAllMatchingBtn.textContent = matchingTpl.replace('{total}', String(totalMatching));\n\t\t\t\t\t\t\tselectAllMatchingBtn.setAttribute('aria-label', matchingAria.replace('{total}', String(totalMatching)));\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.remove('hidden');\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.add('inline-flex');\n\t\t\t\t\t\t\tselectAllMatchingBtn.disabled = false;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.add('hidden');\n\t\t\t\t\t\t\tselectAllMatchingBtn.classList.remove('inline-flex');\n\t\t\t\t\t\t\tselectAllMatchingBtn.disabled = true;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Shift-click range selection: capture on click (before the\n\t\t\t\t// change event) so we can see event.shiftKey. If shift is\n\t\t\t\t// held and we have a prior lastClickedId, select/deselect\n\t\t\t\t// every checkbox between the two anchors in DOM order.\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || !t.classList || !t.classList.contains('sw-bulk-select')) return;\n\t\t\t\t\tvar id = t.getAttribute('data-artist-id');\n\t\t\t\t\tif (!id) return;\n\t\t\t\t\t// Keyboard Shift+Space triggers a click with shiftKey.\n\t\t\t\t\tif (ev.shiftKey && lastClickedId && lastClickedId !== id) {\n\t\t\t\t\t\tvar boxes = Array.prototype.slice.call(\n\t\t\t\t\t\t\tdocument.querySelectorAll('#artist-content .sw-bulk-select')\n\t\t\t\t\t\t);\n\t\t\t\t\t\tvar idx1 = -1, idx2 = -1;\n\t\t\t\t\t\tfor (var i = 0; i < boxes.length; i++) {\n\t\t\t\t\t\t\tvar bid = boxes[i].getAttribute('data-artist-id');\n\t\t\t\t\t\t\tif (bid === lastClickedId) idx1 = i;\n\t\t\t\t\t\t\tif (bid === id) idx2 = i;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (idx1 >= 0 && idx2 >= 0) {\n\t\t\t\t\t\t\tvar lo = Math.min(idx1, idx2), hi = Math.max(idx1, idx2);\n\t\t\t\t\t\t\t// Target state follows the just-clicked checkbox's\n\t\t\t\t\t\t\t// post-click state (which the browser has already\n\t\t\t\t\t\t\t// set by the time this click handler runs).\n\t\t\t\t\t\t\tvar target = t.checked;\n\t\t\t\t\t\t\tfor (var j = lo; j <= hi; j++) {\n\t\t\t\t\t\t\t\tvar cb = boxes[j];\n\t\t\t\t\t\t\t\tvar cid = cb.getAttribute('data-artist-id');\n\t\t\t\t\t\t\t\tif (!cid) continue;\n\t\t\t\t\t\t\t\tif (target) {\n\t\t\t\t\t\t\t\t\tif (!tryAdd(cid)) { cb.checked = false; continue; }\n\t\t\t\t\t\t\t\t\tcb.checked = true;\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tselected.delete(cid);\n\t\t\t\t\t\t\t\t\tcb.checked = false;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (!target) capWarned = false;\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tlastClickedId = id;\n\t\t\t\t}, true);\n\n\t\t\t\tdocument.body.addEventListener('change', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t) return;\n\t\t\t\t\tif (t.classList && t.classList.contains('sw-bulk-select')) {\n\t\t\t\t\t\tvar id = t.getAttribute('data-artist-id');\n\t\t\t\t\t\tif (!id) return;\n\t\t\t\t\t\tif (t.checked) {\n\t\t\t\t\t\t\tif (!tryAdd(id)) { t.checked = false; }\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tselected.delete(id);\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t} else if (t.id === 'bulk-select-all') {\n\t\t\t\t\t\tvar boxes = document.querySelectorAll('#artist-content .sw-bulk-select');\n\t\t\t\t\t\tboxes.forEach(function(cb) {\n\t\t\t\t\t\t\tvar id = cb.getAttribute('data-artist-id');\n\t\t\t\t\t\t\tif (!id) return;\n\t\t\t\t\t\t\tif (t.checked) {\n\t\t\t\t\t\t\t\tcb.checked = tryAdd(id);\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tcb.checked = false;\n\t\t\t\t\t\t\t\tselected.delete(id);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t\tif (!t.checked) capWarned = false;\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t} else if (t.id === 'bulk-action-select') {\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Build the localized verb label for a bulk action from the\n\t\t\t\t// data attributes on the progress pill data carrier. Falls\n\t\t\t\t// back to the raw action key if a verb is missing.\n\t\t\t\tfunction actionVerb(action) {\n\t\t\t\t\tvar pill = document.getElementById('bulk-progress-pill');\n\t\t\t\t\tif (!pill) return action;\n\t\t\t\t\tvar key = 'data-i18n-verb-' + action.replace(/_/g, '-');\n\t\t\t\t\treturn pill.getAttribute(key) || action;\n\t\t\t\t}\n\n\t\t\t\t// Render delegates to the layout-level ProgressPill so this\n\t\t\t\t// page-level controller no longer owns the pill DOM. The\n\t\t\t\t// server publishes operation.progress SSE events from\n\t\t\t\t// runBulkAction which the pill already handles; the local\n\t\t\t\t// fallback push covers the 202-response-before-first-SSE\n\t\t\t\t// window and the DOMContentLoaded recovery path so a page\n\t\t\t\t// reload mid-action still surfaces the pill from the next\n\t\t\t\t// /status snapshot.\n\t\t\t\tfunction renderProgressPill(action, processed, total) {\n\t\t\t\t\tif (window.swProgressPill && typeof window.swProgressPill.push === 'function') {\n\t\t\t\t\t\twindow.swProgressPill.push({\n\t\t\t\t\t\t\top_id: 'bulk_action',\n\t\t\t\t\t\t\t// Pass the localized verb (e.g. \"Running rules\")\n\t\t\t\t\t\t\t// rather than the raw action key (\"run_rules\") so\n\t\t\t\t\t\t\t// the fallback pill push reads consistently with\n\t\t\t\t\t\t\t// the SSE-driven path, which already runs every\n\t\t\t\t\t\t\t// label through the pill's data-i18n-verb-* map.\n\t\t\t\t\t\t\tlabel: actionVerb(action),\n\t\t\t\t\t\t\tprocessed: processed,\n\t\t\t\t\t\t\ttotal: total,\n\t\t\t\t\t\t\tstatus: 'running',\n\t\t\t\t\t\t\tcancel_url: '/api/v1/artists/bulk-actions/cancel'\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction hideProgressPill() {\n\t\t\t\t\t// Local poll drives terminal state directly; the layout\n\t\t\t\t\t// pill's de-dup by op_id makes a duplicate terminal push\n\t\t\t\t\t// from SSE harmless. Without this push, a server crash\n\t\t\t\t\t// mid-op (no terminal SSE event ever fires) or the SSE\n\t\t\t\t\t// path lagging the local poll leaves a stale pill on\n\t\t\t\t\t// screen indefinitely.\n\t\t\t\t\tif (window.swProgressPill && typeof window.swProgressPill.push === 'function') {\n\t\t\t\t\t\twindow.swProgressPill.push({op_id: 'bulk_action', status: 'canceled', processed: 0, total: 0});\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Start polling bulk-actions/status every 2s. Stops on terminal\n\t\t\t\t// status and surfaces an outcome-breakdown toast. Page reloads\n\t\t\t\t// mid-action re-attach by calling this on DOMContentLoaded.\n\t\t\t\t// Process one /status snapshot. Returns true when the status\n\t\t\t\t// is terminal (idle/completed/failed) so callers know to stop\n\t\t\t\t// polling and do not need to start one. Shared between the\n\t\t\t\t// active poll callback and the DOMContentLoaded recovery\n\t\t\t\t// path so a page reload near the end of a bulk job still\n\t\t\t\t// surfaces the summary toast from the terminal snapshot.\n\t\t\t\tfunction handleProgressSnapshot(data, initialAction) {\n\t\t\t\t\tif (!data || data.status === 'idle') {\n\t\t\t\t\t\t// Only synthesize the terminal-canceled push when we\n\t\t\t\t\t\t// previously observed a running action. Without this\n\t\t\t\t\t\t// guard, every page load that hits an idle /status\n\t\t\t\t\t\t// (the normal no-op state) fires a synthetic canceled\n\t\t\t\t\t\t// event, which can produce false cancel-state UI in\n\t\t\t\t\t\t// future consumers that latch on the canceled status.\n\t\t\t\t\t\tif (bulkActionRunning) {\n\t\t\t\t\t\t\thideProgressPill();\n\t\t\t\t\t\t}\n\t\t\t\t\t\tbulkActionRunning = false;\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\trenderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);\n\t\t\t\t\t// The global ProgressPill renders its own Cancel button\n\t\t\t\t\t// when the operation.progress event carries cancel_url;\n\t\t\t\t\t// the local controller no longer needs to toggle one.\n\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {\n\t\t\t\t\t\t// Push the matching terminal state to the layout pill\n\t\t\t\t\t\t// directly: the local /status poll observes terminal\n\t\t\t\t\t\t// status before the next throttled SSE tick lands, and\n\t\t\t\t\t\t// on a server crash mid-op the SSE terminal event may\n\t\t\t\t\t\t// never fire at all. The pill de-dupes by op_id, so a\n\t\t\t\t\t\t// subsequent duplicate terminal SSE push is harmless.\n\t\t\t\t\t\tif (window.swProgressPill && typeof window.swProgressPill.push === 'function') {\n\t\t\t\t\t\t\twindow.swProgressPill.push({\n\t\t\t\t\t\t\t\top_id: 'bulk_action',\n\t\t\t\t\t\t\t\t// Same localization as the running-state push\n\t\t\t\t\t\t\t\t// above: the layout pill's data-i18n-verb-*\n\t\t\t\t\t\t\t\t// map only fires on its own SSE path, so the\n\t\t\t\t\t\t\t\t// fallback push must hand it a localized\n\t\t\t\t\t\t\t\t// string directly.\n\t\t\t\t\t\t\t\tlabel: actionVerb(data.action || initialAction || ''),\n\t\t\t\t\t\t\t\tprocessed: data.processed || 0,\n\t\t\t\t\t\t\t\ttotal: data.total || 0,\n\t\t\t\t\t\t\t\tstatus: data.status\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tbulkActionRunning = false;\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\tvar pill = document.getElementById('bulk-progress-pill');\n\t\t\t\t\t\t// Re-identify auto breaks out auto_linked/queued/\n\t\t\t\t\t\t// no_match counters so the toast can say \"3 auto-\n\t\t\t\t\t\t// linked, 2 queued, 1 no match\" instead of the\n\t\t\t\t\t\t// generic succeeded/skipped triad. Other actions\n\t\t\t\t\t\t// keep the existing summary text.\n\t\t\t\t\t\tvar msg;\n\t\t\t\t\t\tif ((data.action === 're_identify_auto' || data.action === 're_identify') &&\n\t\t\t\t\t\t\t((data.auto_linked || 0) + (data.queued || 0) + (data.no_match || 0) + (data.failed || 0) > 0)) {\n\t\t\t\t\t\t\tvar rtpl = (pill && pill.getAttribute('data-i18n-reidentify-summary')) ||\n\t\t\t\t\t\t\t\t'{auto_linked} auto-linked, {queued} queued, {no_match} no match';\n\t\t\t\t\t\t\tmsg = rtpl\n\t\t\t\t\t\t\t\t.replace('{auto_linked}', String(data.auto_linked || 0))\n\t\t\t\t\t\t\t\t.replace('{queued}', String(data.queued || 0))\n\t\t\t\t\t\t\t\t.replace('{no_match}', String(data.no_match || 0))\n\t\t\t\t\t\t\t\t.replace('{failed}', String(data.failed || 0));\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tvar tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';\n\t\t\t\t\t\t\tmsg = tpl\n\t\t\t\t\t\t\t\t.replace('{succeeded}', String(data.succeeded || 0))\n\t\t\t\t\t\t\t\t.replace('{failed}', String(data.failed || 0))\n\t\t\t\t\t\t\t\t.replace('{skipped}', String(data.skipped || 0));\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function' && (data.failed || 0) === 0) {\n\t\t\t\t\t\t\twindow.showSuccessToast(msg);\n\t\t\t\t\t\t} else if (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\twindow.showToast(msg);\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn true;\n\t\t\t\t\t}\n\t\t\t\t\treturn false;\n\t\t\t\t}\n\n\t\t\t\tfunction startProgressPoll(initialAction) {\n\t\t\t\t\tif (progressPoll) { progressPoll.stop(); progressPoll = null; }\n\t\t\t\t\tbulkActionRunning = true;\n\t\t\t\t\tupdateBar();\n\t\t\t\t\tprogressPoll = pollAsyncStatus(_artistsBp + '/api/v1/artists/bulk-actions/status', {\n\t\t\t\t\t\tonData: function(data) {\n\t\t\t\t\t\t\treturn handleProgressSnapshot(data, initialAction);\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonHTTPError: function() {\n\t\t\t\t\t\t\t// Transport/HTTP errors are non-terminal: the backend\n\t\t\t\t\t\t\t// job may still be running. Keep bulkActionRunning set\n\t\t\t\t\t\t\t// so Apply stays disabled; a later idle/completed/\n\t\t\t\t\t\t\t// failed snapshot from the polling retry will clear\n\t\t\t\t\t\t\t// the lock. Releasing here would reopen the duplicate-\n\t\t\t\t\t\t\t// submit window and reintroduce the 409 loop.\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonNetworkError: function() {\n\t\t\t\t\t\t\t// Same rationale as onHTTPError: the status endpoint\n\t\t\t\t\t\t\t// may be transiently unreachable while the action is\n\t\t\t\t\t\t\t// still running. Do not clear the lock on an unknown\n\t\t\t\t\t\t\t// status.\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\t// Expose so other controllers (single-artist run-rules on the\n\t\t\t\t// artist detail page) can attach to an in-flight action.\n\t\t\t\twindow.swBulkProgress = {\n\t\t\t\t\tstart: startProgressPoll,\n\t\t\t\t\trender: renderProgressPill,\n\t\t\t\t\thide: hideProgressPill\n\t\t\t\t};\n\n\t\t\t\t// Cancel the in-flight bulk action. The layout-level\n\t\t\t\t// ProgressPill renders its own Cancel button driven by the\n\t\t\t\t// cancel_url on each operation.progress SSE event, so this\n\t\t\t\t// programmatic entrypoint is retained only for callers\n\t\t\t\t// (tests, the artist-detail run-rules controller) that\n\t\t\t\t// still trigger cancellation explicitly.\n\t\t\t\twindow.swCancelBulkAction = function() {\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/bulk-actions/cancel', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken}\n\t\t\t\t\t});\n\t\t\t\t};\n\n\t\t\t\t// Size-aware confirm dialog. <=50: no dialog; >50 and <=500:\n\t\t\t\t// simple confirm with action + count; >500: stronger warning\n\t\t\t\t// that names external API impact for re-identify and\n\t\t\t\t// fetch_images. Returns true when the user confirmed.\n\t\t\t\tfunction confirmBulkAction(action, count) {\n\t\t\t\t\tif (count <= 50) return true;\n\t\t\t\t\tvar pill = document.getElementById('bulk-progress-pill');\n\t\t\t\t\t// Use the action-dropdown's selected option label so the\n\t\t\t\t\t// confirm text reads naturally (e.g. \"Apply Run rules to\n\t\t\t\t\t// 100 artists?\") rather than the progress-verb form.\n\t\t\t\t\tvar selectEl = document.getElementById('bulk-action-select');\n\t\t\t\t\tvar verb = action;\n\t\t\t\t\tif (selectEl && selectEl.selectedOptions && selectEl.selectedOptions[0]) {\n\t\t\t\t\t\tverb = selectEl.selectedOptions[0].textContent || action;\n\t\t\t\t\t}\n\t\t\t\t\t// The large-count copy names external provider APIs, so\n\t\t\t\t\t// only use it for actions that actually hit them. Local\n\t\t\t\t\t// actions (scan, run_rules) get the plain small template\n\t\t\t\t\t// regardless of count to avoid misleading warnings.\n\t\t\t\t\tvar usesExternalProviders = action === 're_identify_auto' || action === 're_identify_review' || action === 'fetch_images';\n\t\t\t\t\tvar tpl;\n\t\t\t\t\tif (count > 500 && usesExternalProviders) {\n\t\t\t\t\t\ttpl = (pill && pill.getAttribute('data-i18n-confirm-large')) || 'You are about to apply {action} to {count} artists. This may take a while and will hit external provider APIs (MusicBrainz, Fanart.tv, etc.). Continue?';\n\t\t\t\t\t} else {\n\t\t\t\t\t\ttpl = (pill && pill.getAttribute('data-i18n-confirm-small')) || 'Apply {action} to {count} artists?';\n\t\t\t\t\t}\n\t\t\t\t\tvar msg = tpl.replace('{action}', verb).replace('{count}', String(count));\n\t\t\t\t\treturn window.confirm(msg);\n\t\t\t\t}\n\n\t\t\t\t// \"Show selected\" affordance (#1227): when sort moves selected\n\t\t\t\t// artists off the current page, the toolbar count names how\n\t\t\t\t// many are on this page vs elsewhere. Clicking \"Show selected\"\n\t\t\t\t// issues an htmx GET to /artists with the current selection\n\t\t\t\t// as `ids=` so the user can review the entire selection in\n\t\t\t\t// one place. We reuse htmx.ajax (rather than a plain anchor)\n\t\t\t\t// so the swap target stays #artist-content and the existing\n\t\t\t\t// afterSwap URL listener pushes the new state onto history.\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || t.id !== 'bulk-show-selected') return;\n\t\t\t\t\tif (selected.size === 0) return;\n\t\t\t\t\tvar ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);\n\t\t\t\t\tvar params = buildArtistParams({page: '1', ids: ids.join(',')});\n\t\t\t\t\tif (window.htmx) {\n\t\t\t\t\t\t// Root-relative path here -- the document-level\n\t\t\t\t\t\t// htmx:configRequest hook prepends basePath, so\n\t\t\t\t\t\t// embedding _artistsBp would double-prefix on\n\t\t\t\t\t\t// sub-path deployments.\n\t\t\t\t\t\twindow.htmx.ajax('GET', _artistsPath(), {\n\t\t\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\t\t\tvalues: params\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// \"Select all N matching\" click handler: fetch the full cross-page\n\t\t\t\t// ID list from GET /api/v1/artists/matching-ids using the same\n\t\t\t\t// filter params currently in the URL, then load all returned IDs\n\t\t\t\t// into the `selected` Set (up to MAX_BULK_SELECTION). Captures\n\t\t\t\t// the scope token at the moment of the fetch so a filter change\n\t\t\t\t// that races the response causes the stale result to be discarded.\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || t.id !== 'bulk-select-all-matching') return;\n\t\t\t\t\tt.disabled = true;\n\n\t\t\t\t\t// Snapshot the scope token so we can detect a filter change\n\t\t\t\t\t// that races the async fetch. Capture the current URL params\n\t\t\t\t\t// to forward as query-string on the matching-ids request.\n\t\t\t\t\tvar scopeAtFetch = currentScopeToken();\n\t\t\t\t\tvar currentParams = new URLSearchParams(window.location.search);\n\n\t\t\t\t\t// Build the matching-ids URL, forwarding all filter params\n\t\t\t\t\t// that parseFlyoutFilters and handleArtistMatchingIDs understand.\n\t\t\t\t\tvar idsURL = _artistsBp + '/api/v1/artists/matching-ids';\n\t\t\t\t\tvar forwardKeys = ['search', 'filter', 'library_id'];\n\t\t\t\t\tvar fwd = new URLSearchParams();\n\t\t\t\t\tcurrentParams.forEach(function(v, k) {\n\t\t\t\t\t\tif (forwardKeys.indexOf(k) >= 0 || k.indexOf('filter_') === 0) {\n\t\t\t\t\t\t\tfwd.set(k, v);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\tvar qs = fwd.toString();\n\t\t\t\t\tif (qs) idsURL += '?' + qs;\n\n\t\t\t\t\tfetch(idsURL, {credentials: 'same-origin'})\n\t\t\t\t\t\t.then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })\n\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t// Discard the response if a filter change has happened since\n\t\t\t\t\t\t\t// the fetch started (scope-token drift). The user is now\n\t\t\t\t\t\t\t// looking at a different result set.\n\t\t\t\t\t\t\tif (currentScopeToken() !== scopeAtFetch) { if (t) t.disabled = false; return; }\n\n\t\t\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\t\tif (!data || !Array.isArray(data.ids)) {\n\t\t\t\t\t\t\t\talert((bar && bar.getAttribute('data-i18n-select-all-matching-failed')) || 'Could not load the full matching list. Please try again.');\n\t\t\t\t\t\t\t\tif (t) t.disabled = false;\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// Load returned IDs into the selection, up to the hard cap.\n\t\t\t\t\t\t\tselected.clear();\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t\tfor (var i = 0; i < data.ids.length; i++) {\n\t\t\t\t\t\t\t\tif (!tryAdd(data.ids[i])) break;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// Warn the user if the server returned a capped result.\n\t\t\t\t\t\t\tif (data.capped) {\n\t\t\t\t\t\t\t\tvar cappedTpl = (bar && bar.getAttribute('data-i18n-select-all-matching-capped')) || 'Loaded {count} of {total} matching artists (limit reached). Actions will apply to these {count} only.';\n\t\t\t\t\t\t\t\talert(cappedTpl\n\t\t\t\t\t\t\t\t\t.replace(/{count}/g, String(selected.size))\n\t\t\t\t\t\t\t\t\t.replace('{total}', String(data.total)));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(function() {\n\t\t\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\t\talert((bar && bar.getAttribute('data-i18n-select-all-matching-failed')) || 'Could not load the full matching list. Please try again.');\n\t\t\t\t\t\t\tif (t) t.disabled = false;\n\t\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\tdocument.body.addEventListener('click', function(ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!t || t.id !== 'bulk-action-apply') return;\n\t\t\t\t\tvar selectEl = document.getElementById('bulk-action-select');\n\t\t\t\t\tif (!selectEl || !selectEl.value || selected.size === 0) return;\n\t\t\t\t\tvar action = selectEl.value;\n\t\t\t\t\t// Defensive truncation: the UI cap should already prevent\n\t\t\t\t\t// this, but guard against any drift so we never hit the\n\t\t\t\t\t// backend's hard 1000-ID rejection with a generic toast.\n\t\t\t\t\tvar ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);\n\t\t\t\t\tif (!confirmBulkAction(action, ids.length)) return;\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tt.disabled = true;\n\t\t\t\t\t// Re-identify (review) dispatches to the wizard flow\n\t\t\t\t\t// rather than the bulk-actions endpoint: the wizard is\n\t\t\t\t\t// interactive and owns its own session state, so routing\n\t\t\t\t\t// it through the singleton bulk-action slot would be\n\t\t\t\t\t// misleading. Start the wizard then redirect the user to\n\t\t\t\t\t// its first step.\n\t\t\t\t\tif (action === 're_identify_review') {\n\t\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/re-identify/wizard', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\t\t\tbody: JSON.stringify({ids: ids})\n\t\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t\tif (!r.ok) {\n\t\t\t\t\t\t\t\tvar bar3 = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\t\t\talert((bar3 && bar3.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.');\n\t\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\t\tif (!data || !data.session_id) return;\n\t\t\t\t\t\t\twindow.location.href = _artistsBp + '/artists/re-identify/wizard/' + data.session_id + '/step/0';\n\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t});\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/bulk-actions', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\t\tbody: JSON.stringify({action: action, ids: ids})\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tvar bar = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\tvar i18nBusy = (bar && bar.getAttribute('data-i18n-busy')) || 'A bulk action is already running. Please wait for it to finish.';\n\t\t\t\t\t\tvar i18nFailed = (bar && bar.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.';\n\t\t\t\t\t\tif (r.status === 409) {\n\t\t\t\t\t\t\talert(i18nBusy);\n\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t} else if (!r.ok) {\n\t\t\t\t\t\t\talert(i18nFailed);\n\t\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Render an immediate 0-of-total pill so the user sees\n\t\t\t\t\t\t\t// feedback before the first poll tick lands, then\n\t\t\t\t\t\t\t// start polling. Apply-disabled stays true until the\n\t\t\t\t\t\t\t// poll observes a terminal status.\n\t\t\t\t\t\t\trenderProgressPill(action, 0, ids.length);\n\t\t\t\t\t\t\tselected.clear();\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t\t\tstartProgressPoll(action);\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tvar bar2 = document.getElementById('bulk-action-bar');\n\t\t\t\t\t\talert((bar2 && bar2.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.');\n\t\t\t\t\t\tt.disabled = false;\n\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\t// Scope token: filter-identifying params only. If any of\n\t\t\t\t// these change across an htmx swap, the user is looking\n\t\t\t\t// at a different result set and the previous selection is\n\t\t\t\t// no longer meaningful. Pagination, sort, order, and view\n\t\t\t\t// do NOT reset selection so the user can re-sort, paginate,\n\t\t\t\t// or switch table/grid while preserving their selection.\n\t\t\t\t//\n\t\t\t\t// Prefer the explicit URLSearchParams source over\n\t\t\t\t// window.location.search so the same routine works whether\n\t\t\t\t// we are reacting to an htmx swap (where the URL has\n\t\t\t\t// already been updated by the listener at line 638) or\n\t\t\t\t// computing the initial token at IIFE init.\n\t\t\t\tfunction tokenFromParams(p) {\n\t\t\t\t\tvar keys = [];\n\t\t\t\t\tp.forEach(function(_v, k) {\n\t\t\t\t\t\tif (k === 'search' || k === 'library_id' || k === 'filter' || k.indexOf('filter_') === 0) {\n\t\t\t\t\t\t\tkeys.push(k);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\tkeys.sort();\n\t\t\t\t\treturn keys.map(function(k) { return k + '=' + p.get(k); }).join('&');\n\t\t\t\t}\n\t\t\t\tfunction currentScopeToken() {\n\t\t\t\t\treturn tokenFromParams(new URLSearchParams(window.location.search));\n\t\t\t\t}\n\t\t\t\t// Compute the scope token from an htmx request URL. Used in\n\t\t\t\t// the afterSwap handler to derive the new scope without\n\t\t\t\t// depending on whether the URL-update listener has run yet.\n\t\t\t\t// htmx 2.0.8 exposes the request configuration on\n\t\t\t\t// evt.detail.requestConfig.path (the path htmx issued the\n\t\t\t\t// request to) and the resolved URL on evt.detail.xhr.responseURL\n\t\t\t\t// (post-redirect). We try requestConfig.path first because it\n\t\t\t\t// reflects what htmx asked for, fall back to xhr.responseURL,\n\t\t\t\t// then finally to window.location if neither is present.\n\t\t\t\tfunction scopeTokenFromRequest(evt) {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar rc = evt && evt.detail && evt.detail.requestConfig;\n\t\t\t\t\t\tvar xhr = evt && evt.detail && evt.detail.xhr;\n\t\t\t\t\t\tvar path = (rc && rc.path) || (xhr && xhr.responseURL);\n\t\t\t\t\t\tif (path) {\n\t\t\t\t\t\t\tvar u = new URL(path, window.location.origin);\n\t\t\t\t\t\t\treturn tokenFromParams(u.searchParams);\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (e) { /* fall through */ }\n\t\t\t\t\treturn currentScopeToken();\n\t\t\t\t}\n\t\t\t\tvar lastScopeToken = currentScopeToken();\n\n\t\t\t\t// Re-sync on initial load and after every HTMX swap of the\n\t\t\t\t// artist content (pagination, filter change, etc.). Also\n\t\t\t\t// probe the bulk-actions/status endpoint on load so a page\n\t\t\t\t// reload mid-action re-attaches the progress pill.\n\t\t\t\t// Seed the `selected` Set from the active `?ids=` URL param.\n\t\t\t\t// Mirrors the server-side parseIDsParam canonical ID shape\n\t\t\t\t// (^[A-Za-z0-9_-]{1,64}$, see handlers_artist.go) so the\n\t\t\t\t// client store stays consistent with what the server rendered:\n\t\t\t\t// a hand-crafted URL like ?ids=valid,@@ otherwise lets the\n\t\t\t\t// bulk-action POST submit @@ and earn a 400 wholesale rejection.\n\t\t\t\t// Capped to MAX_BULK_SELECTION to match the in-memory contract.\n\t\t\t\t// Idempotent: safe to call after `selected.clear()` on a\n\t\t\t\t// scope-token change so the toolbar re-syncs with the\n\t\t\t\t// server-rendered chip when ids= survives the swap.\n\t\t\t\tfunction seedSelectedFromURL() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar idRe = /^[A-Za-z0-9_-]{1,64}$/;\n\t\t\t\t\t\tvar initialIDs = new URLSearchParams(window.location.search).get('ids');\n\t\t\t\t\t\tif (!initialIDs) return;\n\t\t\t\t\t\tvar parts = initialIDs.split(',');\n\t\t\t\t\t\tfor (var i = 0; i < parts.length && selected.size < MAX_BULK_SELECTION; i++) {\n\t\t\t\t\t\t\tvar pid = parts[i].trim();\n\t\t\t\t\t\t\tif (idRe.test(pid)) selected.add(pid);\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (e) { /* ignore */ }\n\t\t\t\t}\n\n\t\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\t\t// Seed from any `ids=` URL param so a reload or\n\t\t\t\t\t// shareable-link revisit of /artists?ids=a,b,c keeps the\n\t\t\t\t\t// toolbar count, the \"Show selected\" affordance, and the\n\t\t\t\t\t// per-row checkboxes consistent with the chip the server\n\t\t\t\t\t// already rendered (#1227).\n\t\t\t\t\tseedSelectedFromURL();\n\t\t\t\t\tupdateBar();\n\t\t\t\t\t// Fire-and-forget status probe. If an action is in flight\n\t\t\t\t\t// the poll attaches; otherwise the pill stays hidden.\n\t\t\t\t\tfetch(_artistsBp + '/api/v1/artists/bulk-actions/status', {credentials: 'same-origin'})\n\t\t\t\t\t\t.then(function(r) { return r.ok ? r.json() : null; })\n\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t// Terminal snapshots (completed/failed/idle) are\n\t\t\t\t\t\t\t// handled in-place so the summary toast is not\n\t\t\t\t\t\t\t// dropped on reload-near-end. Non-terminal returns\n\t\t\t\t\t\t\t// false and we start the normal poll.\n\t\t\t\t\t\t\tif (!data) return;\n\t\t\t\t\t\t\tif (handleProgressSnapshot(data, data.action || '')) return;\n\t\t\t\t\t\t\tstartProgressPoll(data.action || '');\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(function(){ /* ignore */ });\n\t\t\t\t});\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\t\t// Derive the new scope from the htmx request URL so\n\t\t\t\t\t\t// the comparison does not depend on the URL-update\n\t\t\t\t\t\t// listener (line 638) having fired first. This keeps\n\t\t\t\t\t\t// selection stable across sort/order/page/view swaps\n\t\t\t\t\t\t// (issue #1081 F1) regardless of listener ordering.\n\t\t\t\t\t\tvar currentToken = scopeTokenFromRequest(evt);\n\t\t\t\t\t\tif (currentToken !== lastScopeToken) {\n\t\t\t\t\t\t\tselected.clear();\n\t\t\t\t\t\t\tcapWarned = false;\n\t\t\t\t\t\t\tlastScopeToken = currentToken;\n\t\t\t\t\t\t\t// Re-seed from the post-swap URL: if the new\n\t\t\t\t\t\t\t// URL still carries an ids param, the scope-clear\n\t\t\t\t\t\t\t// above would otherwise leave the toolbar\n\t\t\t\t\t\t\t// reporting an empty selection while the\n\t\t\t\t\t\t\t// server-rendered selection chip is still\n\t\t\t\t\t\t\t// present (search/library/view changes preserve\n\t\t\t\t\t\t\t// ids via buildArtistParams + the configRequest\n\t\t\t\t\t\t\t// hook, but change other scope keys).\n\t\t\t\t\t\t\tseedSelectedFromURL();\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Reset the shift-click anchor on every swap: after\n\t\t\t\t\t\t// pagination or sort the prior DOM ordering no longer\n\t\t\t\t\t\t// applies, so an old anchor could select an unintended\n\t\t\t\t\t\t// range on the next shift-click.\n\t\t\t\t\t\tlastClickedId = null;\n\t\t\t\t\t\t// Re-derive every checkbox's checked state from the\n\t\t\t\t\t\t// `selected` Set. The freshly-swapped HTML never\n\t\t\t\t\t\t// includes a `checked` attribute, so this is what\n\t\t\t\t\t\t// keeps checkmarks attached to artist IDs (not row\n\t\t\t\t\t\t// positions) across sort changes (issue #1081 F2).\n\t\t\t\t\t\tupdateBar();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3537,16 +2171,16 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var190 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var190 == nil {
-			templ_7745c5c3_Var190 = templ.NopComponent
+		templ_7745c5c3_Var129 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var129 == nil {
+			templ_7745c5c3_Var129 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 238, "<!-- Filters help (M55 #1335, maintainer 2026-05-30): rendered in the flyout HEADER\n\t     (right of the title) via FilterFlyout's headerHelp slot, not the toolbar. The\n\t     flyout is shared by table + grid, so the help stays reachable from both views. -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "<!-- Filters help (M55 #1335, maintainer 2026-05-30): rendered in the flyout HEADER\n\t     (right of the title) via FilterFlyout's headerHelp slot, not the toolbar. The\n\t     flyout is shared by table + grid, so the help stays reachable from both views. -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var191 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var130 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -3558,7 +2192,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Var192 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var131 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -3574,7 +2208,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 239, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3584,15 +2218,15 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.metadata")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var192), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.metadata")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var131), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 240, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var193 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var132 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -3608,7 +2242,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 241, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3616,7 +2250,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 242, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3624,7 +2258,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 243, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3632,7 +2266,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 244, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3640,7 +2274,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 245, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3648,7 +2282,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 246, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3656,7 +2290,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 247, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3664,7 +2298,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 248, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3672,7 +2306,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 249, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3680,7 +2314,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 250, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3688,7 +2322,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 251, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3696,7 +2330,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 252, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3704,7 +2338,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 253, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3714,15 +2348,15 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.metadata_fields")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var193), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.metadata_fields")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var132), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 254, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var194 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var133 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -3738,7 +2372,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 255, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3746,7 +2380,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 256, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3754,7 +2388,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 257, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3762,7 +2396,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 258, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3772,15 +2406,15 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.images")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var194), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.images")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var133), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 259, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var195 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var134 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -3796,7 +2430,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 260, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3804,7 +2438,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 261, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3814,15 +2448,15 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.platform")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var195), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.platform")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var134), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 262, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var196 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var135 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -3838,7 +2472,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 263, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3846,7 +2480,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 264, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3856,15 +2490,15 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.status")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var196), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.status")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var135), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 265, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var197 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var136 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -3880,7 +2514,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 266, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3888,7 +2522,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 267, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3896,7 +2530,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 268, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3906,16 +2540,16 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.artist_type")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var197), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.artist_type")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var136), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 269, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(data.Libraries) > 1 {
-				templ_7745c5c3_Var198 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_Var137 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 					if !templ_7745c5c3_IsBuffer {
@@ -3930,7 +2564,7 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 					for _, lib := range data.Libraries {
 						libState := filterState(data.Filters, "library_"+lib.ID)
 						libLabel := libraryDropdownLabel(lib, data.LibrarySources)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 270, "  ")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "  ")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -3950,14 +2584,14 @@ func ArtistFilterFlyout(data ArtistListData) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.library")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var198), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = components.FilterSection(t(ctx, "artists.filter_section.library")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var137), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.FilterFlyout("artist-filters-flyout", t(ctx, "artists.filters_title"), "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content", components.ContextHelp("help-artists-filters", t(ctx, "artists.help.filters.label"), t(ctx, "artists.help.filters"), "core-concepts/artists-and-libraries#libraries")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var191), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.FilterFlyout("artist-filters-flyout", t(ctx, "artists.filters_title"), "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content", components.ContextHelp("help-artists-filters", t(ctx, "artists.help.filters.label"), t(ctx, "artists.help.filters"), "core-concepts/artists-and-libraries#libraries")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var130), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
