@@ -64,7 +64,13 @@
               providers.push(chip.dataset.disabledProvider);
             });
           }
-          var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+          var csrfToken;
+          if (typeof window.swCsrfToken === 'function') {
+            csrfToken = window.swCsrfToken();
+          } else {
+            console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+            csrfToken = '';
+          }
           fetch(sortableBp + '/api/v1/providers/priorities', {
             method: 'PUT',
             headers: {

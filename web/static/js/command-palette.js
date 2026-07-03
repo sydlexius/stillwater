@@ -208,7 +208,11 @@
   function doPost(item) {
     var url = basePath() + item.href;
     var headers = {};
-    if (typeof window.swCsrfToken === 'function') headers['X-CSRF-Token'] = window.swCsrfToken();
+    if (typeof window.swCsrfToken === 'function') {
+      headers['X-CSRF-Token'] = window.swCsrfToken();
+    } else {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+    }
     return fetch(url, { method: 'POST', headers: headers })
       .then(function (res) {
         if (res && res.ok) {

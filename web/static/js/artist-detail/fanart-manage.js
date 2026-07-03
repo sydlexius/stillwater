@@ -37,7 +37,11 @@
   // Delegates to the canonical reader (preferences.js) instead of re-inventing
   // the cookie regex, matching the other first-party modules.
   function csrfToken() {
-    return typeof window.swCsrfToken === "function" ? window.swCsrfToken() : "";
+    if (typeof window.swCsrfToken !== "function") {
+      console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+      return "";
+    }
+    return window.swCsrfToken();
   }
 
   function basePath() {

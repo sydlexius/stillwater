@@ -27,7 +27,13 @@
       var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 
       function refreshSettingsLibraryList() {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         var sourceLogos = {emby: bp + "/static/img/logos/emby-128.png", jellyfin: bp + "/static/img/logos/jellyfin.svg", lidarr: bp + "/static/img/logos/lidarr.svg"};
         var sourceNames = {emby: "Emby", jellyfin: "Jellyfin", lidarr: "Lidarr"};
         fetch(bp + "/api/v1/libraries", {
@@ -206,7 +212,13 @@
       }
 
       function runLibraryOp(connID, libID, operation) {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         var btn = document.getElementById(operation + '-btn-' + libID);
         var spinner = document.getElementById(operation + '-spinner-' + libID);
         var label = document.getElementById(operation + '-label-' + libID);
@@ -257,7 +269,9 @@
       }
 
       function pollLibraryOp(libID, operation, btn, spinner, label) {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        // Status polling is a GET (pollAsyncStatus sends no CSRF token), so this
+        // function needs no swCsrfToken; the previously-computed-but-unused token
+        // block was removed to avoid a false-alarm console.error (#2109 review).
         function resetUI() {
           if (btn) btn.disabled = false;
           if (spinner) spinner.classList.add('hidden');
@@ -297,7 +311,13 @@
       }
 
       function updateLibraryFSMode(id, mode) {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         fetch(bp + "/api/v1/libraries/" + id, {
           method: "PUT",
           headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
@@ -316,7 +336,13 @@
       }
 
       function updateLibraryPollInterval(id, interval) {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         fetch(bp + "/api/v1/libraries/" + id, {
           method: "PUT",
           headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
@@ -355,7 +381,13 @@
         // shows. Re-enabled in the .finally() handler below regardless
         // of outcome so the control is never permanently stuck.
         if (input) input.disabled = true;
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         fetch(bp + "/api/v1/libraries/" + id, {
           method: "PUT",
           headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
@@ -376,7 +408,13 @@
       }
 
       function settingsDeleteLibrary_click(id) {
-        var csrfToken = (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';
+        var csrfToken;
+        if (typeof window.swCsrfToken === 'function') {
+          csrfToken = window.swCsrfToken();
+        } else {
+          console.error("swCsrfToken unavailable - preferences.js may have failed to load; state-changing requests will 403");
+          csrfToken = '';
+        }
         function doDelete(deleteArtists) {
           var url = bp + "/api/v1/libraries/" + id;
           if (deleteArtists) { url += "?deleteArtists=true"; }
