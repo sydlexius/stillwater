@@ -157,8 +157,7 @@ func parseIDsParam(raw string) []string {
 // from the request query (sort/order/flyout filters/pagination/off-page ids)
 // plus best-effort compliance and platform-presence lookups. It returns
 // ok=false after writing a login or error response, so callers can simply
-// return. Shared by the stable handleArtistsPage and the next/ channel's
-// handleNextArtistsPage so both render byte-identical data (M55 #1335).
+// return.
 //
 //nolint:gocognit // Artists page handler (cog 50): resolves auth, parses paging/sort/filter params, validates "show selected" IDs, queries the page slice + total counts + facet counts, then renders both full-page and HTMX-partial responses. The parse/query/render stages could move into named helpers reading from a shared request-context struct without reshuffling render-time fields. Refactor tracked in #1550.
 func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (templates.ArtistListData, bool) {
@@ -242,12 +241,9 @@ func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (
 	}
 
 	// BaseURL drives pagination links, the "show all" affordance, and the shared
-	// sort/selection JS fragment-swap path; it must be channel-aware so the
-	// next/ page swaps the next/ fragment rather than the stable table (#1335).
+	// sort/selection JS fragment-swap path. Since the artists-list promotion
+	// (#1757 PR-3a) there is a single canonical route, so it is unconditional.
 	listBaseURL := "/artists"
-	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
-		listBaseURL = "/next/artists"
-	}
 	data := templates.ArtistListData{
 		Artists: artists,
 		Pagination: components.PaginationData{
@@ -313,21 +309,21 @@ func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (
 		}
 	}
 
-	// Load saved filter views for the next/ channel only (M55 #1777). The
-	// stable channel never renders saved-view chips so we skip the DB query.
-	if middleware.UXChannelFromContext(req.Context()) == middleware.UXNext {
-		raw := r.getUserStringPreference(req.Context(), PrefSavedViews, "")
-		if raw != "" {
-			data.SavedViews = parseSavedViews(raw)
-		}
+	// Load saved filter views (M55 #1777). This was next-channel-only while the
+	// redesigned list lived in the /next/ lane; it is always-on since the
+	// promotion (#1757 PR-3a) because the canonical page renders the
+	// saved-view chips row.
+	raw := r.getUserStringPreference(req.Context(), PrefSavedViews, "")
+	if raw != "" {
+		data.SavedViews = parseSavedViews(raw)
 	}
 
 	return data, true
 }
 
-// handleArtistsPage renders the stable artists list: the full page, or for an
-// HTMX request the table/grid fragment. The data assembly lives in
-// buildArtistListData so the next/ channel renders the identical data set.
+// handleArtistsPage renders the artists list (promoted-by-move from the next/
+// channel in #1757 PR-3a): the full page, or for an HTMX request the
+// table/grid fragment. The data assembly lives in buildArtistListData.
 func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	data, ok := r.buildArtistListData(w, req)
 	if !ok {
@@ -335,9 +331,9 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	}
 	if isHTMXRequest(req) {
 		if data.View == "grid" {
-			renderTempl(w, req, templates.ArtistGrid(data))
+			renderTempl(w, req, templates.ArtistsGrid(data))
 		} else {
-			renderTempl(w, req, templates.ArtistTable(data))
+			renderTempl(w, req, templates.ArtistsTable(data))
 		}
 		return
 	}

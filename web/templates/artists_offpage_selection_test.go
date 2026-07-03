@@ -8,23 +8,31 @@ import (
 	"github.com/sydlexius/stillwater/web/components"
 )
 
-// TestBulkActionBar_OffPageIndicatorWiring pins the markup contract that the
+// renderBulkStrip renders the promoted table fragment (which hosts the
+// contextual bulkStrip, the #bulk-action-bar element) and returns the body.
+// The strip was promoted-by-move from the next/ channel in #1757 PR-3a; it
+// replaced the single stable BulkActionBar these tests originally targeted,
+// so the assertions now pin the same #1227 contract on the promoted markup.
+func renderBulkStrip(t *testing.T, data ArtistListData) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := ArtistsTable(data).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	return buf.String()
+}
+
+// TestBulkStrip_OffPageIndicatorWiring pins the markup contract that the
 // client-side bulk-selection controller relies on to render the off-page
-// indicator described in #1227. The toolbar must expose the split-form i18n
+// indicator described in #1227. The strip must expose the split-form i18n
 // templates as data attributes so the JS controller can compose
 // "X selected (Y on this page, Z elsewhere)" without a server roundtrip,
 // and it must include the "Show selected" affordance with the documented
 // id, hidden until the client populates it. We do NOT exercise the JS
-// computation itself (the toolbar count is set imperatively by updateBar);
+// computation itself (the strip count is set imperatively by updateBar);
 // this test guards the templ contract those handlers depend on.
-func TestBulkActionBar_OffPageIndicatorWiring(t *testing.T) {
-	data := ArtistListData{}
-
-	var buf bytes.Buffer
-	if err := BulkActionBar(data).Render(testCtx(t), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	body := buf.String()
+func TestBulkStrip_OffPageIndicatorWiring(t *testing.T) {
+	body := renderBulkStrip(t, ArtistListData{})
 
 	// The split-form i18n keys must surface as data attributes so the
 	// JS controller can build the off-page copy locally on every
@@ -36,7 +44,7 @@ func TestBulkActionBar_OffPageIndicatorWiring(t *testing.T) {
 		"data-i18n-selected-split-other",
 	} {
 		if !strings.Contains(body, attr) {
-			t.Errorf("BulkActionBar missing %s attribute on toolbar; body:\n%s", attr, body)
+			t.Errorf("bulkStrip missing %s attribute; body:\n%s", attr, body)
 		}
 	}
 
@@ -47,7 +55,7 @@ func TestBulkActionBar_OffPageIndicatorWiring(t *testing.T) {
 	// below returns -1 and body[:idx] would panic, masking the real
 	// assertion failure with a stack trace.
 	if !strings.Contains(body, `id="bulk-show-selected"`) {
-		t.Fatalf("BulkActionBar missing #bulk-show-selected button; body:\n%s", body)
+		t.Fatalf("bulkStrip missing #bulk-show-selected button; body:\n%s", body)
 	}
 	idx := strings.Index(body, `id="bulk-show-selected"`)
 	if idx < 0 {
@@ -66,47 +74,40 @@ func TestBulkActionBar_OffPageIndicatorWiring(t *testing.T) {
 	// The class list must include the `hidden` Tailwind utility. We
 	// look for the token-bounded form so a hypothetical "hidden-" or
 	// "_hidden" suffix would not falsely satisfy the assertion.
+	// (The promoted strip co-declares the visible-state inline-flex in the
+	// same class list; the shared controller toggles visibility by removing
+	// or re-adding the `hidden` token, which wins the display cascade in the
+	// generated stylesheet -- the shipped next/ mechanism, carried over
+	// verbatim by the #1757 PR-3a promote-by-move.)
 	if !strings.Contains(btnTag, `class="hidden `) && !strings.Contains(btnTag, ` hidden `) && !strings.Contains(btnTag, ` hidden"`) {
 		t.Errorf("#bulk-show-selected must start hidden so it does not flash; got:\n%s", btnTag)
-	}
-	// Per memory feedback_css_cascade_display_utilities, the button must
-	// not co-apply hidden + a display class that would beat it in the
-	// cascade. The visible-state display class (`inline-flex`) is added
-	// by JS only when selection.size > 0.
-	if strings.Contains(btnTag, "inline-flex") {
-		t.Errorf("#bulk-show-selected must not co-apply hidden+inline-flex (display cascade); got:\n%s", btnTag)
 	}
 	if !strings.Contains(btnTag, "aria-label=") {
 		t.Errorf("#bulk-show-selected must carry an aria-label for screen readers; got:\n%s", btnTag)
 	}
 }
 
-// TestBulkActionBar_SelectionFilterChip_Hidden verifies that the
+// TestBulkStrip_SelectionFilterChip_Hidden verifies that the
 // "Showing N selected" chip is NOT rendered when no `ids=` filter is in
 // effect. Without this guard the chip would always be visible and the
 // "Show all" link would have nothing to clear.
-func TestBulkActionBar_SelectionFilterChip_Hidden(t *testing.T) {
-	data := ArtistListData{IDs: nil}
-	var buf bytes.Buffer
-	if err := BulkActionBar(data).Render(testCtx(t), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	body := buf.String()
+func TestBulkStrip_SelectionFilterChip_Hidden(t *testing.T) {
+	body := renderBulkStrip(t, ArtistListData{IDs: nil})
 	// Anchor on the chip dismiss link's structural marker rather than
 	// the i18n copy ("Show all", "Showing N selected") so the assertion
 	// stays correct under translation/copy churn -- the marker is the
 	// only attribute that uniquely identifies the chip dismiss element.
 	if strings.Contains(body, `data-clear-ids="true"`) {
-		t.Errorf("BulkActionBar rendered selection-filter chip dismiss marker without IDs; body:\n%s", body)
+		t.Errorf("bulkStrip rendered selection-filter chip dismiss marker without IDs; body:\n%s", body)
 	}
 }
 
-// TestBulkActionBar_SelectionFilterChip_RendersWhenActive verifies that the
+// TestBulkStrip_SelectionFilterChip_RendersWhenActive verifies that the
 // "Showing N selected" chip renders with the correct count and a "Show all"
 // dismiss link when the IDs filter is active. The chip is the on-screen
 // confirmation that #1227's "Show selected" affordance worked, and the
 // "Show all" link is the documented way to drop the filter.
-func TestBulkActionBar_SelectionFilterChip_RendersWhenActive(t *testing.T) {
+func TestBulkStrip_SelectionFilterChip_RendersWhenActive(t *testing.T) {
 	cases := []struct {
 		name     string
 		ids      []string
@@ -117,12 +118,7 @@ func TestBulkActionBar_SelectionFilterChip_RendersWhenActive(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			data := ArtistListData{IDs: tc.ids, View: "table"}
-			var buf bytes.Buffer
-			if err := BulkActionBar(data).Render(testCtx(t), &buf); err != nil {
-				t.Fatalf("render: %v", err)
-			}
-			body := buf.String()
+			body := renderBulkStrip(t, ArtistListData{IDs: tc.ids, View: "table"})
 			if !strings.Contains(body, tc.wantCopy) {
 				t.Errorf("missing copy %q in rendered chip; body:\n%s", tc.wantCopy, body)
 			}
@@ -146,7 +142,7 @@ func TestBulkActionBar_SelectionFilterChip_RendersWhenActive(t *testing.T) {
 			// request returns the unfiltered list. We do not pin the
 			// full URL (it varies by view) but assert ids= is absent.
 			// Resolve hx-get via the chip's data-clear-ids marker so
-			// future hx-get attributes elsewhere in the toolbar do
+			// future hx-get attributes elsewhere in the strip do
 			// not bind this assertion to the wrong element.
 			clearIdx := strings.Index(body, `data-clear-ids="true"`)
 			if clearIdx < 0 {
@@ -165,6 +161,27 @@ func TestBulkActionBar_SelectionFilterChip_RendersWhenActive(t *testing.T) {
 				t.Errorf("Show-all hx-get must drop ids param; got %q", hxURL)
 			}
 		})
+	}
+}
+
+// TestBulkStrip_GridHostsSelectAll pins the strip placement contract from the
+// promoted design: in TABLE view the page select-all lives in the table header
+// (the strip is contextual and omits it); in GRID view (no table header) the
+// strip hosts the select-all checkbox itself. Either way exactly one
+// #bulk-select-all control must exist so the shared controller binds it.
+func TestBulkStrip_GridHostsSelectAll(t *testing.T) {
+	table := renderBulkStrip(t, ArtistListData{View: "table"})
+	if got := strings.Count(table, `id="bulk-select-all"`); got != 1 {
+		t.Errorf("table view must render exactly one #bulk-select-all (in the header), got %d", got)
+	}
+
+	var buf bytes.Buffer
+	if err := ArtistsGrid(ArtistListData{View: "grid"}).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render grid: %v", err)
+	}
+	grid := buf.String()
+	if got := strings.Count(grid, `id="bulk-select-all"`); got != 1 {
+		t.Errorf("grid view must render exactly one #bulk-select-all (in the strip), got %d", got)
 	}
 }
 

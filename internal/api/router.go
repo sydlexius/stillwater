@@ -889,12 +889,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Per-screen next/ routes land as their templates ship; each is more
 	// specific than the /next/{path...} fallback so Go's mux prefers it, and
 	// each renders the next template only when the resolved channel is "next"
-	// (otherwise it falls back to the stable page itself). M55 #1335: artists.
-	mux.HandleFunc("GET "+bp+"/next/artists", wrapOptionalAuth(r.handleNextArtistsPage, optAuthMw))
+	// (otherwise it falls back to the stable page itself).
 	// M55 #1757 PR-2: the dashboard promoted to the canonical index ("/"), so
 	// the dedicated /next/ + /next dashboard routes are gone. "GET /next/"
 	// now reaches the /next/{path...} fallback below, which re-dispatches to
 	// the stable index -- i.e. the same promoted dashboard.
+	// M55 #1757 PR-3a: the artists list promoted to the canonical /artists, so
+	// the dedicated /next/artists route is gone; "GET /next/artists" reaches
+	// the fallback and re-dispatches to the promoted canonical list.
 	// M55 #1336: the next/ artist-detail page. More specific than the
 	// /next/{path...} fallback so Go's mux prefers it; renders the next template
 	// only when the resolved channel is "next" (otherwise it delegates to the
