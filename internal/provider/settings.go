@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
@@ -16,6 +17,11 @@ import (
 type SettingsService struct {
 	db        *sql.DB
 	encryptor *encryption.Encryptor
+
+	// webSearchMu serializes the enable-flag + priority read-modify-write in
+	// SetWebSearchEnabledAndSyncPriorities so concurrent toggles cannot
+	// interleave and lose each other's updates.
+	webSearchMu sync.Mutex
 }
 
 // NewSettingsService creates a new SettingsService.
@@ -533,10 +539,8 @@ func (s *SettingsService) ResetPriorities(ctx context.Context) error {
 		return nil
 	}
 
-	// Mirror the image-field set used by handleSetWebSearchEnabled. Keep this
-	// list in sync with that handler (and with DefaultPriorities) if image
-	// fields are ever added or renamed.
-	imageFields := []string{"thumb", "fanart", "logo", "banner"}
+	// Shared image-field set (also used by SetWebSearchEnabledAndSyncPriorities).
+	imageFields := webSearchImageFieldNames()
 	defaults := DefaultPriorities()
 	defaultsByField := make(map[string][]ProviderName, len(defaults))
 	for _, d := range defaults {
@@ -635,6 +639,62 @@ func (s *SettingsService) SetWebSearchEnabled(ctx context.Context, name Provider
 	)
 	if err != nil {
 		return fmt.Errorf("storing web search enabled for %s: %w", name, err)
+	}
+	return nil
+}
+
+// webSearchImageFieldNames returns the image fields whose priority lists carry
+// web search providers. It returns a fresh slice on each call so callers can
+// never mutate shared state. Keep in sync with DefaultPriorities.
+func webSearchImageFieldNames() []string {
+	return []string{"thumb", "fanart", "logo", "banner"}
+}
+
+// isWebSearchImageField reports whether field is one of the image fields whose
+// priority list carries a web search provider.
+func isWebSearchImageField(field string) bool {
+	switch field {
+	case "thumb", "fanart", "logo", "banner":
+		return true
+	default:
+		return false
+	}
+}
+
+// SetWebSearchEnabledAndSyncPriorities persists the enabled state for a web
+// search provider and, in the same critical section, adds (enabled) or removes
+// (disabled) it from every image-field priority list. The whole read-modify-
+// write runs under webSearchMu, so concurrent enable/disable calls are
+// serialized and cannot overwrite each other's priority updates (the
+// "equivalent lock" alternative to a single DB transaction; the writes still
+// land row-by-row, but no two toggles interleave).
+func (s *SettingsService) SetWebSearchEnabledAndSyncPriorities(ctx context.Context, name ProviderName, enabled bool) error {
+	s.webSearchMu.Lock()
+	defer s.webSearchMu.Unlock()
+
+	if err := s.SetWebSearchEnabled(ctx, name, enabled); err != nil {
+		return err
+	}
+	priorities, err := s.GetPriorities(ctx)
+	if err != nil {
+		return err
+	}
+	for _, pri := range priorities {
+		if !isWebSearchImageField(pri.Field) {
+			continue
+		}
+		var changed bool
+		if enabled {
+			changed = pri.AddProvider(name)
+		} else {
+			changed = pri.RemoveProvider(name)
+		}
+		if !changed {
+			continue
+		}
+		if err := s.SetPriority(ctx, pri.Field, pri.Providers); err != nil {
+			return err
+		}
 	}
 	return nil
 }

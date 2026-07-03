@@ -11,6 +11,17 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+// isWebSearchImageFieldForTest mirrors the provider package's unexported
+// image-field predicate so these api-package tests can filter priority rows.
+func isWebSearchImageFieldForTest(field string) bool {
+	switch field {
+	case "thumb", "fanart", "logo", "banner":
+		return true
+	default:
+		return false
+	}
+}
+
 // TestHandleSetWebSearchEnabled_InvalidProvider covers the 400 branch when
 // the path provider name is not a known web search provider.
 func TestHandleSetWebSearchEnabled_InvalidProvider(t *testing.T) {
@@ -114,7 +125,7 @@ func TestHandleSetWebSearchEnabled_EnableJSON(t *testing.T) {
 		t.Fatalf("GetPriorities: %v", err)
 	}
 	for _, pri := range priorities {
-		if !isWebSearchImageField(pri.Field) {
+		if !isWebSearchImageFieldForTest(pri.Field) {
 			continue
 		}
 		if !pri.Contains(provider.NameDuckDuckGo) {
@@ -135,11 +146,8 @@ func TestHandleSetWebSearchEnabled_DisableForm(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed: enable first so there is something to remove.
-	if err := r.providerSettings.SetWebSearchEnabled(ctx, provider.NameDuckDuckGo, true); err != nil {
-		t.Fatalf("seeding SetWebSearchEnabled: %v", err)
-	}
-	if err := r.syncWebSearchPriorities(ctx, provider.NameDuckDuckGo, true); err != nil {
-		t.Fatalf("seeding syncWebSearchPriorities: %v", err)
+	if err := r.providerSettings.SetWebSearchEnabledAndSyncPriorities(ctx, provider.NameDuckDuckGo, true); err != nil {
+		t.Fatalf("seeding SetWebSearchEnabledAndSyncPriorities: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/websearch/duckduckgo/toggle",
@@ -168,7 +176,7 @@ func TestHandleSetWebSearchEnabled_DisableForm(t *testing.T) {
 		t.Fatalf("GetPriorities: %v", err)
 	}
 	for _, pri := range priorities {
-		if !isWebSearchImageField(pri.Field) {
+		if !isWebSearchImageFieldForTest(pri.Field) {
 			continue
 		}
 		if pri.Contains(provider.NameDuckDuckGo) {
@@ -246,6 +254,32 @@ func TestHandleSetWebSearchEnabled_PersistError(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+}
+
+// TestRespondWebSearchToggle_OnboardingListError covers the onboarding-wizard
+// branch when ListWebSearchStatuses fails: the error is logged and the response
+// falls through to the generic HX-Refresh rather than an error page.
+func TestRespondWebSearchToggle_OnboardingListError(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	// Close the DB so ListWebSearchStatuses returns an error.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/websearch/duckduckgo/toggle", nil)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "https://example.test/setup/wizard")
+	w := httptest.NewRecorder()
+	r.respondWebSearchToggle(w, req, provider.NameDuckDuckGo)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if w.Header().Get("HX-Refresh") != "true" {
+		t.Errorf("HX-Refresh header = %q, want %q (expected fallback after list error)", w.Header().Get("HX-Refresh"), "true")
 	}
 }
 

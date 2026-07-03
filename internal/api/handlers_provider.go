@@ -579,21 +579,6 @@ func (r *Router) handleGetWebSearchProviders(w http.ResponseWriter, req *http.Re
 	writeJSON(w, http.StatusOK, map[string]any{"providers": statuses})
 }
 
-// webSearchImageFields lists the image fields whose priority lists are kept
-// in sync when a web search provider's enabled state changes.
-var webSearchImageFields = []string{"thumb", "fanart", "logo", "banner"}
-
-// isWebSearchImageField reports whether field is one of the image fields
-// that carries a web search provider in its priority list.
-func isWebSearchImageField(field string) bool {
-	for _, f := range webSearchImageFields {
-		if f == field {
-			return true
-		}
-	}
-	return false
-}
-
 // isValidWebSearchProviderName reports whether name is a known web search
 // provider.
 func isValidWebSearchProviderName(name provider.ProviderName) bool {
@@ -627,33 +612,6 @@ func parseWebSearchEnabledRequest(w http.ResponseWriter, req *http.Request) (ena
 	return req.FormValue("enabled") == "true", true
 }
 
-// syncWebSearchPriorities adds (enabled=true) or removes (enabled=false) name
-// from every image-field priority list, persisting each list it modifies.
-func (r *Router) syncWebSearchPriorities(ctx context.Context, name provider.ProviderName, enabled bool) error {
-	priorities, err := r.providerSettings.GetPriorities(ctx)
-	if err != nil {
-		return err
-	}
-	for _, pri := range priorities {
-		if !isWebSearchImageField(pri.Field) {
-			continue
-		}
-		var changed bool
-		if enabled {
-			changed = pri.AddProvider(name)
-		} else {
-			changed = pri.RemoveProvider(name)
-		}
-		if !changed {
-			continue
-		}
-		if err := r.providerSettings.SetPriority(ctx, pri.Field, pri.Providers); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // respondWebSearchToggle writes the response for a web search toggle: an
 // OOB card re-render when called from the onboarding wizard, an HTMX
 // refresh trigger for the Settings context, or a plain JSON status for
@@ -665,7 +623,11 @@ func (r *Router) respondWebSearchToggle(w http.ResponseWriter, req *http.Request
 	}
 	if strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard") {
 		status, err := r.providerSettings.ListWebSearchStatuses(req.Context())
-		if err == nil {
+		if err != nil {
+			// Full error to slog; the client still gets the generic HX-Refresh
+			// fallback below rather than a sanitized error page.
+			r.logger.Error("listing web search statuses for onboarding fragment", "provider", name, "error", err)
+		} else {
 			for _, s := range status {
 				if s.Name == name {
 					renderTempl(w, req, templates.OnboardingWebSearchToggle(s))
@@ -694,15 +656,12 @@ func (r *Router) handleSetWebSearchEnabled(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	if err := r.providerSettings.SetWebSearchEnabled(req.Context(), name, enabled); err != nil {
-		r.logger.Error("setting web search enabled", "provider", name, "error", err)
+	// Persist the enabled flag and sync the image-field priority lists as one
+	// serialized operation so concurrent toggles cannot lose each other's
+	// updates.
+	if err := r.providerSettings.SetWebSearchEnabledAndSyncPriorities(req.Context(), name, enabled); err != nil {
+		r.logger.Error("setting web search enabled", "provider", name, "enabled", enabled, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to update setting")
-		return
-	}
-
-	if err := r.syncWebSearchPriorities(req.Context(), name, enabled); err != nil {
-		r.logger.Error("syncing web search priorities", "provider", name, "enabled", enabled, "error", err)
-		writeError(w, req, http.StatusInternalServerError, "failed to update priorities")
 		return
 	}
 

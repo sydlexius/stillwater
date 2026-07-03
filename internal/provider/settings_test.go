@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -398,6 +399,108 @@ func TestWebSearchEnabledRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSetWebSearchEnabledAndSyncPriorities(t *testing.T) {
+	svc := NewSettingsService(setupTestDB(t), setupTestEncryptor(t))
+	ctx := context.Background()
+
+	// Enable: the flag is persisted and the provider is appended at the lowest
+	// position of every image-field priority list.
+	if err := svc.SetWebSearchEnabledAndSyncPriorities(ctx, NameDuckDuckGo, true); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	enabled, err := svc.IsWebSearchEnabled(ctx, NameDuckDuckGo)
+	if err != nil {
+		t.Fatalf("IsWebSearchEnabled: %v", err)
+	}
+	if !enabled {
+		t.Error("expected duckduckgo enabled after sync")
+	}
+
+	priorities, err := svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities: %v", err)
+	}
+	imageFields := 0
+	for _, pri := range priorities {
+		if !isWebSearchImageField(pri.Field) {
+			continue
+		}
+		imageFields++
+		if !pri.Contains(NameDuckDuckGo) {
+			t.Errorf("field %q: expected duckduckgo present, got %v", pri.Field, pri.Providers)
+		}
+		if pri.Providers[len(pri.Providers)-1] != NameDuckDuckGo {
+			t.Errorf("field %q: expected duckduckgo appended last, got %v", pri.Field, pri.Providers)
+		}
+	}
+	if imageFields != len(webSearchImageFieldNames()) {
+		t.Errorf("expected %d image fields, saw %d", len(webSearchImageFieldNames()), imageFields)
+	}
+
+	// Disable: the provider is removed from every image-field priority list.
+	if err := svc.SetWebSearchEnabledAndSyncPriorities(ctx, NameDuckDuckGo, false); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	priorities, err = svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities after disable: %v", err)
+	}
+	for _, pri := range priorities {
+		if !isWebSearchImageField(pri.Field) {
+			continue
+		}
+		if pri.Contains(NameDuckDuckGo) {
+			t.Errorf("field %q: expected duckduckgo removed, got %v", pri.Field, pri.Providers)
+		}
+	}
+}
+
+// TestSetWebSearchEnabledAndSyncPriorities_Concurrent hammers the toggle from
+// many goroutines. The webSearchMu lock must serialize the read-modify-write so
+// no interleaving duplicates the provider or loses an update; after converging
+// on "enabled", the provider must appear exactly once in each image field. Run
+// under -race to also surface any data race on the shared service state.
+func TestSetWebSearchEnabledAndSyncPriorities_Concurrent(t *testing.T) {
+	svc := NewSettingsService(setupTestDB(t), setupTestEncryptor(t))
+	ctx := context.Background()
+
+	const workers = 8
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(enable bool) {
+			defer wg.Done()
+			// Errors are not asserted here: the point is that concurrent calls
+			// never corrupt state, which the post-convergence check verifies.
+			_ = svc.SetWebSearchEnabledAndSyncPriorities(ctx, NameDuckDuckGo, enable)
+		}(i%2 == 0)
+	}
+	wg.Wait()
+
+	// Converge to a known state, then assert no duplicate accumulated.
+	if err := svc.SetWebSearchEnabledAndSyncPriorities(ctx, NameDuckDuckGo, true); err != nil {
+		t.Fatalf("final enable: %v", err)
+	}
+	priorities, err := svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities: %v", err)
+	}
+	for _, pri := range priorities {
+		if !isWebSearchImageField(pri.Field) {
+			continue
+		}
+		count := 0
+		for _, p := range pri.Providers {
+			if p == NameDuckDuckGo {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("field %q: expected duckduckgo exactly once, got %d in %v", pri.Field, count, pri.Providers)
+		}
+	}
+}
+
 func TestListWebSearchStatuses(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)
@@ -610,6 +713,27 @@ func TestFieldPriorityRemoveProviderAllOccurrences(t *testing.T) {
 	want := []ProviderName{NameAudioDB, NameDiscogs}
 	if !reflect.DeepEqual(fp.Providers, want) {
 		t.Fatalf("expected providers %v, got %v", want, fp.Providers)
+	}
+}
+
+func TestFieldPriorityRemoveProviderLastEntry(t *testing.T) {
+	// Removing the only remaining provider reports modified=true and leaves an
+	// empty list. The current implementation builds the result via append from
+	// a nil slice, so the emptied list is nil (not a non-nil empty slice); this
+	// test pins that actual contract so a future change to it is a conscious one.
+	fp := FieldPriority{
+		Field:     "biography",
+		Providers: []ProviderName{NameMusicBrainz},
+	}
+
+	if modified := fp.RemoveProvider(NameMusicBrainz); !modified {
+		t.Error("expected RemoveProvider to report modified=true when removing the last entry")
+	}
+	if len(fp.Providers) != 0 {
+		t.Fatalf("expected empty provider list, got %v", fp.Providers)
+	}
+	if fp.Providers != nil {
+		t.Errorf("expected nil slice after removing the last entry, got non-nil %v", fp.Providers)
 	}
 }
 
