@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
@@ -16,6 +17,11 @@ import (
 type SettingsService struct {
 	db        *sql.DB
 	encryptor *encryption.Encryptor
+
+	// webSearchMu serializes the enable-flag + priority read-modify-write in
+	// SetWebSearchEnabledAndSyncPriorities so concurrent toggles cannot
+	// interleave and lose each other's updates.
+	webSearchMu sync.Mutex
 }
 
 // NewSettingsService creates a new SettingsService.
@@ -344,6 +350,45 @@ func (fp FieldPriority) EnabledProviders() []ProviderName {
 	return result
 }
 
+// Contains reports whether name is present in the priority list.
+func (fp *FieldPriority) Contains(name ProviderName) bool {
+	for _, p := range fp.Providers {
+		if p == name {
+			return true
+		}
+	}
+	return false
+}
+
+// AddProvider appends name to the priority list if it is not already
+// present. It returns true if the list was modified.
+func (fp *FieldPriority) AddProvider(name ProviderName) bool {
+	if fp.Contains(name) {
+		return false
+	}
+	fp.Providers = append(fp.Providers, name)
+	return true
+}
+
+// RemoveProvider removes name from the priority list if present. It returns
+// true if the list was modified.
+func (fp *FieldPriority) RemoveProvider(name ProviderName) bool {
+	var filtered []ProviderName
+	removed := false
+	for _, p := range fp.Providers {
+		if p == name {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	if !removed {
+		return false
+	}
+	fp.Providers = filtered
+	return true
+}
+
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
@@ -494,10 +539,8 @@ func (s *SettingsService) ResetPriorities(ctx context.Context) error {
 		return nil
 	}
 
-	// Mirror the image-field set used by handleSetWebSearchEnabled. Keep this
-	// list in sync with that handler (and with DefaultPriorities) if image
-	// fields are ever added or renamed.
-	imageFields := []string{"thumb", "fanart", "logo", "banner"}
+	// Shared image-field set (also used by SetWebSearchEnabledAndSyncPriorities).
+	imageFields := webSearchImageFieldNames()
 	defaults := DefaultPriorities()
 	defaultsByField := make(map[string][]ProviderName, len(defaults))
 	for _, d := range defaults {
@@ -596,6 +639,97 @@ func (s *SettingsService) SetWebSearchEnabled(ctx context.Context, name Provider
 	)
 	if err != nil {
 		return fmt.Errorf("storing web search enabled for %s: %w", name, err)
+	}
+	return nil
+}
+
+// webSearchImageFieldNames returns the image fields whose priority lists carry
+// web search providers. It returns a fresh slice on each call so callers can
+// never mutate shared state. Keep in sync with DefaultPriorities.
+func webSearchImageFieldNames() []string {
+	return []string{"thumb", "fanart", "logo", "banner"}
+}
+
+// isWebSearchImageField reports whether field is one of the image fields whose
+// priority list carries a web search provider.
+func isWebSearchImageField(field string) bool {
+	switch field {
+	case "thumb", "fanart", "logo", "banner":
+		return true
+	default:
+		return false
+	}
+}
+
+// SetWebSearchEnabledAndSyncPriorities persists the enabled state for a web
+// search provider and adds (enabled) or removes (disabled) it from every
+// image-field priority list. The enabled-flag write and every priority write
+// commit inside a single DB transaction, so the update is all-or-nothing: a
+// failure part-way through rolls back and never leaves the flag set with the
+// provider missing from some image fields (or vice versa). webSearchMu
+// additionally serializes the read + transaction so two concurrent toggles
+// cannot base their writes on each other's stale reads.
+//
+// Cross-process atomicity is not a concern here: Stillwater runs a single
+// process against an embedded SQLite database, so there are no replicas to
+// interleave.
+func (s *SettingsService) SetWebSearchEnabledAndSyncPriorities(ctx context.Context, name ProviderName, enabled bool) error {
+	s.webSearchMu.Lock()
+	defer s.webSearchMu.Unlock()
+
+	// Read current priorities first (mutex-guarded, so no concurrent toggle
+	// interferes). The writes below then commit atomically.
+	priorities, err := s.GetPriorities(ctx)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning web search toggle transaction for %s: %w", name, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
+
+	// Persist the enabled flag.
+	enabledVal := "false"
+	if enabled {
+		enabledVal = "true"
+	}
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		webSearchEnabledKey(name), enabledVal, enabledVal,
+	); err != nil {
+		return fmt.Errorf("storing web search enabled for %s: %w", name, err)
+	}
+
+	// Add/remove the provider in every image-field priority list it changes.
+	for _, pri := range priorities {
+		if !isWebSearchImageField(pri.Field) {
+			continue
+		}
+		var changed bool
+		if enabled {
+			changed = pri.AddProvider(name)
+		} else {
+			changed = pri.RemoveProvider(name)
+		}
+		if !changed {
+			continue
+		}
+		data, err := json.Marshal(pri.Providers)
+		if err != nil {
+			return fmt.Errorf("marshaling priority for %s: %w", pri.Field, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+			prioritySettingKey(pri.Field), string(data), string(data),
+		); err != nil {
+			return fmt.Errorf("storing priority for %s: %w", pri.Field, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing web search toggle for %s: %w", name, err)
 	}
 	return nil
 }

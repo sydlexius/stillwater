@@ -987,37 +987,64 @@ var platformToStillwaterType = map[string]string{
 	"Banner":  "banner",
 }
 
-// downloadPlatformImages downloads available images from a media platform for a single artist.
-// connType identifies the platform source (e.g. "emby", "jellyfin") for provenance metadata.
-// Errors are non-fatal: logged as warnings and skipped.
-//
-//nolint:gocognit // Platform image downloader (cog 60): walks the imageTag -> Stillwater image-type map, downloads each present tag with per-type cache-miss handling, saves with platform-naming patterns, records provenance, and finally walks the backdropTags slice with a parallel pipeline; a per-tag pipeline struct with a download-save-provenance method would preserve provenance attribution while flattening the cog score. Refactor tracked in #1546.
-func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, backdropTags []string, a *artist.Artist, connType string, result *populateResult) {
+// platformImagePipeline encapsulates the download context for a single
+// artist's platform-image sync: where images land on disk, how to reach the
+// platform, and the provenance (connType) + result accounting to record
+// against every downloaded image.
+type platformImagePipeline struct {
+	r                *Router
+	dl               imageDownloader
+	dir              string
+	platformArtistID string
+	artist           *artist.Artist
+	connType         string
+	result           *populateResult
+}
+
+// newPlatformImagePipeline validates the artist's image directory and
+// returns a pipeline for downloading platform images. ok is false when the
+// download should be skipped entirely (no usable path/cache dir, or the
+// filesystem path isn't ready); the caller should return without downloading.
+func newPlatformImagePipeline(r *Router, dl imageDownloader, platformArtistID string, a *artist.Artist, connType string, result *populateResult) (p *platformImagePipeline, ok bool) {
 	dir := r.imageDir(a)
 	if dir == "" {
 		r.logger.Debug("skipping image download: no path or cache dir", "artist", a.Name)
-		return
+		return nil, false
 	}
 
 	if a.Path == "" {
 		// Cache directory: create if needed.
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			r.logger.Warn("creating cache directory", "artist", a.Name, "dir", dir, "error", err)
-			return
+			return nil, false
 		}
 	} else {
 		// Filesystem path: must already exist from scan and be a directory.
 		info, err := os.Stat(dir)
 		if err != nil {
 			r.logger.Debug("artist directory not accessible, skipping images", "artist", a.Name, "dir", dir, "error", err)
-			return
+			return nil, false
 		}
 		if !info.IsDir() {
 			r.logger.Debug("artist path is not a directory, skipping images", "artist", a.Name, "dir", dir)
-			return
+			return nil, false
 		}
 	}
 
+	return &platformImagePipeline{
+		r:                r,
+		dl:               dl,
+		dir:              dir,
+		platformArtistID: platformArtistID,
+		artist:           a,
+		connType:         connType,
+		result:           result,
+	}, true
+}
+
+// downloadNamedImages downloads each present platform image tag that maps to
+// a known Stillwater image type. Errors are non-fatal: logged and skipped.
+func (p *platformImagePipeline) downloadNamedImages(ctx context.Context, imageTags map[string]string) {
 	for platformKey, tagValue := range imageTags {
 		if tagValue == "" {
 			continue
@@ -1026,109 +1053,161 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 		if !ok {
 			continue
 		}
+		p.downloadNamedImage(ctx, stillwaterType)
+	}
+}
 
-		patterns := r.getActiveNamingConfig(ctx, stillwaterType)
-		if _, found := img.FindExistingImage(dir, patterns); found {
-			r.logger.Debug("skipping existing image", "artist", a.Name, "type", stillwaterType)
-			continue
-		}
+// downloadNamedImage downloads, saves, and records provenance for a single
+// named image type (e.g. "thumb", "logo"), skipping if it already exists.
+func (p *platformImagePipeline) downloadNamedImage(ctx context.Context, stillwaterType string) {
+	r, a := p.r, p.artist
 
-		data, _, err := dl.GetArtistImage(ctx, platformArtistID, stillwaterType)
-		if err != nil {
-			r.logger.Warn("downloading image from platform", "artist", a.Name, "type", stillwaterType, "error", err)
-			continue
-		}
-
-		platformMeta := &img.ExifMeta{Source: connType, Fetched: time.Now().UTC(), Mode: "user"}
-		if _, err := r.processAndSaveImage(ctx, dir, stillwaterType, data, platformMeta); err != nil {
-			r.logger.Warn("saving downloaded image", "artist", a.Name, "type", stillwaterType, "error", err)
-			continue
-		}
-
-		r.updateArtistImageFlag(ctx, a, stillwaterType)
-		result.Images++
+	patterns := r.getActiveNamingConfig(ctx, stillwaterType)
+	if _, found := img.FindExistingImage(p.dir, patterns); found {
+		r.logger.Debug("skipping existing image", "artist", a.Name, "type", stillwaterType)
+		return
 	}
 
-	if len(backdropTags) > 0 {
-		primary := r.getActiveFanartPrimary(ctx)
-		kodi := r.isKodiNumbering(ctx)
+	data, _, err := p.dl.GetArtistImage(ctx, p.platformArtistID, stillwaterType)
+	if err != nil {
+		r.logger.Warn("downloading image from platform", "artist", a.Name, "type", stillwaterType, "error", err)
+		return
+	}
 
-		downloaded := 0
-		anyExisted := false
-		for i, tag := range backdropTags {
-			if tag == "" {
-				r.logger.Debug("skipping backdrop with empty tag", "artist", a.Name, "index", i)
-				continue
-			}
-			filename := img.FanartFilename(primary, i, kodi)
-			// Check all common image extensions for this slot. img.ConvertFormat converts WebP
-			// to PNG, so a previously-saved file may have a different extension than the
-			// current filename. FanartFilename preserves the extension from the active
-			// primary name, so the saved file and the generated name may legitimately differ.
-			base := strings.TrimSuffix(filename, filepath.Ext(filename))
-			slotExists := false
-			skipDownload := false
-			for _, ext := range []string{".jpg", ".jpeg", ".png"} {
-				candidate := filepath.Join(dir, base+ext)
-				_, statErr := os.Stat(candidate)
-				if statErr == nil {
-					slotExists = true
-					break
-				}
-				if !errors.Is(statErr, fs.ErrNotExist) {
-					r.logger.Warn("checking backdrop existence", "artist", a.Name, "index", i, "file", base+ext, "error", statErr)
-					skipDownload = true
-					// Continue checking remaining extensions -- this candidate may be temporarily inaccessible.
-				}
-			}
-			if slotExists {
-				r.logger.Debug("skipping existing backdrop", "artist", a.Name, "index", i)
-				anyExisted = true
-				continue
-			}
-			if skipDownload {
-				r.logger.Warn("skipping backdrop download due to filesystem error", "artist", a.Name, "index", i)
-				continue
-			}
-			data, _, dlErr := dl.GetArtistBackdrop(ctx, platformArtistID, i)
-			if dlErr != nil {
-				r.logger.Warn("downloading backdrop from platform", "artist", a.Name, "index", i, "error", dlErr)
-				continue
-			}
-			if len(data) == 0 {
-				r.logger.Warn("empty backdrop response from platform", "artist", a.Name, "index", i)
-				continue
-			}
-			converted, _, convertErr := img.ConvertFormat(bytes.NewReader(data))
-			if convertErr != nil {
-				r.logger.Warn("converting backdrop format", "artist", a.Name, "index", i, "error", convertErr)
-				continue
-			}
-			backdropMeta := &img.ExifMeta{Source: connType, Fetched: time.Now().UTC(), Mode: "user"}
-			saved, saveErr := img.Save(dir, "fanart", converted, []string{filename}, false, backdropMeta, r.logger)
-			if saveErr != nil {
-				r.logger.Warn("saving backdrop", "artist", a.Name, "index", i, "error", saveErr)
-				continue
-			}
-			if len(saved) == 0 {
-				r.logger.Warn("saving backdrop produced no files", "artist", a.Name, "index", i, "dir", dir, "filename", filename)
-				continue
-			}
+	meta := &img.ExifMeta{Source: p.connType, Fetched: time.Now().UTC(), Mode: "user"}
+	if _, err := r.processAndSaveImage(ctx, p.dir, stillwaterType, data, meta); err != nil {
+		r.logger.Warn("saving downloaded image", "artist", a.Name, "type", stillwaterType, "error", err)
+		return
+	}
+
+	r.updateArtistImageFlag(ctx, a, stillwaterType)
+	p.result.Images++
+}
+
+// backdropOutcome reports what happened to a single backdrop slot so the
+// caller can decide whether a post-download fanart compaction is needed.
+type backdropOutcome int
+
+const (
+	backdropSkipped backdropOutcome = iota
+	backdropExisted
+	backdropDownloaded
+)
+
+// downloadBackdrops downloads missing backdrop images for the given tags and,
+// if anything was downloaded or already present, compacts the fanart
+// numbering so the primary slot is always populated.
+func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropTags []string) {
+	if len(backdropTags) == 0 {
+		return
+	}
+	r, a := p.r, p.artist
+	primary := r.getActiveFanartPrimary(ctx)
+	kodi := r.isKodiNumbering(ctx)
+
+	downloaded := 0
+	anyExisted := false
+	for i, tag := range backdropTags {
+		if tag == "" {
+			r.logger.Debug("skipping backdrop with empty tag", "artist", a.Name, "index", i)
+			continue
+		}
+		switch p.downloadBackdrop(ctx, i, primary, kodi) {
+		case backdropExisted:
+			anyExisted = true
+		case backdropDownloaded:
 			downloaded++
-			result.Images++
-		}
-		if downloaded > 0 || anyExisted {
-			// When backdrop index 0 failed (empty tag, download error, etc.)
-			// but later indexes succeeded, no primary fanart file exists.
-			// The UI serves the background image from /images/fanart/file which
-			// only matches the primary name pattern. Compact the numbered files
-			// so the lowest available becomes the primary -- same pattern used
-			// by handleFanartBatchDelete.
-			r.compactFanartIfNeeded(dir, primary, kodi)
-			r.updateArtistImageFlag(ctx, a, "fanart")
-			r.updateArtistFanartCount(ctx, a)
+		case backdropSkipped:
 		}
 	}
+	if downloaded > 0 || anyExisted {
+		// When backdrop index 0 failed (empty tag, download error, etc.)
+		// but later indexes succeeded, no primary fanart file exists.
+		// The UI serves the background image from /images/fanart/file which
+		// only matches the primary name pattern. Compact the numbered files
+		// so the lowest available becomes the primary -- same pattern used
+		// by handleFanartBatchDelete.
+		r.compactFanartIfNeeded(p.dir, primary, kodi)
+		r.updateArtistImageFlag(ctx, a, "fanart")
+		r.updateArtistFanartCount(ctx, a)
+	}
+}
+
+// downloadBackdrop handles a single backdrop slot: existence check, download,
+// format conversion, and save with provenance metadata. Errors are non-fatal:
+// logged as warnings and reported as backdropSkipped.
+func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, primary string, kodi bool) backdropOutcome {
+	r, a := p.r, p.artist
+
+	filename := img.FanartFilename(primary, i, kodi)
+	// Check all common image extensions for this slot. img.ConvertFormat converts WebP
+	// to PNG, so a previously-saved file may have a different extension than the
+	// current filename. FanartFilename preserves the extension from the active
+	// primary name, so the saved file and the generated name may legitimately differ.
+	base := strings.TrimSuffix(filename, filepath.Ext(filename))
+	slotExists := false
+	skipDownload := false
+	for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+		candidate := filepath.Join(p.dir, base+ext)
+		_, statErr := os.Stat(candidate)
+		if statErr == nil {
+			slotExists = true
+			break
+		}
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			r.logger.Warn("checking backdrop existence", "artist", a.Name, "index", i, "file", base+ext, "error", statErr)
+			skipDownload = true
+			// Continue checking remaining extensions -- this candidate may be temporarily inaccessible.
+		}
+	}
+	if slotExists {
+		r.logger.Debug("skipping existing backdrop", "artist", a.Name, "index", i)
+		return backdropExisted
+	}
+	if skipDownload {
+		r.logger.Warn("skipping backdrop download due to filesystem error", "artist", a.Name, "index", i)
+		return backdropSkipped
+	}
+
+	data, _, dlErr := p.dl.GetArtistBackdrop(ctx, p.platformArtistID, i)
+	if dlErr != nil {
+		r.logger.Warn("downloading backdrop from platform", "artist", a.Name, "index", i, "error", dlErr)
+		return backdropSkipped
+	}
+	if len(data) == 0 {
+		r.logger.Warn("empty backdrop response from platform", "artist", a.Name, "index", i)
+		return backdropSkipped
+	}
+	converted, _, convertErr := img.ConvertFormat(bytes.NewReader(data))
+	if convertErr != nil {
+		r.logger.Warn("converting backdrop format", "artist", a.Name, "index", i, "error", convertErr)
+		return backdropSkipped
+	}
+	meta := &img.ExifMeta{Source: p.connType, Fetched: time.Now().UTC(), Mode: "user"}
+	saved, saveErr := img.Save(p.dir, "fanart", converted, []string{filename}, false, meta, r.logger)
+	if saveErr != nil {
+		r.logger.Warn("saving backdrop", "artist", a.Name, "index", i, "error", saveErr)
+		return backdropSkipped
+	}
+	if len(saved) == 0 {
+		r.logger.Warn("saving backdrop produced no files", "artist", a.Name, "index", i, "dir", p.dir, "filename", filename)
+		return backdropSkipped
+	}
+	p.result.Images++
+	return backdropDownloaded
+}
+
+// downloadPlatformImages downloads available images from a media platform for a single artist.
+// connType identifies the platform source (e.g. "emby", "jellyfin") for provenance metadata.
+// Errors are non-fatal: logged as warnings and skipped.
+func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, backdropTags []string, a *artist.Artist, connType string, result *populateResult) {
+	p, ok := newPlatformImagePipeline(r, dl, platformArtistID, a, connType, result)
+	if !ok {
+		return
+	}
+
+	p.downloadNamedImages(ctx, imageTags)
+	p.downloadBackdrops(ctx, backdropTags)
 
 	if result.Images > 0 {
 		r.enforceCacheLimitIfNeeded(ctx, a)

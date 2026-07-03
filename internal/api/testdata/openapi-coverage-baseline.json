@@ -56,7 +56,6 @@
   "serveFanartByIndex",
   "setPriorities",
   "setProviderMirror",
-  "setWebSearchEnabled",
   "testProvider",
   "testWebhook",
   "toggleFieldProvider",
