@@ -127,7 +127,7 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			Tier:            TierPaid,
 			HelpURL:         "https://developer.spotify.com/dashboard",
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
-			SupportedFields: []string{"name", "genres"},
+			SupportedFields: []string{"name"},
 			SupportedImages: []ImageType{ImageThumb},
 		},
 	}
