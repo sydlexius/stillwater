@@ -27,7 +27,7 @@ templ SectionPlatformProfile(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.platform_profile.title"))
-				@components.ContextHelp("help-platform-profile", t(ctx, "settings.platform_profile.title"), t(ctx, "settings.platform_profile.help"), "settings-general-platform-profile")
+				@components.ContextHelp("help-platform-profile", t(ctx, "settings.platform_profile.title"), t(ctx, "settings.platform_profile.help"), "settings-platform-platform-profile")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.platform_profile.description") }
@@ -54,7 +54,7 @@ templ SectionActiveProfile(data SettingsData) {
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<div class="flex items-center gap-2">
 					<h2 class="text-lg font-semibold">{ t(ctx, "settings.active_profile.title") }</h2>
-					@components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-general-active-profile")
+					@components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-platform-active-profile")
 				</div>
 				if profileEditable(data.ActiveProfile) {
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -108,7 +108,7 @@ templ SectionActiveProfile(data SettingsData) {
 						<div>
 							<div class="flex items-center gap-1">
 								<span id="symlink-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</span>
-								@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-general-symlinks")
+								@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-platform-symlinks")
 							</div>
 							<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 								if data.SymlinkSupported {
@@ -351,13 +351,13 @@ templ SectionBasePath(data SettingsData) {
 // <script> tag.
 // Exported for future use by the next/ chrome package.
 templ SectionImageCache(data SettingsData, assets AssetPaths) {
-	@components.SettingSection("help-image-cache", t(ctx, "settings.image_cache.title"), t(ctx, "settings.image_cache.help"), "settings-general-image-cache", t(ctx, "settings.image_cache.description")) {
+	@components.SettingSection("help-image-cache", t(ctx, "settings.image_cache.title"), t(ctx, "settings.image_cache.help"), "settings-maintenance-image-cache", t(ctx, "settings.image_cache.description")) {
 		<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.loading") }</div>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div>
 				<div class="flex items-center gap-1 mb-1">
 					<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.image_cache.max_size") }</label>
-					@components.ContextHelp("help-cache-max-size", t(ctx, "settings.image_cache.max_size"), t(ctx, "settings.image_cache.max_size.help"), "settings-general-image-cache-max-size")
+					@components.ContextHelp("help-cache-max-size", t(ctx, "settings.image_cache.max_size"), t(ctx, "settings.image_cache.max_size.help"), "settings-maintenance-image-cache-max-size")
 				</div>
 				<select
 					id="cache-max-size"
@@ -384,7 +384,7 @@ templ SectionImageCache(data SettingsData, assets AssetPaths) {
 					>
 						{ t(ctx, "settings.image_cache.clear") }
 					</button>
-					@components.ContextHelp("help-cache-clear", t(ctx, "settings.image_cache.clear"), t(ctx, "settings.image_cache.clear.help"), "settings-general-image-cache-clear")
+					@components.ContextHelp("help-cache-clear", t(ctx, "settings.image_cache.clear"), t(ctx, "settings.image_cache.clear.help"), "settings-maintenance-image-cache-clear")
 				</div>
 				<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
 			</div>
@@ -589,7 +589,7 @@ templ SectionMetadataLanguages(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.metadata_languages.title"))
-				@components.ContextHelp("help-metadata-languages", t(ctx, "settings.metadata_languages.title"), t(ctx, "settings.metadata_languages.help"), "settings-providers-metadata-languages")
+				@components.ContextHelp("help-metadata-languages", t(ctx, "settings.metadata_languages.title"), t(ctx, "settings.metadata_languages.help"), "settings-languages-metadata-languages")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.metadata_languages.description") }
@@ -663,7 +663,7 @@ templ SectionAdvanced(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.advanced.title"))
-				@components.ContextHelp("help-advanced", t(ctx, "settings.advanced.title"), t(ctx, "settings.advanced.help"), "settings-providers-advanced")
+				@components.ContextHelp("help-advanced", t(ctx, "settings.advanced.title"), t(ctx, "settings.advanced.help"), "settings-config-file-advanced")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.advanced.description") }
@@ -675,7 +675,7 @@ templ SectionAdvanced(data SettingsData) {
 					<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 						{ t(ctx, "settings.name_similarity.label") }
 					</label>
-					@components.ContextHelp("help-name-similarity", t(ctx, "settings.name_similarity.label"), t(ctx, "settings.name_similarity.help"), "settings-providers-name-similarity")
+					@components.ContextHelp("help-name-similarity", t(ctx, "settings.name_similarity.label"), t(ctx, "settings.name_similarity.help"), "settings-config-file-name-similarity")
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
 					{ t(ctx, "settings.name_similarity.description") }
@@ -965,7 +965,7 @@ templ SectionRuleSchedule(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.rule_schedule.title"))
-				@components.ContextHelp("help-rule-schedule", t(ctx, "settings.rule_schedule.title"), t(ctx, "settings.rule_schedule.help"), "settings-rules-rule-schedule")
+				@components.ContextHelp("help-rule-schedule", t(ctx, "settings.rule_schedule.title"), t(ctx, "settings.rule_schedule.help"), "settings-schedule-rule-schedule")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.rule_schedule.description") }
@@ -1040,7 +1040,7 @@ templ SectionWebhooks(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.webhooks.title"))
-				@components.ContextHelp("help-webhooks", t(ctx, "settings.webhooks.title"), t(ctx, "settings.webhooks.help"), "settings-automation-webhooks")
+				@components.ContextHelp("help-webhooks", t(ctx, "settings.webhooks.title"), t(ctx, "settings.webhooks.help"), "settings-webhooks-webhooks")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.webhooks.description") }
@@ -1075,7 +1075,7 @@ templ SectionWebhooks(data SettingsData) {
 						<div class="flex items-center gap-1">
 							<label id="webhook-name-label" for="webhook-name" class="sr-only">{ t(ctx, "settings.webhooks.name.label") }</label>
 							<input id="webhook-name" name="name" aria-labelledby="webhook-name-label" placeholder={ t(ctx, "settings.webhooks.name_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-							@components.ContextHelp("help-webhook-name", t(ctx, "settings.webhooks.name.label"), t(ctx, "settings.webhooks.name.help"), "settings-automation-webhooks-add")
+							@components.ContextHelp("help-webhook-name", t(ctx, "settings.webhooks.name.label"), t(ctx, "settings.webhooks.name.help"), "settings-webhooks-webhooks-add")
 						</div>
 						<div class="flex items-center gap-1">
 							<label id="webhook-type-label" for="webhook-type" class="sr-only">{ t(ctx, "settings.webhooks.type.label") }</label>
@@ -1086,12 +1086,12 @@ templ SectionWebhooks(data SettingsData) {
 								<option value="slack">Slack</option>
 								<option value="gotify">Gotify</option>
 							</select>
-							@components.ContextHelp("help-webhook-type", t(ctx, "settings.webhooks.type.label"), t(ctx, "settings.webhooks.type.help"), "settings-automation-webhooks-select-type")
+							@components.ContextHelp("help-webhook-type", t(ctx, "settings.webhooks.type.label"), t(ctx, "settings.webhooks.type.help"), "settings-webhooks-webhooks-select-type")
 						</div>
 						<div class="col-span-full flex items-center gap-1">
 							<label id="webhook-url-label" for="webhook-url" class="sr-only">{ t(ctx, "settings.webhooks.url.label") }</label>
 							<input id="webhook-url" name="url" type="url" aria-labelledby="webhook-url-label" placeholder={ t(ctx, "settings.webhooks.url_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-							@components.ContextHelp("help-webhook-url", t(ctx, "settings.webhooks.url.label"), t(ctx, "settings.webhooks.url.help"), "settings-automation-webhooks-url")
+							@components.ContextHelp("help-webhook-url", t(ctx, "settings.webhooks.url.label"), t(ctx, "settings.webhooks.url.help"), "settings-webhooks-webhooks-url")
 						</div>
 					</div>
 					<div class="flex gap-2">
@@ -1109,7 +1109,7 @@ templ SectionWebhooks(data SettingsData) {
 // checkboxes.  It already routes through the shared SettingSection wrapper.
 // Exported for future use by the next/ chrome package.
 templ SectionNotificationBadges(data SettingsData) {
-	@components.SettingSection("help-notif-badges", t(ctx, "settings.notif_badges.title"), t(ctx, "settings.notif_badges.help"), "settings-automation-notif-badges", t(ctx, "settings.notif_badges.description")) {
+	@components.SettingSection("help-notif-badges", t(ctx, "settings.notif_badges.title"), t(ctx, "settings.notif_badges.help"), "settings-webhooks-notif-badges", t(ctx, "settings.notif_badges.description")) {
 		<div class="flex items-center gap-3">
 			<label for="notif-badge-enabled" class="relative inline-flex items-center gap-3 cursor-pointer">
 				<input
@@ -1125,12 +1125,12 @@ templ SectionNotificationBadges(data SettingsData) {
 				<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
 				<span id="notif-badge-enabled-label" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.enable_badge") }</span>
 			</label>
-			@components.ContextHelp("help-notif-enable-badge", t(ctx, "settings.notif_badges.enable_badge"), t(ctx, "settings.notif_badges.enable_badge.help"), "settings-automation-notif-badges-enable-badge")
+			@components.ContextHelp("help-notif-enable-badge", t(ctx, "settings.notif_badges.enable_badge"), t(ctx, "settings.notif_badges.enable_badge.help"), "settings-webhooks-notif-badges-enable-badge")
 		</div>
 		<div class="space-y-2">
 			<div class="flex items-center gap-1">
 				<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.count_by_severity") }</p>
-				@components.ContextHelp("help-notif-count-severity", t(ctx, "settings.notif_badges.count_by_severity"), t(ctx, "settings.notif_badges.count_by_severity.help"), "settings-automation-notif-badges-count-by-severity")
+				@components.ContextHelp("help-notif-count-severity", t(ctx, "settings.notif_badges.count_by_severity"), t(ctx, "settings.notif_badges.count_by_severity.help"), "settings-webhooks-notif-badges-count-by-severity")
 			</div>
 			<div class="flex flex-col gap-2">
 				<label class="inline-flex items-center gap-2">
@@ -1174,7 +1174,7 @@ templ SectionAPITokens(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.api_tokens.title"))
-				@components.ContextHelp("help-api-tokens", t(ctx, "settings.api_tokens.title"), t(ctx, "settings.api_tokens.help"), "settings-automation-api-tokens")
+				@components.ContextHelp("help-api-tokens", t(ctx, "settings.api_tokens.title"), t(ctx, "settings.api_tokens.help"), "settings-tokens-api-tokens")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.api_tokens.description") }
@@ -1294,28 +1294,28 @@ templ SectionAPITokens(data SettingsData) {
 								<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
 								<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_read") }</span>
 							</label>
-							@components.ContextHelp("help-token-scope-read", t(ctx, "settings.api_tokens.scope_read"), t(ctx, "settings.api_tokens.scope_read.help"), "settings-automation-api-tokens-scope-read")
+							@components.ContextHelp("help-token-scope-read", t(ctx, "settings.api_tokens.scope_read"), t(ctx, "settings.api_tokens.scope_read.help"), "settings-tokens-api-tokens-scope-read")
 						</div>
 						<div class="inline-flex items-center gap-1.5">
 							<label class="inline-flex items-center gap-1.5">
 								<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
 								<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_write") }</span>
 							</label>
-							@components.ContextHelp("help-token-scope-write", t(ctx, "settings.api_tokens.scope_write"), t(ctx, "settings.api_tokens.scope_write.help"), "settings-automation-api-tokens-scope-write")
+							@components.ContextHelp("help-token-scope-write", t(ctx, "settings.api_tokens.scope_write"), t(ctx, "settings.api_tokens.scope_write.help"), "settings-tokens-api-tokens-scope-write")
 						</div>
 						<div class="inline-flex items-center gap-1.5">
 							<label class="inline-flex items-center gap-1.5">
 								<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
 								<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_webhook") }</span>
 							</label>
-							@components.ContextHelp("help-token-scope-webhook", t(ctx, "settings.api_tokens.scope_webhook"), t(ctx, "settings.api_tokens.scope_webhook.help"), "settings-automation-api-tokens-scope-webhook")
+							@components.ContextHelp("help-token-scope-webhook", t(ctx, "settings.api_tokens.scope_webhook"), t(ctx, "settings.api_tokens.scope_webhook.help"), "settings-tokens-api-tokens-scope-webhook")
 						</div>
 						<div class="inline-flex items-center gap-1.5">
 							<label class="inline-flex items-center gap-1.5">
 								<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
 								<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_admin") }</span>
 							</label>
-							@components.ContextHelp("help-token-scope-admin", t(ctx, "settings.api_tokens.scope_admin"), t(ctx, "settings.api_tokens.scope_admin.help"), "settings-automation-api-tokens-scope-admin")
+							@components.ContextHelp("help-token-scope-admin", t(ctx, "settings.api_tokens.scope_admin"), t(ctx, "settings.api_tokens.scope_admin.help"), "settings-tokens-api-tokens-scope-admin")
 						</div>
 					</div>
 					<div class="flex gap-2">
@@ -1343,7 +1343,7 @@ templ SectionConfirmDialogs(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.confirm_dialogs.title"))
-				@components.ContextHelp("help-confirm-dialogs", t(ctx, "settings.confirm_dialogs.title"), t(ctx, "settings.confirm_dialogs.help"), "settings-maintenance-confirm-dialogs")
+				@components.ContextHelp("help-confirm-dialogs", t(ctx, "settings.confirm_dialogs.title"), t(ctx, "settings.confirm_dialogs.help"), "settings-general-confirm-dialogs")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.confirm_dialogs.description") }
@@ -1509,7 +1509,7 @@ templ SectionExportImport(data SettingsData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.export_import.title"))
-				@components.ContextHelp("help-export-import", t(ctx, "settings.export_import.title"), t(ctx, "settings.export_import.help"), "settings-maintenance-export-import")
+				@components.ContextHelp("help-export-import", t(ctx, "settings.export_import.title"), t(ctx, "settings.export_import.help"), "settings-config-file-export-import")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.export_import.description_line1") }
@@ -1524,7 +1524,7 @@ templ SectionExportImport(data SettingsData) {
 				<div>
 					<div class="flex items-center gap-1 mb-1">
 						<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.export_passphrase") }</label>
-						@components.ContextHelp("help-export-passphrase", t(ctx, "settings.export_import.export_passphrase"), t(ctx, "settings.export_import.export_passphrase.help"), "settings-maintenance-export-import-export-passphrase")
+						@components.ContextHelp("help-export-passphrase", t(ctx, "settings.export_import.export_passphrase"), t(ctx, "settings.export_import.export_passphrase.help"), "settings-config-file-export-import-export-passphrase")
 					</div>
 					<input
 						id="export-passphrase"
@@ -1562,7 +1562,7 @@ templ SectionExportImport(data SettingsData) {
 					<div>
 						<div class="flex items-center gap-1 mb-1">
 							<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_file_label") }</label>
-							@components.ContextHelp("help-import-file", t(ctx, "settings.export_import.import_file_label"), t(ctx, "settings.export_import.import_file_label.help"), "settings-maintenance-export-import-import-file-label")
+							@components.ContextHelp("help-import-file", t(ctx, "settings.export_import.import_file_label"), t(ctx, "settings.export_import.import_file_label.help"), "settings-config-file-export-import-import-file-label")
 						</div>
 						<input
 							id="import-file"
@@ -1576,7 +1576,7 @@ templ SectionExportImport(data SettingsData) {
 					<div>
 						<div class="flex items-center gap-1 mb-1">
 							<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_passphrase") }</label>
-							@components.ContextHelp("help-import-passphrase", t(ctx, "settings.export_import.import_passphrase"), t(ctx, "settings.export_import.import_passphrase.help"), "settings-maintenance-export-import-import-passphrase")
+							@components.ContextHelp("help-import-passphrase", t(ctx, "settings.export_import.import_passphrase"), t(ctx, "settings.export_import.import_passphrase.help"), "settings-config-file-export-import-import-passphrase")
 						</div>
 						<input
 							id="import-passphrase"
@@ -1609,309 +1609,6 @@ templ SectionExportImport(data SettingsData) {
 	</div>
 }
 
-// SectionLogSettings renders the "Log Settings" card on the Settings Logs tab:
-// the level/format selectors, the log-to-file toggle, and the file-logging
-// rotation settings.
-// Exported for future use by the next/ chrome package.
-templ SectionLogSettings(data SettingsData) {
-	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_settings.title") }</h2>
-				@components.ContextHelp("help-log-settings", t(ctx, "settings.log_settings.title"), t(ctx, "settings.log_settings.help"), "settings-logs-log-settings")
-			</div>
-			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-				{ t(ctx, "settings.log_settings.description") }
-			</p>
-		</div>
-		<div class="px-6 py-4">
-			<form
-				id="logging-config-form"
-				hx-put="/api/v1/settings/logging"
-				hx-target="#logging-status"
-				hx-swap="innerHTML"
-				class="space-y-4"
-			>
-				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					<div>
-						<div class="flex items-center gap-1 mb-1">
-							<label for="log-level" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.level") }</label>
-							@components.ContextHelp("help-log-level", t(ctx, "settings.log_settings.level"), t(ctx, "settings.log_settings.level.help"), "settings-logs-log-settings-level")
-						</div>
-						<select
-							id="log-level"
-							name="level"
-							onchange="if(typeof updateEphemeralRow==='function')updateEphemeralRow()"
-							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-							hx-get="/api/v1/settings/logging"
-							hx-trigger="load"
-							hx-swap="none"
-							hx-on::after-request="if(event.detail.successful){try{loadLoggingConfig(JSON.parse(event.detail.xhr.responseText));}catch(e){}}"
-						>
-							<option value="trace">{ t(ctx, "settings.log_settings.level_trace") }</option>
-							<option value="debug">{ t(ctx, "settings.log_settings.level_debug") }</option>
-							<option value="info" selected>{ t(ctx, "common.info") }</option>
-							<option value="warn">{ t(ctx, "common.warn") }</option>
-							<option value="error">{ t(ctx, "common.error") }</option>
-						</select>
-					</div>
-					<div>
-						<div class="flex items-center gap-1 mb-1">
-							<label for="log-format" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.format") }</label>
-							@components.ContextHelp("help-log-format", t(ctx, "settings.log_settings.format"), t(ctx, "settings.log_settings.format.help"), "settings-logs-log-settings-format")
-						</div>
-						<select
-							id="log-format"
-							name="format"
-							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						>
-							<option value="json">{ t(ctx, "settings.log_settings.format_json") }</option>
-							<option value="text">{ t(ctx, "settings.log_settings.format_text") }</option>
-						</select>
-					</div>
-				</div>
-				<!-- Ephemeral level: when checked, level change is not persisted to DB -->
-				<div id="ephemeral-level-row" class="hidden flex items-center gap-2">
-					<input
-						type="checkbox"
-						id="ephemeral-level"
-						name="ephemeral"
-						value="true"
-						class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-700"
-						aria-label={ t(ctx, "settings.log_settings.revert_on_restart") }
-					/>
-					<label for="ephemeral-level" class="text-sm text-gray-600 dark:text-gray-400">
-						{ t(ctx, "settings.log_settings.revert_to") } <span id="ephemeral-revert-level" class="font-medium">info</span> { t(ctx, "settings.log_settings.on_restart") }
-					</label>
-				</div>
-				<!-- Hidden input always submitted; JS keeps it in sync with the path display field -->
-				<input type="hidden" name="file_path" id="log-file-path" value=""/>
-				<!-- Log to file toggle -->
-				<div class="flex items-center justify-between py-1">
-					<div>
-						<div class="flex items-center gap-1">
-							<p id="log-to-file-label" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.log_to_file.label") }</p>
-							@components.ContextHelp("help-log-to-file", t(ctx, "settings.log_settings.log_to_file.label"), t(ctx, "settings.log_settings.log_to_file.help"), "settings-logs-log-settings-log-to-file")
-						</div>
-						<p class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.log_to_file.description") }</p>
-					</div>
-					<button
-						type="button"
-						id="log-to-file-btn"
-						role="switch"
-						aria-checked="false"
-						aria-labelledby="log-to-file-label"
-						onclick="toggleFileLogging()"
-						class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 dark:bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
-					>
-						<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
-					</button>
-				</div>
-				<!-- File logging settings (shown when toggle is on) -->
-				<div id="file-logging-settings" class="hidden space-y-4">
-					<div>
-						<div class="flex items-center gap-1 mb-1">
-							<label for="log-file-path-display" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.file_path") }</label>
-							@components.ContextHelp("help-log-file-path", t(ctx, "settings.log_settings.file_path"), t(ctx, "settings.log_settings.file_path.help"), "settings-logs-log-settings-file-path")
-						</div>
-						<input
-							id="log-file-path-display"
-							type="text"
-							placeholder="/config/logs/stillwater.log"
-							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-							oninput="syncLogFilePath(this.value)"
-						/>
-						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.file_path_note") }</p>
-					</div>
-					<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-						<div>
-							<div class="flex items-center gap-1 mb-1">
-								<label for="log-file-max-size" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.max_size") }</label>
-								@components.ContextHelp("help-log-max-size", t(ctx, "settings.log_settings.max_size"), t(ctx, "settings.log_settings.max_size.help"), "settings-logs-log-settings-max-size")
-							</div>
-							<input id="log-file-max-size" name="file_max_size_mb" type="number" value="10" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_size") }/>
-						</div>
-						<div>
-							<div class="flex items-center gap-1 mb-1">
-								<label for="log-file-max-files" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.files_to_keep") }</label>
-								@components.ContextHelp("help-log-files-to-keep", t(ctx, "settings.log_settings.files_to_keep"), t(ctx, "settings.log_settings.files_to_keep.help"), "settings-logs-log-settings-files-to-keep")
-							</div>
-							<input id="log-file-max-files" name="file_max_files" type="number" value="5" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.files_to_keep") }/>
-						</div>
-						<div>
-							<div class="flex items-center gap-1 mb-1">
-								<label for="log-file-max-age" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.max_age") }</label>
-								@components.ContextHelp("help-log-max-age", t(ctx, "settings.log_settings.max_age"), t(ctx, "settings.log_settings.max_age.help"), "settings-logs-log-settings-max-age")
-							</div>
-							<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_age") }/>
-						</div>
-					</div>
-					<!-- Cleanup row (visible only when rotated files exist) -->
-					<div id="log-cleanup-row" class="hidden flex items-center gap-3 pt-1 border-t border-gray-200 dark:border-gray-700">
-						<button
-							type="button"
-							onclick="cleanupLogFiles()"
-							class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						>
-							{ t(ctx, "settings.log_settings.cleanup") }
-						</button>
-						<span id="log-cleanup-status" class="text-sm text-gray-500 dark:text-gray-400" role="status" aria-live="polite"></span>
-					</div>
-				</div>
-				<div class="flex items-center gap-3">
-					<button type="submit" class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-						{ t(ctx, "actions.apply") }
-					</button>
-					<span id="logging-status" role="status" aria-live="polite"></span>
-				</div>
-			</form>
-		</div>
-	</div>
-}
-
-// SectionLogViewer renders the "Log Viewer" card on the Settings Logs tab: the
-// level filter, search box, viewer controls, and the live log-stream container.
-// Exported for future use by the next/ chrome package.
-templ SectionLogViewer(data SettingsData) {
-	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_viewer.title") }</h2>
-				@components.ContextHelp("help-log-viewer", t(ctx, "settings.log_viewer.title"), t(ctx, "settings.log_viewer.help"), "settings-logs-log-viewer")
-			</div>
-			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-				{ t(ctx, "settings.log_viewer.description") }
-			</p>
-		</div>
-		<div class="px-6 py-4 space-y-3">
-			<!-- Filter bar -->
-			<div class="flex flex-wrap items-center gap-2">
-				<div class="flex items-center gap-1" role="group" aria-label={ t(ctx, "settings.log_viewer.level_filter") }>
-					<button
-						type="button"
-						data-log-level="trace"
-						onclick="toggleLogLevel(this)"
-						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-purple-900/50 text-purple-300 opacity-50 hover:opacity-100 transition-opacity"
-						aria-pressed="false"
-					>
-						{ t(ctx, "common.trace") }
-					</button>
-					<button
-						type="button"
-						data-log-level="debug"
-						onclick="toggleLogLevel(this)"
-						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-gray-700 text-gray-300 opacity-50 hover:opacity-100 transition-opacity"
-						aria-pressed="false"
-					>
-						{ t(ctx, "common.debug") }
-					</button>
-					<button
-						type="button"
-						data-log-level="info"
-						onclick="toggleLogLevel(this)"
-						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-blue-900/50 text-blue-300 ring-1 ring-blue-500/50 transition-opacity"
-						aria-pressed="true"
-					>
-						{ t(ctx, "common.info") }
-					</button>
-					<button
-						type="button"
-						data-log-level="warn"
-						onclick="toggleLogLevel(this)"
-						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-amber-900/50 text-amber-300 ring-1 ring-amber-500/50 transition-opacity"
-						aria-pressed="false"
-					>
-						{ t(ctx, "common.warn") }
-					</button>
-					<button
-						type="button"
-						data-log-level="error"
-						onclick="toggleLogLevel(this)"
-						class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-red-900/50 text-red-300 ring-1 ring-red-500/50 transition-opacity"
-						aria-pressed="false"
-					>
-						{ t(ctx, "common.error") }
-					</button>
-				</div>
-				<input
-					type="text"
-					id="log-search"
-					placeholder={ t(ctx, "settings.log_viewer.search_placeholder") }
-					oninput="updateLogFilters()"
-					class="flex-1 min-w-[150px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-					aria-label={ t(ctx, "settings.log_viewer.search_placeholder") }
-				/>
-				<div class="flex items-center gap-1">
-					<button
-						type="button"
-						id="log-pause-btn"
-						onclick="toggleLogPause()"
-						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						aria-label={ t(ctx, "actions.pause") }
-						aria-pressed="false"
-					>
-						{ t(ctx, "actions.pause") }
-					</button>
-					<button
-						type="button"
-						onclick="clearLogs()"
-						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						aria-label={ t(ctx, "actions.clear") }
-					>
-						{ t(ctx, "actions.clear") }
-					</button>
-					<button
-						type="button"
-						onclick="downloadLogs()"
-						class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						aria-label={ t(ctx, "actions.download") }
-					>
-						{ t(ctx, "actions.download") }
-					</button>
-				</div>
-			</div>
-			<!-- Log file picker (visible only when file logging is configured) -->
-			<div id="log-file-picker-row" class="hidden flex items-center gap-2">
-				<label for="log-file-select" class="text-xs text-gray-400 dark:text-gray-500 shrink-0">{ t(ctx, "settings.log_viewer.file_label") }:</label>
-				<select
-					id="log-file-select"
-					onchange="selectLogFile(this.value)"
-					class="rounded border border-gray-600 bg-gray-800 text-gray-200 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					aria-label={ t(ctx, "settings.log_viewer.select_file") }
-				>
-					<option value="">{ t(ctx, "settings.log_viewer.live_current") }</option>
-				</select>
-			</div>
-			<!-- Log viewer container -->
-			<div
-				id="log-viewer"
-				class="h-[28rem] overflow-y-auto font-mono text-xs bg-gray-950 rounded-lg border border-gray-800 p-2"
-				hx-get="/api/v1/logs?limit=200&level=info"
-				hx-trigger="load, every 2s, logRefresh from:body"
-				hx-swap="innerHTML"
-			>
-				<div class="flex items-center justify-center h-full text-gray-500 text-sm">
-					{ t(ctx, "settings.log_viewer.loading") }
-				</div>
-			</div>
-			<p class="text-xs text-gray-500 dark:text-gray-400">
-				{ t(ctx, "settings.log_viewer.footer_note") }
-			</p>
-		</div>
-	</div>
-}
-
-// SectionScannerOps renders the "Performance & Scanning" card surfacing three
-// operational settings that were previously environment-variable-only
-// (#1746 rule-engine artist-worker count, #1753 scanner exclusions + mtime
-// fast-path). Composed into the next/ Settings System group. Each control wraps
-// the shared SettingRow primitive. The artist-worker control leads with a
-// prominent caution callout: raising it only helps deployments whose providers
-// permit higher throughput (a self-hosted / mirrored MusicBrainz, for example).
-// The shared per-provider rate limiter still caps requests to the public
-// providers, so on a default install a high value mostly adds SQLite write
-// contention with no throughput gain.
-// Exported for use by the next/ chrome package.
 templ SectionScannerOps(data SettingsData) {
 	@components.SettingSection("help-scanner-ops", t(ctx, "settings.operations.title"), t(ctx, "settings.operations.help"), "settings-system-operations", t(ctx, "settings.operations.description")) {
 		<!-- Artist-worker concurrency (#1746). Prominent caution callout, then

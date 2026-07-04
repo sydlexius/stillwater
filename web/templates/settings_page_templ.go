@@ -1951,7 +1951,7 @@ func nextPlatformSymlinkCard(data SettingsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-general-symlinks").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-platform-symlinks").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2122,7 +2122,7 @@ func nextSectionActiveProfile(data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-general-active-profile").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-platform-active-profile").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

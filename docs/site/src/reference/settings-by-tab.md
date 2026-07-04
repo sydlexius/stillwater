@@ -1,12 +1,12 @@
 ---
-description: A guided tour of every tab in Settings -- what each section does, where to find specific knobs, and notable behaviors.
+description: A guided tour of every section in Settings -- what each section does, where to find specific knobs, and notable behaviors.
 ---
 
-<!-- code: web/templates/settings.templ (settingsTabs() at line 140 enumerates the 11 tabs; each panel keyed by data-tab-panel="..."). Inventory verified 2026-04-30 against main; Updates-tab fields re-verified 2026-05-01 with W2.E (#1117) landing the enabled toggle, check-interval selector, and the background scheduler that consumes auto-check (auto-apply is split out to #1284); General-tab base-path field is editable when SW_BASE_PATH is unset (#1005). -->
+<!-- code: web/templates/settings_page.templ (settingsPane() composes the sections; each is keyed by @nextSettingsSection("<id>", "<group>")). The single-scroll Settings screen promoted from the next/ lane in #1757 PR-5; the retired tabbed page and its settingsTabs() enumerator are gone. Updates-section fields re-verified 2026-05-01 with W2.E (#1117) landing the enabled toggle, check-interval selector, and the background scheduler that consumes auto-check (auto-apply is split out to #1284); the Base Path field is editable when SW_BASE_PATH is unset (#1005). -->
 
-# Settings, by tab
+# Settings, by section
 
-Stillwater's Settings page is divided into 11 tabs. This page is a navigational reference -- each section below describes one tab, the major panels inside it, and where to find specific knobs. For deeper explanation of *what the settings mean*, follow the cross-links into the relevant Core Concepts or How-to pages.
+Stillwater's Settings page is a single-scroll screen organized into sections grouped under Essentials, Data, Integrations, and System. This page is a navigational reference -- each section below describes one settings section, the major cards inside it, and where to find specific knobs. For deeper explanation of *what the settings mean*, follow the cross-links into the relevant Core Concepts or How-to pages.
 
 If you already know the name of the control you want, the search box at the top of `/settings` jumps to it directly -- see [find a setting](../how-to/find-a-setting.md).
 
@@ -14,25 +14,9 @@ If you already know the name of the control you want, the search box at the top 
 
 ## General  {#tab-general}
 
-### Platform Profile  {#settings-general-platform-profile}
+### Base Path  {#settings-general-base-path}
 
-A platform profile bundles the NFO format and image filename conventions for one media platform (Emby, Jellyfin, or Kodi), since each platform expects metadata laid out differently on disk. The active profile is the one Stillwater uses when writing files; change it here to retarget output for a different platform.
-
-### Active Profile Details  {#settings-general-active-profile}
-
-A platform profile bundles the NFO format and image filename conventions for one media platform (Emby, Jellyfin, or Kodi). This card shows what the active profile will write and lets you override the filename used for each image type. Edits are saved back to the profile.
-
-- **NFO Output** -- NFO files are XML metadata sidecars that Emby, Jellyfin, and Kodi read alongside artist folders to display biography, MusicBrainz ID, and other curated values. This row reflects the active platform profile's NFO output choice: whether Stillwater writes them at all, and in which format. Edit the profile to change.
-{: #settings-general-active-profile-nfo-output }
-- **Save Filenames** -- Image filenames are how each platform discovers cover art on disk (folder.jpg, fanart.jpg, banner.jpg, and so on). Saves the per-image-type filenames you edited above into the active profile so future image writes land at those paths.
-{: #settings-general-active-profile-save-filenames }
-
-### Profile naming  {#settings-general-profile-naming}
-
-- **Enter filename (e.g. folder.jpg):**
-{: #settings-general-profile-naming-prompt-filename }
-
-### Use symlinks for duplicates  {#settings-general-symlinks}
+URL path prefix for running Stillwater behind a reverse proxy at a sub-path.
 
 ### TLS Status  {#settings-general-tls-status}
 
@@ -59,22 +43,66 @@ Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW
 - **HTTP/3 on :%d/UDP** -- HTTP/3 (QUIC) listener over UDP. The port number is substituted at runtime. *Visibility:* Only present when SW_HTTP3_ENABLED=true.
 {: #settings-general-tls-status-listener-http3 }
 
-### Base Path  {#settings-general-base-path}
+### Confirmation Dialogs  {#settings-general-confirm-dialogs}
 
-URL path prefix for running Stillwater behind a reverse proxy at a sub-path.
+Destructive actions in Stillwater (delete an artist, clear a cache, revoke a token) prompt you to confirm before going through. Each dialog has a Don't ask again checkbox; this section lists every dialog you have suppressed so you can re-enable the prompt if you change your mind.
 
-### Image Cache  {#settings-general-image-cache}
+## Music libraries  {#tab-libraries}
 
-When an artist comes from a connected media server but Stillwater cannot resolve the artist's folder on disk, downloaded cover art is stored in a local image cache instead so the UI can still render thumbnails. This section shows the cache size, lets you cap how big it can grow, and lets you clear it.
+### Music Libraries  {#settings-libraries-libraries}
 
-- **Maximum size** -- Cap the total disk space the image cache may use. When the cache reaches this size, the oldest entries are evicted first. Pick from 256 MB, 512 MB, 1 GB, 2 GB, or Unlimited.
-{: #settings-general-image-cache-max-size }
-- **Unlimited** -- When the maximum size is set to Unlimited, Stillwater never evicts cached images automatically. Disk usage grows with each new image fetched.
-{: #settings-general-image-cache-unlimited }
-- **Clear Cache** -- Remove every image currently held in the local cache. Cached images are re-fetched from providers the next time an artist screen is opened.
-{: #settings-general-image-cache-clear }
+A library is a top-level directory containing one folder per artist; that is the layout Emby, Jellyfin, and Kodi all expect. Add a library entry for each such directory you want Stillwater to scan and write into. Filesystem watch mode is configured per entry below.
 
-## Providers  {#tab-providers}
+- **Connection**
+{: #settings-libraries-libraries-connection-badge }
+- **Lock NFOs** -- When on, Stillwater stamps a lockdata flag into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists so Stillwater's curated values are not overwritten by the platform's own scrapers. Off by default. Artists whose NFO already contains a lockdata flag (set by Stillwater or another tool) are automatically marked as locked at the artist level.
+{: #settings-libraries-libraries-lock-nfo-label }
+- **Filesystem monitoring mode** -- How Stillwater detects new or changed files in this library. Watching subscribes to native filesystem events; polling re-scans on a fixed interval.
+{: #settings-libraries-libraries-fs-mode-title }
+- **Re-sync Artists**
+{: #settings-libraries-libraries-resync }
+- **Scan Library**
+{: #settings-libraries-libraries-scan }
+- **Off** -- Stillwater does not monitor this library's filesystem. New files are picked up only by manual scans.
+{: #settings-libraries-libraries-fs-off }
+- **Watch** -- Subscribe to native filesystem events so changes are picked up immediately. Recommended for local disks.
+{: #settings-libraries-libraries-fs-watch }
+- **Poll** -- Periodically re-scan the library for changes. Works on every filesystem but adds some delay between a change and Stillwater noticing it.
+{: #settings-libraries-libraries-fs-poll }
+- **Watch + Poll** -- Combine native filesystem events with periodic polling. Useful when watching alone misses some changes (for example, on certain network shares).
+{: #settings-libraries-libraries-fs-both }
+- **Poll interval**
+{: #settings-libraries-libraries-poll-interval-title }
+- **Add Library**
+{: #settings-libraries-libraries-add }
+- **Library Name**
+{: #settings-libraries-libraries-name }
+- **Library Path**
+{: #settings-libraries-libraries-path }
+
+## Platform profile  {#tab-platform}
+
+### Platform Profile  {#settings-platform-platform-profile}
+
+A platform profile bundles the NFO format and image filename conventions for one media platform (Emby, Jellyfin, or Kodi), since each platform expects metadata laid out differently on disk. The active profile is the one Stillwater uses when writing files; change it here to retarget output for a different platform.
+
+### Active Profile Details  {#settings-platform-active-profile}
+
+A platform profile bundles the NFO format and image filename conventions for one media platform (Emby, Jellyfin, or Kodi). This card shows what the active profile will write and lets you override the filename used for each image type. Edits are saved back to the profile.
+
+- **NFO Output** -- NFO files are XML metadata sidecars that Emby, Jellyfin, and Kodi read alongside artist folders to display biography, MusicBrainz ID, and other curated values. This row reflects the active platform profile's NFO output choice: whether Stillwater writes them at all, and in which format. Edit the profile to change.
+{: #settings-platform-active-profile-nfo-output }
+- **Save Filenames** -- Image filenames are how each platform discovers cover art on disk (folder.jpg, fanart.jpg, banner.jpg, and so on). Saves the per-image-type filenames you edited above into the active profile so future image writes land at those paths.
+{: #settings-platform-active-profile-save-filenames }
+
+### Profile naming  {#settings-platform-profile-naming}
+
+- **Enter filename (e.g. folder.jpg):**
+{: #settings-platform-profile-naming-prompt-filename }
+
+### Use symlinks for duplicates  {#settings-platform-symlinks}
+
+## Metadata providers  {#tab-providers}
 
 ### Provider API Keys  {#settings-providers-provider-keys}
 
@@ -90,54 +118,6 @@ Most metadata providers (Fanart.tv, Discogs, TheAudioDB, and others) require a f
 {: #settings-providers-provider-keys-key-configured }
 - **API key required** -- Shown next to a provider that needs an API key but does not have one saved yet. Stillwater skips this provider during lookups until a key is added.
 {: #settings-providers-provider-keys-key-required }
-
-### Web Image Search  {#settings-providers-web-search}
-
-Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalogue of images per artist; for obscure or local artists they often have nothing. Web image search (DuckDuckGo) crawls the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.
-
-### Provider Priorities  {#settings-providers-priorities}
-
-For each metadata field (biography, genres, image URLs, and so on) Stillwater queries providers in a specific order and uses the first non-empty answer. This list is that order: drag to rearrange, click the checkmark or X to include or skip a provider for a given field. Only providers you have configured appear here.
-
-- **Restore defaults**
-{: #settings-providers-priorities-restore-defaults }
-
-### Metadata Language Preferences  {#settings-providers-metadata-languages}
-
-Set your preferred languages for artist names, biographies, aliases, and genre/style/mood tags. Search by language name and pick from the autocomplete to add pills. Order matters: pills are an ordered priority list, left to right. When a provider has the same field in multiple languages, Stillwater walks the list and uses the first language the provider offers; everything to the right is a fallback. Drag pills or focus one and use the arrow keys to reorder; click the X or press Backspace on a focused pill to remove. Clearing all pills falls back to English silently.
-
-- **Search languages**
-{: #settings-providers-metadata-languages-input-label }
-- **Remove**
-{: #settings-providers-metadata-languages-remove }
-- **Use MB sort-name as a fallback for display names** -- When your top metadata language is Latin-script (English, German, French, etc.) and MusicBrainz does not have a tagged alias in that language, Stillwater can use MB's sort-name as the display name (e.g. 青木達之 becomes Tatsuyuki Aoki). Disable this if you want to see only the canonical name or curator-tagged aliases.
-{: #settings-providers-metadata-languages-romanization-fallback }
-
-### Advanced  {#settings-providers-advanced}
-
-Provider matching is how Stillwater decides whether a search result returned by MusicBrainz, Discogs, or another source actually refers to the artist you asked about. These controls adjust the thresholds and tie-breakers used during that match.
-
-### Name similarity  {#settings-providers-name-similarity}
-
-Minimum similarity score (0-100) required when matching artist names from search results. Set to 0 to disable name validation and accept any result. Default is 60.
-
-- **Name Similarity Threshold**
-{: #settings-providers-name-similarity-label }
-
-### Tag Sources  {#settings-providers-tag-sources}
-
-Filter genre, style, and mood tags written to artist metadata. Exclude patterns drop matching tags before they are saved; count caps limit how many tags of each type are kept.
-
-- **Exclude Patterns** -- One pattern per line, case-insensitive. An asterisk (*) is a wildcard that matches any run of characters. Blank lines are ignored.
-{: #settings-providers-tag-sources-exclude }
-- **Tag Count Caps** -- Set to 0 to allow an unlimited number of tags. When a cap is set, the highest-priority provider's tags fill the slots first.
-{: #settings-providers-tag-sources-caps }
-- **Max Genres**
-{: #settings-providers-tag-sources-caps-max-genres }
-- **Max Styles**
-{: #settings-providers-tag-sources-caps-max-styles }
-- **Max Moods**
-{: #settings-providers-tag-sources-caps-max-moods }
 
 ### Provider config  {#settings-providers-provider-config}
 
@@ -166,20 +146,156 @@ Filter genre, style, and mood tags written to artist metadata. Exclude patterns 
 - **Field verbosity** -- Controls the level of detail fetched from the provider for specific metadata fields.
 {: #settings-providers-provider-config-verbosity-section }
 
-## Connections  {#tab-connections}
+### Web Image Search  {#settings-providers-web-search}
+
+Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalogue of images per artist; for obscure or local artists they often have nothing. Web image search (DuckDuckGo) crawls the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.
+
+### Provider Priorities  {#settings-providers-priorities}
+
+For each metadata field (biography, genres, image URLs, and so on) Stillwater queries providers in a specific order and uses the first non-empty answer. This list is that order: drag to rearrange, click the checkmark or X to include or skip a provider for a given field. Only providers you have configured appear here.
+
+- **Restore defaults**
+{: #settings-providers-priorities-restore-defaults }
+- **Drag to reorder. Click to enable/disable.**
+{: #settings-providers-priorities-instructions }
+- **Disable this provider**
+{: #settings-providers-priorities-disable-provider }
+- **Enable this provider**
+{: #settings-providers-priorities-enable-provider }
+- **No configured providers for this field.**
+{: #settings-providers-priorities-no-providers }
+
+### Tag Sources  {#settings-providers-tag-sources}
+
+Filter genre, style, and mood tags written to artist metadata. Exclude patterns drop matching tags before they are saved; count caps limit how many tags of each type are kept.
+
+- **Exclude Patterns** -- One pattern per line, case-insensitive. An asterisk (*) is a wildcard that matches any run of characters. Blank lines are ignored.
+{: #settings-providers-tag-sources-exclude }
+- **Tag Count Caps** -- Set to 0 to allow an unlimited number of tags. When a cap is set, the highest-priority provider's tags fill the slots first.
+{: #settings-providers-tag-sources-caps }
+- **Max Genres**
+{: #settings-providers-tag-sources-caps-max-genres }
+- **Max Styles**
+{: #settings-providers-tag-sources-caps-max-styles }
+- **Max Moods**
+{: #settings-providers-tag-sources-caps-max-moods }
+
+## Languages  {#tab-languages}
+
+### Metadata Language Preferences  {#settings-languages-metadata-languages}
+
+Set your preferred languages for artist names, biographies, aliases, and genre/style/mood tags. Search by language name and pick from the autocomplete to add pills. Order matters: pills are an ordered priority list, left to right. When a provider has the same field in multiple languages, Stillwater walks the list and uses the first language the provider offers; everything to the right is a fallback. Drag pills or focus one and use the arrow keys to reorder; click the X or press Backspace on a focused pill to remove. Clearing all pills falls back to English silently.
+
+- **Search languages**
+{: #settings-languages-metadata-languages-input-label }
+- **Remove**
+{: #settings-languages-metadata-languages-remove }
+- **Use MB sort-name as a fallback for display names** -- When your top metadata language is Latin-script (English, German, French, etc.) and MusicBrainz does not have a tagged alias in that language, Stillwater can use MB's sort-name as the display name (e.g. 青木達之 becomes Tatsuyuki Aoki). Disable this if you want to see only the canonical name or curator-tagged aliases.
+{: #settings-languages-metadata-languages-romanization-fallback }
+
+## Rules & severity  {#tab-rules}
+
+### Rules  {#settings-rules-rules}
+
+- **paused: conflict gating** -- A conflict gate is Stillwater's safeguard that pauses its own writes when a connected media server has its own NFO or image saver enabled, since whichever wrote second wins and edits would otherwise round-trip endlessly. This chip appears on the NFO or Image rule category header while a gate is active for that surface; auto-fix stays paused until you turn off the platform-side saver and dismiss the banner.
+{: #settings-rules-rules-conflict-gated-chip }
+- **Requires local library** -- Some rules check or rewrite files on disk, which only works for libraries whose path Stillwater can read directly (not API-only libraries imported through Emby or Jellyfin). This badge marks a rule that depends on local-filesystem access; the rule stays disabled until you add at least one library with a real filesystem path on the Libraries tab.
+{: #settings-rules-rules-requires-local }
+- **Auto-fix** -- When this rule is enabled, the dropdown picks how Stillwater handles a failed check: manual records the violation on the Reports page so you can review and apply fixes yourself, while auto applies the fix during the same scan without waiting for review. Disabling the rule is a separate toggle.
+{: #settings-rules-rules-auto-fix }
+- **Manual (notify only)** -- When this rule is enabled, the dropdown picks how Stillwater handles a failed check: manual records the violation on the Reports page so you can review and apply fixes yourself, while auto applies the fix during the same scan. Disabling the rule is a separate toggle.
+{: #settings-rules-rules-manual }
+- **Resolution preset**
+{: #settings-rules-rules-resolution-preset }
+- **-- select preset --**
+{: #settings-rules-rules-select-preset }
+- **Min width (px)**
+{: #settings-rules-rules-min-width }
+- **Min height (px)**
+{: #settings-rules-rules-min-height }
+- **Aspect ratio preset**
+{: #settings-rules-rules-aspect-preset }
+- **Aspect ratio (decimal)**
+{: #settings-rules-rules-aspect-ratio }
+- **Tolerance (e.g. 0.1)**
+{: #settings-rules-rules-tolerance }
+- **Min length (chars)**
+{: #settings-rules-rules-min-length }
+- **Threshold % (total area)**
+{: #settings-rules-rules-threshold-percent }
+- **Trim margin (px)**
+{: #settings-rules-rules-trim-margin }
+- **Severity**
+{: #settings-rules-rules-severity-label }
+
+### Preset  {#settings-rules-preset}
+
+- **720p HD (1280x720)**
+{: #settings-rules-preset-fanart-720p }
+- **1080p Full HD (1920x1080)**
+{: #settings-rules-preset-fanart-1080p }
+- **1440p QHD (2560x1440)**
+{: #settings-rules-preset-fanart-1440p }
+- **4K UHD (3840x2160)**
+{: #settings-rules-preset-fanart-4k }
+- **Standard (500x500)**
+{: #settings-rules-preset-thumb-standard }
+- **HD (1000x1000)**
+{: #settings-rules-preset-thumb-hd }
+- **Ultra (2000x2000)**
+{: #settings-rules-preset-thumb-ultra }
+- **Kodi standard (758x140)**
+{: #settings-rules-preset-banner-kodi }
+- **Wide (1000x185)**
+{: #settings-rules-preset-banner-wide }
+- **Standard (400px)**
+{: #settings-rules-preset-logo-standard }
+- **Large (800px)**
+{: #settings-rules-preset-logo-large }
+- **16:9 widescreen (1.778)**
+{: #settings-rules-preset-aspect-16-9 }
+- **16:10 (1.6)**
+{: #settings-rules-preset-aspect-16-10 }
+- **2:1 ultra-wide (2.0)**
+{: #settings-rules-preset-aspect-2-1 }
+- **1:1 square (1.0)**
+{: #settings-rules-preset-aspect-1-1 }
+
+## Schedule  {#tab-schedule}
+
+### Scheduled Evaluation  {#settings-schedule-rule-schedule}
+
+A rule is a check that compares the actual state of an artist's NFO or images against the value Stillwater believes is correct. Scheduling makes Stillwater run every enabled rule across the whole library on a fixed cadence (in addition to triggering them on changes). Requires a container restart after changing.
+
+### Schedule  {#settings-schedule-schedule}
+
+- **Every 5 minutes**
+{: #settings-schedule-schedule-every-5m }
+- **Every 15 minutes**
+{: #settings-schedule-schedule-every-15m }
+- **Every 30 minutes**
+{: #settings-schedule-schedule-every-30m }
+- **Every hour**
+{: #settings-schedule-schedule-every-hour }
+- **Every 6 hours**
+{: #settings-schedule-schedule-every-6h }
+- **Every 12 hours**
+{: #settings-schedule-schedule-every-12h }
+- **Daily (24h)**
+{: #settings-schedule-schedule-daily }
+
+## Servers (Emby, Jellyfin, Lidarr)  {#tab-connections}
 
 ### Server Connections  {#settings-connections-connections}
 
 A connection is a credentialed link to an external media server (Emby, Jellyfin, or Lidarr) that lets Stillwater both read its library structure and write NFO files and images back into the artist folders that server manages. Add one connection per server you want Stillwater to integrate with.
 
+- **Discover Libraries**
+{: #settings-connections-connections-discover }
 - **Feature toggles**
 {: #settings-connections-connections-feature-toggles }
 - **What Stillwater sends to this connection**
 {: #settings-connections-connections-sends-heading }
-- **Library import** -- When on, Stillwater imports library and artist metadata from this server during scans.
-{: #settings-connections-connections-feature-library-import }
-- **NFO write** -- When on, Stillwater writes artist.nfo files into folders this server's libraries cover. Writes can still be paused by the conflict banner shown at the top of the page when a round-trip with the platform's own NFO saver would otherwise overwrite Stillwater's edits.
-{: #settings-connections-connections-feature-nfo-write }
 - **Image download/write** -- When on, Stillwater downloads images from providers and writes them to artist folders that this server's libraries cover. Writes can still be paused by the conflict banner shown at the top of the page when a round-trip with the platform's own image saver would otherwise overwrite Stillwater's edits.
 {: #settings-connections-connections-feature-image-write }
 - **Let Stillwater manage images and NFO files on this server**
@@ -194,116 +310,55 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-api-key }
 - **Not configured**
 {: #settings-connections-connections-not-configured }
+- **Add server**
+{: #settings-connections-connections-add-server }
+- **Choose a server type**
+{: #settings-connections-connections-pick-type }
 
-## Libraries  {#tab-libraries}
+## Webhooks & notifications  {#tab-webhooks}
 
-### Music Libraries  {#settings-libraries-libraries}
-
-A library is a top-level directory containing one folder per artist; that is the layout Emby, Jellyfin, and Kodi all expect. Add a library entry for each such directory you want Stillwater to scan and write into. Filesystem watch mode is configured per entry below.
-
-- **Connection**
-{: #settings-libraries-libraries-connection-badge }
-- **Lock NFOs** -- When on, Stillwater stamps a lockdata flag into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists so Stillwater's curated values are not overwritten by the platform's own scrapers. Off by default. Artists whose NFO already contains a lockdata flag (set by Stillwater or another tool) are automatically marked as locked at the artist level.
-{: #settings-libraries-libraries-lock-nfo-label }
-- **Filesystem monitoring mode** -- How Stillwater detects new or changed files in this library. Watching subscribes to native filesystem events; polling re-scans on a fixed interval.
-{: #settings-libraries-libraries-fs-mode-title }
-- **Re-sync Artists**
-{: #settings-libraries-libraries-resync }
-- **Scan Library**
-{: #settings-libraries-libraries-scan }
-- **Add Library**
-{: #settings-libraries-libraries-add }
-- **Library Name**
-{: #settings-libraries-libraries-name }
-- **Library Path**
-{: #settings-libraries-libraries-path }
-- **Off** -- Stillwater does not monitor this library's filesystem. New files are picked up only by manual scans.
-{: #settings-libraries-libraries-fs-off }
-- **Watch** -- Subscribe to native filesystem events so changes are picked up immediately. Recommended for local disks.
-{: #settings-libraries-libraries-fs-watch }
-- **Poll** -- Periodically re-scan the library for changes. Works on every filesystem but adds some delay between a change and Stillwater noticing it.
-{: #settings-libraries-libraries-fs-poll }
-- **Watch + Poll** -- Combine native filesystem events with periodic polling. Useful when watching alone misses some changes (for example, on certain network shares).
-{: #settings-libraries-libraries-fs-both }
-- **Poll interval**
-{: #settings-libraries-libraries-poll-interval-title }
-
-## Automation  {#tab-automation}
-
-### Webhooks  {#settings-automation-webhooks}
+### Webhooks  {#settings-webhooks-webhooks}
 
 A webhook is an HTTP POST Stillwater sends to a URL you provide whenever a chosen event happens (a rule fixes a violation, an artist is added, and so on). Configure as many webhooks as you need to forward Stillwater events into Slack, Discord, your home automation, or any service that can accept JSON over HTTP.
 
 - **Add Webhook**
-{: #settings-automation-webhooks-add }
+{: #settings-webhooks-webhooks-add }
 - **Webhook name**
-{: #settings-automation-webhooks-name }
+{: #settings-webhooks-webhooks-name }
 - **Webhook type**
-{: #settings-automation-webhooks-type }
+{: #settings-webhooks-webhooks-type }
 - **Select type...**
-{: #settings-automation-webhooks-select-type }
+{: #settings-webhooks-webhooks-select-type }
 - **Generic (JSON)** -- Send a generic JSON payload describing the event. Use this for in-house tooling or services without a dedicated formatter.
-{: #settings-automation-webhooks-type-generic }
+{: #settings-webhooks-webhooks-type-generic }
 - **Webhook URL**
-{: #settings-automation-webhooks-url }
+{: #settings-webhooks-webhooks-url }
 
-### Notification Badges  {#settings-automation-notif-badges}
+### Notification Badges  {#settings-webhooks-notif-badges}
 
 A violation is what Stillwater records when an enabled rule disagrees with what the artist's NFO or images contain on disk. The sidebar badge surfaces the count of active violations directly in the navigation so you do not have to open the Reports page to know whether anything needs attention.
 
 - **Enable badge** -- When on, the Reports link in the sidebar carries a small numeric badge whose count is the number of active violations matching the severity filters below. Turn it off if you would rather not see the count at a glance.
-{: #settings-automation-notif-badges-enable-badge }
+{: #settings-webhooks-notif-badges-enable-badge }
 - **Count violations by severity** -- Each violation has a severity (info, warning, error). These toggles decide which severities the sidebar badge tallies; disabling a severity hides it from the count without removing those violations from the Reports page itself.
-{: #settings-automation-notif-badges-count-by-severity }
+{: #settings-webhooks-notif-badges-count-by-severity }
 
-### API Tokens  {#settings-automation-api-tokens}
+## API tokens  {#tab-tokens}
+
+### API Tokens  {#settings-tokens-api-tokens}
 
 API tokens are long-lived credentials that let scripts and external tools call the Stillwater REST API without a browser session. Each token is scoped (read, write, webhook, or admin) so you can grant exactly the access an integration needs and revoke it independently.
 
 - **Revoked**
-{: #settings-automation-api-tokens-revoked }
+{: #settings-tokens-api-tokens-revoked }
 - **Read** -- Read-only access to artists, libraries, rules, and settings. Safe for dashboards and one-way integrations that only fetch data.
-{: #settings-automation-api-tokens-scope-read }
+{: #settings-tokens-api-tokens-scope-read }
 - **Write** -- Create and modify artists, run rules, and queue background work. Use this for automation scripts that need to make changes but should not touch user accounts.
-{: #settings-automation-api-tokens-scope-write }
+{: #settings-tokens-api-tokens-scope-write }
 - **Webhook** -- Lets the token receive inbound webhook deliveries from external systems. Pair with a single integration so an exposed token does not also grant read or write access.
-{: #settings-automation-api-tokens-scope-webhook }
+{: #settings-tokens-api-tokens-scope-webhook }
 - **Admin** -- Grants every API scope (read, write, and webhook) on top of the routes the owning user's role allows. Routes that are gated by the administrator role still require the owning user to be an administrator; revocation is always limited to the owning user's own tokens.
-{: #settings-automation-api-tokens-scope-admin }
-
-## Rules  {#tab-rules}
-
-### Rules  {#settings-rules-rules}
-
-- **paused: conflict gating** -- A conflict gate is Stillwater's safeguard that pauses its own writes when a connected media server has its own NFO or image saver enabled, since whichever wrote second wins and edits would otherwise round-trip endlessly. This chip appears on the NFO or Image rule category header while a gate is active for that surface; auto-fix stays paused until you turn off the platform-side saver and dismiss the banner.
-{: #settings-rules-rules-conflict-gated-chip }
-- **Requires local library** -- Some rules check or rewrite files on disk, which only works for libraries whose path Stillwater can read directly (not API-only libraries imported through Emby or Jellyfin). This badge marks a rule that depends on local-filesystem access; the rule stays disabled until you add at least one library with a real filesystem path on the Libraries tab.
-{: #settings-rules-rules-requires-local }
-- **Auto-fix** -- When this rule is enabled, the dropdown picks how Stillwater handles a failed check: manual records the violation on the Reports page so you can review and apply fixes yourself, while auto applies the fix during the same scan without waiting for review. Disabling the rule is a separate toggle.
-{: #settings-rules-rules-auto-fix }
-- **Manual (notify only)** -- When this rule is enabled, the dropdown picks how Stillwater handles a failed check: manual records the violation on the Reports page so you can review and apply fixes yourself, while auto applies the fix during the same scan. Disabling the rule is a separate toggle.
-{: #settings-rules-rules-manual }
-
-### Scheduled Evaluation  {#settings-rules-rule-schedule}
-
-A rule is a check that compares the actual state of an artist's NFO or images against the value Stillwater believes is correct. Scheduling makes Stillwater run every enabled rule across the whole library on a fixed cadence (in addition to triggering them on changes). Requires a container restart after changing.
-
-### Schedule  {#settings-rules-schedule}
-
-- **Every 5 minutes**
-{: #settings-rules-schedule-every-5m }
-- **Every 15 minutes**
-{: #settings-rules-schedule-every-15m }
-- **Every 30 minutes**
-{: #settings-rules-schedule-every-30m }
-- **Every hour**
-{: #settings-rules-schedule-every-hour }
-- **Every 6 hours**
-{: #settings-rules-schedule-every-6h }
-- **Every 12 hours**
-{: #settings-rules-schedule-every-12h }
-- **Daily (24h)**
-{: #settings-rules-schedule-daily }
+{: #settings-tokens-api-tokens-scope-admin }
 
 ## Users  {#tab-users}
 
@@ -392,88 +447,123 @@ An invite is a one-time link Stillwater issues to a prospective user; redeeming 
 - **Revoke**
 {: #settings-users-users-revoke }
 
-## Auth Providers  {#tab-auth-providers}
+## Auth providers  {#tab-auth}
 
-### Authentication Providers  {#settings-auth-providers-auth}
+### Authentication Providers  {#settings-auth-auth}
 
 An authentication provider is the system Stillwater asks to verify a user's password before letting them in: a local username/password, an Emby or Jellyfin server, or an OIDC identity provider. Enable as many as you want; users see a sign-in button per enabled provider.
 
 - **Local** -- Local accounts live in Stillwater's own user table: username, role, and a password hash that Stillwater verifies itself with no external service involved. This is the simplest provider to enable and is on by default for the first admin account.
-{: #settings-auth-providers-auth-local }
+{: #settings-auth-auth-local }
 - **Emby** -- When this provider is on, the sign-in form asks for the username and password of an account on the linked Emby server and verifies them against Emby's API rather than against Stillwater's own user table. Reuses whichever Emby connection you have already configured.
-{: #settings-auth-providers-auth-emby }
+{: #settings-auth-auth-emby }
 - **Enable Emby Auth**
-{: #settings-auth-providers-auth-enable-emby }
+{: #settings-auth-auth-enable-emby }
 - **Server URL**
-{: #settings-auth-providers-auth-server-url }
+{: #settings-auth-auth-server-url }
 - **Sourced from your Emby connection**
-{: #settings-auth-providers-auth-sourced-from-emby }
+{: #settings-auth-auth-sourced-from-emby }
 - **Auto-Provision** -- Auto-provisioning means Stillwater creates a local account on the fly the first time someone signs in through the upstream provider. With this on, anyone who can authenticate against the linked Emby server gets a Stillwater account without an admin issuing an invite first; the guard rail below decides who actually qualifies.
-{: #settings-auth-providers-auth-auto-provision-emby }
+{: #settings-auth-auth-auto-provision-emby }
 - **Emby Auto-Provision**
-{: #settings-auth-providers-auth-enable-auto-provision-emby }
+{: #settings-auth-auth-enable-auto-provision-emby }
 - **Guard Rail** -- When auto-provisioning is on, the guard rail narrows who actually gets an account created. Pick admins-only to limit it to users with admin rights on the upstream Emby or Jellyfin server, or any user to provision everyone the provider authenticates.
-{: #settings-auth-providers-auth-guard-rail }
+{: #settings-auth-auth-guard-rail }
 - **Emby guard rail setting**
-{: #settings-auth-providers-auth-emby-guard-rail }
+{: #settings-auth-auth-emby-guard-rail }
 - **Admins only** -- Only users with an existing admin account in the upstream provider are allowed to auto-provision. Other users can still sign in but will not have a Stillwater account created for them.
-{: #settings-auth-providers-auth-admins-only }
+{: #settings-auth-auth-admins-only }
 - **Any user** -- Every user the upstream provider authenticates is auto-provisioned a Stillwater account at the configured default role.
-{: #settings-auth-providers-auth-any-user }
+{: #settings-auth-auth-any-user }
 - **Default Role** -- Stillwater accounts have a role (Administrator or User) that decides what they can change. This setting picks the role assigned to brand-new accounts created by auto-provisioning; an admin can promote or demote them later.
-{: #settings-auth-providers-auth-default-role }
+{: #settings-auth-auth-default-role }
 - **Default role for Emby users**
-{: #settings-auth-providers-auth-default-role-emby }
+{: #settings-auth-auth-default-role-emby }
 - **Jellyfin** -- When this provider is on, the sign-in form asks for the username and password of an account on the linked Jellyfin server and verifies them against Jellyfin's API rather than against Stillwater's own user table. Requires an active Jellyfin connection.
-{: #settings-auth-providers-auth-jellyfin }
+{: #settings-auth-auth-jellyfin }
 - **Enable Jellyfin Auth**
-{: #settings-auth-providers-auth-enable-jellyfin }
+{: #settings-auth-auth-enable-jellyfin }
 - **Sourced from your Jellyfin connection**
-{: #settings-auth-providers-auth-sourced-from-jellyfin }
+{: #settings-auth-auth-sourced-from-jellyfin }
 - **Auto-Provision** -- Auto-provisioning means Stillwater creates a local account on the fly the first time someone signs in through the upstream provider. With this on, anyone who can authenticate against the linked Jellyfin server gets a Stillwater account without an admin issuing an invite first; the guard rail below decides who actually qualifies.
-{: #settings-auth-providers-auth-auto-provision-jellyfin }
+{: #settings-auth-auth-auto-provision-jellyfin }
 - **Jellyfin Auto-Provision**
-{: #settings-auth-providers-auth-enable-auto-provision-jellyfin }
+{: #settings-auth-auth-enable-auto-provision-jellyfin }
 - **Jellyfin guard rail setting**
-{: #settings-auth-providers-auth-jellyfin-guard-rail }
+{: #settings-auth-auth-jellyfin-guard-rail }
 - **Default role for Jellyfin users**
-{: #settings-auth-providers-auth-default-role-jellyfin }
+{: #settings-auth-auth-default-role-jellyfin }
 - **OpenID Connect (OIDC)** -- OpenID Connect (OIDC) is a standard protocol that lets Stillwater redirect sign-in to an existing identity provider so users authenticate there once and reach every connected app without re-entering credentials. Works with Authentik, Keycloak, Authelia, Auth0, or any OIDC-compliant provider.
-{: #settings-auth-providers-auth-oidc }
+{: #settings-auth-auth-oidc }
 - **Enable OIDC Auth**
-{: #settings-auth-providers-auth-enable-oidc }
+{: #settings-auth-auth-enable-oidc }
 - **Issuer URL** -- Base URL of your OIDC provider. Stillwater discovers the rest of the endpoints automatically through the provider's well-known configuration document.
-{: #settings-auth-providers-auth-issuer-url }
+{: #settings-auth-auth-issuer-url }
 - **OIDC Issuer URL**
-{: #settings-auth-providers-auth-oidc-issuer }
+{: #settings-auth-auth-oidc-issuer }
 - **OIDC Client ID** -- Public identifier registered for Stillwater in your OIDC provider.
-{: #settings-auth-providers-auth-client-id }
+{: #settings-auth-auth-client-id }
 - **OIDC Client Secret** -- Confidential credential issued by your OIDC provider. Leave blank when editing other fields to keep the existing secret.
-{: #settings-auth-providers-auth-client-secret }
+{: #settings-auth-auth-client-secret }
 - **Default role for OIDC users not in an admin group**
-{: #settings-auth-providers-auth-default-role-oidc }
+{: #settings-auth-auth-default-role-oidc }
 - **OIDC Admin Groups** -- Comma-separated list of OIDC groups whose members are granted the Administrator role. Stillwater reads the values from the groups claim on the ID token.
-{: #settings-auth-providers-auth-admin-groups }
+{: #settings-auth-auth-admin-groups }
 - **OIDC Allowed Groups** -- Comma-separated list of OIDC groups allowed to log in. Leave empty to allow every authenticated user from this provider.
-{: #settings-auth-providers-auth-allowed-groups }
+{: #settings-auth-auth-allowed-groups }
 - **Display Name** -- Provider name shown on the sign-in button. Falls back to a generic OIDC label when blank.
-{: #settings-auth-providers-auth-oidc-display-name }
+{: #settings-auth-auth-oidc-display-name }
 - **Logo URL** -- Optional image shown next to the OIDC sign-in button. A key icon is used when blank.
-{: #settings-auth-providers-auth-oidc-logo-url }
+{: #settings-auth-auth-oidc-logo-url }
 - **Auto-Provision** -- Auto-provisioning means Stillwater creates a local account on the fly the first time someone signs in. With this on, every user the OIDC provider authenticates gets a Stillwater account without an admin issuing an invite first; the allowed groups list below restricts who qualifies.
-{: #settings-auth-providers-auth-auto-provision-oidc }
+{: #settings-auth-auth-auto-provision-oidc }
 - **Enable auto-provisioning for OIDC users**
-{: #settings-auth-providers-auth-enable-auto-provision-oidc }
+{: #settings-auth-auth-enable-auto-provision-oidc }
 - **OIDC Auto-Provision**
-{: #settings-auth-providers-auth-oidc-auto-provision }
+{: #settings-auth-auth-oidc-auto-provision }
+
+## Configuration file  {#tab-config-file}
+
+### Performance & Scanning  {#settings-config-file-operations}
+
+Operational tuning knobs for scanning and rule evaluation. These were previously available only as environment variables.
+
+- **Advanced: only raise this for self-hosted or mirrored providers**
+{: #settings-config-file-operations-workers-caution-title }
+- **Raising this only helps if your metadata providers permit higher request throughput, such as a self-hosted or mirrored MusicBrainz. The shared per-provider rate limiter still caps requests to the public providers, so on a default install a high value mostly adds database write contention with no speedup. Most deployments should leave this at the default.**
+{: #settings-config-file-operations-workers-caution-body }
+- **Concurrent Artists** -- How many artists the rule engine evaluates concurrently during a Run Rules pass. Default is 2. Applies on the next pass.
+{: #settings-config-file-operations-workers }
+- **Set via the %s environment variable. Edit that variable and restart to change it.**
+{: #settings-config-file-operations-env-managed }
+- **Scanner Exclusions** -- Comma-separated artist directory names the scanner skips (for example: Various Artists, Soundtrack). Whitespace around each name is trimmed. Takes effect on the next scan.
+{: #settings-config-file-operations-exclusions }
+- **Scanner mtime Fast Path** -- When on, the scanner reuses cached image flags for artist directories whose modification time has not changed since the previous scan, skipping a re-probe. Turn off on filesystems with unreliable modification times (some network shares, FUSE mounts, restored backups).
+{: #settings-config-file-operations-mtime }
+
+### Settings Export / Import  {#settings-config-file-export-import}
+
+- **Export passphrase** -- Pick a passphrase used to encrypt the exported file. You will need the same passphrase to import the file later.
+{: #settings-config-file-export-import-export-passphrase }
+- **Import settings file** -- Pick the encrypted .json file produced by a previous export.
+{: #settings-config-file-export-import-import-file-label }
+- **Import passphrase** -- Enter the same passphrase used when the file was exported.
+{: #settings-config-file-export-import-import-passphrase }
+
+### Advanced  {#settings-config-file-advanced}
+
+Provider matching is how Stillwater decides whether a search result returned by MusicBrainz, Discogs, or another source actually refers to the artist you asked about. These controls adjust the thresholds and tie-breakers used during that match.
+
+### Name similarity  {#settings-config-file-name-similarity}
+
+Minimum similarity score (0-100) required when matching artist names from search results. Set to 0 to disable name validation and accept any result. Default is 60.
+
+- **Name Similarity Threshold**
+{: #settings-config-file-name-similarity-label }
 
 ## Maintenance  {#tab-maintenance}
 
 The Maintenance tab groups five sections that keep the database and configuration healthy. Database Maintenance and Database Backup each have an auto-run option; the Schedule section supplies the shared interval choices (every 6 hours through weekly) that both use. Confirmation Dialogs lists every destructive-action prompt you have suppressed with Don't ask again, so you can re-enable any of them. Settings Export / Import lets you snapshot your full configuration as an encrypted file and restore it on the same or a different instance.
-
-### Confirmation Dialogs  {#settings-maintenance-confirm-dialogs}
-
-Destructive actions in Stillwater (delete an artist, clear a cache, revoke a token) prompt you to confirm before going through. Each dialog has a Don't ask again checkbox; this section lists every dialog you have suppressed so you can re-enable the prompt if you change your mind.
 
 ### Database Maintenance  {#settings-maintenance-db-maintenance}
 
@@ -516,64 +606,30 @@ A backup is a snapshot of Stillwater's SQLite database, which holds every artist
 - **90 days**
 {: #settings-maintenance-backup-days-90 }
 
-### Settings Export / Import  {#settings-maintenance-export-import}
+### Backup Schedule  {#settings-maintenance-backup-schedule}
 
-- **Export passphrase** -- Pick a passphrase used to encrypt the exported file. You will need the same passphrase to import the file later.
-{: #settings-maintenance-export-import-export-passphrase }
-- **Import settings file** -- Pick the encrypted .json file produced by a previous export.
-{: #settings-maintenance-export-import-import-file-label }
-- **Import passphrase** -- Enter the same passphrase used when the file was exported.
-{: #settings-maintenance-export-import-import-passphrase }
+How often Stillwater takes an automatic database backup.
 
-## Logs  {#tab-logs}
+- **Backup Interval** -- Number of hours between automatic backups. Must be a positive whole number.
+{: #settings-maintenance-backup-schedule-interval }
+- **hours**
+{: #settings-maintenance-backup-schedule-interval-unit }
 
-The Logs tab is divided into two sections. Log Settings controls what Stillwater captures: the minimum severity level, the on-disk format, and the rotation policy that determines how many files are kept and for how long. Log Viewer reads back what Log Settings retained, streaming the in-memory ring buffer live and letting you page through older rotated files; it can only show entries that the retention limits above have not already pruned.
+### Operations  {#settings-maintenance-operations}
 
-### Log Settings  {#settings-logs-log-settings}
+- **Set via the %s environment variable. Edit that variable and restart to change it.**
+{: #settings-maintenance-operations-env-managed }
 
-Stillwater emits structured log lines for every meaningful event (scans, rule fixes, API calls, errors). These settings decide how chatty those logs are, what format they use, and whether they are kept on disk in addition to stdout. Changes take effect immediately.
+### Image Cache  {#settings-maintenance-image-cache}
 
-- **Level** -- Minimum severity to record. Trace and Debug are verbose and intended for troubleshooting; Info is a good default for normal operation.
-{: #settings-logs-log-settings-level }
-- **Trace**
-{: #settings-logs-log-settings-level-trace }
-- **Debug**
-{: #settings-logs-log-settings-level-debug }
-- **Format** -- JSON is easier to ingest into log shippers and search tools. Text is more readable when you are reading the file directly.
-{: #settings-logs-log-settings-format }
-- **JSON**
-{: #settings-logs-log-settings-format-json }
-- **Text**
-{: #settings-logs-log-settings-format-text }
-- **Revert log level on restart** -- Apply the new log level only for the current process. The persisted level is restored when Stillwater restarts. Useful for temporary debug sessions.
-{: #settings-logs-log-settings-revert-on-restart }
-- **Revert to**
-{: #settings-logs-log-settings-revert-to }
-- **on restart**
-{: #settings-logs-log-settings-on-restart }
-- **Log to file** -- Write logs to a rotating file in addition to stdout.
-{: #settings-logs-log-settings-log-to-file }
-- **Log file path** -- Where Stillwater writes the rotating log file. Use a path inside your config directory so the log persists across container restarts.
-{: #settings-logs-log-settings-file-path }
-- **Max size (MB)** -- Rotate the log file once it grows past this size. The active file becomes a numbered archive and a new active file is started.
-{: #settings-logs-log-settings-max-size }
-- **Files to keep** -- Number of rotated log files to retain alongside the active one. Older files are removed during rotation.
-{: #settings-logs-log-settings-files-to-keep }
-- **Max age (days)** -- Discard rotated log files older than this many days, regardless of how many files exist.
-{: #settings-logs-log-settings-max-age }
+When an artist comes from a connected media server but Stillwater cannot resolve the artist's folder on disk, downloaded cover art is stored in a local image cache instead so the UI can still render thumbnails. This section shows the cache size, lets you cap how big it can grow, and lets you clear it.
 
-### Log Viewer  {#settings-logs-log-viewer}
-
-Stillwater keeps the most recent log lines in an in-memory ring buffer in addition to writing them to disk. The viewer streams that buffer live so you can watch what the app is doing right now, filter by severity, and grep across messages without leaving the browser.
-
-- **Log level filter**
-{: #settings-logs-log-viewer-level-filter }
-- **File**
-{: #settings-logs-log-viewer-file-label }
-- **Select log file to view**
-{: #settings-logs-log-viewer-select-file }
-- **Live (current)**
-{: #settings-logs-log-viewer-live-current }
+- **Maximum size** -- Cap the total disk space the image cache may use. When the cache reaches this size, the oldest entries are evicted first. Pick from 256 MB, 512 MB, 1 GB, 2 GB, or Unlimited.
+{: #settings-maintenance-image-cache-max-size }
+- **Unlimited** -- When the maximum size is set to Unlimited, Stillwater never evicts cached images automatically. Disk usage grows with each new image fetched.
+{: #settings-maintenance-image-cache-unlimited }
+- **Clear Cache** -- Remove every image currently held in the local cache. Cached images are re-fetched from providers the next time an artist screen is opened.
+{: #settings-maintenance-image-cache-clear }
 
 ## Updates  {#tab-updates}
 

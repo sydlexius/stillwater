@@ -29,7 +29,7 @@ Two options:
 - **Admins only** -- only users who are administrators on the upstream server qualify. This is the default. If the upstream server marks the user as an admin, Stillwater provisions them as an administrator (ignoring the configured default role for that connection). If the upstream server marks them as a regular user, login is rejected.
 - **Any user** -- any user who can authenticate against the upstream server qualifies. Combined with a permissive Emby or Jellyfin installation, this means anyone on the upstream server can sign in.
 
-The guard rail setting lives under Settings > Auth Providers > Emby (or Jellyfin) > Guard rail (see [`settings-auth-providers-auth-emby-guard-rail`](../reference/settings-by-tab.md#settings-auth-providers-auth-emby-guard-rail) and [`settings-auth-providers-auth-jellyfin-guard-rail`](../reference/settings-by-tab.md#settings-auth-providers-auth-jellyfin-guard-rail)).
+The guard rail setting lives under Settings > Auth Providers > Emby (or Jellyfin) > Guard rail (see [`settings-auth-auth-emby-guard-rail`](../reference/settings-by-tab.md#settings-auth-auth-emby-guard-rail) and [`settings-auth-auth-jellyfin-guard-rail`](../reference/settings-by-tab.md#settings-auth-auth-jellyfin-guard-rail)).
 
 ### OIDC guard rails
 
@@ -47,7 +47,7 @@ For group claims to work, the IdP must include a `groups` claim in its ID tokens
 When provisioning fires and the guard rail passes, Stillwater assigns the new account a role. The role comes from two sources in priority order:
 
 1. **Role mapping** -- if the provider signals admin status (Emby/Jellyfin: `IsAdministrator`; OIDC: `adminGroups` membership), the account is created as `administrator`.
-2. **Default role setting** -- otherwise, the configured default role for the connection is used. Both Emby and Jellyfin connections have a default role setting (see [`settings-auth-providers-auth-default-role-emby`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-emby) and [`settings-auth-providers-auth-default-role-jellyfin`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-jellyfin)); the OIDC provider has its own (see [`settings-auth-providers-auth-default-role-oidc`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-oidc)).
+2. **Default role setting** -- otherwise, the configured default role for the connection is used. Both Emby and Jellyfin connections have a default role setting (see [`settings-auth-auth-default-role-emby`](../reference/settings-by-tab.md#settings-auth-auth-default-role-emby) and [`settings-auth-auth-default-role-jellyfin`](../reference/settings-by-tab.md#settings-auth-auth-default-role-jellyfin)); the OIDC provider has its own (see [`settings-auth-auth-default-role-oidc`](../reference/settings-by-tab.md#settings-auth-auth-default-role-oidc)).
 
 The default roles are `administrator` and `operator`. Operators have full access to library management but cannot change system settings.
 
@@ -69,8 +69,8 @@ Stillwater does not delete or deactivate local accounts when the upstream accoun
 
 Auto-provisioning is disabled by default for every provider. To enable it:
 
-- For Emby: Settings > Auth Providers > Emby > Enable auto-provisioning (see [`settings-auth-providers-auth-auto-provision-emby`](../reference/settings-by-tab.md#settings-auth-providers-auth-auto-provision-emby))
-- For Jellyfin: Settings > Auth Providers > Jellyfin > Enable auto-provisioning (see [`settings-auth-providers-auth-auto-provision-jellyfin`](../reference/settings-by-tab.md#settings-auth-providers-auth-auto-provision-jellyfin))
-- For OIDC: Settings > Auth Providers > OIDC > Enable auto-provisioning (see [`settings-auth-providers-auth-auto-provision-oidc`](../reference/settings-by-tab.md#settings-auth-providers-auth-auto-provision-oidc))
+- For Emby: Settings > Auth Providers > Emby > Enable auto-provisioning (see [`settings-auth-auth-auto-provision-emby`](../reference/settings-by-tab.md#settings-auth-auth-auto-provision-emby))
+- For Jellyfin: Settings > Auth Providers > Jellyfin > Enable auto-provisioning (see [`settings-auth-auth-auto-provision-jellyfin`](../reference/settings-by-tab.md#settings-auth-auth-auto-provision-jellyfin))
+- For OIDC: Settings > Auth Providers > OIDC > Enable auto-provisioning (see [`settings-auth-auth-auto-provision-oidc`](../reference/settings-by-tab.md#settings-auth-auth-auto-provision-oidc))
 
 Each provider's auto-provision toggle is independent. You can enable it for Emby without enabling it for Jellyfin or OIDC.

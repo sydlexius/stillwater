@@ -534,7 +534,7 @@ templ nextPlatformSymlinkCard(data SettingsData) {
 				<div>
 					<div class="flex items-center gap-1">
 						<span id="symlink-toggle-label" class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</span>
-						@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-general-symlinks")
+						@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-platform-symlinks")
 					</div>
 					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 						if data.SymlinkSupported && data.ActiveProfile != nil {
@@ -588,7 +588,7 @@ templ nextSectionActiveProfile(data SettingsData) {
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<div class="flex items-center gap-2">
 					@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.active_profile.title"))
-					@components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-general-active-profile")
+					@components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-platform-active-profile")
 				</div>
 				if profileEditableNext(data.ActiveProfile) {
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">

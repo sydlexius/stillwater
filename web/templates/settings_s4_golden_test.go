@@ -114,8 +114,6 @@ func TestSettingsSections_S4_Golden(t *testing.T) {
 		{name: "db_maintenance", render: SectionDatabaseMaintenance(s4MaintenanceData).Render},
 		{name: "backup", render: SectionBackup(s4MaintenanceData).Render},
 		{name: "export_import", render: SectionExportImport(s4MaintenanceData).Render},
-		{name: "log_settings", render: SectionLogSettings(s4MaintenanceData).Render},
-		{name: "log_viewer", render: SectionLogViewer(s4MaintenanceData).Render},
 		{name: "scanner_ops", render: SectionScannerOps(s4MaintenanceData).Render},
 		{name: "backup_schedule", render: SectionBackupSchedule(s4MaintenanceData).Render},
 		{name: "scanner_ops_env_pinned", render: SectionScannerOps(s4OpsEnvPinnedData).Render},
