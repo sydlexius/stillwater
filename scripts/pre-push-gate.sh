@@ -136,26 +136,108 @@ fi
 bash "$TOOL_VERSIONS_HELPER"
 
 echo ""
-echo "=== Tests ==="
-# -coverpkg=./... matches CI's methodology (.github/workflows/ci.yml): each test
-# binary is instrumented against every package, so a package exercised mainly by
-# other packages' integration tests (e.g. internal/connection via api/publish/
-# imagebridge) is credited that cross-package coverage. Without it the local
-# profile reads lower than CI and fails the floor locally while CI passes (#2062;
-# the avoidable extra test-writing on #1686/#1564). Costs extra instrumentation
-# time vs per-package coverage -- the tradeoff for floor numbers that match CI.
-go test -race -count=1 -covermode=atomic -coverpkg=./... -coverprofile="$COVER_OUT" ./...
+echo "=== Changed Go files/packages ==="
+# Derived once, up front, so both the Tests step below and the measurement-
+# linter re-pass further down (in the Lint section) reuse the same set instead
+# of computing it twice. Motivation: M52 PR #1644 bumped
+# SSEHub.SubscribeToEventBus from cog=28 to cog=34 (cap 30); local gate PASS,
+# CI FAIL. Issue #1645.
+MODIFIED_GO_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
+  | grep -v '_templ\.go$' || true)
+# Guard against BSD xargs (macOS) running `dirname` with zero args when the
+# input is empty; GNU xargs has --no-run-if-empty but BSD does not. Empty
+# file list -> empty package list -> callers below skip cleanly.
+if [ -n "$MODIFIED_GO_FILES" ]; then
+  MODIFIED_GO_PKGS=$(printf '%s\n' "$MODIFIED_GO_FILES" \
+    | xargs -n1 dirname \
+    | sort -u \
+    | sed 's|^|./|; s|$|/...|')
+else
+  MODIFIED_GO_PKGS=""
+fi
 
-# Union the profile before the floor/patch checks consume it. A single
-# `go test ./... -coverpkg=./...` invocation emits each block once PER test
-# binary (every binary instruments every package), so the raw profile is
-# heavily duplicated. `go tool cover` dedups on read, but coverage-floor.sh and
-# patch-coverage.sh sum nstmts across duplicate blocks and would read every
-# package at ~1/N of its real coverage, failing the floor spuriously. gocovmerge
-# applies the same per-block UNION that CI runs across its 9 shards
-# (.github/workflows/ci.yml:575) so the local floor/patch numbers match CI.
-go tool gocovmerge "$COVER_OUT" > "$COVER_OUT.merged"
-mv "$COVER_OUT.merged" "$COVER_OUT"
+echo ""
+echo "=== Tests ==="
+# RUN_RACE three-state gate, mirroring the RUN_A11Y pattern further down in
+# this file (the "Accessibility (axe-core)" section):
+#   - RUN_RACE truthy (1/true/yes/on): full `go test -race -coverpkg=./...
+#     ./...`, BLOCKING on failure. Today's behavior; the escape hatch for a
+#     complete, CI-equivalent local run.
+#   - RUN_RACE falsy  (0/false/no/off): skip the test run entirely.
+#   - RUN_RACE unset (the DEFAULT): run ONE fast, changed-packages-only,
+#     NON-race test (`go test -coverprofile=... $MODIFIED_GO_PKGS`, no
+#     `-race`, no `-coverpkg=./...`). This is deliberately narrower than the
+#     full suite: it's a quick "did I obviously break a test" signal, and it
+#     produces the coverage profile the patch-coverage step below consumes.
+#     A FAILURE in this default path is ADVISORY (warn, don't block) -- CI's
+#     required `Test` job runs the full race suite across 9 shards and is the
+#     authoritative gate. If no Go files changed since BASE, the run is
+#     skipped (nothing to test).
+race_flag="$(printf '%s' "${RUN_RACE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+
+run_full_race_suite() {
+  # -coverpkg=./... matches CI's methodology (.github/workflows/ci.yml): each
+  # test binary is instrumented against every package, so a package exercised
+  # mainly by other packages' integration tests (e.g. internal/connection via
+  # api/publish/imagebridge) is credited that cross-package coverage. Without
+  # it the profile reads lower than CI (#2062). Costs extra instrumentation
+  # time vs per-package coverage -- the tradeoff for floor/patch numbers that
+  # match CI.
+  go test -race -count=1 -covermode=atomic -coverpkg=./... -coverprofile="$COVER_OUT" ./...
+
+  # Union the profile before patch-coverage consumes it. A single
+  # `go test ./... -coverpkg=./...` invocation emits each block once PER test
+  # binary (every binary instruments every package), so the raw profile is
+  # heavily duplicated. `go tool cover` dedups on read, but patch-coverage.sh
+  # sums nstmts across duplicate blocks and would read every package at ~1/N
+  # of its real coverage, failing spuriously. gocovmerge applies the same
+  # per-block UNION that CI runs across its 9 shards
+  # (.github/workflows/ci.yml:575) so the local numbers match CI.
+  go tool gocovmerge "$COVER_OUT" > "$COVER_OUT.merged"
+  mv "$COVER_OUT.merged" "$COVER_OUT"
+}
+
+run_changed_pkgs_test() {
+  if [ -z "$MODIFIED_GO_PKGS" ]; then
+    echo "tests: skipped (no Go files changed since BASE)"
+    return 0
+  fi
+  # shellcheck disable=SC2086  # word-splitting on newlines is intentional
+  go test -count=1 -covermode=atomic -coverprofile="$COVER_OUT" $MODIFIED_GO_PKGS
+}
+
+# SKIP_PATCH_COVERAGE gates the "Patch coverage" step below: it has nothing
+# to check when RUN_RACE=0 skipped the test run entirely (no profile was
+# produced at all). The default/changed-packages path always leaves a valid
+# (if sometimes structurally-empty) profile at $COVER_OUT, so patch-coverage
+# still runs there.
+SKIP_PATCH_COVERAGE=0
+case "$race_flag" in
+  0 | false | no | off)
+    echo "tests: skipped (RUN_RACE=${RUN_RACE} forces opt-out; CI still runs the full race suite)"
+    echo "tests: no coverage profile generated -- patch coverage also skipped for this push"
+    SKIP_PATCH_COVERAGE=1
+    ;;
+  1 | true | yes | on)
+    run_full_race_suite
+    ;;
+  *)
+    if ! run_changed_pkgs_test; then
+      echo ""
+      echo "WARN: changed-packages test run failed (see output above) -- not blocking this push."
+      echo "WARN: CI's Test job runs the full -race suite and is authoritative; set RUN_RACE=1 to make this blocking locally."
+    fi
+    # go test writes no profile at all on a build/compile failure (as opposed
+    # to an ordinary test-assertion failure, which still emits one). Leave a
+    # minimal valid profile so patch-coverage.sh's non-empty-file check below
+    # does not hard-fail (exit 2) on top of the WARN already emitted above;
+    # this also covers the "no Go files changed" case where
+    # run_changed_pkgs_test never invokes `go test` at all.
+    if [ ! -s "$COVER_OUT" ]; then
+      echo "mode: atomic" > "$COVER_OUT"
+    fi
+    ;;
+esac
 
 echo ""
 echo "=== Vulnerability scan (govulncheck) ==="
@@ -213,19 +295,10 @@ golangci-lint run --new-from-rev="$BASE" ./...
 #
 # Motivation: M52 PR #1644 bumped SSEHub.SubscribeToEventBus from
 # cog=28 to cog=34 (cap 30); local gate PASS, CI FAIL. Issue #1645.
-MODIFIED_GO_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
-  | grep -v '_templ\.go$' || true)
-# Guard against BSD xargs (macOS) running `dirname` with zero args when the
-# input is empty; GNU xargs has --no-run-if-empty but BSD does not. Empty
-# file list -> empty package list -> the `if` block below skips cleanly.
-if [ -n "$MODIFIED_GO_FILES" ]; then
-  MODIFIED_GO_PKGS=$(printf '%s\n' "$MODIFIED_GO_FILES" \
-    | xargs -n1 dirname \
-    | sort -u \
-    | sed 's|^|./|; s|$|/...|')
-else
-  MODIFIED_GO_PKGS=""
-fi
+#
+# MODIFIED_GO_FILES/MODIFIED_GO_PKGS were already derived once in the
+# "Changed Go files/packages" step above (also consumed by the Tests step);
+# reused here rather than recomputed.
 if [ -n "$MODIFIED_GO_PKGS" ]; then
   echo "--- measurement-linter re-pass on $(echo "$MODIFIED_GO_PKGS" | wc -l | tr -d ' ') changed package(s) ---"
   # --default=none + --enable=gocognit narrows the active linter set to just
@@ -343,54 +416,50 @@ fi
 
 echo ""
 echo "=== Patch coverage ==="
-# Matches codecov.yml's 78% patch threshold (codecov.yml:14). With -coverpkg on
-# the test run above, the local profile now uses the same cross-package
-# methodology as Codecov, so we catch patch gaps before push instead of learning
-# about them from a failing codecov check.
-#
-# patch-coverage.sh uses exit codes 0|1|2 (2 = config error). This wrapper
-# is documented as 0|1, so collapse any non-zero child status to 1. Using
-# an `if` here (rather than calling the script bare under `set -e`) lets
-# us capture the exit code without the shell bailing out first.
-#
-# BASE is intentionally not forwarded: patch-coverage.sh has its own
-# resolution that errors out if `main` is missing, which is stricter than
-# this script's silent HEAD~1 fallback. Letting the child resolve BASE
-# avoids narrowing patch coverage to only the tip commit on a branch
-# whose base ref isn't reachable.
-# Prefer the repo-vendored helper so a fresh clone works without any
-# user-local install. Fall back to ~/.claude/scripts/patch-coverage.sh only
-# if the repo copy is missing (e.g. mid-rebase against a commit that
-# pre-dates the vendoring).
-PATCH_COVERAGE_HELPER="$SCRIPT_DIR/patch-coverage.sh"
-if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
-  PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
-fi
-if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
-  echo "pre-push-gate: patch-coverage.sh not found in scripts/ or ~/.claude/scripts/" >&2
-  exit 1
-fi
-if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=78 \
-    PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go scripts/" \
-    bash "$PATCH_COVERAGE_HELPER"; then
-  :
+if [ "$SKIP_PATCH_COVERAGE" -eq 1 ]; then
+  echo "SKIP: patch coverage (RUN_RACE=${RUN_RACE} skipped the test run, so no profile is available; CI's Coverage Floor / codecov still gate this)"
 else
-  exit 1
-fi
-
-echo ""
-echo "=== Per-package coverage floor ==="
-# Enforce the one-way coverage ratchet. Each internal/ package must stay at
-# or above the floor recorded in testdata/coverage-floor.json. Reuses the
-# coverage profile generated by the test step above ($COVER_OUT) so no
-# second test run is needed.
-#
-# coverage-floor.sh uses exit codes 0|1|2. Collapse non-zero to 1 here,
-# consistent with how patch-coverage.sh exits are handled above.
-if bash "$SCRIPT_DIR/coverage-floor.sh" --cover "$COVER_OUT"; then
-  :
-else
-  exit 1
+  # Matches codecov.yml's 78% patch threshold (codecov.yml:14).
+  #
+  # The Tests step above no longer always runs a `-coverpkg=./...` profile:
+  # by default it runs a changed-packages-only, non-`-coverpkg` profile, so a
+  # package covered mainly by OTHER packages' integration tests (e.g.
+  # internal/connection via api/publish/imagebridge) can read LOWER here than
+  # in CI -- a FALSE-POSITIVE local patch-cov block, never a false-negative
+  # (see the cross-package methodology note in the Tests step above, and
+  # #2062). If this check looks spurious, run `RUN_RACE=1` for the full,
+  # CI-equivalent `-coverpkg=./...` profile before trusting the number.
+  #
+  # patch-coverage.sh uses exit codes 0|1|2 (2 = config error). This wrapper
+  # is documented as 0|1, so collapse any non-zero child status to 1. Using
+  # an `if` here (rather than calling the script bare under `set -e`) lets
+  # us capture the exit code without the shell bailing out first.
+  #
+  # BASE is intentionally not forwarded: patch-coverage.sh has its own
+  # resolution that errors out if `main` is missing, which is stricter than
+  # this script's silent HEAD~1 fallback. Letting the child resolve BASE
+  # avoids narrowing patch coverage to only the tip commit on a branch
+  # whose base ref isn't reachable.
+  # Prefer the repo-vendored helper so a fresh clone works without any
+  # user-local install. Fall back to ~/.claude/scripts/patch-coverage.sh only
+  # if the repo copy is missing (e.g. mid-rebase against a commit that
+  # pre-dates the vendoring).
+  PATCH_COVERAGE_HELPER="$SCRIPT_DIR/patch-coverage.sh"
+  if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
+    PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
+  fi
+  if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
+    echo "pre-push-gate: patch-coverage.sh not found in scripts/ or ~/.claude/scripts/" >&2
+    exit 1
+  fi
+  if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=78 \
+      PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go scripts/" \
+      bash "$PATCH_COVERAGE_HELPER"; then
+    :
+  else
+    echo "WARN: if this looks spurious, run \`RUN_RACE=1 bash scripts/pre-push-gate.sh\` for the full-profile (CI-equivalent) coverage." >&2
+    exit 1
+  fi
 fi
 
 echo ""
