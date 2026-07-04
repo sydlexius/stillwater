@@ -390,15 +390,19 @@ templ repPaneCompliance(assets AssetPaths, data ComplianceData) {
 				data-many-template={ t(ctx, "report.n_selected") }
 			>{ t(ctx, "report.zero_selected") }</span>
 			<div class="flex items-center gap-3">
+				<!-- #1757 PR-4 no-solid-blue sweep: the bar is dark in both themes,
+				     so its action buttons take the dark-bar treatment the #1932
+				     fanart bulk bar established (white ink + light-alpha outline)
+				     instead of a solid blue fill. -->
 				<button
 					type="button"
 					onclick="bulkAction('fetch-metadata')"
-					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+					class="inline-flex items-center gap-1.5 rounded-md border border-white/25 px-3 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors"
 				>{ t(ctx, "report.fetch_metadata") }</button>
 				<button
 					type="button"
 					onclick="bulkAction('fetch-images')"
-					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+					class="inline-flex items-center gap-1.5 rounded-md border border-white/25 px-3 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors"
 				>{ t(ctx, "report.fetch_images") }</button>
 				<button
 					type="button"
@@ -798,7 +802,12 @@ templ repRunRulesScript() {
 				html: true,
 				title: isAll ? (ds.confirmAllTitle || 'Re-evaluate all artists?') : (ds.confirmTitle || 'Run Rules'),
 				acceptText: isAll ? (ds.confirmAllAccept || 'Re-evaluate All') : (ds.confirmAccept || 'Start'),
-				acceptClass: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+				// The modal's default accept is the danger-red treatment; Run
+				// Rules is non-destructive, so restyle the accept with the
+				// pane's accent-emphasis motif classes (no solid-blue fill --
+				// #1757 PR-4 sweep). The focus ring matches the canonical
+				// artist-detail buttons.
+				acceptClass: 'sw-rep-run-btn sw-rep-run-btn--primary focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
 			});
 		}
 
