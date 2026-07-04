@@ -977,7 +977,7 @@
   "guide.provider_lastfm_desc": "Biographies, tags (used as genres/styles), similar artists. Good fallback for biography text.",
   "guide.provider_musicbrainz_desc": "Artist identifiers (MBIDs), basic metadata, disambiguation, relationships. The foundation for cross-referencing other providers.",
   "guide.provider_no_key": "No key required",
-  "guide.provider_spotify_desc": "Artist images and genre tags. Uses OAuth client credentials for access.",
+  "guide.provider_spotify_desc": "Artist images. Uses OAuth client credentials for access.",
   "guide.provider_wikidata_desc": "Structured data linked from MusicBrainz: formation date, country, genres, official website URLs.",
   "guide.provider_wikipedia_desc": "Biographies, band members, genres, years active, and country of origin parsed from Wikipedia articles linked via Wikidata.",
   "guide.providers_desc": "Stillwater pulls artist metadata from multiple sources. Each provider offers different data, and you can configure which provider wins for each field via the priority system in Settings.",

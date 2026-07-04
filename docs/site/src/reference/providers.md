@@ -24,7 +24,7 @@ The table below is generated from the provider definitions in the codebase. Don'
 | Wikidata | Free | Not required | 5/sec | No | Name, Formed, Disbanded, Origin, Genres | thumb, logo |
 | Deezer | Free | Not required | 5/sec | No | Name | thumb |
 | Genius | Free key | [Sign up](https://genius.com/api-clients) | 5/sec | No | Name, Biography, Aliases | None |
-| Spotify | Paid | [Sign up](https://developer.spotify.com/dashboard) | 5/sec | No | Name, Genres | thumb |
+| Spotify | Paid | [Sign up](https://developer.spotify.com/dashboard) | 5/sec | No | Name | thumb |
 <!-- END GENERATED: provider-matrix -->
 
 ## How the fallback chain works

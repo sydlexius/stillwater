@@ -393,7 +393,7 @@ func (fp *FieldPriority) RemoveProvider(name ProviderName) bool {
 func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameGenius}},
-		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameSpotify, NameWikipedia}},
+		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameWikipedia}},
 		{Field: "styles", Providers: []ProviderName{NameDiscogs, NameAudioDB, NameLastFM, NameMusicBrainz}},
 		{Field: "moods", Providers: []ProviderName{NameAudioDB, NameLastFM}},
 		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameWikipedia}},
