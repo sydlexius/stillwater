@@ -255,16 +255,31 @@ test('/next/settings passes a11y scan in light mode', async ({ page }) => {
   // ever arms (root cause of #2223). Race it against a short deadline so a
   // starved run fails fast, feeding a retry, instead of riding to the global
   // timeout.
-  await Promise.race([
-    page.evaluate(() => {
-      window.swPreferences.set('theme', 'dark');
-      window.swSidebar.cycleTheme();
-    }),
-    new Promise((_, reject) => setTimeout(
-      () => reject(new Error('theme-toggle evaluate did not return within 5s (CPU-starved run)')),
-      5_000,
-    )),
-  ]);
+  // Track the evaluate promise and the race's timer independently: if the
+  // timeout wins, the evaluate call is still running against a page that may
+  // close during retry teardown. Attach a no-op catch so that later
+  // rejection ("Target closed") never surfaces as an unhandled rejection, and
+  // clearTimeout the timer in a finally so it can't fire after the race has
+  // already settled.
+  const themeTogglePromise = page.evaluate(() => {
+    window.swPreferences.set('theme', 'dark');
+    window.swSidebar.cycleTheme();
+  });
+  themeTogglePromise.catch(() => {});
+  let themeToggleTimeoutId;
+  try {
+    await Promise.race([
+      themeTogglePromise,
+      new Promise((_, reject) => {
+        themeToggleTimeoutId = setTimeout(
+          () => reject(new Error('theme-toggle evaluate did not return within 5s (CPU-starved run)')),
+          5_000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(themeToggleTimeoutId);
+  }
   // Single bounded settle poll: the theme swap is synchronous, so this
   // confirms it landed rather than waiting out a fixed sleep.
   await page.waitForFunction(

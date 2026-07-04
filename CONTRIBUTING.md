@@ -61,9 +61,11 @@ Short version:
    scripts/pre-push-gate.sh`; downloads a Chromium browser and boots an
    ephemeral server, so it adds minutes). The opt-in accepts any of `1`,
    `true`, `yes`, or `on` (case-insensitive, surrounding whitespace ignored).
-   CI runs the full suite unconditionally in its dedicated a11y job and
-   enforces it strictly -- CI, not the local gate, is the authoritative a11y
-   check.
+   CI runs the full suite in its dedicated a11y job when a11y-relevant files
+   changed and enforces it strictly; the required "A11y Smoke Tests" check
+   always reports a result (an always-run summary wraps the conditional job
+   so non-a11y PRs report success rather than a permanently-skipped context)
+   -- CI, not the local gate, is the authoritative a11y check.
 4. Open one PR per logical change; never stack PRs.
 5. Apply at least one of the labels listed below so the release-notes
    generator (`.github/release.yml`) buckets your change correctly.
