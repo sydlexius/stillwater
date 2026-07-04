@@ -3039,6 +3039,102 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/duplicates/ignore:
+    post:
+      tags: [Artists]
+      summary: Ignore a suspected-duplicate group
+      description: >-
+        Persist a server-side ignore for a near-duplicate group so it stops
+        surfacing on the duplicates page and in the sidebar count. The group is
+        identified by its member artist IDs, from which the server derives a
+        canonical signature (member IDs sorted and joined with "|"). The write is
+        idempotent: re-ignoring the same group returns 200 without creating a
+        duplicate row. The signature is an exact-match key, so if the detector
+        later regroups the same artists differently the new group resurfaces for
+        review.
+
+        Admin-only.
+      operationId: ignoreDuplicateGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [member_ids]
+              properties:
+                member_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Artist IDs of the group's members.
+                group_key:
+                  type: string
+                  description: >-
+                    Optional non-authoritative display context (the group's
+                    display key) stored for the manage-ignored view.
+                reason:
+                  type: string
+                  description: >-
+                    Optional non-authoritative detection reason stored for the
+                    manage-ignored view.
+      responses:
+        "200":
+          description: Ignore persisted (or already present; idempotent).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ignored:
+                    type: boolean
+                  signature:
+                    type: string
+                    description: The canonical group signature that was persisted.
+        "400":
+          description: Malformed body or no usable member IDs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs, emitting the body via http.Error, so the
+            content type is text/plain (the body text happens to read
+            `{"error":"unauthorized"}`) rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text
+            ("Forbidden: administrator role required"), not the JSON Error
+            schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: >-
+            Persisting the ignore failed. The wrapped driver error is logged
+            server-side; the response carries a generic JSON envelope
+            (error: internal) so no internal detail leaks to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            The database is not configured on this instance, so the ignore
+            cannot be persisted (error: unavailable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/locked:
     get:
       tags: [Artists]

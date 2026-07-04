@@ -12,10 +12,10 @@ import "github.com/sydlexius/stillwater/web/templates"
 //   - #1714: deselect rows in the merge dialog. Implemented entirely in the
 //     shared merge modal's script (so the stable page gains it too); nothing
 //     page-specific is needed here.
-//   - #1716: ignore a finding. A per-group "Ignore" button dismisses the group
-//     client-side; the choice is stored under a ui.confirm.duplicate.<key>
-//     localStorage key (see artistDuplicatesIgnoreScript) so the existing
-//     resetConfirmPrefs() sweep restores it.
+//   - #1716/#2219: ignore a finding. A per-group "Ignore" button POSTs the
+//     group's member IDs to /api/v1/artists/duplicates/ignore, which persists
+//     the ignore server-side (the sidebar count then drops on its next poll).
+//     See artistDuplicatesIgnoreScript.
 templ ArtistDuplicatesNextPage(assets templates.AssetPaths, view templates.ArtistDuplicatesPageView) {
 	@LayoutNext(t(ctx, "artist_duplicates.page_title"), assets) {
 		<div class="sw-next-duplicates space-y-6">
@@ -73,6 +73,9 @@ templ ArtistDuplicatesNextTable(assets templates.AssetPaths, view templates.Arti
 								class="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
 								data-ignore-group
 								data-group-key={ group.Key }
+								data-i18n-ignore-read-error={ t(ctx, "artist_duplicates.ignore_read_error") }
+								data-i18n-ignore-http-error={ t(ctx, "artist_duplicates.ignore_http_error") }
+								data-i18n-ignore-network-error={ t(ctx, "artist_duplicates.ignore_network_error") }
 							>
 								{ t(ctx, "artist_duplicates.action_ignore") }
 							</button>
@@ -127,8 +130,8 @@ templ ArtistDuplicatesNextTable(assets templates.AssetPaths, view templates.Arti
 			}
 			// All-dismissed empty state (#1716): hidden until the ignore script
 			// finds that every group card has been dismissed. Distinct copy from
-			// the "none detected" state so the user knows findings exist but are
-			// ignored (and can be restored via reset confirmation prompts).
+			// the "none detected" state so the user knows findings existed but
+			// are now ignored (server-side persisted since #2219).
 			<div id="duplicates-empty-dismissed" hidden class="sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "artist_duplicates.empty_state_dismissed") }
 			</div>
@@ -137,30 +140,42 @@ templ ArtistDuplicatesNextTable(assets templates.AssetPaths, view templates.Arti
 }
 
 // artistDuplicatesIgnoreScript implements the #1716 "ignore a finding"
-// affordance entirely client-side -- no backend, no migration.
+// affordance. Since #2219 the ignore is PERSISTED SERVER-SIDE: clicking Ignore
+// POSTs the group's member IDs to /api/v1/artists/duplicates/ignore. There is no
+// longer any localStorage read/write -- the server is the single source of truth
+// for ignored groups, so the sidebar count and the page can never diverge. Any
+// pre-#2219 per-browser localStorage ignores are simply dropped and those groups
+// resurface once for fresh review (a deliberate one-time transition).
 //
-// Each group's localStorage key is "ui.confirm.duplicate." followed by the
-// group's member IDs sorted and joined with "|". Sorting makes the key
-// invariant to member order; the "ui.confirm.duplicate." prefix means the
-// existing resetConfirmPrefs() sweep (which clears every "ui.confirm.*" key)
-// restores ignored findings for free. A plain sorted-ID join is used rather
-// than a crypto hash so the feature also works in insecure (plain-HTTP)
-// contexts where window.crypto.subtle is unavailable.
+// memberIdsFor derives the group's member IDs from the card's data-members blob
+// (the same blob the merge modal reads); the server computes the canonical
+// signature from them exactly as the old client key did (sorted, "|"-joined).
 templ artistDuplicatesIgnoreScript() {
 	<script>
 		(function() {
-			var PREFIX = 'ui.confirm.duplicate.';
+			var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+			var basePath = bpMeta ? bpMeta.content : '';
+			var endpoint = basePath + '/api/v1/artists/duplicates/ignore';
 
-			// groupKeyFor derives the stable localStorage key from a card's
-			// data-members blob (the same blob the merge modal reads). Returns
-			// null when the blob is missing/empty/unparseable so callers skip it.
-			function groupKeyFor(card) {
+			// Use the canonical CSRF cookie reader exposed by preferences.js
+			// (loaded on every page via the layout). Fall back to a local reader
+			// only if the global is somehow absent so the POST still has a header.
+			function csrfToken() {
+				if (typeof window.swCsrfToken === 'function') return window.swCsrfToken();
+				var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+				return match ? match[1] : '';
+			}
+
+			// memberIdsFor returns the group's member IDs from the card's
+			// data-members blob. Returns null when the blob is missing, empty, or
+			// unparsable so callers skip the POST.
+			function memberIdsFor(card) {
 				var raw = card.getAttribute('data-members') || '[]';
 				var members = [];
 				try { members = JSON.parse(raw); } catch (e) { return null; }
 				var ids = members.map(function(m) { return m.id; }).filter(Boolean);
 				if (ids.length === 0) return null;
-				return PREFIX + ids.slice().sort().join('|');
+				return ids;
 			}
 
 			// refreshEmptyState reveals the "all dismissed" panel when every
@@ -174,30 +189,46 @@ templ artistDuplicatesIgnoreScript() {
 				if (dismissed) dismissed.hidden = anyVisible;
 			}
 
-			function dismiss(card) {
-				var key = groupKeyFor(card);
-				if (!key) return;
-				try {
-					localStorage.setItem(key, '1');
-				} catch (e) {
-					// localStorage can throw (private mode, quota exceeded). The
-					// card still hides for this session, but the choice will not
-					// persist across reloads -- surface it rather than swallow it.
-					console.warn('stillwater: could not persist ignored duplicate group', e);
-				}
-				card.hidden = true;
-				refreshEmptyState();
+			// notifyError surfaces a failure rather than silently hiding the card,
+			// so a persist failure never masquerades as a successful ignore.
+			function notifyError(msg) {
+				if (window.showToast) { window.showToast(msg); return; }
+				console.error('stillwater: ' + msg);
 			}
 
-			// On load, hide any group the user previously ignored.
-			document.querySelectorAll('[data-duplicate-group]').forEach(function(card) {
-				var key = groupKeyFor(card);
-				if (!key) return;
-				var stored = null;
-				try { stored = localStorage.getItem(key); } catch (e) { stored = null; }
-				if (stored) card.hidden = true;
-			});
-			refreshEmptyState();
+			function ignore(card, btn) {
+				// Localized toast copy is threaded through the button's data-i18n-*
+				// attributes (rendered server-side via t(ctx, ...)); the English
+				// literals are only the fallback when the attribute is absent,
+				// mirroring the rerun-onboarding pattern in settings.templ.
+				var readErr = (btn && btn.dataset.i18nIgnoreReadError) || 'Could not read group members to ignore.';
+				var httpTpl = (btn && btn.dataset.i18nIgnoreHttpError) || 'Could not ignore this group ({status}). Please try again.';
+				var netErr = (btn && btn.dataset.i18nIgnoreNetworkError) || 'Network error while ignoring this group. Please try again.';
+				var ids = memberIdsFor(card);
+				if (!ids) { notifyError(readErr); return; }
+				var groupKey = card.getAttribute('data-group-key') || '';
+				if (btn) btn.disabled = true;
+				fetch(endpoint, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-Token': csrfToken()
+					},
+					body: JSON.stringify({ member_ids: ids, group_key: groupKey })
+				}).then(function(res) {
+					if (!res.ok) {
+						if (btn) btn.disabled = false;
+						notifyError(httpTpl.replace('{status}', res.status));
+						return;
+					}
+					// Persisted: hide the card and refresh the all-dismissed panel.
+					card.hidden = true;
+					refreshEmptyState();
+				}).catch(function() {
+					if (btn) btn.disabled = false;
+					notifyError(netErr);
+				});
+			}
 
 			// Delegate clicks on the per-group Ignore buttons.
 			document.addEventListener('click', function(e) {
@@ -205,7 +236,7 @@ templ artistDuplicatesIgnoreScript() {
 				if (!btn) return;
 				e.preventDefault();
 				var card = btn.closest('[data-duplicate-group]');
-				if (card) dismiss(card);
+				if (card) ignore(card, btn);
 			});
 		})();
 	</script>

@@ -20,10 +20,10 @@ import "github.com/sydlexius/stillwater/web/templates"
 //   - #1714: deselect rows in the merge dialog. Implemented entirely in the
 //     shared merge modal's script (so the stable page gains it too); nothing
 //     page-specific is needed here.
-//   - #1716: ignore a finding. A per-group "Ignore" button dismisses the group
-//     client-side; the choice is stored under a ui.confirm.duplicate.<key>
-//     localStorage key (see artistDuplicatesIgnoreScript) so the existing
-//     resetConfirmPrefs() sweep restores it.
+//   - #1716/#2219: ignore a finding. A per-group "Ignore" button POSTs the
+//     group's member IDs to /api/v1/artists/duplicates/ignore, which persists
+//     the ignore server-side (the sidebar count then drops on its next poll).
+//     See artistDuplicatesIgnoreScript.
 func ArtistDuplicatesNextPage(assets templates.AssetPaths, view templates.ArtistDuplicatesPageView) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -261,226 +261,265 @@ func ArtistDuplicatesNextTable(assets templates.AssetPaths, view templates.Artis
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" data-i18n-ignore-read-error=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var13 string
-				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_ignore"))
+				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_read_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 77, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 76, Col: 83}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</button> <button type=\"button\" class=\"inline-flex items-center gap-1 rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors\" data-merge-open data-group-key=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" data-i18n-ignore-http-error=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 string
-				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
+				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_http_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 83, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 77, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" data-i18n-ignore-network-error=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var15 string
-				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_merge"))
+				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_network_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 85, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 78, Col: 89}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</button></div></div><table class=\"min-w-full text-sm\"><thead class=\"bg-gray-50 dark:bg-gray-800/30\"><tr><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var16 string
-				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_name"))
+				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_ignore"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 92, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 80, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</button> <button type=\"button\" class=\"inline-flex items-center gap-1 rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors\" data-merge-open data-group-key=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
-				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_path"))
+				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 93, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 86, Col: 34}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var18 string
-				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_mbid"))
+				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_merge"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 94, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 88, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</button></div></div><table class=\"min-w-full text-sm\"><thead class=\"bg-gray-50 dark:bg-gray-800/30\"><tr><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var19 string
+				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_name"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 95, Col: 123}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var20 string
+				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_path"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 96, Col: 123}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var21 string
+				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_mbid"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 97, Col: 123}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, m := range group.Members {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<tr><td class=\"px-4 py-2\"><a class=\"text-blue-600 dark:text-blue-400 hover:underline underline-offset-2\" href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<tr><td class=\"px-4 py-2\"><a class=\"text-blue-600 dark:text-blue-400 hover:underline underline-offset-2\" href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var19 templ.SafeURL
-					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/next/artists/" + m.ID))
+					var templ_7745c5c3_Var22 templ.SafeURL
+					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/next/artists/" + m.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 103, Col: 74}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 106, Col: 74}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\">")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var20 string
-					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(m.Name)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 104, Col: 19}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</a> ")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					if m.Recommended {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<span class=\"ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300\" title=\"")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						var templ_7745c5c3_Var21 string
-						templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(templates.RecommendedReasonLabel(ctx, m.RecommendedReason))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 108, Col: 78}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\">")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						var templ_7745c5c3_Var22 string
-						templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.recommended_badge"))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 110, Col: 59}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</span>")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var23 string
-					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(m.Path)
+					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(m.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 114, Col: 90}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 107, Col: 19}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</a> ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					if m.MBID != "" {
-						var templ_7745c5c3_Var24 string
-						templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(m.MBID)
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 117, Col: 19}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+					if m.Recommended {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span class=\"ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300\" title=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
+						var templ_7745c5c3_Var24 string
+						templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(templates.RecommendedReasonLabel(ctx, m.RecommendedReason))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 111, Col: 78}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var25 string
-						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.no_mbid"))
+						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.recommended_badge"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 119, Col: 102}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 113, Col: 59}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</span>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</td></tr>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var26 string
+					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(m.Path)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 117, Col: 90}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					if m.MBID != "" {
+						var templ_7745c5c3_Var27 string
+						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(m.MBID)
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 120, Col: 19}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					} else {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var28 string
+						templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.no_mbid"))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 122, Col: 102}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</span>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</td></tr>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</tbody></table></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</tbody></table></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "     <div id=\"duplicates-empty-dismissed\" hidden class=\"sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "     <div id=\"duplicates-empty-dismissed\" hidden class=\"sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var26 string
-			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.empty_state_dismissed"))
+			var templ_7745c5c3_Var29 string
+			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.empty_state_dismissed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 133, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/next/artist_duplicates.templ`, Line: 136, Col: 55}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -489,15 +528,16 @@ func ArtistDuplicatesNextTable(assets templates.AssetPaths, view templates.Artis
 }
 
 // artistDuplicatesIgnoreScript implements the #1716 "ignore a finding"
-// affordance entirely client-side -- no backend, no migration.
+// affordance. Since #2219 the ignore is PERSISTED SERVER-SIDE: clicking Ignore
+// POSTs the group's member IDs to /api/v1/artists/duplicates/ignore. There is no
+// longer any localStorage read/write -- the server is the single source of truth
+// for ignored groups, so the sidebar count and the page can never diverge. Any
+// pre-#2219 per-browser localStorage ignores are simply dropped and those groups
+// resurface once for fresh review (a deliberate one-time transition).
 //
-// Each group's localStorage key is "ui.confirm.duplicate." followed by the
-// group's member IDs sorted and joined with "|". Sorting makes the key
-// invariant to member order; the "ui.confirm.duplicate." prefix means the
-// existing resetConfirmPrefs() sweep (which clears every "ui.confirm.*" key)
-// restores ignored findings for free. A plain sorted-ID join is used rather
-// than a crypto hash so the feature also works in insecure (plain-HTTP)
-// contexts where window.crypto.subtle is unavailable.
+// memberIdsFor derives the group's member IDs from the card's data-members blob
+// (the same blob the merge modal reads); the server computes the canonical
+// signature from them exactly as the old client key did (sorted, "|"-joined).
 func artistDuplicatesIgnoreScript() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -514,12 +554,12 @@ func artistDuplicatesIgnoreScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var27 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var27 == nil {
-			templ_7745c5c3_Var27 = templ.NopComponent
+		templ_7745c5c3_Var30 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var30 == nil {
+			templ_7745c5c3_Var30 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<script>\n\t\t(function() {\n\t\t\tvar PREFIX = 'ui.confirm.duplicate.';\n\n\t\t\t// groupKeyFor derives the stable localStorage key from a card's\n\t\t\t// data-members blob (the same blob the merge modal reads). Returns\n\t\t\t// null when the blob is missing/empty/unparseable so callers skip it.\n\t\t\tfunction groupKeyFor(card) {\n\t\t\t\tvar raw = card.getAttribute('data-members') || '[]';\n\t\t\t\tvar members = [];\n\t\t\t\ttry { members = JSON.parse(raw); } catch (e) { return null; }\n\t\t\t\tvar ids = members.map(function(m) { return m.id; }).filter(Boolean);\n\t\t\t\tif (ids.length === 0) return null;\n\t\t\t\treturn PREFIX + ids.slice().sort().join('|');\n\t\t\t}\n\n\t\t\t// refreshEmptyState reveals the \"all dismissed\" panel when every\n\t\t\t// detected group card is hidden, and hides it again otherwise.\n\t\t\tfunction refreshEmptyState() {\n\t\t\t\tvar cards = document.querySelectorAll('[data-duplicate-group]');\n\t\t\t\tif (cards.length === 0) return;\n\t\t\t\tvar anyVisible = false;\n\t\t\t\tcards.forEach(function(c) { if (!c.hidden) anyVisible = true; });\n\t\t\t\tvar dismissed = document.getElementById('duplicates-empty-dismissed');\n\t\t\t\tif (dismissed) dismissed.hidden = anyVisible;\n\t\t\t}\n\n\t\t\tfunction dismiss(card) {\n\t\t\t\tvar key = groupKeyFor(card);\n\t\t\t\tif (!key) return;\n\t\t\t\ttry {\n\t\t\t\t\tlocalStorage.setItem(key, '1');\n\t\t\t\t} catch (e) {\n\t\t\t\t\t// localStorage can throw (private mode, quota exceeded). The\n\t\t\t\t\t// card still hides for this session, but the choice will not\n\t\t\t\t\t// persist across reloads -- surface it rather than swallow it.\n\t\t\t\t\tconsole.warn('stillwater: could not persist ignored duplicate group', e);\n\t\t\t\t}\n\t\t\t\tcard.hidden = true;\n\t\t\t\trefreshEmptyState();\n\t\t\t}\n\n\t\t\t// On load, hide any group the user previously ignored.\n\t\t\tdocument.querySelectorAll('[data-duplicate-group]').forEach(function(card) {\n\t\t\t\tvar key = groupKeyFor(card);\n\t\t\t\tif (!key) return;\n\t\t\t\tvar stored = null;\n\t\t\t\ttry { stored = localStorage.getItem(key); } catch (e) { stored = null; }\n\t\t\t\tif (stored) card.hidden = true;\n\t\t\t});\n\t\t\trefreshEmptyState();\n\n\t\t\t// Delegate clicks on the per-group Ignore buttons.\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tvar btn = e.target.closest('[data-ignore-group]');\n\t\t\t\tif (!btn) return;\n\t\t\t\te.preventDefault();\n\t\t\t\tvar card = btn.closest('[data-duplicate-group]');\n\t\t\t\tif (card) dismiss(card);\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<script>\n\t\t(function() {\n\t\t\tvar bpMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\tvar basePath = bpMeta ? bpMeta.content : '';\n\t\t\tvar endpoint = basePath + '/api/v1/artists/duplicates/ignore';\n\n\t\t\t// Use the canonical CSRF cookie reader exposed by preferences.js\n\t\t\t// (loaded on every page via the layout). Fall back to a local reader\n\t\t\t// only if the global is somehow absent so the POST still has a header.\n\t\t\tfunction csrfToken() {\n\t\t\t\tif (typeof window.swCsrfToken === 'function') return window.swCsrfToken();\n\t\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn match ? match[1] : '';\n\t\t\t}\n\n\t\t\t// memberIdsFor returns the group's member IDs from the card's\n\t\t\t// data-members blob. Returns null when the blob is missing, empty, or\n\t\t\t// unparsable so callers skip the POST.\n\t\t\tfunction memberIdsFor(card) {\n\t\t\t\tvar raw = card.getAttribute('data-members') || '[]';\n\t\t\t\tvar members = [];\n\t\t\t\ttry { members = JSON.parse(raw); } catch (e) { return null; }\n\t\t\t\tvar ids = members.map(function(m) { return m.id; }).filter(Boolean);\n\t\t\t\tif (ids.length === 0) return null;\n\t\t\t\treturn ids;\n\t\t\t}\n\n\t\t\t// refreshEmptyState reveals the \"all dismissed\" panel when every\n\t\t\t// detected group card is hidden, and hides it again otherwise.\n\t\t\tfunction refreshEmptyState() {\n\t\t\t\tvar cards = document.querySelectorAll('[data-duplicate-group]');\n\t\t\t\tif (cards.length === 0) return;\n\t\t\t\tvar anyVisible = false;\n\t\t\t\tcards.forEach(function(c) { if (!c.hidden) anyVisible = true; });\n\t\t\t\tvar dismissed = document.getElementById('duplicates-empty-dismissed');\n\t\t\t\tif (dismissed) dismissed.hidden = anyVisible;\n\t\t\t}\n\n\t\t\t// notifyError surfaces a failure rather than silently hiding the card,\n\t\t\t// so a persist failure never masquerades as a successful ignore.\n\t\t\tfunction notifyError(msg) {\n\t\t\t\tif (window.showToast) { window.showToast(msg); return; }\n\t\t\t\tconsole.error('stillwater: ' + msg);\n\t\t\t}\n\n\t\t\tfunction ignore(card, btn) {\n\t\t\t\t// Localized toast copy is threaded through the button's data-i18n-*\n\t\t\t\t// attributes (rendered server-side via t(ctx, ...)); the English\n\t\t\t\t// literals are only the fallback when the attribute is absent,\n\t\t\t\t// mirroring the rerun-onboarding pattern in settings.templ.\n\t\t\t\tvar readErr = (btn && btn.dataset.i18nIgnoreReadError) || 'Could not read group members to ignore.';\n\t\t\t\tvar httpTpl = (btn && btn.dataset.i18nIgnoreHttpError) || 'Could not ignore this group ({status}). Please try again.';\n\t\t\t\tvar netErr = (btn && btn.dataset.i18nIgnoreNetworkError) || 'Network error while ignoring this group. Please try again.';\n\t\t\t\tvar ids = memberIdsFor(card);\n\t\t\t\tif (!ids) { notifyError(readErr); return; }\n\t\t\t\tvar groupKey = card.getAttribute('data-group-key') || '';\n\t\t\t\tif (btn) btn.disabled = true;\n\t\t\t\tfetch(endpoint, {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': csrfToken()\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({ member_ids: ids, group_key: groupKey })\n\t\t\t\t}).then(function(res) {\n\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t\t\tnotifyError(httpTpl.replace('{status}', res.status));\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Persisted: hide the card and refresh the all-dismissed panel.\n\t\t\t\t\tcard.hidden = true;\n\t\t\t\t\trefreshEmptyState();\n\t\t\t\t}).catch(function() {\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t\tnotifyError(netErr);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Delegate clicks on the per-group Ignore buttons.\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tvar btn = e.target.closest('[data-ignore-group]');\n\t\t\t\tif (!btn) return;\n\t\t\t\te.preventDefault();\n\t\t\t\tvar card = btn.closest('[data-duplicate-group]');\n\t\t\t\tif (card) ignore(card, btn);\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
