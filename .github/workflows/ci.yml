@@ -302,8 +302,12 @@ jobs:
       - name: Run JS unit tests
         run: npm test
 
+  # Worker job: does the real a11y work, gated on tests/a11y/** changes. The
+  # always-running a11y-summary wrapper below owns the required "A11y Smoke
+  # Tests (Playwright + axe-core)" check name so non-a11y PRs report success
+  # rather than a permanently-skipped required context.
   a11y-test:
-    name: A11y Smoke Tests (Playwright + axe-core)
+    name: A11y Smoke Tests Check
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.a11y == 'true'
@@ -437,6 +441,31 @@ jobs:
           name: playwright-a11y-report
           path: tests/a11y/report/
           retention-days: 7
+
+  # Aggregate gate that owns the "A11y Smoke Tests (Playwright + axe-core)"
+  # check name. Always runs so the required context reports success (not
+  # skipped) on non-a11y PRs, and fails closed if the `changes` detector
+  # itself failed/was cancelled before trusting its `a11y` output.
+  a11y-summary:
+    name: A11y Smoke Tests (Playwright + axe-core)
+    runs-on: ubuntu-latest
+    needs: [changes, a11y-test]
+    if: always()
+    steps:
+      - name: Verify a11y check succeeded
+        run: |
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.a11y }}" != "true" ]; then
+            echo "No a11y-relevant changes; A11y Smoke Tests Check was skipped."
+            exit 0
+          fi
+          if [ "${{ needs.a11y-test.result }}" != "success" ]; then
+            echo "A11y Smoke Tests Check did not succeed: ${{ needs.a11y-test.result }}"
+            exit 1
+          fi
 
   test:
     # Per-shard display names render as "Test Shard (api)", "Test Shard (rule)",
