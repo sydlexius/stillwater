@@ -169,10 +169,14 @@ echo "=== Tests ==="
 #     `-race`, no `-coverpkg=./...`). This is deliberately narrower than the
 #     full suite: it's a quick "did I obviously break a test" signal, and it
 #     produces the coverage profile the patch-coverage step below consumes.
-#     A FAILURE in this default path is ADVISORY (warn, don't block) -- CI's
-#     required `Test` job runs the full race suite across 9 shards and is the
-#     authoritative gate. If no Go files changed since BASE, the run is
-#     skipped (nothing to test).
+#     An ORDINARY TEST-ASSERTION FAILURE in this default path is ADVISORY
+#     (warn, don't block) -- CI's required `Test` job runs the full race
+#     suite across 9 shards and is the authoritative gate. A BUILD/COMPILE
+#     failure in the changed packages is different and always BLOCKS: `go
+#     test` never emits a coverage profile when the package doesn't compile,
+#     so treating it as advisory-only would let the empty-profile fallback
+#     silently swallow it as "nothing to measure" below. If no Go files
+#     changed since BASE, the run is skipped (nothing to test).
 race_flag="$(printf '%s' "${RUN_RACE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
 run_full_race_suite() {
@@ -208,14 +212,17 @@ run_changed_pkgs_test() {
 
 # SKIP_PATCH_COVERAGE gates the "Patch coverage" step below: it has nothing
 # to check when RUN_RACE=0 skipped the test run entirely (no profile was
-# produced at all). The default/changed-packages path always leaves a valid
-# (if sometimes structurally-empty) profile at $COVER_OUT, so patch-coverage
-# still runs there.
+# produced at all), or when the default/changed-packages path legitimately
+# has nothing to measure. SKIP_PATCH_COVERAGE_REASON carries the specific
+# reason through to that step's SKIP message so it never misreports why
+# coverage wasn't enforced (see the "Patch coverage" section below).
 SKIP_PATCH_COVERAGE=0
+SKIP_PATCH_COVERAGE_REASON=""
 case "$race_flag" in
   0 | false | no | off)
     echo "tests: skipped (RUN_RACE=${RUN_RACE} forces opt-out; CI still runs the full race suite)"
     echo "tests: no coverage profile generated -- patch coverage also skipped for this push"
+    SKIP_PATCH_COVERAGE_REASON="RUN_RACE=${RUN_RACE} skipped the test run, so no profile is available; CI's Coverage Floor / codecov still gate this"
     SKIP_PATCH_COVERAGE=1
     ;;
   1 | true | yes | on)
@@ -223,18 +230,36 @@ case "$race_flag" in
     ;;
   *)
     if ! run_changed_pkgs_test; then
-      echo ""
-      echo "WARN: changed-packages test run failed (see output above) -- not blocking this push."
-      echo "WARN: CI's Test job runs the full -race suite and is authoritative; set RUN_RACE=1 to make this blocking locally."
+      if [ -s "$COVER_OUT" ]; then
+        # Ordinary test-assertion failure: go test still ran to completion and
+        # emitted a real profile. Advisory only -- CI's full -race suite is
+        # authoritative; patch coverage below still runs against this profile.
+        echo ""
+        echo "WARN: changed-packages test run failed (see output above) -- not blocking this push."
+        echo "WARN: CI's Test job runs the full -race suite and is authoritative; set RUN_RACE=1 to make this blocking locally."
+      else
+        # Build/compile failure: go test never produced a profile at all,
+        # meaning the changed packages don't even compile. This is strictly
+        # worse than an ordinary test failure and must never be masked as
+        # advisory or fall through to the empty-profile skip below, which
+        # would let patch-coverage.sh read it as "nothing to enforce" and
+        # exit 0 -- a silent gate weakening on a genuinely broken build.
+        echo ""
+        echo "FAIL: changed-packages test run produced no coverage profile -- this indicates a build/compile error in the changed packages (not just a failing test assertion). Fix the build before pushing." >&2
+        exit 1
+      fi
     fi
-    # go test writes no profile at all on a build/compile failure (as opposed
-    # to an ordinary test-assertion failure, which still emits one). Leave a
-    # minimal valid profile so patch-coverage.sh's non-empty-file check below
-    # does not hard-fail (exit 2) on top of the WARN already emitted above;
-    # this also covers the "no Go files changed" case where
-    # run_changed_pkgs_test never invokes `go test` at all.
     if [ ! -s "$COVER_OUT" ]; then
-      echo "mode: atomic" > "$COVER_OUT"
+      # Reachable only when run_changed_pkgs_test exited 0 (or was skipped
+      # outright because no Go files changed) yet left no profile -- there is
+      # legitimately nothing to measure. Skip patch coverage explicitly with
+      # a WARN instead of writing a minimal "mode: atomic" placeholder profile:
+      # patch-coverage.sh treats an empty profile as "no executable lines,
+      # nothing to enforce" and exits 0, which would read identically to a
+      # real, passing coverage check for genuine Go changes.
+      echo "WARN: no coverage profile produced by the changed-packages test run -- patch coverage skipped (nothing to measure for this push)"
+      SKIP_PATCH_COVERAGE_REASON="changed-packages test run produced no coverage profile (no Go packages changed since BASE, or the changed packages have nothing testable)"
+      SKIP_PATCH_COVERAGE=1
     fi
     ;;
 esac
@@ -417,7 +442,12 @@ fi
 echo ""
 echo "=== Patch coverage ==="
 if [ "$SKIP_PATCH_COVERAGE" -eq 1 ]; then
-  echo "SKIP: patch coverage (RUN_RACE=${RUN_RACE} skipped the test run, so no profile is available; CI's Coverage Floor / codecov still gate this)"
+  # SKIP_PATCH_COVERAGE is now set for more than one reason (RUN_RACE=0
+  # opt-out, or the changed-packages path legitimately producing no coverage
+  # profile) -- report the actual reason set alongside the flag rather than
+  # hard-coding the RUN_RACE explanation, which would misreport why coverage
+  # wasn't enforced for the other paths.
+  echo "SKIP: patch coverage (${SKIP_PATCH_COVERAGE_REASON:-no coverage profile available for this push})"
 else
   # Matches codecov.yml's 78% patch threshold (codecov.yml:14).
   #
