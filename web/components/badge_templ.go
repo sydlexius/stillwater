@@ -10,14 +10,17 @@ import templruntime "github.com/a-h/templ/runtime"
 
 // HealthScoreClass returns the Tailwind color classes for a health score value.
 // Thresholds: 100 = green, 50-99 = yellow, <50 = red.
+// Light-mode shades are the 700 step: the 600 greens/yellows fail WCAG AA
+// contrast on the light table background (axe color-contrast, #1757 PR-4 a11y
+// pass). Dark-mode 400 shades are unchanged.
 func HealthScoreClass(score float64) string {
 	if score >= 100 {
-		return "text-green-600 dark:text-green-400"
+		return "text-green-700 dark:text-green-400"
 	}
 	if score >= 50 {
-		return "text-yellow-600 dark:text-yellow-400"
+		return "text-yellow-700 dark:text-yellow-400"
 	}
-	return "text-red-600 dark:text-red-400"
+	return "text-red-700 dark:text-red-400"
 }
 
 // StatusBadge renders a colored indicator for a boolean status.
@@ -50,7 +53,7 @@ func StatusBadge(exists bool, label string) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(label + ": found")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 20, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 23, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 			if templ_7745c5c3_Err != nil {
@@ -63,7 +66,7 @@ func StatusBadge(exists bool, label string) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 25, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 28, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -81,7 +84,7 @@ func StatusBadge(exists bool, label string) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(label + ": missing")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 30, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 33, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -94,7 +97,7 @@ func StatusBadge(exists bool, label string) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 35, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 38, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -143,7 +146,7 @@ func SeverityBadge(level string) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue("Severity: " + level)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 50, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 53, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
@@ -161,7 +164,7 @@ func SeverityBadge(level string) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue("Severity: " + level)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 62, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 65, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {
@@ -229,7 +232,7 @@ func LockBadge(source string) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue("Locked: " + source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 119, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 122, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 				if templ_7745c5c3_Err != nil {
@@ -253,7 +256,7 @@ func LockBadge(source string) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 129, Col: 13}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 132, Col: 13}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -373,7 +376,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 227, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 230, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 			if templ_7745c5c3_Err != nil {
@@ -386,7 +389,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 228, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 231, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
@@ -404,7 +407,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 240, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 243, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
@@ -417,7 +420,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 241, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 244, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
@@ -435,7 +438,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 250, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 253, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 			if templ_7745c5c3_Err != nil {
@@ -448,7 +451,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 251, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 254, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
@@ -466,7 +469,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 260, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 263, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
@@ -479,7 +482,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 261, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 264, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 			if templ_7745c5c3_Err != nil {
@@ -497,7 +500,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 270, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 273, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 			if templ_7745c5c3_Err != nil {
@@ -510,7 +513,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(badgeLabel(tooltip, platform))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 271, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 274, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
@@ -558,7 +561,7 @@ func ImageStatusBadge(exists, lowRes bool, label string) templ.Component {
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(label + ": missing")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 290, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 293, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
@@ -571,7 +574,7 @@ func ImageStatusBadge(exists, lowRes bool, label string) templ.Component {
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 295, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 298, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -589,7 +592,7 @@ func ImageStatusBadge(exists, lowRes bool, label string) templ.Component {
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(label + ": low resolution")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 300, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 303, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
@@ -602,7 +605,7 @@ func ImageStatusBadge(exists, lowRes bool, label string) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 305, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 308, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -620,7 +623,7 @@ func ImageStatusBadge(exists, lowRes bool, label string) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(label + ": found")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 310, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 313, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {
@@ -633,7 +636,7 @@ func ImageStatusBadge(exists, lowRes bool, label string) templ.Component {
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 315, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/badge.templ`, Line: 318, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 			if templ_7745c5c3_Err != nil {

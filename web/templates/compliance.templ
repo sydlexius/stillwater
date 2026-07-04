@@ -163,7 +163,9 @@ templ ComplianceTable(data ComplianceData) {
 								id="select-all"
 								onchange="toggleSelectAll(this)"
 								class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+								aria-label={ t(ctx, "report.select_all_rows") }
 							/>
+							<span class="sr-only">{ t(ctx, "report.select_column") }</span>
 						</th>
 						<th
 							scope="col"
@@ -230,6 +232,7 @@ templ complianceRow(row ComplianceRow, profileName string, basePath string) {
 				class="bulk-select rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
 				value={ row.Artist.ID }
 				onchange="updateBulkBar()"
+				aria-label={ tf(ctx, "report.select_row", row.Artist.Name) }
 			/>
 		</td>
 		<td data-col="artist" class="px-4 py-3 text-sm">
@@ -269,7 +272,10 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 		<!-- Overall card -->
 		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-5 shadow">
 			<p class="text-sm font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "report.overall") }</p>
-			<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-600 dark:text-green-400", data.Overall.Score >= 80), templ.KV("text-yellow-600 dark:text-yellow-400", data.Overall.Score >= 50 && data.Overall.Score < 80), templ.KV("text-red-600 dark:text-red-400", data.Overall.Score < 50) }>
+			<!-- Light-mode shades are the 700 step: the 600 greens/yellows fail
+			     WCAG AA contrast on the light card background (axe color-contrast,
+			     #1757 PR-4 a11y pass). Dark-mode 400 shades are unchanged. -->
+			<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-700 dark:text-green-400", data.Overall.Score >= 80), templ.KV("text-yellow-700 dark:text-yellow-400", data.Overall.Score >= 50 && data.Overall.Score < 80), templ.KV("text-red-700 dark:text-red-400", data.Overall.Score < 50) }>
 				{ fmt.Sprintf("%.1f%%", data.Overall.Score) }
 			</p>
 			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
@@ -280,7 +286,7 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 		for _, lib := range data.Libraries {
 			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-5 shadow">
 				<p class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate" title={ lib.LibraryName }>{ lib.LibraryName }</p>
-				<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-600 dark:text-green-400", lib.Score >= 80), templ.KV("text-yellow-600 dark:text-yellow-400", lib.Score >= 50 && lib.Score < 80), templ.KV("text-red-600 dark:text-red-400", lib.Score < 50) }>
+				<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-700 dark:text-green-400", lib.Score >= 80), templ.KV("text-yellow-700 dark:text-yellow-400", lib.Score >= 50 && lib.Score < 80), templ.KV("text-red-700 dark:text-red-400", lib.Score < 50) }>
 					{ fmt.Sprintf("%.1f%%", lib.Score) }
 				</p>
 				<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">

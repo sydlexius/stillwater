@@ -84,6 +84,7 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 	@Layout(t(ctx, "reports.page_title"), assets) {
 		<script src={ assets.ChartJS }></script>
 		<div class="sw-next-reports">
+			<h1 class="sr-only">{ t(ctx, "reports.page_title") }</h1>
 			<div class="sw-rep-workspace sw-card">
 				<!-- Left rail: 260px on desktop; a slide-over drawer at <=768px -->
 				<nav class="sw-rep-rail" id="sw-rep-rail" aria-label={ t(ctx, "reports.page_title") }>
