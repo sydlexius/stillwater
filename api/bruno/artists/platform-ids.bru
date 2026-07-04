@@ -1,0 +1,31 @@
+meta {
+  name: Platform IDs
+  type: http
+  seq: 22
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/platform-ids
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  This endpoint queries the platform-ID mapping table keyed on artistId
+  without first checking the artist itself exists, so the sentinel
+  artistId deterministically yields an empty array rather than a 404.
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return array", function() {
+    expect(res.body).to.be.an("array");
+  });
+}

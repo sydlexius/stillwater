@@ -1,0 +1,26 @@
+meta {
+  name: Bulk Identify Progress
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{apiBase}}/artists/bulk-identify
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response reports a status field", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.status).to.be.a("string");
+  });
+}
