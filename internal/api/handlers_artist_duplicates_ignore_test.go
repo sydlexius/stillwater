@@ -22,8 +22,7 @@ import (
 )
 
 // ignoreReq builds a POST request to the ignore endpoint with an admin auth
-// context. body is JSON-encoded; pass a raw string via rawIgnoreReq for the
-// malformed-body case.
+// context. body is marshaled to JSON before being set as the request body.
 func ignoreReq(t *testing.T, body any) *http.Request {
 	t.Helper()
 	buf, err := json.Marshal(body)

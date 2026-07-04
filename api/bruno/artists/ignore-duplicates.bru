@@ -1,0 +1,37 @@
+meta {
+  name: Ignore Duplicate Group
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{apiBase}}/artists/duplicates/ignore
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "member_ids": ["fixture-artist-1", "fixture-artist-2"]
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    // The endpoint persists an ignore ledger entry keyed on the member-ID
+    // signature; it does not require the IDs to match a currently-detected
+    // duplicate group (idempotent by design, #2219), so a fixture pair with
+    // no live group still ignores cleanly.
+    expect(res.status).to.equal(200);
+  });
+
+  test("response echoes the signature", function() {
+    expect(res.body.ignored).to.equal(true);
+    expect(res.body.signature).to.be.a("string");
+  });
+}

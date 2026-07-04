@@ -163,7 +163,7 @@ templ artistDuplicatesIgnoreScript() {
 			function csrfToken() {
 				if (typeof window.swCsrfToken === 'function') return window.swCsrfToken();
 				var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-				return match ? decodeURIComponent(match[1]) : '';
+				return match ? match[1] : '';
 			}
 
 			// memberIdsFor returns the group's member IDs from the card's

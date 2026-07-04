@@ -33,6 +33,14 @@ func TestDuplicateGroupSignature_OrderInvariant(t *testing.T) {
 	if got := DuplicateGroupSignature(nil); got != "" {
 		t.Errorf("nil signature = %q, want empty string", got)
 	}
+	// Whitespace-padded IDs collapse to their trimmed form.
+	if got := DuplicateGroupSignature([]string{" a1 ", "b2"}); got != "a1|b2" {
+		t.Errorf("whitespace-padded signature = %q, want %q (trimmed)", got, "a1|b2")
+	}
+	// Duplicate IDs collapse to a single occurrence.
+	if got := DuplicateGroupSignature([]string{"a1", "b2", "b2"}); got != "a1|b2" {
+		t.Errorf("duplicate-id signature = %q, want %q (deduped)", got, "a1|b2")
+	}
 }
 
 // mkGroup builds a NearDuplicateGroup with the given member IDs for filter tests.

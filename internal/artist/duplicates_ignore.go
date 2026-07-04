@@ -25,17 +25,25 @@ import (
 )
 
 // DuplicateGroupSignature computes the canonical, order-invariant signature for
-// a near-duplicate group from its member artist IDs: non-empty IDs sorted
+// a near-duplicate group from its member artist IDs: IDs are trimmed of
+// surrounding whitespace, deduplicated, and the non-empty survivors sorted
 // ascending and joined with "|". This matches the detector's member set and the
 // legacy client key scheme exactly, so a group ignored via the API and the same
 // group detected server-side produce identical signatures. Returns "" when no
 // non-empty IDs remain, which callers treat as an invalid (un-ignorable) group.
 func DuplicateGroupSignature(memberIDs []string) string {
 	ids := make([]string, 0, len(memberIDs))
+	seen := make(map[string]struct{}, len(memberIDs))
 	for _, id := range memberIDs {
-		if id != "" {
-			ids = append(ids, id)
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
 		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
 		return ""
