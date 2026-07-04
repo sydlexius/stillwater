@@ -97,23 +97,38 @@ func TestArtistDuplicatesNextPage_EmptyState(t *testing.T) {
 }
 
 // TestArtistDuplicatesNextPage_IgnoreScriptContract pins the ignore script's
-// localStorage key scheme (#1716, DC3): the "ui.confirm.duplicate." prefix
-// (so resetConfirmPrefs() clears it) and a sorted-ID join (so no crypto.subtle
-// dependency). A regression to a crypto hash or a different prefix would break
-// either the reset sweep or insecure-context support.
+// server-persistence contract (#2219): clicking Ignore POSTs the group's member
+// IDs to the ignore endpoint with a CSRF header, and there is NO remaining
+// localStorage read/write path (the server is the single source of truth). A
+// regression to the old client-only localStorage scheme would reintroduce the
+// split client/server state the AC forbids.
 func TestArtistDuplicatesNextPage_IgnoreScriptContract(t *testing.T) {
 	var buf bytes.Buffer
 	if err := ArtistDuplicatesNextPage(templates.AssetPaths{IsAdmin: true}, sampleDuplicatesView()).Render(nextTestCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	body := buf.String()
-	if !strings.Contains(body, `ui.confirm.duplicate.`) {
-		t.Errorf("ignore script must key localStorage under the ui.confirm.duplicate. prefix (resetConfirmPrefs sweep)")
+
+	// The ignore must POST to the server endpoint with the member_ids payload
+	// and a CSRF header -- the actual persistence mechanism, not a substring
+	// that a no-op script could also satisfy.
+	for _, want := range []string{
+		`/api/v1/artists/duplicates/ignore`, // server endpoint
+		`method: 'POST'`,                    // mutation, not a read
+		`member_ids`,                        // group identity sent to the server
+		`X-CSRF-Token`,                      // CSRF-protected state change
+		`swCsrfToken`,                       // canonical token reader
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ignore script must POST the ignore server-side; missing %q", want)
+		}
 	}
-	if !strings.Contains(body, `sort().join('|')`) {
-		t.Errorf("ignore script must derive the key from a sorted-ID join (no crypto.subtle dependency)")
-	}
-	if strings.Contains(body, "crypto.subtle") {
-		t.Errorf("ignore script must not use crypto.subtle (secure-context only)")
+
+	// The legacy client-only ignore key scheme must be fully removed so no
+	// ignore state lives only in the browser (the #2219 no-split-state AC). The
+	// ui.confirm.duplicate. prefix was unique to the old ignore script; a bare
+	// "localStorage" check would false-positive on the layout's other scripts.
+	if strings.Contains(body, `ui.confirm.duplicate.`) {
+		t.Errorf("ignore script must not retain the client-only localStorage key scheme (ui.confirm.duplicate.)")
 	}
 }

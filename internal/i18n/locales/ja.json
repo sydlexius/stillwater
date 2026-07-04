@@ -5,7 +5,7 @@
   "artist_duplicates.col_name": "アーティスト",
   "artist_duplicates.col_path": "ディレクトリ",
   "artist_duplicates.empty_state": "重複が疑われるアーティストは検出されませんでした。",
-  "artist_duplicates.empty_state_dismissed": "重複が疑われるアーティストはすべて無視されました。設定で確認プロンプトをリセットすると再表示できます。",
+  "artist_duplicates.empty_state_dismissed": "重複が疑われるアーティストはすべて無視されました。",
   "artist_duplicates.merge_modal.confirm_button": "統合を確認",
   "artist_duplicates.merge_modal.conflicts_heading": "統合できません: アルバムの衝突が検出されました",
   "artist_duplicates.merge_modal.conflicts_help": "両方のディレクトリに同じ名前のアルバムが存在します。衝突しているアルバムのいずれかをディスク上でリネームまたは削除し、このページを更新して再試行してください。",
