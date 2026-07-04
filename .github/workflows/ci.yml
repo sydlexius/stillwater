@@ -22,16 +22,30 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       js: ${{ steps.filter.outputs.js }}
       a11y: ${{ steps.filter.outputs.a11y }}
+      # True only when EVERY changed file is under .github/workflows/ (e.g. a
+      # Dependabot action-version bump). Mutually exclusive with `code`: a diff
+      # that also touches app code always has code=true instead. Drives a
+      # trimmed-but-real representative build+test leg (see build_matrix/
+      # test_matrix below) instead of the full app-test fan-out -- see
+      # docs/pr-workflow.md "Workflow-only trim".
+      workflow_only: ${{ steps.workflow_only.outputs.only }}
       # Always emits at least one matrix leg so GitHub can interpolate the job
       # name. Non-code PRs get a single placeholder leg marked skip=true whose
       # build steps no-op. (An empty matrix, or a job skipped via `if:`, instead
       # surfaces the literal, unexpanded "Build (${{ matrix.goos }},
-      # ${{ matrix.goarch }})" check name.)
+      # ${{ matrix.goarch }})" check name.) Workflow-only PRs get the same
+      # single leg but run for real (no skip flag) as the representative build.
       build_matrix: ${{ steps.matrix.outputs.build_matrix }}
+      # Full 9-shard matrix for code changes; a single representative shard
+      # for workflow-only PRs (exercises checkout/setup-go/cache/upload-artifact
+      # for real without paying for the full fan-out); unused otherwise.
+      test_matrix: ${{ steps.matrix.outputs.test_matrix }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Needed to diff against the PR base / previous push commit below.
+          fetch-depth: 0
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
         id: filter
@@ -47,7 +61,6 @@ jobs:
               - 'cmd/**'
               - 'Makefile'
               - 'build/docker/**'
-              - '.github/workflows/ci.yml'
               - '.goreleaser.yml'
               - '.golangci.yml'
               - '.spectral.yaml'
@@ -57,7 +70,6 @@ jobs:
               - 'tests/unit/**'
               - 'package.json'
               - 'package-lock.json'
-              - '.github/workflows/ci.yml'
             a11y:
               - 'web/templates/**'
               - 'web/static/css/**'
@@ -68,15 +80,47 @@ jobs:
               - 'package-lock.json'
               - '**/*.go'
               - '**/*.templ'
-              - '.github/workflows/ci.yml'
 
-      - name: Compute build matrix
+      # Detects a diff where EVERY changed file is under .github/workflows/.
+      # Cannot be expressed as a dorny/paths-filter "matches" output (that
+      # answers "did ANY file match", not "do ALL files match"), so this
+      # walks the actual changed-file list. Ambiguous cases (no resolvable
+      # base SHA) default to `only=false`, i.e. fail toward running the full
+      # stack rather than under-testing a real code change.
+      - name: Detect workflow-only diff
+        id: workflow_only
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+          if [ -z "${BASE_SHA}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "Cannot resolve base SHA; treating as not workflow-only."
+            echo "only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "${BASE_SHA}" "${{ github.sha }}")
+          if [ -z "${CHANGED}" ]; then
+            echo "only=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "${CHANGED}" | grep -qvE '^\.github/workflows/'; then
+            echo "only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute build/test matrices
         id: matrix
         run: |
           if [ "${{ steps.filter.outputs.code }}" = "true" ]; then
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"},{"goos":"linux","goarch":"arm64"},{"goos":"darwin","goarch":"amd64"},{"goos":"darwin","goarch":"arm64"},{"goos":"windows","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'test_matrix={"shard":["api-1","api-2","rule-1","rule-2","services","settingsio","providers","scan","rest"]}' >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.workflow_only.outputs.only }}" = "true" ]; then
+            echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'test_matrix={"shard":["rest"]}' >> "$GITHUB_OUTPUT"
           else
             echo 'build_matrix={"include":[{"goos":"linux","goarch":"amd64","skip":true}]}' >> "$GITHUB_OUTPUT"
+            echo 'test_matrix={"shard":["rest"]}' >> "$GITHUB_OUTPUT"
           fi
 
   # ---------------------------------------------------------------------------
@@ -105,7 +149,7 @@ jobs:
     name: Go Cache Primer
     runs-on: ubuntu-latest
     needs: [changes]
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow_only == 'true'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -383,13 +427,14 @@ jobs:
     name: Test Shard
     runs-on: ubuntu-latest
     needs: [changes, go-cache-primer]
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow_only == 'true'
     strategy:
       # One shard's failure should not cancel the others -- a flake in one
       # shard hides real failures in the others if fail-fast is on.
       fail-fast: false
-      matrix:
-        shard: [api-1, api-2, rule-1, rule-2, services, settingsio, providers, scan, rest]
+      # Full 9-shard set for code changes; a single representative shard
+      # (`rest`) for workflow-only diffs -- see changes.outputs.test_matrix.
+      matrix: ${{ fromJson(needs.changes.outputs.test_matrix) }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -557,8 +602,8 @@ jobs:
             echo "Detect Changes did not succeed: ${{ needs.changes.result }}"
             exit 1
           fi
-          if [ "${{ needs.changes.outputs.code }}" != "true" ]; then
-            echo "No code changes; Test shards were skipped."
+          if [ "${{ needs.changes.outputs.code }}" != "true" ] && [ "${{ needs.changes.outputs.workflow_only }}" != "true" ]; then
+            echo "No code or workflow changes; Test shards were skipped."
             exit 0
           fi
           if [ "${{ needs.test.result }}" != "success" ]; then
@@ -708,8 +753,9 @@ jobs:
     name: Build Matrix (${{ matrix.goos }}, ${{ matrix.goarch }})
     runs-on: ubuntu-latest
     needs: [changes, lint, coverage-floor]
-    # Run placeholder leg for non-code PRs (dependencies skipped); run full
-    # matrix only after lint/coverage-floor succeed for code changes.
+    # Run a placeholder leg for docs-only PRs, a single REAL representative
+    # leg for workflow-only PRs (see changes.outputs.build_matrix), and the
+    # full matrix -- gated on lint/coverage-floor success -- for code changes.
     if: |
       always() &&
       needs.changes.result == 'success' &&
