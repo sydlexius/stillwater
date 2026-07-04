@@ -980,6 +980,13 @@
     "covered": true
   },
   {
+    "operationId": "ignoreDuplicateGroup",
+    "method": "POST",
+    "path": "/artists/duplicates/ignore",
+    "handler": "handleArtistDuplicatesIgnore",
+    "covered": true
+  },
+  {
     "operationId": "importLibraries",
     "method": "POST",
     "path": "/connections/{id}/libraries/import",

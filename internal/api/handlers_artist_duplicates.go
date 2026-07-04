@@ -96,8 +96,85 @@ func (r *Router) handleArtistDuplicatesPage(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// Drop server-side ignored groups (#2219) before building the view so the
+	// page and the sidebar count -- which filter through the same helper -- can
+	// never diverge.
+	ignored, err := artist.LoadIgnoredSignatures(req.Context(), r.db)
+	if err != nil {
+		r.logger.Error("loading ignored duplicate groups", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	groups = artist.FilterIgnoredGroups(groups, ignored)
+
 	view := buildArtistDuplicatesView(groups, r.lookupArticleMode(req))
 	renderTempl(w, req, templates.ArtistDuplicatesPage(r.assetsFor(req), view))
+}
+
+// ignoreDuplicateRequest is the wire shape for POST
+// /api/v1/artists/duplicates/ignore. member_ids identifies the group (the
+// canonical signature is derived from them server-side); group_key and reason
+// are optional display context stored for the manage-ignored view.
+type ignoreDuplicateRequest struct {
+	MemberIDs []string `json:"member_ids"`
+	GroupKey  string   `json:"group_key"`
+	Reason    string   `json:"reason"`
+}
+
+// handleArtistDuplicatesIgnore persists a server-side ignore for a near-
+// duplicate group (#2219). Admin-only via requireForeignAdmin, the same gate as
+// the merge endpoint and the page. The group is identified by its member artist
+// IDs, from which the canonical signature is computed; the write is idempotent,
+// so re-ignoring the same group returns 200 without error. On success the
+// sidebar count cache is invalidated so the pill drops on the next poll.
+//
+// POST {basePath}/api/v1/artists/duplicates/ignore
+func (r *Router) handleArtistDuplicatesIgnore(w http.ResponseWriter, req *http.Request) {
+	if !r.requireForeignAdmin(w, req) {
+		return
+	}
+	if r.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error":   "unavailable",
+			"message": "database not configured",
+		})
+		return
+	}
+
+	var body ignoreDuplicateRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":   "invalid_request",
+			"message": "invalid JSON body",
+		})
+		return
+	}
+
+	signature := artist.DuplicateGroupSignature(body.MemberIDs)
+	if signature == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":   "invalid_request",
+			"message": "member_ids must contain at least one non-empty id",
+		})
+		return
+	}
+
+	if err := artist.IgnoreDuplicateGroup(req.Context(), r.db, signature, body.GroupKey, body.Reason); err != nil {
+		// Log the wrapped error for operators; return a generic envelope so no
+		// raw error text (driver strings, column names) leaks to API callers.
+		r.logger.Error("ignoring near-duplicate group", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error":   "internal",
+			"message": "see server logs",
+		})
+		return
+	}
+
+	// Ignoring a group changes the duplicate-group set; drop the sidebar's
+	// cached count so the next poll reflects the decrement. Mirrors the merge
+	// handler's invalidate-before-respond pattern.
+	duplicatesCount.invalidate()
+	writeJSON(w, http.StatusOK, map[string]any{"ignored": true, "signature": signature})
 }
 
 // mergeRequestBody is the wire shape for POST /api/v1/artists/merge. The
@@ -340,8 +417,10 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 //
 // The detection result is cached at module scope for duplicatesCountTTL so
 // that polling sidebars across many tabs collapse to at most one
-// DetectDuplicates run per TTL window. The cache is invalidated on
-// successful merges (handled in handleArtistsMerge).
+// DetectDuplicates run per TTL window. The cache is invalidated on successful
+// merges (handleArtistsMerge) and on successful ignores
+// (handleArtistDuplicatesIgnore) so the pill reflects the change on the next
+// poll; otherwise it relies on TTL expiry.
 func (r *Router) handleArtistDuplicatesCount(w http.ResponseWriter, req *http.Request) {
 	// Admin gate: middleware.RoleFromContext is populated by wrapAuth.
 	// Mirrors the gate enforced by requireForeignAdmin on the page handler.
@@ -419,7 +498,14 @@ func countDuplicateGroups(ctx context.Context, db *sql.DB) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return len(groups), nil
+	// Exclude server-side ignored groups (#2219) through the same filter the
+	// page uses, so the pill count matches what the page shows and drops when a
+	// group is ignored.
+	ignored, err := artist.LoadIgnoredSignatures(ctx, db)
+	if err != nil {
+		return 0, err
+	}
+	return len(artist.FilterIgnoredGroups(groups, ignored)), nil
 }
 
 // buildArtistDuplicatesView converts the detection result into the view model

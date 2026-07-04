@@ -46,6 +46,16 @@ func (r *Router) handleNextArtistDuplicatesPage(w http.ResponseWriter, req *http
 		return
 	}
 
+	// Drop server-side ignored groups (#2219) via the shared filter, matching
+	// the stable page and the sidebar count exactly.
+	ignored, err := artist.LoadIgnoredSignatures(req.Context(), r.db)
+	if err != nil {
+		r.logger.Error("loading ignored duplicate groups for next page", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	groups = artist.FilterIgnoredGroups(groups, ignored)
+
 	view := buildArtistDuplicatesView(groups, r.lookupArticleMode(req))
 	renderTempl(w, req, next.ArtistDuplicatesNextPage(r.assetsFor(req), view))
 }

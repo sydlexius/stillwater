@@ -479,6 +479,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/duplicates/count", wrapAuth(r.handleArtistDuplicatesCount, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/merge", wrapAuth(r.handleArtistsMerge, authMw))
+	// #2219: server-side ignore for a suspected-duplicate group. Admin-only via
+	// the in-handler requireForeignAdmin gate (same as merge). Persists the
+	// ignore and invalidates the sidebar count cache so the pill drops.
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/duplicates/ignore", wrapAuth(r.handleArtistDuplicatesIgnore, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleLockArtist, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleUnlockArtist, authMw))
 	// Field-level and per-image lock toggles for platforms that support
