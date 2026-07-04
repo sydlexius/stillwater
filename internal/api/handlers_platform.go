@@ -192,21 +192,6 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
 
-// normalizeSettingsSection maps a raw section string to a valid settings tab
-// name. Unknown values fall back to "general". This keeps the validation logic
-// in one place so handleSettingsPage and handleSettingsSectionPage stay in sync.
-func normalizeSettingsSection(section string) templates.SettingsTabID {
-	switch templates.SettingsTabID(section) {
-	case templates.TabGeneral, templates.TabProviders, templates.TabConnections,
-		templates.TabLibraries, templates.TabAutomation, templates.TabRules,
-		templates.TabUsers, templates.TabAuthProviders, templates.TabMaintenance,
-		templates.TabLogs, templates.TabUpdates:
-		return templates.SettingsTabID(section)
-	default:
-		return templates.TabGeneral
-	}
-}
-
 // handleSettingsPage renders the settings HTML page.
 // GET /settings
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {

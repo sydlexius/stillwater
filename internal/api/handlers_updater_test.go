@@ -16,7 +16,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/updater"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // testRouterWithUpdater creates a minimal Router with a real updater.Service.
@@ -979,16 +978,6 @@ func TestBuildUpdatesTabData_GetConfigError(t *testing.T) {
 	}
 	if data.CheckIntervalHours != updater.DefaultCheckIntervalHours {
 		t.Errorf("CheckIntervalHours = %d, want %d on LoadFailed", data.CheckIntervalHours, updater.DefaultCheckIntervalHours)
-	}
-}
-
-// TestNormalizeSettingsSectionUpdates verifies that "updates" is a valid
-// settings section that routes to the updates tab.
-func TestNormalizeSettingsSectionUpdates(t *testing.T) {
-	t.Parallel()
-	got := normalizeSettingsSection("updates")
-	if got != templates.TabUpdates {
-		t.Errorf("normalizeSettingsSection(\"updates\") = %q, want \"updates\"", got)
 	}
 }
 

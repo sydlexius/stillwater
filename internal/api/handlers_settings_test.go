@@ -7,29 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/sydlexius/stillwater/web/templates"
 )
-
-// TestNormalizeSettingsSection verifies that valid section names pass through
-// unchanged and that unknown names fall back to "general".
-func TestNormalizeSettingsSection(t *testing.T) {
-	t.Parallel()
-	valid := []string{
-		"general", "providers", "connections", "libraries",
-		"automation", "rules", "users", "auth_providers", "maintenance", "logs",
-	}
-	for _, s := range valid {
-		if got := normalizeSettingsSection(s); string(got) != s {
-			t.Errorf("normalizeSettingsSection(%q) = %q, want %q", s, got, s)
-		}
-	}
-	for _, bad := range []string{"", "admin", "unknown", "../etc", "appearance", "authentication"} {
-		if got := normalizeSettingsSection(bad); got != templates.TabGeneral {
-			t.Errorf("normalizeSettingsSection(%q) = %q, want \"general\"", bad, got)
-		}
-	}
-}
 
 func TestHandleUpdateSettings_CacheMaxSize_Invalid(t *testing.T) {
 	t.Parallel()
