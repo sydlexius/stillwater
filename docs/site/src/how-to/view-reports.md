@@ -2,7 +2,7 @@
 description: Browse the two-pane Reports workspace at /reports to view compliance, library health, metadata completeness, and rule pass-rate data across your library.
 ---
 
-<!-- code: web/templates/reports.templ, internal/api/handlers_report.go -->
+<!-- code: web/templates/reports_page.templ, internal/api/handlers_report.go -->
 
 # View reports
 
