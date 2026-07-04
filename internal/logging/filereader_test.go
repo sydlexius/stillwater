@@ -198,7 +198,7 @@ func TestParseLogLine_TraceLevel(t *testing.T) {
 }
 
 func TestManagerReadLogFile_PathTraversal(t *testing.T) {
-	cfg := Config{Level: "info", Format: "json", FilePath: "/tmp/test.log"}
+	cfg := Config{Level: "info", Format: "json", FilePath: filepath.Join(t.TempDir(), "test.log")}
 	mgr, _ := NewManager(cfg)
 	defer mgr.Close()
 
