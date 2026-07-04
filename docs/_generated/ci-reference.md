@@ -54,7 +54,7 @@ flowchart TD
 
 ## Test Matrix Shards
 
-No test shards configured.
+Test shards are computed dynamically at runtime (see the `test_matrix` output in ci.yml).
 
 ## Test Aggregator Pattern
 

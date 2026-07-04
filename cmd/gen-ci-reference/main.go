@@ -103,13 +103,14 @@ func run(sourcePath, outPath string, checkOnly bool) error {
 
 // ciJob holds the parsed representation of one GitHub Actions job.
 type ciJob struct {
-	ID       string
-	Name     string
-	Needs    []string
-	If       string
-	RunsOn   string
-	Shards   []string
-	ShardMap map[string]string
+	ID            string
+	Name          string
+	Needs         []string
+	If            string
+	RunsOn        string
+	Shards        []string
+	ShardMap      map[string]string
+	DynamicMatrix bool
 }
 
 // ciWorkflow is the parsed CI workflow.
@@ -140,6 +141,19 @@ type jobYAML struct {
 // is captured as interface{} and inspected afterwards.
 type strategyYAML struct {
 	Matrix interface{} `yaml:"matrix"` // map[string]interface{} or expression string
+}
+
+// isDynamicExpr reports whether the matrix is a GitHub Actions expression
+// string (e.g. `${{ fromJson(needs.changes.outputs.test_matrix) }}`) rather
+// than a literal YAML mapping. shards() cannot extract shard names from an
+// expression, so callers use this to distinguish "computed at runtime" from
+// "genuinely no matrix".
+func (s *strategyYAML) isDynamicExpr() bool {
+	if s == nil {
+		return false
+	}
+	str, ok := s.Matrix.(string)
+	return ok && strings.Contains(str, "${{")
 }
 
 // shards returns the literal shard list from the matrix, or nil if the matrix
@@ -233,6 +247,7 @@ func parseWorkflow(src []byte) (*ciWorkflow, error) {
 		}
 		// Extract matrix shards if present and literal (skips dynamic expressions).
 		job.Shards = j.Strategy.shards()
+		job.DynamicMatrix = j.Strategy.isDynamicExpr()
 		// Extract SHARDS bash map from steps.
 		for _, step := range j.Steps {
 			if m := extractShardsMap(step.Run); len(m) > 0 {
@@ -325,7 +340,8 @@ func renderMermaid(wf *ciWorkflow) string {
 	b.WriteString("flowchart TD\n")
 
 	// Emit nodes with labels.
-	for _, job := range wf.Jobs {
+	for i := range wf.Jobs {
+		job := &wf.Jobs[i]
 		label := job.Name
 		if label == "" {
 			label = job.ID
@@ -340,7 +356,8 @@ func renderMermaid(wf *ciWorkflow) string {
 	b.WriteString("\n")
 
 	// Emit edges from needs relationships.
-	for _, job := range wf.Jobs {
+	for i := range wf.Jobs {
+		job := &wf.Jobs[i]
 		nodeID := sanitizeID(job.ID)
 		for _, need := range job.Needs {
 			needID := sanitizeID(need)
@@ -384,6 +401,10 @@ func renderShardSection(wf *ciWorkflow) (string, error) {
 	b.WriteString("## Test Matrix Shards\n\n")
 
 	if len(testJob.Shards) == 0 {
+		if testJob.DynamicMatrix {
+			b.WriteString("Test shards are computed dynamically at runtime (see the `test_matrix` output in ci.yml).\n")
+			return b.String(), nil
+		}
 		b.WriteString("No test shards configured.\n")
 		return b.String(), nil
 	}
