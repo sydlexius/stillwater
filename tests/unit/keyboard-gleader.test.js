@@ -238,3 +238,28 @@ describe('keyboard.js: M1 - g-leader suppressed while cheat sheet is open', () =
     assert.ok(navigated[0].endsWith('/next/'), `expected /next/, got ${navigated[0]}`);
   });
 });
+
+describe('keyboard.js: "s" focuses the secondary search (#1757 PR-4)', () => {
+  it('s focuses the [data-sw-shortcut="s"] target when present', () => {
+    const railHtml = '<input id="rep-rail-filter" type="search" data-sw-shortcut="s" data-sw-shortcut-label="Search reports">';
+    const { win } = setup(railHtml);
+    const evt = fire(win, 's');
+    assert.equal(win.document.activeElement.id, 'rep-rail-filter', 's must focus the rail search input');
+    assert.ok(evt.defaultPrevented, 's must preventDefault when it focuses its target');
+  });
+
+  it('s is a no-op (no throw, no focus steal) when no target exists', () => {
+    const { win } = setup(); // base DOM has only the "/" search input
+    const evt = fire(win, 's');
+    assert.notEqual(win.document.activeElement.id, 'search', 's must not focus the "/" search box');
+    assert.equal(evt.defaultPrevented, false, 's must not preventDefault without a target');
+  });
+
+  it('s while typing in an input does not steal focus', () => {
+    const railHtml = '<input id="rep-rail-filter" type="search" data-sw-shortcut="s" data-sw-shortcut-label="Search reports">';
+    const { win } = setup(railHtml);
+    win.document.getElementById('search').focus();
+    fire(win, 's');
+    assert.equal(win.document.activeElement.id, 'search', 'typing "s" in a field must not move focus');
+  });
+});
