@@ -1,0 +1,34 @@
+meta {
+  name: Images Websearch (Sentinel 404)
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/images/websearch
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  artistId is the all-zeros sentinel UUID guaranteed not to exist in the CI
+  database. The handler validates the (omitted) sort key first -- an empty
+  "sort" query param is accepted as "no sort" -- then checks the artist
+  exists before the "type" filter is validated, so the sentinel
+  deterministically yields a 404 ahead of any provider search.
+}
+
+tests {
+  test("returns 404 for sentinel artistId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports artist not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
+  });
+}

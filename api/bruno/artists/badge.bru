@@ -1,0 +1,25 @@
+meta {
+  name: Artists Badge
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{apiBase}}/artists/badge
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("returns an HTML fragment", function() {
+    expect(res.headers["content-type"]).to.include("text/html");
+  });
+}

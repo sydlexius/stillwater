@@ -1,0 +1,32 @@
+meta {
+  name: Fields Edit All (Non-HTMX 400)
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/fields/edit-all
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  This route only serves HTMX swaps (checked before the artist lookup), so a
+  plain Bruno request without HX-Request deterministically hits the 400
+  guard regardless of whether artistId exists.
+}
+
+tests {
+  test("returns 400 for a non-HTMX request", function() {
+    expect(res.status).to.equal(400);
+  });
+
+  test("error envelope reports the HTMX requirement", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("edit-all requires an HTMX request");
+  });
+}
