@@ -51,7 +51,7 @@ func ActivityPage(assets AssetPaths, data ActivityPageData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"sw-next-activity\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()\n\t\t     this promoted screen carries the next-gen chrome regardless of URL, so\n\t\t     the Global cheat-sheet section and g-leader nav register here the same\n\t\t     as on /next/activity. Must render before LayoutGlobalChrome's\n\t\t     KeyboardJS script tag (later in Layout's document order) so the flag is\n\t\t     set when that script's isNextPage() check runs. Scoped to this page\n\t\t     only, NOT set in Layout itself, which is also the shared shell for\n\t\t     still-legacy/stable screens. --> <script>window.SW_IS_NEXT_PAGE = true;</script> <div class=\"sw-next-activity\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

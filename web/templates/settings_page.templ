@@ -220,6 +220,15 @@ templ railIcon(name, cls string) {
 // keyboard + cross-tab SSE refresh).
 templ SettingsPage(assets AssetPaths, data SettingsData) {
 	@Layout(t(ctx, "settings.title"), assets) {
+		<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()
+		     this promoted screen carries the next-gen chrome regardless of URL, so
+		     the Global cheat-sheet section and g-leader nav register here the same
+		     as on /next/settings. Must render before LayoutGlobalChrome's KeyboardJS
+		     script tag (later in Layout's document order) so the flag is set when
+		     that script's isNextPage() check runs. Scoped to this page only,
+		     NOT set in Layout itself, which is also the shared shell for
+		     still-legacy/stable screens. -->
+		<script>window.SW_IS_NEXT_PAGE = true;</script>
 		<script src={ assets.SettingsSectionRefreshJS }></script>
 		<script src={ assets.SettingsResetConfirmPrefsJS }></script>
 		<script src={ assets.SettingsSymlinkJS }></script>
@@ -646,4 +655,3 @@ templ nextSectionActiveProfile(data SettingsData) {
 		</div>
 	}
 }
-

@@ -43,6 +43,15 @@ func TestHandleActivityPage_RendersPromotedShell(t *testing.T) {
 			t.Errorf("preserved hook id missing from activity page: %s", id)
 		}
 	}
+
+	// #1757 PR-5 fix-round: the promoted page must set SW_IS_NEXT_PAGE so
+	// keyboard.js's isNextPage() registers the Global cheat-sheet/g-leader
+	// shortcuts here, and it must render before the keyboard.js script tag.
+	flagIdx := strings.Index(body, "window.SW_IS_NEXT_PAGE = true;")
+	kbdIdx := strings.Index(body, "/static/js/keyboard.js")
+	if flagIdx == -1 || kbdIdx == -1 || flagIdx >= kbdIdx {
+		t.Errorf("SW_IS_NEXT_PAGE flag (idx %d) must appear before the keyboard.js script tag (idx %d)", flagIdx, kbdIdx)
+	}
 }
 
 // TestHandleActivityPage_UnauthRendersLoginPage asserts that an unauthenticated

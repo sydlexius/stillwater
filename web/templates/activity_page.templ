@@ -13,6 +13,15 @@ package templates
 // stable /activity/content endpoint, so no next/-specific content route exists.
 templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 	@Layout(t(ctx, "activity.title"), assets) {
+		<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()
+		     this promoted screen carries the next-gen chrome regardless of URL, so
+		     the Global cheat-sheet section and g-leader nav register here the same
+		     as on /next/activity. Must render before LayoutGlobalChrome's
+		     KeyboardJS script tag (later in Layout's document order) so the flag is
+		     set when that script's isNextPage() check runs. Scoped to this page
+		     only, NOT set in Layout itself, which is also the shared shell for
+		     still-legacy/stable screens. -->
+		<script>window.SW_IS_NEXT_PAGE = true;</script>
 		<div class="sw-next-activity">
 			@ActivityBody(data)
 		</div>

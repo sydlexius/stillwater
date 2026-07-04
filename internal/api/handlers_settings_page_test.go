@@ -51,19 +51,29 @@ func TestHandleSettingsPage_HappyPath(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, marker := range []string{
-		`class="sw-next-settings"`,     // scope class (chrome shell)
-		`id="settings-search-input"`,   // keyword filter
-		`data-rail-group="essentials"`, // a rail group
-		`data-rail-group="system"`,     // last rail group
-		`id="section-platform"`,        // a deep-link section anchor (Platform profile)
-		`href="#section-platform"`,     // its rail link
-		`id="group-essentials"`,        // a pane <h2> group divider (all-scrollable)
-		`data-rail-toggle`,             // the mobile section-nav hamburger
-		`id="section-updates"`,         // Updates section (SettingsUpdatesTab)
+		`class="sw-next-settings"`,       // scope class (chrome shell)
+		`id="settings-search-input"`,     // keyword filter
+		`data-rail-group="essentials"`,   // a rail group
+		`data-rail-group="system"`,       // last rail group
+		`id="section-platform"`,          // a deep-link section anchor (Platform profile)
+		`href="#section-platform"`,       // its rail link
+		`id="group-essentials"`,          // a pane <h2> group divider (all-scrollable)
+		`data-rail-toggle`,               // the mobile section-nav hamburger
+		`id="section-updates"`,           // Updates section (SettingsUpdatesTab)
+		`window.SW_IS_NEXT_PAGE = true;`, // #1757 PR-5 fix-round: global cheat-sheet/g-leader flag
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("expected settings marker %q in body", marker)
 		}
+	}
+
+	// The SW_IS_NEXT_PAGE flag must render BEFORE the keyboard.js <script> tag:
+	// keyboard.js's isNextPage() reads the flag at script-execution time, and
+	// browsers execute inline/external scripts in document order (#1757 PR-5).
+	flagIdx := strings.Index(body, "window.SW_IS_NEXT_PAGE = true;")
+	kbdIdx := strings.Index(body, "/static/js/keyboard.js")
+	if flagIdx == -1 || kbdIdx == -1 || flagIdx >= kbdIdx {
+		t.Errorf("SW_IS_NEXT_PAGE flag (idx %d) must appear before the keyboard.js script tag (idx %d)", flagIdx, kbdIdx)
 	}
 }
 
