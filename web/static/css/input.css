@@ -5804,7 +5804,8 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 
 .sw-rep-item.is-active {
   border-left-color: var(--sw-accent-primary);
-  background: rgba(59, 130, 246, 0.1);
+  /* Fill tracks the accent token like the border (CR finding on #2222). */
+  background: color-mix(in srgb, var(--sw-accent-primary) 10%, transparent);
 }
 
 .sw-rep-item-body {
@@ -5911,21 +5912,23 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 /* Primary variant (#1757 PR-4: the restored Run Rules button). Uses the
- * scope's established accent-emphasis treatment (accent border + 10% accent
- * tint, cf. .sw-rep-filter-btn.is-active / .sw-rep-item.is-active) rather
- * than a solid hardcoded-blue fill: it reads as the pane's primary action
- * next to the neutral glass Re-evaluate All, follows the accent token, and
- * keeps the pane's content-text color, whose contrast is already
- * axe-verified on this surface (white-on-default-accent would fail AA at
- * this 13px size). */
+ * scope's accent-emphasis treatment (accent border + 10% accent tint, cf.
+ * .sw-rep-filter-btn.is-active / .sw-rep-item.is-active) rather than a solid
+ * hardcoded-blue fill: it reads as the pane's primary action next to the
+ * neutral glass Re-evaluate All and keeps the pane's content-text color,
+ * whose contrast is already axe-verified on this surface
+ * (white-on-default-accent would fail AA at this 13px size). Both the fill
+ * and the border derive from --sw-accent-primary (fill via color-mix) so a
+ * non-blue accent preference recolors the whole button, not just its border
+ * (CR finding on #2222). */
 .sw-rep-run-btn.sw-rep-run-btn--primary {
-  background: rgba(59, 130, 246, 0.1);
+  background: color-mix(in srgb, var(--sw-accent-primary) 10%, transparent);
   border-color: var(--sw-accent-primary);
   font-weight: 600;
 }
 
 .sw-rep-run-btn.sw-rep-run-btn--primary:hover {
-  background: rgba(59, 130, 246, 0.18);
+  background: color-mix(in srgb, var(--sw-accent-primary) 18%, transparent);
   border-color: var(--sw-accent-primary);
 }
 
@@ -6028,7 +6031,10 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 
 .sw-rep-filter-btn.is-active {
   border-color: var(--sw-accent-primary);
-  background: rgba(59, 130, 246, 0.1);
+  /* Fill tracks the accent token like the border (CR finding on #2222). The
+   * #93c5fd ink stays: it is text color, not a fill, and its contrast is
+   * axe-verified -- recoloring ink needs rendered evidence, not a grep. */
+  background: color-mix(in srgb, var(--sw-accent-primary) 10%, transparent);
   color: #93c5fd;
 }
 
