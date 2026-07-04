@@ -12,16 +12,16 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-// TestHandleNextReportsPage_RendersWorkshell verifies that GET /next/reports
-// returns 200 on the "next" channel and renders the two-pane workspace shell
+// TestHandleReportsPage_RendersWorkshell verifies that GET /reports
+// returns 200 and renders the two-pane workspace shell
 // (.sw-next-reports + .sw-rep-workspace) with the compliance report active.
-func TestHandleNextReportsPage_RendersWorkshell(t *testing.T) {
+func TestHandleReportsPage_RendersWorkshell(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportsPage))
+	h := http.HandlerFunc(r.handleReportsPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -39,39 +39,130 @@ func TestHandleNextReportsPage_RendersWorkshell(t *testing.T) {
 	if !strings.Contains(body, "sw-rep-rail") {
 		t.Errorf("reports rail (sw-rep-rail) absent from response")
 	}
-	if !strings.Contains(body, "/next/reports/compliance") {
-		t.Errorf("compliance report rail link (/next/reports/compliance) absent from response")
+	if !strings.Contains(body, "/reports/compliance") {
+		t.Errorf("compliance report rail link (/reports/compliance) absent from response")
 	}
 }
 
-// TestHandleNextReportsPage_StableMode404 verifies that GET /next/reports
-// returns 404 when the stable UX channel is active. The UX middleware blocks
-// /next/* requests before the handler runs (decision 12).
-func TestHandleNextReportsPage_StableMode404(t *testing.T) {
+// TestHandleReportsPage_KeyboardShortcutBindings verifies the maintainer-chosen
+// shortcut scheme (#1757 PR-4 UAT): "s" focuses the rail search on every
+// report; "/" focuses the compliance pane's search-artists box, so it is
+// registered only when that pane renders. The registry reads the
+// data-sw-shortcut attributes, so the exact attribute-on-element pairings are
+// asserted, not just key presence.
+func TestHandleReportsPage_KeyboardShortcutBindings(t *testing.T) {
 	t.Parallel()
-	r := newTestRouterFull(t)
+	r, _ := testRouter(t)
 
-	h := middleware.UX("stable", "")(http.HandlerFunc(r.handleNextReportsPage))
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/next/reports", nil)
+	h := http.HandlerFunc(r.handleReportsPage)
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+
+	// Compliance (default) pane: rail carries "s", search-artists carries "/".
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports", nil)
+	req = withI18nCtx(t, req)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	railIdx := strings.Index(body, `id="rep-rail-filter"`)
+	if railIdx < 0 {
+		t.Fatalf("rail filter input (rep-rail-filter) absent")
+	}
+	// The rail input's attributes precede its id in source order; check the
+	// tag containing the id carries the "s" binding.
+	railTag := body[strings.LastIndex(body[:railIdx], "<input") : strings.Index(body[railIdx:], ">")+railIdx]
+	if !strings.Contains(railTag, `data-sw-shortcut="s"`) {
+		t.Errorf("rail search must bind the s shortcut; tag: %s", railTag)
+	}
+	searchIdx := strings.Index(body, `id="compliance-search"`)
+	if searchIdx < 0 {
+		t.Fatalf("compliance search-artists input (compliance-search) absent")
+	}
+	searchTag := body[strings.LastIndex(body[:searchIdx], "<input") : strings.Index(body[searchIdx:], ">")+searchIdx]
+	if !strings.Contains(searchTag, `data-sw-shortcut="/"`) {
+		t.Errorf("compliance search-artists must bind the / shortcut; tag: %s", searchTag)
+	}
+
+	// Non-compliance pane: no search-artists box, so "/" must not register.
+	req = httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports?tab=health", nil)
+	req = withI18nCtx(t, req)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("?tab=health: status = %d, want 200", w.Code)
+	}
+	healthBody := w.Body.String()
+	if strings.Contains(healthBody, `data-sw-shortcut="/"`) {
+		t.Errorf("/ must not be registered on panes without the search-artists box")
+	}
+	if !strings.Contains(healthBody, `data-sw-shortcut="s"`) {
+		t.Errorf("s (rail search) must be registered on every report pane")
+	}
+}
+
+// TestHandleReportsPage_ServesStableChannel verifies that the promoted
+// workspace is channel-agnostic (#1757 PR-4): a request carrying the stable
+// UX channel gets the workspace, not a 404. The pre-promotion checkNextChannel
+// guard (and its StableMode404 / OptOutHeader404 cases) is gone with the
+// dedicated /next/reports routes.
+func TestHandleReportsPage_ServesStableChannel(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	h := middleware.UX("stable", "")(http.HandlerFunc(r.handleReportsPage))
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("stable mode: status = %d, want 404", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("stable channel: status = %d, want 200 (workspace is canonical)", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "sw-rep-workspace") {
+		t.Errorf("stable channel must get the promoted reports workspace")
 	}
 }
 
-// TestHandleNextReportsPage_UnauthRedirectsToLogin verifies that an
+// TestHandleReportsPage_TabQuerySelectsReport verifies that ?tab={name}
+// selects the active report — the form handleCompliancePage's full-page
+// redirect emits (/reports?tab=compliance) — here exercised with the health
+// report.
+func TestHandleReportsPage_TabQuerySelectsReport(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	h := http.HandlerFunc(r.handleReportsPage)
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports?tab=health", nil)
+	req = withI18nCtx(t, req)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("?tab=health: status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "sw-rep-simple-pane") {
+		t.Errorf("?tab=health must render the health pane (sw-rep-simple-pane)")
+	}
+	if strings.Contains(body, "compliance-results") {
+		t.Errorf("?tab=health must not render the compliance pane")
+	}
+}
+
+// TestHandleReportsPage_UnauthRedirectsToLogin verifies that an
 // unauthenticated request renders the login page (HTTP 200) rather than the
 // workspace, matching the wrapOptionalAuth + requireAuth pattern used on all
-// next/ browser pages.
-func TestHandleNextReportsPage_UnauthRedirectsToLogin(t *testing.T) {
+// browser page routes.
+func TestHandleReportsPage_UnauthRedirectsToLogin(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterFull(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportsPage))
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/next/reports", nil)
+	h := http.HandlerFunc(r.handleReportsPage)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -88,16 +179,16 @@ func TestHandleNextReportsPage_UnauthRedirectsToLogin(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_ComplianceReport verifies that GET
-// /next/reports/compliance renders the compliance report workspace with the
+// TestHandleReportPage_ComplianceReport verifies that GET
+// /reports/compliance renders the compliance report workspace with the
 // compliance overview active in the rail and the compliance table present.
-func TestHandleNextReportPage_ComplianceReport(t *testing.T) {
+func TestHandleReportPage_ComplianceReport(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/compliance", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/compliance", nil)
 	req.SetPathValue("name", "compliance")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -121,16 +212,16 @@ func TestHandleNextReportPage_ComplianceReport(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_UnknownReportShowsPlaceholder verifies that
-// GET /next/reports/{name} for an unrecognized name renders the placeholder
+// TestHandleReportPage_UnknownReportShowsPlaceholder verifies that
+// GET /reports/{name} for an unrecognized name renders the placeholder
 // pane (sw-rep-placeholder) and does not attempt to load compliance data.
-func TestHandleNextReportPage_UnknownReportShowsPlaceholder(t *testing.T) {
+func TestHandleReportPage_UnknownReportShowsPlaceholder(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/image-coverage", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/image-coverage", nil)
 	req.SetPathValue("name", "image-coverage")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -148,16 +239,16 @@ func TestHandleNextReportPage_UnknownReportShowsPlaceholder(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_RailContainsBuiltinReports verifies the reports
+// TestHandleReportPage_RailContainsBuiltinReports verifies the reports
 // rail lists all seven built-in reports and marks the active one with
 // aria-current="page".
-func TestHandleNextReportPage_RailContainsBuiltinReports(t *testing.T) {
+func TestHandleReportPage_RailContainsBuiltinReports(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/compliance", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/compliance", nil)
 	req.SetPathValue("name", "compliance")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -169,13 +260,13 @@ func TestHandleNextReportPage_RailContainsBuiltinReports(t *testing.T) {
 	body := w.Body.String()
 
 	wantLinks := []string{
-		"/next/reports/compliance",
-		"/next/reports/underrated-artists",
-		"/next/reports/image-coverage",
-		"/next/reports/connection-sync",
-		"/next/reports/id-metadata-coverage",
-		"/next/reports/state-records",
-		"/next/reports/weekly-review-queue",
+		"/reports/compliance",
+		"/reports/underrated-artists",
+		"/reports/image-coverage",
+		"/reports/connection-sync",
+		"/reports/id-metadata-coverage",
+		"/reports/state-records",
+		"/reports/weekly-review-queue",
 	}
 	for _, link := range wantLinks {
 		if !strings.Contains(body, link) {
@@ -189,57 +280,17 @@ func TestHandleNextReportPage_RailContainsBuiltinReports(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportsPage_OptOutHeader404 verifies the decision-12 per-request
-// opt-out: when the UX channel in context is stable (simulating an
-// X-Stillwater-UX: stable header) the handler returns 404 via checkNextChannel
-// even when the lane itself is enabled. This exercises the !checkNextChannel
-// early-return in handleNextReportsPage.
-func TestHandleNextReportsPage_OptOutHeader404(t *testing.T) {
-	t.Parallel()
-	r, _ := testRouter(t)
-
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports", nil)
-	req = withI18nCtx(t, req)
-	w := httptest.NewRecorder()
-	r.handleNextReportsPage(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("opt-out stable channel: status = %d, want 404 (decision 12)", w.Code)
-	}
-}
-
-// TestHandleNextReportPage_OptOutHeader404 verifies the same decision-12 guard
-// on the named-report handler (handleNextReportPage).
-func TestHandleNextReportPage_OptOutHeader404(t *testing.T) {
-	t.Parallel()
-	r, _ := testRouter(t)
-
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/compliance", nil)
-	req.SetPathValue("name", "compliance")
-	req = withI18nCtx(t, req)
-	w := httptest.NewRecorder()
-	r.handleNextReportPage(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("opt-out stable channel: status = %d, want 404 (decision 12)", w.Code)
-	}
-}
-
-// TestHandleNextReportPage_EmptyNameDefaultsToCompliance verifies that when
+// TestHandleReportPage_EmptyNameDefaultsToCompliance verifies that when
 // the {name} path value is absent or empty the handler defaults to the
 // compliance report (decision 12 default). This exercises the name=="" branch.
-func TestHandleNextReportPage_EmptyNameDefaultsToCompliance(t *testing.T) {
+func TestHandleReportPage_EmptyNameDefaultsToCompliance(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
 	// Do not call SetPathValue so PathValue("name") returns "".
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -249,25 +300,25 @@ func TestHandleNextReportPage_EmptyNameDefaultsToCompliance(t *testing.T) {
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "sw-next-reports") {
-		t.Errorf("empty name must render the next/reports workspace shell")
+		t.Errorf("empty name must render the reports workspace shell")
 	}
 }
 
-// TestHandleNextReportsPage_WithArtistsAndLibrary exercises the artist-row
-// loop and library-service branch in loadNextComplianceData. Adding a real
+// TestHandleReportsPage_WithArtistsAndLibrary exercises the artist-row
+// loop and library-service branch in loadReportsComplianceData. Adding a real
 // artist ensures the pageIDs slice is non-empty, driving the ComplianceRow
 // construction loop, the violations nil-check, and the totalPages increment.
 // Wiring a library service (via testRouterWithLibrary) drives the
 // r.libraryService != nil branch that appends available libraries to the page.
-func TestHandleNextReportsPage_WithArtistsAndLibrary(t *testing.T) {
+func TestHandleReportsPage_WithArtistsAndLibrary(t *testing.T) {
 	t.Parallel()
 	r, _, artistSvc := testRouterWithLibrary(t)
 
 	addTestArtist(t, artistSvc, "LibraryReport Artist")
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportsPage))
+	h := http.HandlerFunc(r.handleReportsPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -281,20 +332,20 @@ func TestHandleNextReportsPage_WithArtistsAndLibrary(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportsPage_ArtistListError verifies that when artistService.List
+// TestHandleReportsPage_ArtistListError verifies that when artistService.List
 // fails (closed database) the handler returns 500 and does not panic. The
-// serveNextReportsWorkspace !ok short-circuit is also exercised here since
-// loadNextComplianceData propagates the error up.
-func TestHandleNextReportsPage_ArtistListError(t *testing.T) {
+// serveReportsWorkspace !ok short-circuit is also exercised here since
+// loadReportsComplianceData propagates the error up.
+func TestHandleReportsPage_ArtistListError(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 	if err := r.db.Close(); err != nil {
 		t.Fatalf("closing db: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportsPage))
+	h := http.HandlerFunc(r.handleReportsPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -304,11 +355,11 @@ func TestHandleNextReportsPage_ArtistListError(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportsPage_ViolationsError verifies the 500 path when
+// TestHandleReportsPage_ViolationsError verifies the 500 path when
 // GetViolationsForArtists fails. An artist is seeded so pageIDs is non-empty
 // and the rule service actually queries its database; the rule DB is then
 // replaced with a closed one to force the error.
-func TestHandleNextReportsPage_ViolationsError(t *testing.T) {
+func TestHandleReportsPage_ViolationsError(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
 
@@ -320,9 +371,9 @@ func TestHandleNextReportsPage_ViolationsError(t *testing.T) {
 		t.Fatalf("closing rule db: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportsPage))
+	h := http.HandlerFunc(r.handleReportsPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -332,16 +383,16 @@ func TestHandleNextReportsPage_ViolationsError(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportsPage_InvalidSortReturns400 verifies that an invalid sort
+// TestHandleReportsPage_InvalidSortReturns400 verifies that an invalid sort
 // parameter causes complianceListParams to write 400 and the handler to
-// short-circuit, exercising the !ok branch in loadNextComplianceData.
-func TestHandleNextReportsPage_InvalidSortReturns400(t *testing.T) {
+// short-circuit, exercising the !ok branch in loadReportsComplianceData.
+func TestHandleReportsPage_InvalidSortReturns400(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportsPage))
+	h := http.HandlerFunc(r.handleReportsPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports?sort=not_a_valid_field", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports?sort=not_a_valid_field", nil)
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -351,16 +402,16 @@ func TestHandleNextReportsPage_InvalidSortReturns400(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_HealthReport verifies that GET /next/reports/health
+// TestHandleReportPage_HealthReport verifies that GET /reports/health
 // renders the Library health pane (embedding HealthSummaryFragment) rather than
 // the coming-soon placeholder.
-func TestHandleNextReportPage_HealthReport(t *testing.T) {
+func TestHandleReportPage_HealthReport(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/health", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/health", nil)
 	req.SetPathValue("name", "health")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -384,17 +435,17 @@ func TestHandleNextReportPage_HealthReport(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_MetadataCompletenessReport verifies that GET
-// /next/reports/metadata-completeness renders the Metadata completeness pane
+// TestHandleReportPage_MetadataCompletenessReport verifies that GET
+// /reports/metadata-completeness renders the Metadata completeness pane
 // (embedding MetadataCompletenessFragment) rather than the placeholder. With an
 // empty library the fragment shows the "No artists found." empty state.
-func TestHandleNextReportPage_MetadataCompletenessReport(t *testing.T) {
+func TestHandleReportPage_MetadataCompletenessReport(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/metadata-completeness", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/metadata-completeness", nil)
 	req.SetPathValue("name", "metadata-completeness")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -415,16 +466,16 @@ func TestHandleNextReportPage_MetadataCompletenessReport(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_RulePassRatesReport verifies that GET
-// /next/reports/rule-pass-rates renders the Rule pass-rates pane rather than the
+// TestHandleReportPage_RulePassRatesReport verifies that GET
+// /reports/rule-pass-rates renders the Rule pass-rates pane rather than the
 // placeholder. With no rule evaluations the inline list shows its empty state.
-func TestHandleNextReportPage_RulePassRatesReport(t *testing.T) {
+func TestHandleReportPage_RulePassRatesReport(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/rule-pass-rates", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/rule-pass-rates", nil)
 	req.SetPathValue("name", "rule-pass-rates")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -445,17 +496,17 @@ func TestHandleNextReportPage_RulePassRatesReport(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_RailListsHandlerBackedReports verifies the reports
+// TestHandleReportPage_RailListsHandlerBackedReports verifies the reports
 // rail now links the three handler-backed built-ins (health,
 // metadata-completeness, rule-pass-rates) in addition to compliance, so they
 // are reachable from the workspace navigation.
-func TestHandleNextReportPage_RailListsHandlerBackedReports(t *testing.T) {
+func TestHandleReportPage_RailListsHandlerBackedReports(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/compliance", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/compliance", nil)
 	req.SetPathValue("name", "compliance")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -466,9 +517,9 @@ func TestHandleNextReportPage_RailListsHandlerBackedReports(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, link := range []string{
-		"/next/reports/health",
-		"/next/reports/metadata-completeness",
-		"/next/reports/rule-pass-rates",
+		"/reports/health",
+		"/reports/metadata-completeness",
+		"/reports/rule-pass-rates",
 	} {
 		if !strings.Contains(body, link) {
 			t.Errorf("rail link %q absent from response", link)
@@ -476,20 +527,20 @@ func TestHandleNextReportPage_RailListsHandlerBackedReports(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_HealthReportError_GetHealthStats verifies that when
+// TestHandleReportPage_HealthReportError_GetHealthStats verifies that when
 // GetHealthStats fails (closed DB) the health pane returns 500 and does not
 // render the workspace shell. This exercises the !ok early-return in
-// serveNextReportsWorkspace and the first error branch of loadNextHealthData.
-func TestHandleNextReportPage_HealthReportError_GetHealthStats(t *testing.T) {
+// serveReportsWorkspace and the first error branch of loadReportsHealthData.
+func TestHandleReportPage_HealthReportError_GetHealthStats(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 	if err := r.db.Close(); err != nil {
 		t.Fatalf("closing db: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/health", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/health", nil)
 	req.SetPathValue("name", "health")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -500,11 +551,11 @@ func TestHandleNextReportPage_HealthReportError_GetHealthStats(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_HealthReportError_TopFailingRules verifies that when
+// TestHandleReportPage_HealthReportError_TopFailingRules verifies that when
 // TopFailingRuleResults fails the health pane returns 500. The artist DB is
 // left open so GetHealthStats succeeds; a fresh closed rule DB forces the
-// TopFailingRuleResults error path inside loadNextHealthData.
-func TestHandleNextReportPage_HealthReportError_TopFailingRules(t *testing.T) {
+// TopFailingRuleResults error path inside loadReportsHealthData.
+func TestHandleReportPage_HealthReportError_TopFailingRules(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -514,9 +565,9 @@ func TestHandleNextReportPage_HealthReportError_TopFailingRules(t *testing.T) {
 		t.Fatalf("closing rule db: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/health", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/health", nil)
 	req.SetPathValue("name", "health")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -544,10 +595,10 @@ func firstEnabledRuleID(t *testing.T, svc *rule.Service) string {
 	return ""
 }
 
-// TestHandleNextReportPage_HealthReportWithPassRates verifies that when real
+// TestHandleReportPage_HealthReportWithPassRates verifies that when real
 // rule results are present GetRulePassRates returns data and the health pane
 // renders correctly (covering the rates loop and toTemplateRulePassRateData).
-func TestHandleNextReportPage_HealthReportWithPassRates(t *testing.T) {
+func TestHandleReportPage_HealthReportWithPassRates(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
 
@@ -559,9 +610,9 @@ func TestHandleNextReportPage_HealthReportWithPassRates(t *testing.T) {
 		t.Fatalf("seeding rule pass result: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/health", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/health", nil)
 	req.SetPathValue("name", "health")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -576,10 +627,10 @@ func TestHandleNextReportPage_HealthReportWithPassRates(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_RulePassRatesWithData verifies that when rule results
+// TestHandleReportPage_RulePassRatesWithData verifies that when rule results
 // exist the rule-pass-rates pane renders the populated table (non-empty state)
 // and toTemplateRulePassRateData is exercised for each result row.
-func TestHandleNextReportPage_RulePassRatesWithData(t *testing.T) {
+func TestHandleReportPage_RulePassRatesWithData(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
 
@@ -591,9 +642,9 @@ func TestHandleNextReportPage_RulePassRatesWithData(t *testing.T) {
 		t.Fatalf("seeding rule pass result: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/rule-pass-rates", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/rule-pass-rates", nil)
 	req.SetPathValue("name", "rule-pass-rates")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -612,10 +663,10 @@ func TestHandleNextReportPage_RulePassRatesWithData(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_RulePassRatesReportError verifies that when
+// TestHandleReportPage_RulePassRatesReportError verifies that when
 // GetRulePassRates fails the rule-pass-rates pane returns 500. A fresh closed
-// rule DB forces the error path in loadNextRulePassRatesData.
-func TestHandleNextReportPage_RulePassRatesReportError(t *testing.T) {
+// rule DB forces the error path in loadReportsRulePassRatesData.
+func TestHandleReportPage_RulePassRatesReportError(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -625,9 +676,9 @@ func TestHandleNextReportPage_RulePassRatesReportError(t *testing.T) {
 		t.Fatalf("closing rule db: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/rule-pass-rates", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/rule-pass-rates", nil)
 	req.SetPathValue("name", "rule-pass-rates")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -638,19 +689,19 @@ func TestHandleNextReportPage_RulePassRatesReportError(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_MetadataCompletenessReportError verifies that when
+// TestHandleReportPage_MetadataCompletenessReportError verifies that when
 // GetMetadataCompleteness fails (closed DB) the metadata-completeness pane
-// returns 500. This covers the error branch in loadNextMetadataData.
-func TestHandleNextReportPage_MetadataCompletenessReportError(t *testing.T) {
+// returns 500. This covers the error branch in loadReportsMetadataData.
+func TestHandleReportPage_MetadataCompletenessReportError(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 	if err := r.db.Close(); err != nil {
 		t.Fatalf("closing db: %v", err)
 	}
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/metadata-completeness", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/metadata-completeness", nil)
 	req.SetPathValue("name", "metadata-completeness")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()
@@ -661,16 +712,16 @@ func TestHandleNextReportPage_MetadataCompletenessReportError(t *testing.T) {
 	}
 }
 
-// TestHandleNextReportPage_MetadataCompletenessWithLibrary verifies that when a
-// library service is wired up loadNextMetadataData populates the libNames map
+// TestHandleReportPage_MetadataCompletenessWithLibrary verifies that when a
+// library service is wired up loadReportsMetadataData populates the libNames map
 // (exercising the libs loop and the libNames[libs[i].ID] = libs[i].Name path).
-func TestHandleNextReportPage_MetadataCompletenessWithLibrary(t *testing.T) {
+func TestHandleReportPage_MetadataCompletenessWithLibrary(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
-	h := middleware.UX("next", "")(http.HandlerFunc(r.handleNextReportPage))
+	h := http.HandlerFunc(r.handleReportPage)
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/reports/metadata-completeness", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/metadata-completeness", nil)
 	req.SetPathValue("name", "metadata-completeness")
 	req = withI18nCtx(t, req)
 	w := httptest.NewRecorder()

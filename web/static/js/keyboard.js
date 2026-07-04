@@ -451,8 +451,8 @@
           clearTimeout(leaderTimeout);
           leaderTimeout = null;
           var leaderTargets = {
-            d: '/next/', a: '/next/artists', r: '/next/reports',
-            l: '/next/logs', f: '/next/reports', s: '/next/settings'
+            d: '/next/', a: '/next/artists', r: '/reports',
+            l: '/next/logs', f: '/reports', s: '/next/settings'
           };
           if (leaderTargets.hasOwnProperty(e.key)) {
             // M1: suppress nav while the cheat-sheet modal is open.
@@ -482,6 +482,17 @@
         var search = actionTarget('/');
         if (search) { e.preventDefault(); search.focus(); } else { warnAdvertisedMissing('/'); }
         return;
+      }
+      // "s" focuses a secondary search box (#1757 PR-4: the reports rail
+      // search; "/" stays the content search, matching /artists). Mirrors the
+      // "/" branch above, with one deliberate difference: when no
+      // [data-sw-shortcut="s"] target exists on the page, fall THROUGH instead
+      // of returning, so the key stays available to the roving/contextual
+      // layers below and screens without the binding see a genuine no-op.
+      if (e.key === 's') {
+        var railSearch = actionTarget('s');
+        if (railSearch) { e.preventDefault(); railSearch.focus(); return; }
+        warnAdvertisedMissing('s');
       }
       if (e.key === 'f' || e.key === 'F') {
         var filter = actionTarget('f');

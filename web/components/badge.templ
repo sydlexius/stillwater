@@ -2,14 +2,17 @@ package components
 
 // HealthScoreClass returns the Tailwind color classes for a health score value.
 // Thresholds: 100 = green, 50-99 = yellow, <50 = red.
+// Light-mode shades are the 700 step: the 600 greens/yellows fail WCAG AA
+// contrast on the light table background (axe color-contrast, #1757 PR-4 a11y
+// pass). Dark-mode 400 shades are unchanged.
 func HealthScoreClass(score float64) string {
 	if score >= 100 {
-		return "text-green-600 dark:text-green-400"
+		return "text-green-700 dark:text-green-400"
 	}
 	if score >= 50 {
-		return "text-yellow-600 dark:text-yellow-400"
+		return "text-yellow-700 dark:text-yellow-400"
 	}
-	return "text-red-600 dark:text-red-400"
+	return "text-red-700 dark:text-red-400"
 }
 
 // StatusBadge renders a colored indicator for a boolean status.

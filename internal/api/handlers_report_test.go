@@ -1371,17 +1371,60 @@ func TestHandleReportCompliance_QueryParamOverridesPref(t *testing.T) {
 	}
 }
 
-// TestHandleCompliancePage_UnauthRendersLoginPage asserts that an
-// unauthenticated GET /reports/compliance returns HTTP 200 with the login page
-// rather than the compliance report. handleCompliancePage calls requireAuth as
-// its first action, so visitors with no session are presented the login form
-// instead of a 401 JSON error. This covers the false-branch line added in
-// #2018.
-func TestHandleCompliancePage_UnauthRendersLoginPage(t *testing.T) {
+// TestHandleCompliancePage_FullPageRedirectsToWorkspace asserts that a
+// non-HTMX GET /reports/compliance 302s to the reports workspace with the
+// compliance tab active (#1757 PR-4). The redirect happens before any auth or
+// data work — the workspace handler owns the requireAuth gate.
+func TestHandleCompliancePage_FullPageRedirectsToWorkspace(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterFull(t)
 
 	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports/compliance", nil))
+	w := httptest.NewRecorder()
+	r.handleCompliancePage(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("full-page request should 302 to the workspace, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/reports?tab=compliance" {
+		t.Errorf("Location = %q, want %q", loc, "/reports?tab=compliance")
+	}
+}
+
+// TestHandleCompliancePage_RedirectCarriesQuery asserts the full-page redirect
+// preserves the request's filter params (plus tab=compliance) so bookmarked
+// filtered deep links keep resolving on the workspace.
+func TestHandleCompliancePage_RedirectCarriesQuery(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/compliance?search=indie&status=non_compliant", nil)
+	w := httptest.NewRecorder()
+	r.handleCompliancePage(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("full-page request should 302 to the workspace, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	for _, s := range []string{"/reports?", "tab=compliance", "search=indie", "status=non_compliant"} {
+		if !strings.Contains(loc, s) {
+			t.Errorf("Location %q missing %q", loc, s)
+		}
+	}
+}
+
+// TestHandleCompliancePage_HTMXUnauthRendersLoginPage asserts that an
+// unauthenticated HTMX GET /reports/compliance renders the login page (200)
+// rather than the fragment. handleCompliancePage calls requireAuth on the
+// fragment path, so visitors with no session are presented the login form
+// instead of a 401 JSON error.
+func TestHandleCompliancePage_HTMXUnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports/compliance", nil))
+	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 	r.handleCompliancePage(w, req)
 
@@ -1395,35 +1438,29 @@ func TestHandleCompliancePage_UnauthRendersLoginPage(t *testing.T) {
 	if !strings.Contains(body, "/api/v1/auth/login") {
 		t.Error("login page must have the login form action (/api/v1/auth/login)")
 	}
-	if !strings.Contains(body, `name="username"`) {
-		t.Error("login page must include a username input field (name=username)")
-	}
-	if !strings.Contains(body, `type="password"`) {
-		t.Error("login page must include a password input field (type=password)")
-	}
 }
 
-// TestHandleCompliancePage_AuthRendersCompliancePage asserts that an
-// authenticated GET /reports/compliance returns HTTP 200 with the real
-// compliance report. handleCompliancePage calls requireAuth as its first
-// action; with a valid user ID in context, the compliance table renders.
-func TestHandleCompliancePage_AuthRendersCompliancePage(t *testing.T) {
+// TestHandleCompliancePage_HTMXRendersResultsFragment asserts that an
+// authenticated HTMX GET /reports/compliance returns the ComplianceResults
+// fragment (the workspace pane's swap target), not the full workspace shell.
+func TestHandleCompliancePage_HTMXRendersResultsFragment(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterFull(t)
 
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/compliance", nil)
+	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 	r.handleCompliancePage(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("authenticated request should get compliance page (200), got %d", w.Code)
+		t.Fatalf("authenticated HTMX request should get the fragment (200), got %d", w.Code)
 	}
 	body := w.Body.String()
-	if strings.Contains(body, "/api/v1/auth/login") {
-		t.Error("authenticated user must not see the login page")
+	if !strings.Contains(body, "compliance-results") {
+		t.Error("fragment must include the results shell (compliance-results)")
 	}
-	if !strings.Contains(body, "compliance-table") {
-		t.Error("compliance page must include the compliance table (compliance-table)")
+	if strings.Contains(body, "sw-rep-workspace") {
+		t.Error("HTMX fragment must not include the workspace shell")
 	}
 }

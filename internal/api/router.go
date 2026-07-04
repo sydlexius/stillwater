@@ -819,17 +819,18 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/artists/{id}/artwork-modal", wrapOptionalAuth(r.handleArtworkModal, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}", wrapOptionalAuth(r.handleArtistDetailPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists", wrapOptionalAuth(r.handleArtistsPage, optAuthMw))
+	// M55 #1757 PR-4: /reports is the promoted two-pane reports workspace
+	// (default compliance tab; ?tab={name} selects another). /reports/{name}
+	// selects a built-in report by ID. The exact /reports/compliance and
+	// /reports/duplicates routes are more specific than the {name} pattern so
+	// Go's mux prefers them. /reports/compliance keeps serving the
+	// ComplianceResults fragment for HTMX requests (the workspace pane's swap
+	// target) and 302s full-page requests to /reports?tab=compliance.
+	// wrapOptionalAuth so the in-handler requireAuth gate renders the login
+	// page for unauthenticated visitors instead of returning 401 JSON.
 	mux.HandleFunc("GET "+bp+"/reports/compliance", wrapOptionalAuth(r.handleCompliancePage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/reports", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
-		target := r.basePath + "/reports/compliance"
-		if req.URL.RawQuery != "" {
-			target = target + "?" + req.URL.RawQuery
-		}
-		// gosec G710: target's path is server-controlled (r.basePath +
-		// /reports/compliance); only the query string is carried through from
-		// the request, which cannot redirect off-origin.
-		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the query string flows from req.
-	}, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/reports", wrapOptionalAuth(r.handleReportsPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/reports/{name}", wrapOptionalAuth(r.handleReportPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/activity", wrapOptionalAuth(r.handleActivityPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/activity/content", wrapOptionalAuth(r.handleActivityContent, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/dashboard/actions", wrapOptionalAuth(r.handleDashboardActionQueue, optAuthMw))
@@ -920,20 +921,18 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files", wrapOptionalAuth(r.handleNextForeignFilesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files/allowlist", wrapOptionalAuth(r.handleNextForeignAllowlistPage, optAuthMw))
 	// M55 #1752: next/ duplicates detect+merge page. Registered as an exact
-	// path so Go's mux prefers it over the /next/reports/{name} workspace
-	// pattern below (the sidebar duplicates link already targets this exact
-	// path via /api/v1/reports/duplicates/count?ch=next). wrapOptionalAuth so
-	// the in-handler requireForeignAdmin gate renders the login page for
+	// path so Go's mux prefers it over the /next/{path...} fallback below (the
+	// sidebar duplicates link already targets this exact path via
+	// /api/v1/reports/duplicates/count?ch=next). wrapOptionalAuth so the
+	// in-handler requireForeignAdmin gate renders the login page for
 	// unauthenticated visitors instead of returning 401 JSON.
 	mux.HandleFunc("GET "+bp+"/next/reports/duplicates", wrapOptionalAuth(r.handleNextArtistDuplicatesPage, optAuthMw))
-	// M55 #1337: next/ reports two-pane workspace. /next/reports defaults to the
-	// Compliance overview. /next/reports/{name} selects a built-in report by ID.
-	// These are registered after the more-specific foreign-files routes above so
-	// Go's mux prefers exact paths (e.g. foreign-files) over the {name} pattern.
-	// wrapOptionalAuth so the in-handler requireAuth gate renders the login page
-	// for unauthenticated visitors instead of returning 401 JSON.
-	mux.HandleFunc("GET "+bp+"/next/reports", wrapOptionalAuth(r.handleNextReportsPage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/next/reports/{name}", wrapOptionalAuth(r.handleNextReportPage, optAuthMw))
+	// M55 #1757 PR-4: the reports workspace promoted to the canonical /reports
+	// (+ /reports/{name}), so the dedicated /next/reports and
+	// /next/reports/{name} routes are gone; those paths reach the /next/{path...}
+	// fallback below and re-dispatch to the promoted canonical workspace. The
+	// still-/next/ foreign-files and duplicates routes above are exact paths, so
+	// they keep winning over the fallback.
 	// M55 #1772: next/ global activity feed. More specific than the
 	// /next/{path...} fallback so Go's mux prefers it; renders the next template
 	// only when the resolved channel is "next" (otherwise it 404s via

@@ -29,6 +29,12 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 	mux.HandleFunc("GET /artists", func(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte("V1 ARTISTS q=" + req.URL.RawQuery))
 	})
+	mux.HandleFunc("GET /reports", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("WORKSPACE q=" + req.URL.RawQuery))
+	})
+	mux.HandleFunc("GET /reports/{name}", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("WORKSPACE " + req.PathValue("name")))
+	})
 	mux.HandleFunc("GET /next/{path...}", r.nextFallback(mux))
 
 	tests := []struct {
@@ -45,6 +51,12 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 		// routes are gone; both re-dispatch to the promoted canonical pages,
 		// query string (the modal's kind param) intact.
 		{"/next/artists/42/artwork-modal?kind=logo", "MODAL 42 q=kind=logo"},
+		// #1757 PR-4: the dedicated /next/reports + /next/reports/{name} routes
+		// are gone; both re-dispatch to the promoted canonical workspace, query
+		// string intact for bookmarked filtered URLs.
+		{"/next/reports", "WORKSPACE q="},
+		{"/next/reports?search=abba", "WORKSPACE q=search=abba"},
+		{"/next/reports/health", "WORKSPACE health"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
