@@ -6,7 +6,10 @@ import "testing"
 // capability: the Spotify API returns empty genres, so Spotify must not be
 // advertised as a genres source anywhere providers are declared.
 func TestSpotifyCapabilitiesExcludeGenres(t *testing.T) {
-	caps := ProviderCapabilities()[NameSpotify]
+	caps, ok := ProviderCapabilities()[NameSpotify]
+	if !ok {
+		t.Fatalf("ProviderCapabilities has no entry for %q", NameSpotify)
+	}
 
 	found := false
 	for _, f := range caps.SupportedFields {
