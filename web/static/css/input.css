@@ -3112,6 +3112,32 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
   margin-block-end: var(--sw-density-gap);
 }
 
+/* Reports workspace (M55 #1337; promoted #1757 PR-4) -- the workspace's list
+ * surfaces track the density pref like the other promoted scopes, on
+ * compact/spacious only (comfortable keeps each surface's hand-tuned rhythm,
+ * same rationale as the artists table):
+ *
+ *   - Compliance table rows: the embedded ComplianceTable body cells carry
+ *     Tailwind py-3; rebind their vertical padding to the density row-py
+ *     token (mirrors the .sw-next-artists tbody td rule above).
+ *   - Rail entries: each .sw-rep-item link carries a hand-tuned 6px vertical
+ *     padding; rebind it to the token so the rail tightens/loosens with the
+ *     table.
+ *   - Rule pass-rates rows: each .sw-rep-rate-item row carries 8px vertical
+ *     padding; rebind likewise so the non-table pane rows respond too. */
+html[data-density="compact"] .sw-next-reports tbody td,
+html[data-density="spacious"] .sw-next-reports tbody td {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
+}
+html[data-density="compact"] .sw-next-reports .sw-rep-list-item .sw-rep-item,
+html[data-density="spacious"] .sw-next-reports .sw-rep-list-item .sw-rep-item,
+html[data-density="compact"] .sw-next-reports .sw-rep-rate-item,
+html[data-density="spacious"] .sw-next-reports .sw-rep-rate-item {
+  padding-top: var(--sw-density-row-py);
+  padding-bottom: var(--sw-density-row-py);
+}
+
 /* Checkbox treatment (M55 #1335; maintainer note 2026-05-30): the prototype's
  * selection checkboxes carry a surface-tinted background instead of the
  * browser-default white box, in BOTH themes. Restyle the reused native
@@ -3236,8 +3262,8 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
  * small kbd chips (/ in search, f on Filters) plus a tip line under the list.
  * Mirrors design/styles.css .kbd. The tip-line prose is added during UAT.
  * Scoped to every next/ surface that renders a .sw-list-tips footer (artists,
- * dashboard, artist-detail #1939, foreign-files #1939) so the same chip
- * treatment applies across all keyboard footers without forking. The keycap
+ * dashboard, artist-detail #1939, foreign-files #1939, reports #1757 PR-4) so
+ * the same chip treatment applies across all keyboard footers without forking. The keycap
  * class is next/-exclusive (no usage outside web/templates/next/), so each new
  * footer surface must be added to these selector groups or it regresses to a
  * bare monospace glyph -- which is exactly the #1939 scope-miss this fixes. */
@@ -3245,6 +3271,7 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-dashboard .sw-kbd,
 .sw-next-artist-detail .sw-kbd,
 .sw-next-foreign-files .sw-kbd,
+.sw-next-reports .sw-kbd,
 .sw-next-logs .sw-kbd,
 .sw-cheat-sheet-modal .sw-kbd,
 .sw-cmdk .sw-kbd {
@@ -3281,6 +3308,7 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-dashboard .sw-kbd::before,
 .sw-next-artist-detail .sw-kbd::before,
 .sw-next-foreign-files .sw-kbd::before,
+.sw-next-reports .sw-kbd::before,
 .sw-next-logs .sw-kbd::before,
 .sw-cheat-sheet-modal .sw-kbd::before,
 .sw-cmdk .sw-kbd::before {
@@ -3304,6 +3332,7 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-dashboard .sw-kbd,
 .dark .sw-next-artist-detail .sw-kbd,
 .dark .sw-next-foreign-files .sw-kbd,
+.dark .sw-next-reports .sw-kbd,
 .dark .sw-next-logs .sw-kbd,
 .dark .sw-cheat-sheet-modal .sw-kbd,
 .dark .sw-cmdk .sw-kbd {
@@ -3313,6 +3342,7 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-dashboard .sw-kbd::before,
 .dark .sw-next-artist-detail .sw-kbd::before,
 .dark .sw-next-foreign-files .sw-kbd::before,
+.dark .sw-next-reports .sw-kbd::before,
 .dark .sw-next-logs .sw-kbd::before,
 .dark .sw-cheat-sheet-modal .sw-kbd::before,
 .dark .sw-cmdk .sw-kbd::before {
@@ -3381,6 +3411,7 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .sw-next-dashboard .sw-list-tips,
 .sw-next-artist-detail .sw-list-tips,
 .sw-next-foreign-files .sw-list-tips,
+.sw-next-reports .sw-list-tips,
 .sw-next-logs .sw-list-tips {
   margin-top: 0.75rem;
   display: flex;
@@ -3423,6 +3454,7 @@ html:not([data-density]) .sw-next-duplicates #artist-duplicates-table > :not(:la
 .dark .sw-next-dashboard .sw-list-tips,
 .dark .sw-next-artist-detail .sw-list-tips,
 .dark .sw-next-foreign-files .sw-list-tips,
+.dark .sw-next-reports .sw-list-tips,
 .dark .sw-next-logs .sw-list-tips {
   color: #94a3b8;
   border-color: var(--swd-line, rgba(148, 163, 184, 0.14));
@@ -5876,6 +5908,32 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-rep-run-btn:hover {
   background: rgba(255, 255, 255, 0.07);
   border-color: var(--sw-accent-primary);
+}
+
+/* Primary variant (#1757 PR-4: the restored Run Rules button). Uses the
+ * scope's established accent-emphasis treatment (accent border + 10% accent
+ * tint, cf. .sw-rep-filter-btn.is-active / .sw-rep-item.is-active) rather
+ * than a solid hardcoded-blue fill: it reads as the pane's primary action
+ * next to the neutral glass Re-evaluate All, follows the accent token, and
+ * keeps the pane's content-text color, whose contrast is already
+ * axe-verified on this surface (white-on-default-accent would fail AA at
+ * this 13px size). */
+.sw-rep-run-btn.sw-rep-run-btn--primary {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--sw-accent-primary);
+  font-weight: 600;
+}
+
+.sw-rep-run-btn.sw-rep-run-btn--primary:hover {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: var(--sw-accent-primary);
+}
+
+/* Both run buttons disable while a rule run is in flight (startRuleRun /
+ * resetRuleButton toggle the attribute). */
+.sw-rep-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .sw-rep-run-icon {
