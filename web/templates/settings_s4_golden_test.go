@@ -96,8 +96,8 @@ func TestS4_PageComposesSections(t *testing.T) {
 	check("SectionDatabaseMaintenance", SectionDatabaseMaintenance(data).Render)
 	check("SectionBackup", SectionBackup(data).Render)
 	check("SectionExportImport", SectionExportImport(data).Render)
-	check("SectionLogSettings", SectionLogSettings(data).Render)
-	check("SectionLogViewer", SectionLogViewer(data).Render)
+	// #1757 PR-5: logs moved to their own /logs screen (#1338), so the promoted
+	// settings page no longer composes SectionLogSettings / SectionLogViewer.
 }
 
 // TestSettingsSections_S4_Golden renders each extracted System Section* func in

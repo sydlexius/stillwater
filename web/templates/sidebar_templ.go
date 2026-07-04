@@ -51,7 +51,7 @@ type SidebarData struct {
 // /settings, /preferences) since this is now the default chrome on every page.
 // Two targets stay on /next/ because no canonical route exists yet -- Foreign
 // Files (/next/reports/foreign-files; the v1 route is /settings/foreign-files)
-// and Logs (/next/logs) -- and the Compliance/Duplicates/Foreign count pills
+// and Logs (/logs) -- and the Compliance/Duplicates/Foreign count pills
 // keep their ?ch=next source, which selects the promoted glyph-led pill markup
 // (the emitted href is canonicalized by the reports screen PR that revises the
 // count handler). These are the migration follow-ups for the per-screen PRs.
@@ -495,9 +495,9 @@ func Sidebar(data SidebarData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var28 templ.SafeURL
-		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.BasePath + "/next/logs"))
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.BasePath + "/logs"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 227, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 227, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {

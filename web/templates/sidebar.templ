@@ -43,7 +43,7 @@ type SidebarData struct {
 // /settings, /preferences) since this is now the default chrome on every page.
 // Two targets stay on /next/ because no canonical route exists yet -- Foreign
 // Files (/next/reports/foreign-files; the v1 route is /settings/foreign-files)
-// and Logs (/next/logs) -- and the Compliance/Duplicates/Foreign count pills
+// and Logs (/logs) -- and the Compliance/Duplicates/Foreign count pills
 // keep their ?ch=next source, which selects the promoted glyph-led pill markup
 // (the emitted href is canonicalized by the reports screen PR that revises the
 // count handler). These are the migration follow-ups for the per-screen PRs.
@@ -224,7 +224,7 @@ templ Sidebar(data SidebarData) {
 			<ul role="list" class="sw-sidebar-nav-list">
 				<li>
 					<a
-						href={ templ.SafeURL(data.BasePath + "/next/logs") }
+						href={ templ.SafeURL(data.BasePath + "/logs") }
 						class="sw-sidebar-link"
 						data-path="/logs"
 						aria-label={ t(ctx, "nav.logs") }

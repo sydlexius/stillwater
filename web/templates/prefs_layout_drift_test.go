@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"os"
@@ -27,8 +27,8 @@ func TestPrefsLayoutSectionOrderParity(t *testing.T) {
 		want[i] = s.ID
 	}
 
-	// web/templates/next -> ../../.. is the repo root.
-	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	// web/templates -> ../.. is the repo root.
+	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolving repo root: %v", err)
 	}

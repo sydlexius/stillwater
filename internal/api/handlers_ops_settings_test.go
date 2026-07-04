@@ -10,16 +10,15 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // opsTestRouter builds a settings-capable Router with the scanner service and
 // rule pipeline wired (buildSettingsData reads their live getters for the
 // operational settings) so the ops-display path under test is exercised end to
-// end. testRouter/nextSettingsTestRouter leave both nil.
+// end. testRouter/settingsPageTestRouter leave both nil.
 func opsTestRouter(t *testing.T) (*Router, *scanner.Service, *rule.Pipeline) {
 	t.Helper()
-	r := nextSettingsTestRouter(t)
+	r := settingsPageTestRouter(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	sc := scanner.NewService(nil, nil, nil, logger, "/music", nil)
@@ -67,7 +66,7 @@ func TestBuildSettingsData_OpsDisplay_LiveValues(t *testing.T) {
 	sc.SetExclusions([]string{"Various Artists", "Soundtrack"})
 	sc.SetMtimeFastPath(false)
 
-	data, ok := r.buildSettingsData(opsRequest(), "", templates.TabGeneral, false)
+	data, ok := r.buildSettingsData(opsRequest(), "", false)
 	if !ok {
 		t.Fatal("buildSettingsData returned ok=false")
 	}
@@ -107,7 +106,7 @@ func TestBuildSettingsData_OpsDisplay_EnvPinned(t *testing.T) {
 	sc.SetExclusions([]string{"Live", "Bootlegs"})
 	sc.SetMtimeFastPath(false)
 
-	data, ok := r.buildSettingsData(opsRequest(), "", templates.TabGeneral, false)
+	data, ok := r.buildSettingsData(opsRequest(), "", false)
 	if !ok {
 		t.Fatal("buildSettingsData returned ok=false")
 	}
@@ -146,7 +145,7 @@ func TestBuildSettingsData_BackupInterval_InvalidEnv(t *testing.T) {
 				t.Fatalf("seeding persisted backup.interval_hours: %v", err)
 			}
 
-			data, ok := r.buildSettingsData(opsRequest(), "", templates.TabGeneral, false)
+			data, ok := r.buildSettingsData(opsRequest(), "", false)
 			if !ok {
 				t.Fatal("buildSettingsData returned ok=false")
 			}
@@ -231,7 +230,7 @@ func TestApplyLiveSettingSideEffects_NilService(t *testing.T) {
 		_ = os.Unsetenv(k)
 	}
 
-	r := nextSettingsTestRouter(t)
+	r := settingsPageTestRouter(t)
 	r.scannerService = nil
 	r.pipeline = nil
 

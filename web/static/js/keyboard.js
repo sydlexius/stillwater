@@ -452,7 +452,7 @@
           leaderTimeout = null;
           var leaderTargets = {
             d: '/next/', a: '/next/artists', r: '/reports',
-            l: '/next/logs', f: '/reports', s: '/next/settings'
+            l: '/logs', f: '/reports', s: '/settings'
           };
           if (leaderTargets.hasOwnProperty(e.key)) {
             // M1: suppress nav while the cheat-sheet modal is open.

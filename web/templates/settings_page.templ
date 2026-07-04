@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"strconv"
@@ -7,7 +7,6 @@ import (
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // next/ Settings screen (M55 #1339). Firefox/Chrome about:preferences model:
@@ -19,19 +18,19 @@ import (
 // (also deep-linkable). On narrow viewports the rail collapses behind a
 // hamburger toggle and the content reflows to a single column.
 //
-// The section CONTENT is the shared, chrome-agnostic templates.Section* funcs
-// (web/templates/settings_sections.templ) plus templates.Settings{Users,Auth
+// The section CONTENT is the shared, chrome-agnostic Section* funcs
+// (web/templates/settings_sections.templ) plus Settings{Users,Auth
 // Providers,Updates}Tab -- composed here BYTE-FOR-BYTE (Option A), so every
 // control + JS-hook id is preserved. The taxonomy (ids/labels/icons/order/
 // keywords) is the canonical settingsGroups from the prototype source
 // (design/settings.jsx lines 13-53), MINUS `logs` (moved to its own /next/logs
 // screen, #1338) and MINUS `per-user preferences` (descoped to #1774).
 //
-// NOTE (#1757): this page depends on the shared templates.Section* /
+// NOTE (#1757): this page depends on the shared Section* /
 // Settings*Tab funcs. When the stable settings chrome retires, those shared
 // content funcs must MIGRATE OUT of the stable layer, not be deleted.
 
-// profileEditableNext mirrors the stable templates.profileEditable (unexported):
+// profileEditableNext mirrors the stable profileEditable (unexported):
 // builtin profiles are read-only except the seeded "custom" one.
 func profileEditableNext(p *platform.Profile) bool {
 	if p == nil {
@@ -48,7 +47,7 @@ func profileIsCustomNext(p *platform.Profile) bool {
 }
 
 // boolAttrNext renders a Go bool as the "true"/"false" string an aria-* boolean
-// attribute expects (mirrors the stable templates.boolAttr helper).
+// attribute expects (mirrors the stable boolAttr helper).
 func boolAttrNext(b bool) string {
 	if b {
 		return "true"
@@ -144,7 +143,7 @@ func nextSettingsGroups() []railGroup {
 // data. 0 means no badge (no count applies, or the data is empty). Never
 // hardcode the prototype's static numbers (#1339 lead guidance: omit rather
 // than fake).
-func sectionCount(id string, data templates.SettingsData) int {
+func sectionCount(id string, data SettingsData) int {
 	switch id {
 	case "providers":
 		// Count only providers with a configured key (status != "unconfigured").
@@ -213,14 +212,14 @@ templ railIcon(name, cls string) {
 	}
 }
 
-// SettingsPageNext is the next/ channel settings page (M55 #1339). It wraps the
-// shared next chrome (LayoutNext) and composes the rail + the single-section
+// SettingsPage is the next/ channel settings page (M55 #1339). It wraps the
+// shared next chrome (Layout) and composes the rail + the single-section
 // pane. Page-level scripts are the SAME first-party settings modules the stable
 // page loads (so the reused sections behave identically), minus the tab bar and
 // Logs modules, plus next-settings.js (rail filter + single-section switching +
 // keyboard + cross-tab SSE refresh).
-templ SettingsPageNext(assets templates.AssetPaths, data templates.SettingsData) {
-	@LayoutNext(t(ctx, "settings.title"), assets) {
+templ SettingsPage(assets AssetPaths, data SettingsData) {
+	@Layout(t(ctx, "settings.title"), assets) {
 		<script src={ assets.SettingsSectionRefreshJS }></script>
 		<script src={ assets.SettingsResetConfirmPrefsJS }></script>
 		<script src={ assets.SettingsSymlinkJS }></script>
@@ -234,12 +233,12 @@ templ SettingsPageNext(assets templates.AssetPaths, data templates.SettingsData)
 		<script src={ assets.SettingsMaintenanceJS }></script>
 		<script src={ assets.SettingsExportJS }></script>
 		<script src={ assets.SettingsProfileNamingJS }></script>
-		@templates.SettingsUsersScript()
-		@templates.SettingsAuthProvidersScript()
+		@SettingsUsersScript()
+		@SettingsAuthProvidersScript()
 		@components.LanguagePickerScript()
 		<script src={ assets.SettingsRomanizationFallbackJS }></script>
 		@components.ContextHelpScript()
-		@templates.SettingsSearchIndexScript(templates.BuildSettingsSearchIndex(ctx))
+		@SettingsSearchIndexScript(BuildSettingsSearchIndex(ctx))
 		<script src={ assets.SortableJS }></script>
 		<script src={ assets.SettingsNotifBadgesJS }></script>
 		<script src={ assets.SettingsOpsJS }></script>
@@ -269,7 +268,7 @@ templ SettingsPageNext(assets templates.AssetPaths, data templates.SettingsData)
 // filter and a real count badge where one applies. The active item is styled via
 // CSS (3px left accent + semibold label, NO background swap). The "↳ matched
 // keyword" line and the empty-state are populated by next-settings.js.
-templ settingsRail(data templates.SettingsData) {
+templ settingsRail(data SettingsData) {
 	<aside class="sw-next-settings-rail" aria-label={ t(ctx, "settings.sections_label") }>
 		<div class="sw-next-settings-filter">
 			<label for="settings-search-input" class="sr-only">{ t(ctx, "settings.filter.placeholder") }</label>
@@ -340,18 +339,18 @@ templ settingsRail(data templates.SettingsData) {
 // @nextSettingsSection with a stable #section-<id> anchor (the rail's scroll-spy
 // + click-to-jump target, also #hash deep-linkable). An <h2> group divider opens
 // each group so the heading hierarchy is h1 (page) -> h2 (group) -> h3 (card).
-templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
+templ settingsPane(data SettingsData, assets AssetPaths) {
 	<div class="sw-next-settings-pane" id="sw-next-settings-pane">
 		@settingsGroupHeading("essentials", "settings.next.group_essentials")
 		@nextSettingsSection("general", "essentials") {
 			@nextSectionHeader("settings.next.section.general", "")
-			@templates.SectionBasePath(data)
-			@templates.SectionTLSStatus(data)
-			@templates.SectionConfirmDialogs(data)
+			@SectionBasePath(data)
+			@SectionTLSStatus(data)
+			@SectionConfirmDialogs(data)
 		}
 		@nextSettingsSection("libraries", "essentials") {
 			@nextSectionHeader("settings.next.section.libraries", "settings.libraries.description")
-			@templates.SectionLibraries(data)
+			@SectionLibraries(data)
 		}
 		@nextSettingsSection("platform", "essentials") {
 			@nextSectionHeader("settings.next.section.platform", "settings.platform_profile.description")
@@ -361,7 +360,7 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 			     (M55 #1339). space-y-6 reproduces the pane's 1.5rem gap internally so
 			     the wrapper is layout-neutral as one flex item. -->
 			<div data-settings-fragment="platform" class="space-y-6">
-				@templates.SectionPlatformProfile(data)
+				@SectionPlatformProfile(data)
 				@nextSectionActiveProfile(data)
 				if profileIsCustomNext(data.ActiveProfile) {
 					@nextPlatformSymlinkCard(data)
@@ -374,64 +373,64 @@ templ settingsPane(data templates.SettingsData, assets templates.AssetPaths) {
 			     Provider API Keys card's own description (settings.provider_keys.description);
 			     the four provider cards each self-describe below. -->
 			@nextSectionHeader("settings.next.section.providers", "")
-			@templates.SectionProviderKeys(data)
-			@templates.SectionWebSearch(data)
-			@templates.SectionProviderPriorities(data)
-			@templates.SectionTagSources(data)
+			@SectionProviderKeys(data)
+			@SectionWebSearch(data)
+			@SectionProviderPriorities(data)
+			@SectionTagSources(data)
 		}
 		@nextSettingsSection("languages", "data") {
 			@nextSectionHeader("settings.next.section.languages", "settings.metadata_languages.description")
-			@templates.SectionMetadataLanguages(data)
+			@SectionMetadataLanguages(data)
 		}
 		@nextSettingsSection("rules", "data") {
 			@nextSectionHeader("settings.next.section.rules", "")
-			@templates.SectionRules(data)
+			@SectionRules(data)
 		}
 		@nextSettingsSection("schedule", "data") {
 			@nextSectionHeader("settings.next.section.schedule", "settings.rule_schedule.description")
-			@templates.SectionRuleSchedule(data)
+			@SectionRuleSchedule(data)
 		}
 		@settingsGroupHeading("integrations", "settings.next.group_integrations")
 		@nextSettingsSection("connections", "integrations") {
 			<!-- #2117: section description blanked here to kill the duplicate with the
 			     Connections card's own description (settings.connections.description). -->
 			@nextSectionHeader("settings.next.section.connections", "")
-			@templates.SectionServersNext(data)
+			@SectionServersNext(data)
 		}
 		@nextSettingsSection("webhooks", "integrations") {
 			@nextSectionHeader("settings.next.section.webhooks", "settings.webhooks.description")
-			@templates.SectionWebhooks(data)
-			@templates.SectionNotificationBadges(data)
+			@SectionWebhooks(data)
+			@SectionNotificationBadges(data)
 		}
 		@nextSettingsSection("tokens", "integrations") {
 			@nextSectionHeader("settings.next.section.tokens", "settings.api_tokens.description")
-			@templates.SectionAPITokens(data)
+			@SectionAPITokens(data)
 		}
 		@settingsGroupHeading("system", "settings.next.group_system")
 		@nextSettingsSection("users", "system") {
 			@nextSectionHeader("settings.next.section.users", "settings.users.description")
-			@templates.SettingsUsersTab(data.Users)
+			@SettingsUsersTab(data.Users)
 		}
 		@nextSettingsSection("auth", "system") {
 			@nextSectionHeader("settings.next.section.auth", "settings.auth.description")
-			@templates.SettingsAuthProvidersTab(data.AuthProviders)
+			@SettingsAuthProvidersTab(data.AuthProviders)
 		}
 		@nextSettingsSection("config-file", "system") {
 			@nextSectionHeader("settings.next.section.config_file", "")
-			@templates.SectionScannerOps(data)
-			@templates.SectionExportImport(data)
-			@templates.SectionAdvanced(data)
+			@SectionScannerOps(data)
+			@SectionExportImport(data)
+			@SectionAdvanced(data)
 		}
 		@nextSettingsSection("maintenance", "system") {
 			@nextSectionHeader("settings.next.section.maintenance", "")
-			@templates.SectionDatabaseMaintenance(data)
-			@templates.SectionBackup(data)
-			@templates.SectionBackupSchedule(data)
-			@templates.SectionImageCache(data, assets)
+			@SectionDatabaseMaintenance(data)
+			@SectionBackup(data)
+			@SectionBackupSchedule(data)
+			@SectionImageCache(data, assets)
 		}
 		@nextSettingsSection("updates", "system") {
 			@nextSectionHeader("settings.next.section.updates", "settings.updates.description")
-			@templates.SettingsUpdatesTab(data.Updates, assets.BasePath)
+			@SettingsUpdatesTab(data.Updates, assets.BasePath)
 		}
 	</div>
 }
@@ -521,7 +520,7 @@ templ nextSectionHeader(labelKey, descKey string) {
 // the seeded "custom" profile (#2120). Toggle state is driven by
 // data.SymlinkSupported and data.ActiveProfile.UseSymlinks, mirroring the
 // stable settings_sections.templ SectionProfileNaming symlink block.
-templ nextPlatformSymlinkCard(data templates.SettingsData) {
+templ nextPlatformSymlinkCard(data SettingsData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<!-- Hidden element carrying translated strings for symlink.js. -->
 		<div
@@ -580,10 +579,10 @@ templ nextPlatformSymlinkCard(data templates.SettingsData) {
 }
 
 // nextSectionActiveProfile is the next/-local Active Profile card: a verbatim
-// copy of templates.SectionActiveProfile WITH THE SYMLINK TOGGLE REMOVED (#1339
+// copy of SectionActiveProfile WITH THE SYMLINK TOGGLE REMOVED (#1339
 // B-KEEP). The symlink default toggle now lives in the Platform Profile
 // section, gated to the Custom profile only (#2120).
-templ nextSectionActiveProfile(data templates.SettingsData) {
+templ nextSectionActiveProfile(data SettingsData) {
 	if data.ActiveProfile != nil {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -625,10 +624,10 @@ templ nextSectionActiveProfile(data templates.SettingsData) {
 							}
 						</p>
 					</div>
-					@templates.ProfileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditableNext(data.ActiveProfile))
-					@templates.ProfileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditableNext(data.ActiveProfile))
-					@templates.ProfileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditableNext(data.ActiveProfile))
-					@templates.ProfileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditableNext(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditableNext(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditableNext(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditableNext(data.ActiveProfile))
+					@ProfileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditableNext(data.ActiveProfile))
 				</div>
 				if profileEditableNext(data.ActiveProfile) {
 					<div class="pt-2">

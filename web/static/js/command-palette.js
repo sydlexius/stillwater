@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var SCREEN_HREF = { d: '/next/', a: '/next/artists', r: '/reports', l: '/next/logs', f: '/reports', s: '/next/settings' };
+  var SCREEN_HREF = { d: '/next/', a: '/next/artists', r: '/reports', l: '/logs', f: '/reports', s: '/settings' };
 
   // Module state, populated lazily on first open() (elements may not exist
   // yet at script-eval time depending on load order).
@@ -31,11 +31,11 @@
   ];
 
   var SETTINGS = [
-    { id: 'set-general',     label: 'General',            kind: 'setting', href: '/next/settings#section-general', group: 'Essentials' },
-    { id: 'set-libraries',   label: 'Music libraries',    kind: 'setting', href: '/next/settings#section-libraries', group: 'Essentials' },
-    { id: 'set-providers',   label: 'Metadata providers', kind: 'setting', href: '/next/settings#section-providers', group: 'Data' },
-    { id: 'set-rules',       label: 'Rules & severity',   kind: 'setting', href: '/next/settings#section-rules', group: 'Data' },
-    { id: 'set-connections', label: 'Servers',            kind: 'setting', href: '/next/settings#section-connections', group: 'Integrations' },
+    { id: 'set-general',     label: 'General',            kind: 'setting', href: '/settings#section-general', group: 'Essentials' },
+    { id: 'set-libraries',   label: 'Music libraries',    kind: 'setting', href: '/settings#section-libraries', group: 'Essentials' },
+    { id: 'set-providers',   label: 'Metadata providers', kind: 'setting', href: '/settings#section-providers', group: 'Data' },
+    { id: 'set-rules',       label: 'Rules & severity',   kind: 'setting', href: '/settings#section-rules', group: 'Data' },
+    { id: 'set-connections', label: 'Servers',            kind: 'setting', href: '/settings#section-connections', group: 'Integrations' },
   ];
 
   function buildIndex(registryList) {

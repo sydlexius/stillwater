@@ -140,7 +140,10 @@ func TestS3_PageComposesSections(t *testing.T) {
 		}
 	}
 
-	check("SectionServers", SectionServers(data).Render)
+	// #1757 PR-5: the promoted settings page composes the next/ Servers variant
+	// (SectionServersNext) in its Connections section, not the retired tabbed
+	// SectionServers.
+	check("SectionServersNext", SectionServersNext(data).Render)
 	check("SectionWebhooks", SectionWebhooks(data).Render)
 	check("SectionNotificationBadges", SectionNotificationBadges(data).Render)
 	check("SectionAPITokens", SectionAPITokens(data).Render)

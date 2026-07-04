@@ -41,19 +41,11 @@ func activityFilterCount(data ActivityPageData) int {
 	return len(data.FilterFields) + len(data.FilterSources)
 }
 
-// ActivityPage renders the global activity page at /activity.
-templ ActivityPage(assets AssetPaths, data ActivityPageData) {
-	@Layout(t(ctx, "activity.title"), assets) {
-		@ActivityBody(data)
-	}
-}
-
 // ActivityBody renders the shared activity surface: the filter trigger, the
 // date-range bar, the content region (#activity-content), the filter flyout, and
-// the inline filter/date scripts. It is extracted from ActivityPage so the
-// next/ channel page (next.ActivityPageNext) can wrap this identical chrome in
-// LayoutNext without forking any markup or hook ids -- both channels emit
-// byte-for-byte the same body. All hook ids and script targets live here, once.
+// the inline filter/date scripts. It is shared by ActivityPage (the promoted
+// chrome wrap, activity_page.templ) without forking any markup or hook ids. All
+// hook ids and script targets live here, once.
 templ ActivityBody(data ActivityPageData) {
 	<div class="space-y-6">
 		<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

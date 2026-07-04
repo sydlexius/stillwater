@@ -123,13 +123,18 @@ func TestBuildSettingsSearchIndex_UniqueIDs(t *testing.T) {
 // mismatch.
 func TestBuildSettingsSearchIndex_TabIDsMatchSettingsTabs(t *testing.T) {
 	ctx := testCtx(t)
-	valid := make(map[SettingsTabID]bool)
-	for _, tab := range settingsTabs() {
-		valid[tab.ID] = true
+	// The canonical settings-section id set (the same values
+	// normalizeSettingsSection accepts). The tabbed chrome retired in #1757 PR-5,
+	// but the search index still tags each entry with the section it belongs to.
+	valid := map[SettingsTabID]bool{
+		TabGeneral: true, TabProviders: true, TabConnections: true,
+		TabLibraries: true, TabAutomation: true, TabRules: true,
+		TabUsers: true, TabAuthProviders: true, TabMaintenance: true,
+		TabLogs: true, TabUpdates: true,
 	}
 	for _, e := range BuildSettingsSearchIndex(ctx) {
 		if !valid[e.TabID] {
-			t.Errorf("entry %q has TabID %q not in settingsTabs()", e.ID, e.TabID)
+			t.Errorf("entry %q has TabID %q not in the canonical settings-section set", e.ID, e.TabID)
 		}
 	}
 }
@@ -173,28 +178,6 @@ func TestSettingsSearchScript_EntryPointAndShortcut(t *testing.T) {
 	}
 	if !strings.Contains(out, "e.key !== '/'") {
 		t.Errorf("output missing '/' shortcut guard: %s", out)
-	}
-}
-
-// TestSettingsTabBar_RendersSearchBoxAndTabs renders settingsTabBar and
-// verifies it emits the search input element plus every tab from
-// settingsTabs() with a matching `data-tab` attribute. The client filter
-// targets these attributes; missing any one silently makes that tab
-// unreachable via search-driven greying.
-func TestSettingsTabBar_RendersSearchBoxAndTabs(t *testing.T) {
-	var buf bytes.Buffer
-	if err := settingsTabBar(TabGeneral, "").Render(testCtx(t), &buf); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, `id="settings-search-input"`) {
-		t.Errorf("output missing search input element: %s", out)
-	}
-	for _, tab := range settingsTabs() {
-		want := `data-tab="` + string(tab.ID) + `"`
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %s", want)
-		}
 	}
 }
 

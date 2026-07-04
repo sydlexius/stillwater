@@ -1,10 +1,9 @@
-package next
+package templates
 
 import (
 	"strconv"
 
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // LogsFilterState is the initial, server-parsed filter selection for the next/
@@ -57,8 +56,8 @@ func logsFilterCountStr(filter LogsFilterState) string {
 // below. Surfaces source their background from --sw-glass-bg so the Background
 // Opacity preference governs translucency (M55 opacity compliance); the flyout
 // and drawer apply a legibility floor so they stay readable at low opacity.
-templ LogsPage(assets templates.AssetPaths, filter LogsFilterState, logComponents []string) {
-	@LayoutNext(t(ctx, "logs.title"), assets) {
+templ LogsPage(assets AssetPaths, filter LogsFilterState, logComponents []string) {
+	@Layout(t(ctx, "logs.title"), assets) {
 		<div
 			id="sw-logs-root"
 			class="sw-next-logs space-y-3"

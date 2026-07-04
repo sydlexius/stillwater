@@ -1,19 +1,18 @@
-package next
+package templates
 
-import "github.com/sydlexius/stillwater/web/templates"
 
-// PreferencesPageNext renders the /next/preferences standalone page (M55 #1774).
+// UserPreferencesPage renders the /next/preferences standalone page (M55 #1774).
 //
 // This is the direct-URL / bookmark-accessible version of the preferences drawer.
-// It renders the drawer content inline inside LayoutNext so users who navigate
+// It renders the drawer content inline inside Layout so users who navigate
 // directly to /next/preferences (or have JS disabled) see the full preferences
 // interface as a regular page rather than a modal panel.
 //
 // When JS is available, the sidebar preferences link instead triggers the flyout
 // drawer (data-sw-prefs-trigger), so users rarely land here via navigation -- it
 // exists as a progressive-enhancement fallback and for direct-link access.
-templ PreferencesPageNext(assets templates.AssetPaths, prefs templates.PreferencesData) {
-	@LayoutNext(t(ctx, "prefs.drawer.title"), assets) {
+templ UserPreferencesPage(assets AssetPaths, prefs PreferencesData) {
+	@Layout(t(ctx, "prefs.drawer.title"), assets) {
 		<div class="sw-prefs-page-wrapper max-w-2xl mx-auto">
 			@PrefsDrawer(assets, prefs)
 		</div>

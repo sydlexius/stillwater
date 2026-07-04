@@ -1075,6 +1075,122 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))
 }
 
+// handleUserPreferencesDrawer returns only the preferences flyout drawer body
+// fragment for HTMX lazy loading (M55 #1774; promoted from
+// /next/preferences-drawer in #1757 PR-5). The drawer chrome shell is already in
+// the DOM (mounted by Layout); this handler returns the body content that fills
+// it in.
+//
+// GET /preferences-drawer
+func (r *Router) handleUserPreferencesDrawer(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	prefs, err := r.loadUserPrefsData(w, req, userID)
+	if err != nil {
+		// loadUserPrefsData already wrote the error response.
+		return
+	}
+	renderTempl(w, req, templates.PrefsDrawer(r.assetsFor(req), prefs))
+}
+
+// loadUserPrefsData reads all stored preferences for userID and builds a
+// PreferencesData struct, falling back to compiled defaults for missing keys.
+// On error it writes the HTTP response and returns a non-nil error. It is the
+// shared loader for the preferences flyout drawer fragment.
+func (r *Router) loadUserPrefsData(w http.ResponseWriter, req *http.Request, userID string) (templates.PreferencesData, error) {
+	ctx := req.Context()
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT key, value FROM user_preferences WHERE user_id = ?`, userID)
+	if err != nil {
+		r.logger.Error("querying user preferences for drawer", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return templates.PreferencesData{}, err
+	}
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here; SQL error already checked via rows.Err
+
+	stored := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			r.logger.Error("scanning user preference for drawer", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return templates.PreferencesData{}, err
+		}
+		stored[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		r.logger.Error("iterating user preferences for drawer", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return templates.PreferencesData{}, err
+	}
+
+	pref := func(key string) string {
+		if v, ok := stored[key]; ok {
+			return v
+		}
+		if def, ok := preferenceDefaults[key]; ok {
+			return def.defaultValue
+		}
+		return ""
+	}
+
+	pageSize := PageSizeDefault
+	if v, ok := stored[PrefPageSize]; ok {
+		if n, err2 := strconv.Atoi(v); err2 == nil && n >= PageSizeMin && n <= PageSizeMax {
+			pageSize = n
+		}
+	}
+
+	bgOpacity := strconv.Itoa(BgOpacityDefault)
+	if v, ok := stored[PrefBgOpacity]; ok {
+		bgOpacity = normalizeBgOpacity(v)
+	}
+
+	legacyAutoFetch := strconv.FormatBool(r.getBoolSetting(ctx, "auto_fetch_images", false))
+	autoFetchImages := legacyAutoFetch
+	if v, ok := stored[PrefAutoFetchImages]; ok {
+		autoFetchImages = normalizeBoolPref(v, legacyAutoFetch)
+	}
+
+	notifEnabled := preferenceDefaults[PrefNotificationEnabled].defaultValue
+	if v, ok := stored[PrefNotificationEnabled]; ok {
+		notifEnabled = normalizeBoolPref(v, notifEnabled)
+	}
+
+	showPlatformDebug := preferenceDefaults[PrefShowPlatformDebug].defaultValue
+	if v, ok := stored[PrefShowPlatformDebug]; ok {
+		showPlatformDebug = normalizeBoolPref(v, showPlatformDebug)
+	}
+
+	return templates.PreferencesData{
+		Theme:                         pref(PrefTheme),
+		ThumbnailSize:                 pref(PrefThumbnailSize),
+		SidebarState:                  pref(PrefSidebarState),
+		ContentWidth:                  pref(PrefContentWidth),
+		ReducedMotion:                 pref(PrefReducedMotion),
+		Language:                      pref(PrefLanguage),
+		FontFamily:                    pref(PrefFontFamily),
+		LetterSpacing:                 pref(PrefLetterSpacing),
+		FontSize:                      pref(PrefFontSize),
+		LiteMode:                      pref(PrefLiteMode),
+		PageSize:                      pageSize,
+		AutoFetchImages:               autoFetchImages,
+		BackgroundOpacity:             bgOpacity,
+		Density:                       pref(PrefDensity),
+		MonoFont:                      pref(PrefMonoFont),
+		KbdHints:                      pref(PrefKbdHints),
+		NotificationEnabled:           notifEnabled,
+		ShowPlatformDebug:             showPlatformDebug,
+		ArtistDetailSectionOrder:      parseSectionList(stored[PrefArtistDetailSectionOrder]),
+		ArtistDetailHiddenSections:    parseSectionList(stored[PrefArtistDetailHiddenSections]),
+		ArtistDetailCollapsedSections: parseSectionList(stored[PrefArtistDetailCollapsedSections]),
+	}, nil
+}
+
 // getUserBoolPreference reads a boolean user preference from the user_preferences
 // table. Returns the fallback value if no row exists for the current user.
 func (r *Router) getUserBoolPreference(ctx context.Context, key string, fallback bool) bool {

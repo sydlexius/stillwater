@@ -41,34 +41,6 @@ func tf(ctx context.Context, key string, args ...any) string {
 	return fmt.Sprintf(tmpl, args...)
 }
 
-// Glass/outline button convention for the next/ channel.
-//
-// glassButton is the single shared class-string for all glass/outline buttons
-// across the next/ dashboard, artists, and bulk screens. It uses Tailwind v4
-// arbitrary-value utilities to reference the --swd-line and --swd-ink-2 CSS
-// variable tokens. Those tokens are defined (light + dark) on the next/ screen
-// markers .sw-next-dashboard, .sw-next-artist-detail, .sw-next-foreign-files,
-// and .sw-next-artists (see the --swd-* token blocks in web/static/css/
-// input.css); the buttons must render inside one of those scopes for the tokens
-// to resolve. Border and text color then adapt automatically to both themes and
-// the user's Background Opacity setting -- no inline style= attribute required.
-// Combine with layout utilities (inline-flex, gap, padding, font-*, disabled:*)
-// at each call site.
-const glassButton = "rounded-md border border-[var(--swd-line)] text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-
-// glassButtonHalo is appended (via templ.KV or concatenation) when a glass
-// button is in its active/pressed state. An inset ring keeps the halo inside
-// the element's border, matching the artist-detail kind-tab convention.
-// focus:ring-4 focus:ring-blue-700 override the base glassButton focus ring
-// (ring-2 ring-blue-500) with a heavier, darker indicator so keyboard focus
-// is distinguishable from the always-on halo (WCAG 2.4.7).
-const glassButtonHalo = "ring-2 ring-blue-500 ring-inset focus:ring-4 focus:ring-blue-700"
-
-// filterTriggerBadge is the count badge overlay for filter-trigger buttons
-// (identical to the promoted templates copy; the logs screen still renders it
-// from this package until it promotes).
-const filterTriggerBadge = "sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
-
 // -- next/ artist-detail presentation helpers (M55 #1335/#1336) ---------------
 // The artists LIST promoted to the canonical templates package in #1757 PR-3a;
 // the helpers below remain only for the not-yet-promoted next/ artist-detail
