@@ -35,6 +35,7 @@ flowchart TD
     changes --> coverage_floor_summary
     test --> coverage_floor_summary
     coverage_floor --> coverage_floor_summary
+    changes --> coverage_upload
     test --> coverage_upload
     changes --> docker
     lint --> docker
@@ -53,17 +54,7 @@ flowchart TD
 
 ## Test Matrix Shards
 
-| Shard | Packages / Notes | Partition |
-|---|---|---|
-| `api-1` | `internal/api` | Partitioned shard 1 of 2: test functions split by round-robin over sorted names |
-| `api-2` | `internal/api` | Partitioned shard 2 of 2: test functions split by round-robin over sorted names |
-| `rule-1` | `internal/rule` | Partitioned shard 1 of 2: test functions split by round-robin over sorted names |
-| `rule-2` | `internal/rule` | Partitioned shard 2 of 2: test functions split by round-robin over sorted names |
-| `services` | `internal/auth internal/image internal/artist` | Named shard: all tests in listed packages |
-| `settingsio` | `internal/settingsio` | Named shard: all tests in listed packages |
-| `providers` | `internal/provider internal/connection` | Named shard: all tests in listed packages |
-| `scan` | `internal/scanner internal/library internal/database internal/scraper internal/foreign internal/watcher` | Named shard: all tests in listed packages |
-| `rest` | `_dynamic_` | Remainder: all packages not covered by a named shard, derived at runtime to auto-include new packages |
+No test shards configured.
 
 ## Test Aggregator Pattern
 
