@@ -247,19 +247,30 @@ test('/next/settings passes a11y scan in light mode', async ({ page }) => {
       && typeof window.swSidebar.cycleTheme === 'function'),
     { timeout: 10_000 },
   );
-  await page.evaluate(() => {
-    window.swPreferences.set('theme', 'dark');
-    window.swSidebar.cycleTheme();
-  });
+  // cycleTheme() runs swPreferences.set() synchronously, including the
+  // glass/opacity token recompute, so page.evaluate() only returns once the
+  // DOM mutation is already applied. That evaluate call has no timeout of its
+  // own, though: under CPU starvation it can block the page's event loop long
+  // enough to consume the whole 60s test timeout before the settle wait below
+  // ever arms (root cause of #2223). Race it against a short deadline so a
+  // starved run fails fast, feeding a retry, instead of riding to the global
+  // timeout.
+  await Promise.race([
+    page.evaluate(() => {
+      window.swPreferences.set('theme', 'dark');
+      window.swSidebar.cycleTheme();
+    }),
+    new Promise((_, reject) => setTimeout(
+      () => reject(new Error('theme-toggle evaluate did not return within 5s (CPU-starved run)')),
+      5_000,
+    )),
+  ]);
+  // Single bounded settle poll: the theme swap is synchronous, so this
+  // confirms it landed rather than waiting out a fixed sleep.
   await page.waitForFunction(
     () => !document.documentElement.classList.contains('dark'),
     { timeout: 5_000 },
   );
-  // Let the theme swap fully settle (CSS transitions are disabled in
-  // beforeEach, but preferences.js also recomputes the glass/opacity tokens in
-  // JS on a theme change). Without this, axe's synchronous color-contrast read
-  // can occasionally still sample a transient color and report a false failure.
-  await page.waitForTimeout(300);
 
   const results = await buildAxeBuilder(page).analyze();
   expect(

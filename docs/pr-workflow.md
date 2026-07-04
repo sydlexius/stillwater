@@ -111,6 +111,8 @@ The fix: every required context in `ci.yml` is owned by an always-running (`if: 
 
 `JS Unit Tests` and `A11y Smoke Tests` are gated the same D1-prone way as the five above, but there is no in-repo evidence (no `.github/settings.yml` or ruleset-as-code; confirmed against the live ruleset, which lists only the five contexts above) that they are currently required. If either is promoted to required, it needs the same always-running wrapper treatment described above.
 
+`A11y Smoke Tests` runs the full Playwright/axe-core suite unconditionally in CI and fails hard on any real violation -- CI is the strict, authoritative a11y gate. The local pre-push gate's a11y step (`scripts/pre-push-gate.sh`) runs the same suite when a11y-relevant files changed since `BASE`, but treats a failure there as advisory (warn, don't block): a local-only harness flake -- a CPU-starved theme-toggle timeout in `tests/a11y/contrast.spec.js`, not a real contrast violation -- otherwise hard-blocks pushes unrelated to the flaking page (#2223). Set `RUN_A11Y=1` to make the local run blocking again.
+
 ### Workflow-only trim (#2131)
 
 A diff where every changed file is under `.github/workflows/**` -- in practice a Dependabot GitHub Actions version bump (`actions/setup-go`, `actions/cache`, etc.) -- no longer re-runs the full app-test fan-out. The application code is byte-identical to `main` on such a diff, so the 5-platform build matrix, the 9-shard race suite, Docker, CodeQL's Go analysis, and the a11y/axe smoke add zero marginal signal over a green CI; what actually needs validating is "do the jobs that use the bumped action still run."

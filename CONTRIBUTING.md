@@ -53,12 +53,17 @@ Short version:
 2. Use a conventional-commit prefix (`feat:`, `fix:`, `docs:`, `chore:`,
    `refactor:`, `perf:`, `ci:`, `test:`, etc.) on the squash commit.
 3. Run `bash scripts/pre-push-gate.sh` before pushing. The accessibility
-   (axe-core) smoke tests are opt-in and skipped by default; run them with
+   (axe-core) smoke tests auto-run when a11y-relevant files changed since
+   `BASE` and the Playwright toolchain is installed, but a failure there is
+   **advisory** (warn, don't block) -- a local-only harness flake must not
+   hard-block an unrelated push (#2223). Force a blocking local run with
    `RUN_A11Y=1 bash scripts/pre-push-gate.sh` (or `RUN_A11Y=true bash
    scripts/pre-push-gate.sh`; downloads a Chromium browser and boots an
    ephemeral server, so it adds minutes). The opt-in accepts any of `1`,
    `true`, `yes`, or `on` (case-insensitive, surrounding whitespace ignored).
-   CI runs them unconditionally in its dedicated a11y job.
+   CI runs the full suite unconditionally in its dedicated a11y job and
+   enforces it strictly -- CI, not the local gate, is the authoritative a11y
+   check.
 4. Open one PR per logical change; never stack PRs.
 5. Apply at least one of the labels listed below so the release-notes
    generator (`.github/release.yml`) buckets your change correctly.

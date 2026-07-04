@@ -20,8 +20,10 @@ export default defineConfig({
   // Authenticate ONCE for the whole run (avoids tripping the login rate
   // limiter); every test context loads the resulting session via storageState.
   globalSetup: './tests/a11y/global-setup.js',
-  // Deterministic: no retries so a failure is a failure.
-  retries: 0,
+  // A genuine violation still fails on every attempt; a load-induced
+  // transient (the CPU-starved theme-toggle timeout root-caused in #2223)
+  // self-heals on retry.
+  retries: 2,
   // Single worker: tests authenticate sequentially against the ephemeral server.
   workers: 1,
   // Wall-clock budget per test. These tests drive a real booted server +

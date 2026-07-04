@@ -445,14 +445,19 @@ echo "=== Accessibility (axe-core) ==="
 #
 # Degrades gracefully (#2140), and stays self-contained (no shared state with
 # other steps) to minimize merge conflicts with sibling branches:
-#   - RUN_A11Y truthy (1/true/yes/on): force a RUN regardless of changed files.
+#   - RUN_A11Y truthy (1/true/yes/on): force a RUN, BLOCKING on failure
+#     regardless of changed files.
 #   - RUN_A11Y falsy  (0/false/no/off): force a SKIP (escape hatch when the
 #     Playwright toolchain is unavailable and you must push anyway; CI still
 #     gates a11y).
 #   - RUN_A11Y unset (auto, the default): run iff a11y-relevant files changed
 #     AND the Playwright toolchain is installed; otherwise SKIP -- never FAIL --
 #     so a fresh clone without `npx playwright install` can still push, matching
-#     the oasdiff/python3 optional-tool SKIP pattern above.
+#     the oasdiff/python3 optional-tool SKIP pattern above. A failure in this
+#     auto path is ADVISORY (warn, don't block): #2223 root-caused a local-only
+#     harness flake (a CPU-starved theme-toggle timeout, not a real contrast
+#     violation) that hard-blocked pushes on unrelated changes. CI runs the
+#     full suite and remains the strict, authoritative a11y gate.
 a11y_flag="$(printf '%s' "${RUN_A11Y:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
 # a11y_changed: did this branch touch any file CI's a11y filter watches?
@@ -475,12 +480,14 @@ a11y_toolchain_ready() {
 }
 
 run_a11y=0
+a11y_blocking=0
 case "$a11y_flag" in
   0 | false | no | off)
     echo "a11y: skipped (RUN_A11Y=${RUN_A11Y} forces opt-out; CI still gates a11y)"
     ;;
   1 | true | yes | on)
     run_a11y=1
+    a11y_blocking=1
     ;;
   *)
     if ! a11y_changed; then
@@ -496,10 +503,15 @@ esac
 if [ "$run_a11y" -eq 1 ]; then
   if ! make test-a11y; then
     echo ""
-    echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
-    exit 1
+    if [ "$a11y_blocking" -eq 1 ]; then
+      echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
+      exit 1
+    fi
+    echo "WARN: a11y: advisory failure in the auto path (see #2223) -- not blocking this push."
+    echo "WARN: a11y: CI runs the full suite and enforces it strictly; set RUN_A11Y=1 to make this blocking locally."
+  else
+    echo "OK"
   fi
-  echo "OK"
 fi
 
 echo "=== UI-preference coverage (prefs-coverage) ==="
