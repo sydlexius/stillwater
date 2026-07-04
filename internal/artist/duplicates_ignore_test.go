@@ -5,6 +5,7 @@ package artist
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -139,5 +140,46 @@ func TestLoadIgnoredSignatures_NilDB(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("nil db set len = %d, want 0", len(got))
+	}
+}
+
+// TestIgnoreDuplicateGroup_ExecError forces the ExecContext failure branch: a
+// closed (non-nil) DB is past the nil guard, so the INSERT hits "database is
+// closed" and IgnoreDuplicateGroup must wrap and return it rather than silently
+// succeeding. Distinct from the nil-db guard in TestIgnoreDuplicateGroup_Guards.
+func TestIgnoreDuplicateGroup_ExecError(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+	err := IgnoreDuplicateGroup(context.Background(), db, "a1|b2", "", "")
+	if err == nil {
+		t.Fatal("closed-db ExecContext must return an error, got nil")
+	}
+	// The wrap prefix proves the error came from this function's Exec branch,
+	// not from an earlier guard.
+	if !strings.Contains(err.Error(), "ignoring duplicate group:") {
+		t.Errorf("error = %q, want the 'ignoring duplicate group:' wrap", err.Error())
+	}
+}
+
+// TestLoadIgnoredSignatures_QueryError forces the QueryContext failure branch on
+// a closed (non-nil) DB: past the nil-db seam, the SELECT errors and Load must
+// return a nil map + wrapped error, not an empty "nothing ignored" set (which
+// would silently un-ignore every group on a transient DB fault).
+func TestLoadIgnoredSignatures_QueryError(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+	got, err := LoadIgnoredSignatures(context.Background(), db)
+	if err == nil {
+		t.Fatal("closed-db QueryContext must return an error, got nil")
+	}
+	if got != nil {
+		t.Errorf("on query error the returned map must be nil, got %+v", got)
+	}
+	if !strings.Contains(err.Error(), "loading ignored signatures:") {
+		t.Errorf("error = %q, want the 'loading ignored signatures:' wrap", err.Error())
 	}
 }

@@ -10,6 +10,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -219,6 +221,128 @@ func TestCountDecrementsOnIgnore(t *testing.T) {
 	}
 	if after != 1 {
 		t.Errorf("post-ignore count = %d, want 1 (decrement after ignore; no stale cache read)", after)
+	}
+}
+
+// TestHandleArtistDuplicatesIgnore_NilDB pins the 503 branch: a Router with no
+// DB wired must return Service Unavailable (not a 500 or a panic) and persist
+// nothing. Mirrors the merge handler's nil-service guard.
+func TestHandleArtistDuplicatesIgnore_NilDB(t *testing.T) {
+	duplicatesCount.invalidate()
+	r := &Router{
+		logger: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})),
+		db:     nil,
+	}
+
+	rec := httptest.NewRecorder()
+	r.handleArtistDuplicatesIgnore(rec, ignoreReq(t, ignoreDuplicateRequest{MemberIDs: []string{"a", "b"}}))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unavailable") {
+		t.Errorf("body should carry the unavailable envelope; got %q", rec.Body.String())
+	}
+}
+
+// TestHandleArtistDuplicatesIgnore_PersistError pins the 500 branch: a valid,
+// admin-authorized request whose IgnoreDuplicateGroup write fails (here forced
+// by closing the DB after construction) must return 500 with the generic
+// "internal" envelope -- and must NOT leak the raw driver error to the caller.
+func TestHandleArtistDuplicatesIgnore_PersistError(t *testing.T) {
+	r, db := countTestRouter(t)
+	// Close after construction so the nil-db guard passes but the INSERT fails.
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	r.handleArtistDuplicatesIgnore(rec, ignoreReq(t, ignoreDuplicateRequest{MemberIDs: []string{"a1", "b2"}}))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"error":"internal"`) {
+		t.Errorf("body should carry the generic internal envelope; got %q", body)
+	}
+	// The raw driver string ("database is closed") must not reach the caller.
+	if strings.Contains(body, "database is closed") || strings.Contains(body, "sql:") {
+		t.Errorf("500 body must not leak the raw driver error; got %q", body)
+	}
+}
+
+// dropIgnoredTable removes the ignored_duplicate_groups table so that
+// DetectDuplicates (which reads artists) still succeeds while
+// LoadIgnoredSignatures (which reads the dropped table) fails -- isolating the
+// ignore-load error branch that a full db.Close() would mask behind an earlier
+// DetectDuplicates failure.
+func dropIgnoredTable(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(), `DROP TABLE ignored_duplicate_groups`); err != nil {
+		t.Fatalf("dropping ignored_duplicate_groups: %v", err)
+	}
+}
+
+// TestHandleArtistDuplicatesPage_IgnoreLoadError pins the page handler's
+// LoadIgnoredSignatures error branch (#2219): detection succeeds but the
+// ignored-set load fails, so the page must 500 rather than render a view that
+// silently shows every group as un-ignored.
+func TestHandleArtistDuplicatesPage_IgnoreLoadError(t *testing.T) {
+	r, db := countTestRouter(t)
+	seedTwoDistinctPairs(t, db)
+	dropIgnoredTable(t, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/reports/duplicates", nil)
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	r.handleArtistDuplicatesPage(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (ignore-load failure); body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandleNextArtistDuplicatesPage_IgnoreLoadError is the next/ mirror of the
+// stable page's ignore-load error branch: detection succeeds, the ignored-set
+// load fails, and the /next/ page must 500.
+func TestHandleNextArtistDuplicatesPage_IgnoreLoadError(t *testing.T) {
+	r, db := countTestRouter(t)
+	seedTwoDistinctPairs(t, db)
+	dropIgnoredTable(t, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/next/reports/duplicates", nil)
+	ctx := middleware.WithTestUXChannel(req.Context(), middleware.UXNext)
+	ctx = middleware.WithTestUserID(ctx, "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	r.handleNextArtistDuplicatesPage(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (ignore-load failure); body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCountDuplicateGroups_IgnoreLoadError pins countDuplicateGroups' error
+// return when LoadIgnoredSignatures fails: detection succeeds (artists table
+// intact) but the ignored-set load errors, so the counter must propagate the
+// error (0, err) rather than under-count silently.
+func TestCountDuplicateGroups_IgnoreLoadError(t *testing.T) {
+	_, db := countTestRouter(t)
+	seedTwoDistinctPairs(t, db)
+	dropIgnoredTable(t, db)
+
+	n, err := countDuplicateGroups(context.Background(), db)
+	if err == nil {
+		t.Fatal("countDuplicateGroups must return an error when the ignore-load fails")
+	}
+	if n != 0 {
+		t.Errorf("count on error = %d, want 0", n)
 	}
 }
 
