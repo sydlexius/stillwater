@@ -44,6 +44,64 @@ func TestHandleReportsPage_RendersWorkshell(t *testing.T) {
 	}
 }
 
+// TestHandleReportsPage_KeyboardShortcutBindings verifies the maintainer-chosen
+// shortcut scheme (#1757 PR-4 UAT): "s" focuses the rail search on every
+// report; "/" focuses the compliance pane's search-artists box, so it is
+// registered only when that pane renders. The registry reads the
+// data-sw-shortcut attributes, so the exact attribute-on-element pairings are
+// asserted, not just key presence.
+func TestHandleReportsPage_KeyboardShortcutBindings(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	h := http.HandlerFunc(r.handleReportsPage)
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+
+	// Compliance (default) pane: rail carries "s", search-artists carries "/".
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports", nil)
+	req = withI18nCtx(t, req)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	railIdx := strings.Index(body, `id="rep-rail-filter"`)
+	if railIdx < 0 {
+		t.Fatalf("rail filter input (rep-rail-filter) absent")
+	}
+	// The rail input's attributes precede its id in source order; check the
+	// tag containing the id carries the "s" binding.
+	railTag := body[strings.LastIndex(body[:railIdx], "<input") : strings.Index(body[railIdx:], ">")+railIdx]
+	if !strings.Contains(railTag, `data-sw-shortcut="s"`) {
+		t.Errorf("rail search must bind the s shortcut; tag: %s", railTag)
+	}
+	searchIdx := strings.Index(body, `id="compliance-search"`)
+	if searchIdx < 0 {
+		t.Fatalf("compliance search-artists input (compliance-search) absent")
+	}
+	searchTag := body[strings.LastIndex(body[:searchIdx], "<input") : strings.Index(body[searchIdx:], ">")+searchIdx]
+	if !strings.Contains(searchTag, `data-sw-shortcut="/"`) {
+		t.Errorf("compliance search-artists must bind the / shortcut; tag: %s", searchTag)
+	}
+
+	// Non-compliance pane: no search-artists box, so "/" must not register.
+	req = httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports?tab=health", nil)
+	req = withI18nCtx(t, req)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("?tab=health: status = %d, want 200", w.Code)
+	}
+	healthBody := w.Body.String()
+	if strings.Contains(healthBody, `data-sw-shortcut="/"`) {
+		t.Errorf("/ must not be registered on panes without the search-artists box")
+	}
+	if !strings.Contains(healthBody, `data-sw-shortcut="s"`) {
+		t.Errorf("s (rail search) must be registered on every report pane")
+	}
+}
+
 // TestHandleReportsPage_ServesStableChannel verifies that the promoted
 // workspace is channel-agnostic (#1757 PR-4): a request carrying the stable
 // UX channel gets the workspace, not a 404. The pre-promotion checkNextChannel

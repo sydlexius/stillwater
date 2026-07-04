@@ -344,7 +344,7 @@ templ coverageChartData(data ComplianceSummaryData) {
 			var gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
 			var textColor = isDark ? '#9ca3af' : '#6b7280';
 
-			new Chart(ctx, {
+			var chart = new Chart(ctx, {
 				type: 'bar',
 				data: {
 					labels: d.labels,
@@ -375,6 +375,12 @@ templ coverageChartData(data ComplianceSummaryData) {
 					}
 				}
 			});
+			// The summary band arrives via an async innerHTML swap (the pane's
+			// hx-trigger="load" fetch and the post-Run-Rules refresh both re-run
+			// this init script). On that path Chart.js can measure the container
+			// before layout settles and fall back to its 300x200 default canvas;
+			// force a re-measure on the next frame once layout is done.
+			requestAnimationFrame(function() { chart.resize(); });
 		})();
 	</script>
 }

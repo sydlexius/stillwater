@@ -95,8 +95,8 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 						<input
 							type="search"
 							id="rep-rail-filter"
-							data-sw-shortcut="/"
-							data-sw-shortcut-label={ t(ctx, "reports.shortcuts.search") }
+							data-sw-shortcut="s"
+							data-sw-shortcut-label={ t(ctx, "reports.shortcuts.search_reports") }
 							placeholder={ t(ctx, "reports.rail_filter_placeholder") }
 							class="sw-rep-rail-filter-input"
 							oninput="swRepRailFilter(this.value)"
@@ -158,14 +158,19 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 				     (z 50) stacks above it (z 49). Hidden entirely on desktop. -->
 				<div class="sw-rep-rail-scrim" id="sw-rep-rail-scrim" onclick="swReportsRailDrawer.close()" aria-hidden="true"></div>
 			</div>
-			<!-- Keyboard tip line (mirrors the artists list footer): the "/"
-			     rail-filter shortcut applies on every report; "f" opens the
-			     compliance filter flyout, so it is listed only when that pane
-			     (and its trigger button) is rendered. Keycap hints are owned by
-			     the #1789 registry via the data-sw-shortcut attributes above. -->
+			<!-- Keyboard tip line (mirrors the artists list footer): "s" focuses
+			     the rail search on every report; "/" focuses the compliance
+			     pane's search-artists box and "f" opens its filter flyout, so
+			     those two are listed only when that pane (and their targets)
+			     is rendered. Keycap hints are owned by the #1789 registry via
+			     the data-sw-shortcut attributes above. -->
 			<p class="sw-list-tips" role="note">
 				<span class="font-medium">{ t(ctx, "reports.shortcuts.tip_label") }:</span>
-				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">/</kbd><span class="ml-1">{ t(ctx, "reports.shortcuts.search") }</span></span>
+				if data.ActiveReport == "compliance" {
+					<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">/</kbd><span class="ml-1">{ t(ctx, "reports.shortcuts.search") }</span></span>
+					<span aria-hidden="true">·</span>
+				}
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">s</kbd><span class="ml-1">{ t(ctx, "reports.shortcuts.search_reports") }</span></span>
 				if data.ActiveReport == "compliance" {
 					<span aria-hidden="true">·</span>
 					<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "reports.shortcuts.tip_filters") }</span></span>
@@ -273,7 +278,10 @@ templ repPaneCompliance(assets AssetPaths, data ComplianceData) {
 		<div class="sw-rep-toolbar-search">
 			<input
 				type="search"
+				id="compliance-search"
 				name="search"
+				data-sw-shortcut="/"
+				data-sw-shortcut-label={ t(ctx, "reports.shortcuts.search") }
 				value={ data.Search }
 				placeholder={ t(ctx, "common.search_artists") }
 				hx-get="/reports/compliance"
