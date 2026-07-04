@@ -73,6 +73,9 @@ templ ArtistDuplicatesNextTable(assets templates.AssetPaths, view templates.Arti
 								class="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
 								data-ignore-group
 								data-group-key={ group.Key }
+								data-i18n-ignore-read-error={ t(ctx, "artist_duplicates.ignore_read_error") }
+								data-i18n-ignore-http-error={ t(ctx, "artist_duplicates.ignore_http_error") }
+								data-i18n-ignore-network-error={ t(ctx, "artist_duplicates.ignore_network_error") }
 							>
 								{ t(ctx, "artist_duplicates.action_ignore") }
 							</button>
@@ -194,8 +197,15 @@ templ artistDuplicatesIgnoreScript() {
 			}
 
 			function ignore(card, btn) {
+				// Localized toast copy is threaded through the button's data-i18n-*
+				// attributes (rendered server-side via t(ctx, ...)); the English
+				// literals are only the fallback when the attribute is absent,
+				// mirroring the rerun-onboarding pattern in settings.templ.
+				var readErr = (btn && btn.dataset.i18nIgnoreReadError) || 'Could not read group members to ignore.';
+				var httpTpl = (btn && btn.dataset.i18nIgnoreHttpError) || 'Could not ignore this group ({status}). Please try again.';
+				var netErr = (btn && btn.dataset.i18nIgnoreNetworkError) || 'Network error while ignoring this group. Please try again.';
 				var ids = memberIdsFor(card);
-				if (!ids) { notifyError('Could not read group members to ignore.'); return; }
+				if (!ids) { notifyError(readErr); return; }
 				var groupKey = card.getAttribute('data-group-key') || '';
 				if (btn) btn.disabled = true;
 				fetch(endpoint, {
@@ -208,7 +218,7 @@ templ artistDuplicatesIgnoreScript() {
 				}).then(function(res) {
 					if (!res.ok) {
 						if (btn) btn.disabled = false;
-						notifyError('Could not ignore this group (' + res.status + '). Please try again.');
+						notifyError(httpTpl.replace('{status}', res.status));
 						return;
 					}
 					// Persisted: hide the card and refresh the all-dismissed panel.
@@ -216,7 +226,7 @@ templ artistDuplicatesIgnoreScript() {
 					refreshEmptyState();
 				}).catch(function() {
 					if (btn) btn.disabled = false;
-					notifyError('Network error while ignoring this group. Please try again.');
+					notifyError(netErr);
 				});
 			}
 
