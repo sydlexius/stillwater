@@ -76,11 +76,11 @@ describe('keyboard.js: g-leader navigation (#1775)', () => {
     assert.ok(navigated[0].endsWith('/next/artists'), `expected /next/artists, got ${navigated[0]}`);
   });
 
-  it('g then r navigates to /next/reports', () => {
+  it('g then r navigates to the canonical /reports (#1757 PR-4)', () => {
     const { win, navigated } = setup();
     fire(win, 'g');
     fire(win, 'r');
-    assert.ok(navigated[0].endsWith('/next/reports'), `expected /next/reports, got ${navigated[0]}`);
+    assert.equal(navigated[0], '/reports', `expected /reports, got ${navigated[0]}`);
   });
 
   it('g then l navigates to /next/logs', () => {
@@ -90,11 +90,11 @@ describe('keyboard.js: g-leader navigation (#1775)', () => {
     assert.ok(navigated[0].endsWith('/next/logs'), `expected /next/logs, got ${navigated[0]}`);
   });
 
-  it('g then f navigates to /next/reports (Findings = Reports)', () => {
+  it('g then f navigates to the canonical /reports (Findings = Reports)', () => {
     const { win, navigated } = setup();
     fire(win, 'g');
     fire(win, 'f');
-    assert.ok(navigated[0].endsWith('/next/reports'), `expected /next/reports, got ${navigated[0]}`);
+    assert.equal(navigated[0], '/reports', `expected /reports, got ${navigated[0]}`);
   });
 
   it('g then s navigates to /next/settings', () => {

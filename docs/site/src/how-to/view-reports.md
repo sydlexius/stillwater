@@ -1,16 +1,16 @@
 ---
-description: Browse the two-pane Reports workspace at /next/reports to view compliance, library health, metadata completeness, and rule pass-rate data across your library.
+description: Browse the two-pane Reports workspace at /reports to view compliance, library health, metadata completeness, and rule pass-rate data across your library.
 ---
 
-<!-- code: web/templates/next/reports.templ, internal/api/handlers_next_report.go -->
+<!-- code: web/templates/reports.templ, internal/api/handlers_report.go -->
 
 # View reports
 
-The **Reports** workspace is a two-pane screen at `/next/reports` that gives you a bird's-eye view of your library's health, compliance, and metadata state. The left rail lists every available report; the right pane renders the one you select.
+The **Reports** workspace is a two-pane screen at `/reports` that gives you a bird's-eye view of your library's health, compliance, and metadata state. The left rail lists every available report; the right pane renders the one you select.
 
 ## Open the Reports workspace
 
-Click **Reports** in the sidebar. The workspace opens with the Compliance overview active by default. You can also navigate directly to `/next/reports/{report-name}` (for example, `/next/reports/health`).
+Click **Reports** in the sidebar. The workspace opens with the Compliance overview active by default. You can also navigate directly to `/reports/{report-name}` (for example, `/reports/health`).
 
 ## The reports rail
 

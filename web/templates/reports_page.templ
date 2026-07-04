@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"context"
@@ -7,36 +7,36 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// ReportsPageData is the view model for the next/ reports two-pane workspace
-// (M55 #1337). ActiveReport identifies which built-in report is selected (e.g.
+// ReportsPageData is the view model for the reports two-pane workspace
+// (M55 #1337; promoted to the canonical /reports in #1757 PR-4). ActiveReport
+// identifies which built-in report is selected (e.g.
 // "compliance"). The matching data field is populated for each live report
 // ("compliance", "health", "metadata-completeness", "rule-pass-rates");
 // unrecognized or deferred report names render a placeholder pane.
 type ReportsPageData struct {
 	ActiveReport   string
-	ComplianceData templates.ComplianceData
+	ComplianceData ComplianceData
 	// HealthData is populated when ActiveReport=="health".
-	HealthData templates.HealthSummaryData
+	HealthData HealthSummaryData
 	// MetadataReport is populated when ActiveReport=="metadata-completeness".
 	MetadataReport *artist.MetadataCompletenessReport
 	// RulePassRates is populated when ActiveReport=="rule-pass-rates".
-	RulePassRates []templates.RulePassRateData
+	RulePassRates []RulePassRateData
 }
 
-// nextBuiltinReport is a single entry in the reports rail.
-type nextBuiltinReport struct {
+// repBuiltinReport is a single entry in the reports rail.
+type repBuiltinReport struct {
 	ID       string
 	LabelKey string
 	DescKey  string
 }
 
-// nextBuiltinReports is the ordered list of built-in reports shown in the rail.
-// IDs match the {name} path segment in /next/reports/{name}. The first four
+// repBuiltinReports is the ordered list of built-in reports shown in the rail.
+// IDs match the {name} path segment in /reports/{name}. The first four
 // entries have live right-panes; the remaining six render a placeholder.
-var nextBuiltinReports = []nextBuiltinReport{
+var repBuiltinReports = []repBuiltinReport{
 	{"compliance", "reports.compliance.label", "reports.compliance.desc"},
 	{"health", "reports.health_report.label", "reports.health_report.desc"},
 	{"metadata-completeness", "reports.metadata_completeness.label", "reports.metadata_completeness.desc"},
@@ -50,9 +50,11 @@ var nextBuiltinReports = []nextBuiltinReport{
 }
 
 // repFilterCount returns the number of active filters on the compliance data,
-// used to badge the Filters trigger button (mirrors complianceActiveFilterCount
-// in compliance.templ which is unexported and cannot be called from this package).
-func repFilterCount(data templates.ComplianceData) int {
+// used to badge the Filters trigger button. It intentionally differs from
+// complianceActiveFilterCount (compliance.templ): the workspace toolbar keeps
+// the search box separate from the flyout, so Search counts here, and the two
+// health bounds collapse into one "health range" filter for the badge.
+func repFilterCount(data ComplianceData) int {
 	n := 0
 	if data.Search != "" {
 		n++
@@ -72,13 +74,14 @@ func repFilterCount(data templates.ComplianceData) int {
 	return n
 }
 
-// ReportsPageNext renders the next/ reports two-pane workspace (M55 #1337).
+// ReportsPage renders the reports two-pane workspace (M55 #1337; promoted to
+// the canonical /reports in #1757 PR-4).
 // The left rail (260 px) lists built-in reports; clicking one navigates to
-// /next/reports/{name}. The right pane renders the active report content.
+// /reports/{name}. The right pane renders the active report content.
 // Logged-out visitors reach this page via wrapOptionalAuth; the handler calls
 // requireAuth internally and redirects to login if the session is absent.
-templ ReportsPageNext(assets templates.AssetPaths, data ReportsPageData) {
-	@LayoutNext(t(ctx, "reports.page_title"), assets) {
+templ ReportsPage(assets AssetPaths, data ReportsPageData) {
+	@Layout(t(ctx, "reports.page_title"), assets) {
 		<script src={ assets.ChartJS }></script>
 		<div class="sw-next-reports">
 			<div class="sw-rep-workspace sw-card">
@@ -100,10 +103,10 @@ templ ReportsPageNext(assets templates.AssetPaths, data ReportsPageData) {
 					<div class="sw-rep-list-wrap">
 						<p class="sw-rep-list-label" aria-hidden="true">{ t(ctx, "reports.section_builtin") }</p>
 						<ul role="list" class="sw-rep-list" id="sw-rep-list">
-							for _, r := range nextBuiltinReports {
+							for _, r := range repBuiltinReports {
 								<li class="sw-rep-list-item" data-rep-label={ t(ctx, r.LabelKey) }>
 									<a
-										href={ templ.SafeURL(assets.BasePath + "/next/reports/" + r.ID) }
+										href={ templ.SafeURL(assets.BasePath + "/reports/" + r.ID) }
 										class={ "sw-rep-item", templ.KV("is-active", data.ActiveReport == r.ID) }
 										if data.ActiveReport == r.ID {
 											aria-current="page"
@@ -159,12 +162,11 @@ templ ReportsPageNext(assets templates.AssetPaths, data ReportsPageData) {
 }
 
 // repPaneCompliance renders the right pane for the Compliance overview report.
-// It reuses templates.ComplianceResults (including ComplianceTable, pagination,
-// and active filter chips) and templates.ComplianceFilterFlyout without
+// It reuses ComplianceResults (including ComplianceTable, pagination,
+// and active filter chips) and ComplianceFilterFlyout without
 // forking them. The toolbar, summary band, and bulk action bar are inline since
-// they require the next/ scope and the compliance.templ script components are
-// unexported.
-templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceData) {
+// they require the workspace scope.
+templ repPaneCompliance(assets AssetPaths, data ComplianceData) {
 	<!-- Pane header -->
 	<div class="sw-rep-pane-header">
 		<div class="sw-rep-pane-title-block">
@@ -293,7 +295,7 @@ templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceDa
 			aria-labelledby="sw-rep-tab-btn-results"
 			class="sw-rep-tab-panel"
 		>
-			@templates.ComplianceResults(data)
+			@ComplianceResults(data)
 		</div>
 		<div
 			id="sw-rep-tab-matrix"
@@ -306,7 +308,7 @@ templ repPaneCompliance(assets templates.AssetPaths, data templates.ComplianceDa
 		</div>
 	</div>
 	<!-- Filter flyout (reused from stable compliance page) -->
-	@templates.ComplianceFilterFlyout(data)
+	@ComplianceFilterFlyout(data)
 	<!-- Bulk action bar -->
 	<div
 		id="bulk-action-bar"
@@ -357,9 +359,9 @@ templ repPanePlaceholder(ctx context.Context, reportID string) {
 
 // repPaneHealth renders the right pane for the Library health report. It
 // embeds the existing HealthSummaryFragment (compliance score card + top
-// failing rules + per-rule pass rates) used on the dashboard, so the next/
+// failing rules + per-rule pass rates) used on the dashboard, so the reports
 // workspace and the dashboard stay visually consistent without forking.
-templ repPaneHealth(data templates.HealthSummaryData) {
+templ repPaneHealth(data HealthSummaryData) {
 	<div class="sw-rep-pane-header">
 		<div class="sw-rep-pane-title-block">
 			<p class="sw-rep-pane-title">{ t(ctx, "reports.health_report.label") }</p>
@@ -367,7 +369,7 @@ templ repPaneHealth(data templates.HealthSummaryData) {
 		</div>
 	</div>
 	<div class="sw-rep-simple-pane">
-		@templates.HealthSummaryFragment(data)
+		@HealthSummaryFragment(data)
 	</div>
 }
 
@@ -382,7 +384,7 @@ templ repPaneMetadataCompleteness(report *artist.MetadataCompletenessReport) {
 		</div>
 	</div>
 	<div class="sw-rep-simple-pane">
-		@templates.MetadataCompletenessFragment(report)
+		@MetadataCompletenessFragment(report)
 	</div>
 }
 
@@ -390,7 +392,7 @@ templ repPaneMetadataCompleteness(report *artist.MetadataCompletenessReport) {
 // The /api/v1/reports/rule-pass-rates endpoint is JSON-only, so this pane
 // renders an inline list directly from the loaded data. PassRate is a 0.0-1.0
 // fraction (see rule.GetRulePassRates); it is shown as a whole percentage.
-templ repPaneRulePassRates(rates []templates.RulePassRateData) {
+templ repPaneRulePassRates(rates []RulePassRateData) {
 	<div class="sw-rep-pane-header">
 		<div class="sw-rep-pane-title-block">
 			<p class="sw-rep-pane-title">{ t(ctx, "reports.rule_pass_rates.label") }</p>
@@ -419,11 +421,11 @@ templ repPaneRulePassRates(rates []templates.RulePassRateData) {
 	</div>
 }
 
-// repComplianceScript renders the JS for the compliance workspace pane.
-// Mirrors the unexported complianceScript() in compliance.templ so these
-// functions are available when ComplianceTable is embedded in the next/ reports
-// workspace. The run-rules flow is intentionally absent (the workspace "Run"
-// button is a simple HTMX re-fetch, not the full confirmAndRunRules flow).
+// repComplianceScript renders the JS for the compliance workspace pane so
+// these functions are available when ComplianceTable is embedded in the
+// reports workspace. The run-rules flow is intentionally absent (the
+// workspace "Run" button is a simple HTMX re-fetch, not the full
+// confirmAndRunRules flow the retired v1 compliance page carried).
 templ repComplianceScript() {
 	<script>
 		// Tab switching: toggle aria-selected + hidden on the tab panels.

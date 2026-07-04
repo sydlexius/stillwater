@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var SCREEN_HREF = { d: '/next/', a: '/next/artists', r: '/next/reports', l: '/next/logs', f: '/next/reports', s: '/next/settings' };
+  var SCREEN_HREF = { d: '/next/', a: '/next/artists', r: '/reports', l: '/next/logs', f: '/reports', s: '/next/settings' };
 
   // Module state, populated lazily on first open() (elements may not exist
   // yet at script-eval time depending on load order).

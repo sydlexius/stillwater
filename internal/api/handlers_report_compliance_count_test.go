@@ -125,9 +125,9 @@ func TestHandleComplianceCount_StableChannel(t *testing.T) {
 	}
 }
 
-// TestHandleComplianceCount_NextChannel asserts the next/-sidebar fragment
-// (?ch=next): href uses /next/reports/compliance, SVG chart-bar glyph is
-// present, pill uses sw-sidebar-count-pill.
+// TestHandleComplianceCount_NextChannel asserts the promoted-sidebar fragment
+// (?ch=next): href uses the canonical /reports/compliance (#1757 PR-4), SVG
+// chart-bar glyph is present, pill uses sw-sidebar-count-pill.
 func TestHandleComplianceCount_NextChannel(t *testing.T) {
 
 	r, db := complianceCountTestRouter(t)
@@ -145,8 +145,11 @@ func TestHandleComplianceCount_NextChannel(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `href="/next/reports/compliance"`) {
-		t.Errorf("body %q missing /next/reports/compliance href", body)
+	if !strings.Contains(body, `href="/reports/compliance"`) {
+		t.Errorf("body %q missing canonical /reports/compliance href", body)
+	}
+	if strings.Contains(body, "/next/") {
+		t.Errorf("?ch=next href must be canonical (no /next/); got %q", body)
 	}
 	if !strings.Contains(body, "<svg") {
 		t.Errorf("next/ channel should include chart-bar SVG glyph; got %q", body)

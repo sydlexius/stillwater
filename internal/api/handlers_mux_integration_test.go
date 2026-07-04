@@ -46,7 +46,9 @@ func TestWrapOptionalAuthRoutes_Unauthenticated(t *testing.T) {
 		{name: "artists list page", path: "/artists"},
 		{name: "artist detail page", path: "/artists/nonexistent-id"},
 		{name: "artist images page", path: "/artists/nonexistent-id/images"},
-		{name: "reports/compliance page", path: "/reports/compliance"},
+		// /reports/compliance itself 302s full-page requests to the workspace
+		// (#1757 PR-4), so the optional-auth page route to exercise is /reports.
+		{name: "reports workspace page", path: "/reports"},
 	}
 
 	for _, tc := range routes {
@@ -173,10 +175,21 @@ func TestWrapOptionalAuthRoutes_AuthenticatedAdmin(t *testing.T) {
 			acceptStatuses: []int{http.StatusNotFound},
 		},
 		{
-			name:           "reports/compliance page",
-			path:           "/reports/compliance",
+			// The promoted reports workspace, compliance tab active (#1757
+			// PR-4); the compliance table renders inside the right pane.
+			name:           "reports workspace page",
+			path:           "/reports",
 			wantBody:       "compliance-table",
 			acceptStatuses: []int{http.StatusOK},
+		},
+		{
+			// Full-page /reports/compliance 302s to the workspace with the
+			// compliance tab active (#1757 PR-4). A regression to wrapAuth
+			// would return 401 JSON instead of the redirect.
+			name:           "reports/compliance full-page redirect",
+			path:           "/reports/compliance",
+			wantBody:       "",
+			acceptStatuses: []int{http.StatusFound},
 		},
 	}
 
