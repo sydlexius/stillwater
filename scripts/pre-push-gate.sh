@@ -206,6 +206,17 @@ run_changed_pkgs_test() {
     echo "tests: skipped (no Go files changed since BASE)"
     return 0
   fi
+  # Clear any stale profile before running. A profile left behind by a prior
+  # INTERRUPTED run of this gate (killed mid-test, crashed before cleanup's
+  # EXIT trap fired) would otherwise still be sitting at $COVER_OUT when this
+  # invocation's `go test` fails to compile: the build-failure branch below
+  # tells a compile failure apart from an ordinary test failure by checking
+  # whether $COVER_OUT is non-empty, and a stale non-empty file would make a
+  # genuine build breakage misread as an ordinary (advisory) test failure --
+  # masking it instead of blocking the push. This is belt-and-suspenders on
+  # top of the cleanup() EXIT trap, which only covers the common case where
+  # the script exits normally.
+  rm -f "$COVER_OUT"
   # shellcheck disable=SC2086  # word-splitting on newlines is intentional
   go test -count=1 -covermode=atomic -coverprofile="$COVER_OUT" $MODIFIED_GO_PKGS
 }

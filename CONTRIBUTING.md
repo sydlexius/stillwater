@@ -54,10 +54,13 @@ Short version:
    `refactor:`, `perf:`, `ci:`, `test:`, etc.) on the squash commit.
 3. Run `bash scripts/pre-push-gate.sh` before pushing. By default the local
    test step is a fast, changed-packages-only, non-race run -- a quick "did I
-   obviously break a test" signal, not a full CI-equivalent pass. A failure
-   there is **advisory** (warn, don't block); CI's required `Test` job runs
-   the full `-race` suite and `Coverage Floor` job runs the per-package
-   coverage ratchet, and both are authoritative. Force the full,
+   obviously break a test" signal, not a full CI-equivalent pass. An ordinary
+   test-assertion failure there is **advisory** (warn, don't block); CI's
+   required `Test` job runs the full `-race` suite and `Coverage Floor` job
+   runs the per-package coverage ratchet, and both are authoritative. A
+   failure that prevents the changed packages from **compiling** is
+   different and always **blocks** the push (no coverage profile is produced
+   in that case, which is how the gate tells the two apart). Force the full,
    CI-equivalent local run (blocking on failure) with `RUN_RACE=1 bash
    scripts/pre-push-gate.sh`, or skip the local test run and patch-coverage
    check entirely with `RUN_RACE=0`. The opt-in/opt-out accepts any of `1`,
