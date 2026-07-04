@@ -57,11 +57,13 @@ jobs:
     name: Analyze Go
     runs-on: ubuntu-latest
     needs: [changes]
-    # Always run on schedule/workflow_dispatch (no `changes` job ran, output
-    # is empty/false); skip only when this specific push/PR diff is proven
-    # workflow-only. Not a required check, so a skip here does not need a
-    # satisfier the way ci.yml's required jobs do.
-    if: needs.changes.outputs.workflow_only != 'true'
+    # Always run on schedule/workflow_dispatch (the `changes` job's own `if:`
+    # skips it for those triggers, leaving this output empty/false); skip
+    # only when this specific push/PR diff is proven workflow-only. always()
+    # makes that explicit/robust rather than relying on GitHub's evaluation
+    # of a truthy `if:` past a skipped dependency. Not a required check, so a
+    # skip here does not need a satisfier the way ci.yml's required jobs do.
+    if: always() && needs.changes.outputs.workflow_only != 'true'
     permissions:
       security-events: write
       contents: read

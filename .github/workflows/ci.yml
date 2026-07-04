@@ -619,12 +619,13 @@ jobs:
   coverage-upload:
     name: Upload Coverage
     runs-on: ubuntu-latest
-    needs: [test]
-    # Only upload when all shards succeeded. If code did not change, the
-    # test job was skipped and result is 'skipped' (not 'success'), so this
-    # job is naturally a no-op for docs-only pushes -- no need to condition
-    # on changes.outputs.code separately.
-    if: needs.test.result == 'success'
+    needs: [changes, test]
+    # Gated on real code changes only: a workflow-only push still runs the
+    # `test` job (single `rest` shard, see changes.outputs.workflow_only), and
+    # that shard's coverage alone would poison main's Codecov baseline if
+    # uploaded unflagged. Docs-only pushes skip `test` entirely (result is
+    # 'skipped', not 'success'), so this job is naturally a no-op there too.
+    if: needs.changes.outputs.code == 'true' && needs.test.result == 'success'
     permissions:
       contents: read
       # Required for Codecov OIDC token exchange (use_oidc: true).
