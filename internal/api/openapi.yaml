@@ -3098,13 +3098,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: Authentication required.
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs, emitting the body via http.Error, so the
+            content type is text/plain (the body text happens to read
+            `{"error":"unauthorized"}`) rather than the JSON Error schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            (requireForeignAdmin) via http.Error, so the body is plain text
+            ("Forbidden: administrator role required"), not the JSON Error
+            schema.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: >-
+            Persisting the ignore failed. The wrapped driver error is logged
+            server-side; the response carries a generic JSON envelope
+            (error: internal) so no internal detail leaks to the caller.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "403":
-          description: Administrator role required.
+        "503":
+          description: >-
+            The database is not configured on this instance, so the ignore
+            cannot be persisted (error: unavailable).
           content:
             application/json:
               schema:

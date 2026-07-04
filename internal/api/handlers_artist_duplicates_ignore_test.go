@@ -272,6 +272,37 @@ func TestHandleArtistDuplicatesIgnore_PersistError(t *testing.T) {
 	}
 }
 
+// TestHandleArtistDuplicatesIgnore_OversizedBody pins the 1 MiB MaxBytesReader
+// cap: a body past the limit must be rejected at decode with a 400 (not read in
+// full, not 500, not persisted). The oversized field is a padded reason string
+// so the JSON is otherwise well-formed -- proving the cap, not a syntax error,
+// is what trips.
+func TestHandleArtistDuplicatesIgnore_OversizedBody(t *testing.T) {
+	r, db := countTestRouter(t)
+
+	huge := strings.Repeat("x", (1<<20)+1024) // just over the 1 MiB cap
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/duplicates/ignore",
+		strings.NewReader(`{"member_ids":["a1","b2"],"reason":"`+huge+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	r.handleArtistDuplicatesIgnore(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body over cap); body=%q", rec.Code, rec.Body.String())
+	}
+	got, err := artist.LoadIgnoredSignatures(context.Background(), db)
+	if err != nil {
+		t.Fatalf("LoadIgnoredSignatures: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("an over-cap request must not persist a row; found %d", len(got))
+	}
+}
+
 // dropIgnoredTable removes the ignored_duplicate_groups table so that
 // DetectDuplicates (which reads artists) still succeeds while
 // LoadIgnoredSignatures (which reads the dropped table) fails -- isolating the

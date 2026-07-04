@@ -141,6 +141,12 @@ func (r *Router) handleArtistDuplicatesIgnore(w http.ResponseWriter, req *http.R
 		return
 	}
 
+	// Cap the request body at 1 MiB. The payload is a short list of artist IDs
+	// plus two optional display strings, so a well-behaved client never exceeds
+	// a few KiB; the cap bounds a hostile or buggy caller. A breach surfaces as
+	// a decode error and is mapped to the same 400 as any other malformed body.
+	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
+
 	var body ignoreDuplicateRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
