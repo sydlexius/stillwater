@@ -151,10 +151,12 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 
 	// Include Driver.js tour assets only on pages where the guided tour
 	// may auto-start, be manually triggered, or set a pending flag.
-	// The /next/* prefix covers the Dashboard, Artists, and Artist Detail
-	// screens which all have SCREEN_STEPS groups in tour.js.
+	// The promoted canonical Dashboard route is now "/" (#1757); the
+	// /next/* prefix still covers Artists and Artist Detail, which all
+	// have SCREEN_STEPS groups in tour.js.
 	switch {
-	case path == "/artists" || path == "/artists/",
+	case path == "/",
+		path == "/artists" || path == "/artists/",
 		strings.HasPrefix(path, "/guide"),
 		strings.HasPrefix(path, "/next"),
 		strings.HasPrefix(path, "/onboarding"),
