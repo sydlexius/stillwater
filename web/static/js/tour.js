@@ -28,11 +28,15 @@
     // artist link from the DOM and stores it in TOUR_CHAIN_ARTIST_URL_KEY.
     var OOBE_CHAIN = ['dashboard', 'artists', 'artistDetail'];
 
-    // CHAIN_URLS maps a chain screen name to the vNext URL to navigate to when
-    // advancing the chain. artistDetail is absent: its URL is dynamic and is
-    // stored separately in TOUR_CHAIN_ARTIST_URL_KEY.
+    // CHAIN_URLS maps a chain screen name to the URL to navigate to when
+    // advancing the chain. dashboard is never actually read as an advance
+    // target (it is always OOBE_CHAIN[0], the entry point, never something the
+    // chain advances TO) but is kept here, set to the promoted canonical
+    // route (#1757), for documentation consistency with getCurrentScreen().
+    // artistDetail is absent: its URL is dynamic and is stored separately in
+    // TOUR_CHAIN_ARTIST_URL_KEY.
     var CHAIN_URLS = {
-        dashboard: '/next/',
+        dashboard: '/',
         artists: '/next/artists'
     };
 
@@ -143,9 +147,10 @@
         return !!el && el.content === 'true';
     }
 
-    // navigate: assign to window.location.href, prefixed with the deployment
-    // base path. Tests may override via window.swNavigate (mirrors the seam
-    // in keyboard.js).
+    // navigate: assign to window.location.href. Callers pass a fully-prefixed
+    // URL (basePath already applied); unlike keyboard.js's navigate, this does
+    // not add the base path itself. Tests may override via window.swNavigate
+    // (mirrors the seam in keyboard.js).
     function navigate(url) {
         if (typeof window.swNavigate === 'function') {
             window.swNavigate(url);
@@ -156,7 +161,10 @@
 
     // getCurrentScreen inspects window.location.pathname and returns a screen
     // identifier for the SCREEN_STEPS registry, or null for unrecognized paths.
-    //   'dashboard'   -- /next or /next/
+    //   'dashboard'   -- / (promoted canonical dashboard, #1757), or the
+    //                    legacy /next, /next/ (kept for dual-mode direct visits
+    //                    and the nextFallback re-dispatch, which serves the
+    //                    same dashboard content without changing the URL)
     //   'artists'     -- /next/artists or /artists (both channels)
     //   'artistDetail'-- /artists/{id} (or legacy /next/artists/{id})
     //   null          -- any other path
@@ -167,6 +175,12 @@
         if (bp && path.indexOf(bp) === 0) {
             path = path.slice(bp.length) || '/';
         }
+        // '/' is the promoted canonical dashboard route (#1757 PR-6b landed the
+        // last promotion; handleIndex serves the same IndexPage regardless of
+        // SW_UX channel). This must be recognized in addition to /next, /next/
+        // -- without it, navigating the OOBE chain's entry point (which lands
+        // here) returned null and silently aborted the tour (#2228 fix-round).
+        if (path === '/') { return 'dashboard'; }
         if (path === '/next' || path === '/next/') { return 'dashboard'; }
         // Artist detail must be checked before the artists list pattern.
         // Both the canonical /artists/{id} (promoted in #1757 PR-3b) and the

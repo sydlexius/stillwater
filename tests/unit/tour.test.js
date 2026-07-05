@@ -148,6 +148,31 @@ describe('tour.js: startGuidedTour branches on lane availability, not the origin
     });
 });
 
+describe('tour.js: getCurrentScreen recognizes the promoted canonical dashboard route (#2228 fix-round)', () => {
+    it('auto-start on "/" with a pending tour drives the dashboard group, not a silent no-op', async () => {
+        const driverCalls = [];
+        const errors = [];
+        const { win } = createPage({
+            url: 'http://localhost:1973/',
+            nextEnabled: 'true',
+            bodyHtml: `
+                <div id="sw-sidebar"></div>
+                <div id="dashboard-search"></div>
+                <div id="dashboard-run-rules-btn"></div>
+                <div id="action-queue"></div>
+                <div id="next-dash-activity-feed"></div>
+            `,
+            storage: { 'tour.pending': 'true' },
+            driverCalls,
+        });
+        win.console.error = (msg) => errors.push(msg);
+        await wait(600);
+        assert.equal(errors.length, 0, 'must not log "unrecognised screen" for the promoted dashboard route "/"');
+        assert.equal(driverCalls.length, 1, 'dashboard tour must actually drive -- a null getCurrentScreen() would silently no-op here');
+        assert.equal(driverCalls[0].steps.length, 5, 'full 5-step dashboard group (first chain screen, no nav dedup)');
+    });
+});
+
 describe('tour.js: button-triggered flow runs the full OOBE chain end-to-end (#2228)', () => {
     it('dashboard -> artists -> artistDetail, ending in tour.completed', async () => {
         const driverCalls = [];
@@ -159,9 +184,14 @@ describe('tour.js: button-triggered flow runs the full OOBE chain end-to-end (#2
         let storage = dumpStorage(guide.win);
         assert.equal(storage['tour.pending'], 'true');
 
-        // Screen 2: land on the vNext Dashboard (chain index 0, full 5 steps).
+        // Screen 2: land on the promoted canonical Dashboard route (#1757 -- a
+        // real navigation to /next/ is internally re-dispatched server-side
+        // and the browser ends up here at "/", not "/next/"; chain index 0,
+        // full 5 steps). This is the exact regression the #2228 fix-round
+        // caught: getCurrentScreen() previously did not recognize "/" and
+        // returned null here, silently aborting the whole chain.
         const dashboard = createPage({
-            url: 'http://localhost:1973/next/',
+            url: 'http://localhost:1973/',
             nextEnabled: 'true',
             bodyHtml: `
                 <div id="sw-sidebar"></div>
