@@ -2,13 +2,49 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 )
+
+// recordingHandler is a minimal slog.Handler that captures every record's
+// message and level so tests can assert on Warn-level logging without
+// depending on log formatting. Safe for concurrent use since tests seed
+// preferences via a shared *Router.
+type recordingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r)
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(_ string) slog.Handler      { return h }
+
+// messages returns the captured messages at or above the given level.
+func (h *recordingHandler) messages(minLevel slog.Level) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for _, r := range h.records {
+		if r.Level >= minLevel {
+			out = append(out, r.Message)
+		}
+	}
+	return out
+}
 
 // prefsPageRequest issues GET /preferences against the promoted preferences
 // page handler with (or without) an authed user context.
@@ -255,6 +291,106 @@ func TestUserPrefsData_ShowPlatformDebugDefault(t *testing.T) {
 	if got := toggleState(w.Body.String(), "pref-d-show-platform-debug"); got != "false" {
 		t.Errorf("show_platform_debug default: aria-checked = %q, want false", got)
 	}
+}
+
+// TestLoadUserPrefsData_WarnsOnInvalidStoredValues seeds invalid/normalizable
+// values for page_size, bg_opacity, and auto_fetch_images and verifies
+// loadUserPrefsData logs a Warn for each -- both from the standalone page
+// (GET /preferences) and the flyout drawer fragment (GET /preferences-drawer).
+// Before the #2231 fix-round consolidation, handleUserPreferencesPage warned
+// on these invalid-stored-value cases but handleUserPreferencesDrawer's
+// separate copy of the parsing logic silently swallowed them; both surfaces
+// now share loadUserPrefsData, so both must warn identically.
+func TestLoadUserPrefsData_WarnsOnInvalidStoredValues(t *testing.T) {
+	t.Parallel()
+
+	seed := func(t *testing.T, r *Router, userID string) {
+		t.Helper()
+		seedUserPref(t, r, userID, "page_size", "not-a-number")
+		seedUserPref(t, r, userID, "bg_opacity", "not-a-number")
+		seedUserPref(t, r, userID, "auto_fetch_images", "maybe")
+	}
+
+	wantWarns := []string{
+		"stored page_size invalid, using default",
+		"stored bg_opacity invalid, using default",
+		"stored auto_fetch_images normalized",
+	}
+
+	t.Run("page", func(t *testing.T) {
+		t.Parallel()
+		r, _ := testRouter(t)
+		rec := &recordingHandler{}
+		r.logger = slog.New(rec)
+		const userID = "prefs-warn-page-user"
+		seed(t, r, userID)
+
+		w := prefsPageRequest(t, r, userID)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+		}
+
+		got := rec.messages(slog.LevelWarn)
+		for _, want := range wantWarns {
+			if !containsMessage(got, want) {
+				t.Errorf("page handler: missing warn %q; got %v", want, got)
+			}
+		}
+	})
+
+	t.Run("drawer", func(t *testing.T) {
+		t.Parallel()
+		r, _ := testRouter(t)
+		rec := &recordingHandler{}
+		r.logger = slog.New(rec)
+		const userID = "prefs-warn-drawer-user"
+		seed(t, r, userID)
+
+		w := prefsDrawerRequest(t, r, userID)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+		}
+
+		got := rec.messages(slog.LevelWarn)
+		for _, want := range wantWarns {
+			if !containsMessage(got, want) {
+				t.Errorf("drawer handler: missing warn %q; got %v (this is the bug #2231 fixed: the drawer path used to drop these warns)", want, got)
+			}
+		}
+	})
+}
+
+// TestLoadUserPrefsData_NoWarnOnValidStoredValues is the negative-path
+// counterpart: valid stored values must not trigger any Warn logging on
+// either surface.
+func TestLoadUserPrefsData_NoWarnOnValidStoredValues(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	rec := &recordingHandler{}
+	r.logger = slog.New(rec)
+	const userID = "prefs-no-warn-user"
+	seedUserPref(t, r, userID, "page_size", "100")
+	seedUserPref(t, r, userID, "bg_opacity", "80")
+	seedUserPref(t, r, userID, "auto_fetch_images", "true")
+
+	w := prefsPageRequest(t, r, userID)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	if got := rec.messages(slog.LevelWarn); len(got) != 0 {
+		t.Errorf("expected no warnings for valid stored values, got %v", got)
+	}
+}
+
+// containsMessage reports whether msgs contains want.
+func containsMessage(msgs []string, want string) bool {
+	for _, m := range msgs {
+		if m == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestUserPrefsData_ShowPlatformDebugStored verifies the stored value wins:

@@ -972,104 +972,10 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	ctx := req.Context()
-
-	// Load all stored preferences for this user.
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT key, value FROM user_preferences WHERE user_id = ?`, userID)
+	prefs, err := r.loadUserPrefsData(w, req, userID)
 	if err != nil {
-		r.logger.Error("querying user preferences for page", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		// loadUserPrefsData already wrote the error response.
 		return
-	}
-	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
-
-	stored := make(map[string]string)
-	for rows.Next() {
-		var k, v string
-		if err := rows.Scan(&k, &v); err != nil {
-			r.logger.Error("scanning user preference", "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		stored[k] = v
-	}
-	if err := rows.Err(); err != nil {
-		r.logger.Error("iterating user preferences", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	pref := func(key string) string {
-		if v, ok := stored[key]; ok {
-			return v
-		}
-		if def, ok := preferenceDefaults[key]; ok {
-			return def.defaultValue
-		}
-		return ""
-	}
-
-	// Parse page_size as integer; fall back to default.
-	pageSize := PageSizeDefault
-	if v, ok := stored[PrefPageSize]; ok {
-		if n, err2 := strconv.Atoi(v); err2 == nil && n >= PageSizeMin && n <= PageSizeMax {
-			pageSize = n
-		} else {
-			r.logger.Warn("stored page_size invalid for preferences page, using default",
-				"user_id", userID, "raw_value", v)
-		}
-	}
-
-	// Parse bg_opacity as integer; fall back to default.
-	bgOpacity := strconv.Itoa(BgOpacityDefault)
-	if v, ok := stored[PrefBgOpacity]; ok {
-		normalized := normalizeBgOpacity(v)
-		if normalized != v {
-			r.logger.Warn("stored bg_opacity invalid for preferences page, using default",
-				"user_id", userID, "raw_value", v, "normalized", normalized)
-		}
-		bgOpacity = normalized
-	}
-
-	// Determine auto_fetch_images with the app-level setting as the fallback so
-	// the toggle reflects the effective behavior when no per-user row exists.
-	legacyAutoFetch := strconv.FormatBool(r.getBoolSetting(ctx, "auto_fetch_images", false))
-	autoFetchImages := legacyAutoFetch
-	if v, ok := stored[PrefAutoFetchImages]; ok {
-		normalized := normalizeBoolPref(v, legacyAutoFetch)
-		if normalized != v {
-			r.logger.Warn("stored auto_fetch_images normalized for preferences page",
-				"user_id", userID, "raw_value", v, "normalized", normalized)
-		}
-		autoFetchImages = normalized
-	}
-
-	prefs := templates.PreferencesData{
-		Theme:             pref(PrefTheme),
-		ThumbnailSize:     pref(PrefThumbnailSize),
-		SidebarState:      pref(PrefSidebarState),
-		ContentWidth:      pref(PrefContentWidth),
-		ReducedMotion:     pref(PrefReducedMotion),
-		Language:          pref(PrefLanguage),
-		FontFamily:        pref(PrefFontFamily),
-		LetterSpacing:     pref(PrefLetterSpacing),
-		FontSize:          pref(PrefFontSize),
-		LiteMode:          pref(PrefLiteMode),
-		PageSize:          pageSize,
-		AutoFetchImages:   autoFetchImages,
-		BackgroundOpacity: bgOpacity,
-		// M55 #1774 flyout drawer keys.
-		Density:             pref(PrefDensity),
-		MonoFont:            pref(PrefMonoFont),
-		KbdHints:            pref(PrefKbdHints),
-		NotificationEnabled: normalizeBoolPref(pref(PrefNotificationEnabled), preferenceDefaults[PrefNotificationEnabled].defaultValue),
-		// M55 #2060: per-user debug tab toggle.
-		ShowPlatformDebug: normalizeBoolPref(pref(PrefShowPlatformDebug), preferenceDefaults[PrefShowPlatformDebug].defaultValue),
-		// Artist detail layout: parse stored JSON arrays (nil = use default order).
-		ArtistDetailSectionOrder:      parseSectionList(stored[PrefArtistDetailSectionOrder]),
-		ArtistDetailHiddenSections:    parseSectionList(stored[PrefArtistDetailHiddenSections]),
-		ArtistDetailCollapsedSections: parseSectionList(stored[PrefArtistDetailCollapsedSections]),
 	}
 
 	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))
@@ -1098,15 +1004,19 @@ func (r *Router) handleUserPreferencesDrawer(w http.ResponseWriter, req *http.Re
 
 // loadUserPrefsData reads all stored preferences for userID and builds a
 // PreferencesData struct, falling back to compiled defaults for missing keys.
-// On error it writes the HTTP response and returns a non-nil error. It is the
-// shared loader for the preferences flyout drawer fragment.
+// It logs a Warn for any stored value that is invalid or gets normalized, so
+// bad data in user_preferences is observable regardless of which surface
+// triggered the load. On error it writes the HTTP response and returns a
+// non-nil error. It is the single shared loader for both the preferences page
+// (GET /preferences) and the preferences flyout drawer fragment
+// (GET /preferences-drawer).
 func (r *Router) loadUserPrefsData(w http.ResponseWriter, req *http.Request, userID string) (templates.PreferencesData, error) {
 	ctx := req.Context()
 
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT key, value FROM user_preferences WHERE user_id = ?`, userID)
 	if err != nil {
-		r.logger.Error("querying user preferences for drawer", "error", err)
+		r.logger.Error("querying user preferences", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return templates.PreferencesData{}, err
 	}
@@ -1116,14 +1026,14 @@ func (r *Router) loadUserPrefsData(w http.ResponseWriter, req *http.Request, use
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err != nil {
-			r.logger.Error("scanning user preference for drawer", "error", err)
+			r.logger.Error("scanning user preference", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return templates.PreferencesData{}, err
 		}
 		stored[k] = v
 	}
 	if err := rows.Err(); err != nil {
-		r.logger.Error("iterating user preferences for drawer", "error", err)
+		r.logger.Error("iterating user preferences", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return templates.PreferencesData{}, err
 	}
@@ -1138,22 +1048,39 @@ func (r *Router) loadUserPrefsData(w http.ResponseWriter, req *http.Request, use
 		return ""
 	}
 
+	// Parse page_size as integer; fall back to default.
 	pageSize := PageSizeDefault
 	if v, ok := stored[PrefPageSize]; ok {
 		if n, err2 := strconv.Atoi(v); err2 == nil && n >= PageSizeMin && n <= PageSizeMax {
 			pageSize = n
+		} else {
+			r.logger.Warn("stored page_size invalid, using default",
+				"user_id", userID, "raw_value", v)
 		}
 	}
 
+	// Parse bg_opacity as integer; fall back to default.
 	bgOpacity := strconv.Itoa(BgOpacityDefault)
 	if v, ok := stored[PrefBgOpacity]; ok {
-		bgOpacity = normalizeBgOpacity(v)
+		normalized := normalizeBgOpacity(v)
+		if normalized != v {
+			r.logger.Warn("stored bg_opacity invalid, using default",
+				"user_id", userID, "raw_value", v, "normalized", normalized)
+		}
+		bgOpacity = normalized
 	}
 
+	// Determine auto_fetch_images with the app-level setting as the fallback so
+	// the toggle reflects the effective behavior when no per-user row exists.
 	legacyAutoFetch := strconv.FormatBool(r.getBoolSetting(ctx, "auto_fetch_images", false))
 	autoFetchImages := legacyAutoFetch
 	if v, ok := stored[PrefAutoFetchImages]; ok {
-		autoFetchImages = normalizeBoolPref(v, legacyAutoFetch)
+		normalized := normalizeBoolPref(v, legacyAutoFetch)
+		if normalized != v {
+			r.logger.Warn("stored auto_fetch_images normalized",
+				"user_id", userID, "raw_value", v, "normalized", normalized)
+		}
+		autoFetchImages = normalized
 	}
 
 	notifEnabled := preferenceDefaults[PrefNotificationEnabled].defaultValue
