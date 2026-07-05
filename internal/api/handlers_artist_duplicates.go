@@ -75,7 +75,10 @@ func (c *duplicatesCountCache) invalidate() {
 	c.mu.Unlock()
 }
 
-// handleArtistDuplicatesPage renders /reports/duplicates. Admin-only.
+// handleArtistDuplicatesPage renders /reports/duplicates (M55 #1757 PR-6b:
+// serves the promoted detect + merge template that was previously the next/
+// lane's /next/reports/duplicates; the page is channel-agnostic so there is no
+// checkNextChannel guard). Admin-only.
 func (r *Router) handleArtistDuplicatesPage(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return
@@ -465,11 +468,14 @@ func (r *Router) handleArtistDuplicatesCount(w http.ResponseWriter, req *http.Re
 	}
 
 	label := html.EscapeString(i18n.TFromCtx(req.Context()).T("nav.reports.duplicates"))
-	// ?ch=next: caller is the next/ sidebar; use the /next/ href and include
-	// the copy glyph so the hydrated item matches the icon-led subnav style.
-	// Stable callers omit the glyph (stable sidebar does not show subnav icons).
+	// The href no longer varies by channel (M55 #1757 PR-6b promoted the
+	// duplicates page from /next/reports/duplicates to the canonical Reports
+	// hub), so build it once for both branches.
+	href := html.EscapeString(r.basePath + "/reports/duplicates")
+	// ?ch=next: caller is the promoted sidebar; include the copy glyph so the
+	// hydrated item matches the icon-led subnav style. Stable callers omit the
+	// glyph (stable sidebar does not show subnav icons).
 	if req.URL.Query().Get("ch") == "next" {
-		href := html.EscapeString(r.basePath + "/next/reports/duplicates")
 		fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
 			`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/reports/duplicates" aria-label="%s">`+
 				`<svg class="sw-sidebar-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">`+
@@ -481,7 +487,6 @@ func (r *Router) handleArtistDuplicatesCount(w http.ResponseWriter, req *http.Re
 			href, label, label, count)
 		return
 	}
-	href := html.EscapeString(r.basePath + "/reports/duplicates")
 	fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
 		`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/reports/duplicates" aria-label="%s">`+
 			`<span class="sw-sidebar-label">%s</span>`+

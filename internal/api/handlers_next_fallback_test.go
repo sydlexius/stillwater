@@ -56,6 +56,9 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 	mux.HandleFunc("GET /reports/foreign-files/allowlist", func(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte("FOREIGN ALLOWLIST q=" + req.URL.RawQuery))
 	})
+	mux.HandleFunc("GET /reports/duplicates", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("DUPLICATES q=" + req.URL.RawQuery))
+	})
 	mux.HandleFunc("GET /next/{path...}", r.nextFallback(mux))
 
 	tests := []struct {
@@ -93,6 +96,11 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 		// query string (allowlist pagination) intact.
 		{"/next/reports/foreign-files", "FOREIGN FILES q="},
 		{"/next/reports/foreign-files/allowlist?page=2", "FOREIGN ALLOWLIST q=page=2"},
+		// #1757 PR-6b: the dedicated /next/reports/duplicates route is gone (the
+		// last per-screen next/ template); it re-dispatches to the promoted
+		// canonical page, query string intact.
+		{"/next/reports/duplicates", "DUPLICATES q="},
+		{"/next/reports/duplicates?merged=1", "DUPLICATES q=merged=1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

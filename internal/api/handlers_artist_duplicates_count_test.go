@@ -193,9 +193,10 @@ func TestHandleArtistDuplicatesCount_CacheTTL(t *testing.T) {
 }
 
 // TestHandleArtistDuplicatesCount_NextChannel asserts the ?ch=next branch:
-// when count > 0 and the next/ channel param is set, the link uses
-// /next/reports/duplicates and the sw-sidebar-count-pill class (with icon).
-// The stable branch is covered by TestHandleArtistDuplicatesCount_WithDuplicates.
+// when count > 0 and the ?ch=next param is set, the link uses the canonical
+// /reports/duplicates path (M55 #1757 PR-6b) and the sw-sidebar-count-pill
+// class (with icon). The stable branch is covered by
+// TestHandleArtistDuplicatesCount_WithDuplicates.
 func TestHandleArtistDuplicatesCount_NextChannel(t *testing.T) {
 	r, db := countTestRouter(t)
 	seedTwoDuplicates(t, db)
@@ -213,7 +214,7 @@ func TestHandleArtistDuplicatesCount_NextChannel(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`href="/next/reports/duplicates"`,
+		`href="/reports/duplicates"`,
 		`data-path="/reports/duplicates"`,
 		`sw-sidebar-count-pill`,
 		`>1<`,  // one duplicate group

@@ -949,26 +949,21 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// (#1338), and settings rail (#1339) promoted to their canonical paths
 	// (/preferences, /preferences-drawer, /activity, /logs, /settings), so their
 	// dedicated /next/* routes are gone; those paths reach the /next/{path...}
-	// fallback below and re-dispatch to the promoted canonical pages. The still-
-	// /next/ duplicates route below is an exact path, so it keeps winning over
-	// the fallback until its own promotion PR.
+	// fallback below and re-dispatch to the promoted canonical pages.
 	// M55 #1757 PR-6a: foreign-files management promoted to the canonical
 	// /reports/foreign-files (+ /allowlist), so the dedicated /next/reports/
 	// foreign-files routes are gone; those paths reach the /next/{path...}
 	// fallback below and re-dispatch to the promoted canonical pages.
-	// M55 #1752: next/ duplicates detect+merge page. Registered as an exact
-	// path so Go's mux prefers it over the /next/{path...} fallback below (the
-	// sidebar duplicates link already targets this exact path via
-	// /api/v1/reports/duplicates/count?ch=next). wrapOptionalAuth so the
-	// in-handler requireForeignAdmin gate renders the login page for
-	// unauthenticated visitors instead of returning 401 JSON.
-	mux.HandleFunc("GET "+bp+"/next/reports/duplicates", wrapOptionalAuth(r.handleNextArtistDuplicatesPage, optAuthMw))
+	// M55 #1757 PR-6b: the duplicates detect + merge page (#1752) promoted to
+	// the canonical /reports/duplicates, so the dedicated /next/reports/
+	// duplicates route is gone; that path reaches the /next/{path...} fallback
+	// below and re-dispatches to the promoted canonical page. This was the last
+	// per-screen next/ template, so the /next/ lane now carries no screen
+	// content -- only LayoutNext + shared helpers remain as future-lane infra.
 	// M55 #1757 PR-4: the reports workspace promoted to the canonical /reports
 	// (+ /reports/{name}), so the dedicated /next/reports and
 	// /next/reports/{name} routes are gone; those paths reach the /next/{path...}
-	// fallback below and re-dispatch to the promoted canonical workspace. The
-	// still-/next/ duplicates route above is an exact path, so it keeps winning
-	// over the fallback.
+	// fallback below and re-dispatch to the promoted canonical workspace.
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

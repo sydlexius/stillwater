@@ -336,28 +336,6 @@ func TestHandleArtistDuplicatesPage_IgnoreLoadError(t *testing.T) {
 	}
 }
 
-// TestHandleNextArtistDuplicatesPage_IgnoreLoadError is the next/ mirror of the
-// stable page's ignore-load error branch: detection succeeds, the ignored-set
-// load fails, and the /next/ page must 500.
-func TestHandleNextArtistDuplicatesPage_IgnoreLoadError(t *testing.T) {
-	r, db := countTestRouter(t)
-	seedTwoDistinctPairs(t, db)
-	dropIgnoredTable(t, db)
-
-	req := httptest.NewRequest(http.MethodGet, "/next/reports/duplicates", nil)
-	ctx := middleware.WithTestUXChannel(req.Context(), middleware.UXNext)
-	ctx = middleware.WithTestUserID(ctx, "admin-1")
-	ctx = middleware.WithTestRole(ctx, "administrator")
-	req = req.WithContext(ctx)
-
-	rec := httptest.NewRecorder()
-	r.handleNextArtistDuplicatesPage(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500 (ignore-load failure); body=%q", rec.Code, rec.Body.String())
-	}
-}
-
 // TestCountDuplicateGroups_IgnoreLoadError pins countDuplicateGroups' error
 // return when LoadIgnoredSignatures fails: detection succeeds (artists table
 // intact) but the ignored-set load errors, so the counter must propagate the

@@ -40,12 +40,11 @@ type SidebarData struct {
 // and /api/v1/foreign-files/count?ch=next when count>0.
 //
 // Nav hrefs point at CANONICAL routes (/, /artists, /reports,
-// /reports/foreign-files, /activity, /settings, /preferences, /logs) since
-// this is now the default chrome on every page. The
+// /reports/foreign-files, /reports/duplicates, /activity, /settings,
+// /preferences, /logs) since this is now the default chrome on every page. The
 // Compliance/Duplicates/Foreign count pills keep their ?ch=next source, which
-// selects the promoted glyph-led pill markup. Duplicates remains the last
-// per-screen migration follow-up (its canonical /reports/duplicates page is
-// still pending promotion).
+// selects the promoted glyph-led pill markup (the ?ch=next param now only
+// selects markup style -- every hydrated href targets a canonical route).
 //
 // States are controlled via the data-sidebar-state attribute ("full",
 // "icon-only", "hidden"); the initial state is set by preferences.js from the
@@ -142,8 +141,8 @@ templ Sidebar(data SidebarData) {
 					<!-- Compliance (admin): HTMX-hydrated count pill; count =
 					     non-compliant artists (health_score < 100). Empty body hides
 					     the item when fully compliant. The count endpoint is
-					     admin-only. ?ch=next tells the handler to use the /next/ href
-					     and include the chart-bar glyph. -->
+					     admin-only. ?ch=next selects the glyph-led pill markup (the
+					     hydrated href targets the canonical /reports route). -->
 					<li
 						id="sidebar-compliance-nav"
 						hx-get="/api/v1/reports/compliance/count?ch=next"

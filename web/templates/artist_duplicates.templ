@@ -27,33 +27,43 @@ type ArtistDuplicatesPageView struct {
 	Groups []ArtistDuplicateGroupRow
 }
 
-// ArtistDuplicatesPage renders the "Possible duplicate artists" list page.
-// Each group exposes a "Merge..." action that opens the consolidation modal
-// (#1615 -- API in PR #1654, UI in PR12b). The modal runs a dry-run preflight
-// via POST /api/v1/artists/merge so the user previews the would-be moves +
-// collisions before committing.
+// ArtistDuplicatesPage renders the "Possible duplicate artists" detect + merge
+// report (M55 #1752, promoted to the canonical /reports/duplicates in #1757
+// PR-6b). Each group exposes a "Merge..." action that opens the consolidation
+// modal (#1615) -- the modal runs a dry-run preflight via POST
+// /api/v1/artists/merge so the user previews the would-be moves + collisions
+// before committing -- and an "Ignore" action (#1716/#2219) that persists a
+// server-side dismissal.
+//
+// The .sw-next-duplicates scope class is retained verbatim from the promoted
+// template so its scoped styles keep matching.
 templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
 	@Layout(t(ctx, "artist_duplicates.page_title"), assets) {
-		<div class="space-y-6">
-			<div class="sw-card rounded-lg px-6 py-4">
-				<h1 class="text-2xl font-bold">{ t(ctx, "artist_duplicates.title") }</h1>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+		<div class="sw-next-duplicates space-y-6">
+			<div class="sw-card rounded-lg px-3 py-2">
+				// Visible <h1> doubles as the page's document-outline heading so
+				// screen readers get a top-level landmark.
+				<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "artist_duplicates.title") }</h1>
+				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
 					{ t(ctx, "artist_duplicates.subtitle") }
 				</p>
 			</div>
 			@ArtistDuplicatesTable(assets, view)
 		</div>
 		@ArtistMergeModal()
+		@artistDuplicatesIgnoreScript()
 	}
 }
 
-// ArtistDuplicatesTable is the content section rendered inside
-// ArtistDuplicatesPage.  Each group is a card listing its members with a
-// per-group "Merge..." button.
+// ArtistDuplicatesTable renders the detected near-duplicate groups as cards.
+// Each group shows a reason badge, a member table, a per-group "Merge..."
+// button, and an "Ignore" button (#1716). The card data-* attributes
+// (data-duplicate-group, data-group-key, data-members) are consumed by the
+// shared merge modal script and the ignore script alike.
 templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 	<div id="artist-duplicates-table" class="space-y-4">
 		if len(view.Groups) == 0 {
-			<div class="sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+			<div id="duplicates-empty-none" class="sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "artist_duplicates.empty_state") }
 			</div>
 		} else {
@@ -75,14 +85,27 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 							</span>
 						}
 						<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{ group.Key }</span>
-						<button
-							type="button"
-							class="ml-auto inline-flex items-center gap-1 rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
-							data-merge-open
-							data-group-key={ group.Key }
-						>
-							{ t(ctx, "artist_duplicates.action_merge") }
-						</button>
+						<div class="ml-auto flex items-center gap-2">
+							<button
+								type="button"
+								class="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
+								data-ignore-group
+								data-group-key={ group.Key }
+								data-i18n-ignore-read-error={ t(ctx, "artist_duplicates.ignore_read_error") }
+								data-i18n-ignore-http-error={ t(ctx, "artist_duplicates.ignore_http_error") }
+								data-i18n-ignore-network-error={ t(ctx, "artist_duplicates.ignore_network_error") }
+							>
+								{ t(ctx, "artist_duplicates.action_ignore") }
+							</button>
+							<button
+								type="button"
+								class="inline-flex items-center gap-1 rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
+								data-merge-open
+								data-group-key={ group.Key }
+							>
+								{ t(ctx, "artist_duplicates.action_merge") }
+							</button>
+						</div>
 					</div>
 					<table class="min-w-full text-sm">
 						<thead class="bg-gray-50 dark:bg-gray-800/30">
@@ -123,8 +146,121 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 					</table>
 				</div>
 			}
+			// All-dismissed empty state (#1716): hidden until the ignore script
+			// finds that every group card has been dismissed. Distinct copy from
+			// the "none detected" state so the user knows findings existed but
+			// are now ignored (server-side persisted since #2219).
+			<div id="duplicates-empty-dismissed" hidden class="sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "artist_duplicates.empty_state_dismissed") }
+			</div>
 		}
 	</div>
+}
+
+// artistDuplicatesIgnoreScript implements the #1716 "ignore a finding"
+// affordance. Since #2219 the ignore is PERSISTED SERVER-SIDE: clicking Ignore
+// POSTs the group's member IDs to /api/v1/artists/duplicates/ignore. There is no
+// longer any localStorage read/write -- the server is the single source of truth
+// for ignored groups, so the sidebar count and the page can never diverge. Any
+// pre-#2219 per-browser localStorage ignores are simply dropped and those groups
+// resurface once for fresh review (a deliberate one-time transition).
+//
+// memberIdsFor derives the group's member IDs from the card's data-members blob
+// (the same blob the merge modal reads); the server computes the canonical
+// signature from them exactly as the old client key did (sorted, "|"-joined).
+templ artistDuplicatesIgnoreScript() {
+	<script>
+		(function() {
+			var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+			var basePath = bpMeta ? bpMeta.content : '';
+			var endpoint = basePath + '/api/v1/artists/duplicates/ignore';
+
+			// Use the canonical CSRF cookie reader exposed by preferences.js
+			// (loaded on every page via the layout). Fall back to a local reader
+			// only if the global is somehow absent so the POST still has a header.
+			function csrfToken() {
+				if (typeof window.swCsrfToken === 'function') return window.swCsrfToken();
+				var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+				if (!match) return '';
+				// decodeURIComponent throws URIError on malformed percent-encoding;
+				// fall back to the raw value so a bad cookie never breaks the page.
+				try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+			}
+
+			// memberIdsFor returns the group's member IDs from the card's
+			// data-members blob. Returns null when the blob is missing, empty, or
+			// unparsable so callers skip the POST.
+			function memberIdsFor(card) {
+				var raw = card.getAttribute('data-members') || '[]';
+				var members = [];
+				try { members = JSON.parse(raw); } catch (e) { return null; }
+				var ids = members.map(function(m) { return m.id; }).filter(Boolean);
+				if (ids.length === 0) return null;
+				return ids;
+			}
+
+			// refreshEmptyState reveals the "all dismissed" panel when every
+			// detected group card is hidden, and hides it again otherwise.
+			function refreshEmptyState() {
+				var cards = document.querySelectorAll('[data-duplicate-group]');
+				if (cards.length === 0) return;
+				var anyVisible = false;
+				cards.forEach(function(c) { if (!c.hidden) anyVisible = true; });
+				var dismissed = document.getElementById('duplicates-empty-dismissed');
+				if (dismissed) dismissed.hidden = anyVisible;
+			}
+
+			// notifyError surfaces a failure rather than silently hiding the card,
+			// so a persist failure never masquerades as a successful ignore.
+			function notifyError(msg) {
+				if (window.showToast) { window.showToast(msg); return; }
+				console.error('stillwater: ' + msg);
+			}
+
+			function ignore(card, btn) {
+				// Localized toast copy is threaded through the button's data-i18n-*
+				// attributes (rendered server-side via t(ctx, ...)); the English
+				// literals are only the fallback when the attribute is absent,
+				// mirroring the rerun-onboarding pattern in settings.templ.
+				var readErr = (btn && btn.dataset.i18nIgnoreReadError) || 'Could not read group members to ignore.';
+				var httpTpl = (btn && btn.dataset.i18nIgnoreHttpError) || 'Could not ignore this group ({status}). Please try again.';
+				var netErr = (btn && btn.dataset.i18nIgnoreNetworkError) || 'Network error while ignoring this group. Please try again.';
+				var ids = memberIdsFor(card);
+				if (!ids) { notifyError(readErr); return; }
+				var groupKey = card.getAttribute('data-group-key') || '';
+				if (btn) btn.disabled = true;
+				fetch(endpoint, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-Token': csrfToken()
+					},
+					body: JSON.stringify({ member_ids: ids, group_key: groupKey })
+				}).then(function(res) {
+					if (!res.ok) {
+						if (btn) btn.disabled = false;
+						notifyError(httpTpl.replace('{status}', res.status));
+						return;
+					}
+					// Persisted: hide the card and refresh the all-dismissed panel.
+					card.hidden = true;
+					refreshEmptyState();
+				}).catch(function() {
+					if (btn) btn.disabled = false;
+					notifyError(netErr);
+				});
+			}
+
+			// Delegate clicks on the per-group Ignore buttons.
+			document.addEventListener('click', function(e) {
+				var btn = e.target.closest('[data-ignore-group]');
+				if (!btn) return;
+				e.preventDefault();
+				var card = btn.closest('[data-duplicate-group]');
+				if (card) ignore(card, btn);
+			});
+		})();
+	</script>
 }
 
 // ArtistMergeModal renders the per-group merge confirmation dialog. The
@@ -253,7 +389,10 @@ templ ArtistMergeModal() {
 		function csrfToken() {
 			if (typeof window.swCsrfToken === 'function') return window.swCsrfToken();
 			var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-			return match ? decodeURIComponent(match[1]) : '';
+			if (!match) return '';
+			// decodeURIComponent throws URIError on malformed percent-encoding;
+			// fall back to the raw value so a bad cookie never breaks the page.
+			try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
 		}
 
 		function openModal(groupKey) {
