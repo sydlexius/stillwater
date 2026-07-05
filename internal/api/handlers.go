@@ -1514,18 +1514,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // partial requests (HX-Request: true) receive a JSON error body so they are
 // not served a full HTML document in a swap target.
 // nextFallback returns the handler for the /next/* UI-channel lane (M55 #1340).
-// Until a screen's next template lands, it re-dispatches the request to the
-// stable route by stripping the /next prefix and forwarding through the mux, so
-// navigation to unimplemented next/ paths never dead-ends. The UX middleware has
-// already set X-Stillwater-UX: next on the response. Each screen issue replaces
-// this generic fallback with a dedicated next/ handler as its template lands.
-// No per-route auth wrapper is applied here because the re-dispatched stable
-// route applies its own auth.
+// It re-dispatches the request to the stable route by stripping the /next prefix
+// and forwarding through the mux, so navigation to any next/ path never
+// dead-ends. The UX middleware has already set X-Stillwater-UX: next on the
+// response. No per-route auth wrapper is applied here because the re-dispatched
+// stable route applies its own auth.
 //
-// Note: nextFallback only covers paths with NO dedicated next/ handler yet.
-// Implemented handlers use checkNextChannel (decision 12) and return 404 on the
-// per-request stable opt-out; that policy does not apply here because this
-// handler is the scaffolding for screens that are not yet implemented.
+// As of M55 #1757 every M55 screen has been promoted to its canonical path, so
+// there are currently no dedicated per-screen next/ handlers and this fallback
+// covers the entire /next/* lane. When a future round builds a new screen in the
+// lane, it registers a dedicated next/ handler for its exact path (re-adding a
+// per-request stable opt-out guard if that screen needs one); this generic
+// fallback continues to catch every other /next/* path.
 func (r *Router) nextFallback(mux *http.ServeMux) http.HandlerFunc {
 	bp := r.basePath
 	return func(w http.ResponseWriter, req *http.Request) {

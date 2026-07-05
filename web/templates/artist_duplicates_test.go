@@ -72,6 +72,127 @@ func TestArtistDuplicatesTable_MergeButtonAndMembers(t *testing.T) {
 	}
 }
 
+// sampleDuplicatesView returns a two-group view: one name_key group with a
+// recommended survivor, one mbid group. Enough to exercise both reason badges,
+// the recommended badge, the per-group action buttons, and the data-* hooks.
+func sampleDuplicatesView() ArtistDuplicatesPageView {
+	return ArtistDuplicatesPageView{
+		Groups: []ArtistDuplicateGroupRow{
+			{
+				Key:    "the cure",
+				Reason: "name_key",
+				Members: []ArtistDuplicateMember{
+					{ID: "a1", Name: "The Cure", Path: "/music/Cure"},
+					{ID: "b2", Name: "The Cure", Path: "/music/The Cure", Recommended: true, RecommendedReason: "canonical_basename"},
+				},
+			},
+			{
+				Key:    "mbid-123",
+				Reason: "mbid",
+				Members: []ArtistDuplicateMember{
+					{ID: "c3", Name: "Boards of Canada", Path: "/music/BoC", MBID: "mbid-123"},
+					{ID: "d4", Name: "Boards of Canada", Path: "/music/Boards", MBID: "mbid-123", Recommended: true, RecommendedReason: "most_content"},
+				},
+			},
+		},
+	}
+}
+
+// TestArtistDuplicatesTable_IgnoreHooksAndCanonicalLinks pins the promoted
+// table's per-group Ignore trigger (#1716), the hidden all-dismissed panel, and
+// the canonical member links. Post-promotion (M55 #1757 PR-6b) the member link
+// must target /artists/{id}, NOT the retired /next/artists/{id} lane.
+func TestArtistDuplicatesTable_IgnoreHooksAndCanonicalLinks(t *testing.T) {
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesTable(AssetPaths{BasePath: "", IsAdmin: true}, sampleDuplicatesView()).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	for _, want := range []string{
+		`data-ignore-group`,               // per-group Ignore trigger (#1716)
+		`data-merge-open`,                 // per-group Merge trigger
+		`data-group-key="the cure"`,       // name_key group key
+		`/artists/a1`,                     // member link uses the canonical route
+		`id="duplicates-empty-dismissed"`, // all-dismissed panel present (hidden)
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rendered duplicates table missing %q", want)
+		}
+	}
+	// The member link must NOT reference the retired /next/ lane.
+	if strings.Contains(body, "/next/artists/") {
+		t.Error("promoted table must not link to the retired /next/artists/ lane")
+	}
+	// The all-dismissed panel must start hidden; the ignore script reveals it.
+	if !strings.Contains(body, `id="duplicates-empty-dismissed" hidden`) {
+		t.Error("duplicates-empty-dismissed panel should render with the hidden attribute")
+	}
+	// Both reason badges should appear (one name_key group, one mbid group).
+	for _, label := range []string{"Name collision", "Shared MBID"} {
+		if !strings.Contains(body, label) {
+			t.Errorf("reason badge %q missing", label)
+		}
+	}
+}
+
+// TestArtistDuplicatesPage_EmptyState verifies the "none detected" empty state
+// renders (and the all-dismissed variant does not) when there are no groups, so
+// an admin with a clean library sees the right message.
+func TestArtistDuplicatesPage_EmptyState(t *testing.T) {
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesPage(AssetPaths{IsAdmin: true}, ArtistDuplicatesPageView{}).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `id="duplicates-empty-none"`) {
+		t.Error("none-detected empty state missing")
+	}
+	if strings.Contains(body, `id="duplicates-empty-dismissed"`) {
+		t.Error("all-dismissed panel should not render when there are zero groups")
+	}
+	if !strings.Contains(body, "No suspected duplicates detected.") {
+		t.Error("empty-state message missing")
+	}
+}
+
+// TestArtistDuplicatesPage_IgnoreScriptContract pins the ignore script's
+// server-persistence contract (#2219): clicking Ignore POSTs the group's member
+// IDs to the ignore endpoint with a CSRF header, and there is NO remaining
+// localStorage read/write path (the server is the single source of truth). A
+// regression to the old client-only localStorage scheme would reintroduce the
+// split client/server state the AC forbids.
+func TestArtistDuplicatesPage_IgnoreScriptContract(t *testing.T) {
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesPage(AssetPaths{IsAdmin: true}, sampleDuplicatesView()).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	// The ignore must POST to the server endpoint with the member_ids payload
+	// and a CSRF header -- the actual persistence mechanism, not a substring
+	// that a no-op script could also satisfy.
+	for _, want := range []string{
+		`/api/v1/artists/duplicates/ignore`, // server endpoint
+		`method: 'POST'`,                    // mutation, not a read
+		`member_ids`,                        // group identity sent to the server
+		`X-CSRF-Token`,                      // CSRF-protected state change
+		`swCsrfToken`,                       // canonical token reader
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ignore script must POST the ignore server-side; missing %q", want)
+		}
+	}
+
+	// The legacy client-only ignore key scheme must be fully removed so no
+	// ignore state lives only in the browser (the #2219 no-split-state AC). The
+	// ui.confirm.duplicate. prefix was unique to the old ignore script; a bare
+	// "localStorage" check would false-positive on the layout's other scripts.
+	if strings.Contains(body, `ui.confirm.duplicate.`) {
+		t.Error("ignore script must not retain the client-only localStorage key scheme (ui.confirm.duplicate.)")
+	}
+}
+
 // TestArtistDuplicatesTable_RecommendedBadge pins the visible badge so a
 // regression that drops it (or moves it off the recommended row) gets caught.
 func TestArtistDuplicatesTable_RecommendedBadge(t *testing.T) {

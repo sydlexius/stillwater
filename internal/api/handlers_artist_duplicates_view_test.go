@@ -154,7 +154,86 @@ func TestHandleArtistDuplicatesPage_AuthenticatedRendersPage(t *testing.T) {
 	if !strings.Contains(body, "artist-duplicates-table") {
 		t.Error("authenticated admin must see the artist-duplicates-table in the response")
 	}
+	// M55 #1757 PR-6b: the canonical page now serves the promoted detect + merge
+	// template. Its .sw-next-duplicates scope class (kept verbatim from the
+	// promoted template), the shared merge modal, and the none-detected empty
+	// state (empty test DB) prove the promoted template renders here, not the
+	// retired v1 page.
+	if !strings.Contains(body, "sw-next-duplicates") {
+		t.Error("promoted page must render the sw-next-duplicates scope class")
+	}
+	if !strings.Contains(body, `id="merge-modal"`) {
+		t.Error("promoted page must render the shared merge modal (#merge-modal)")
+	}
+	if !strings.Contains(body, `id="duplicates-empty-none"`) {
+		t.Error("empty test DB should render the none-detected empty state")
+	}
 	if strings.Contains(body, `type="password"`) {
 		t.Error("authenticated admin must not see a login password field")
+	}
+}
+
+// TestHandleArtistDuplicatesPage_NonAdminForbidden verifies the admin gate
+// (requireForeignAdmin): the duplicates page is admin-only, so a non-admin with
+// a valid session must get 403 rather than the rendered page. Folded from the
+// retired handleNextArtistDuplicatesPage test (M55 #1757 PR-6b).
+func TestHandleArtistDuplicatesPage_NonAdminForbidden(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "u1")
+	ctx = middleware.WithTestRole(ctx, "operator")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/duplicates", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesPage(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("non-admin should get 403; got %d", w.Code)
+	}
+}
+
+// TestHandleArtistDuplicatesPage_NilDB pins the partially-constructed-Router
+// guard: when r.db is nil the handler renders an empty page (200) with the
+// promoted shell rather than panicking on the detection call. Folded from the
+// retired next handler test (M55 #1757 PR-6b).
+func TestHandleArtistDuplicatesPage_NilDB(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+	r.db = nil
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("nil db: status = %d, want 200 (empty page)", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "sw-next-duplicates") {
+		t.Error("nil db should still render the promoted shell (sw-next-duplicates)")
+	}
+	if !strings.Contains(body, `id="duplicates-empty-none"`) {
+		t.Error("nil db should render the none-detected empty state")
+	}
+}
+
+// TestHandleArtistDuplicatesPage_DetectorError pins the fail-loud branch: when
+// DetectDuplicates errors (forced here by closing the DB) the handler must
+// return 500 rather than rendering a misleading empty page. sql.DB.Close is
+// idempotent, so the t.Cleanup-registered Close stays safe. Folded from the
+// retired next handler test (M55 #1757 PR-6b).
+func TestHandleArtistDuplicatesPage_DetectorError(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesPage(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("detector error: status = %d, want 500", w.Code)
 	}
 }
