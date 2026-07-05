@@ -988,7 +988,7 @@ templ LogsViewerScript() {
 					console.error('[swKbd] register API missing on logs page');
 				}
 			}
-			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
+			if ((window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') || document.readyState !== 'loading') {
 				registerLogsShortcuts();
 			} else {
 				document.addEventListener('DOMContentLoaded', registerLogsShortcuts);

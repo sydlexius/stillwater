@@ -1534,7 +1534,7 @@ templ artistDetailPageScript() {
 				{ key: 'Escape', label: ds.esc || '' }
 			]);
 		}
-		if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
+		if ((window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') || document.readyState !== 'loading') {
 			registerArtistDetailShortcuts();
 		} else {
 			document.addEventListener('DOMContentLoaded', registerArtistDetailShortcuts);
