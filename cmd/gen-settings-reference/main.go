@@ -159,9 +159,10 @@ func discoverTemplSources(trunk, glob string) (sources []string, owner map[strin
 	// the overall order deterministic.
 	var helperOnlyPaths []string
 	for _, p := range subPaths {
-		// Glob includes the trunk file when it matches `settings_*.templ`
-		// (it doesn't, since the trunk is `settings.templ`), but we filter
-		// regardless to be defensive against renames.
+		// The glob matches `settings_*.templ`, which the trunk file
+		// (settings_page.templ) satisfies too, so it would otherwise be
+		// double-counted as one of its own sub-templates. Filter it out
+		// explicitly rather than relying on the glob to exclude it.
 		if p == trunk {
 			continue
 		}

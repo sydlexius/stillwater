@@ -9,6 +9,17 @@ import (
 	"testing"
 )
 
+// canonicalSettingsTabIDs is the hand-curated list of every SettingsTabID that
+// BuildSettingsSearchIndex is expected to tag entries with. Shared by
+// TestBuildSettingsSearchIndex (every tab has at least one entry) and
+// TestBuildSettingsSearchIndex_TabIDsMatchSettingsTabs (no entry carries a
+// TabID outside this set) so the two lists cannot drift out of sync.
+var canonicalSettingsTabIDs = []SettingsTabID{
+	TabGeneral, TabProviders, TabConnections, TabLibraries,
+	TabAutomation, TabRules, TabUsers, TabAuthProviders,
+	TabMaintenance, TabLogs, TabUpdates,
+}
+
 // readSettingsModule returns the source of a settings JS module extracted out of
 // settings.templ (M55 #1808). Tests run with the working directory set to the
 // package dir (web/templates), so the vendored module sits one level up under
@@ -67,11 +78,7 @@ func TestBuildSettingsSearchIndex(t *testing.T) {
 	}
 
 	// All tabs that should have at least one entry.
-	expectedTabs := []SettingsTabID{
-		TabGeneral, TabProviders, TabConnections, TabLibraries,
-		TabAutomation, TabRules, TabUsers, TabAuthProviders,
-		TabMaintenance, TabLogs, TabUpdates,
-	}
+	expectedTabs := canonicalSettingsTabIDs
 	tabsSeen := make(map[SettingsTabID]int)
 
 	for i, e := range index {
@@ -123,14 +130,12 @@ func TestBuildSettingsSearchIndex_UniqueIDs(t *testing.T) {
 // mismatch.
 func TestBuildSettingsSearchIndex_TabIDsMatchSettingsTabs(t *testing.T) {
 	ctx := testCtx(t)
-	// The canonical settings-section id set (the same values
-	// normalizeSettingsSection accepts). The tabbed chrome retired in #1757 PR-5,
-	// but the search index still tags each entry with the section it belongs to.
-	valid := map[SettingsTabID]bool{
-		TabGeneral: true, TabProviders: true, TabConnections: true,
-		TabLibraries: true, TabAutomation: true, TabRules: true,
-		TabUsers: true, TabAuthProviders: true, TabMaintenance: true,
-		TabLogs: true, TabUpdates: true,
+	// The canonical settings-section id set. The tabbed chrome retired in
+	// #1757 PR-5, but the search index still tags each entry with the section
+	// it belongs to.
+	valid := make(map[SettingsTabID]bool, len(canonicalSettingsTabIDs))
+	for _, tab := range canonicalSettingsTabIDs {
+		valid[tab] = true
 	}
 	for _, e := range BuildSettingsSearchIndex(ctx) {
 		if !valid[e.TabID] {

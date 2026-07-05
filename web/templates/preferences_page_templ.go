@@ -8,11 +8,12 @@ package templates
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// UserPreferencesPage renders the /next/preferences standalone page (M55 #1774).
+// UserPreferencesPage renders the canonical /preferences standalone page
+// (M55 #1774; promoted from /next/preferences in #1757 PR-5).
 //
 // This is the direct-URL / bookmark-accessible version of the preferences drawer.
 // It renders the drawer content inline inside Layout so users who navigate
-// directly to /next/preferences (or have JS disabled) see the full preferences
+// directly to /preferences (or have JS disabled) see the full preferences
 // interface as a regular page rather than a modal panel.
 //
 // When JS is available, the sidebar preferences link instead triggers the flyout
@@ -51,7 +52,7 @@ func UserPreferencesPage(assets AssetPaths, prefs PreferencesData) templ.Compone
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()\n\t\t     this promoted screen carries the next-gen chrome regardless of URL, so\n\t\t     the Global cheat-sheet section and g-leader nav register here the same\n\t\t     as on /next/preferences. Must render before LayoutGlobalChrome's\n\t\t     KeyboardJS script tag (later in Layout's document order) so the flag is\n\t\t     set when that script's isNextPage() check runs. Scoped to this page\n\t\t     only, NOT set in Layout itself, which is also the shared shell for\n\t\t     still-legacy/stable screens. --> <script>window.SW_IS_NEXT_PAGE = true;</script> <div class=\"sw-prefs-page-wrapper max-w-2xl mx-auto\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()\n\t\t     this promoted screen carries the next-gen chrome regardless of URL, so\n\t\t     the Global cheat-sheet section and g-leader nav register here the same\n\t\t     as elsewhere in the next-gen chrome. Must render before LayoutGlobalChrome's\n\t\t     KeyboardJS script tag (later in Layout's document order) so the flag is\n\t\t     set when that script's isNextPage() check runs. Scoped to this page\n\t\t     only, NOT set in Layout itself, which is also the shared shell for\n\t\t     still-legacy/stable screens. --> <script>window.SW_IS_NEXT_PAGE = true;</script> <div class=\"sw-prefs-page-wrapper max-w-2xl mx-auto\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

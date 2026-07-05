@@ -1,22 +1,23 @@
 package templates
 
 
-// ActivityPage renders the global activity feed in the next/ UI chrome
-// (M55 #1772). It is an Option-A chrome wrap: the entire activity surface
-// (filter trigger, date-range bar, content region, filter flyout, and the
-// inline filter/date scripts) is the shared ActivityBody, reused
-// byte-for-byte so every hook id, HTMX contract, and i18n key matches the
-// stable /activity page exactly. The only next/-specific additions are the
-// Layout shell and the .sw-next-activity token scope (defined in input.css
-// alongside the sibling next surfaces) so any reused component resolves the
-// --swd-* design tokens. The content fragment is reused unchanged from the
-// stable /activity/content endpoint, so no next/-specific content route exists.
+// ActivityPage renders the canonical /activity page (M55 #1772; promoted from
+// /next/activity in #1757 PR-5). It is an Option-A chrome wrap: the entire
+// activity surface (filter trigger, date-range bar, content region, filter
+// flyout, and the inline filter/date scripts) is the shared ActivityBody,
+// reused byte-for-byte so every hook id, HTMX contract, and i18n key matches
+// unchanged from before the promotion. The only chrome-specific additions are
+// the Layout shell and the .sw-next-activity token scope (defined in
+// input.css alongside the sibling next-gen surfaces) so any reused component
+// resolves the --swd-* design tokens. The content fragment is reused
+// unchanged from the /activity/content endpoint, so no separate content route
+// exists for this page.
 templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 	@Layout(t(ctx, "activity.title"), assets) {
 		<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()
 		     this promoted screen carries the next-gen chrome regardless of URL, so
 		     the Global cheat-sheet section and g-leader nav register here the same
-		     as on /next/activity. Must render before LayoutGlobalChrome's
+		     as elsewhere in the next-gen chrome. Must render before LayoutGlobalChrome's
 		     KeyboardJS script tag (later in Layout's document order) so the flag is
 		     set when that script's isNextPage() check runs. Scoped to this page
 		     only, NOT set in Layout itself, which is also the shared shell for

@@ -40,13 +40,14 @@ type SidebarData struct {
 // and /api/v1/foreign-files/count?ch=next when count>0.
 //
 // Nav hrefs point at CANONICAL routes (/, /artists, /reports, /activity,
-// /settings, /preferences) since this is now the default chrome on every page.
-// Two targets stay on /next/ because no canonical route exists yet -- Foreign
-// Files (/next/reports/foreign-files; the v1 route is /settings/foreign-files)
-// and Logs (/logs) -- and the Compliance/Duplicates/Foreign count pills
-// keep their ?ch=next source, which selects the promoted glyph-led pill markup
-// (the emitted href is canonicalized by the reports screen PR that revises the
-// count handler). These are the migration follow-ups for the per-screen PRs.
+// /settings, /preferences, /logs) since this is now the default chrome on
+// every page. Only Foreign Files stays on /next/ because no canonical route
+// exists yet (/next/reports/foreign-files; the v1 route is
+// /settings/foreign-files) -- and the Compliance/Duplicates/Foreign count
+// pills keep their ?ch=next source, which selects the promoted glyph-led pill
+// markup (the emitted href is canonicalized by the reports screen PR that
+// revises the count handler). These are the migration follow-ups for the
+// per-screen PRs.
 //
 // States are controlled via the data-sidebar-state attribute ("full",
 // "icon-only", "hidden"); the initial state is set by preferences.js from the

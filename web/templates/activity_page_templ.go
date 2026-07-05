@@ -8,16 +8,17 @@ package templates
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// ActivityPage renders the global activity feed in the next/ UI chrome
-// (M55 #1772). It is an Option-A chrome wrap: the entire activity surface
-// (filter trigger, date-range bar, content region, filter flyout, and the
-// inline filter/date scripts) is the shared ActivityBody, reused
-// byte-for-byte so every hook id, HTMX contract, and i18n key matches the
-// stable /activity page exactly. The only next/-specific additions are the
-// Layout shell and the .sw-next-activity token scope (defined in input.css
-// alongside the sibling next surfaces) so any reused component resolves the
-// --swd-* design tokens. The content fragment is reused unchanged from the
-// stable /activity/content endpoint, so no next/-specific content route exists.
+// ActivityPage renders the canonical /activity page (M55 #1772; promoted from
+// /next/activity in #1757 PR-5). It is an Option-A chrome wrap: the entire
+// activity surface (filter trigger, date-range bar, content region, filter
+// flyout, and the inline filter/date scripts) is the shared ActivityBody,
+// reused byte-for-byte so every hook id, HTMX contract, and i18n key matches
+// unchanged from before the promotion. The only chrome-specific additions are
+// the Layout shell and the .sw-next-activity token scope (defined in
+// input.css alongside the sibling next-gen surfaces) so any reused component
+// resolves the --swd-* design tokens. The content fragment is reused
+// unchanged from the /activity/content endpoint, so no separate content route
+// exists for this page.
 func ActivityPage(assets AssetPaths, data ActivityPageData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -51,7 +52,7 @@ func ActivityPage(assets AssetPaths, data ActivityPageData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()\n\t\t     this promoted screen carries the next-gen chrome regardless of URL, so\n\t\t     the Global cheat-sheet section and g-leader nav register here the same\n\t\t     as on /next/activity. Must render before LayoutGlobalChrome's\n\t\t     KeyboardJS script tag (later in Layout's document order) so the flag is\n\t\t     set when that script's isNextPage() check runs. Scoped to this page\n\t\t     only, NOT set in Layout itself, which is also the shared shell for\n\t\t     still-legacy/stable screens. --> <script>window.SW_IS_NEXT_PAGE = true;</script> <div class=\"sw-next-activity\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()\n\t\t     this promoted screen carries the next-gen chrome regardless of URL, so\n\t\t     the Global cheat-sheet section and g-leader nav register here the same\n\t\t     as elsewhere in the next-gen chrome. Must render before LayoutGlobalChrome's\n\t\t     KeyboardJS script tag (later in Layout's document order) so the flag is\n\t\t     set when that script's isNextPage() check runs. Scoped to this page\n\t\t     only, NOT set in Layout itself, which is also the shared shell for\n\t\t     still-legacy/stable screens. --> <script>window.SW_IS_NEXT_PAGE = true;</script> <div class=\"sw-next-activity\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
