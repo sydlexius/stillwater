@@ -259,3 +259,27 @@ describe('tour.js: button-triggered flow runs the full OOBE chain end-to-end (#2
         assert.equal(totalStepsDriven, 14, 'combined chain steps actually driven: 5 + 6 + 3 (nav de-duped once), matching the 14-step OOBE chain');
     });
 });
+
+describe('tour.js: shouldAutoStart does not treat null===null as a chain match (fold-in fix)', () => {
+    // Root cause: shouldAutoStart() checked `getChainNext() === screen` before
+    // checking the pending flag. getChainNext() reads localStorage's
+    // 'tour.chain' key, which is null when no chain is active; getCurrentScreen()
+    // returns null for any unrecognized path (e.g. /settings). With neither set,
+    // `null === null` was true, so shouldAutoStart() fired on ANY unrecognized
+    // page -- with no chain in progress and no OOBE pending -- logging
+    // "tour: auto-start on unrecognised screen: null" and calling markComplete(),
+    // which prematurely flips tour.completed and permanently suppresses the real
+    // OOBE auto-start the next time the user actually lands on the dashboard.
+    // A broken guard that merely reordered the pending check ahead of the chain
+    // check (instead of null-checking screen) would still fail this test the
+    // moment a chain key is genuinely absent and pending happens to be unset,
+    // so this isolates the null-vs-null identity bug specifically.
+    it('unrecognized page, no chain key, no pending flag: no error logged, onboarding not marked complete', async () => {
+        const errors = [];
+        const { win } = createPage({ url: 'http://localhost:1973/settings', nextEnabled: 'true' });
+        win.console.error = (msg) => errors.push(msg);
+        await wait(100);
+        assert.equal(errors.length, 0, 'must not log "tour: auto-start on unrecognised screen: null"');
+        assert.equal(win.localStorage.getItem('tour.completed'), null, 'markComplete() must not fire from a null===null false match');
+    });
+});

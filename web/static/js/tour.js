@@ -206,7 +206,9 @@
         // Chain-in-progress: a prior chain step navigated here. The pending
         // key may already be gone (cleared by markComplete); rely on the chain
         // key alone as the authority for subsequent chain screens.
-        if (getChainNext() === screen) { return true; }
+        // Guard against null === null: an unrecognized screen must never
+        // count as a chain match just because no chain is active either.
+        if (screen !== null && getChainNext() === screen) { return true; }
         // OOBE initial trigger: pending marker set, on a chain-eligible screen.
         if (localStorage.getItem(TOUR_PENDING_KEY) !== 'true') { return false; }
         // Auto-start on the vNext Dashboard (new OOBE entry point) or the
