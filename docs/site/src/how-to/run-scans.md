@@ -20,7 +20,7 @@ The trigger depends on whether the library is **manual** (you typed in the path)
 
 ### Imported libraries
 
-1. Open **Settings > Libraries**.
+1. Open **Settings** and jump to the **Music libraries** section (left-side section nav, Essentials group).
 2. Find the library you want to scan in the list.
 3. Click **Scan Library** on its row.
 
@@ -51,7 +51,7 @@ For manual libraries the same constraints apply -- coverage comes from leaving t
 
 For libraries on auto-pilot, recurring scans keep the catalog fresh without you clicking anything.
 
-1. Open **Settings > Libraries**.
+1. Open **Settings** and jump to the **Music libraries** section (left-side section nav, Essentials group).
 2. On the library row, find the **Filesystem monitoring mode** dropdown (it sits next to the per-library actions).
 3. Pick a mode:
    - **Off** -- no automatic scans. You trigger manually.
@@ -68,7 +68,7 @@ Stillwater probes each path on startup to decide whether watch mode is supported
 
 When you've connected Emby, Jellyfin, or Lidarr, you can pull the platform's artist list instead of (or in addition to) walking the disk.
 
-1. Open **Settings > Libraries** and find a library imported from a platform connection.
+1. Open **Settings** and jump to the **Music libraries** section (left-side section nav, Essentials group) and find a library imported from a platform connection.
 2. Click **Re-sync Artists** on its row.
 
 Stillwater queries the platform's library and reconciles with what it has stored. New platform-side artists appear in Stillwater (pathless if they don't have a directory on disk yet); deleted ones are removed.
