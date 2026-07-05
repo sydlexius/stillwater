@@ -19,7 +19,12 @@ type AssetPaths struct {
 	// UtilsJS is the shared client-side utility module (web/static/js/utils.js).
 	// Exposes window.escapeHTML so inline scripts on every Layout-based page
 	// and onboarding.templ can call it without each defining their own copy.
-	UtilsJS        string
+	UtilsJS string
+	// SecretToggleJS drives the show/hide toggle for masked credential inputs
+	// (SecretInput component, #2102). Loaded app-wide via LayoutGlobalChrome
+	// since both the settings provider-key form and the connections
+	// add/edit forms use it.
+	SecretToggleJS string
 	SidebarJS      string
 	FilterFlyoutJS string
 	KeyboardJS     string
@@ -275,6 +280,9 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 	@HelpOverlay()
 	if assets.UtilsJS != "" {
 		<script src={ assets.UtilsJS }></script>
+	}
+	if assets.SecretToggleJS != "" {
+		<script src={ assets.SecretToggleJS }></script>
 	}
 	<script src={ assets.PollingJS }></script>
 	<script src={ assets.SessionJS }></script>

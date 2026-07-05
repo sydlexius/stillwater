@@ -881,6 +881,51 @@ func TestDeleteAPIKeyClearsStatus(t *testing.T) {
 	}
 }
 
+// TestDeleteAPIKeySpotifyBlob verifies that DeleteAPIKey fully clears the
+// Spotify credential blob (#2218): Spotify stores client_id + client_secret
+// combined as one JSON value under the provider's single api_key setting row
+// (see internal/api handlers_provider.go buildSpotifyKey), so the single
+// DELETE this method issues must wipe both fields at once -- there is no
+// separate client_secret row that could survive the clear.
+func TestDeleteAPIKeySpotifyBlob(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	blob := `{"client_id":"my-client-id","client_secret":"my-client-secret"}`
+	if err := svc.SetAPIKey(ctx, NameSpotify, blob); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	has, err := svc.HasAPIKey(ctx, NameSpotify)
+	if err != nil {
+		t.Fatalf("HasAPIKey before delete: %v", err)
+	}
+	if !has {
+		t.Fatal("expected Spotify key to be present before delete")
+	}
+
+	if err := svc.DeleteAPIKey(ctx, NameSpotify); err != nil {
+		t.Fatalf("DeleteAPIKey: %v", err)
+	}
+
+	key, err := svc.GetAPIKey(ctx, NameSpotify)
+	if err != nil {
+		t.Fatalf("GetAPIKey after delete: %v", err)
+	}
+	if key != "" {
+		t.Errorf("expected Spotify blob fully cleared (both client_id and client_secret), got %q", key)
+	}
+	has, err = svc.HasAPIKey(ctx, NameSpotify)
+	if err != nil {
+		t.Fatalf("HasAPIKey after delete: %v", err)
+	}
+	if has {
+		t.Error("expected HasAPIKey false after delete")
+	}
+}
+
 func TestListProviderKeyStatusesWithPersistedStatus(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)

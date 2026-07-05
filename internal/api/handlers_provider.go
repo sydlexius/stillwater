@@ -263,7 +263,13 @@ func (r *Router) renderProviderCard(w http.ResponseWriter, req *http.Request, na
 	writeError(w, req, http.StatusNotFound, "unknown provider")
 }
 
-// handleDeleteProviderKey removes the API key for a provider.
+// handleDeleteProviderKey removes the API key for a provider (#2218). Credential
+// scope only: it clears the stored key (and, for Spotify, the combined
+// client_id/client_secret blob -- both are stored as one encrypted value, see
+// SettingsService.DeleteAPIKey) plus the persisted test status. It does not
+// touch priority-list participation; ListProviderKeyStatuses already derives
+// the "unconfigured" status implicitly from HasKey, so the provider drops out
+// of active lookups without any separate priority mutation here.
 func (r *Router) handleDeleteProviderKey(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	if !isValidProviderName(name) {
@@ -274,6 +280,15 @@ func (r *Router) handleDeleteProviderKey(w http.ResponseWriter, req *http.Reques
 	if err := r.providerSettings.DeleteAPIKey(req.Context(), name); err != nil {
 		r.logger.Error("deleting provider API key", "provider", name, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to delete API key")
+		return
+	}
+	r.logger.Info("provider API key cleared", "provider", name)
+
+	if isHTMXRequest(req) {
+		isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
+		w.Header().Set("HX-Reswap", "innerHTML")
+		r.renderProviderCard(w, req, name, isOOBE)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

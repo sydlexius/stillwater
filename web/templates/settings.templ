@@ -1075,16 +1075,29 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 									required
 								/>
-								<input
-									type="password"
-									name="client_secret"
-									placeholder={ t(ctx, "settings.provider_config.client_secret") }
-									autocomplete="off"
-									data-1p-ignore
-									data-lpignore="true"
-									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-									required
-								/>
+								<label for={ "client-secret-" + string(pk.Name) } class="sr-only">{ t(ctx, "settings.provider_config.client_secret") }</label>
+								@components.SecretInput(
+									"client-secret-"+string(pk.Name),
+									"client_secret",
+									t(ctx, "settings.provider_config.client_secret"),
+									"flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+									true,
+									"",
+								)
+								if pk.HasKey {
+									<button
+										type="button"
+										class="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+										aria-label={ tf(ctx, "settings.provider_keys.delete_key_aria", pk.DisplayName) }
+										hx-delete={ "/api/v1/providers/" + string(pk.Name) + "/key" }
+										hx-target={ "#provider-card-" + string(pk.Name) }
+										hx-swap="innerHTML"
+										hx-confirm={ tf(ctx, "settings.provider_keys.delete_key_confirm", pk.DisplayName) }
+										data-confirm-key="provider-key-delete"
+									>
+										@components.IconTrash("h-4 w-4")
+									</button>
+								}
 							</div>
 							<p class="text-xs text-gray-500 dark:text-gray-400">
 								{ t(ctx, "settings.provider_keys.spotify_note_prefix") }
@@ -1092,20 +1105,29 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							</p>
 						} else {
 							<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-								<input
-									type="text"
-									name="api_key"
-									if pk.OptionalKey {
-										placeholder={ t(ctx, "settings.provider_keys.premium_key_placeholder") }
-									} else {
-										placeholder={ t(ctx, "settings.provider_keys.key_placeholder") }
-									}
-									autocomplete="off"
-									data-1p-ignore
-									data-lpignore="true"
-									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-									required
-								/>
+								<label for={ "api-key-" + string(pk.Name) } class="sr-only">{ t(ctx, "settings.provider_config.api_key") }</label>
+								@components.SecretInput(
+									"api-key-"+string(pk.Name),
+									"api_key",
+									keyPlaceholder(ctx, pk.OptionalKey),
+									"flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+									true,
+									"",
+								)
+								if pk.HasKey {
+									<button
+										type="button"
+										class="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+										aria-label={ tf(ctx, "settings.provider_keys.delete_key_aria", pk.DisplayName) }
+										hx-delete={ "/api/v1/providers/" + string(pk.Name) + "/key" }
+										hx-target={ "#provider-card-" + string(pk.Name) }
+										hx-swap="innerHTML"
+										hx-confirm={ tf(ctx, "settings.provider_keys.delete_key_confirm", pk.DisplayName) }
+										data-confirm-key="provider-key-delete"
+									>
+										@components.IconTrash("h-4 w-4")
+									</button>
+								}
 							</div>
 						}
 						<div class="flex gap-2">
@@ -1900,17 +1922,14 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							</div>
 							<div>
 								<label for={ "edit-api-key-" + c.ID } class="sr-only">{ t(ctx, "settings.connections.api_key") }</label>
-								<input
-									id={ "edit-api-key-" + c.ID }
-									name="api_key"
-									type="text"
-									placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
-									autocomplete="off"
-									data-1p-ignore
-									data-lpignore="true"
-									data-focus-target="api_key"
-									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-								/>
+								@components.SecretInput(
+									"edit-api-key-"+c.ID,
+									"api_key",
+									t(ctx, "settings.connections.api_key_placeholder"),
+									"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+									false,
+									"api_key",
+								)
 							</div>
 							<div class="flex gap-2">
 								<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
@@ -1972,17 +1991,14 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 						<label for={ "conn-api-key-" + connType } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.api_key") }</label>
 						@components.ContextHelp("help-conn-api-key-"+connType, t(ctx, "settings.connections.api_key"), t(ctx, "settings.connections.api_key.help"), "settings-connections-connections-api-key")
 					</div>
-					<input
-						id={ "conn-api-key-" + connType }
-						name="api_key"
-						type="text"
-						placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
-						required
-						autocomplete="off"
-						data-1p-ignore
-						data-lpignore="true"
-						class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-					/>
+					@components.SecretInput(
+						"conn-api-key-"+connType,
+						"api_key",
+						t(ctx, "settings.connections.api_key_placeholder"),
+						"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+						true,
+						"",
+					)
 				</div>
 				<div class="flex gap-2">
 					<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>

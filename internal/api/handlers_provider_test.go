@@ -299,6 +299,99 @@ func TestHandleDeleteMirror(t *testing.T) {
 	}
 }
 
+// TestHandleDeleteProviderKey verifies the #2218 clear-key path removes the
+// stored key and status, and returns a plain JSON status for non-HTMX callers.
+func TestHandleDeleteProviderKey(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+	ctx := context.Background()
+
+	if err := r.providerSettings.SetAPIKey(ctx, provider.NameFanartTV, "some-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	if err := r.providerSettings.SetKeyStatus(ctx, provider.NameFanartTV, "ok"); err != nil {
+		t.Fatalf("SetKeyStatus: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/providers/fanarttv/key", nil)
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleDeleteProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	has, err := r.providerSettings.HasAPIKey(ctx, provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("HasAPIKey: %v", err)
+	}
+	if has {
+		t.Error("expected key to be cleared")
+	}
+	status, err := r.providerSettings.GetKeyStatus(ctx, provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus: %v", err)
+	}
+	if status != "" {
+		t.Errorf("expected key status cleared, got %q", status)
+	}
+}
+
+// TestHandleDeleteProviderKey_HTMX verifies an HTMX request gets back the
+// re-rendered provider card reflecting the now-unconfigured state, mirroring
+// the handleDeleteMirror HTMX re-render pattern.
+func TestHandleDeleteProviderKey_HTMX(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+	ctx := context.Background()
+
+	if err := r.providerSettings.SetAPIKey(ctx, provider.NameFanartTV, "some-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/providers/fanarttv/key", nil)
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("name", "fanarttv")
+	w := httptest.NewRecorder()
+	r.handleDeleteProviderKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if got, want := w.Header().Get("HX-Retarget"), "#provider-card-fanarttv"; got != want {
+		t.Errorf("HX-Retarget = %q, want %q", got, want)
+	}
+	if got, want := w.Header().Get("HX-Reswap"), "innerHTML"; got != want {
+		t.Errorf("HX-Reswap = %q, want %q", got, want)
+	}
+	if !strings.Contains(w.Body.String(), "<") {
+		t.Errorf("expected HTML response for HTMX request; body: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "Key configured") {
+		t.Errorf("expected card to no longer show configured status; body: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "delete_key_aria") {
+		t.Errorf("expected translated delete-key label, got raw key; body: %s", w.Body.String())
+	}
+}
+
+// TestHandleDeleteProviderKey_InvalidProvider verifies an unknown provider
+// name returns 400.
+func TestHandleDeleteProviderKey_InvalidProvider(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/providers/notreal/key", nil)
+	req.SetPathValue("name", "notreal")
+	w := httptest.NewRecorder()
+	r.handleDeleteProviderKey(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandleSetMirrorUnsupportedProvider(t *testing.T) {
 	t.Parallel()
 	r := testRouterWithMirror(t)
