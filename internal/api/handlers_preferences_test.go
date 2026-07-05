@@ -1595,11 +1595,10 @@ func TestValidateMetadataLanguages(t *testing.T) {
 // we care about here is validateMetadataLanguages, tested above.
 
 // TestUserPreferencesPage_RendersWithDefaults exercises the page-render
-// handler so the templates.PreferencesData literal at line 639 is covered.
-// Asserts a 200 plus markers unique to the preferences page (the
-// appearance tab panel and one of its preference inputs) so the test
-// fails if the handler accidentally renders the login page or an
-// unrelated template.
+// handler so the templates.PreferencesData literal is covered. Asserts a 200
+// plus markers unique to the promoted preferences page (the standalone drawer
+// wrapper and the drawer body, #1757 PR-5) so the test fails if the handler
+// accidentally renders the login page or an unrelated template.
 func TestUserPreferencesPage_RendersWithDefaults(t *testing.T) {
 	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
@@ -1615,8 +1614,8 @@ func TestUserPreferencesPage_RendersWithDefaults(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, marker := range []string{
-		`data-tab-panel="appearance"`,
-		`id="pref-theme"`,
+		`sw-prefs-page-wrapper`,
+		`sw-prefs-drawer`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("expected preferences-page marker %q in rendered body", marker)
@@ -1624,6 +1623,15 @@ func TestUserPreferencesPage_RendersWithDefaults(t *testing.T) {
 	}
 	if strings.Contains(body, `id="login-result"`) {
 		t.Error("expected preferences page, but login-page marker id=\"login-result\" was rendered")
+	}
+
+	// #1757 PR-5 fix-round: the promoted page must set SW_IS_NEXT_PAGE so
+	// keyboard.js's isNextPage() registers the Global cheat-sheet/g-leader
+	// shortcuts here, and it must render before the keyboard.js script tag.
+	flagIdx := strings.Index(body, "window.SW_IS_NEXT_PAGE = true;")
+	kbdIdx := strings.Index(body, "/static/js/keyboard.js")
+	if flagIdx == -1 || kbdIdx == -1 || flagIdx >= kbdIdx {
+		t.Errorf("SW_IS_NEXT_PAGE flag (idx %d) must appear before the keyboard.js script tag (idx %d)", flagIdx, kbdIdx)
 	}
 }
 

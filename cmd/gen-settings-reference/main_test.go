@@ -1046,7 +1046,7 @@ func TestDiscoverTemplSources(t *testing.T) {
 	// Sub-templates discovered by glob (sorted): auth, billing, users.
 	wantOwners := map[string]string{
 		users:  "users",
-		auth:   "auth_providers",
+		auth:   "auth",
 		future: "billing",
 	}
 	for path, wantPanel := range wantOwners {

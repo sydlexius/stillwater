@@ -972,17 +972,55 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
+	prefs, err := r.loadUserPrefsData(w, req, userID)
+	if err != nil {
+		// loadUserPrefsData already wrote the error response.
+		return
+	}
+
+	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))
+}
+
+// handleUserPreferencesDrawer returns only the preferences flyout drawer body
+// fragment for HTMX lazy loading (M55 #1774; promoted from
+// /next/preferences-drawer in #1757 PR-5). The drawer chrome shell is already in
+// the DOM (mounted by Layout); this handler returns the body content that fills
+// it in.
+//
+// GET /preferences-drawer
+func (r *Router) handleUserPreferencesDrawer(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	prefs, err := r.loadUserPrefsData(w, req, userID)
+	if err != nil {
+		// loadUserPrefsData already wrote the error response.
+		return
+	}
+	renderTempl(w, req, templates.PrefsDrawer(r.assetsFor(req), prefs))
+}
+
+// loadUserPrefsData reads all stored preferences for userID and builds a
+// PreferencesData struct, falling back to compiled defaults for missing keys.
+// It logs a Warn for any stored value that is invalid or gets normalized, so
+// bad data in user_preferences is observable regardless of which surface
+// triggered the load. On error it writes the HTTP response and returns a
+// non-nil error. It is the single shared loader for both the preferences page
+// (GET /preferences) and the preferences flyout drawer fragment
+// (GET /preferences-drawer).
+func (r *Router) loadUserPrefsData(w http.ResponseWriter, req *http.Request, userID string) (templates.PreferencesData, error) {
 	ctx := req.Context()
 
-	// Load all stored preferences for this user.
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT key, value FROM user_preferences WHERE user_id = ?`, userID)
 	if err != nil {
-		r.logger.Error("querying user preferences for page", "error", err)
+		r.logger.Error("querying user preferences", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return templates.PreferencesData{}, err
 	}
-	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here; SQL error already checked via rows.Err
 
 	stored := make(map[string]string)
 	for rows.Next() {
@@ -990,14 +1028,14 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		if err := rows.Scan(&k, &v); err != nil {
 			r.logger.Error("scanning user preference", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+			return templates.PreferencesData{}, err
 		}
 		stored[k] = v
 	}
 	if err := rows.Err(); err != nil {
 		r.logger.Error("iterating user preferences", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return templates.PreferencesData{}, err
 	}
 
 	pref := func(key string) string {
@@ -1016,7 +1054,7 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		if n, err2 := strconv.Atoi(v); err2 == nil && n >= PageSizeMin && n <= PageSizeMax {
 			pageSize = n
 		} else {
-			r.logger.Warn("stored page_size invalid for preferences page, using default",
+			r.logger.Warn("stored page_size invalid, using default",
 				"user_id", userID, "raw_value", v)
 		}
 	}
@@ -1026,7 +1064,7 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 	if v, ok := stored[PrefBgOpacity]; ok {
 		normalized := normalizeBgOpacity(v)
 		if normalized != v {
-			r.logger.Warn("stored bg_opacity invalid for preferences page, using default",
+			r.logger.Warn("stored bg_opacity invalid, using default",
 				"user_id", userID, "raw_value", v, "normalized", normalized)
 		}
 		bgOpacity = normalized
@@ -1039,40 +1077,45 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 	if v, ok := stored[PrefAutoFetchImages]; ok {
 		normalized := normalizeBoolPref(v, legacyAutoFetch)
 		if normalized != v {
-			r.logger.Warn("stored auto_fetch_images normalized for preferences page",
+			r.logger.Warn("stored auto_fetch_images normalized",
 				"user_id", userID, "raw_value", v, "normalized", normalized)
 		}
 		autoFetchImages = normalized
 	}
 
-	prefs := templates.PreferencesData{
-		Theme:             pref(PrefTheme),
-		ThumbnailSize:     pref(PrefThumbnailSize),
-		SidebarState:      pref(PrefSidebarState),
-		ContentWidth:      pref(PrefContentWidth),
-		ReducedMotion:     pref(PrefReducedMotion),
-		Language:          pref(PrefLanguage),
-		FontFamily:        pref(PrefFontFamily),
-		LetterSpacing:     pref(PrefLetterSpacing),
-		FontSize:          pref(PrefFontSize),
-		LiteMode:          pref(PrefLiteMode),
-		PageSize:          pageSize,
-		AutoFetchImages:   autoFetchImages,
-		BackgroundOpacity: bgOpacity,
-		// M55 #1774 flyout drawer keys.
-		Density:             pref(PrefDensity),
-		MonoFont:            pref(PrefMonoFont),
-		KbdHints:            pref(PrefKbdHints),
-		NotificationEnabled: normalizeBoolPref(pref(PrefNotificationEnabled), preferenceDefaults[PrefNotificationEnabled].defaultValue),
-		// M55 #2060: per-user debug tab toggle.
-		ShowPlatformDebug: normalizeBoolPref(pref(PrefShowPlatformDebug), preferenceDefaults[PrefShowPlatformDebug].defaultValue),
-		// Artist detail layout: parse stored JSON arrays (nil = use default order).
+	notifEnabled := preferenceDefaults[PrefNotificationEnabled].defaultValue
+	if v, ok := stored[PrefNotificationEnabled]; ok {
+		notifEnabled = normalizeBoolPref(v, notifEnabled)
+	}
+
+	showPlatformDebug := preferenceDefaults[PrefShowPlatformDebug].defaultValue
+	if v, ok := stored[PrefShowPlatformDebug]; ok {
+		showPlatformDebug = normalizeBoolPref(v, showPlatformDebug)
+	}
+
+	return templates.PreferencesData{
+		Theme:                         pref(PrefTheme),
+		ThumbnailSize:                 pref(PrefThumbnailSize),
+		SidebarState:                  pref(PrefSidebarState),
+		ContentWidth:                  pref(PrefContentWidth),
+		ReducedMotion:                 pref(PrefReducedMotion),
+		Language:                      pref(PrefLanguage),
+		FontFamily:                    pref(PrefFontFamily),
+		LetterSpacing:                 pref(PrefLetterSpacing),
+		FontSize:                      pref(PrefFontSize),
+		LiteMode:                      pref(PrefLiteMode),
+		PageSize:                      pageSize,
+		AutoFetchImages:               autoFetchImages,
+		BackgroundOpacity:             bgOpacity,
+		Density:                       pref(PrefDensity),
+		MonoFont:                      pref(PrefMonoFont),
+		KbdHints:                      pref(PrefKbdHints),
+		NotificationEnabled:           notifEnabled,
+		ShowPlatformDebug:             showPlatformDebug,
 		ArtistDetailSectionOrder:      parseSectionList(stored[PrefArtistDetailSectionOrder]),
 		ArtistDetailHiddenSections:    parseSectionList(stored[PrefArtistDetailHiddenSections]),
 		ArtistDetailCollapsedSections: parseSectionList(stored[PrefArtistDetailCollapsedSections]),
-	}
-
-	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))
+	}, nil
 }
 
 // getUserBoolPreference reads a boolean user preference from the user_preferences

@@ -50,10 +50,35 @@ const (
 	componentsAnchorsMirror = "web/components/_settings-anchors.txt"
 )
 
-// templTrunkPath is the page-rendering templ file: it owns the
-// data-tab-panel="X" div tree that defines the tab boundaries the scanner
-// uses for key attribution.
-const templTrunkPath = "web/templates/settings.templ"
+// templTrunkPath is the page-rendering templ file: it owns the per-section
+// @nextSettingsSection("id", ...) wrapper calls that define the section
+// boundaries the scanner uses for key attribution. After the tabbed settings
+// page retired (#1757 PR-5) the promoted single-scroll page (settings_page.templ)
+// is the trunk; it composes the same shared Section*/Settings*Tab funcs the old
+// tabbed page did, so key attribution is unchanged apart from the boundary
+// marker (a section wrapper instead of a data-tab-panel div). The doc reference
+// is therefore organized by the promoted SECTIONS, not the retired tabs.
+const templTrunkPath = "web/templates/settings_page.templ"
+
+// extraHelperSources names helper-bearing templ files that back the trunk's
+// @-calls but are NOT matched by templSubTemplateGlob (`settings_*.templ`).
+// settings.templ (no underscore) holds ProviderKeyCard, serviceConnectionCard,
+// ruleRow, SettingsUpdatesTab and their descendants -- helpers the promoted
+// trunk and the shared Section* funcs @-call into. It was the trunk itself
+// before the promote, so its helpers were always in the recursive index; now
+// that settings_page.templ is the trunk, it must be folded in explicitly or the
+// walk cannot follow @ProviderKeyCard / @SettingsUpdatesTab / ... and would drop
+// every key those helpers render.
+var extraHelperSources = []string{"web/templates/settings.templ"}
+
+// subTemplatePanelOverride remaps a single-panel sub-template to a section id
+// that differs from its filename stem. settings_auth_providers.templ's stem is
+// "auth_providers" but the promoted page's section id is "auth" (the shorter
+// rail/section id), so its keys attribute to the "auth" section, not a
+// non-existent "auth_providers" one. Keyed on basename for worktree portability.
+var subTemplatePanelOverride = map[string]string{
+	"settings_auth_providers.templ": "auth",
+}
 
 // templSubTemplateGlob matches every settings_*.templ partial that backs a
 // specific tab panel. Files matching this glob are auto-discovered at
@@ -134,9 +159,10 @@ func discoverTemplSources(trunk, glob string) (sources []string, owner map[strin
 	// the overall order deterministic.
 	var helperOnlyPaths []string
 	for _, p := range subPaths {
-		// Glob includes the trunk file when it matches `settings_*.templ`
-		// (it doesn't, since the trunk is `settings.templ`), but we filter
-		// regardless to be defensive against renames.
+		// The glob matches `settings_*.templ`, which the trunk file
+		// (settings_page.templ) satisfies too, so it would otherwise be
+		// double-counted as one of its own sub-templates. Filter it out
+		// explicitly rather than relying on the glob to exclude it.
 		if p == trunk {
 			continue
 		}
@@ -149,10 +175,23 @@ func discoverTemplSources(trunk, glob string) (sources []string, owner map[strin
 			helperOnlyPaths = append(helperOnlyPaths, p)
 			continue
 		}
-		stem := strings.TrimSuffix(base, ".templ")       // settings_users
-		panelID := strings.TrimPrefix(stem, "settings_") // users
+		panelID := strings.TrimPrefix(strings.TrimSuffix(base, ".templ"), "settings_") // settings_users -> users
+		if override, ok := subTemplatePanelOverride[base]; ok {
+			panelID = override // e.g. settings_auth_providers -> "auth"
+		}
 		owner[p] = panelID
 		sources = append(sources, p)
+	}
+	// Fold in helper-bearing files that back the trunk's @-calls but do not match
+	// the settings_*.templ glob (settings.templ). They open no panels of their
+	// own; the recursive panel walk steps into their helper bodies via the global
+	// index. Skipped if absent so tests that pass a synthetic glob still work.
+	for _, p := range extraHelperSources {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		helperOnly[p] = struct{}{}
+		helperOnlyPaths = append(helperOnlyPaths, p)
 	}
 	sources = append(sources, helperOnlyPaths...)
 	return sources, owner, helperOnly, nil
@@ -326,6 +365,14 @@ type panel struct {
 // appears in inline JS querySelector references (and any panel div that has
 // not yet migrated to the typed SettingsTabID interpolation below).
 var panelOpenRE = regexp.MustCompile(`data-tab-panel="([a-z_]+)"`)
+
+// sectionOpenerRE matches the promoted settings page's per-section wrapper call,
+// @nextSettingsSection("id", "group"), which defines the section boundaries the
+// scanner uses for key attribution after the tabbed page retired (#1757 PR-5).
+// The captured group is the section id (the panel ID); ids may contain hyphens
+// (e.g. "config-file"). The old data-tab-panel forms remain supported so the
+// synthetic-fixture unit tests below keep exercising the scanner.
+var sectionOpenerRE = regexp.MustCompile(`@nextSettingsSection\(\s*"([a-z0-9-]+)"`)
 
 // panelOpenTypedRE matches the typed-constant form,
 // data-tab-panel={ string(TabFoo) }, that panel divs use after the migration
@@ -546,7 +593,7 @@ func scanPanels(sources []string, subOwner map[string]string, helperOnly map[str
 			}
 		}
 		if !matched && len(extra) > 0 {
-			return nil, fmt.Errorf("sub-template %s maps to panel %q which has no data-tab-panel div in the trunk file", src, owner)
+			return nil, fmt.Errorf("sub-template %s maps to panel %q which has no matching section opener in the trunk file", src, owner)
 		}
 	}
 
@@ -579,6 +626,11 @@ func findPanelOpeners(trunk string, trunkData []byte) ([][]int, []string, error)
 		id         string
 	}
 	var rawOpens []panelOpener
+	// Promoted per-section wrappers (@nextSettingsSection("id", ...)) -- the
+	// primary opener form for the current settings_page.templ trunk.
+	for _, m := range sectionOpenerRE.FindAllSubmatchIndex(trunkData, -1) {
+		rawOpens = append(rawOpens, panelOpener{start: m[0], end: m[1], id: string(trunkData[m[2]:m[3]])})
+	}
 	for _, m := range panelOpenRE.FindAllSubmatchIndex(trunkData, -1) {
 		rawOpens = append(rawOpens, panelOpener{start: m[0], end: m[1], id: string(trunkData[m[2]:m[3]])})
 	}
@@ -593,7 +645,7 @@ func findPanelOpeners(trunk string, trunkData []byte) ([][]int, []string, error)
 		rawOpens = append(rawOpens, panelOpener{start: m[0], end: m[1], id: id})
 	}
 	if len(rawOpens) == 0 {
-		return nil, nil, fmt.Errorf("no data-tab-panel openers found in %s", trunk)
+		return nil, nil, fmt.Errorf("no section openers (@nextSettingsSection) or data-tab-panel divs found in %s", trunk)
 	}
 	sort.Slice(rawOpens, func(i, j int) bool { return rawOpens[i].start < rawOpens[j].start })
 	openMatches := make([][]int, 0, len(rawOpens))
@@ -1300,9 +1352,19 @@ func buildDocument(tabs []panel, keys map[string]string) (document, error) {
 }
 
 func buildTab(p panel, keys map[string]string) (docTab, error) {
+	// Prefer the promoted rail's canonical section label
+	// (settings.next.section.{id}); the section ids use hyphens (config-file)
+	// while the i18n keys use underscores (config_file). Fall back to a legacy
+	// settings.tab.{id} label, then a humanized id, so a section without a rail
+	// label still renders (#1757 PR-5).
+	sectionLabelKey := "settings.next.section." + strings.ReplaceAll(p.ID, "-", "_")
+	label := keys[sectionLabelKey]
+	if label == "" {
+		label = lookupLabel(keys, "settings.tab."+p.ID, p.ID)
+	}
 	tab := docTab{
 		ID:    p.ID,
-		Label: lookupLabel(keys, "settings.tab."+p.ID, p.ID),
+		Label: label,
 		Intro: keys["settings.tab."+p.ID+".intro"],
 	}
 	sections, err := buildSections(p.Keys, keys)

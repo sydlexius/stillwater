@@ -181,7 +181,7 @@ templ Layout(title string, assets AssetPaths) {
 			     replaces this container with the real drawer, leaving no wrapper. -->
 			<div
 				id="sw-prefs-mount"
-				hx-get={ assets.BasePath + "/next/preferences-drawer" }
+				hx-get={ assets.BasePath + "/preferences-drawer" }
 				hx-trigger="sw:prefs-open from:body once"
 				hx-swap="outerHTML"
 			></div>

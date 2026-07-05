@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // PrefsDrawer renders the preferences flyout drawer for the next/ UI (M55 #1774).
@@ -30,10 +29,10 @@ import (
 // (spec "Help & accessibility" section). The popovers use the existing
 // sw-context-help component pattern (components/context_help.templ).
 //
-// The drawer is mounted once in LayoutNext (below the sidebar, before the scrim)
+// The drawer is mounted once in Layout (below the sidebar, before the scrim)
 // and hidden by default (aria-hidden="true" + inert). Opening is orchestrated
 // by window.swPrefsDrawer (web/static/js/prefs-drawer.js).
-templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) {
+templ PrefsDrawer(assets AssetPaths, prefs PreferencesData) {
 	<!-- Scrim: visual dim only; X button and ESC are the only dismiss triggers -->
 	<div
 		id="sw-prefs-scrim"
@@ -228,7 +227,7 @@ templ PrefsDrawer(assets templates.AssetPaths, prefs templates.PreferencesData) 
 			</button>
 		</div>
 	</div>
-	// Wire the (?) ContextHelp popovers. next/ LayoutNext does not mount the
+	// Wire the (?) ContextHelp popovers. next/ Layout does not mount the
 	// component script globally (the same trap artist_detail.templ documents),
 	// so without this every onclick=swContextHelpToggle in the drawer is dead.
 	// Rendered once; the component script self-guards re-injection. Covers both
@@ -499,7 +498,7 @@ templ prefsHelpPopover(id, label, helpText string) {
 //
 // SortableJS handles drag; up/down arrow buttons are the keyboard-accessible
 // fallback. State is saved via PATCH /api/v1/preferences by prefs-drawer.js.
-templ prefsArtistLayoutCard(assets templates.AssetPaths, prefs templates.PreferencesData) {
+templ prefsArtistLayoutCard(assets AssetPaths, prefs PreferencesData) {
 	<div class="sw-prefs-layout-header">
 		<div class="sw-prefs-row-name" style="padding: 6px 16px 2px;">
 			{ t(ctx, "prefs.group.artist_layout") }

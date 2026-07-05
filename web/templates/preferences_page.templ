@@ -1,0 +1,30 @@
+package templates
+
+
+// UserPreferencesPage renders the canonical /preferences standalone page
+// (M55 #1774; promoted from /next/preferences in #1757 PR-5).
+//
+// This is the direct-URL / bookmark-accessible version of the preferences drawer.
+// It renders the drawer content inline inside Layout so users who navigate
+// directly to /preferences (or have JS disabled) see the full preferences
+// interface as a regular page rather than a modal panel.
+//
+// When JS is available, the sidebar preferences link instead triggers the flyout
+// drawer (data-sw-prefs-trigger), so users rarely land here via navigation -- it
+// exists as a progressive-enhancement fallback and for direct-link access.
+templ UserPreferencesPage(assets AssetPaths, prefs PreferencesData) {
+	@Layout(t(ctx, "prefs.drawer.title"), assets) {
+		<!-- SW_IS_NEXT_PAGE (#1757 PR-5 fix-round): tells keyboard.js's isNextPage()
+		     this promoted screen carries the next-gen chrome regardless of URL, so
+		     the Global cheat-sheet section and g-leader nav register here the same
+		     as elsewhere in the next-gen chrome. Must render before LayoutGlobalChrome's
+		     KeyboardJS script tag (later in Layout's document order) so the flag is
+		     set when that script's isNextPage() check runs. Scoped to this page
+		     only, NOT set in Layout itself, which is also the shared shell for
+		     still-legacy/stable screens. -->
+		<script>window.SW_IS_NEXT_PAGE = true;</script>
+		<div class="sw-prefs-page-wrapper max-w-2xl mx-auto">
+			@PrefsDrawer(assets, prefs)
+		</div>
+	}
+}

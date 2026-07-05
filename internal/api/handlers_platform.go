@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
+	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -191,21 +192,6 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
 
-// normalizeSettingsSection maps a raw section string to a valid settings tab
-// name. Unknown values fall back to "general". This keeps the validation logic
-// in one place so handleSettingsPage and handleSettingsSectionPage stay in sync.
-func normalizeSettingsSection(section string) templates.SettingsTabID {
-	switch templates.SettingsTabID(section) {
-	case templates.TabGeneral, templates.TabProviders, templates.TabConnections,
-		templates.TabLibraries, templates.TabAutomation, templates.TabRules,
-		templates.TabUsers, templates.TabAuthProviders, templates.TabMaintenance,
-		templates.TabLogs, templates.TabUpdates:
-		return templates.SettingsTabID(section)
-	default:
-		return templates.TabGeneral
-	}
-}
-
 // handleSettingsPage renders the settings HTML page.
 // GET /settings
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
@@ -222,36 +208,43 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// The stable chrome shows one tab at a time, so it loads the Users section's
-	// (potentially expensive) data only when the Users tab is active. tab also
-	// sets data.ActiveTab so the right panel opens.
-	tab := normalizeSettingsSection(req.URL.Query().Get("tab"))
-	data, ok := r.buildSettingsData(req, userID, tab, tab == templates.TabUsers)
+	// M55 #1757 PR-5: the promoted settings screen is the single-scroll
+	// about:preferences-style page (formerly next/). It renders every section in
+	// one column with an eagerly-rendered Users section, so loadUsers=true always
+	// (unlike the retired tabbed chrome, which loaded Users only on its active
+	// tab). tab is irrelevant to the scroll-spy chrome, so pass the General
+	// default for data.ActiveTab.
+	data, ok := r.buildSettingsData(req, userID, true)
 	if !ok {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// The promoted page adds an <h2> group-divider tier (Essentials / Data /
+	// Integrations / System) between the page <h1> and the section cards, so the
+	// shared section CARD titles render one level deeper (<h3>) to keep a
+	// non-skipping heading outline. Thread that base level through the render
+	// context.
+	req = req.WithContext(components.WithHeadingLevel(req.Context(), 3))
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }
 
 // buildSettingsData aggregates every SettingsData field the settings screen
-// needs. It is shared by the stable handleSettingsPage and the next/
-// handleNextSettingsPage so the data assembly lives in exactly one place (issue
-// #1339 AC: reuse the data aggregation, no duplication). The caller has already
-// verified the request is authenticated with the administrator role.
+// needs. It backs handleSettingsPage so the data assembly lives in exactly one
+// place (issue #1339 AC: reuse the data aggregation, no duplication). The caller
+// has already verified the request is authenticated with the administrator role.
 //
-// tab sets data.ActiveTab -- the stable tab the page opens on; the next/ chrome
-// ignores it (it renders one long scroll and tracks position via scroll-spy).
-// loadUsers gates the users+invites query: stable passes tab==TabUsers (only the
-// active Users tab needs it), next/ passes true because the Users section is
-// always present on its single-scroll page.
+// data.ActiveTab is fixed to the General tab: the promoted settings screen
+// (#1757 PR-5) renders one long scroll and tracks position via scroll-spy, so
+// the tab selection is vestigial. loadUsers gates the users+invites query --
+// the promoted page passes true because the Users section is always present on
+// its single-scroll page.
 //
 // It returns ok=false only when the platform list (the one hard dependency)
 // cannot be read; the caller then surfaces a 500. Every other subsection
 // degrades gracefully (logs + renders empty) rather than failing the page.
 //
 //nolint:gocognit // Top-level settings page aggregator: platforms list, providers list, integrations, language prefs, update config; each subsection has its own error branch with a degrade-or-bail decision and merging them would require shared error sentinels that obscure the per-section policy.
-func (r *Router) buildSettingsData(req *http.Request, userID string, tab templates.SettingsTabID, loadUsers bool) (templates.SettingsData, bool) {
+func (r *Router) buildSettingsData(req *http.Request, userID string, loadUsers bool) (templates.SettingsData, bool) {
 	profiles, err := r.platformService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing platforms for settings page", "error", err)
@@ -410,7 +403,7 @@ func (r *Router) buildSettingsData(req *http.Request, userID string, tab templat
 	}
 
 	data := templates.SettingsData{
-		ActiveTab:               tab,
+		ActiveTab:               templates.TabGeneral,
 		Libraries:               libs,
 		Profiles:                profiles,
 		ActiveProfile:           active,

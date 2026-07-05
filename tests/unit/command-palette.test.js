@@ -70,7 +70,7 @@ describe('command palette index', () => {
     const settings = list.filter((i) => i.kind === 'setting');
     assert.ok(settings.length > 0);
     settings.forEach((s) => {
-      assert.match(s.href, /^\/next\/settings#section-/, `setting "${s.label}" href "${s.href}" must target a #section- anchor`);
+      assert.match(s.href, /^\/settings#section-/, `setting "${s.label}" href "${s.href}" must target a #section- anchor`);
     });
   });
 });

@@ -1,4 +1,4 @@
-package next
+package templates
 
 import (
 	"bytes"
@@ -14,14 +14,13 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // settingsTestData is a SettingsData populated just enough that every section
 // renders real content (several sections guard on non-empty data). It also has
 // known slice lengths so the count-badge test can assert exact numbers:
 // ProviderKeys=1, Rules=1; Libraries/Connections/Webhooks/APITokens/Users empty.
-var settingsTestData = templates.SettingsData{
+var settingsTestData = SettingsData{
 	ActiveProfile: &platform.Profile{Name: "Test Profile"},
 	ProviderKeys: []provider.ProviderKeyStatus{
 		{Name: "fanart", DisplayName: "Fanart.tv", RequiresKey: true, HasKey: true, Status: "ok", AccessTier: provider.TierFreeKey},
@@ -57,10 +56,10 @@ func settingsTestCtx(tb testing.TB) context.Context {
 	return i18n.WithTranslator(context.Background(), bundle.Translator("en"))
 }
 
-func renderSettingsPaneWith(tb testing.TB, data templates.SettingsData) *html.Node {
+func renderSettingsPaneWith(tb testing.TB, data SettingsData) *html.Node {
 	tb.Helper()
 	var buf bytes.Buffer
-	if err := settingsPane(data, templates.AssetPaths{}).Render(settingsTestCtx(tb), &buf); err != nil {
+	if err := settingsPane(data, AssetPaths{}).Render(settingsTestCtx(tb), &buf); err != nil {
 		tb.Fatalf("rendering settingsPane: %v", err)
 	}
 	root, err := html.Parse(strings.NewReader(buf.String()))
@@ -81,7 +80,7 @@ func renderSettingsPaneLeveled(tb testing.TB) *html.Node {
 	tb.Helper()
 	var buf bytes.Buffer
 	ctx := components.WithHeadingLevel(settingsTestCtx(tb), 3)
-	if err := settingsPane(settingsTestData, templates.AssetPaths{}).Render(ctx, &buf); err != nil {
+	if err := settingsPane(settingsTestData, AssetPaths{}).Render(ctx, &buf); err != nil {
 		tb.Fatalf("rendering leveled settingsPane: %v", err)
 	}
 	root, err := html.Parse(strings.NewReader(buf.String()))
@@ -91,7 +90,7 @@ func renderSettingsPaneLeveled(tb testing.TB) *html.Node {
 	return root
 }
 
-func renderRail(tb testing.TB, data templates.SettingsData) (string, *html.Node) {
+func renderRail(tb testing.TB, data SettingsData) (string, *html.Node) {
 	tb.Helper()
 	var buf bytes.Buffer
 	if err := settingsRail(data).Render(settingsTestCtx(tb), &buf); err != nil {
@@ -315,7 +314,7 @@ func textOf(n *html.Node) string {
 // scroll-spies the one in view. Each section keeps its #section-<id> anchor.
 func TestSettingsPaneAllSectionsVisible(t *testing.T) {
 	var buf bytes.Buffer
-	if err := settingsPane(settingsTestData, templates.AssetPaths{}).Render(settingsTestCtx(t), &buf); err != nil {
+	if err := settingsPane(settingsTestData, AssetPaths{}).Render(settingsTestCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	out := buf.String()
@@ -608,7 +607,7 @@ func countBadgeFor(root *html.Node, id string) (string, bool) {
 // TestSettingsCountBadgesEnabledOnly verifies that count badges reflect only
 // ENABLED items: unconfigured providers and disabled rules are excluded.
 func TestSettingsCountBadgesEnabledOnly(t *testing.T) {
-	data := templates.SettingsData{
+	data := SettingsData{
 		ActiveProfile: &platform.Profile{Name: "Test"},
 		ProviderKeys: []provider.ProviderKeyStatus{
 			{Name: "fanart", Status: "ok"},            // enabled: has valid key

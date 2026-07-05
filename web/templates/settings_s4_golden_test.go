@@ -96,8 +96,8 @@ func TestS4_PageComposesSections(t *testing.T) {
 	check("SectionDatabaseMaintenance", SectionDatabaseMaintenance(data).Render)
 	check("SectionBackup", SectionBackup(data).Render)
 	check("SectionExportImport", SectionExportImport(data).Render)
-	check("SectionLogSettings", SectionLogSettings(data).Render)
-	check("SectionLogViewer", SectionLogViewer(data).Render)
+	// #1757 PR-5: logs moved to their own /logs screen (#1338), so the promoted
+	// settings page no longer composes SectionLogSettings / SectionLogViewer.
 }
 
 // TestSettingsSections_S4_Golden renders each extracted System Section* func in
@@ -114,8 +114,6 @@ func TestSettingsSections_S4_Golden(t *testing.T) {
 		{name: "db_maintenance", render: SectionDatabaseMaintenance(s4MaintenanceData).Render},
 		{name: "backup", render: SectionBackup(s4MaintenanceData).Render},
 		{name: "export_import", render: SectionExportImport(s4MaintenanceData).Render},
-		{name: "log_settings", render: SectionLogSettings(s4MaintenanceData).Render},
-		{name: "log_viewer", render: SectionLogViewer(s4MaintenanceData).Render},
 		{name: "scanner_ops", render: SectionScannerOps(s4MaintenanceData).Render},
 		{name: "backup_schedule", render: SectionBackupSchedule(s4MaintenanceData).Render},
 		{name: "scanner_ops_env_pinned", render: SectionScannerOps(s4OpsEnvPinnedData).Render},

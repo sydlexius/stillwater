@@ -2,40 +2,75 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 )
 
-// prefsPageRequest issues GET /next/preferences against the page handler with
-// (or without) an authed user context, mirroring the next/ artist-detail test
-// request pattern.
+// recordingHandler is a minimal slog.Handler that captures every record's
+// message and level so tests can assert on Warn-level logging without
+// depending on log formatting. Safe for concurrent use since tests seed
+// preferences via a shared *Router.
+type recordingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r)
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(_ string) slog.Handler      { return h }
+
+// messages returns the captured messages at or above the given level.
+func (h *recordingHandler) messages(minLevel slog.Level) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for _, r := range h.records {
+		if r.Level >= minLevel {
+			out = append(out, r.Message)
+		}
+	}
+	return out
+}
+
+// prefsPageRequest issues GET /preferences against the promoted preferences
+// page handler with (or without) an authed user context.
 func prefsPageRequest(t *testing.T, r *Router, userID string) *httptest.ResponseRecorder {
 	t.Helper()
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
+	ctx := context.Background()
 	if userID != "" {
 		ctx = middleware.WithTestUserID(ctx, userID)
 	}
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/preferences", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/preferences", nil)
 	w := httptest.NewRecorder()
-	r.handleNextPreferencesPage(w, req)
+	r.handleUserPreferencesPage(w, req)
 	return w
 }
 
-// prefsDrawerRequest issues GET /next/preferences-drawer against the fragment
+// prefsDrawerRequest issues GET /preferences-drawer against the fragment
 // handler.
 func prefsDrawerRequest(t *testing.T, r *Router, userID string) *httptest.ResponseRecorder {
 	t.Helper()
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXNext)
+	ctx := context.Background()
 	if userID != "" {
 		ctx = middleware.WithTestUserID(ctx, userID)
 	}
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/preferences-drawer", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/preferences-drawer", nil)
 	w := httptest.NewRecorder()
-	r.handleNextPreferencesDrawer(w, req)
+	r.handleUserPreferencesDrawer(w, req)
 	return w
 }
 
@@ -72,9 +107,9 @@ func toggleState(body, id string) string {
 	return rest[:end]
 }
 
-// seedNextPref stores a single preference row for the user directly in the DB
+// seedUserPref stores a single preference row for the user directly in the DB
 // (same insert the artist-lock page-size tests use).
-func seedNextPref(t *testing.T, r *Router, userID, key, value string) {
+func seedUserPref(t *testing.T, r *Router, userID, key, value string) {
 	t.Helper()
 	_, err := r.db.ExecContext(context.Background(),
 		`INSERT INTO user_preferences (user_id, key, value, updated_at)
@@ -86,10 +121,10 @@ func seedNextPref(t *testing.T, r *Router, userID, key, value string) {
 	}
 }
 
-// TestHandleNextPreferencesPage_RendersStandalonePage verifies the authed
+// TestHandleUserPreferencesPage_RendersStandalonePage verifies the authed
 // standalone page renders the drawer content inline (the direct-URL / no-JS
 // fallback) with the page wrapper that neutralizes the flyout positioning.
-func TestHandleNextPreferencesPage_RendersStandalonePage(t *testing.T) {
+func TestHandleUserPreferencesPage_RendersStandalonePage(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -112,44 +147,9 @@ func TestHandleNextPreferencesPage_RendersStandalonePage(t *testing.T) {
 	}
 }
 
-// TestHandleNextPreferencesPage_StableChannel404 verifies the Phase 2 channel
-// guard: when UXStable is in context (lane disabled or user opted back) the
-// handler returns 404 immediately without touching the DB or rendering content.
-func TestHandleNextPreferencesPage_StableChannel404(t *testing.T) {
-	t.Parallel()
-	r, _ := testRouter(t)
-
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/preferences", nil)
-	w := httptest.NewRecorder()
-	r.handleNextPreferencesPage(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("stable channel: status = %d, want 404", w.Code)
-	}
-}
-
-// TestHandleNextPreferencesDrawer_StableChannel404 verifies the Phase 2 channel
-// guard on the drawer fragment endpoint.
-func TestHandleNextPreferencesDrawer_StableChannel404(t *testing.T) {
-	t.Parallel()
-	r, _ := testRouter(t)
-
-	ctx := middleware.WithTestUXChannel(context.Background(), middleware.UXStable)
-	ctx = middleware.WithTestUserID(ctx, "test-user")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/next/preferences-drawer", nil)
-	w := httptest.NewRecorder()
-	r.handleNextPreferencesDrawer(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("stable channel: status = %d, want 404", w.Code)
-	}
-}
-
-// TestHandleNextPreferencesPage_Unauthenticated verifies the page handler
+// TestHandleUserPreferencesPage_Unauthenticated verifies the page handler
 // falls back to the login page rather than leaking preference content.
-func TestHandleNextPreferencesPage_Unauthenticated(t *testing.T) {
+func TestHandleUserPreferencesPage_Unauthenticated(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -163,9 +163,9 @@ func TestHandleNextPreferencesPage_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestHandleNextPreferencesDrawer_FragmentOnly verifies the HTMX fragment
+// TestHandleUserPreferencesDrawer_FragmentOnly verifies the HTMX fragment
 // endpoint returns the drawer body without the page chrome.
-func TestHandleNextPreferencesDrawer_FragmentOnly(t *testing.T) {
+func TestHandleUserPreferencesDrawer_FragmentOnly(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -182,10 +182,10 @@ func TestHandleNextPreferencesDrawer_FragmentOnly(t *testing.T) {
 	}
 }
 
-// TestHandleNextPreferencesDrawer_Unauthorized verifies the fragment endpoint
+// TestHandleUserPreferencesDrawer_Unauthorized verifies the fragment endpoint
 // rejects unauthenticated requests with a JSON 401 (it is an XHR target, not
 // a navigable page).
-func TestHandleNextPreferencesDrawer_Unauthorized(t *testing.T) {
+func TestHandleUserPreferencesDrawer_Unauthorized(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -198,23 +198,23 @@ func TestHandleNextPreferencesDrawer_Unauthorized(t *testing.T) {
 	}
 }
 
-// TestLoadNextPrefsData_StoredValuesWinOverDefaults seeds stored preferences
-// and asserts the rendered drawer reflects them: the font-size slider sits on
-// the stored stop, the seeded section order leads the layout card, and the
-// hidden section renders with its visibility toggled off.
-func TestLoadNextPrefsData_StoredValuesWinOverDefaults(t *testing.T) {
+// TestUserPrefsData_StoredValuesWinOverDefaults seeds stored preferences and
+// asserts the rendered drawer reflects them: the font-size slider sits on the
+// stored stop, the seeded section order leads the layout card, and the hidden
+// section renders with its visibility toggled off.
+func TestUserPrefsData_StoredValuesWinOverDefaults(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 	const userID = "prefs-stored-user"
 
-	seedNextPref(t, r, userID, "font_size", "xx-large")
-	seedNextPref(t, r, userID, "theme", "light")
-	seedNextPref(t, r, userID, "page_size", "120")
-	seedNextPref(t, r, userID, "bg_opacity", "90")
-	seedNextPref(t, r, userID, "auto_fetch_images", "true")
-	seedNextPref(t, r, userID, "notification_enabled", "false")
-	seedNextPref(t, r, userID, "artist_detail_section_order", `["discography","metadata"]`)
-	seedNextPref(t, r, userID, "artist_detail_hidden_sections", `["providers"]`)
+	seedUserPref(t, r, userID, "font_size", "xx-large")
+	seedUserPref(t, r, userID, "theme", "light")
+	seedUserPref(t, r, userID, "page_size", "120")
+	seedUserPref(t, r, userID, "bg_opacity", "90")
+	seedUserPref(t, r, userID, "auto_fetch_images", "true")
+	seedUserPref(t, r, userID, "notification_enabled", "false")
+	seedUserPref(t, r, userID, "artist_detail_section_order", `["discography","metadata"]`)
+	seedUserPref(t, r, userID, "artist_detail_hidden_sections", `["providers"]`)
 
 	w := prefsPageRequest(t, r, userID)
 	if w.Code != http.StatusOK {
@@ -254,9 +254,9 @@ func TestLoadNextPrefsData_StoredValuesWinOverDefaults(t *testing.T) {
 	}
 }
 
-// TestLoadNextPrefsData_DefaultsWhenUnset verifies a user with no stored rows
-// gets the compiled defaults (medium font stop, default section taxonomy).
-func TestLoadNextPrefsData_DefaultsWhenUnset(t *testing.T) {
+// TestUserPrefsData_DefaultsWhenUnset verifies a user with no stored rows gets
+// the compiled defaults (medium font stop, default section taxonomy).
+func TestUserPrefsData_DefaultsWhenUnset(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -277,10 +277,10 @@ func TestLoadNextPrefsData_DefaultsWhenUnset(t *testing.T) {
 	}
 }
 
-// TestLoadNextPrefsData_ShowPlatformDebugDefault verifies the show_platform_debug
+// TestUserPrefsData_ShowPlatformDebugDefault verifies the show_platform_debug
 // pref defaults to "false" when no stored row exists: the Behavior group toggle
 // renders with aria-checked="false".
-func TestLoadNextPrefsData_ShowPlatformDebugDefault(t *testing.T) {
+func TestUserPrefsData_ShowPlatformDebugDefault(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
@@ -293,16 +293,116 @@ func TestLoadNextPrefsData_ShowPlatformDebugDefault(t *testing.T) {
 	}
 }
 
-// TestLoadNextPrefsData_ShowPlatformDebugStored verifies the stored value wins:
+// TestLoadUserPrefsData_WarnsOnInvalidStoredValues seeds invalid/normalizable
+// values for page_size, bg_opacity, and auto_fetch_images and verifies
+// loadUserPrefsData logs a Warn for each -- both from the standalone page
+// (GET /preferences) and the flyout drawer fragment (GET /preferences-drawer).
+// Before the #2231 fix-round consolidation, handleUserPreferencesPage warned
+// on these invalid-stored-value cases but handleUserPreferencesDrawer's
+// separate copy of the parsing logic silently swallowed them; both surfaces
+// now share loadUserPrefsData, so both must warn identically.
+func TestLoadUserPrefsData_WarnsOnInvalidStoredValues(t *testing.T) {
+	t.Parallel()
+
+	seed := func(t *testing.T, r *Router, userID string) {
+		t.Helper()
+		seedUserPref(t, r, userID, "page_size", "not-a-number")
+		seedUserPref(t, r, userID, "bg_opacity", "not-a-number")
+		seedUserPref(t, r, userID, "auto_fetch_images", "maybe")
+	}
+
+	wantWarns := []string{
+		"stored page_size invalid, using default",
+		"stored bg_opacity invalid, using default",
+		"stored auto_fetch_images normalized",
+	}
+
+	t.Run("page", func(t *testing.T) {
+		t.Parallel()
+		r, _ := testRouter(t)
+		rec := &recordingHandler{}
+		r.logger = slog.New(rec)
+		const userID = "prefs-warn-page-user"
+		seed(t, r, userID)
+
+		w := prefsPageRequest(t, r, userID)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+		}
+
+		got := rec.messages(slog.LevelWarn)
+		for _, want := range wantWarns {
+			if !containsMessage(got, want) {
+				t.Errorf("page handler: missing warn %q; got %v", want, got)
+			}
+		}
+	})
+
+	t.Run("drawer", func(t *testing.T) {
+		t.Parallel()
+		r, _ := testRouter(t)
+		rec := &recordingHandler{}
+		r.logger = slog.New(rec)
+		const userID = "prefs-warn-drawer-user"
+		seed(t, r, userID)
+
+		w := prefsDrawerRequest(t, r, userID)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+		}
+
+		got := rec.messages(slog.LevelWarn)
+		for _, want := range wantWarns {
+			if !containsMessage(got, want) {
+				t.Errorf("drawer handler: missing warn %q; got %v (this is the bug #2231 fixed: the drawer path used to drop these warns)", want, got)
+			}
+		}
+	})
+}
+
+// TestLoadUserPrefsData_NoWarnOnValidStoredValues is the negative-path
+// counterpart: valid stored values must not trigger any Warn logging on
+// either surface.
+func TestLoadUserPrefsData_NoWarnOnValidStoredValues(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	rec := &recordingHandler{}
+	r.logger = slog.New(rec)
+	const userID = "prefs-no-warn-user"
+	seedUserPref(t, r, userID, "page_size", "100")
+	seedUserPref(t, r, userID, "bg_opacity", "80")
+	seedUserPref(t, r, userID, "auto_fetch_images", "true")
+
+	w := prefsPageRequest(t, r, userID)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	if got := rec.messages(slog.LevelWarn); len(got) != 0 {
+		t.Errorf("expected no warnings for valid stored values, got %v", got)
+	}
+}
+
+// containsMessage reports whether msgs contains want.
+func containsMessage(msgs []string, want string) bool {
+	for _, m := range msgs {
+		if m == want {
+			return true
+		}
+	}
+	return false
+}
+
+// TestUserPrefsData_ShowPlatformDebugStored verifies the stored value wins:
 // seeding show_platform_debug = "true" causes the Behavior group toggle to
-// render with aria-checked="true". This exercises the if v, ok := stored[...]
-// override branch in loadNextPrefsData added by M55 #2060.
-func TestLoadNextPrefsData_ShowPlatformDebugStored(t *testing.T) {
+// render with aria-checked="true". This exercises the stored-value override
+// branch added by M55 #2060.
+func TestUserPrefsData_ShowPlatformDebugStored(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 	const userID = "prefs-debug-stored-user"
 
-	seedNextPref(t, r, userID, "show_platform_debug", "true")
+	seedUserPref(t, r, userID, "show_platform_debug", "true")
 
 	w := prefsPageRequest(t, r, userID)
 	if w.Code != http.StatusOK {

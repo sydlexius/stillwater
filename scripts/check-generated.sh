@@ -3,8 +3,15 @@
 set -euo pipefail
 
 base=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
-templ_changed=$(git diff --name-only "$base"..HEAD -- '*.templ')
-gen_changed=$(git diff --name-only "$base"..HEAD -- '*_templ.go')
+# --no-renames: the structural check below maps each foo.templ to a literal
+# foo_templ.go path. Git's default rename detection collapses a renamed or
+# relocated generated file (e.g. next/activity_templ.go -> activity_page_templ.go
+# when a surface is promoted out of next/) to its NEW path only, so the old
+# expected path goes missing and the check false-positives even though the
+# generated output is correct. Disabling rename detection keeps a move visible
+# as delete-old + add-new, which is exactly what the path mapping expects.
+templ_changed=$(git diff --no-renames --name-only "$base"..HEAD -- '*.templ')
+gen_changed=$(git diff --no-renames --name-only "$base"..HEAD -- '*_templ.go')
 
 missing=""
 while IFS= read -r templ_file; do

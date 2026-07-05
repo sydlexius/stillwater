@@ -87,7 +87,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-auth", t(ctx, "settings.auth.title"), t(ctx, "settings.auth.help"), "settings-auth-providers-auth").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-auth", t(ctx, "settings.auth.title"), t(ctx, "settings.auth.help"), "settings-auth-auth").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -134,7 +134,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-local-always-on", t(ctx, "settings.auth.local.label"), t(ctx, "settings.auth.local.help"), "settings-auth-providers-auth-local").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-local-always-on", t(ctx, "settings.auth.local.label"), t(ctx, "settings.auth.local.help"), "settings-auth-auth-local").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -244,7 +244,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-auth-enable-emby", t(ctx, "settings.auth.enable_emby.label"), t(ctx, "settings.auth.enable_emby.help"), "settings-auth-providers-auth-enable-emby").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-auth-enable-emby", t(ctx, "settings.auth.enable_emby.label"), t(ctx, "settings.auth.enable_emby.help"), "settings-auth-auth-enable-emby").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -408,7 +408,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-auth-auto-provision-emby", t(ctx, "settings.auth.enable_auto_provision_emby.label"), t(ctx, "settings.auth.enable_auto_provision_emby.help"), "settings-auth-providers-auth-enable-auto-provision-emby").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-auth-auto-provision-emby", t(ctx, "settings.auth.enable_auto_provision_emby.label"), t(ctx, "settings.auth.enable_auto_provision_emby.help"), "settings-auth-auth-enable-auto-provision-emby").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -756,7 +756,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-auth-enable-jellyfin", t(ctx, "settings.auth.enable_jellyfin.label"), t(ctx, "settings.auth.enable_jellyfin.help"), "settings-auth-providers-auth-enable-jellyfin").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-auth-enable-jellyfin", t(ctx, "settings.auth.enable_jellyfin.label"), t(ctx, "settings.auth.enable_jellyfin.help"), "settings-auth-auth-enable-jellyfin").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -920,7 +920,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-auth-auto-provision-jellyfin", t(ctx, "settings.auth.enable_auto_provision_jellyfin.label"), t(ctx, "settings.auth.enable_auto_provision_jellyfin.help"), "settings-auth-providers-auth-enable-auto-provision-jellyfin").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-auth-auto-provision-jellyfin", t(ctx, "settings.auth.enable_auto_provision_jellyfin.label"), t(ctx, "settings.auth.enable_auto_provision_jellyfin.help"), "settings-auth-auth-enable-auto-provision-jellyfin").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1268,7 +1268,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-auth-enable-oidc", t(ctx, "settings.auth.enable_oidc.label"), t(ctx, "settings.auth.enable_oidc.help"), "settings-auth-providers-auth-enable-oidc").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-auth-enable-oidc", t(ctx, "settings.auth.enable_oidc.label"), t(ctx, "settings.auth.enable_oidc.help"), "settings-auth-auth-enable-oidc").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1383,7 +1383,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-issuer", t(ctx, "settings.auth.oidc_issuer.label"), t(ctx, "settings.auth.oidc_issuer.help"), "settings-auth-providers-auth-oidc").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-issuer", t(ctx, "settings.auth.oidc_issuer.label"), t(ctx, "settings.auth.oidc_issuer.help"), "settings-auth-auth-oidc").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1430,7 +1430,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-id", t(ctx, "settings.auth.client_id.label"), t(ctx, "settings.auth.client_id.help"), "settings-auth-providers-auth-client-id").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-id", t(ctx, "settings.auth.client_id.label"), t(ctx, "settings.auth.client_id.help"), "settings-auth-auth-client-id").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1477,7 +1477,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-secret", t(ctx, "settings.auth.client_secret.label"), t(ctx, "settings.auth.client_secret.help"), "settings-auth-providers-auth-client-secret").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-secret", t(ctx, "settings.auth.client_secret.label"), t(ctx, "settings.auth.client_secret.help"), "settings-auth-auth-client-secret").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1596,7 +1596,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-admin-groups", t(ctx, "settings.auth.admin_groups.label"), t(ctx, "settings.auth.admin_groups.help"), "settings-auth-providers-auth-admin-groups").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-admin-groups", t(ctx, "settings.auth.admin_groups.label"), t(ctx, "settings.auth.admin_groups.help"), "settings-auth-auth-admin-groups").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1656,7 +1656,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-user-groups", t(ctx, "settings.auth.allowed_groups.label"), t(ctx, "settings.auth.allowed_groups.help"), "settings-auth-providers-auth-allowed-groups").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-user-groups", t(ctx, "settings.auth.allowed_groups.label"), t(ctx, "settings.auth.allowed_groups.help"), "settings-auth-auth-allowed-groups").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1922,7 +1922,7 @@ func SettingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-autoprovision", t(ctx, "settings.auth.oidc_auto_provision.label"), t(ctx, "settings.auth.oidc_auto_provision.help"), "settings-auth-providers-auth-auto-provision-oidc").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-autoprovision", t(ctx, "settings.auth.oidc_auto_provision.label"), t(ctx, "settings.auth.oidc_auto_provision.help"), "settings-auth-auth-auto-provision-oidc").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -60,7 +60,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<div class="flex items-center gap-2">
 				@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.auth.title"))
-				@components.ContextHelp("help-auth", t(ctx, "settings.auth.title"), t(ctx, "settings.auth.help"), "settings-auth-providers-auth")
+				@components.ContextHelp("help-auth", t(ctx, "settings.auth.title"), t(ctx, "settings.auth.help"), "settings-auth-auth")
 			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.auth.description") }
@@ -81,7 +81,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
 								{ t(ctx, "common.enabled") }
 							</span>
-							@components.ContextHelp("help-local-always-on", t(ctx, "settings.auth.local.label"), t(ctx, "settings.auth.local.help"), "settings-auth-providers-auth-local")
+							@components.ContextHelp("help-local-always-on", t(ctx, "settings.auth.local.label"), t(ctx, "settings.auth.local.help"), "settings-auth-auth-local")
 						</div>
 					</div>
 					// Local auth is always on: the toggle is rendered but permanently
@@ -125,7 +125,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 									{ t(ctx, "common.disabled") }
 								}
 							</span>
-							@components.ContextHelp("help-auth-enable-emby", t(ctx, "settings.auth.enable_emby.label"), t(ctx, "settings.auth.enable_emby.help"), "settings-auth-providers-auth-enable-emby")
+							@components.ContextHelp("help-auth-enable-emby", t(ctx, "settings.auth.enable_emby.label"), t(ctx, "settings.auth.enable_emby.help"), "settings-auth-auth-enable-emby")
 						</div>
 					</div>
 					<button
@@ -168,7 +168,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1">
 									<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision_emby.label") }</div>
-									@components.ContextHelp("help-auth-auto-provision-emby", t(ctx, "settings.auth.enable_auto_provision_emby.label"), t(ctx, "settings.auth.enable_auto_provision_emby.help"), "settings-auth-providers-auth-enable-auto-provision-emby")
+									@components.ContextHelp("help-auth-auto-provision-emby", t(ctx, "settings.auth.enable_auto_provision_emby.label"), t(ctx, "settings.auth.enable_auto_provision_emby.help"), "settings-auth-auth-enable-auto-provision-emby")
 								</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_emby.description") }</div>
 							</div>
@@ -247,7 +247,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 									{ t(ctx, "common.disabled") }
 								}
 							</span>
-							@components.ContextHelp("help-auth-enable-jellyfin", t(ctx, "settings.auth.enable_jellyfin.label"), t(ctx, "settings.auth.enable_jellyfin.help"), "settings-auth-providers-auth-enable-jellyfin")
+							@components.ContextHelp("help-auth-enable-jellyfin", t(ctx, "settings.auth.enable_jellyfin.label"), t(ctx, "settings.auth.enable_jellyfin.help"), "settings-auth-auth-enable-jellyfin")
 						</div>
 					</div>
 					<button
@@ -290,7 +290,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1">
 									<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision_jellyfin.label") }</div>
-									@components.ContextHelp("help-auth-auto-provision-jellyfin", t(ctx, "settings.auth.enable_auto_provision_jellyfin.label"), t(ctx, "settings.auth.enable_auto_provision_jellyfin.help"), "settings-auth-providers-auth-enable-auto-provision-jellyfin")
+									@components.ContextHelp("help-auth-auto-provision-jellyfin", t(ctx, "settings.auth.enable_auto_provision_jellyfin.label"), t(ctx, "settings.auth.enable_auto_provision_jellyfin.help"), "settings-auth-auth-enable-auto-provision-jellyfin")
 								</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_jellyfin.description") }</div>
 							</div>
@@ -369,7 +369,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 									{ t(ctx, "common.disabled") }
 								}
 							</span>
-							@components.ContextHelp("help-auth-enable-oidc", t(ctx, "settings.auth.enable_oidc.label"), t(ctx, "settings.auth.enable_oidc.help"), "settings-auth-providers-auth-enable-oidc")
+							@components.ContextHelp("help-auth-enable-oidc", t(ctx, "settings.auth.enable_oidc.label"), t(ctx, "settings.auth.enable_oidc.help"), "settings-auth-auth-enable-oidc")
 						</div>
 					</div>
 					<button
@@ -406,7 +406,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-issuer-url" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.issuer_url") }</label>
-									@components.ContextHelp("help-oidc-issuer", t(ctx, "settings.auth.oidc_issuer.label"), t(ctx, "settings.auth.oidc_issuer.help"), "settings-auth-providers-auth-oidc")
+									@components.ContextHelp("help-oidc-issuer", t(ctx, "settings.auth.oidc_issuer.label"), t(ctx, "settings.auth.oidc_issuer.help"), "settings-auth-auth-oidc")
 								</div>
 								<input
 									id="oidc-issuer-url"
@@ -421,7 +421,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-client-id" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.client_id") }</label>
-									@components.ContextHelp("help-oidc-client-id", t(ctx, "settings.auth.client_id.label"), t(ctx, "settings.auth.client_id.help"), "settings-auth-providers-auth-client-id")
+									@components.ContextHelp("help-oidc-client-id", t(ctx, "settings.auth.client_id.label"), t(ctx, "settings.auth.client_id.help"), "settings-auth-auth-client-id")
 								</div>
 								<input
 									id="oidc-client-id"
@@ -436,7 +436,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-client-secret" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.client_secret") }</label>
-									@components.ContextHelp("help-oidc-client-secret", t(ctx, "settings.auth.client_secret.label"), t(ctx, "settings.auth.client_secret.help"), "settings-auth-providers-auth-client-secret")
+									@components.ContextHelp("help-oidc-client-secret", t(ctx, "settings.auth.client_secret.label"), t(ctx, "settings.auth.client_secret.help"), "settings-auth-auth-client-secret")
 								</div>
 								<input
 									id="oidc-client-secret"
@@ -463,7 +463,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-admin-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.admin_groups") }</label>
-									@components.ContextHelp("help-oidc-admin-groups", t(ctx, "settings.auth.admin_groups.label"), t(ctx, "settings.auth.admin_groups.help"), "settings-auth-providers-auth-admin-groups")
+									@components.ContextHelp("help-oidc-admin-groups", t(ctx, "settings.auth.admin_groups.label"), t(ctx, "settings.auth.admin_groups.help"), "settings-auth-auth-admin-groups")
 								</div>
 								<input
 									id="oidc-admin-groups"
@@ -479,7 +479,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-user-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.allowed_groups") }</label>
-									@components.ContextHelp("help-oidc-user-groups", t(ctx, "settings.auth.allowed_groups.label"), t(ctx, "settings.auth.allowed_groups.help"), "settings-auth-providers-auth-allowed-groups")
+									@components.ContextHelp("help-oidc-user-groups", t(ctx, "settings.auth.allowed_groups.label"), t(ctx, "settings.auth.allowed_groups.help"), "settings-auth-auth-allowed-groups")
 								</div>
 								<input
 									id="oidc-user-groups"
@@ -544,7 +544,7 @@ templ SettingsAuthProvidersTab(data AuthProvidersData) {
 									></span>
 								</button>
 								<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_oidc.description") }</span>
-								@components.ContextHelp("help-oidc-autoprovision", t(ctx, "settings.auth.oidc_auto_provision.label"), t(ctx, "settings.auth.oidc_auto_provision.help"), "settings-auth-providers-auth-auto-provision-oidc")
+								@components.ContextHelp("help-oidc-autoprovision", t(ctx, "settings.auth.oidc_auto_provision.label"), t(ctx, "settings.auth.oidc_auto_provision.help"), "settings-auth-auth-auto-provision-oidc")
 							</div>
 							<div class="flex gap-2">
 								<button

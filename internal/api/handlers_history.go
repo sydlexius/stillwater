@@ -640,8 +640,7 @@ func rebuildSourceFilters(filter artist.GlobalHistoryFilter) []string {
 }
 
 // buildActivityPageData loads the global activity feed at offset 0 and assembles
-// the templates.ActivityPageData view model shared by both the stable
-// (handleActivityPage) and next/ (handleNextActivityPage) page handlers. It
+// the templates.ActivityPageData view model used by handleActivityPage. It
 // returns ok==false only after it has already written an error response, so the
 // caller must return immediately without rendering when ok is false.
 func (r *Router) buildActivityPageData(w http.ResponseWriter, req *http.Request, userID string) (templates.ActivityPageData, bool) {

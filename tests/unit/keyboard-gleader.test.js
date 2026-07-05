@@ -83,11 +83,11 @@ describe('keyboard.js: g-leader navigation (#1775)', () => {
     assert.equal(navigated[0], '/reports', `expected /reports, got ${navigated[0]}`);
   });
 
-  it('g then l navigates to /next/logs', () => {
+  it('g then l navigates to the canonical /logs (#1757 PR-5)', () => {
     const { win, navigated } = setup();
     fire(win, 'g');
     fire(win, 'l');
-    assert.ok(navigated[0].endsWith('/next/logs'), `expected /next/logs, got ${navigated[0]}`);
+    assert.equal(navigated[0], '/logs', `expected /logs, got ${navigated[0]}`);
   });
 
   it('g then f navigates to the canonical /reports (Findings = Reports)', () => {
@@ -97,11 +97,11 @@ describe('keyboard.js: g-leader navigation (#1775)', () => {
     assert.equal(navigated[0], '/reports', `expected /reports, got ${navigated[0]}`);
   });
 
-  it('g then s navigates to /next/settings', () => {
+  it('g then s navigates to the canonical /settings (#1757 PR-5)', () => {
     const { win, navigated } = setup();
     fire(win, 'g');
     fire(win, 's');
-    assert.ok(navigated[0].endsWith('/next/settings'), `expected /next/settings, got ${navigated[0]}`);
+    assert.equal(navigated[0], '/settings', `expected /settings, got ${navigated[0]}`);
   });
 
   it('g in a text input is a no-op (leader not armed)', () => {

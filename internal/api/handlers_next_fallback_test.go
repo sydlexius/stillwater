@@ -35,6 +35,21 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 	mux.HandleFunc("GET /reports/{name}", func(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte("WORKSPACE " + req.PathValue("name")))
 	})
+	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("SETTINGS"))
+	})
+	mux.HandleFunc("GET /preferences", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("PREFERENCES"))
+	})
+	mux.HandleFunc("GET /preferences-drawer", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("PREFS DRAWER"))
+	})
+	mux.HandleFunc("GET /activity", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("ACTIVITY q=" + req.URL.RawQuery))
+	})
+	mux.HandleFunc("GET /logs", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("LOGS q=" + req.URL.RawQuery))
+	})
 	mux.HandleFunc("GET /next/{path...}", r.nextFallback(mux))
 
 	tests := []struct {
@@ -57,6 +72,16 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 		{"/next/reports", "WORKSPACE q="},
 		{"/next/reports?search=abba", "WORKSPACE q=search=abba"},
 		{"/next/reports/health", "WORKSPACE health"},
+		// #1757 PR-5: settings (#1339), preferences (#1774), the preferences
+		// drawer fragment, activity (#1772), and logs (#1338) promoted to their
+		// canonical paths; their dedicated /next/* routes are gone and re-dispatch
+		// to the promoted pages via the fallback, query string intact for
+		// bookmarked deep-links.
+		{"/next/settings", "SETTINGS"},
+		{"/next/preferences", "PREFERENCES"},
+		{"/next/preferences-drawer", "PREFS DRAWER"},
+		{"/next/activity", "ACTIVITY q="},
+		{"/next/logs?level=error", "LOGS q=level=error"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

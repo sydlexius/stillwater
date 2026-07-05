@@ -87,8 +87,8 @@ The toggle also makes a standing promise: if someone re-enables a saver on the p
 Each connection has several feature toggles; three of them interact with how Stillwater writes to the shared library:
 
 - **image_write** -- whether Stillwater writes image files for artists sourced from this connection. See [`settings-connections-connections-feature-image-write`](../reference/settings-by-tab.md#settings-connections-connections-feature-image-write).
-- **nfo_write** -- whether Stillwater writes NFO files for artists sourced from this connection. See [`settings-connections-connections-feature-nfo-write`](../reference/settings-by-tab.md#settings-connections-connections-feature-nfo-write).
-- **library_import** -- whether Stillwater imports the library listing from this connection during scans. See [`settings-connections-connections-feature-library-import`](../reference/settings-by-tab.md#settings-connections-connections-feature-library-import).
+- **nfo_write** -- whether Stillwater writes NFO files for artists sourced from this connection.
+- **library_import** -- whether Stillwater imports the library listing from this connection during scans.
 
 Disabling `image_write` or `nfo_write` on a connection stops Stillwater from writing those files for that connection's artists, but it does not change what the peer itself writes. The conflict gate operates independently: it watches what the *peer* is configured to write, not what Stillwater is configured to write.
 

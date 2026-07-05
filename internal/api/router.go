@@ -872,6 +872,16 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the encoded query flows from req.
 	}, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/preferences", wrapOptionalAuth(r.handleUserPreferencesPage, optAuthMw))
+	// M55 #1757 PR-5: the preferences flyout drawer body fragment. Promoted from
+	// /next/preferences-drawer; the canonical Layout lazy-loads it. HTMX fragment
+	// only (returns the drawer body so Layout need not thread prefs data through
+	// every caller).
+	mux.HandleFunc("GET "+bp+"/preferences-drawer", wrapOptionalAuth(r.handleUserPreferencesDrawer, optAuthMw))
+	// M55 #1757 PR-5: the live log viewer promoted from /next/logs to the
+	// canonical /logs. wrapOptionalAuth so the in-handler admin gate renders the
+	// login page for unauthenticated visitors instead of returning 401 JSON; the
+	// log feed is administrator-only.
+	mux.HandleFunc("GET "+bp+"/logs", wrapOptionalAuth(r.handleLogsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/guide", wrapOptionalAuth(r.handleGuidePage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/setup/wizard", wrapOptionalAuth(r.handleOnboardingPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(func(w http.ResponseWriter, req *http.Request) {
@@ -911,13 +921,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /artists/{id}/artwork-modal), so the dedicated /next/artists/{id} routes
 	// are gone; those paths reach the fallback and re-dispatch to the promoted
 	// canonical detail page.
-	// M55 #1774: preferences flyout drawer. Two routes:
-	//   /next/preferences        - standalone page for direct-URL / bookmark access.
-	//   /next/preferences-drawer - HTMX fragment; returns only the drawer body so
-	//                             LayoutNext can lazy-load it without passing prefs
-	//                             data through every handler that calls LayoutNext.
-	mux.HandleFunc("GET "+bp+"/next/preferences", wrapOptionalAuth(r.handleNextPreferencesPage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/next/preferences-drawer", wrapOptionalAuth(r.handleNextPreferencesDrawer, optAuthMw))
+	// M55 #1757 PR-5: preferences (#1774), activity feed (#1772), live log viewer
+	// (#1338), and settings rail (#1339) promoted to their canonical paths
+	// (/preferences, /preferences-drawer, /activity, /logs, /settings), so their
+	// dedicated /next/* routes are gone; those paths reach the /next/{path...}
+	// fallback below and re-dispatch to the promoted canonical pages. The still-
+	// /next/ foreign-files and duplicates routes below are exact paths, so they
+	// keep winning over the fallback until their own promotion PRs.
 	// M55 #1773: foreign-files management in the next/ chrome. wrapOptionalAuth
 	// (not wrapAuth) so the handler's requireForeignAdmin gate runs: it renders
 	// the login page for unauthenticated visitors rather than returning 401 JSON
@@ -937,27 +947,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// fallback below and re-dispatch to the promoted canonical workspace. The
 	// still-/next/ foreign-files and duplicates routes above are exact paths, so
 	// they keep winning over the fallback.
-	// M55 #1772: next/ global activity feed. More specific than the
-	// /next/{path...} fallback so Go's mux prefers it; renders the next template
-	// only when the resolved channel is "next" (otherwise it 404s via
-	// checkNextChannel). It reuses the stable /activity/content endpoint for the
-	// HTMX content fragment, so no /next/activity/content route is registered.
-	mux.HandleFunc("GET "+bp+"/next/activity", wrapOptionalAuth(r.handleNextActivityPage, optAuthMw))
-	// M55 #1338: next/ live log viewer (PR 5B frontend). More specific than the
-	// /next/{path...} fallback so Go's mux prefers it; renders the next template
-	// only when the resolved channel is "next" (otherwise it 404s via
-	// checkNextChannel). It consumes the already-merged GET /api/v1/logs/stream
-	// SSE endpoint (PR 5A, #2080) for both backfill and the live tail.
-	// wrapOptionalAuth so the in-handler admin gate renders the login page for
-	// unauthenticated visitors instead of returning 401 JSON; logs are
-	// administrator-only.
-	mux.HandleFunc("GET "+bp+"/next/logs", wrapOptionalAuth(r.handleNextLogsPage, optAuthMw))
-	// M55 #1339: next/ settings rail. More specific than the /next/{path...}
-	// fallback so Go's mux prefers it; renders the next template only when the
-	// resolved channel is "next" (otherwise it 404s via checkNextChannel). The
-	// administrator-only gate lives in the handler; wrapOptionalAuth so an
-	// unauthenticated visitor gets the login page, not a 401 JSON body.
-	mux.HandleFunc("GET "+bp+"/next/settings", wrapOptionalAuth(r.handleNextSettingsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last
