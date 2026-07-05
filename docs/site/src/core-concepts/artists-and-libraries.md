@@ -52,9 +52,9 @@ Two modes, mostly there for filesystems that fast notifications can't reach:
 
 Stillwater probes each path on startup to decide whether fast notifications work, and the UI shows the result so you don't have to guess.
 
-**Where to find Settings > Libraries:**
+**Where to find the library controls:**
 
-![Settings tabs nav with the Libraries tab active](../assets/screenshots/nav-settings-tabs-libraries.png){ width="640" }
+Settings is one long scrolling page. Down the left side is a section nav; click **Music libraries** in it (under the **Essentials** group) to jump straight to the **Music Libraries** section, or scroll to it. Every library is a row in that section.
 
 ![Manual library rows showing name, path, type badge, watch dropdown, Lock NFOs toggle, Remove action; Add Library button at the bottom](../assets/screenshots/settings-libraries-list.png)
 

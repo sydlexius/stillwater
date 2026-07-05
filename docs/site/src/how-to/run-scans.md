@@ -2,7 +2,7 @@
 description: Trigger filesystem and platform scans, schedule recurring runs, monitor progress.
 ---
 
-<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/settings.templ (per-library Scan Library / Re-sync Artists buttons in the Libraries tab). -->
+<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/settings.templ (per-library Scan Library / Re-sync Artists buttons in the Music Libraries section). -->
 
 # Run scans
 
@@ -20,7 +20,7 @@ The trigger depends on whether the library is **manual** (you typed in the path)
 
 ### Imported libraries
 
-1. Open **Settings > Libraries**.
+1. Open **Settings** and jump to the **Music libraries** section (left-side section nav, Essentials group).
 2. Find the library you want to scan in the list.
 3. Click **Scan Library** on its row.
 
@@ -35,9 +35,9 @@ A manual library row has no per-row **Scan Library** button. The supported trigg
 
 The scan is **structure-incremental** in both cases -- it walks every artist directory in the library, but it only does the expensive metadata-detect work on directories that don't already have an artist record. So a library with 4,000 artists where nothing has moved still gets walked, but the per-directory work collapses to "look up the existing artist by path" and finishes quickly. New or moved directories pay the full detect cost; existing ones are essentially free.
 
-**Where to find Settings > Libraries:**
+**Where to find the library controls:**
 
-![Settings tabs nav with the Libraries tab active](../assets/screenshots/nav-settings-tabs-libraries.png){ width="640" }
+Settings is one long scrolling page. Down the left side is a section nav; click **Music libraries** in it (under the **Essentials** group) to jump straight to the **Music Libraries** section, or simply scroll to it. Every library is a row in that section.
 
 ![Two manual library rows showing the Filesystem monitoring mode dropdown, Lock NFOs checkbox, and Remove action; an Add Library button sits at the bottom](../assets/screenshots/settings-libraries-list.png)
 
@@ -51,7 +51,7 @@ For manual libraries the same constraints apply -- coverage comes from leaving t
 
 For libraries on auto-pilot, recurring scans keep the catalog fresh without you clicking anything.
 
-1. Open **Settings > Libraries**.
+1. Open **Settings** and jump to the **Music libraries** section (left-side section nav, Essentials group).
 2. On the library row, find the **Filesystem monitoring mode** dropdown (it sits next to the per-library actions).
 3. Pick a mode:
    - **Off** -- no automatic scans. You trigger manually.
@@ -68,7 +68,7 @@ Stillwater probes each path on startup to decide whether watch mode is supported
 
 When you've connected Emby, Jellyfin, or Lidarr, you can pull the platform's artist list instead of (or in addition to) walking the disk.
 
-1. Open **Settings > Libraries** and find a library imported from a platform connection.
+1. Open **Settings** and jump to the **Music libraries** section (left-side section nav, Essentials group) and find a library imported from a platform connection.
 2. Click **Re-sync Artists** on its row.
 
 Stillwater queries the platform's library and reconciles with what it has stored. New platform-side artists appear in Stillwater (pathless if they don't have a directory on disk yet); deleted ones are removed.

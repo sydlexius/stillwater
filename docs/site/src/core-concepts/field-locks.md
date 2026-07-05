@@ -36,17 +36,17 @@ Field locks coexist with the artist-level lock. Unlocking the artist doesn't cle
 
 **Where to find the lock controls:** open an artist from the **Artists** sidebar item; lock icons sit next to the Biography heading, each tag-group label (Genres / Styles / Moods), and every field in the Details panel.
 
-A locked field swaps its lock icon for an amber closed lock and **hides the edit pencil and overflow menu**, so the value can't be changed by accident. Hover the demo below to see the same field switch from unlocked to locked:
+Locking a field is a read-mode action: every field carries a padlock next to its value (gray and open when unlocked), and clicking it toggles the lock. A locked field's padlock turns **amber and closed**, and its inline editing controls stay hidden even in edit mode, so the value can't be changed by accident. Hover the demo below to see the same field switch from unlocked to locked:
 
 <div class="sw-hover-swap" tabindex="0" markdown="span">
-![Name field unlocked: gray open lock, edit pencil, and overflow menu, with '12 Stones' as the value](../assets/screenshots/artist-field-name-unlocked.png)
-![Name field locked: amber closed lock and no edit affordances; '12 Stones' is still visible but no longer editable](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
+![Name field unlocked: gray open padlock next to the value 'Johann Sebastian Bach'](../assets/screenshots/artist-field-name-unlocked.png)
+![Name field locked: amber closed padlock; 'Johann Sebastian Bach' is still visible but no longer editable](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
 <span class="sw-hover-hint">Hover or focus to lock</span>
 </div>
 
-For context, here's the whole Overview panel showing where the lock controls live -- next to the Biography header, each Tags group, and every Detail-panel row:
+For context, here's the whole Details section showing where the lock controls live -- next to the Biography header, each Tags group, and every field row:
 
-![Artist Overview panel: Biography card with a lock icon in the header, Tags card with per-group locks on Genres / Styles / Moods, Details panel listing Name / Sort Name / Disambiguation / Type / Formed / Born / Disbanded / Died / Years Active / Origin -- each row with its own lock and edit affordances](../assets/screenshots/artist-overview-fields.jpg)
+![Artist Details section: an Identity list (Name / Sort Name / Type / Disambiguation / Gender / Origin / Formed / Born / Disbanded / Died / Years Active), a Tags block with per-group locks on Genres / Styles / Moods, and a Biography column with a lock icon in its header -- every row and group carries its own open-lock padlock in read mode](../assets/screenshots/artist-overview-fields.jpg)
 
 ## Library-wide: NFO lockdata switch
 

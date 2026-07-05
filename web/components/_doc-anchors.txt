@@ -281,7 +281,7 @@ how-to/direct-tls-setup#http-to-https-redirect-listener
 how-to/direct-tls-setup#http3-quic-http3-quic-firewall
 how-to/edit-artist#add-or-change-a-provider-id
 how-to/edit-artist#discard-accidental-edits
-how-to/edit-artist#edit-a-single-field
+how-to/edit-artist#edit-a-field
 how-to/edit-artist#edit-an-artist
 how-to/edit-artist#editing-list-fields
 how-to/edit-artist#lock-a-single-field
