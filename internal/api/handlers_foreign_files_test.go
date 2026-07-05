@@ -21,6 +21,22 @@ import (
 	"github.com/sydlexius/stillwater/internal/i18n"
 )
 
+// newTestRouterFull builds a Router with static assets and a foreign repo,
+// suitable for tests that call assetsFor (full page renders). Uses
+// testRouterWithStubPipeline which passes StaticFS so staticAssets is
+// non-nil, and NewRouter automatically sets foreignRepo from deps.DB.
+func newTestRouterFull(t *testing.T) *Router {
+	t.Helper()
+	r, _ := testRouterWithStubPipeline(t, &stubPipeline{})
+	return r
+}
+
+// adminContext returns a context with a test user ID and administrator role.
+func adminContext() context.Context {
+	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
+	return middleware.WithTestRole(ctx, "administrator")
+}
+
 // withI18nCtx attaches an English i18n translator to a request so that
 // template i18n lookups resolve to real translations rather than raw key
 // strings. Used by tests that assert on user-facing copy in rendered HTML.
@@ -705,7 +721,7 @@ func TestHandleForeignFilesPage_DBErrorPath(t *testing.T) {
 	}
 	ctx := middleware.WithTestUserID(context.Background(), "admin-user")
 	ctx = middleware.WithTestRole(ctx, "administrator")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/foreign-files", nil)
 	rec := httptest.NewRecorder()
 	r.handleForeignFilesPage(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -723,7 +739,7 @@ func TestHandleForeignAllowlistPage_DBErrorPath(t *testing.T) {
 	}
 	ctx := middleware.WithTestUserID(context.Background(), "admin-user")
 	ctx = middleware.WithTestRole(ctx, "administrator")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files/allowlist", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/foreign-files/allowlist", nil)
 	rec := httptest.NewRecorder()
 	r.handleForeignAllowlistPage(rec, req)
 	if rec.Code != http.StatusInternalServerError {
@@ -752,7 +768,7 @@ func TestRequireForeignAdmin_NonAdminGetsForbidden(t *testing.T) {
 	r, _ := newTestRouterWithForeign(t)
 	ctx := middleware.WithTestUserID(context.Background(), "u1")
 	ctx = middleware.WithTestRole(ctx, "operator")
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/foreign-files", nil)
 	rec := httptest.NewRecorder()
 	if r.requireForeignAdmin(rec, req) {
 		t.Error("operator role should be denied")
@@ -996,8 +1012,9 @@ func TestHandleForeignFilesCount_NonAdmin(t *testing.T) {
 }
 
 // TestHandleForeignFilesCount_StableChannel asserts the stable-sidebar branch:
-// when count > 0 and ?ch=next is absent, the link uses /settings/foreign-files
-// and the sw-sidebar-badge-pill class (no icon).
+// when count > 0 and ?ch=next is absent, the link uses the canonical
+// /reports/foreign-files path (M55 #1757 PR-6a) and the sw-sidebar-badge-pill
+// class (no icon).
 func TestHandleForeignFilesCount_StableChannel(t *testing.T) {
 	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
@@ -1018,8 +1035,8 @@ func TestHandleForeignFilesCount_StableChannel(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`href="/settings/foreign-files"`,
-		`data-path="/settings/foreign-files"`,
+		`href="/reports/foreign-files"`,
+		`data-path="/reports/foreign-files"`,
 		`sw-sidebar-badge-pill`,
 		`>1<`,
 	} {
@@ -1190,14 +1207,14 @@ func TestHandleForeignFilesCount_NextChannelSidebarPill(t *testing.T) {
 }
 
 // TestHandleForeignFilesPage_UnauthRendersLoginPage asserts that an
-// unauthenticated GET /settings/foreign-files returns HTTP 200 with the login
+// unauthenticated GET /reports/foreign-files returns HTTP 200 with the login
 // page rather than a 401 JSON error. The route uses wrapOptionalAuth so
 // requireForeignAdmin -> renderLoginPage runs for cookieless visitors.
 func TestHandleForeignFilesPage_UnauthRendersLoginPage(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterFull(t)
 
-	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/settings/foreign-files", nil))
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports/foreign-files", nil))
 	w := httptest.NewRecorder()
 	r.handleForeignFilesPage(w, req)
 
@@ -1228,7 +1245,7 @@ func TestHandleForeignAllowlistPage_UnauthRendersLoginPage(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterFull(t)
 
-	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/settings/foreign-files/allowlist", nil))
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports/foreign-files/allowlist", nil))
 	w := httptest.NewRecorder()
 	r.handleForeignAllowlistPage(w, req)
 
@@ -1257,13 +1274,15 @@ func TestHandleForeignAllowlistPage_UnauthRendersLoginPage(t *testing.T) {
 // regression test for handleForeignFilesPage. An admin request must reach the
 // real foreign-files page, not the login render. This guards the wrapAuth change
 // introduced in #1941: adding the auth gate must not break the authed path.
+// M55 #1757 PR-6a: the page now serves the promoted shell (sw-next-foreign-files
+// scope class) on its canonical /reports/foreign-files path.
 func TestHandleForeignFilesPage_AuthenticatedRendersPage(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterFull(t)
 
 	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
 	ctx = middleware.WithTestRole(ctx, "administrator")
-	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files", nil))
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/foreign-files", nil))
 	w := httptest.NewRecorder()
 	r.handleForeignFilesPage(w, req)
 
@@ -1276,6 +1295,12 @@ func TestHandleForeignFilesPage_AuthenticatedRendersPage(t *testing.T) {
 	if !strings.Contains(body, "foreign-files-table") {
 		t.Error("authenticated admin must see the foreign-files-table in the response")
 	}
+	// The promoted page carries the sw-next-foreign-files scope class (the
+	// promote-by-move keeps the class verbatim). Its presence proves the
+	// canonical handler now renders the promoted template, not the retired v1.
+	if !strings.Contains(body, "sw-next-foreign-files") {
+		t.Error("promoted page must render the sw-next-foreign-files scope class")
+	}
 	if strings.Contains(body, `type="password"`) {
 		t.Error("authenticated admin must not see a login password field")
 	}
@@ -1283,13 +1308,15 @@ func TestHandleForeignFilesPage_AuthenticatedRendersPage(t *testing.T) {
 
 // TestHandleForeignAllowlistPage_AuthenticatedRendersPage is the
 // authenticated-path regression test for handleForeignAllowlistPage.
+// M55 #1757 PR-6a: the page now serves the promoted shell on its canonical
+// /reports/foreign-files/allowlist path.
 func TestHandleForeignAllowlistPage_AuthenticatedRendersPage(t *testing.T) {
 	t.Parallel()
 	r := newTestRouterFull(t)
 
 	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
 	ctx = middleware.WithTestRole(ctx, "administrator")
-	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files/allowlist", nil))
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/foreign-files/allowlist", nil))
 	w := httptest.NewRecorder()
 	r.handleForeignAllowlistPage(w, req)
 
@@ -1302,7 +1329,49 @@ func TestHandleForeignAllowlistPage_AuthenticatedRendersPage(t *testing.T) {
 	if !strings.Contains(body, "foreign-allowlist-table") {
 		t.Error("authenticated admin must see the foreign-allowlist-table in the response")
 	}
+	// Promoted shell scope class (see the detected-files test above).
+	if !strings.Contains(body, "sw-next-foreign-files") {
+		t.Error("promoted allowlist page must render the sw-next-foreign-files scope class")
+	}
 	if strings.Contains(body, `type="password"`) {
 		t.Error("authenticated admin must not see a login password field")
+	}
+}
+
+// TestHandleForeignAllowlistPage_HTMXReturnsBodyFragment pins the promoted
+// pagination contract folded in from the retired handleNextForeignAllowlistPage
+// (M55 #1757 PR-6a): an HTMX request (the Prev/Next pager click) returns only
+// the ForeignAllowlistBody fragment -- identified by the foreign-allowlist-body
+// swap-target id -- and NOT the full page chrome (no <html>/sidebar). A
+// full-page GET, by contrast, renders the whole shell.
+func TestHandleForeignAllowlistPage_HTMXReturnsBodyFragment(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+
+	// HTMX request: fragment only.
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/foreign-files/allowlist", nil))
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handleForeignAllowlistPage(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTMX request should get 200, got %d", w.Code)
+	}
+	frag := w.Body.String()
+	if !strings.Contains(frag, `id="foreign-allowlist-body"`) {
+		t.Error("HTMX request must return the foreign-allowlist-body swap fragment")
+	}
+	if strings.Contains(frag, "<html") || strings.Contains(frag, "sw-next-foreign-files") {
+		t.Error("HTMX request must return the body fragment only, not the full page shell")
+	}
+
+	// Full-page request: whole shell (carries the promoted scope class).
+	req = withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/foreign-files/allowlist", nil))
+	w = httptest.NewRecorder()
+	r.handleForeignAllowlistPage(w, req)
+	if !strings.Contains(w.Body.String(), "sw-next-foreign-files") {
+		t.Error("full-page request must render the whole promoted shell")
 	}
 }

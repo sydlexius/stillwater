@@ -50,6 +50,12 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 	mux.HandleFunc("GET /logs", func(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte("LOGS q=" + req.URL.RawQuery))
 	})
+	mux.HandleFunc("GET /reports/foreign-files", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("FOREIGN FILES q=" + req.URL.RawQuery))
+	})
+	mux.HandleFunc("GET /reports/foreign-files/allowlist", func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte("FOREIGN ALLOWLIST q=" + req.URL.RawQuery))
+	})
 	mux.HandleFunc("GET /next/{path...}", r.nextFallback(mux))
 
 	tests := []struct {
@@ -82,6 +88,11 @@ func TestNextFallback_ReDispatchesToStablePath(t *testing.T) {
 		{"/next/preferences-drawer", "PREFS DRAWER"},
 		{"/next/activity", "ACTIVITY q="},
 		{"/next/logs?level=error", "LOGS q=level=error"},
+		// #1757 PR-6a: the dedicated /next/reports/foreign-files (+ /allowlist)
+		// routes are gone; both re-dispatch to the promoted canonical pages,
+		// query string (allowlist pagination) intact.
+		{"/next/reports/foreign-files", "FOREIGN FILES q="},
+		{"/next/reports/foreign-files/allowlist?page=2", "FOREIGN ALLOWLIST q=page=2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

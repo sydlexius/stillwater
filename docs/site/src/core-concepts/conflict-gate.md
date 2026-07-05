@@ -105,7 +105,7 @@ For [rules](rules.md), the conflict gate is consulted before any fix that produc
 
 ## Foreign files
 
-When a connected media server writes an image file to an artist directory without a Stillwater provenance tag, Stillwater records it in the **foreign-files ledger**. Each entry appears in the Settings page under Foreign Files so you can review, allowlist, or delete it.
+When a connected media server writes an image file to an artist directory without a Stillwater provenance tag, Stillwater records it in the **foreign-files ledger**. Each entry appears in the Reports area under Foreign Files (`/reports/foreign-files`) so you can review, allowlist, or delete it.
 
 ### Deduplicated display
 
