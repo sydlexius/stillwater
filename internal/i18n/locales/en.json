@@ -2243,6 +2243,7 @@
   "settings.provider_config.server.description": "Which MusicBrainz endpoint Stillwater queries. Pick a preset or supply a custom mirror URL.",
   "settings.provider_config.test_aria": "Test %s connection",
   "settings.provider_config.add_key": "Add API key",
+  "settings.provider_config.api_key": "API Key",
   "settings.provider_config.update_key": "Update API key",
   "settings.provider_config.verbosity_biography": "Biography",
   "settings.provider_config.verbosity_biography.description": "Controls how much of the Wikipedia article is fetched for the biography field.",

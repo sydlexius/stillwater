@@ -132,6 +132,7 @@ settings-providers-priorities-no-providers
 settings-providers-priorities-restore-defaults
 settings-providers-provider-config
 settings-providers-provider-config-add-key
+settings-providers-provider-config-api-key
 settings-providers-provider-config-base-url
 settings-providers-provider-config-beta
 settings-providers-provider-config-client-id
