@@ -2,7 +2,7 @@
 description: Trigger filesystem and platform scans, schedule recurring runs, monitor progress.
 ---
 
-<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/settings.templ (per-library Scan Library / Re-sync Artists buttons in the Libraries tab). -->
+<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/settings.templ (per-library Scan Library / Re-sync Artists buttons in the Music Libraries section). -->
 
 # Run scans
 
@@ -35,9 +35,9 @@ A manual library row has no per-row **Scan Library** button. The supported trigg
 
 The scan is **structure-incremental** in both cases -- it walks every artist directory in the library, but it only does the expensive metadata-detect work on directories that don't already have an artist record. So a library with 4,000 artists where nothing has moved still gets walked, but the per-directory work collapses to "look up the existing artist by path" and finishes quickly. New or moved directories pay the full detect cost; existing ones are essentially free.
 
-**Where to find Settings > Libraries:**
+**Where to find the library controls:**
 
-![Settings tabs nav with the Libraries tab active](../assets/screenshots/nav-settings-tabs-libraries.png){ width="640" }
+Settings is one long scrolling page. Down the left side is a section nav; click **Music libraries** in it (under the **Essentials** group) to jump straight to the **Music Libraries** section, or simply scroll to it. Every library is a row in that section.
 
 ![Two manual library rows showing the Filesystem monitoring mode dropdown, Lock NFOs checkbox, and Remove action; an Add Library button sits at the bottom](../assets/screenshots/settings-libraries-list.png)
 

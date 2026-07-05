@@ -8,24 +8,25 @@ description: Change artist metadata by hand, lock fields you've curated, overrid
 
 Most metadata in Stillwater comes from providers. Sometimes you want to override a value, pin one in place, or curate something the providers don't supply. This page covers the manual-edit paths.
 
-## Edit a single field
+## Edit a field
 
-Each field has its own row of small icons next to its label: an open-lock toggle, an edit pencil, and a `…` overflow menu. The pencil is the entry point for editing.
+In read mode the **Details** section just shows each field's value with a lock padlock beside it -- there are no per-field edit pencils or overflow menus. Editing is a mode you switch the whole section into.
 
-![A Detail-panel field row: label, open-lock icon (gray), edit pencil icon, overflow menu, and the field value below](../assets/screenshots/artist-field-row-actions.png){ width="420" }
+1. Open the artist's page. The **Details** section (the first accordion section, holding Identity, Tags, and Biography) is where the editable metadata lives.
+2. Click the **Edit** button in the Details section header. Every field swaps to an inline editor: text inputs for Name, Sort Name, and the rest; a dropdown for Type; chip editors for Genres, Styles, and Moods; a textarea for Biography.
+3. Change the value you want.
+4. As soon as a field changes, its own **Save** and **Cancel** controls appear. Click **Save** to commit that field or **Cancel** to revert it -- each field saves independently.
+5. Click **Done** in the section header to leave edit mode.
 
-1. Open the artist's page.
-2. Click the **pencil** icon next to the field you want to change. Biography and the tag groups (Genres, Styles, Moods) put the pencil in the card header; Detail-panel fields (Name, Born, Type, etc.) put it next to the field label.
-3. The field swaps to an inline editor. Type the new value.
-4. Press **Enter** (or click **Save**) to commit, or **Esc** / **Cancel** to back out.
+![The Details panel in edit mode: Name, Sort Name, and Type as inline inputs, each with a lock toggle and clear / fetch icons; the Name field is locked with an amber padlock](../assets/screenshots/artist-edit-mode-fields.png){ width="420" }
 
-The field saves immediately -- no separate "Save changes" button at the page level. The change appears in the artist's history alongside provider attributions.
+Next to each field's editor sit small icons: a **lock** toggle to pin the field, a **fetch** icon to pull just that field from providers, and a **clear** icon to empty it. Committed changes appear in the artist's history alongside provider attributions.
 
-![Biography card in inline edit mode: a textarea pre-filled with the current bio text, with Save (blue) and Cancel buttons below](../assets/screenshots/artist-bio-edit.png)
+![Biography in edit mode: a textarea holding the current bio, with lock, fetch-from-providers, and clear icons in the card header (Save and Cancel appear once you change the text)](../assets/screenshots/artist-bio-edit.png)
 
 ### Editing list fields
 
-Genres, styles, and moods are list fields. Their inline editor lets you type a new value into a text input to add it; click the **X** on an existing chip to remove one. The order matters for some platforms (the first genre is often the "primary" one).
+Genres, styles, and moods are list fields. In edit mode their editor lets you type a new value into a text input to add it; click the **X** on an existing chip to remove one. The order matters for some platforms (the first genre is often the "primary" one).
 
 ## Revert a field to a prior value
 
@@ -59,13 +60,13 @@ To unlock, click the lock button again.
 
 Sometimes you want most of an artist's metadata to refresh from providers, but two or three fields you've curated should stay put.
 
-1. On the artist's page, find the field you want to pin. A small open-lock icon (gray) sits next to its label.
-2. Click the lock icon. It immediately switches to a closed amber lock; the field is now skipped on future refreshes.
-3. While locked, the field's edit pencil and overflow menu disappear -- you can't accidentally change a pinned value. Click the closed lock again to unlock.
+1. On the artist's page, find the field you want to pin in the **Details** section. A small open-lock padlock (gray) sits next to its value -- these padlocks show in read mode, so you do not need to enter edit mode to set a lock.
+2. Click the padlock. It immediately switches to a closed amber lock; the field is now skipped on future refreshes.
+3. While locked, the field's inline editing controls stay hidden even in edit mode -- you can't accidentally change a pinned value. Click the closed padlock again to unlock.
 
 <div class="sw-hover-swap" tabindex="0" markdown="span">
-![Name field unlocked: gray open lock, edit pencil, and overflow menu](../assets/screenshots/artist-field-name-unlocked.png)
-![Name field locked: amber closed lock, no edit affordances](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
+![Name field unlocked: gray open padlock next to the value](../assets/screenshots/artist-field-name-unlocked.png)
+![Name field locked: amber closed padlock next to the value](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
 <span class="sw-hover-hint">Hover or focus to lock</span>
 </div>
 
@@ -75,7 +76,7 @@ Per-field locks are independent of the whole-artist lock. You can have an unlock
 
 When an artist has multiple fanart images, the first one is "primary" -- it's the one shown in slideshow positions where only one fanart fits.
 
-1. Open the artist's **Images** tab.
+1. Open the artist's **Artwork** section.
 2. Hover (or focus) any non-primary fanart in the gallery. A small star button appears on the overlay. Click the star to promote that fanart to primary; the others keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox for full-size viewing -- the star is the promotion control.)
 3. For finer rearrangement, open the image search page (the same place you fetch new fanart) and use the up/down buttons in the fanart gallery there. The order saves immediately and the files on disk are renumbered to match.
 
@@ -85,7 +86,7 @@ Renumbering follows the platform profile's convention -- so the resulting order 
 
 When providers don't have what you want, upload directly.
 
-1. Open the artist's **Images** tab.
+1. Open the artist's **Artwork** section.
 2. On the slot you want to fill (thumb / fanart / logo / banner), click **Upload**.
 3. Drag a file onto the drop zone, or click to file-pick.
 4. (Optional) Crop the image in the in-browser cropper before saving.
@@ -97,10 +98,10 @@ Uploads up to 25 MB are accepted.
 
 Most provider IDs are discovered automatically as Stillwater queries providers and follows links between them. When you need to set one manually:
 
-1. Open the artist's page.
-2. Find the provider ID under the **External IDs** section (MusicBrainz, AudioDB, Discogs, Wikidata, Deezer, Spotify).
-3. Click the value to edit it.
-4. Paste the ID and press Enter to save.
+1. Open the artist's page and find the **Provider IDs** section (MusicBrainz, AudioDB, Discogs, Wikidata, Deezer, Spotify).
+2. Switch it into edit mode with its **Edit** control. Each ID becomes an inline input.
+3. Paste the ID into the right provider's field.
+4. Save the field.
 
 Setting an ID does not trigger a refresh on its own -- the next refresh will use the new ID. To pull updated data immediately, click **Refresh** after saving.
 

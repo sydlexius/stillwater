@@ -10,15 +10,15 @@ Most "Stillwater can't talk to my media server" issues are auth issues. This pag
 
 ## Where to look first
 
-Settings > Connections shows a card per platform connection (Emby, Jellyfin, Lidarr). Each card has a live status indicator:
+Settings > Connections shows a card per platform connection (Emby, Jellyfin, Lidarr). Each card has a live status label:
 
-- **Green** -- Stillwater connected on its last attempt; calls are working.
+- **Green "Connected"** -- Stillwater connected on its last attempt; calls are working.
 - **Amber** -- the connection is configured but not currently authenticating, or has a non-fatal warning attached.
 - **Red** -- authentication is failing or the URL is unreachable.
 
 Click into the card to see the underlying error message.
 
-![Settings > Connections: three service connection cards (Emby, Jellyfin, Lidarr) shown in the healthy steady state, each with a green dot, plus inline Test / Discover Libraries / Delete actions; the same dot turns amber for warnings or red for authentication / reachability failures described in the bullets above](../assets/screenshots/settings-connections-cards.png)
+![Settings > Connections: three server connection cards (Emby, Jellyfin, Lidarr) shown in the healthy steady state, each with a green **Connected** label, plus inline Test, Discover Libraries, and Delete actions; the label turns amber for warnings or red for authentication / reachability failures described in the bullets above](../assets/screenshots/settings-connections-cards.png)
 
 ## "Authentication failed" / 401 Unauthorized
 
@@ -35,7 +35,7 @@ Stillwater got to the platform but the API key was rejected.
 1. Generate a new API key on the platform (the [connect Emby](../getting-started/connect-emby.md) and [connect Jellyfin](../getting-started/connect-jellyfin.md) pages cover where).
 2. Settings > Connections > the failing card > **Edit**.
 3. Paste the new key, save.
-4. The status indicator should flip green within a few seconds.
+4. The status label should flip to a green **Connected** within a few seconds.
 
 ## "Connection refused" / "DNS lookup failed" / 502 / 504
 
