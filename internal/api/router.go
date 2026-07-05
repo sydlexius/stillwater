@@ -840,10 +840,34 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/dashboard/actions", wrapOptionalAuth(r.handleDashboardActionQueue, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/dashboard/activity", wrapOptionalAuth(r.handleDashboardActivityFeed, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
-	// Foreign-file management pages (#1185). Registered before the catch-all
-	// /settings/{section} redirect so the more-specific routes win.
-	mux.HandleFunc("GET "+bp+"/settings/foreign-files", wrapOptionalAuth(r.handleForeignFilesPage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/settings/foreign-files/allowlist", wrapOptionalAuth(r.handleForeignAllowlistPage, optAuthMw))
+	// Foreign-file management pages (#1185). M55 #1757 PR-6a: promoted from
+	// /settings/foreign-files to the canonical /reports/foreign-files so they
+	// sit alongside /reports/compliance and /reports/duplicates under the
+	// Reports hub. The old /settings/foreign-files paths 301 to the new ones
+	// so bookmarks and external links still resolve, mirroring the
+	// /settings/artist-duplicates -> /reports/duplicates alias below.
+	// Registered before the catch-all /settings/{section} redirect so the
+	// more-specific routes win.
+	mux.HandleFunc("GET "+bp+"/reports/foreign-files", wrapOptionalAuth(r.handleForeignFilesPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/reports/foreign-files/allowlist", wrapOptionalAuth(r.handleForeignAllowlistPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/settings/foreign-files", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
+		target := r.basePath + "/reports/foreign-files"
+		if raw := req.URL.RawQuery; raw != "" {
+			target += "?" + raw
+		}
+		// gosec G710: path is server-built (r.basePath + /reports/foreign-files);
+		// only the query string flows from req, which cannot redirect off-origin.
+		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the query string flows from req.
+	}, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/settings/foreign-files/allowlist", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
+		target := r.basePath + "/reports/foreign-files/allowlist"
+		if raw := req.URL.RawQuery; raw != "" {
+			target += "?" + raw
+		}
+		// gosec G710: path is server-built (r.basePath + /reports/foreign-files/allowlist);
+		// only the query string flows from req, which cannot redirect off-origin.
+		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the query string flows from req.
+	}, optAuthMw))
 	// Near-duplicate artist detection page (#1614). Canonical path is
 	// /reports/duplicates so it sits alongside /reports/compliance under
 	// the Reports hub. The old /settings/artist-duplicates path 301s to
@@ -926,14 +950,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// (/preferences, /preferences-drawer, /activity, /logs, /settings), so their
 	// dedicated /next/* routes are gone; those paths reach the /next/{path...}
 	// fallback below and re-dispatch to the promoted canonical pages. The still-
-	// /next/ foreign-files and duplicates routes below are exact paths, so they
-	// keep winning over the fallback until their own promotion PRs.
-	// M55 #1773: foreign-files management in the next/ chrome. wrapOptionalAuth
-	// (not wrapAuth) so the handler's requireForeignAdmin gate runs: it renders
-	// the login page for unauthenticated visitors rather than returning 401 JSON
-	// (which is correct for API routes but wrong for browser page requests).
-	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files", wrapOptionalAuth(r.handleNextForeignFilesPage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/next/reports/foreign-files/allowlist", wrapOptionalAuth(r.handleNextForeignAllowlistPage, optAuthMw))
+	// /next/ duplicates route below is an exact path, so it keeps winning over
+	// the fallback until its own promotion PR.
+	// M55 #1757 PR-6a: foreign-files management promoted to the canonical
+	// /reports/foreign-files (+ /allowlist), so the dedicated /next/reports/
+	// foreign-files routes are gone; those paths reach the /next/{path...}
+	// fallback below and re-dispatch to the promoted canonical pages.
 	// M55 #1752: next/ duplicates detect+merge page. Registered as an exact
 	// path so Go's mux prefers it over the /next/{path...} fallback below (the
 	// sidebar duplicates link already targets this exact path via
@@ -945,8 +967,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// (+ /reports/{name}), so the dedicated /next/reports and
 	// /next/reports/{name} routes are gone; those paths reach the /next/{path...}
 	// fallback below and re-dispatch to the promoted canonical workspace. The
-	// still-/next/ foreign-files and duplicates routes above are exact paths, so
-	// they keep winning over the fallback.
+	// still-/next/ duplicates route above is an exact path, so it keeps winning
+	// over the fallback.
 	mux.HandleFunc("GET "+bp+"/next/{path...}", r.nextFallback(mux))
 
 	// Catch-all: unmatched routes render the custom 404 page. Registered last

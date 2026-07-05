@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/foreign"
 	"github.com/sydlexius/stillwater/internal/i18n"
+	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -29,9 +30,11 @@ import (
 //     leaves the parent <li> empty so the child disappears from the nav);
 //   - an <a> link populated with the count when count > 0.
 //
-// ?ch=next: caller is the next/ sidebar; the href uses the /next/ path and
-// the fragment includes the file-question glyph. Stable callers omit the
-// glyph and use the stable /settings/foreign-files path.
+// ?ch=next: caller is the promoted sidebar; the entry is static so the
+// response injects only the count pill span (no href). Stable callers get a
+// full <a> link to the canonical /reports/foreign-files path (M55 #1757 PR-6a:
+// the foreign-files page was promoted from /settings/foreign-files to the
+// Reports hub).
 //
 // The 403 response uses a JSON envelope (writeJSON) even though the success
 // path emits text/html. This is intentional and mirrors handleArtistDuplicatesCount:
@@ -81,9 +84,9 @@ func (r *Router) handleForeignFilesCount(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	label := html.EscapeString(i18n.TFromCtx(req.Context()).T("nav.reports.foreign"))
-	href := html.EscapeString(r.basePath + "/settings/foreign-files")
+	href := html.EscapeString(r.basePath + "/reports/foreign-files")
 	fmt.Fprintf(w, //nolint:errcheck // Best-effort HTTP write; client disconnect is not actionable
-		`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/settings/foreign-files" aria-label="%s">`+
+		`<a href="%s" class="sw-sidebar-link sw-sidebar-subnav-link" data-path="/reports/foreign-files" aria-label="%s">`+
 			`<span class="sw-sidebar-label">%s</span>`+
 			`<span class="sw-sidebar-badge-pill">%d</span>`+
 			`</a>`,
@@ -160,7 +163,9 @@ func (r *Router) loadForeignAllowlistView(ctx context.Context) (templates.Foreig
 	return view, nil
 }
 
-// handleForeignFilesPage renders /settings/foreign-files. Admin-only; the
+// handleForeignFilesPage renders /reports/foreign-files (M55 #1757 PR-6a:
+// promoted from the next/ lane to the canonical Reports-hub path; the page is
+// channel-agnostic so there is no checkNextChannel guard). Admin-only; the
 // management page exposes destructive actions so we mirror the rest of the
 // settings UI's RBAC.
 func (r *Router) handleForeignFilesPage(w http.ResponseWriter, req *http.Request) {
@@ -176,16 +181,72 @@ func (r *Router) handleForeignFilesPage(w http.ResponseWriter, req *http.Request
 	renderTempl(w, req, templates.ForeignFilesPage(r.assetsFor(req), view))
 }
 
-// handleForeignAllowlistPage renders /settings/foreign-files/allowlist.
-// Admin-only.
+// handleForeignAllowlistPage renders /reports/foreign-files/allowlist (M55
+// #1757 PR-6a: promoted from the next/ lane; channel-agnostic, no
+// checkNextChannel guard). Admin-only.
+//
+// Pagination: the handler reads "page" and "page_size" query parameters
+// (respecting the user's stored page-size preference via getUserPageSize) and
+// slices the full allowlist in-memory. An HTMX request -- triggered by the
+// pagination Prev/Next links -- returns only the ForeignAllowlistBody fragment
+// so the swap replaces just the table-plus-pager region without re-rendering
+// the surrounding chrome.
 func (r *Router) handleForeignAllowlistPage(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return
 	}
+
+	userID := middleware.UserIDFromContext(req.Context())
+	page := intQuery(req, "page", 1)
+	pageSize := r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0))
+
 	view, err := r.loadForeignAllowlistView(req.Context())
 	if err != nil {
 		r.logger.Error("listing foreign allowlist for page", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	totalItems := len(view.Rows)
+	totalPages := (totalItems + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page < 1 {
+		page = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > totalItems {
+		start = totalItems
+	}
+	if end > totalItems {
+		end = totalItems
+	}
+	view.Rows = view.Rows[start:end]
+
+	view.Pagination = components.PaginationData{
+		CurrentPage: page,
+		TotalPages:  totalPages,
+		PageSize:    pageSize,
+		TotalItems:  totalItems,
+		BaseURL:     r.basePath + "/reports/foreign-files/allowlist",
+		// TargetID is "foreign-allowlist-body": pagination links (rendered
+		// via NextPagination in ForeignAllowlistBody) swap the whole body
+		// fragment (table + pagination) with outerHTML so the keyboard
+		// boundary controls remain in the DOM after page navigation.
+		TargetID: "foreign-allowlist-body",
+	}
+
+	// HTMX pagination requests (Prev/Next clicks from NextPagination) swap
+	// the ForeignAllowlistBody fragment (table + pagination controls) as one
+	// unit; full-page navigations render the complete page shell.
+	if isHTMXRequest(req) {
+		renderTempl(w, req, templates.ForeignAllowlistBody(view))
 		return
 	}
 	renderTempl(w, req, templates.ForeignAllowlistPage(r.assetsFor(req), view))

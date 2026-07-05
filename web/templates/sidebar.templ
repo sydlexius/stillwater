@@ -39,15 +39,13 @@ type SidebarData struct {
 // placeholder <li> is filled by /api/v1/reports/{compliance,duplicates}/count?ch=next
 // and /api/v1/foreign-files/count?ch=next when count>0.
 //
-// Nav hrefs point at CANONICAL routes (/, /artists, /reports, /activity,
-// /settings, /preferences, /logs) since this is now the default chrome on
-// every page. Only Foreign Files stays on /next/ because no canonical route
-// exists yet (/next/reports/foreign-files; the v1 route is
-// /settings/foreign-files) -- and the Compliance/Duplicates/Foreign count
-// pills keep their ?ch=next source, which selects the promoted glyph-led pill
-// markup (the emitted href is canonicalized by the reports screen PR that
-// revises the count handler). These are the migration follow-ups for the
-// per-screen PRs.
+// Nav hrefs point at CANONICAL routes (/, /artists, /reports,
+// /reports/foreign-files, /activity, /settings, /preferences, /logs) since
+// this is now the default chrome on every page. The
+// Compliance/Duplicates/Foreign count pills keep their ?ch=next source, which
+// selects the promoted glyph-led pill markup. Duplicates remains the last
+// per-screen migration follow-up (its canonical /reports/duplicates page is
+// still pending promotion).
 //
 // States are controlled via the data-sidebar-state attribute ("full",
 // "icon-only", "hidden"); the initial state is set by preferences.js from the
@@ -165,7 +163,7 @@ templ Sidebar(data SidebarData) {
 					     only the count pill is HTMX-conditional. -->
 					<li id="sidebar-foreign-next">
 						<a
-							href={ templ.SafeURL(data.BasePath + "/next/reports/foreign-files") }
+							href={ templ.SafeURL(data.BasePath + "/reports/foreign-files") }
 							class="sw-sidebar-link sw-sidebar-subnav-link"
 							data-path="/reports/foreign-files"
 							aria-label={ t(ctx, "nav.reports.foreign") }

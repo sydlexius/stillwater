@@ -13693,12 +13693,13 @@ paths:
         empty body when no foreign files are in the ledger or when the count
         lookup fails (fail-safe; the sidebar template only renders this
         placeholder for administrators, so a healthy session never triggers the
-        403 path). When at least one file exists, returns a populated <a> link
-        element with the file count. The ?ch=next query parameter switches the
-        href from the stable /settings/foreign-files path to /next/foreign and
-        includes the plain document glyph (IconDocument) for the next/ sidebar style. Unlike
-        the duplicates-count endpoint, this endpoint is not cached; the foreign-
-        file count already has its own DB-level summarization via
+        403 path). When at least one file exists, the stable branch returns a
+        populated <a> link element (pointing at the canonical
+        /reports/foreign-files path) with the file count. The ?ch=next query
+        parameter selects the promoted-sidebar behavior: the entry is static, so
+        the response injects only the count-pill span. Unlike the
+        duplicates-count endpoint, this endpoint is not cached; the foreign-file
+        count already has its own DB-level summarization via
         foreignSummaryForBanner.
       operationId: getForeignFilesCountBadge
       parameters:

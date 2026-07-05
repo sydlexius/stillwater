@@ -111,3 +111,40 @@ func TestNotificationsPageRedirect(t *testing.T) {
 		}
 	})
 }
+
+// TestForeignFilesSettingsAlias301 verifies that the retired v1 foreign-files
+// paths (M55 #1757 PR-6a promoted them to the Reports hub) 301-redirect to
+// their canonical /reports/foreign-files counterparts so bookmarks and
+// external links still resolve. Mirrors the /settings/artist-duplicates ->
+// /reports/duplicates alias. The query string must be preserved.
+func TestForeignFilesSettingsAlias301(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		reqPath string
+		wantLoc string
+	}{
+		{"detected files", "/settings/foreign-files", "/reports/foreign-files"},
+		{"allowlist", "/settings/foreign-files/allowlist", "/reports/foreign-files/allowlist"},
+		{"query preserved", "/settings/foreign-files/allowlist?page=3", "/reports/foreign-files/allowlist?page=3"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := testRouterForOnboarding(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			mux := r.Handler(ctx)
+
+			req := httptest.NewRequest(http.MethodGet, tc.reqPath, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != http.StatusMovedPermanently {
+				t.Fatalf("%s: status = %d, want %d", tc.reqPath, w.Code, http.StatusMovedPermanently)
+			}
+			if loc := w.Header().Get("Location"); loc != tc.wantLoc {
+				t.Fatalf("%s: Location = %q, want %q", tc.reqPath, loc, tc.wantLoc)
+			}
+		})
+	}
+}

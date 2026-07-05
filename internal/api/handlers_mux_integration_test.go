@@ -39,8 +39,8 @@ func TestWrapOptionalAuthRoutes_Unauthenticated(t *testing.T) {
 		name string
 		path string
 	}{
-		{name: "foreign-files page", path: "/settings/foreign-files"},
-		{name: "foreign-files allowlist page", path: "/settings/foreign-files/allowlist"},
+		{name: "foreign-files page", path: "/reports/foreign-files"},
+		{name: "foreign-files allowlist page", path: "/reports/foreign-files/allowlist"},
 		{name: "reports/duplicates page", path: "/reports/duplicates"},
 		{name: "re-identify wizard step", path: "/artists/re-identify/wizard/fake-sid/step/0"},
 		{name: "artists list page", path: "/artists"},
@@ -128,13 +128,13 @@ func TestWrapOptionalAuthRoutes_AuthenticatedAdmin(t *testing.T) {
 	}{
 		{
 			name:           "foreign-files page",
-			path:           "/settings/foreign-files",
+			path:           "/reports/foreign-files",
 			wantBody:       "foreign-files-table",
 			acceptStatuses: []int{http.StatusOK},
 		},
 		{
 			name:           "foreign-files allowlist page",
-			path:           "/settings/foreign-files/allowlist",
+			path:           "/reports/foreign-files/allowlist",
 			wantBody:       "foreign-allowlist-table",
 			acceptStatuses: []int{http.StatusOK},
 		},
