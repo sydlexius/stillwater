@@ -79,6 +79,20 @@ Short version:
    (an always-run summary wraps the conditional job so non-a11y PRs report
    success rather than a permanently-skipped context) -- CI, not the local
    gate, is the authoritative a11y check.
+
+   `govulncheck` and the provider-failure smoke test are likewise
+   **advisory-by-default**, gated by `RUN_VULN` and `RUN_PROVIDER_SMOKE`
+   (same `1`/`true`/`yes`/`on` / `0`/`false`/`no`/`off` three-state
+   convention as `RUN_RACE`/`RUN_A11Y`). Both run automatically only when
+   Go-relevant files changed since `BASE` (Go source, `go.mod`/`go.sum`, and
+   for the smoke test also the smoke/gate scripts themselves), and a
+   failure in that auto path warns rather than blocks -- CI's required "Go
+   Vulnerability Check" (runs unconditionally on every push/PR) and
+   "Provider Failure Smoke" jobs are the authoritative gates. Force a
+   blocking local run with `RUN_VULN=1` / `RUN_PROVIDER_SMOKE=1 bash
+   scripts/pre-push-gate.sh`, or skip either entirely with `RUN_VULN=0` /
+   `RUN_PROVIDER_SMOKE=0` (e.g. when offline, or the smoke test's local
+   server can't boot).
 4. Open one PR per logical change; never stack PRs.
 5. Apply at least one of the labels listed below so the release-notes
    generator (`.github/release.yml`) buckets your change correctly.

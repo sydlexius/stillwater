@@ -277,16 +277,68 @@ esac
 
 echo ""
 echo "=== Vulnerability scan (govulncheck) ==="
-# Blocking: a reachable known vulnerability fails the push. Pinned to the same
-# version as `make vulncheck` / CI (fresh-clone-friendly `go run`, no local
-# install required). Default source-based reachability mode (no -scan=module)
-# so only actually-reachable vulnerabilities gate, and whole-module ./... scope
-# to match CI's authoritative behavior (no go.mod-diff gating).
-if ! go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; then
-  echo "FAIL: govulncheck exited non-zero -- a reachable vulnerability, or a tool/download/run error; see the govulncheck output above" >&2
-  exit 1
+# RUN_VULN three-state gate, mirroring the RUN_RACE pattern above (and
+# RUN_A11Y further down): CI's "Go Vulnerability Check" job (security.yml)
+# runs unconditionally on every push/PR to main with no paths-filter and is
+# the authoritative, required gate -- it is network-dependent (downloads the
+# vuln DB) and takes ~30-60s, so running it again on every local push is a
+# slow, occasionally-flaky duplicate of a check CI already enforces.
+#   - RUN_VULN truthy (1/true/yes/on): force a RUN, BLOCKING on failure
+#     regardless of changed files. Today's prior behavior; the escape hatch
+#     for a full, CI-equivalent local run.
+#   - RUN_VULN falsy  (0/false/no/off): force a SKIP (escape hatch when
+#     offline or the vuln DB fetch is misbehaving; CI still gates this).
+#   - RUN_VULN unset (auto, the DEFAULT): run iff Go-relevant files changed
+#     since BASE (any non-generated *.go file, or go.mod/go.sum), otherwise
+#     SKIP -- nothing reachable-vulnerability-wise could have changed. A
+#     failure in this auto path is ADVISORY (warn, don't block): CI's
+#     required job is the strict, authoritative gate.
+vuln_flag="$(printf '%s' "${RUN_VULN:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+
+# vuln_relevant: did this branch touch any file that could change
+# govulncheck's result -- a Go source file (MODIFIED_GO_FILES, already
+# derived above and reused here) or the dependency manifests?
+vuln_relevant() {
+  [ -n "$MODIFIED_GO_FILES" ] && return 0
+  git diff --name-only "$BASE" HEAD 2>/dev/null | grep -qE '^go\.(mod|sum)$'
+}
+
+run_vuln=0
+vuln_blocking=0
+case "$vuln_flag" in
+  0 | false | no | off)
+    echo "vuln: skipped (RUN_VULN=${RUN_VULN} forces opt-out; CI still runs govulncheck)"
+    ;;
+  1 | true | yes | on)
+    run_vuln=1
+    vuln_blocking=1
+    ;;
+  *)
+    if ! vuln_relevant; then
+      echo "vuln: skipped (no Go source or go.mod/go.sum changes since BASE; set RUN_VULN=1 to force)"
+    else
+      run_vuln=1
+    fi
+    ;;
+esac
+
+if [ "$run_vuln" -eq 1 ]; then
+  # Pinned to the same version as `make vulncheck` / CI (fresh-clone-friendly
+  # `go run`, no local install required). Default source-based reachability
+  # mode (no -scan=module) so only actually-reachable vulnerabilities gate,
+  # and whole-module ./... scope to match CI's authoritative behavior.
+  if ! go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...; then
+    echo ""
+    if [ "$vuln_blocking" -eq 1 ]; then
+      echo "FAIL: govulncheck exited non-zero -- a reachable vulnerability, or a tool/download/run error; see the govulncheck output above" >&2
+      exit 1
+    fi
+    echo "WARN: vuln: advisory failure in the auto path -- not blocking this push."
+    echo "WARN: vuln: CI's Go Vulnerability Check job is authoritative; set RUN_VULN=1 to make this blocking locally."
+  else
+    echo "OK"
+  fi
 fi
-echo "OK"
 
 echo ""
 echo "=== Lint (diff-only) ==="
@@ -528,21 +580,72 @@ echo "OK: $(wc -l < "$live_fuzz_file" | tr -d ' ') fuzz targets, matrix set matc
 
 echo ""
 echo "=== Provider failure smoke test ==="
-# Builds the binary (re-uses cached build if present), starts a temporary
-# injected instance, drives the coverage matrix, and asserts that every
-# covered surface communicates provider failures instead of silently
-# returning empty data.  Hard-fail on non-zero exit from the script.
+# RUN_PROVIDER_SMOKE three-state gate, mirroring the RUN_RACE / RUN_VULN
+# pattern above: CI's "Provider Failure Smoke" job (gate.yml) is a required
+# check, gated there by a dorny/paths-filter on '**/*.go',
+# scripts/smoke-provider-failure.sh, scripts/pre-push-gate.sh,
+# .github/workflows/gate.yml, go.mod, and go.sum -- so it is CI-authoritative
+# and load-sensitive locally (builds a binary, boots a temporary server).
+# Mirrors that same filter here so the local auto-run tracks CI's own
+# relevance decision instead of drifting.
+#   - RUN_PROVIDER_SMOKE truthy (1/true/yes/on): force a RUN, BLOCKING on
+#     failure regardless of changed files. Prior behavior; the escape hatch
+#     for a full, CI-equivalent local run.
+#   - RUN_PROVIDER_SMOKE falsy  (0/false/no/off): force a SKIP (escape hatch
+#     when the local server can't boot, e.g. a port conflict; CI still gates
+#     this).
+#   - RUN_PROVIDER_SMOKE unset (auto, the DEFAULT): run iff Go source or the
+#     smoke/gate scripts or go.mod/go.sum changed since BASE, otherwise SKIP.
+#     A failure in this auto path is ADVISORY (warn, don't block): CI's
+#     required job is the strict, authoritative gate.
+provider_smoke_flag="$(printf '%s' "${RUN_PROVIDER_SMOKE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+
+# provider_smoke_relevant: mirrors gate.yml's provider-failure-smoke
+# paths-filter (Go source, the smoke/gate scripts themselves, or the
+# dependency manifests).
+provider_smoke_relevant() {
+  [ -n "$MODIFIED_GO_FILES" ] && return 0
+  git diff --name-only "$BASE" HEAD 2>/dev/null | grep -qE '^(go\.(mod|sum)|scripts/smoke-provider-failure\.sh|scripts/pre-push-gate\.sh|\.github/workflows/gate\.yml)$'
+}
+
 SMOKE_FAILURE_SCRIPT="$SCRIPT_DIR/smoke-provider-failure.sh"
-if [ ! -x "$SMOKE_FAILURE_SCRIPT" ]; then
-  echo "pre-push-gate: smoke-provider-failure.sh not found or not executable in scripts/" >&2
-  exit 1
+
+run_provider_smoke=0
+provider_smoke_blocking=0
+case "$provider_smoke_flag" in
+  0 | false | no | off)
+    echo "provider-smoke: skipped (RUN_PROVIDER_SMOKE=${RUN_PROVIDER_SMOKE} forces opt-out; CI still runs the provider failure smoke)"
+    ;;
+  1 | true | yes | on)
+    run_provider_smoke=1
+    provider_smoke_blocking=1
+    ;;
+  *)
+    if ! provider_smoke_relevant; then
+      echo "provider-smoke: skipped (no Go/smoke-script/go.mod/go.sum changes since BASE; set RUN_PROVIDER_SMOKE=1 to force)"
+    else
+      run_provider_smoke=1
+    fi
+    ;;
+esac
+
+if [ "$run_provider_smoke" -eq 1 ]; then
+  if [ ! -x "$SMOKE_FAILURE_SCRIPT" ]; then
+    echo "pre-push-gate: smoke-provider-failure.sh not found or not executable in scripts/" >&2
+    exit 1
+  fi
+  if ! bash "$SMOKE_FAILURE_SCRIPT" 2>&1; then
+    echo ""
+    if [ "$provider_smoke_blocking" -eq 1 ]; then
+      echo "FAIL: provider failure smoke test reported failures (see output above)."
+      exit 1
+    fi
+    echo "WARN: provider-smoke: advisory failure in the auto path -- not blocking this push."
+    echo "WARN: provider-smoke: CI's Provider Failure Smoke job is authoritative; set RUN_PROVIDER_SMOKE=1 to make this blocking locally."
+  else
+    echo "OK"
+  fi
 fi
-if ! bash "$SMOKE_FAILURE_SCRIPT" 2>&1; then
-  echo ""
-  echo "FAIL: provider failure smoke test reported failures (see output above)."
-  exit 1
-fi
-echo "OK"
 
 echo ""
 echo "=== Accessibility (axe-core) ==="
