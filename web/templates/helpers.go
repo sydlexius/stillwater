@@ -716,6 +716,16 @@ func getKeyLinkText(ctx context.Context, tier provider.AccessTier) string {
 	return result
 }
 
+// keyPlaceholder returns the provider API key input's placeholder text,
+// switching to the premium-tier copy when the key is an optional upgrade
+// rather than a required credential (#2102).
+func keyPlaceholder(ctx context.Context, optionalKey bool) string {
+	if optionalKey {
+		return t(ctx, "settings.provider_keys.premium_key_placeholder")
+	}
+	return t(ctx, "settings.provider_keys.key_placeholder")
+}
+
 // rateLimitText formats a RateLimitInfo into a short human-readable string.
 func rateLimitText(rl *provider.RateLimitInfo) string {
 	if rl == nil {

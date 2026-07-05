@@ -354,7 +354,7 @@
     "method": "DELETE",
     "path": "/providers/{name}/key",
     "handler": "handleDeleteProviderKey",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "deleteProviderMirror",
