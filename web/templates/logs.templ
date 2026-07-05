@@ -962,17 +962,36 @@ templ LogsViewerScript() {
 			// this page only advertises it for the cheat sheet. j/k are page-local.
 			// TODO(#1775): once the shared registry exposes a g-leader registration
 			// API, bind 'g l' -> /next/logs here instead of relying on #1775's map.
+			//
+			// Init-order (#2210): on a cold full-page load this inline script runs
+			// BEFORE the later non-defer <script src=keyboard.js> tag (rendered
+			// lower in the body) has defined window.swKeyboardShortcuts, so the
+			// presence guard below would silently no-op on EVERY load and these
+			// cheat-sheet entries would never reach the help overlay. If the API is
+			// already present (the htmx-navigation case, where keyboard.js is
+			// already resident from a prior full load) register immediately;
+			// otherwise defer to DOMContentLoaded, by which point the parser has
+			// executed the later keyboard.js tag.
+			function registerLogsShortcuts() {
+				if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
+					// `/` (search) and `f` (filters) auto-register from their
+					// data-sw-shortcut attributes; only the inline-handled keys are added
+					// manually here.
+					window.swKeyboardShortcuts.register('logs', [
+						{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },
+						{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },
+						{ key: 'k', label: L('labelScrollUp') || 'Scroll up' },
+						{ key: 'PgUp / PgDn', label: L('labelPage') || 'Page up / down' },
+						{ key: 'Shift+G / End', label: L('labelJumpBottom') || 'Jump to bottom' }
+					]);
+				} else if (window.console && console.error) {
+					console.error('[swKbd] register API missing on logs page');
+				}
+			}
 			if (window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') {
-				// `/` (search) and `f` (filters) auto-register from their
-				// data-sw-shortcut attributes; only the inline-handled keys are added
-				// manually here.
-				window.swKeyboardShortcuts.register('logs', [
-					{ key: 'g l', label: L('labelGoToLogs') || 'Go to logs' },
-					{ key: 'j', label: L('labelScrollDown') || 'Scroll down' },
-					{ key: 'k', label: L('labelScrollUp') || 'Scroll up' },
-					{ key: 'PgUp / PgDn', label: L('labelPage') || 'Page up / down' },
-					{ key: 'Shift+G / End', label: L('labelJumpBottom') || 'Jump to bottom' }
-				]);
+				registerLogsShortcuts();
+			} else {
+				document.addEventListener('DOMContentLoaded', registerLogsShortcuts);
 			}
 
 			// -- boot -----------------------------------------------------------
