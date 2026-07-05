@@ -1,22 +1,27 @@
-// users-panel-reveal.spec.js - Playwright functional smoke for #2132: the
-// stable Settings > Users panel must populate on a client-side tab switch,
-// not only on a full page load.
+// users-panel-reveal.spec.js - Playwright functional smoke covering the
+// Settings > Users panel's data-population contract.
 //
-// Context: the Users panel's #users-table-body and #invites-list fetch via
-// hx-trigger="intersect once" (previously "load", which only ever fired for
-// whichever tab happened to be active at initial page render -- switching
-// tabs client-side never re-triggered a "load" event, so the panel stayed on
-// its permanent loading skeleton). This spec proves the fix behaviorally: it
-// loads /settings on a non-Users tab, clicks the Users tab control, and
-// asserts (a) the GET requests actually fire on reveal and (b) the DOM swaps
-// from the loading skeleton to real content.
+// History: #2132 fixed the v1 tabbed Settings page, where the panel populated
+// only if Users happened to be the tab active at initial render (hx-trigger=
+// "load" never refired on a client-side tab switch, so switching to Users
+// left it on a permanent loading skeleton). #1757 PR-5 then promoted Settings
+// to a single scrollable pane and, per buildSettingsData's doc comment
+// (internal/api/handlers_platform.go), changed loadUsers to always be true:
+// "the promoted page passes true because the Users section is always present
+// on its single-scroll page". That means the Users table and pending-invites
+// list are now server-rendered with real content on every /settings GET --
+// confirmed directly: the initial HTML response already contains a
+// `tr[id^="user-row-"]` row, with no client-side interaction involved. The
+// v1 tab-click reveal this spec used to assert against no longer exists (the
+// data-tab-panel hidden-class model was deleted by the promotion commit), and
+// there is no separate "first population" moment left to test for a reveal --
+// the promoted architecture removed the lazy-load gap #2132 was guarding
+// against by rendering everything eagerly instead.
 //
-// Runs against the STABLE UI. The shared a11y harness boots the server with
-// SW_UX=next (see playwright.config.js / Makefile test-a11y), under which
-// ResolveUX defaults bare paths like /settings to the next/ channel. A
-// sw_ux=stable cookie forces the stable resolution for this spec only,
-// per internal/api/middleware/ux.go's ResolveUX (mode="next", cookie="stable"
-// -> UXStable), without touching the shared server config.
+// This spec asserts the CURRENT, honest equivalent of the original intent:
+// the Users section carries real, populated user/invite content from first
+// paint (never left showing the loading-placeholder copy), regardless of
+// which section of the page happens to be scrolled into view.
 //
 // Auth: reuses the single login from global-setup.js (session + csrf_token
 // cookies loaded via storageState in playwright.config.js).
@@ -54,55 +59,31 @@ test.beforeAll(async () => {
   }
 });
 
-test('Users tab populates on client-side reveal, not just page load', async ({ page, context }) => {
-  // Force the stable UI channel for this page's requests (see module comment).
-  await context.addCookies([
-    { name: 'sw_ux', value: 'stable', url: BASE_URL },
-  ]);
-
+test('Users section renders real content on first paint, not a loading skeleton', async ({ page }) => {
   await page.goto('/settings');
   await page.waitForLoadState('load');
 
-  // Sanity: land on a non-Users tab (default is General), so revealing Users
-  // is a genuine client-side tab switch, not the tab that was active at load.
-  const usersPanel = page.locator('[data-tab-panel="users"]');
-  await expect(usersPanel).toHaveClass(/hidden/);
+  // The Users section is present in the single-pane DOM from first paint
+  // (per #1757 PR-5's promotion, never behind a hidden tab panel).
+  const usersSection = page.locator('#section-users');
+  await expect(usersSection).toBeAttached();
 
   const usersTableBody = page.locator('#users-table-body');
-  const invitesList = page.locator('#invites-list');
-  const initialUsersHTML = await usersTableBody.innerHTML();
-  const initialInvitesHTML = await invitesList.innerHTML();
 
-  // Arm both response waits before the click so the reveal-triggered fetches
-  // (not any load-time fetch) are what get captured.
-  const usersFetch = page.waitForResponse(
-    resp => resp.request().method() === 'GET' && /\/api\/v1\/users$/.test(new URL(resp.url()).pathname),
-  );
-  const invitesFetch = page.waitForResponse(
-    resp => resp.request().method() === 'GET' && /\/api\/v1\/users\/invites$/.test(new URL(resp.url()).pathname),
-  );
-
-  await page.locator('a[data-tab="users"]').click();
-
-  // The click must be a real client-side reveal, not a navigation.
-  expect(new URL(page.url()).pathname).toBe('/settings');
-  await expect(usersPanel).not.toHaveClass(/hidden/);
-
-  const [usersResp, invitesResp] = await Promise.all([usersFetch, invitesFetch]);
-  expect(usersResp.ok()).toBe(true);
-  expect(invitesResp.ok()).toBe(true);
-
-  // The panel must actually swap away from its loading skeleton, not just
-  // fire the request.
-  await expect(usersTableBody).not.toHaveText('');
-  await expect
-    .poll(() => usersTableBody.innerHTML(), { timeout: 5_000 })
-    .not.toBe(initialUsersHTML);
-  await expect
-    .poll(() => invitesList.innerHTML(), { timeout: 5_000 })
-    .not.toBe(initialInvitesHTML);
-
-  // At least the admin account itself must render as a real row.
+  // At least the admin account itself must render as a real row -- proving
+  // buildSettingsData's loadUsers=true-always contract, not the loading
+  // placeholder row settings_users.templ emits when data.Users is empty.
   const userRows = usersTableBody.locator('tr[id^="user-row-"]');
   expect(await userRows.count()).toBeGreaterThanOrEqual(1);
+
+  const bodyText = await usersTableBody.innerText();
+  expect(bodyText).not.toContain('Loading');
+
+  // The pending-invites list is NOT asserted against its "Loading..." string:
+  // settings_users.templ reuses that same copy as the zero-invites empty
+  // state (`if len(data.Invites) == 0`), so it legitimately still reads
+  // "Loading invites..." when there are simply no pending invites -- which is
+  // the case for a fresh admin-only account. That is an existing UX rough
+  // edge (the empty state and the loading state share one string), not a
+  // population-timing bug this spec is scoped to catch.
 });
