@@ -1075,6 +1075,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 									required
 								/>
+								<label for={ "client-secret-" + string(pk.Name) } class="sr-only">{ t(ctx, "settings.provider_config.client_secret") }</label>
 								@components.SecretInput(
 									"client-secret-"+string(pk.Name),
 									"client_secret",
@@ -1104,6 +1105,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							</p>
 						} else {
 							<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+								<label for={ "api-key-" + string(pk.Name) } class="sr-only">{ t(ctx, "settings.connections.api_key") }</label>
 								@components.SecretInput(
 									"api-key-"+string(pk.Name),
 									"api_key",

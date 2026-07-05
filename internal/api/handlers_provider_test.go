@@ -359,6 +359,12 @@ func TestHandleDeleteProviderKey_HTMX(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+	if got, want := w.Header().Get("HX-Retarget"), "#provider-card-fanarttv"; got != want {
+		t.Errorf("HX-Retarget = %q, want %q", got, want)
+	}
+	if got, want := w.Header().Get("HX-Reswap"), "innerHTML"; got != want {
+		t.Errorf("HX-Reswap = %q, want %q", got, want)
+	}
 	if !strings.Contains(w.Body.String(), "<") {
 		t.Errorf("expected HTML response for HTMX request; body: %s", w.Body.String())
 	}
