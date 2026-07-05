@@ -120,9 +120,13 @@ go test -race -count=1 ./internal/<pkg>/ 2>&1 | tee "$SW_RUN_DIR/race.log"
 grep -nE 'WARNING: DATA RACE|--- FAIL' "$SW_RUN_DIR/race.log"
 ```
 
-Do not run the full `./...` race suite as a pre-PR check -- that is the
-pre-push gate's job and the pre-push git hook runs it automatically. The
-capture rule is for targeted runs while debugging. When dispatching a
+Do not run the full `./...` race suite as a pre-PR check. The pre-push git
+hook runs the pre-push gate automatically, but by default the gate's local
+test step is a fast, changed-packages-only, non-race run (a quick "did I
+obviously break a test" signal); the full `-race -coverpkg=./...` suite only
+runs locally when `RUN_RACE=1` is set (BLOCKING on failure), and is otherwise
+CI-authoritative via the required `Test` and `Coverage Floor` checks. The
+capture rule above is for targeted runs while debugging. When dispatching a
 subagent that runs tests, paste this rule into its prompt; subagents do not
 load project memory. The `capture-race-test-output` hookify rule blocks
 uncaptured `go test -race` invocations.
