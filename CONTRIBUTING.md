@@ -52,20 +52,33 @@ Short version:
    enforces this.
 2. Use a conventional-commit prefix (`feat:`, `fix:`, `docs:`, `chore:`,
    `refactor:`, `perf:`, `ci:`, `test:`, etc.) on the squash commit.
-3. Run `bash scripts/pre-push-gate.sh` before pushing. The accessibility
-   (axe-core) smoke tests auto-run when a11y-relevant files changed since
-   `BASE` and the Playwright toolchain is installed, but a failure there is
-   **advisory** (warn, don't block) -- a local-only harness flake must not
-   hard-block an unrelated push (#2223). Force a blocking local run with
-   `RUN_A11Y=1 bash scripts/pre-push-gate.sh` (or `RUN_A11Y=true bash
+3. Run `bash scripts/pre-push-gate.sh` before pushing. By default the local
+   test step is a fast, changed-packages-only, non-race run -- a quick "did I
+   obviously break a test" signal, not a full CI-equivalent pass. An ordinary
+   test-assertion failure there is **advisory** (warn, don't block); CI's
+   required `Test` job runs the full `-race` suite and `Coverage Floor` job
+   runs the per-package coverage ratchet, and both are authoritative. A
+   failure that prevents the changed packages from **compiling** is
+   different and always **blocks** the push (no coverage profile is produced
+   in that case, which is how the gate tells the two apart). Force the full,
+   CI-equivalent local run (blocking on failure) with `RUN_RACE=1 bash
+   scripts/pre-push-gate.sh`, or skip the local test run and patch-coverage
+   check entirely with `RUN_RACE=0`. The opt-in/opt-out accepts any of `1`,
+   `true`, `yes`, `on`, `0`, `false`, `no`, or `off` (case-insensitive,
+   surrounding whitespace ignored).
+
+   The accessibility (axe-core) smoke tests auto-run when a11y-relevant
+   files changed since `BASE` and the Playwright toolchain is installed, but
+   a failure there is likewise **advisory** -- a local-only harness flake
+   must not hard-block an unrelated push (#2223). Force a blocking local run
+   with `RUN_A11Y=1 bash scripts/pre-push-gate.sh` (or `RUN_A11Y=true bash
    scripts/pre-push-gate.sh`; downloads a Chromium browser and boots an
-   ephemeral server, so it adds minutes). The opt-in accepts any of `1`,
-   `true`, `yes`, or `on` (case-insensitive, surrounding whitespace ignored).
-   CI runs the full suite in its dedicated a11y job when a11y-relevant files
-   changed and enforces it strictly; the required "A11y Smoke Tests" check
-   always reports a result (an always-run summary wraps the conditional job
-   so non-a11y PRs report success rather than a permanently-skipped context)
-   -- CI, not the local gate, is the authoritative a11y check.
+   ephemeral server, so it adds minutes). CI runs the full suite in its
+   dedicated a11y job when a11y-relevant files changed and enforces it
+   strictly; the required "A11y Smoke Tests" check always reports a result
+   (an always-run summary wraps the conditional job so non-a11y PRs report
+   success rather than a permanently-skipped context) -- CI, not the local
+   gate, is the authoritative a11y check.
 4. Open one PR per logical change; never stack PRs.
 5. Apply at least one of the labels listed below so the release-notes
    generator (`.github/release.yml`) buckets your change correctly.
