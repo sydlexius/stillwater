@@ -13710,9 +13710,11 @@ paths:
             enum: [next]
           required: false
           description: >-
-            Channel hint. Set to "next" when the caller is the next/ sidebar;
-            the response then uses the /next/foreign href and includes the
-            plain document glyph (IconDocument). Omit for the stable sidebar.
+            Channel hint. Set to "next" when the caller is the promoted
+            sidebar; the entry is static, so the response injects only the
+            count-pill span (no href, no icon). Omit for the stable sidebar,
+            which returns a full <a> link to the canonical
+            /reports/foreign-files path.
       responses:
         "200":
           description: >-
