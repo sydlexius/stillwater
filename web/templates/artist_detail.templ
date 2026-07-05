@@ -1497,8 +1497,19 @@ templ artistDetailPageScript() {
 		// Register the inline-handled shortcuts with the shared keyboard registry
 		// so the help overlay exposes them alongside the DOM-discovered h/l/r/R
 		// entries. h/l/r/R are already in the registry via data-sw-shortcut.
-		// Must run after the IIFE above so the keydown handler is wired first.
-		(function () {
+		//
+		// Init-order (#2210/#2235): on a cold full-page load this inline script
+		// runs BEFORE the later non-defer <script src=keyboard.js> tag (rendered
+		// lower in the body) has defined window.swKeyboardShortcuts, so calling
+		// register() immediately would always hit the presence guard below and
+		// log a false "register API missing" error on EVERY load. If the API is
+		// already present (the htmx-navigation case, where keyboard.js is already
+		// resident from a prior full load) register immediately; otherwise defer
+		// to DOMContentLoaded, by which point the parser has executed the later
+		// keyboard.js tag. The console.error inside the deferred function then
+		// only fires when the API is genuinely still missing after that point --
+		// a real failure signal instead of a false alarm on every load.
+		function registerArtistDetailShortcuts() {
 			if (!window.swKeyboardShortcuts ||
 					typeof window.swKeyboardShortcuts.register !== 'function') {
 				if (window.console && console.error) {
@@ -1522,6 +1533,11 @@ templ artistDetailPageScript() {
 				{ key: 'f',      label: ds.f   || '' },
 				{ key: 'Escape', label: ds.esc || '' }
 			]);
-		})();
+		}
+		if ((window.swKeyboardShortcuts && typeof window.swKeyboardShortcuts.register === 'function') || document.readyState !== 'loading') {
+			registerArtistDetailShortcuts();
+		} else {
+			document.addEventListener('DOMContentLoaded', registerArtistDetailShortcuts);
+		}
 	</script>
 }
