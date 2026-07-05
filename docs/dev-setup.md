@@ -22,6 +22,7 @@ Prerequisites and instructions for building Stillwater from source.
 | mermaid-cli (mmdc) | Validate Mermaid diagrams in docs (pre-commit mermaid check) | `brew install mermaid-cli` (or `npm install -g @mermaid-js/mermaid-cli`) |
 | hadolint | Lint Dockerfiles (`make hadolint`, pre-commit hadolint check) | `brew install hadolint` |
 | markdownlint-cli2 | Lint Markdown (pre-commit markdownlint check; CI Docs job) | `brew install markdownlint-cli2` (or `npx markdownlint-cli2`) |
+| prose-tooling | Grammar/prose lint on staged Markdown/text (pre-commit prose-lint check) | Local-only, central config repo at `~/Developer/prose-tooling` (not a stillwater dependency); see its README for the LanguageTool server + `.venv` setup. Optional -- the hook skips gracefully if it is not present. Set `PROSE_TOOLING_DIR` to override the default checkout location. |
 
 ## Installing Tailwind CSS Standalone CLI
 

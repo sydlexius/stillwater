@@ -12,6 +12,8 @@
 #   6. govulncheck -- known vulnerabilities in dependencies
 #   7. hadolint -- Dockerfile best-practice linting
 #   8. markdownlint -- staged markdown files (mirrors CI Docs / Markdown Lint job)
+#   8a. prose-lint -- grammar/prose lint via the central prose-tooling
+#       LanguageTool client (opt-in; needs ~/Developer/prose-tooling)
 #   9. mermaid -- parse Mermaid diagrams in staged markdown (opt-in; needs mmdc)
 #
 # Skip with: git commit --no-verify (use sparingly)
@@ -299,6 +301,62 @@ if [ "${#STAGED_MD[@]}" -gt 0 ]; then
     fi
 else
     warn "markdownlint (no staged .md files)"
+fi
+
+# --------------------------------------------------------------------------
+# 8a. prose-lint -- grammar/prose lint via the central prose-tooling
+#     LanguageTool client (opt-in; needs a sibling ~/Developer/prose-tooling
+#     checkout with its .venv provisioned -- see docs/dev-setup.md).
+# --------------------------------------------------------------------------
+# prose-tooling is a local-only, external config repo (not a stillwater
+# dependency); its client is a script, not a PATH binary, so presence is
+# gated on both paths existing rather than `command -v`. Exit codes map
+# directly onto pass/fail: 0 = clean or advisory-only (advisories still
+# print), 1 = a blocking finding (serial comma / em-dash / one-space --
+# fail), 2 = the LanguageTool server is unreachable (fail -- an unreachable
+# server must never silently pass the commit). Staged files are collected
+# NUL-delimited, same as the markdownlint check above.
+PROSE_TOOLING_DIR="${PROSE_TOOLING_DIR:-${HOME}/Developer/prose-tooling}"
+PROSE_PY="${PROSE_TOOLING_DIR}/.venv/bin/python"
+PROSE_CLIENT="${PROSE_TOOLING_DIR}/bin/prose_check.py"
+STAGED_PROSE=()
+while IFS= read -r -d '' f; do
+    STAGED_PROSE+=("$f")
+done < <(git diff --cached --name-only -z --diff-filter=ACM -- '*.md' '*.txt')
+if [ "${#STAGED_PROSE[@]}" -gt 0 ]; then
+    if [ -x "$PROSE_PY" ] && [ -f "$PROSE_CLIENT" ]; then
+        set +e
+        PROSE_OUTPUT=$("$PROSE_PY" "$PROSE_CLIENT" --lang en-US -- "${STAGED_PROSE[@]}" 2>&1)
+        PROSE_STATUS=$?
+        set -e
+        case "$PROSE_STATUS" in
+            0)
+                pass "prose-lint"
+                [ -n "$PROSE_OUTPUT" ] && echo "$PROSE_OUTPUT"
+                ;;
+            1)
+                echo -e "${RED}${BOLD}FAIL${RESET} prose-lint:"
+                echo "$PROSE_OUTPUT"
+                exit 1
+                ;;
+            2)
+                echo -e "${RED}${BOLD}FAIL${RESET} prose-lint: LanguageTool server unreachable."
+                echo "$PROSE_OUTPUT"
+                echo ""
+                echo "Start it: ${PROSE_TOOLING_DIR}/bin/prose-lint-server.sh start"
+                exit 1
+                ;;
+            *)
+                echo -e "${RED}${BOLD}FAIL${RESET} prose-lint: unexpected exit code ${PROSE_STATUS}"
+                echo "$PROSE_OUTPUT"
+                exit 1
+                ;;
+        esac
+    else
+        warn "prose-lint (prose-tooling not found at ${PROSE_TOOLING_DIR}, skipping)"
+    fi
+else
+    warn "prose-lint (no staged .md / .txt files)"
 fi
 
 # --------------------------------------------------------------------------
