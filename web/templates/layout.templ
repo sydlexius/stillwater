@@ -1,6 +1,10 @@
 package templates
 
-import "github.com/sydlexius/stillwater/web/components"
+import (
+	"strconv"
+
+	"github.com/sydlexius/stillwater/web/components"
+)
 
 // AssetPaths holds cache-busted URLs for static assets and server configuration
 // used by templates to construct correct URLs for sub-path deployments.
@@ -116,6 +120,16 @@ type AssetPaths struct {
 	// empty only for zero-value AssetPaths (unit renders), where the marker is
 	// omitted so cookie/path resolve the channel.
 	UXChannel string
+	// NextLaneEnabled is true when the /next preview lane is reachable at all
+	// under the server's SW_UX mode (mode "next" or "dual"; false for
+	// "stable"). Unlike UXChannel (the per-request RESOLVED channel), this is
+	// page-independent: it reflects lane availability regardless of which
+	// channel the current page happens to render as. Rendered into every
+	// page's <head> as the "ux-next-enabled" meta tag (#2228) so
+	// origin-independent client script (e.g. the /guide Guided Tour button)
+	// can branch on "is the vNext chain reachable at all" instead of
+	// inspecting the current page's own path.
+	NextLaneEnabled bool
 	// Username is the authenticated user's login name for the sidebar profile.
 	Username string
 	// DisplayName is the user's preferred display name. May differ from
@@ -225,6 +239,12 @@ templ LayoutHead(title string, assets AssetPaths) {
 		// request path so sub-path deployments work without modifying each
 		// individual hx-get / hx-post attribute.
 		<meta name="htmx-base-path" content={ assets.BasePath }/>
+		// ux-next-enabled tells origin-independent client script (e.g. the
+		// /guide Guided Tour button, #2228) whether the /next preview lane is
+		// reachable at all under the server's SW_UX mode, independent of
+		// which channel the CURRENT page happens to render as (see
+		// AssetPaths.NextLaneEnabled).
+		<meta name="ux-next-enabled" content={ strconv.FormatBool(assets.NextLaneEnabled) }/>
 		<meta name="app-version" content={ assets.Version }/>
 		<script>
 				(function() {

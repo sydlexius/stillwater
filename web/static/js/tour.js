@@ -129,6 +129,31 @@
         return el ? el.content : '';
     }
 
+    // nextLaneEnabled reads the ux-next-enabled meta tag set by layout.templ
+    // from AssetPaths.NextLaneEnabled (#2228). True whenever the server's
+    // SW_UX mode is "next" or "dual" -- i.e. the /next preview lane (and its
+    // OOBE_CHAIN) is reachable at all -- REGARDLESS of which channel the
+    // page that loaded tour.js happens to be rendering as. This is the
+    // channel-availability check startGuidedTour() branches on instead of
+    // getCurrentScreen() of the origin page, which returns null (and so
+    // always looked like "stable") on origin pages such as /guide that
+    // getCurrentScreen() does not recognize.
+    function nextLaneEnabled() {
+        var el = document.querySelector('meta[name="ux-next-enabled"]');
+        return !!el && el.content === 'true';
+    }
+
+    // navigate: assign to window.location.href, prefixed with the deployment
+    // base path. Tests may override via window.swNavigate (mirrors the seam
+    // in keyboard.js).
+    function navigate(url) {
+        if (typeof window.swNavigate === 'function') {
+            window.swNavigate(url);
+        } else {
+            window.location.href = url;
+        }
+    }
+
     // getCurrentScreen inspects window.location.pathname and returns a screen
     // identifier for the SCREEN_STEPS registry, or null for unrecognized paths.
     //   'dashboard'   -- /next or /next/
@@ -158,10 +183,6 @@
     // artists list page. Kept for internal use and backward compatibility.
     function isArtistsPage() {
         return getCurrentScreen() === 'artists';
-    }
-
-    function isDashboardPage() {
-        return getCurrentScreen() === 'dashboard';
     }
 
     function shouldAutoStart() {
@@ -461,31 +482,41 @@
     };
 
     // startGuidedTour is the public API for the full OOBE / manual restart
-    // flow. On vNext pages it navigates to the Dashboard first; on the stable
-    // channel it navigates to /artists as before.
+    // flow, wired to the Guided Tour button (e.g. on /guide, #2228). It must
+    // decide between two very different experiences:
+    //   - full OOBE_CHAIN (14 steps: dashboard -> artists -> artistDetail)
+    //   - legacy standalone artists-only tour (7 steps)
+    //
+    // That decision used to branch on getCurrentScreen() of the ORIGIN page
+    // (the page the button lives on). On /guide -- and any other page
+    // getCurrentScreen() does not recognize -- that always returned null,
+    // which fell through to the stable/standalone branch even when the /next
+    // lane (and its full chain) was available. The origin page tells you
+    // nothing about lane availability, so branch on nextLaneEnabled()
+    // instead: whether the /next lane is reachable AT ALL under the server's
+    // SW_UX mode, independent of the page the button was clicked from.
+    //
+    // When the lane is enabled, route through the exact same path the
+    // post-onboarding auto-tour uses (markTourPending + navigate to the /next
+    // entry point) so shouldAutoStart() drives the full chain on arrival --
+    // regardless of whether the button's origin page happens to already be
+    // the vNext Dashboard (a reload is required there too, so
+    // shouldAutoStart() re-enters the chain runner rather than a one-off
+    // standalone start that would skip artists/artistDetail).
     window.startGuidedTour = function() {
         var bp = basePath();
-        var screen = getCurrentScreen();
 
-        // vNext path: navigate to Dashboard if not already there.
-        if (screen !== null && window.location.pathname.indexOf(bp + '/next') === 0) {
-            if (!isDashboardPage()) {
-                window.markTourPending();
-                window.location.href = bp + '/next/';
-                return;
-            }
-            // Already on the Dashboard -- reload so shouldAutoStart() re-enters
-            // the chain runner and drives the full dashboard->artists->
-            // artistDetail sequence (a standalone start here would skip it).
+        if (nextLaneEnabled()) {
             window.markTourPending();
-            window.location.href = bp + '/next/';
+            navigate(bp + '/next/');
             return;
         }
 
-        // Stable channel path: navigate to /artists if not already there.
+        // Lane unavailable (SW_UX=stable): fall back to the legacy standalone
+        // artists-only tour, navigating to /artists if not already there.
         if (!isArtistsPage()) {
             window.markTourPending();
-            window.location.href = bp + '/artists';
+            navigate(bp + '/artists');
             return;
         }
         // Already on the stable Artists page -- start immediately.
@@ -550,10 +581,10 @@
                                 }
                                 setChainArtistUrl(skipArtistUrl);
                                 setChainNext(skipNext);
-                                window.location.href = skipArtistUrl;
+                                navigate(skipArtistUrl);
                             } else {
                                 setChainNext(skipNext);
-                                window.location.href = basePath() + CHAIN_URLS[skipNext];
+                                navigate(basePath() + CHAIN_URLS[skipNext]);
                             }
                         } else {
                             markComplete();
@@ -608,10 +639,10 @@
                                 }
                                 setChainArtistUrl(artistUrl);
                                 setChainNext(chainNext);
-                                window.location.href = artistUrl;
+                                navigate(artistUrl);
                             } else {
                                 setChainNext(chainNext);
-                                window.location.href = basePath() + CHAIN_URLS[chainNext];
+                                navigate(basePath() + CHAIN_URLS[chainNext]);
                             }
                         } else {
                             // Chain exhausted -- onboarding complete.

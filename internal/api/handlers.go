@@ -106,6 +106,9 @@ func (r *Router) assets() templates.AssetPaths {
 		SSEJS:        r.basePath + r.staticAssets.Path("/js/sse.js"),
 		LoginBG:      r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
 		BasePath:     r.basePath,
+		// NextLaneEnabled reflects the server's SW_UX mode ("next" or "dual"),
+		// not the resolved per-request channel -- see AssetPaths.NextLaneEnabled.
+		NextLaneEnabled: middleware.LaneEnabled(r.ux),
 	}
 }
 
