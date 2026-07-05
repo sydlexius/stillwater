@@ -10,6 +10,40 @@ import (
 	"testing"
 )
 
+// TestIsArtistDetailPath verifies the canonical Artist Detail route match
+// used by assetsFor() to gate loading the guided-tour assets (#2228
+// fix-round). It must match exactly "/artists/{id}" and reject the list
+// page, sibling routes carrying an extra path segment (images,
+// artwork-modal), and lookalike prefixes -- mirroring tour.js's own
+// getCurrentScreen() artistDetail regex so the two never drift apart.
+func TestIsArtistDetailPath(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"artist detail with a plain id", "/artists/abc123", true},
+		{"artist detail with a uuid-shaped id", "/artists/6f2b1e2a-...-9c", true},
+		{"artists list page (no id)", "/artists", false},
+		{"artists list page with trailing slash", "/artists/", false},
+		{"artist images sub-route has an extra segment", "/artists/abc123/images", false},
+		{"artist artwork-modal sub-route has an extra segment", "/artists/abc123/artwork-modal", false},
+		{"unrelated root path", "/", false},
+		{"unrelated prefix lookalike", "/artists-archive/abc123", false},
+		{"empty path", "", false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isArtistDetailPath(tc.path); got != tc.want {
+				t.Errorf("isArtistDetailPath(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestHandleLogout(t *testing.T) {
 	t.Parallel()
 	t.Run("returns 200 with JSON body and HX-Redirect header", func(t *testing.T) {

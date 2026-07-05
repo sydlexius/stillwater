@@ -325,11 +325,33 @@
                     }
                 },
                 {
+                    // #sort-dropdown carries the "hidden" class (display:none)
+                    // whenever the page loads in TABLE view -- the default view
+                    // -- because table view sorts via its clickable column
+                    // headers instead (see artists.templ, M55 #1335). Driver.js
+                    // cannot usefully highlight a display:none element (its
+                    // bounding rect collapses to 0x0, so the popover anchors
+                    // nowhere); the onHighlightStarted/onDeselected pair below
+                    // temporarily strips the class for the duration of this
+                    // step only, then restores it exactly as found so table
+                    // view's real state is untouched once the tour moves on.
                     element: '#sort-dropdown',
                     popover: {
                         title: i18n.sort_title || 'Sort Artists',
                         description: i18n.sort_desc || 'Reorder by name, health score, date added, or last updated.',
                         side: 'bottom'
+                    },
+                    onHighlightStarted: function(element) {
+                        if (element && element.classList.contains('hidden')) {
+                            element.classList.remove('hidden');
+                            element.setAttribute('data-tour-forced-visible', 'true');
+                        }
+                    },
+                    onDeselected: function(element) {
+                        if (element && element.getAttribute('data-tour-forced-visible') === 'true') {
+                            element.classList.add('hidden');
+                            element.removeAttribute('data-tour-forced-visible');
+                        }
                     }
                 },
                 {
