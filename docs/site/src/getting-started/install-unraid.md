@@ -31,7 +31,7 @@ Required fields:
 
 Defaults you can usually leave alone:
 
-- **PUID / PGID.** Unraid's default `99/100` (the `nobody:users` pair) matches Stillwater's container defaults. Files Stillwater writes to your music library will be owned by this pair, which Unraid is happy with.
+- **PUID / PGID.** Unraid's default `99/100` (the `nobody:users` pair) matches Stillwater's container defaults. Files Stillwater writes to your music library will be owned by this pair, which Unraid is happy with. Stillwater never re-owns your library recursively, so it is safe to point it at a share you also mount into other containers (Lidarr, Plex, and so on) -- it needs write access, not ownership.
 - **Network Type.** `Bridge` is the default and is correct for almost all setups.
 
 Optional knobs:

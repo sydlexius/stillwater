@@ -64,6 +64,8 @@ Two required edits before you start the stack, plus one recommended:
 
 2. **Set `PUID` and `PGID`** to the values from `id` you noted earlier. The container drops privileges to this user so files Stillwater writes to your music directory are owned correctly. Mismatch here is the most common source of permission errors.
 
+    Stillwater needs **write access** to `/music`, not ownership: it never recursively changes ownership of your library. That is deliberate, because a music share is often mounted into several containers at once, and re-owning it would lock the others out. Make sure the mount is writable by `PUID:PGID` (group-writable is the common arrangement) and new files Stillwater creates will be owned by that pair.
+
 3. **(Optional) Pin a version tag** instead of `:latest`. For production setups:
 
     ```yaml
