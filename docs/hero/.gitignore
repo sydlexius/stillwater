@@ -1,0 +1,19 @@
+# The rendered hero video is NOT committed. GitHub renders a video as a
+# click-to-play player only when it is uploaded as a PR/issue attachment
+# (a user-attachments URL); a repo-committed video renders as a mere download
+# link. So the mp4/webm are GitHub-hosted, not stored in git (this also avoids
+# multi-MB binary bloat). The committed hero-static.png is the poster /
+# click-to-play fallback the README links to.
+hero.mp4
+hero.webm
+hero.gif
+
+# Working-dir render artifacts (regenerable, never committed).
+hero-master.mp4
+hero-master-noc.mp4
+hero-noc.mp4
+hero-noc.webm
+hero-noc.gif
+raw/
+fixture/
+bach-candidates/
