@@ -329,14 +329,11 @@
   text-align: center;
 }
 
-/* Collapse toggle button: floats at the header's top-right corner so the
-   centred brand wordmark can span the full sidebar width. In the icon-only
-   rail the brand is hidden and this stays as the lone corner control. */
+/* Shared glyph-button appearance, reused by the header collapse chevron AND the
+   bottom action buttons (theme/help/logout). Positioning is intentionally NOT
+   set here: the bottom buttons must stay in the .sw-sidebar-actions flex flow.
+   Only the header chevron is absolutely positioned (rule below). */
 .sw-sidebar-collapse-btn {
-  position: absolute;
-  top: 8px;
-  right: 6px;
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -349,6 +346,18 @@
   cursor: pointer;
   flex-shrink: 0;
   transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+/* Only the HEADER collapse chevron floats to the header's top-right corner
+   (anchored to the position:relative header) so the centred wordmark can span
+   the full sidebar width. In the icon-only rail the brand is hidden and this
+   stays as the lone corner control. Scoping to .sw-sidebar-header keeps this
+   off the bottom action buttons, which share the class for appearance only. */
+.sw-sidebar-header .sw-sidebar-collapse-btn {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  z-index: 1;
 }
 
 .sw-sidebar-collapse-btn:hover {
