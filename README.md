@@ -9,10 +9,13 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/sydlexius/stillwater)](go.mod)
 
-Stillwater is a self-hosted web app for keeping your music library's artist
-and composer metadata clean and consistent. It reads and writes NFO files,
-manages artwork, and pulls metadata from MusicBrainz and Fanart.tv, all
-from one web UI that works alongside Emby, Jellyfin, and Kodi.
+Stillwater is a self-hosted web app that curates the artist and composer
+metadata for your music library and gets it where it needs to go: into the
+`artist.nfo` files your servers read, pushed to Emby or Jellyfin over their
+APIs, or both. It pulls from ten metadata providers with per-field fallback, so
+the indie, regional, classical, and non-Latin-script artists that leave other
+tools blank usually resolve here, and per-library locking keeps your manual
+edits from being clobbered the next time a server refreshes.
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/cd51e696-f639-44c4-960d-9cce0c0659a9" poster="docs/hero/hero-static.png" width="800" controls></video>
@@ -22,12 +25,26 @@ from one web UI that works alongside Emby, Jellyfin, and Kodi.
 
 ## Features
 
-- Browse and edit artist and composer NFO metadata from one place
-- Fetch, crop, and organize artist artwork
-- Pull metadata from MusicBrainz and Fanart.tv
-- Works alongside Emby, Jellyfin, and Kodi
-- Web UI plus a REST API at `/api/v1/` for automation and integration
-- Session-based authentication and webhook notifications
+- **Ten metadata providers, per-field fallback.** MusicBrainz, Fanart.tv,
+  Discogs, TheAudioDB, Spotify, Last.fm, Deezer, Genius, Wikidata, and Wikipedia,
+  ranked per field so when one source comes up empty another fills the gap, plus
+  opt-in DuckDuckGo web image search for the stragglers.
+- **Deliver by NFO writeback, direct API push, or both.** Write `artist.nfo`
+  files that Emby, Jellyfin, and Kodi all read cleanly, and/or push edits
+  straight to Emby and Jellyfin over their APIs. Stillwater only ever touches
+  metadata and artwork, never your audio files.
+- **Per-library edit locking.** Your manual corrections stay put instead of
+  drifting back every time a media server rewrites the file on refresh.
+- **Rule-driven cleanup with a conflict gate.** A rule engine flags missing,
+  inconsistent, or low-quality metadata and artwork and fixes it in bulk or one
+  at a time, with a round-trip conflict check guarding every write-back.
+- **Artwork pipeline.** Fetch, compare, and crop thumbnails, fanart, logos, and
+  banners across providers from a single comparison view.
+- **Reports and a live dashboard.** Library-health scoring, a prioritized action
+  queue, duplicate detection, the Unmatched Files report, and a live activity feed.
+- **Runs on your hardware.** Single binary or container, SQLite, no cloud, no
+  telemetry, no account, with a REST API at `/api/v1/` and webhooks for
+  automation.
 
 ## Quick start
 
