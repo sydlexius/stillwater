@@ -95,9 +95,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				<div class="w-full max-w-2xl space-y-6">
 					<div class="text-center">
 						<div class="flex justify-center">
-							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
+							@components.Wordmark("sw-wordmark--auth")
 						</div>
-						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">{ t(ctx, "onboarding.welcome") }</h1>
+						<h1 class="mt-3 text-3xl font-bold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.welcome") }</h1>
 						<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "onboarding.configure_intro") }
 						</p>

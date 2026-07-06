@@ -52,12 +52,11 @@ type SidebarData struct {
 // SidebarDisplayName) live in web/templates/sidebar_helpers.go.
 templ Sidebar(data SidebarData) {
 	<nav id="sw-sidebar" class="sw-sidebar" data-sidebar-state="full" aria-label={ t(ctx, "nav.main_navigation") }>
-		<!-- Brand: favicon mark + name + muted mono version line + collapse chevron -->
+		<!-- Brand: Oleo Script wordmark + muted mono version line + collapse chevron -->
 		<div class="sw-sidebar-header">
 			<a href={ templ.SafeURL(data.BasePath + "/") } class="sw-sidebar-brand" aria-label={ t(ctx, "nav.stillwater_home") } style="min-width:0;overflow:hidden;">
-				<img src={ data.BasePath + "/static/img/favicon.svg" } alt="" class="sw-sidebar-logo" aria-hidden="true"/>
 				<span class="sw-sidebar-label sw-sidebar-brand-text">
-					<span>Stillwater</span>
+					@components.Wordmark("")
 					<span class="sw-sidebar-version">v{ data.Version }</span>
 				</span>
 			</a>

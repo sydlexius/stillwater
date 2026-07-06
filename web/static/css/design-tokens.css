@@ -89,6 +89,18 @@
   font-display: swap;
 }
 
+/* Oleo Script: the Stillwater in-product brand wordmark (SIL OFL 1.1).       */
+/* Source: https://github.com/googlefonts/oleo-script (vendored in            */
+/* web/static/fonts/ with OleoScript-OFL.txt; see #2249/#2252). The squircle  */
+/* mark remains the favicon/PWA icon; this cursive face is the wordmark only. */
+@font-face {
+  font-family: 'Oleo Script';
+  src: url('../fonts/OleoScript-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* -- Sidebar ------------------------------------------------------------ */
   --sw-sidebar-bg: #0f172a;
@@ -141,6 +153,10 @@
      --sw-font-mono is the monospace ramp for IDs / timestamps / code. */
   --sw-font-sans: var(--sw-font-family);
   --sw-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* --sw-font-brand is the in-product wordmark face (Oleo Script); the brand
+     identity is fixed and does not track the Font Family preference. */
+  --sw-font-brand: 'Oleo Script', 'Brush Script MT', cursive;
+  --sw-brand-color: #2563eb;
 
   /* -- Layout ------------------------------------------------------------- */
   --sw-content-max-width: 1200px;
