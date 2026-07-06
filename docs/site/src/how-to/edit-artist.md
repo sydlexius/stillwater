@@ -78,7 +78,7 @@ When an artist has multiple fanart images, the first one is "primary" -- it's th
 
 1. Open the artist's **Artwork** section.
 2. Hover (or focus) any non-primary fanart in the gallery. A small star button appears on the overlay. Click the star to promote that fanart to primary; the others keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox for full-size viewing -- the star is the promotion control.)
-3. For finer rearrangement, open the image search page (the same place you fetch new fanart) and use the up/down buttons in the fanart gallery there. The order saves immediately and the files on disk are renumbered to match.
+3. For finer rearrangement, open **Manage artwork** and use the up/down buttons in the **Backdrops** tab. The order saves immediately and the files on disk are renumbered to match.
 
 Renumbering follows the platform profile's convention -- so the resulting order yields `fanart.jpg, fanart2.jpg, fanart3.jpg` for Emby/Jellyfin, or `fanart.jpg, fanart1.jpg, fanart2.jpg` for Kodi.
 
@@ -86,11 +86,10 @@ Renumbering follows the platform profile's convention -- so the resulting order 
 
 When providers don't have what you want, upload directly.
 
-1. Open the artist's **Artwork** section.
-2. On the slot you want to fill (thumb / fanart / logo / banner), click **Upload**.
-3. Drag a file onto the drop zone, or click to file-pick.
-4. (Optional) Crop the image in the in-browser cropper before saving.
-5. Click **Save**.
+1. Open the artist's **Manage artwork** modal and switch to the slot's tab (Primary, Logo, Banner, or Backdrops).
+2. Drag a file onto the drop target, or open the **Actions** menu and choose **Browse**.
+3. (Optional) Crop the image in the in-browser cropper before saving.
+4. Click **Save**.
 
 Uploads up to 25 MB are accepted.
 

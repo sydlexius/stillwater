@@ -48,9 +48,9 @@ Fanart is the only slot that supports more than one image per artist. Stillwater
 
 The artist record reflects how many fanart files exist on disk. Other slots are single-image: writing a new thumb replaces the previous one.
 
-**Where to find the Images tab:** click an artist in the **Artists** sidebar item, then switch to the artist's **Images** sub-tab.
+**Where to manage artwork:** open an artist from the **Artists** list, then open **Manage artwork** from the artist's Artwork section. The modal has a tab for each slot -- **Primary**, **Logo**, **Banner**, and **Backdrops** -- and you switch between them without leaving the modal; changes reconcile to the source-of-truth folder. Each tab shows the current image with an **Actions** menu (fetch from providers, web search, browse, or fetch from a URL) and a drag-and-drop target to replace it.
 
-![Artist detail Images tab showing all four image slots: Primary (1:1), Backdrop with five fanart variants (the first marked Primary), Logo (transparent PNG), and Banner (4:1)](../assets/screenshots/artist-images-tab.jpg)
+![Manage artwork modal on the Primary tab: the Primary, Logo, Banner, and Backdrops tabs across the top, and a Current Primary panel showing the artist's square thumb with a drag-and-drop replace target](../assets/screenshots/artwork-primary.png)
 
 ## Where the images come from
 
