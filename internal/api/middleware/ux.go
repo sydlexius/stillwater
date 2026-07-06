@@ -54,6 +54,16 @@ func ResolveUX(mode, cookie string) UXChannel {
 	}
 }
 
+// LaneEnabled reports whether the /next preview lane is reachable at all for
+// the given SW_UX mode ("next" or "dual"); false for "stable" or any
+// unrecognized mode. Exported so non-request-path code (e.g. the
+// AssetPaths.NextLaneEnabled meta tag rendered into every page's <head>) can
+// check lane availability without duplicating the mode comparison that UX()
+// uses to gate /next/* 404s and path-based opt-in.
+func LaneEnabled(mode string) bool {
+	return mode == string(UXNext) || mode == "dual"
+}
+
 // UX returns middleware that resolves the UI channel for each request, sets the
 // X-Stillwater-UX response header, and stashes the channel in the request
 // context (read via UXChannelFromContext). mode is the SW_UX config value;
@@ -78,7 +88,7 @@ func UX(mode, basePath string) func(http.Handler) http.Handler {
 			// dual). In stable mode (or any unrecognized/empty mode) the preview
 			// is fully off, so /next/* requests return 404 rather than
 			// silently serving stable content under the preview URL namespace.
-			laneEnabled := mode == string(UXNext) || mode == "dual"
+			laneEnabled := LaneEnabled(mode)
 			if !laneEnabled && isNextPath(r.URL.Path, nextPrefix, nextExact) {
 				http.NotFound(w, r)
 				return

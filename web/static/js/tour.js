@@ -28,11 +28,15 @@
     // artist link from the DOM and stores it in TOUR_CHAIN_ARTIST_URL_KEY.
     var OOBE_CHAIN = ['dashboard', 'artists', 'artistDetail'];
 
-    // CHAIN_URLS maps a chain screen name to the vNext URL to navigate to when
-    // advancing the chain. artistDetail is absent: its URL is dynamic and is
-    // stored separately in TOUR_CHAIN_ARTIST_URL_KEY.
+    // CHAIN_URLS maps a chain screen name to the URL to navigate to when
+    // advancing the chain. dashboard is never actually read as an advance
+    // target (it is always OOBE_CHAIN[0], the entry point, never something the
+    // chain advances TO) but is kept here, set to the promoted canonical
+    // route (#1757), for documentation consistency with getCurrentScreen().
+    // artistDetail is absent: its URL is dynamic and is stored separately in
+    // TOUR_CHAIN_ARTIST_URL_KEY.
     var CHAIN_URLS = {
-        dashboard: '/next/',
+        dashboard: '/',
         artists: '/next/artists'
     };
 
@@ -129,9 +133,38 @@
         return el ? el.content : '';
     }
 
+    // nextLaneEnabled reads the ux-next-enabled meta tag set by layout.templ
+    // from AssetPaths.NextLaneEnabled (#2228). True whenever the server's
+    // SW_UX mode is "next" or "dual" -- i.e. the /next preview lane (and its
+    // OOBE_CHAIN) is reachable at all -- REGARDLESS of which channel the
+    // page that loaded tour.js happens to be rendering as. This is the
+    // channel-availability check startGuidedTour() branches on instead of
+    // getCurrentScreen() of the origin page, which returns null (and so
+    // always looked like "stable") on origin pages such as /guide that
+    // getCurrentScreen() does not recognize.
+    function nextLaneEnabled() {
+        var el = document.querySelector('meta[name="ux-next-enabled"]');
+        return !!el && el.content === 'true';
+    }
+
+    // navigate: assign to window.location.href. Callers pass a fully-prefixed
+    // URL (basePath already applied); unlike keyboard.js's navigate, this does
+    // not add the base path itself. Tests may override via window.swNavigate
+    // (mirrors the seam in keyboard.js).
+    function navigate(url) {
+        if (typeof window.swNavigate === 'function') {
+            window.swNavigate(url);
+        } else {
+            window.location.href = url;
+        }
+    }
+
     // getCurrentScreen inspects window.location.pathname and returns a screen
     // identifier for the SCREEN_STEPS registry, or null for unrecognized paths.
-    //   'dashboard'   -- /next or /next/
+    //   'dashboard'   -- / (promoted canonical dashboard, #1757), or the
+    //                    legacy /next, /next/ (kept for dual-mode direct visits
+    //                    and the nextFallback re-dispatch, which serves the
+    //                    same dashboard content without changing the URL)
     //   'artists'     -- /next/artists or /artists (both channels)
     //   'artistDetail'-- /artists/{id} (or legacy /next/artists/{id})
     //   null          -- any other path
@@ -142,6 +175,12 @@
         if (bp && path.indexOf(bp) === 0) {
             path = path.slice(bp.length) || '/';
         }
+        // '/' is the promoted canonical dashboard route (#1757 PR-6b landed the
+        // last promotion; handleIndex serves the same IndexPage regardless of
+        // SW_UX channel). This must be recognized in addition to /next, /next/
+        // -- without it, navigating the OOBE chain's entry point (which lands
+        // here) returned null and silently aborted the tour (#2228 fix-round).
+        if (path === '/') { return 'dashboard'; }
         if (path === '/next' || path === '/next/') { return 'dashboard'; }
         // Artist detail must be checked before the artists list pattern.
         // Both the canonical /artists/{id} (promoted in #1757 PR-3b) and the
@@ -160,10 +199,6 @@
         return getCurrentScreen() === 'artists';
     }
 
-    function isDashboardPage() {
-        return getCurrentScreen() === 'dashboard';
-    }
-
     function shouldAutoStart() {
         // Never fire once onboarding is marked done.
         if (localStorage.getItem(TOUR_COMPLETED_KEY)) { return false; }
@@ -171,7 +206,9 @@
         // Chain-in-progress: a prior chain step navigated here. The pending
         // key may already be gone (cleared by markComplete); rely on the chain
         // key alone as the authority for subsequent chain screens.
-        if (getChainNext() === screen) { return true; }
+        // Guard against null === null: an unrecognized screen must never
+        // count as a chain match just because no chain is active either.
+        if (screen !== null && getChainNext() === screen) { return true; }
         // OOBE initial trigger: pending marker set, on a chain-eligible screen.
         if (localStorage.getItem(TOUR_PENDING_KEY) !== 'true') { return false; }
         // Auto-start on the vNext Dashboard (new OOBE entry point) or the
@@ -290,11 +327,41 @@
                     }
                 },
                 {
+                    // #sort-dropdown carries the "hidden" class (display:none)
+                    // whenever the page loads in TABLE view -- the default view
+                    // -- because table view sorts via its clickable column
+                    // headers instead (see artists.templ, M55 #1335). Driver.js
+                    // cannot usefully highlight a display:none element (its
+                    // bounding rect collapses to 0x0, so the popover anchors
+                    // nowhere); the onHighlightStarted/onDeselected pair below
+                    // temporarily strips the class for the duration of this
+                    // step only, then restores it exactly as found so table
+                    // view's real state is untouched once the tour moves on.
                     element: '#sort-dropdown',
                     popover: {
                         title: i18n.sort_title || 'Sort Artists',
                         description: i18n.sort_desc || 'Reorder by name, health score, date added, or last updated.',
                         side: 'bottom'
+                    },
+                    onHighlightStarted: function(element) {
+                        if (element && element.classList.contains('hidden')) {
+                            element.classList.remove('hidden');
+                            element.setAttribute('data-tour-forced-visible', 'true');
+                        }
+                    },
+                    onDeselected: function(element) {
+                        // Restore keys off the saved data-tour-forced-visible
+                        // flag rather than re-reading live view state (e.g.
+                        // "is card view still active?"). That is safe here
+                        // because Driver.js's overlay makes only
+                        // #sort-dropdown interactive for the duration of this
+                        // step -- the view-toggle buttons are not reachable,
+                        // so the view cannot change mid-step and invalidate
+                        // the saved flag.
+                        if (element && element.getAttribute('data-tour-forced-visible') === 'true') {
+                            element.classList.add('hidden');
+                            element.removeAttribute('data-tour-forced-visible');
+                        }
                     }
                 },
                 {
@@ -461,31 +528,41 @@
     };
 
     // startGuidedTour is the public API for the full OOBE / manual restart
-    // flow. On vNext pages it navigates to the Dashboard first; on the stable
-    // channel it navigates to /artists as before.
+    // flow, wired to the Guided Tour button (e.g. on /guide, #2228). It must
+    // decide between two very different experiences:
+    //   - full OOBE_CHAIN (14 steps: dashboard -> artists -> artistDetail)
+    //   - legacy standalone artists-only tour (7 steps)
+    //
+    // That decision used to branch on getCurrentScreen() of the ORIGIN page
+    // (the page the button lives on). On /guide -- and any other page
+    // getCurrentScreen() does not recognize -- that always returned null,
+    // which fell through to the stable/standalone branch even when the /next
+    // lane (and its full chain) was available. The origin page tells you
+    // nothing about lane availability, so branch on nextLaneEnabled()
+    // instead: whether the /next lane is reachable AT ALL under the server's
+    // SW_UX mode, independent of the page the button was clicked from.
+    //
+    // When the lane is enabled, route through the exact same path the
+    // post-onboarding auto-tour uses (markTourPending + navigate to the /next
+    // entry point) so shouldAutoStart() drives the full chain on arrival --
+    // regardless of whether the button's origin page happens to already be
+    // the vNext Dashboard (a reload is required there too, so
+    // shouldAutoStart() re-enters the chain runner rather than a one-off
+    // standalone start that would skip artists/artistDetail).
     window.startGuidedTour = function() {
         var bp = basePath();
-        var screen = getCurrentScreen();
 
-        // vNext path: navigate to Dashboard if not already there.
-        if (screen !== null && window.location.pathname.indexOf(bp + '/next') === 0) {
-            if (!isDashboardPage()) {
-                window.markTourPending();
-                window.location.href = bp + '/next/';
-                return;
-            }
-            // Already on the Dashboard -- reload so shouldAutoStart() re-enters
-            // the chain runner and drives the full dashboard->artists->
-            // artistDetail sequence (a standalone start here would skip it).
+        if (nextLaneEnabled()) {
             window.markTourPending();
-            window.location.href = bp + '/next/';
+            navigate(bp + '/next/');
             return;
         }
 
-        // Stable channel path: navigate to /artists if not already there.
+        // Lane unavailable (SW_UX=stable): fall back to the legacy standalone
+        // artists-only tour, navigating to /artists if not already there.
         if (!isArtistsPage()) {
             window.markTourPending();
-            window.location.href = bp + '/artists';
+            navigate(bp + '/artists');
             return;
         }
         // Already on the stable Artists page -- start immediately.
@@ -550,10 +627,10 @@
                                 }
                                 setChainArtistUrl(skipArtistUrl);
                                 setChainNext(skipNext);
-                                window.location.href = skipArtistUrl;
+                                navigate(skipArtistUrl);
                             } else {
                                 setChainNext(skipNext);
-                                window.location.href = basePath() + CHAIN_URLS[skipNext];
+                                navigate(basePath() + CHAIN_URLS[skipNext]);
                             }
                         } else {
                             markComplete();
@@ -608,10 +685,10 @@
                                 }
                                 setChainArtistUrl(artistUrl);
                                 setChainNext(chainNext);
-                                window.location.href = artistUrl;
+                                navigate(artistUrl);
                             } else {
                                 setChainNext(chainNext);
-                                window.location.href = basePath() + CHAIN_URLS[chainNext];
+                                navigate(basePath() + CHAIN_URLS[chainNext]);
                             }
                         } else {
                             // Chain exhausted -- onboarding complete.

@@ -27,6 +27,25 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// isArtistDetailPath reports whether path is the canonical Artist Detail
+// route ("/artists/{id}", promoted at #1757 PR-3b) -- a single path segment
+// after "/artists/", with no further slash. It intentionally excludes
+// sibling routes carrying an extra segment, such as "/artists/{id}/images"
+// or "/artists/{id}/artwork-modal": those pages have no SCREEN_STEPS group
+// in tour.js, so loading the tour assets there would be dead weight. This
+// only matches the canonical bare form; it does not match the legacy
+// "/next/artists/{id}" form that tour.js's getCurrentScreen() also
+// recognizes -- that form is covered independently below by assetsFor()'s
+// HasPrefix("/next") arm, so the two do not need to stay in lockstep.
+func isArtistDetailPath(path string) bool {
+	const prefix = "/artists/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := path[len(prefix):]
+	return rest != "" && !strings.Contains(rest, "/")
+}
+
 // handleHealth returns a simple health check response with version info.
 // GET /api/v1/health
 func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
@@ -106,6 +125,9 @@ func (r *Router) assets() templates.AssetPaths {
 		SSEJS:        r.basePath + r.staticAssets.Path("/js/sse.js"),
 		LoginBG:      r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
 		BasePath:     r.basePath,
+		// NextLaneEnabled reflects the server's SW_UX mode ("next" or "dual"),
+		// not the resolved per-request channel -- see AssetPaths.NextLaneEnabled.
+		NextLaneEnabled: middleware.LaneEnabled(r.ux),
 	}
 }
 
@@ -148,10 +170,20 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 
 	// Include Driver.js tour assets only on pages where the guided tour
 	// may auto-start, be manually triggered, or set a pending flag.
-	// The /next/* prefix covers the Dashboard, Artists, and Artist Detail
-	// screens which all have SCREEN_STEPS groups in tour.js.
+	// The promoted canonical Dashboard route is now "/" (#1757 PR-6b); the
+	// canonical Artists list is "/artists" (#1757 PR-3a) and the canonical
+	// Artist Detail is "/artists/{id}" (#1757 PR-3b) -- neither lives under
+	// /next/* anymore, so that prefix alone no longer covers them. Without
+	// the isArtistDetailPath match below, navigating the OOBE chain to an
+	// artist's canonical detail URL loaded a page with no tour.js at all:
+	// the chain's artists->artistDetail hand-off silently died there with
+	// no popover, mirroring the "/" dashboard gap fixed by 0006ff27.
+	// /next/* is kept for the legacy fallback re-dispatch and any future
+	// screen still staged in the preview lane.
 	switch {
-	case path == "/artists" || path == "/artists/",
+	case path == "/",
+		path == "/artists" || path == "/artists/",
+		isArtistDetailPath(path),
 		strings.HasPrefix(path, "/guide"),
 		strings.HasPrefix(path, "/next"),
 		strings.HasPrefix(path, "/onboarding"),
