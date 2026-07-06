@@ -1,0 +1,17 @@
+package components
+
+// Wordmark renders the Stillwater in-product brand identity as the Oleo Script
+// wordmark in the brand color (#2563eb via --sw-brand-color). It replaces the
+// duplicated "favicon squircle image + plain Stillwater text" block that used
+// to live in each auth screen and the sidebar. The squircle mark is retained
+// only as the favicon / PWA / app icon (the <head> <link rel="icon"> tags),
+// never as in-product chrome.
+//
+// The wordmark is sized as a logo (>= 24px computed) so it clears the WCAG
+// large-text (3:1) contrast threshold on every surface, letting the exact
+// brand blue hold on the dark sidebar and dark auth cards. `class` lets a
+// caller add layout/size utilities (e.g. "sw-wordmark--auth"); it is brand
+// text, so it is marked translate="false".
+templ Wordmark(class string) {
+	<span class={ "sw-wordmark", class } translate="false">Stillwater</span>
+}

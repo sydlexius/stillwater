@@ -13,6 +13,46 @@
   background-image: repeating-conic-gradient(#4b5563 0% 25%, transparent 0% 50%);
 }
 
+/* Stillwater in-product brand wordmark (#2252). One shared component renders
+   this on the auth screens and the sidebar; the squircle stays the favicon.
+   Oleo Script is a cursive display face with a small x-height, so the pixel
+   sizes below read smaller than a sans of the same size.
+
+   Colour is theme-split for contrast (maintainer call on #2252): the exact
+   brand blue #2563eb reads on light surfaces (~5.2:1 on the white sidebar and
+   the light auth cards) but only manages ~2.6:1 on the dark glass, below the
+   3:1 large-text bar. Dark mode therefore renders the wordmark white (~13:1 on
+   the dark glass). Sizes still stay >= 24px so the mark is treated as large
+   text either way. */
+.sw-wordmark {
+  font-family: var(--sw-font-brand);
+  color: var(--sw-brand-color);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: normal;
+  display: inline-block;
+}
+
+:where(.dark, .dark *) .sw-wordmark {
+  color: #ffffff;
+}
+
+/* Auth screens (login / setup / register / onboarding): prominent brand. */
+.sw-wordmark--auth {
+  font-size: 3rem;
+}
+
+/* Sidebar header: the wordmark is the brand, centred across the sidebar and
+   sized (px, not rem) to span most of its width. A fixed px size also keeps
+   the mark >= 24px (WCAG large text) regardless of the text-size preference
+   (which sets the root font-size to 13/14/16px and would scale a rem below
+   24px at the "small" setting). The collapse chevron floats to the top-right
+   so it does not eat into the centred wordmark's width (see the header rule
+   below). */
+.sw-sidebar-brand .sw-wordmark {
+  font-size: 30px;
+}
+
 /* Global acrylic card treatment -- active on all pages via the fixed background */
 .sw-card {
   background-color: var(--sw-glass-bg);
@@ -261,34 +301,42 @@
   justify-content: center;
 }
 
-/* Sidebar header */
+/* Sidebar header: the brand wordmark is centred across the sidebar; the
+   collapse chevron floats to the top-right corner (position: relative anchor)
+   so it does not consume the wordmark's horizontal space. */
 .sw-sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 12px 8px;
+  justify-content: center;
+  position: relative;
+  padding: 14px 8px 8px;
   min-height: 48px;
 }
 
 .sw-sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
   text-decoration: none;
   color: #e2e8f0;
-  font-weight: 700;
-  font-size: var(--sw-sidebar-font-brand);
   white-space: nowrap;
 }
 
-.sw-sidebar-logo {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
+.sw-sidebar-brand-text {
+  align-items: center;
+  text-align: center;
 }
 
-/* Collapse toggle button */
+/* Collapse toggle button: floats at the header's top-right corner so the
+   centred brand wordmark can span the full sidebar width. In the icon-only
+   rail the brand is hidden and this stays as the lone corner control. */
 .sw-sidebar-collapse-btn {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
