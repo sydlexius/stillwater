@@ -40,7 +40,11 @@ SEED_SQL="$REPO/docs/hero/seed/fixture.sql"
 PORTRAITS="$REPO/docs/hero/portraits"
 ADMIN_USER="herofixture-admin"; ADMIN_PASS="herofixture-pw"
 
-command -v sqlite3 >/dev/null || { echo "FATAL: sqlite3 not found" >&2; exit 1; }
+# Every external tool this script drives; fail up front with an actionable
+# message rather than mid-run with an opaque error from whichever is missing.
+for tool in go python3 sqlite3 curl lsof; do
+  command -v "$tool" >/dev/null || { echo "FATAL: required tool not found: $tool" >&2; exit 1; }
+done
 [ -f "$SEED_SQL" ] || { echo "FATAL: seed SQL missing: $SEED_SQL" >&2; exit 1; }
 [ -d "$PORTRAITS" ] || { echo "FATAL: committed portraits missing: $PORTRAITS (run fetch-portraits.sh)" >&2; exit 1; }
 
@@ -85,8 +89,17 @@ con.commit(); con.close()
 PY
 
 # 4. Start the capture server (self-generates its throwaway encryption.key next
-#    to the DB). Kill only a prior listener on this port first.
-lsof -ti:"$PORT" -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null || true
+#    to the DB). Kill only a prior instance of OUR fixture binary on this port;
+#    refuse to kill an unrelated service that happens to hold the port (a bare
+#    `xargs kill` would take down whatever is listening, e.g. a dev server).
+for pid in $(lsof -ti:"$PORT" -sTCP:LISTEN 2>/dev/null || true); do
+  if [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "$(basename "$BIN")" ]; then
+    kill "$pid" 2>/dev/null || true
+  else
+    echo "FATAL: port $PORT is held by an unrelated process (pid $pid: $(ps -p "$pid" -o comm= 2>/dev/null)); refusing to kill it" >&2
+    exit 1
+  fi
+done
 echo "starting server on :$PORT"
 # nohup + disown so the capture server outlives this script's shell.
 SW_DB_PATH="$DB" SW_PORT="$PORT" SW_UX=dual SW_MUSIC_PATH="$LIB" \

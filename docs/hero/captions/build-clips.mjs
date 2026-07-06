@@ -17,6 +17,16 @@ const PUBLIC = join(HERE, 'public', 'clips');
 const GEN = join(HERE, 'src', 'clips.generated.ts');
 mkdirSync(PUBLIC, { recursive: true });
 
+// ffmpeg/ffprobe are hard requirements; check up front so a missing binary
+// gives a clear prerequisite error rather than a raw execFileSync stack trace.
+for (const tool of ['ffmpeg', 'ffprobe']) {
+  try {
+    execFileSync(tool, ['-version'], { stdio: 'ignore' });
+  } catch {
+    throw new Error(`required tool not found on PATH: ${tool}`);
+  }
+}
+
 const clips = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const probe = (f) =>
   parseFloat(

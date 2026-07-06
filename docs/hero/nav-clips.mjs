@@ -8,7 +8,7 @@
 //   time WITHIN the clip when that caption group should appear).
 import { chromium, request as pwRequest } from 'playwright';
 import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -26,7 +26,12 @@ const log = (m) => console.log(`[nav-clips] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Start from an empty RAW dir so a stale .webm from an interrupted prior run
-// can never be mistaken for the current recording.
+// can never be mistaken for the current recording. Guard the recursive delete
+// against an unset/misconfigured RAW so a bad HERO_OUT can't wipe an unintended
+// tree (RAW is always <OUT>/raw by construction).
+if (!RAW || RAW === '/' || RAW === '.' || !RAW.endsWith(`${sep}raw`)) {
+  throw new Error(`refusing to rmSync unsafe RAW path: ${RAW}`);
+}
 rmSync(RAW, { recursive: true, force: true });
 mkdirSync(RAW, { recursive: true });
 

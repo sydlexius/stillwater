@@ -32,6 +32,7 @@ const login = await api.post('/api/v1/auth/login', {
 });
 if (!login.ok()) throw new Error(`login failed: ${login.status()}`);
 const session = (login.headers()['set-cookie'] || '').match(/session=([^;]+)/)?.[1];
+if (!session) throw new Error('session cookie missing after login');
 log('authenticated');
 
 // Taller window so ordinary /next pages need no scrollbar and the Manage-artwork

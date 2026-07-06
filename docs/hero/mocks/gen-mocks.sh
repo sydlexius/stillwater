@@ -37,7 +37,11 @@ HERO_ARTIST="${HERO_ARTIST:-c14e15f5-4ff4-4415-b2ea-75de8cb4be57}"
 # Committed public-domain candidate portraits for the Manage-artwork modal grid.
 CAND_DIR="${CAND_DIR:-$HERE/candidates}"
 
-command -v magick >/dev/null || { echo "FATAL: ImageMagick (magick) not found" >&2; exit 1; }
+# Fail up front on any missing tool this script drives (magick for the grid,
+# base64 for data-URIs, curl for the live /refresh capture).
+for tool in magick base64 curl; do
+  command -v "$tool" >/dev/null || { echo "FATAL: required tool not found: $tool" >&2; exit 1; }
+done
 [ -d "$CAND_DIR" ] || { echo "FATAL: candidate dir not found: $CAND_DIR" >&2; exit 1; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
