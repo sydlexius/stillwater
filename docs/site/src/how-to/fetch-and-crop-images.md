@@ -14,22 +14,21 @@ For the *concept* (slots, multi-fanart, platform terminology), see [images](../c
 
 When you want a fresh image for one slot from your configured providers:
 
-1. Open the artist's **Images** tab.
-2. Click **Find** on the slot you want to fill (e.g., the thumb slot).
-3. Stillwater queries providers in priority order and shows candidates side by side. Each candidate carries the source provider's name and the dimensions.
-4. Pick the one you want. The image previews full-size.
-5. (Optional) Crop in the in-browser cropper -- handles for resizing, drag to reposition, the result preview updates live.
-6. Click **Save**.
+1. Open the artist's **Manage artwork** modal and switch to the slot's tab (e.g., **Primary**).
+2. Open the **Actions** menu and choose **Fetch**.
+3. Stillwater queries providers in priority order and shows the candidates in a grid. Each card carries the source provider's badge, the image kind, and the dimensions.
+4. Pick the one you want and click **Save**.
+5. (Optional) Crop in the in-browser cropper first -- handles for resizing, drag to reposition, the result preview updates live.
 
 The saved file goes into the artist's directory under the canonical filename for the slot. Existing image is replaced (after a brief backup, in case you want to undo).
 
-![Image search results for an artist's thumb: a grid of candidate images from Wikidata, Fanart.tv, Deezer, TheAudioDB, and Discogs. Each card shows the provider badge, image kind, dimensions, and Save / Compare / Crop actions. Smaller candidates are tagged "Low resolution"](../assets/screenshots/image-candidates.jpg)
+![Image search results for an artist's Primary slot: a grid of candidate images from Fanart.tv, TheAudioDB, Deezer, Wikipedia, and Discogs. Each card shows the provider badge, the image kind, the dimensions, and a Save action](../assets/screenshots/image-candidates.jpg)
 
 ## Fetch from web search
 
 For cases where curated providers don't have what you need.
 
-1. Same as above, but click **Web search** instead of Find.
+1. Same as above, but choose **Web Search** from the **Actions** menu instead of Fetch.
 2. Stillwater queries the configured web search adapter (e.g., DuckDuckGo).
 3. The result list shows thumbnails with source URLs.
 4. Pick a candidate, preview, crop, save.
@@ -50,11 +49,10 @@ The bulk path uses your priority list per slot. It applies the rule thresholds: 
 
 When you have the image already.
 
-1. Open the artist's **Images** tab.
-2. Click **Upload** on the target slot.
-3. Drag a file onto the drop zone, or click to file-pick.
-4. (Optional) Crop.
-5. Save.
+1. Open the artist's **Manage artwork** modal and switch to the target slot's tab.
+2. Drag a file onto the drop target, or open the **Actions** menu and choose **Browse**.
+3. (Optional) Crop.
+4. Save.
 
 Maximum upload size is 25 MB. Supported formats: JPG, PNG.
 
@@ -62,8 +60,8 @@ Maximum upload size is 25 MB. Supported formats: JPG, PNG.
 
 Logos sometimes ship with excessive transparent padding around the artwork. The "Logo excessive padding" rule flags these; the trim action repairs them.
 
-1. Open the artist's **Images** tab.
-2. On the logo slot, click **Trim** (only appears when the rule has flagged the logo).
+1. Open the artist's **Manage artwork** modal and switch to the **Logo** tab.
+2. Click **Trim** (only appears when the rule has flagged the logo).
 3. Stillwater detects the artwork's bounding box and trims the surrounding padding, leaving a configurable margin (default 2 pixels).
 4. The result previews; click **Save** to keep, or **Cancel** to leave the original.
 
@@ -71,18 +69,18 @@ The trim margin is configurable under the rule's settings (Settings > Rules > Lo
 
 ## Manage multi-fanart
 
-Fanart is the only slot that supports more than one image. The Images tab's fanart strip shows every fanart, with the primary first.
+Fanart is the only slot that supports more than one image. The **Backdrops** tab in **Manage artwork** lists every fanart, with the primary first.
 
 To add another fanart:
 
-1. Click **Add fanart** at the end of the strip.
-2. Choose Find, Web search, or Upload.
-3. Select, crop, save. The new fanart joins the strip.
+1. Click **Add fanart** at the end of the Backdrops gallery.
+2. Choose **Fetch**, **Web Search**, or **Browse** from the **Actions** menu.
+3. Select, crop, save. The new fanart joins the gallery.
 
 To reorder:
 
 - On the artist page, hover (or focus) any non-primary fanart in the gallery; a star button appears on the overlay. Click the star to promote that fanart to primary -- the rest keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox; the star is the promotion control.)
-- For finer control, open the artist's image search page (the same place you fetch new fanart from). The fanart gallery there shows each fanart with up and down buttons; click them to reshuffle. The first fanart is primary, and the file numbering on disk follows the order, with the platform's convention applied (Emby/Jellyfin uses `fanart.jpg, fanart2.jpg, ...`; Kodi uses `fanart.jpg, fanart1.jpg, ...`).
+- For finer control, open the **Backdrops** tab in **Manage artwork** (the same place you fetch new fanart from). The gallery there shows each fanart with up and down buttons; click them to reshuffle. The first fanart is primary, and the file numbering on disk follows the order, with the platform's convention applied (Emby/Jellyfin uses `fanart.jpg, fanart2.jpg, ...`; Kodi uses `fanart.jpg, fanart1.jpg, ...`).
 
 To delete:
 
@@ -90,9 +88,7 @@ To delete:
 
 To delete many at once:
 
-- On the image search page's fanart gallery, tick the checkbox on each fanart you want to remove, then click **Delete selected** (the button label updates to **Delete N selected** as soon as you've ticked at least one).
-
-![Fanart management gallery on the image search page: five fanart cards in a grid, each with a select checkbox, filename, dimensions, file size, up/down move buttons, and a red delete X. The first card is checked, surfacing a red "Delete 1 selected" button at the top right](../assets/screenshots/image-fanart-gallery.jpg)
+- In the **Backdrops** tab, tick the checkbox on each fanart you want to remove, then click **Delete selected** (the button label updates to **Delete N selected** as soon as you've ticked at least one).
 
 ## Comparison view
 
