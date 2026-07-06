@@ -290,3 +290,103 @@ func TestMergeI18nJSON(t *testing.T) {
 		t.Errorf("mergeI18nJSON has %d keys, want %d", len(m), len(wantKeys))
 	}
 }
+
+// TestArtistDuplicatesIgnoredTable_RowAndRestore pins the manage-ignored table
+// contract (#2219 remainder): a populated row renders the derived member count,
+// the group key, a reason badge, and a Restore button whose hx-delete targets
+// the id-scoped restore endpoint and whose HTMX swap replaces the whole table
+// fragment. Drifting any of these silently breaks the un-ignore affordance.
+func TestArtistDuplicatesIgnoredTable_RowAndRestore(t *testing.T) {
+	view := ArtistDuplicatesIgnoredPageView{
+		Rows: []IgnoredDuplicateGroupRow{{
+			ID:          "row-42",
+			GroupKey:    "the cure",
+			Reason:      "name_key",
+			MemberCount: 3,
+			CreatedAt:   "2026-07-05 18:20:00",
+		}},
+	}
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesIgnoredTable(view).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	if !strings.Contains(body, `id="artist-duplicates-ignored-table"`) {
+		t.Errorf("missing stable table container id (HTMX swap target)")
+	}
+	if !strings.Contains(body, `hx-delete="/api/v1/artists/duplicates/ignored/row-42"`) {
+		t.Errorf("Restore button must hx-delete the id-scoped restore endpoint; got %q", body)
+	}
+	if !strings.Contains(body, `hx-target="#artist-duplicates-ignored-table"`) || !strings.Contains(body, `hx-swap="outerHTML"`) {
+		t.Errorf("Restore button must swap the whole table fragment (outerHTML)")
+	}
+	if !strings.Contains(body, `data-sw-roving-activate`) {
+		t.Errorf("Restore button must be the roving-list Enter activation target")
+	}
+	if !strings.Contains(body, `the cure`) {
+		t.Errorf("row must render the group key")
+	}
+	if !strings.Contains(body, `>3<`) {
+		t.Errorf("row must render the derived member count (3)")
+	}
+}
+
+// TestArtistDuplicatesIgnoredTable_EmptyState renders the empty-state copy (not a
+// bare table) when nothing is ignored -- the state the user lands on after
+// restoring the last group.
+func TestArtistDuplicatesIgnoredTable_EmptyState(t *testing.T) {
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesIgnoredTable(ArtistDuplicatesIgnoredPageView{}).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `id="artist-duplicates-ignored-table"`) {
+		t.Errorf("empty state must still carry the swap-target container id")
+	}
+	if strings.Contains(body, "<table") {
+		t.Errorf("empty state must not render a table; got %q", body)
+	}
+	// testCtx wires the real en translator, so the key resolves to its copy.
+	if !strings.Contains(body, "No ignored duplicate groups") {
+		t.Errorf("empty state must render the ignored_empty copy; got %q", body)
+	}
+}
+
+// TestArtistDuplicatesIgnoredTable_UnknownGroupAndReason pins the two fallback
+// branches TestArtistDuplicatesIgnoredTable_RowAndRestore doesn't exercise
+// (it always sets GroupKey and a recognized Reason): an empty GroupKey (the
+// ignore request never captured display context, or it was blank) must render
+// the ignored_group_unknown placeholder rather than an empty cell, and a
+// Reason outside {"mbid", "name_key"} must fall back to the em-dash rather
+// than silently rendering nothing.
+func TestArtistDuplicatesIgnoredTable_UnknownGroupAndReason(t *testing.T) {
+	view := ArtistDuplicatesIgnoredPageView{
+		Rows: []IgnoredDuplicateGroupRow{{
+			ID:          "row-99",
+			GroupKey:    "",
+			Reason:      "",
+			MemberCount: 2,
+			CreatedAt:   "2026-07-06 09:00:00",
+		}},
+	}
+	var buf bytes.Buffer
+	if err := ArtistDuplicatesIgnoredTable(view).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+
+	// testCtx wires the real en translator, so the key resolves to its copy.
+	if !strings.Contains(body, "Unknown group") {
+		t.Errorf("empty GroupKey must render the ignored_group_unknown placeholder; got %q", body)
+	}
+	if !strings.Contains(body, "&mdash;") {
+		t.Errorf("an unrecognized Reason must fall back to the em-dash; got %q", body)
+	}
+	// Neither reason badge's translated copy (mbid or name_key) should render
+	// for this row -- checking the rendered text, not the i18n key, since t()
+	// always resolves to copy and a raw key would never appear either way.
+	if strings.Contains(body, "Shared MBID") || strings.Contains(body, "Name collision") {
+		t.Errorf("unrecognized Reason must not render either badge; got %q", body)
+	}
+}

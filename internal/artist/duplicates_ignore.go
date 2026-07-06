@@ -17,12 +17,33 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 )
+
+// ErrIgnoredGroupNotFound is returned by RestoreDuplicateGroup when no ignored
+// row matches the given id. Callers map it to a 404 rather than a 500 so a
+// double-restore (the row already gone) reports "not found" instead of a
+// server error. Mirrors foreign.ErrNotFound in the allowlist manager.
+var ErrIgnoredGroupNotFound = errors.New("ignored duplicate group not found")
+
+// IgnoredDuplicateGroup is one persisted ignore row, surfaced to the
+// manage-ignored view. Signature is the canonical identity (see
+// DuplicateGroupSignature); GroupKey and Reason are the non-authoritative
+// display context captured at ignore time; CreatedAt is the raw SQLite
+// datetime string ("YYYY-MM-DD HH:MM:SS") from the DEFAULT (datetime('now'))
+// column, passed through untouched for display.
+type IgnoredDuplicateGroup struct {
+	ID        string
+	Signature string
+	GroupKey  string
+	Reason    string
+	CreatedAt string
+}
 
 // DuplicateGroupSignature computes the canonical, order-invariant signature for
 // a near-duplicate group from its member artist IDs: IDs are trimmed of
@@ -131,4 +152,73 @@ func LoadIgnoredSignatures(ctx context.Context, db *sql.DB) (map[string]struct{}
 		return nil, fmt.Errorf("iterating ignored signatures: %w", err)
 	}
 	return out, nil
+}
+
+// LoadIgnoredGroups returns every ignored group row (full columns), newest
+// first, for the manage-ignored view. Distinct from LoadIgnoredSignatures,
+// which returns only the signature set for the pure filter: the manage view
+// needs the id (to target a restore), the display context, and the timestamp.
+// A nil db returns an empty slice (matching LoadIgnoredSignatures' nil-db seam)
+// so a partially wired Router renders the empty state rather than failing.
+func LoadIgnoredGroups(ctx context.Context, db *sql.DB) ([]IgnoredDuplicateGroup, error) {
+	if db == nil {
+		return []IgnoredDuplicateGroup{}, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, signature, group_key, reason, created_at
+		FROM ignored_duplicate_groups
+		ORDER BY created_at DESC, id DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("loading ignored groups: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only cursor
+	out := make([]IgnoredDuplicateGroup, 0)
+	for rows.Next() {
+		var g IgnoredDuplicateGroup
+		if err := rows.Scan(&g.ID, &g.Signature, &g.GroupKey, &g.Reason, &g.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning ignored group: %w", err)
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating ignored groups: %w", err)
+	}
+	return out, nil
+}
+
+// RestoreDuplicateGroup removes the ignore row identified by its TEXT primary
+// key id, so the group resurfaces on the next detection in both the page list
+// and the sidebar count (the shared filter reads the table fresh). Returns
+// ErrIgnoredGroupNotFound when no row matched, so a double-restore reports 404
+// rather than silently succeeding. A nil db or empty id is a programming error.
+func RestoreDuplicateGroup(ctx context.Context, db *sql.DB, id string) error {
+	if db == nil {
+		return fmt.Errorf("restoring duplicate group: nil db")
+	}
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("restoring duplicate group: empty id")
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM ignored_duplicate_groups WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("restoring duplicate group: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("restoring duplicate group: rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrIgnoredGroupNotFound
+	}
+	return nil
+}
+
+// MemberCount returns the number of member artist IDs encoded in the group's
+// signature (the "|"-joined member set). Used by the manage-ignored view to
+// show how many records the ignored group spanned without exposing the raw
+// internal IDs. Returns 0 for an empty signature.
+func (g IgnoredDuplicateGroup) MemberCount() int {
+	if g.Signature == "" {
+		return 0
+	}
+	return strings.Count(g.Signature, "|") + 1
 }

@@ -3135,6 +3135,153 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/duplicates/ignored:
+    get:
+      tags: [Artists]
+      summary: List ignored duplicate groups
+      description: >-
+        Return the near-duplicate groups an administrator has ignored
+        server-side (#2219), for the manage-ignored view. Each item carries the
+        row id (used to restore it), the canonical signature, the display
+        context captured at ignore time (group_key, reason), a derived
+        member_count, and the created_at timestamp.
+
+        Admin-only.
+      operationId: listIgnoredDuplicateGroups
+      responses:
+        "200":
+          description: The ignored groups, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        signature:
+                          type: string
+                        group_key:
+                          type: string
+                        reason:
+                          type: string
+                        member_count:
+                          type: integer
+                        created_at:
+                          type: string
+                  count:
+                    type: integer
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs (http.Error), so the body is text/plain.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the route-level RequireAdmin
+            middleware as a JSON envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: >-
+            Listing the ignored groups failed. The wrapped error is logged
+            server-side; the response carries a generic JSON envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            The database is not configured on this instance (error: unavailable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/duplicates/ignored/{id}:
+    delete:
+      tags: [Artists]
+      summary: Restore (un-ignore) a duplicate group
+      description: >-
+        Remove one server-side ignore by its row id (#2219), so the group
+        resurfaces on the duplicates page and is counted again in the sidebar
+        pill (the count cache is invalidated, so the pill re-increments on the
+        next poll). Returns the refreshed manage-ignored table fragment (HTML)
+        for the HTMX swap.
+
+        Admin-only; CSRF-protected (state-changing).
+      operationId: restoreIgnoredDuplicateGroup
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ignored-group row id (from the list endpoint).
+      responses:
+        "200":
+          description: >-
+            The ignore was removed. The body is the refreshed manage-ignored
+            table fragment (text/html) for the HTMX outerHTML swap.
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Missing id path value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: >-
+            Authentication required. The auth middleware rejects the request
+            before the handler runs (http.Error), so the body is text/plain.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the route-level RequireAdmin
+            middleware as a JSON envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            No ignored group matched the id (error: not_found) -- e.g. it was
+            already restored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: >-
+            Removing the ignore failed. The wrapped error is logged server-side;
+            the response carries a generic JSON envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            The database is not configured on this instance (error: unavailable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/locked:
     get:
       tags: [Artists]

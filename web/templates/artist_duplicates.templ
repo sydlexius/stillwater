@@ -41,12 +41,27 @@ templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
 	@Layout(t(ctx, "artist_duplicates.page_title"), assets) {
 		<div class="sw-next-duplicates space-y-6">
 			<div class="sw-card rounded-lg px-3 py-2">
-				// Visible <h1> doubles as the page's document-outline heading so
-				// screen readers get a top-level landmark.
-				<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "artist_duplicates.title") }</h1>
-				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
-					{ t(ctx, "artist_duplicates.subtitle") }
-				</p>
+				<div class="flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						// Visible <h1> doubles as the page's document-outline heading so
+						// screen readers get a top-level landmark.
+						<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "artist_duplicates.title") }</h1>
+						<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
+							{ t(ctx, "artist_duplicates.subtitle") }
+						</p>
+					</div>
+					// "Manage Ignored" entry point to the manage-ignored page (#2219/#2220).
+					// Mirrors the foreign-files page's "Manage Allowlist" link: same
+					// thin-outline .sw-ff-action affordance, sits outside the card body so
+					// it does not participate in list navigation. Always shown so the
+					// manage page is reachable even when the current detection is empty.
+					<div class="shrink-0">
+						<a
+							class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none"
+							href={ templ.SafeURL(assets.BasePath + "/reports/duplicates/ignored") }
+						>{ t(ctx, "artist_duplicates.manage_ignored") }</a>
+					</div>
+				</div>
 			</div>
 			@ArtistDuplicatesTable(assets, view)
 		</div>
@@ -261,6 +276,137 @@ templ artistDuplicatesIgnoreScript() {
 			});
 		})();
 	</script>
+}
+
+// IgnoredDuplicateGroupRow is one persisted-ignore entry in the manage-ignored
+// view. Constructed by the API handler from artist.IgnoredDuplicateGroup; kept
+// on the templates side (like ForeignAllowlistRow) so the template never imports
+// internal/artist. GroupKey/Reason are the non-authoritative display context
+// captured at ignore time; MemberCount is derived from the signature so the raw
+// internal artist IDs are never surfaced. CreatedAt is the raw SQLite datetime
+// string.
+type IgnoredDuplicateGroupRow struct {
+	ID          string
+	GroupKey    string
+	Reason      string // "name_key" | "mbid" | "" (unknown)
+	MemberCount int
+	CreatedAt   string
+}
+
+// ArtistDuplicatesIgnoredPageView models /reports/duplicates/ignored.
+type ArtistDuplicatesIgnoredPageView struct {
+	Rows []IgnoredDuplicateGroupRow
+}
+
+// ArtistDuplicatesIgnoredPage renders the manage-ignored view (#2219 remainder,
+// folds #2220): the list of duplicate groups an admin has ignored, each with a
+// Restore action that un-ignores it (the group then resurfaces on the duplicates
+// page and the sidebar count re-increments). Modeled on ForeignAllowlistPage: a
+// header card with a back-link, a roving-list table, and a keyboard tip line.
+// Admin-only (the handler gates via requireForeignAdmin).
+templ ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnoredPageView) {
+	@Layout(t(ctx, "artist_duplicates.ignored_page_title"), assets) {
+		<div class="sw-next-duplicates space-y-6">
+			<div class="sw-card rounded-lg px-3 py-2">
+				<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "artist_duplicates.ignored_title") }</h1>
+				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug">
+					{ t(ctx, "artist_duplicates.ignored_subtitle") }
+				</p>
+				<div class="mt-1.5">
+					<a
+						class="sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none"
+						href={ templ.SafeURL(assets.BasePath + "/reports/duplicates") }
+					>{ t(ctx, "artist_duplicates.back_to_duplicates") }</a>
+				</div>
+			</div>
+			<div
+				data-sw-roving-list
+				data-sw-roving-label-j={ t(ctx, "artist_duplicates.ignored_shortcuts.tip_next") }
+				data-sw-roving-label-k={ t(ctx, "artist_duplicates.ignored_shortcuts.tip_prev") }
+				data-sw-roving-label-Enter={ t(ctx, "artist_duplicates.ignored_shortcuts.tip_restore") }
+			>
+				@ArtistDuplicatesIgnoredTable(view)
+			</div>
+			// Keyboard tip line: mirrors the foreign-files/allowlist sw-list-tips footer.
+			// j/k navigate rows; Enter restores the focused group. Uses dedicated
+			// ignored_shortcuts keys (not foreign_files.shortcuts) because this page
+			// lists duplicate groups, not files.
+			<p class="sw-list-tips" role="note">
+				<span class="font-medium">{ t(ctx, "foreign_files.shortcuts.tip_label") }:</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artist_duplicates.ignored_shortcuts.tip_next") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artist_duplicates.ignored_shortcuts.tip_prev") }</span></span>
+				<span aria-hidden="true">·</span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "artist_duplicates.ignored_shortcuts.tip_restore") }</span></span>
+			</p>
+		</div>
+	}
+}
+
+// ArtistDuplicatesIgnoredTable is the HTMX-swappable table fragment for the
+// manage-ignored view. A per-row Restore button issues DELETE
+// /api/v1/artists/duplicates/ignored/{id} and swaps this whole fragment
+// (outerHTML) with the refreshed table, so the empty-state copy appears once the
+// last ignore is restored. Mirrors ForeignAllowlistTable's structure and the
+// per-row Remove affordance.
+templ ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) {
+	<div id="artist-duplicates-ignored-table" class="sw-card rounded-lg p-0 overflow-hidden" tabindex="-1">
+		if len(view.Rows) == 0 {
+			<div class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "artist_duplicates.ignored_empty") }
+			</div>
+		} else {
+			<table class="min-w-full text-sm">
+				<thead class="bg-gray-50 dark:bg-gray-800/50">
+					<tr>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.ignored_col_group") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.ignored_col_reason") }</th>
+						<th scope="col" class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.ignored_col_members") }</th>
+						<th scope="col" class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.ignored_col_ignored_at") }</th>
+						<th scope="col" class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.ignored_col_actions") }</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+					for _, r := range view.Rows {
+						<tr id={ "ignored-row-" + r.ID } data-sw-roving-item data-sw-roving-key={ r.ID }>
+							<td class="px-4 py-2 font-mono text-xs text-gray-700 dark:text-gray-300">
+								if r.GroupKey != "" {
+									{ r.GroupKey }
+								} else {
+									<span class="italic text-gray-400 dark:text-gray-500">{ t(ctx, "artist_duplicates.ignored_group_unknown") }</span>
+								}
+							</td>
+							<td class="px-4 py-2">
+								if r.Reason == "mbid" {
+									<span class="px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">{ t(ctx, "artist_duplicates.reason_mbid") }</span>
+								} else if r.Reason == "name_key" {
+									<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">{ t(ctx, "artist_duplicates.reason_name_key") }</span>
+								} else {
+									<span class="text-gray-400 dark:text-gray-500">&mdash;</span>
+								}
+							</td>
+							<td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{ itoa(r.MemberCount) }</td>
+							<td class="px-4 py-2 text-gray-600 dark:text-gray-400">{ r.CreatedAt }</td>
+							<td class="px-4 py-2 text-right">
+								<button
+									type="button"
+									class="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
+									hx-delete={ "/api/v1/artists/duplicates/ignored/" + r.ID }
+									hx-target="#artist-duplicates-ignored-table"
+									hx-swap="outerHTML"
+									data-sw-error={ t(ctx, "artist_duplicates.restore_response_error") }
+									data-sw-net-error={ t(ctx, "artist_duplicates.restore_send_error") }
+									hx-on::response-error="alert(this.dataset.swError)"
+									hx-on::send-error="alert(this.dataset.swNetError)"
+									data-sw-roving-activate
+								>{ t(ctx, "artist_duplicates.action_restore") }</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
 }
 
 // ArtistMergeModal renders the per-group merge confirmation dialog. The
