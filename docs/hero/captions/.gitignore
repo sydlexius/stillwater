@@ -1,0 +1,8 @@
+node_modules/
+out/
+assets/
+public/*.mp4
+# per-screen recorded/trimmed clips - regenerable via nav-clips.mjs + build-clips.mjs
+public/clips/
+# generated clip manifest (regenerate with docs/hero/captions/build-clips.mjs)
+src/clips.generated.ts
