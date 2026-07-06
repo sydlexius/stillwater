@@ -1,4 +1,6 @@
-# Stillwater
+<p align="center">
+  <img src="docs/img/stillwater-wordmark.svg" alt="Stillwater" width="380"/>
+</p>
 
 [![CI](https://github.com/sydlexius/stillwater/actions/workflows/ci.yml/badge.svg)](https://github.com/sydlexius/stillwater/actions/workflows/ci.yml)
 [![Release](https://github.com/sydlexius/stillwater/actions/workflows/release.yml/badge.svg)](https://github.com/sydlexius/stillwater/actions/workflows/release.yml)
@@ -11,6 +13,12 @@ Stillwater is a self-hosted web app for keeping your music library's artist
 and composer metadata clean and consistent. It reads and writes NFO files,
 manages artwork, and pulls metadata from MusicBrainz and Fanart.tv, all
 from one web UI that works alongside Emby, Jellyfin, and Kodi.
+
+<p align="center">
+  <a href="VIDEO_URL_PLACEHOLDER">
+    <img src="docs/hero/hero-static.png" alt="Stillwater hero walkthrough (click to play)" width="800"/>
+  </a>
+</p>
 
 **Full documentation:** <https://sydlexius.github.io/stillwater/>
 
