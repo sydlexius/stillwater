@@ -483,6 +483,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// the in-handler requireForeignAdmin gate (same as merge). Persists the
 	// ignore and invalidates the sidebar count cache so the pill drops.
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/duplicates/ignore", wrapAuth(r.handleArtistDuplicatesIgnore, authMw))
+	// #2219 remainder (folds #2220): the manage-ignored surface. List the
+	// server-side ignores and restore (un-ignore) one. Admin-only via route-level
+	// RequireAdmin (mirrors the foreign-file allowlist manager); the global CSRF
+	// middleware validates the mutating DELETE. Restore invalidates the sidebar
+	// count cache so the duplicates pill re-increments.
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates/ignored", wrapAuth(middleware.RequireAdmin(r.handleArtistDuplicatesIgnoredList), authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/duplicates/ignored/{id}", wrapAuth(middleware.RequireAdmin(r.handleArtistDuplicatesRestore), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleLockArtist, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleUnlockArtist, authMw))
 	// Field-level and per-image lock toggles for platforms that support
@@ -875,6 +882,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// move). Registered before the catch-all so the specific paths win
 	// over the /settings/{section} section redirect.
 	mux.HandleFunc("GET "+bp+"/reports/duplicates", wrapOptionalAuth(r.handleArtistDuplicatesPage, optAuthMw))
+	// Manage-ignored view (#2219 remainder, folds #2220). More specific than
+	// /reports/duplicates so it is registered right after it; admin-only via the
+	// in-handler requireForeignAdmin gate (same as the page above).
+	mux.HandleFunc("GET "+bp+"/reports/duplicates/ignored", wrapOptionalAuth(r.handleArtistDuplicatesIgnoredPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {

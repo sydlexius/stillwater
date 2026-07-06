@@ -1078,6 +1078,13 @@
     "covered": true
   },
   {
+    "operationId": "listIgnoredDuplicateGroups",
+    "method": "GET",
+    "path": "/artists/duplicates/ignored",
+    "handler": "handleArtistDuplicatesIgnoredList",
+    "covered": true
+  },
+  {
     "operationId": "listInFlightPopulates",
     "method": "GET",
     "path": "/connections/populate/in-flight",
@@ -1419,6 +1426,13 @@
     "path": "/notifications/{id}/resolve",
     "handler": "handleResolveViolation",
     "covered": false
+  },
+  {
+    "operationId": "restoreIgnoredDuplicateGroup",
+    "method": "DELETE",
+    "path": "/artists/duplicates/ignored/{id}",
+    "handler": "handleArtistDuplicatesRestore",
+    "covered": true
   },
   {
     "operationId": "retryReIdentifyWizardStep",
