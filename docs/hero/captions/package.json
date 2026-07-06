@@ -1,0 +1,23 @@
+{
+  "name": "stillwater-hero-captions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion caption layer for the #1756 README hero: kinetic frosted-glass caption chips composited over the Reframed screen capture. Proof-of-concept.",
+  "scripts": {
+    "render": "remotion render src/index.ts HeroCaptions out/proof.mp4",
+    "still": "remotion still src/index.ts HeroCaptions out/frame.png",
+    "studio": "remotion studio src/index.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.484",
+    "@remotion/transitions": "^4.0.484",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "typescript": "^5.4.0"
+  }
+}
