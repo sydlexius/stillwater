@@ -78,14 +78,14 @@ func ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) temp
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"sw-next-duplicates space-y-6\"><div class=\"sw-card rounded-lg px-3 py-2\"><h1 class=\"text-xs font-semibold leading-tight\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"sw-next-duplicates space-y-6\"><div class=\"sw-card rounded-lg px-3 py-2\"><div class=\"flex items-start justify-between gap-3\"><div class=\"min-w-0\"><h1 class=\"text-xs font-semibold leading-tight\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 46, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 48, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -98,13 +98,39 @@ func ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) temp
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.subtitle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 48, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 50, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p></div><div class=\"shrink-0\"><a class=\"sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none\" href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var5 templ.SafeURL
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/reports/duplicates/ignored"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 61, Col: 76}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var6 string
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.manage_ignored"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 62, Col: 51}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</a></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -112,7 +138,7 @@ func ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) temp
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -120,7 +146,7 @@ func ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) temp
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -159,94 +185,76 @@ func ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) tem
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var5 == nil {
-			templ_7745c5c3_Var5 = templ.NopComponent
+		templ_7745c5c3_Var7 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var7 == nil {
+			templ_7745c5c3_Var7 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div id=\"artist-duplicates-table\" class=\"space-y-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div id=\"artist-duplicates-table\" class=\"space-y-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(view.Groups) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div id=\"duplicates-empty-none\" class=\"sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div id=\"duplicates-empty-none\" class=\"sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.empty_state"))
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.empty_state"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 67, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 82, Col: 45}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
 			for _, group := range view.Groups {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"sw-card rounded-lg overflow-hidden\" data-duplicate-group data-group-key=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"sw-card rounded-lg overflow-hidden\" data-duplicate-group data-group-key=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var7 string
-				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
+				var templ_7745c5c3_Var9 string
+				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 74, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 89, Col: 31}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-members=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var8 string
-				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(DuplicateGroupMembersJSON(group.Members))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 75, Col: 60}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-members=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"><div class=\"px-4 py-3 flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50\">")
+				var templ_7745c5c3_Var10 string
+				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(DuplicateGroupMembersJSON(group.Members))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 90, Col: 60}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\"><div class=\"px-4 py-3 flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if group.Reason == "mbid" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<span class=\"px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<span class=\"px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var9 string
-					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_mbid"))
+					var templ_7745c5c3_Var11 string
+					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_mbid"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 80, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 95, Col: 49}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</span> ")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<span class=\"px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var10 string
-					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_name_key"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 84, Col: 53}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -254,93 +262,85 @@ func ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) tem
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<span class=\"px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var12 string
+					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_name_key"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 99, Col: 53}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> ")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<span class=\"text-xs font-mono text-gray-500 dark:text-gray-400\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var11 string
-				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(group.Key)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 87, Col: 82}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span><div class=\"ml-auto flex items-center gap-2\"><button type=\"button\" class=\"inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors\" data-ignore-group data-group-key=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var12 string
-				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 93, Col: 34}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" data-i18n-ignore-read-error=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<span class=\"text-xs font-mono text-gray-500 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var13 string
-				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_read_error"))
+				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(group.Key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 94, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 102, Col: 82}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" data-i18n-ignore-http-error=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</span><div class=\"ml-auto flex items-center gap-2\"><button type=\"button\" class=\"inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors\" data-ignore-group data-group-key=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 string
-				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_http_error"))
+				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 95, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 108, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" data-i18n-ignore-network-error=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" data-i18n-ignore-read-error=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var15 string
-				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_network_error"))
+				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_read_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 96, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 109, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" data-i18n-ignore-http-error=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var16 string
-				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_ignore"))
+				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_http_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 98, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 110, Col: 83}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</button> <button type=\"button\" class=\"inline-flex items-center gap-1 rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors\" data-merge-open data-group-key=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" data-i18n-ignore-network-error=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
-				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
+				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignore_network_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 104, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 111, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 				if templ_7745c5c3_Err != nil {
@@ -351,195 +351,221 @@ func ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) tem
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var18 string
-				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_merge"))
+				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_ignore"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 106, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 113, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</button></div></div><table class=\"min-w-full text-sm\"><thead class=\"bg-gray-50 dark:bg-gray-800/30\"><tr><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</button> <button type=\"button\" class=\"inline-flex items-center gap-1 rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors\" data-merge-open data-group-key=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var19 string
-				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_name"))
+				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(group.Key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 113, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 119, Col: 34}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var20 string
-				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_path"))
+				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_merge"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 114, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 121, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</button></div></div><table class=\"min-w-full text-sm\"><thead class=\"bg-gray-50 dark:bg-gray-800/30\"><tr><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var21 string
-				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_mbid"))
+				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_name"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 115, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 128, Col: 123}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var22 string
+				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_path"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 129, Col: 123}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</th><th class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var23 string
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.col_mbid"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 130, Col: 123}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, m := range group.Members {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<tr><td class=\"px-4 py-2\"><a class=\"text-blue-600 dark:text-blue-400 hover:underline underline-offset-2\" href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<tr><td class=\"px-4 py-2\"><a class=\"text-blue-600 dark:text-blue-400 hover:underline underline-offset-2\" href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var22 templ.SafeURL
-					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/artists/" + m.ID))
+					var templ_7745c5c3_Var24 templ.SafeURL
+					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/artists/" + m.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 124, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 139, Col: 69}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\">")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var23 string
-					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(m.Name)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 125, Col: 19}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</a> ")
+					var templ_7745c5c3_Var25 string
+					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(m.Name)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 140, Col: 19}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</a> ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					if m.Recommended {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span class=\"ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300\" title=\"")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span class=\"ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300\" title=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var24 string
-						templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(RecommendedReasonLabel(ctx, m.RecommendedReason))
+						var templ_7745c5c3_Var26 string
+						templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(RecommendedReasonLabel(ctx, m.RecommendedReason))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 129, Col: 68}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 144, Col: 68}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\">")
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var25 string
-						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.recommended_badge"))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 131, Col: 59}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span>")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var26 string
-					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(m.Path)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 135, Col: 90}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					if m.MBID != "" {
 						var templ_7745c5c3_Var27 string
-						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(m.MBID)
+						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.recommended_badge"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 138, Col: 19}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 146, Col: 59}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						var templ_7745c5c3_Var28 string
-						templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.no_mbid"))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 140, Col: 102}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</span>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</span>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</td></tr>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var28 string
+					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(m.Path)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 150, Col: 90}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</td><td class=\"px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					if m.MBID != "" {
+						var templ_7745c5c3_Var29 string
+						templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(m.MBID)
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 153, Col: 19}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					} else {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var30 string
+						templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.no_mbid"))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 155, Col: 102}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</span>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</td></tr>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</tbody></table></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</tbody></table></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "     <div id=\"duplicates-empty-dismissed\" hidden class=\"sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "     <div id=\"duplicates-empty-dismissed\" hidden class=\"sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var29 string
-			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.empty_state_dismissed"))
+			var templ_7745c5c3_Var31 string
+			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.empty_state_dismissed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 154, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 169, Col: 55}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -574,12 +600,557 @@ func artistDuplicatesIgnoreScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var30 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var30 == nil {
-			templ_7745c5c3_Var30 = templ.NopComponent
+		templ_7745c5c3_Var32 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var32 == nil {
+			templ_7745c5c3_Var32 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<script>\n\t\t(function() {\n\t\t\tvar bpMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\tvar basePath = bpMeta ? bpMeta.content : '';\n\t\t\tvar endpoint = basePath + '/api/v1/artists/duplicates/ignore';\n\n\t\t\t// Use the canonical CSRF cookie reader exposed by preferences.js\n\t\t\t// (loaded on every page via the layout). Fall back to a local reader\n\t\t\t// only if the global is somehow absent so the POST still has a header.\n\t\t\tfunction csrfToken() {\n\t\t\t\tif (typeof window.swCsrfToken === 'function') return window.swCsrfToken();\n\t\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\tif (!match) return '';\n\t\t\t\t// decodeURIComponent throws URIError on malformed percent-encoding;\n\t\t\t\t// fall back to the raw value so a bad cookie never breaks the page.\n\t\t\t\ttry { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }\n\t\t\t}\n\n\t\t\t// memberIdsFor returns the group's member IDs from the card's\n\t\t\t// data-members blob. Returns null when the blob is missing, empty, or\n\t\t\t// unparsable so callers skip the POST.\n\t\t\tfunction memberIdsFor(card) {\n\t\t\t\tvar raw = card.getAttribute('data-members') || '[]';\n\t\t\t\tvar members = [];\n\t\t\t\ttry { members = JSON.parse(raw); } catch (e) { return null; }\n\t\t\t\tvar ids = members.map(function(m) { return m.id; }).filter(Boolean);\n\t\t\t\tif (ids.length === 0) return null;\n\t\t\t\treturn ids;\n\t\t\t}\n\n\t\t\t// refreshEmptyState reveals the \"all dismissed\" panel when every\n\t\t\t// detected group card is hidden, and hides it again otherwise.\n\t\t\tfunction refreshEmptyState() {\n\t\t\t\tvar cards = document.querySelectorAll('[data-duplicate-group]');\n\t\t\t\tif (cards.length === 0) return;\n\t\t\t\tvar anyVisible = false;\n\t\t\t\tcards.forEach(function(c) { if (!c.hidden) anyVisible = true; });\n\t\t\t\tvar dismissed = document.getElementById('duplicates-empty-dismissed');\n\t\t\t\tif (dismissed) dismissed.hidden = anyVisible;\n\t\t\t}\n\n\t\t\t// notifyError surfaces a failure rather than silently hiding the card,\n\t\t\t// so a persist failure never masquerades as a successful ignore.\n\t\t\tfunction notifyError(msg) {\n\t\t\t\tif (window.showToast) { window.showToast(msg); return; }\n\t\t\t\tconsole.error('stillwater: ' + msg);\n\t\t\t}\n\n\t\t\tfunction ignore(card, btn) {\n\t\t\t\t// Localized toast copy is threaded through the button's data-i18n-*\n\t\t\t\t// attributes (rendered server-side via t(ctx, ...)); the English\n\t\t\t\t// literals are only the fallback when the attribute is absent,\n\t\t\t\t// mirroring the rerun-onboarding pattern in settings.templ.\n\t\t\t\tvar readErr = (btn && btn.dataset.i18nIgnoreReadError) || 'Could not read group members to ignore.';\n\t\t\t\tvar httpTpl = (btn && btn.dataset.i18nIgnoreHttpError) || 'Could not ignore this group ({status}). Please try again.';\n\t\t\t\tvar netErr = (btn && btn.dataset.i18nIgnoreNetworkError) || 'Network error while ignoring this group. Please try again.';\n\t\t\t\tvar ids = memberIdsFor(card);\n\t\t\t\tif (!ids) { notifyError(readErr); return; }\n\t\t\t\tvar groupKey = card.getAttribute('data-group-key') || '';\n\t\t\t\tif (btn) btn.disabled = true;\n\t\t\t\tfetch(endpoint, {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': csrfToken()\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({ member_ids: ids, group_key: groupKey })\n\t\t\t\t}).then(function(res) {\n\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t\t\tnotifyError(httpTpl.replace('{status}', res.status));\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Persisted: hide the card and refresh the all-dismissed panel.\n\t\t\t\t\tcard.hidden = true;\n\t\t\t\t\trefreshEmptyState();\n\t\t\t\t}).catch(function() {\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t\tnotifyError(netErr);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Delegate clicks on the per-group Ignore buttons.\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tvar btn = e.target.closest('[data-ignore-group]');\n\t\t\t\tif (!btn) return;\n\t\t\t\te.preventDefault();\n\t\t\t\tvar card = btn.closest('[data-duplicate-group]');\n\t\t\t\tif (card) ignore(card, btn);\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<script>\n\t\t(function() {\n\t\t\tvar bpMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\tvar basePath = bpMeta ? bpMeta.content : '';\n\t\t\tvar endpoint = basePath + '/api/v1/artists/duplicates/ignore';\n\n\t\t\t// Use the canonical CSRF cookie reader exposed by preferences.js\n\t\t\t// (loaded on every page via the layout). Fall back to a local reader\n\t\t\t// only if the global is somehow absent so the POST still has a header.\n\t\t\tfunction csrfToken() {\n\t\t\t\tif (typeof window.swCsrfToken === 'function') return window.swCsrfToken();\n\t\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\tif (!match) return '';\n\t\t\t\t// decodeURIComponent throws URIError on malformed percent-encoding;\n\t\t\t\t// fall back to the raw value so a bad cookie never breaks the page.\n\t\t\t\ttry { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }\n\t\t\t}\n\n\t\t\t// memberIdsFor returns the group's member IDs from the card's\n\t\t\t// data-members blob. Returns null when the blob is missing, empty, or\n\t\t\t// unparsable so callers skip the POST.\n\t\t\tfunction memberIdsFor(card) {\n\t\t\t\tvar raw = card.getAttribute('data-members') || '[]';\n\t\t\t\tvar members = [];\n\t\t\t\ttry { members = JSON.parse(raw); } catch (e) { return null; }\n\t\t\t\tvar ids = members.map(function(m) { return m.id; }).filter(Boolean);\n\t\t\t\tif (ids.length === 0) return null;\n\t\t\t\treturn ids;\n\t\t\t}\n\n\t\t\t// refreshEmptyState reveals the \"all dismissed\" panel when every\n\t\t\t// detected group card is hidden, and hides it again otherwise.\n\t\t\tfunction refreshEmptyState() {\n\t\t\t\tvar cards = document.querySelectorAll('[data-duplicate-group]');\n\t\t\t\tif (cards.length === 0) return;\n\t\t\t\tvar anyVisible = false;\n\t\t\t\tcards.forEach(function(c) { if (!c.hidden) anyVisible = true; });\n\t\t\t\tvar dismissed = document.getElementById('duplicates-empty-dismissed');\n\t\t\t\tif (dismissed) dismissed.hidden = anyVisible;\n\t\t\t}\n\n\t\t\t// notifyError surfaces a failure rather than silently hiding the card,\n\t\t\t// so a persist failure never masquerades as a successful ignore.\n\t\t\tfunction notifyError(msg) {\n\t\t\t\tif (window.showToast) { window.showToast(msg); return; }\n\t\t\t\tconsole.error('stillwater: ' + msg);\n\t\t\t}\n\n\t\t\tfunction ignore(card, btn) {\n\t\t\t\t// Localized toast copy is threaded through the button's data-i18n-*\n\t\t\t\t// attributes (rendered server-side via t(ctx, ...)); the English\n\t\t\t\t// literals are only the fallback when the attribute is absent,\n\t\t\t\t// mirroring the rerun-onboarding pattern in settings.templ.\n\t\t\t\tvar readErr = (btn && btn.dataset.i18nIgnoreReadError) || 'Could not read group members to ignore.';\n\t\t\t\tvar httpTpl = (btn && btn.dataset.i18nIgnoreHttpError) || 'Could not ignore this group ({status}). Please try again.';\n\t\t\t\tvar netErr = (btn && btn.dataset.i18nIgnoreNetworkError) || 'Network error while ignoring this group. Please try again.';\n\t\t\t\tvar ids = memberIdsFor(card);\n\t\t\t\tif (!ids) { notifyError(readErr); return; }\n\t\t\t\tvar groupKey = card.getAttribute('data-group-key') || '';\n\t\t\t\tif (btn) btn.disabled = true;\n\t\t\t\tfetch(endpoint, {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': csrfToken()\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({ member_ids: ids, group_key: groupKey })\n\t\t\t\t}).then(function(res) {\n\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t\t\tnotifyError(httpTpl.replace('{status}', res.status));\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Persisted: hide the card and refresh the all-dismissed panel.\n\t\t\t\t\tcard.hidden = true;\n\t\t\t\t\trefreshEmptyState();\n\t\t\t\t}).catch(function() {\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t\tnotifyError(netErr);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Delegate clicks on the per-group Ignore buttons.\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tvar btn = e.target.closest('[data-ignore-group]');\n\t\t\t\tif (!btn) return;\n\t\t\t\te.preventDefault();\n\t\t\t\tvar card = btn.closest('[data-duplicate-group]');\n\t\t\t\tif (card) ignore(card, btn);\n\t\t\t});\n\t\t})();\n\t</script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// IgnoredDuplicateGroupRow is one persisted-ignore entry in the manage-ignored
+// view. Constructed by the API handler from artist.IgnoredDuplicateGroup; kept
+// on the templates side (like ForeignAllowlistRow) so the template never imports
+// internal/artist. GroupKey/Reason are the non-authoritative display context
+// captured at ignore time; MemberCount is derived from the signature so the raw
+// internal artist IDs are never surfaced. CreatedAt is the raw SQLite datetime
+// string.
+type IgnoredDuplicateGroupRow struct {
+	ID          string
+	GroupKey    string
+	Reason      string // "name_key" | "mbid" | "" (unknown)
+	MemberCount int
+	CreatedAt   string
+}
+
+// ArtistDuplicatesIgnoredPageView models /reports/duplicates/ignored.
+type ArtistDuplicatesIgnoredPageView struct {
+	Rows []IgnoredDuplicateGroupRow
+}
+
+// ArtistDuplicatesIgnoredPage renders the manage-ignored view (#2219 remainder,
+// folds #2220): the list of duplicate groups an admin has ignored, each with a
+// Restore action that un-ignores it (the group then resurfaces on the duplicates
+// page and the sidebar count re-increments). Modeled on ForeignAllowlistPage: a
+// header card with a back-link, a roving-list table, and a keyboard tip line.
+// Admin-only (the handler gates via requireForeignAdmin).
+func ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnoredPageView) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var33 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var33 == nil {
+			templ_7745c5c3_Var33 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Var34 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div class=\"sw-next-duplicates space-y-6\"><div class=\"sw-card rounded-lg px-3 py-2\"><h1 class=\"text-xs font-semibold leading-tight\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var35 string
+			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_title"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 311, Col: 95}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</h1><p class=\"mt-0.5 text-xs text-gray-500 dark:text-gray-400 leading-snug\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var36 string
+			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_subtitle"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 313, Col: 51}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</p><div class=\"mt-1.5\"><a class=\"sw-ff-action inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium focus:outline-none\" href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var37 templ.SafeURL
+			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/reports/duplicates"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 318, Col: 67}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var38 string
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.back_to_duplicates"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 319, Col: 54}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</a></div></div><div data-sw-roving-list data-sw-roving-label-j=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var39 string
+			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "foreign_files.shortcuts.tip_next"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 324, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" data-sw-roving-label-k=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var40 string
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "foreign_files.shortcuts.tip_prev"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 325, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" data-sw-roving-label-Enter=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var41 string
+			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignored_shortcuts.tip_restore"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 326, Col: 90}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = ArtistDuplicatesIgnoredTable(view).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div><p class=\"sw-list-tips\" role=\"note\"><span class=\"font-medium\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var42 string
+			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "foreign_files.shortcuts.tip_label"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 333, Col: 75}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, ":</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">j</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "foreign_files.shortcuts.tip_next"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 334, Col: 145}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">k</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var44 string
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "foreign_files.shortcuts.tip_prev"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 336, Col: 145}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">Enter</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var45 string
+			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_shortcuts.tip_restore"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 338, Col: 164}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</span></span></p></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = Layout(t(ctx, "artist_duplicates.ignored_page_title"), assets).Render(templ.WithChildren(ctx, templ_7745c5c3_Var34), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// ArtistDuplicatesIgnoredTable is the HTMX-swappable table fragment for the
+// manage-ignored view. A per-row Restore button issues DELETE
+// /api/v1/artists/duplicates/ignored/{id} and swaps this whole fragment
+// (outerHTML) with the refreshed table, so the empty-state copy appears once the
+// last ignore is restored. Mirrors ForeignAllowlistTable's structure and the
+// per-row Remove affordance.
+func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var46 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var46 == nil {
+			templ_7745c5c3_Var46 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div id=\"artist-duplicates-ignored-table\" class=\"sw-card rounded-lg p-0 overflow-hidden\" tabindex=\"-1\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(view.Rows) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<div class=\"px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var47 string
+			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_empty"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 354, Col: 47}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<table class=\"min-w-full text-sm\"><thead class=\"bg-gray-50 dark:bg-gray-800/50\"><tr><th scope=\"col\" class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var48 string
+			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_group"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 360, Col: 142}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</th><th scope=\"col\" class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var49 string
+			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_reason"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 361, Col: 143}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</th><th scope=\"col\" class=\"px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var50 string
+			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_members"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 362, Col: 145}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</th><th scope=\"col\" class=\"px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var51 string
+			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_ignored_at"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 363, Col: 147}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</th><th scope=\"col\" class=\"px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var52 string
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_actions"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 364, Col: 145}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</th></tr></thead> <tbody class=\"divide-y divide-gray-200 dark:divide-gray-700\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, r := range view.Rows {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<tr id=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var53 string
+				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue("ignored-row-" + r.ID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 369, Col: 36}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" data-sw-roving-item data-sw-roving-key=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var54 string
+				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(r.ID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 369, Col: 84}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\"><td class=\"px-4 py-2 font-mono text-xs text-gray-700 dark:text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if r.GroupKey != "" {
+					var templ_7745c5c3_Var55 string
+					templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(r.GroupKey)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 372, Col: 21}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var56 string
+					templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_group_unknown"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 374, Col: 114}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</td><td class=\"px-4 py-2\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if r.Reason == "mbid" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<span class=\"px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var57 string
+					templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_mbid"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 379, Col: 177}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else if r.Reason == "name_key" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<span class=\"px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var58 string
+					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_name_key"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 381, Col: 177}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<span class=\"text-gray-400 dark:text-gray-500\">&mdash;</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</td><td class=\"px-4 py-2 text-right text-gray-600 dark:text-gray-400\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var59 string
+				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(r.MemberCount))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 386, Col: 94}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "</td><td class=\"px-4 py-2 text-gray-600 dark:text-gray-400\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var60 string
+				templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(r.CreatedAt)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 387, Col: 75}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</td><td class=\"px-4 py-2 text-right\"><button type=\"button\" class=\"px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs hover:bg-gray-50 dark:hover:bg-gray-800\" hx-delete=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var61 string
+				templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/duplicates/ignored/" + r.ID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 392, Col: 65}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "\" hx-target=\"#artist-duplicates-ignored-table\" hx-swap=\"outerHTML\" data-sw-error=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var62 string
+				templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.restore_response_error"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 395, Col: 75}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "\" data-sw-net-error=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var63 string
+				templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.restore_send_error"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 396, Col: 75}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\" hx-on::response-error=\"alert(this.dataset.swError)\" hx-on::send-error=\"alert(this.dataset.swNetError)\" data-sw-roving-activate>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var64 string
+				templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_restore"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 400, Col: 53}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "</button></td></tr>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</tbody></table>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -609,129 +1180,129 @@ func ArtistMergeModal() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var31 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var31 == nil {
-			templ_7745c5c3_Var31 = templ.NopComponent
+		templ_7745c5c3_Var65 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var65 == nil {
+			templ_7745c5c3_Var65 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<div id=\"merge-i18n\" hidden data-i18n=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "<div id=\"merge-i18n\" hidden data-i18n=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var32 string
-		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(mergeI18nJSON(ctx))
+		var templ_7745c5c3_Var66 string
+		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(mergeI18nJSON(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 273, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 417, Col: 59}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\"></div><div id=\"merge-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"merge-modal-title\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"merge-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"relative w-full max-w-2xl max-h-[85vh] rounded-lg bg-white dark:bg-gray-800 shadow-xl flex flex-col\"><div class=\"flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h3 id=\"merge-modal-title\" class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var33 string
-		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.title"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 286, Col: 53}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\"></div><div id=\"merge-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"merge-modal-title\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"merge-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"relative w-full max-w-2xl max-h-[85vh] rounded-lg bg-white dark:bg-gray-800 shadow-xl flex flex-col\"><div class=\"flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h3 id=\"merge-modal-title\" class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</h3><button type=\"button\" class=\"p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors\" data-merge-close aria-label=\"")
+		var templ_7745c5c3_Var67 string
+		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.title"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 430, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var34 string
-		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.close"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 292, Col: 41}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "</h3><button type=\"button\" class=\"p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors\" data-merge-close aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"><svg class=\"h-5 w-5\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z\" clip-rule=\"evenodd\"></path></svg></button></div><div class=\"px-6 py-4 overflow-y-auto flex-1 space-y-4\"><p class=\"text-sm text-gray-600 dark:text-gray-400\">")
+		var templ_7745c5c3_Var68 string
+		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.close"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 436, Col: 41}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var35 string
-		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.description"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 301, Col: 59}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\"><svg class=\"h-5 w-5\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z\" clip-rule=\"evenodd\"></path></svg></button></div><div class=\"px-6 py-4 overflow-y-auto flex-1 space-y-4\"><p class=\"text-sm text-gray-600 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</p><fieldset><legend class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">")
+		var templ_7745c5c3_Var69 string
+		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.description"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 445, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var36 string
-		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.survivor_legend"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 305, Col: 64}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "</p><fieldset><legend class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</legend><div id=\"merge-survivor-options\" class=\"space-y-2\"></div></fieldset><div class=\"border-t border-gray-200 dark:border-gray-700 pt-4\"><h4 class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">")
+		var templ_7745c5c3_Var70 string
+		templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.survivor_legend"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 449, Col: 64}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var37 string
-		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_heading"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 311, Col: 64}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "</legend><div id=\"merge-survivor-options\" class=\"space-y-2\"></div></fieldset><div class=\"border-t border-gray-200 dark:border-gray-700 pt-4\"><h4 class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</h4><div id=\"merge-preview-body\" class=\"text-sm text-gray-600 dark:text-gray-400\"><p class=\"italic\">")
+		var templ_7745c5c3_Var71 string
+		templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_heading"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 455, Col: 64}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var38 string
-		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_loading"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 314, Col: 82}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "</h4><div id=\"merge-preview-body\" class=\"text-sm text-gray-600 dark:text-gray-400\"><p class=\"italic\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</p></div></div></div><div class=\"flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3\"><button type=\"button\" class=\"rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors\" data-merge-close>")
+		var templ_7745c5c3_Var72 string
+		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_loading"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 458, Col: 82}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var39 string
-		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 324, Col: 31}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</p></div></div></div><div class=\"flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3\"><button type=\"button\" class=\"rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors\" data-merge-close>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</button> <button type=\"button\" id=\"merge-modal-confirm\" class=\"rounded bg-red-600 hover:bg-red-700 px-3 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-600\" disabled>")
+		var templ_7745c5c3_Var73 string
+		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 468, Col: 31}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var40 string
-		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.confirm_button"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 332, Col: 62}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</button> <button type=\"button\" id=\"merge-modal-confirm\" class=\"rounded bg-red-600 hover:bg-red-700 px-3 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-600\" disabled>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</button></div></div></div></div><script>\n\t\t(function() {\n\t\tvar bpMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\tvar basePath = bpMeta ? bpMeta.content : '';\n\t\tvar endpoint = basePath + '/api/v1/artists/merge';\n\t\tvar modal = document.getElementById('merge-modal');\n\t\tvar backdrop = document.getElementById('merge-backdrop');\n\t\tvar optionsRoot = document.getElementById('merge-survivor-options');\n\t\tvar previewBody = document.getElementById('merge-preview-body');\n\t\tvar confirmBtn = document.getElementById('merge-modal-confirm');\n\n\t\tvar current = { members: [], survivorId: null, dryRunOK: false };\n\t\t// excludedIds holds member IDs the user has unchecked in the merge\n\t\t// dialog (#1714): they are neither the survivor nor merged into it, so\n\t\t// they are dropped from loser_ids. Re-checking a box re-includes the\n\t\t// member. Cleared whenever a new group opens or the modal closes.\n\t\tvar excludedIds = new Set();\n\t\t// rowControls mirrors the rendered survivor rows so applySurvivorState\n\t\t// can update each row's checkbox + dim state in place, without a full\n\t\t// re-render that would replace the radio nodes and break radio-group\n\t\t// arrow-key navigation.\n\t\tvar rowControls = [];\n\t\t// dryRunSeq is incremented on every new dry-run invocation and on\n\t\t// closeModal. Async continuations compare their captured seq against\n\t\t// the current value so a stale response from a superseded dry-run\n\t\t// cannot set dryRunOK or enable Confirm.\n\t\tvar dryRunSeq = 0;\n\t\t// lastFocused tracks the element that had focus when the modal opened\n\t\t// so closeModal can restore keyboard focus to the triggering control\n\t\t// (the Merge button or whatever the user tabbed to next). Mirrors the\n\t\t// path_picker.templ _ppOpener pattern; see CR feedback on PR1655.\n\t\tvar lastFocused = null;\n\t\tvar i18nKeys = (function() {\n\t\t\tvar el = document.getElementById('merge-i18n');\n\t\t\tif (!el) return {};\n\t\t\ttry { return JSON.parse(el.dataset.i18n || '{}'); } catch (e) { return {}; }\n\t\t})();\n\n\t\tfunction tx(key) {\n\t\t\treturn (i18nKeys[key] !== undefined) ? i18nKeys[key] : key;\n\t\t}\n\n\t\t// Use the canonical CSRF cookie reader exposed by preferences.js\n\t\t// (loaded on every page via layout.templ). Falling back to a local\n\t\t// reader only if the global is somehow absent so the fetch still has\n\t\t// a header to send rather than throwing.\n\t\tfunction csrfToken() {\n\t\t\tif (typeof window.swCsrfToken === 'function') return window.swCsrfToken();\n\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\tif (!match) return '';\n\t\t\t// decodeURIComponent throws URIError on malformed percent-encoding;\n\t\t\t// fall back to the raw value so a bad cookie never breaks the page.\n\t\t\ttry { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }\n\t\t}\n\n\t\tfunction openModal(groupKey) {\n\t\t\tvar card = document.querySelector('[data-duplicate-group][data-group-key=\"' + cssEscape(groupKey) + '\"]');\n\t\t\tif (!card) return;\n\t\t\tvar raw = card.getAttribute('data-members') || '[]';\n\t\t\tvar members = [];\n\t\t\ttry { members = JSON.parse(raw); } catch (e) { members = []; }\n\t\t\tif (members.length < 2) return;\n\n\t\t\tlastFocused = document.activeElement;\n\t\t\tcurrent.members = members;\n\t\t\tvar rec = members.find(function(m) { return m.recommended; });\n\t\t\tcurrent.survivorId = rec ? rec.id : members[0].id;\n\t\t\tcurrent.dryRunOK = false;\n\t\t\texcludedIds.clear();\n\n\t\t\trenderSurvivorOptions();\n\t\t\tmodal.classList.remove('hidden');\n\t\t\t// Move keyboard focus into the dialog so screen readers announce\n\t\t\t// the new context and Tab/Shift+Tab don't begin behind the\n\t\t\t// backdrop. The Confirm button is the highest-affordance control\n\t\t\t// inside the modal, so focus lands there once the dry-run enables\n\t\t\t// it; until then the close button is the next-best focus target.\n\t\t\tvar initial = document.querySelector('[data-merge-close][aria-label]') || confirmBtn;\n\t\t\tif (initial && typeof initial.focus === 'function') initial.focus();\n\t\t\trunDryRun();\n\t\t}\n\n\t\tfunction closeModal() {\n\t\t\tdryRunSeq++;\n\t\t\tmodal.classList.add('hidden');\n\t\t\toptionsRoot.innerHTML = '';\n\t\t\tpreviewBody.innerHTML = '<p class=\"italic\">' + escapeHTML(tx('preview_loading')) + '</p>';\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tcurrent = { members: [], survivorId: null, dryRunOK: false };\n\t\t\texcludedIds.clear();\n\t\t\trowControls = [];\n\t\t\t// Restore focus to the element that opened the modal so keyboard\n\t\t\t// users land back where they started (typically the group's\n\t\t\t// Merge button), not at the top of the document.\n\t\t\tif (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();\n\t\t\tlastFocused = null;\n\t\t}\n\n\t\tfunction renderSurvivorOptions() {\n\t\t\toptionsRoot.innerHTML = '';\n\t\t\trowControls = [];\n\t\t\tcurrent.members.forEach(function(m) {\n\t\t\t\tvar row = document.createElement('div');\n\t\t\t\trow.className = 'flex items-start gap-3 rounded p-2 hover:bg-gray-50 dark:hover:bg-white/5 transition-opacity';\n\n\t\t\t\tvar label = document.createElement('label');\n\t\t\t\tlabel.className = 'flex items-start gap-3 flex-1 min-w-0 cursor-pointer';\n\t\t\t\tvar radio = document.createElement('input');\n\t\t\t\tradio.type = 'radio';\n\t\t\t\tradio.name = 'merge-survivor';\n\t\t\t\tradio.value = m.id;\n\t\t\t\tradio.className = 'mt-1';\n\t\t\t\tradio.checked = (m.id === current.survivorId);\n\t\t\t\tradio.addEventListener('change', function() {\n\t\t\t\t\tcurrent.survivorId = m.id;\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t\tapplySurvivorState();\n\t\t\t\t\trunDryRun();\n\t\t\t\t});\n\t\t\t\tvar body = document.createElement('div');\n\t\t\t\tbody.className = 'flex-1 min-w-0';\n\t\t\t\tvar name = document.createElement('div');\n\t\t\t\tname.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';\n\t\t\t\tname.textContent = m.name;\n\t\t\t\tif (m.recommended) {\n\t\t\t\t\tvar badge = document.createElement('span');\n\t\t\t\t\tbadge.className = 'ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300';\n\t\t\t\t\tbadge.textContent = tx('recommended_badge');\n\t\t\t\t\tbadge.title = recommendedReasonLabel(m.recommended_reason);\n\t\t\t\t\tname.appendChild(badge);\n\t\t\t\t}\n\t\t\t\tvar path = document.createElement('div');\n\t\t\t\tpath.className = 'text-xs font-mono text-gray-600 dark:text-gray-400 truncate';\n\t\t\t\tpath.textContent = m.path;\n\t\t\t\tbody.appendChild(name);\n\t\t\t\tbody.appendChild(path);\n\t\t\t\tlabel.appendChild(radio);\n\t\t\t\tlabel.appendChild(body);\n\n\t\t\t\t// Include-in-merge checkbox (#1714). Checked = this member is a\n\t\t\t\t// loser that will be merged into the survivor; unchecked =\n\t\t\t\t// excluded from the merge entirely. The survivor's own checkbox\n\t\t\t\t// is forced checked + disabled (the survivor cannot be dropped);\n\t\t\t\t// applySurvivorState keeps that in sync as the radio changes.\n\t\t\t\tvar include = document.createElement('input');\n\t\t\t\tinclude.type = 'checkbox';\n\t\t\t\tinclude.className = 'mt-1 shrink-0';\n\t\t\t\tvar includeLabel = tx('exclude_label') + ': ' + (m.name || m.id);\n\t\t\t\tinclude.setAttribute('aria-label', includeLabel);\n\t\t\t\tinclude.title = includeLabel;\n\t\t\t\tinclude.addEventListener('change', function() {\n\t\t\t\t\tif (include.checked) {\n\t\t\t\t\t\texcludedIds.delete(m.id);\n\t\t\t\t\t} else {\n\t\t\t\t\t\texcludedIds.add(m.id);\n\t\t\t\t\t}\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t\tapplySurvivorState();\n\t\t\t\t\trunDryRun();\n\t\t\t\t});\n\n\t\t\t\trow.appendChild(label);\n\t\t\t\trow.appendChild(include);\n\t\t\t\toptionsRoot.appendChild(row);\n\t\t\t\trowControls.push({ id: m.id, row: row, include: include });\n\t\t\t});\n\t\t\tapplySurvivorState();\n\t\t}\n\n\t\t// applySurvivorState reconciles each member row with the current\n\t\t// survivor + excludedIds set: the survivor row's include box is forced\n\t\t// checked + disabled (it cannot be dropped); every other row reflects\n\t\t// whether it is currently excluded, and excluded rows are dimmed.\n\t\tfunction applySurvivorState() {\n\t\t\trowControls.forEach(function(rc) {\n\t\t\t\tif (rc.id === current.survivorId) {\n\t\t\t\t\texcludedIds.delete(rc.id);\n\t\t\t\t\trc.include.checked = true;\n\t\t\t\t\trc.include.disabled = true;\n\t\t\t\t\trc.row.classList.remove('opacity-50');\n\t\t\t\t} else {\n\t\t\t\t\tvar excluded = excludedIds.has(rc.id);\n\t\t\t\t\trc.include.disabled = false;\n\t\t\t\t\trc.include.checked = !excluded;\n\t\t\t\t\trc.row.classList.toggle('opacity-50', excluded);\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction recommendedReasonLabel(reason) {\n\t\t\tswitch (reason) {\n\t\t\t\tcase 'canonical_basename': return tx('reason_canonical_basename');\n\t\t\t\tcase 'most_content':       return tx('reason_most_content');\n\t\t\t\tcase 'fallback':           return tx('reason_fallback');\n\t\t\t\tdefault:                   return '';\n\t\t\t}\n\t\t}\n\n\t\tfunction loserIDs() {\n\t\t\treturn current.members\n\t\t\t\t.filter(function(m) { return m.id !== current.survivorId && !excludedIds.has(m.id); })\n\t\t\t\t.map(function(m) { return m.id; });\n\t\t}\n\n\t\tfunction runDryRun() {\n\t\t\t// Capture the sequence counter before any async work so stale\n\t\t\t// responses from a superseded invocation are silently discarded.\n\t\t\tvar seq = ++dryRunSeq;\n\t\t\t// All non-survivor members excluded (#1714): nothing to merge. Skip\n\t\t\t// the network round-trip, surface a hint, and keep Confirm disabled\n\t\t\t// until the user re-includes at least one source.\n\t\t\tif (loserIDs().length === 0) {\n\t\t\t\tpreviewBody.innerHTML = '<p class=\"text-sm text-amber-700 dark:text-amber-300\">' + escapeHTML(tx('no_sources_selected')) + '</p>';\n\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tpreviewBody.innerHTML = '<p class=\"italic\">' + escapeHTML(tx('preview_loading')) + '</p>';\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tpostMerge(true).then(function(out) {\n\t\t\t\tif (seq !== dryRunSeq) return;\n\t\t\t\tif (out.kind === 'success') {\n\t\t\t\t\trenderPreview(out.body);\n\t\t\t\t\tcurrent.dryRunOK = true;\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t} else if (out.kind === 'collisions') {\n\t\t\t\t\trenderConflicts(out.body);\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t} else {\n\t\t\t\t\trenderError(out.body);\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tif (seq !== dryRunSeq) return;\n\t\t\t\trenderError({ message: tx('preview_network_error') });\n\t\t\t});\n\t\t}\n\n\t\tfunction commitMerge() {\n\t\t\tif (!current.dryRunOK) return;\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tpostMerge(false).then(function(out) {\n\t\t\t\tif (out.kind === 'success') {\n\t\t\t\t\tcloseModal();\n\t\t\t\t\twindow.location.reload();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (out.kind === 'collisions') {\n\t\t\t\t\t// Pre-flight was clean but the filesystem changed\n\t\t\t\t\t// between dry-run and commit (race). Treat as terminal:\n\t\t\t\t\t// the conflict list is now stale, the user should\n\t\t\t\t\t// re-open from a refreshed list.\n\t\t\t\t\trenderConflicts(out.body);\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t// Transient or operator-fixable errors (merge_in_progress,\n\t\t\t\t// locked, stale_group, ...) -- show the message but re-\n\t\t\t\t// enable Confirm so the user can retry without re-opening\n\t\t\t\t// the modal. dryRunOK is still true from the preflight, so\n\t\t\t\t// the gate at the top of commitMerge passes.\n\t\t\t\trenderError(out.body);\n\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t}).catch(function() {\n\t\t\t\trenderError({ message: tx('preview_network_error') });\n\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t});\n\t\t}\n\n\t\tfunction postMerge(dryRun) {\n\t\t\treturn fetch(endpoint, {\n\t\t\t\tmethod: 'POST',\n\t\t\t\tcredentials: 'same-origin',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken()\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\tsurvivor_id: current.survivorId,\n\t\t\t\t\tloser_ids: loserIDs(),\n\t\t\t\t\tdry_run: dryRun\n\t\t\t\t})\n\t\t\t}).then(function(resp) {\n\t\t\t\treturn resp.json().then(function(body) {\n\t\t\t\t\tif (resp.ok) return { kind: 'success', body: body };\n\t\t\t\t\tif (resp.status === 409 && body.error === 'collisions') {\n\t\t\t\t\t\treturn { kind: 'collisions', body: body };\n\t\t\t\t\t}\n\t\t\t\t\treturn { kind: 'error', body: body };\n\t\t\t\t});\n\t\t\t});\n\t\t}\n\n\t\tfunction renderPreview(body) {\n\t\t\tpreviewBody.innerHTML = '';\n\t\t\tvar moved = body.moved || [];\n\t\t\tvar warnings = body.warnings || [];\n\t\t\tif (moved.length === 0 && warnings.length === 0) {\n\t\t\t\tvar none = document.createElement('p');\n\t\t\t\tnone.className = 'text-sm';\n\t\t\t\tnone.textContent = tx('preview_empty');\n\t\t\t\tpreviewBody.appendChild(none);\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (moved.length > 0) {\n\t\t\t\tvar movedHeading = document.createElement('p');\n\t\t\t\tmovedHeading.className = 'text-sm font-medium text-gray-700 dark:text-gray-300';\n\t\t\t\tmovedHeading.textContent = tx('moves_heading').replace('%d', moved.length);\n\t\t\t\tpreviewBody.appendChild(movedHeading);\n\t\t\t\tvar ul = document.createElement('ul');\n\t\t\t\tul.className = 'mt-1 list-disc list-inside space-y-1 text-xs font-mono text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto';\n\t\t\t\tmoved.forEach(function(m) {\n\t\t\t\t\tvar li = document.createElement('li');\n\t\t\t\t\tli.textContent = m.name;\n\t\t\t\t\tul.appendChild(li);\n\t\t\t\t});\n\t\t\t\tpreviewBody.appendChild(ul);\n\t\t\t}\n\t\t\tif (body.survivor_override) {\n\t\t\t\tvar override = document.createElement('p');\n\t\t\t\toverride.className = 'mt-2 text-xs text-amber-700 dark:text-amber-300';\n\t\t\t\toverride.textContent = tx('warning_override');\n\t\t\t\tpreviewBody.appendChild(override);\n\t\t\t}\n\t\t\tif (warnings.length > 0) {\n\t\t\t\tvar warnHeading = document.createElement('p');\n\t\t\t\twarnHeading.className = 'mt-3 text-sm font-medium text-amber-700 dark:text-amber-300';\n\t\t\t\twarnHeading.textContent = tx('warnings_heading');\n\t\t\t\tpreviewBody.appendChild(warnHeading);\n\t\t\t\tvar wul = document.createElement('ul');\n\t\t\t\twul.className = 'mt-1 list-disc list-inside space-y-1 text-xs text-amber-700 dark:text-amber-300';\n\t\t\t\twarnings.forEach(function(w) {\n\t\t\t\t\tvar li = document.createElement('li');\n\t\t\t\t\tli.textContent = w;\n\t\t\t\t\twul.appendChild(li);\n\t\t\t\t});\n\t\t\t\tpreviewBody.appendChild(wul);\n\t\t\t}\n\t\t\tvar platformNote = document.createElement('p');\n\t\t\tplatformNote.className = 'mt-3 text-xs text-gray-500 dark:text-gray-400';\n\t\t\tplatformNote.textContent = tx('platform_rescan_note');\n\t\t\tpreviewBody.appendChild(platformNote);\n\t\t}\n\n\t\tfunction renderConflicts(body) {\n\t\t\tpreviewBody.innerHTML = '';\n\t\t\tvar heading = document.createElement('p');\n\t\t\theading.className = 'text-sm font-medium text-red-700 dark:text-red-300';\n\t\t\theading.textContent = tx('conflicts_heading');\n\t\t\tpreviewBody.appendChild(heading);\n\t\t\tvar help = document.createElement('p');\n\t\t\thelp.className = 'mt-1 text-xs text-gray-600 dark:text-gray-400';\n\t\t\thelp.textContent = tx('conflicts_help');\n\t\t\tpreviewBody.appendChild(help);\n\t\t\tvar conflicts = (body && body.conflicts) || [];\n\t\t\tif (conflicts.length > 0) {\n\t\t\t\tvar ul = document.createElement('ul');\n\t\t\t\tul.className = 'mt-2 list-disc list-inside space-y-2 text-xs font-mono text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto';\n\t\t\t\tconflicts.forEach(function(c) {\n\t\t\t\t\tvar li = document.createElement('li');\n\t\t\t\t\tli.textContent = c.name;\n\t\t\t\t\tvar sub = document.createElement('div');\n\t\t\t\t\tsub.className = 'ml-5 text-gray-500 dark:text-gray-400';\n\t\t\t\t\tsub.textContent = c.survivor_path + '  <->  ' + c.loser_path;\n\t\t\t\t\tli.appendChild(sub);\n\t\t\t\t\tul.appendChild(li);\n\t\t\t\t});\n\t\t\t\tpreviewBody.appendChild(ul);\n\t\t\t}\n\t\t}\n\n\t\tfunction renderError(body) {\n\t\t\tpreviewBody.innerHTML = '';\n\t\t\tvar msg = '';\n\t\t\tif (body && body.error === 'merge_in_progress') {\n\t\t\t\tmsg = tx('error_merge_in_progress');\n\t\t\t} else if (body && body.error === 'locked') {\n\t\t\t\tmsg = tx('error_locked');\n\t\t\t} else if (body && body.error === 'stale_group') {\n\t\t\t\tmsg = tx('error_stale_group');\n\t\t\t} else if (body && body.error === 'survivor_missing') {\n\t\t\t\tmsg = tx('error_survivor_missing');\n\t\t\t} else if (body && body.message) {\n\t\t\t\tmsg = body.message;\n\t\t\t} else {\n\t\t\t\tmsg = tx('error_unknown');\n\t\t\t}\n\t\t\tvar p = document.createElement('p');\n\t\t\tp.className = 'text-sm text-red-700 dark:text-red-300';\n\t\t\tp.textContent = msg;\n\t\t\tpreviewBody.appendChild(p);\n\t\t}\n\n\t\tfunction cssEscape(s) {\n\t\t\tif (window.CSS && window.CSS.escape) return window.CSS.escape(s);\n\t\t\treturn String(s).replace(/[^a-zA-Z0-9_-]/g, '\\\\$&');\n\t\t}\n\n\t\tdocument.addEventListener('click', function(e) {\n\t\t\tvar open = e.target.closest('[data-merge-open]');\n\t\t\tif (open) {\n\t\t\t\te.preventDefault();\n\t\t\t\topenModal(open.getAttribute('data-group-key'));\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (e.target.closest('[data-merge-close]')) {\n\t\t\t\tcloseModal();\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (e.target === backdrop) {\n\t\t\t\tcloseModal();\n\t\t\t}\n\t\t});\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.key === 'Escape' && !modal.classList.contains('hidden')) {\n\t\t\t\tcloseModal();\n\t\t\t}\n\t\t});\n\t\tconfirmBtn.addEventListener('click', commitMerge);\n\t\t})();\n\t</script>")
+		var templ_7745c5c3_Var74 string
+		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.confirm_button"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 476, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "</button></div></div></div></div><script>\n\t\t(function() {\n\t\tvar bpMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\tvar basePath = bpMeta ? bpMeta.content : '';\n\t\tvar endpoint = basePath + '/api/v1/artists/merge';\n\t\tvar modal = document.getElementById('merge-modal');\n\t\tvar backdrop = document.getElementById('merge-backdrop');\n\t\tvar optionsRoot = document.getElementById('merge-survivor-options');\n\t\tvar previewBody = document.getElementById('merge-preview-body');\n\t\tvar confirmBtn = document.getElementById('merge-modal-confirm');\n\n\t\tvar current = { members: [], survivorId: null, dryRunOK: false };\n\t\t// excludedIds holds member IDs the user has unchecked in the merge\n\t\t// dialog (#1714): they are neither the survivor nor merged into it, so\n\t\t// they are dropped from loser_ids. Re-checking a box re-includes the\n\t\t// member. Cleared whenever a new group opens or the modal closes.\n\t\tvar excludedIds = new Set();\n\t\t// rowControls mirrors the rendered survivor rows so applySurvivorState\n\t\t// can update each row's checkbox + dim state in place, without a full\n\t\t// re-render that would replace the radio nodes and break radio-group\n\t\t// arrow-key navigation.\n\t\tvar rowControls = [];\n\t\t// dryRunSeq is incremented on every new dry-run invocation and on\n\t\t// closeModal. Async continuations compare their captured seq against\n\t\t// the current value so a stale response from a superseded dry-run\n\t\t// cannot set dryRunOK or enable Confirm.\n\t\tvar dryRunSeq = 0;\n\t\t// lastFocused tracks the element that had focus when the modal opened\n\t\t// so closeModal can restore keyboard focus to the triggering control\n\t\t// (the Merge button or whatever the user tabbed to next). Mirrors the\n\t\t// path_picker.templ _ppOpener pattern; see CR feedback on PR1655.\n\t\tvar lastFocused = null;\n\t\tvar i18nKeys = (function() {\n\t\t\tvar el = document.getElementById('merge-i18n');\n\t\t\tif (!el) return {};\n\t\t\ttry { return JSON.parse(el.dataset.i18n || '{}'); } catch (e) { return {}; }\n\t\t})();\n\n\t\tfunction tx(key) {\n\t\t\treturn (i18nKeys[key] !== undefined) ? i18nKeys[key] : key;\n\t\t}\n\n\t\t// Use the canonical CSRF cookie reader exposed by preferences.js\n\t\t// (loaded on every page via layout.templ). Falling back to a local\n\t\t// reader only if the global is somehow absent so the fetch still has\n\t\t// a header to send rather than throwing.\n\t\tfunction csrfToken() {\n\t\t\tif (typeof window.swCsrfToken === 'function') return window.swCsrfToken();\n\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\tif (!match) return '';\n\t\t\t// decodeURIComponent throws URIError on malformed percent-encoding;\n\t\t\t// fall back to the raw value so a bad cookie never breaks the page.\n\t\t\ttry { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }\n\t\t}\n\n\t\tfunction openModal(groupKey) {\n\t\t\tvar card = document.querySelector('[data-duplicate-group][data-group-key=\"' + cssEscape(groupKey) + '\"]');\n\t\t\tif (!card) return;\n\t\t\tvar raw = card.getAttribute('data-members') || '[]';\n\t\t\tvar members = [];\n\t\t\ttry { members = JSON.parse(raw); } catch (e) { members = []; }\n\t\t\tif (members.length < 2) return;\n\n\t\t\tlastFocused = document.activeElement;\n\t\t\tcurrent.members = members;\n\t\t\tvar rec = members.find(function(m) { return m.recommended; });\n\t\t\tcurrent.survivorId = rec ? rec.id : members[0].id;\n\t\t\tcurrent.dryRunOK = false;\n\t\t\texcludedIds.clear();\n\n\t\t\trenderSurvivorOptions();\n\t\t\tmodal.classList.remove('hidden');\n\t\t\t// Move keyboard focus into the dialog so screen readers announce\n\t\t\t// the new context and Tab/Shift+Tab don't begin behind the\n\t\t\t// backdrop. The Confirm button is the highest-affordance control\n\t\t\t// inside the modal, so focus lands there once the dry-run enables\n\t\t\t// it; until then the close button is the next-best focus target.\n\t\t\tvar initial = document.querySelector('[data-merge-close][aria-label]') || confirmBtn;\n\t\t\tif (initial && typeof initial.focus === 'function') initial.focus();\n\t\t\trunDryRun();\n\t\t}\n\n\t\tfunction closeModal() {\n\t\t\tdryRunSeq++;\n\t\t\tmodal.classList.add('hidden');\n\t\t\toptionsRoot.innerHTML = '';\n\t\t\tpreviewBody.innerHTML = '<p class=\"italic\">' + escapeHTML(tx('preview_loading')) + '</p>';\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tcurrent = { members: [], survivorId: null, dryRunOK: false };\n\t\t\texcludedIds.clear();\n\t\t\trowControls = [];\n\t\t\t// Restore focus to the element that opened the modal so keyboard\n\t\t\t// users land back where they started (typically the group's\n\t\t\t// Merge button), not at the top of the document.\n\t\t\tif (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();\n\t\t\tlastFocused = null;\n\t\t}\n\n\t\tfunction renderSurvivorOptions() {\n\t\t\toptionsRoot.innerHTML = '';\n\t\t\trowControls = [];\n\t\t\tcurrent.members.forEach(function(m) {\n\t\t\t\tvar row = document.createElement('div');\n\t\t\t\trow.className = 'flex items-start gap-3 rounded p-2 hover:bg-gray-50 dark:hover:bg-white/5 transition-opacity';\n\n\t\t\t\tvar label = document.createElement('label');\n\t\t\t\tlabel.className = 'flex items-start gap-3 flex-1 min-w-0 cursor-pointer';\n\t\t\t\tvar radio = document.createElement('input');\n\t\t\t\tradio.type = 'radio';\n\t\t\t\tradio.name = 'merge-survivor';\n\t\t\t\tradio.value = m.id;\n\t\t\t\tradio.className = 'mt-1';\n\t\t\t\tradio.checked = (m.id === current.survivorId);\n\t\t\t\tradio.addEventListener('change', function() {\n\t\t\t\t\tcurrent.survivorId = m.id;\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t\tapplySurvivorState();\n\t\t\t\t\trunDryRun();\n\t\t\t\t});\n\t\t\t\tvar body = document.createElement('div');\n\t\t\t\tbody.className = 'flex-1 min-w-0';\n\t\t\t\tvar name = document.createElement('div');\n\t\t\t\tname.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';\n\t\t\t\tname.textContent = m.name;\n\t\t\t\tif (m.recommended) {\n\t\t\t\t\tvar badge = document.createElement('span');\n\t\t\t\t\tbadge.className = 'ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300';\n\t\t\t\t\tbadge.textContent = tx('recommended_badge');\n\t\t\t\t\tbadge.title = recommendedReasonLabel(m.recommended_reason);\n\t\t\t\t\tname.appendChild(badge);\n\t\t\t\t}\n\t\t\t\tvar path = document.createElement('div');\n\t\t\t\tpath.className = 'text-xs font-mono text-gray-600 dark:text-gray-400 truncate';\n\t\t\t\tpath.textContent = m.path;\n\t\t\t\tbody.appendChild(name);\n\t\t\t\tbody.appendChild(path);\n\t\t\t\tlabel.appendChild(radio);\n\t\t\t\tlabel.appendChild(body);\n\n\t\t\t\t// Include-in-merge checkbox (#1714). Checked = this member is a\n\t\t\t\t// loser that will be merged into the survivor; unchecked =\n\t\t\t\t// excluded from the merge entirely. The survivor's own checkbox\n\t\t\t\t// is forced checked + disabled (the survivor cannot be dropped);\n\t\t\t\t// applySurvivorState keeps that in sync as the radio changes.\n\t\t\t\tvar include = document.createElement('input');\n\t\t\t\tinclude.type = 'checkbox';\n\t\t\t\tinclude.className = 'mt-1 shrink-0';\n\t\t\t\tvar includeLabel = tx('exclude_label') + ': ' + (m.name || m.id);\n\t\t\t\tinclude.setAttribute('aria-label', includeLabel);\n\t\t\t\tinclude.title = includeLabel;\n\t\t\t\tinclude.addEventListener('change', function() {\n\t\t\t\t\tif (include.checked) {\n\t\t\t\t\t\texcludedIds.delete(m.id);\n\t\t\t\t\t} else {\n\t\t\t\t\t\texcludedIds.add(m.id);\n\t\t\t\t\t}\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t\tapplySurvivorState();\n\t\t\t\t\trunDryRun();\n\t\t\t\t});\n\n\t\t\t\trow.appendChild(label);\n\t\t\t\trow.appendChild(include);\n\t\t\t\toptionsRoot.appendChild(row);\n\t\t\t\trowControls.push({ id: m.id, row: row, include: include });\n\t\t\t});\n\t\t\tapplySurvivorState();\n\t\t}\n\n\t\t// applySurvivorState reconciles each member row with the current\n\t\t// survivor + excludedIds set: the survivor row's include box is forced\n\t\t// checked + disabled (it cannot be dropped); every other row reflects\n\t\t// whether it is currently excluded, and excluded rows are dimmed.\n\t\tfunction applySurvivorState() {\n\t\t\trowControls.forEach(function(rc) {\n\t\t\t\tif (rc.id === current.survivorId) {\n\t\t\t\t\texcludedIds.delete(rc.id);\n\t\t\t\t\trc.include.checked = true;\n\t\t\t\t\trc.include.disabled = true;\n\t\t\t\t\trc.row.classList.remove('opacity-50');\n\t\t\t\t} else {\n\t\t\t\t\tvar excluded = excludedIds.has(rc.id);\n\t\t\t\t\trc.include.disabled = false;\n\t\t\t\t\trc.include.checked = !excluded;\n\t\t\t\t\trc.row.classList.toggle('opacity-50', excluded);\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction recommendedReasonLabel(reason) {\n\t\t\tswitch (reason) {\n\t\t\t\tcase 'canonical_basename': return tx('reason_canonical_basename');\n\t\t\t\tcase 'most_content':       return tx('reason_most_content');\n\t\t\t\tcase 'fallback':           return tx('reason_fallback');\n\t\t\t\tdefault:                   return '';\n\t\t\t}\n\t\t}\n\n\t\tfunction loserIDs() {\n\t\t\treturn current.members\n\t\t\t\t.filter(function(m) { return m.id !== current.survivorId && !excludedIds.has(m.id); })\n\t\t\t\t.map(function(m) { return m.id; });\n\t\t}\n\n\t\tfunction runDryRun() {\n\t\t\t// Capture the sequence counter before any async work so stale\n\t\t\t// responses from a superseded invocation are silently discarded.\n\t\t\tvar seq = ++dryRunSeq;\n\t\t\t// All non-survivor members excluded (#1714): nothing to merge. Skip\n\t\t\t// the network round-trip, surface a hint, and keep Confirm disabled\n\t\t\t// until the user re-includes at least one source.\n\t\t\tif (loserIDs().length === 0) {\n\t\t\t\tpreviewBody.innerHTML = '<p class=\"text-sm text-amber-700 dark:text-amber-300\">' + escapeHTML(tx('no_sources_selected')) + '</p>';\n\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tpreviewBody.innerHTML = '<p class=\"italic\">' + escapeHTML(tx('preview_loading')) + '</p>';\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tpostMerge(true).then(function(out) {\n\t\t\t\tif (seq !== dryRunSeq) return;\n\t\t\t\tif (out.kind === 'success') {\n\t\t\t\t\trenderPreview(out.body);\n\t\t\t\t\tcurrent.dryRunOK = true;\n\t\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t\t} else if (out.kind === 'collisions') {\n\t\t\t\t\trenderConflicts(out.body);\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t} else {\n\t\t\t\t\trenderError(out.body);\n\t\t\t\t\tcurrent.dryRunOK = false;\n\t\t\t\t\tconfirmBtn.disabled = true;\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tif (seq !== dryRunSeq) return;\n\t\t\t\trenderError({ message: tx('preview_network_error') });\n\t\t\t});\n\t\t}\n\n\t\tfunction commitMerge() {\n\t\t\tif (!current.dryRunOK) return;\n\t\t\tconfirmBtn.disabled = true;\n\t\t\tpostMerge(false).then(function(out) {\n\t\t\t\tif (out.kind === 'success') {\n\t\t\t\t\tcloseModal();\n\t\t\t\t\twindow.location.reload();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (out.kind === 'collisions') {\n\t\t\t\t\t// Pre-flight was clean but the filesystem changed\n\t\t\t\t\t// between dry-run and commit (race). Treat as terminal:\n\t\t\t\t\t// the conflict list is now stale, the user should\n\t\t\t\t\t// re-open from a refreshed list.\n\t\t\t\t\trenderConflicts(out.body);\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t// Transient or operator-fixable errors (merge_in_progress,\n\t\t\t\t// locked, stale_group, ...) -- show the message but re-\n\t\t\t\t// enable Confirm so the user can retry without re-opening\n\t\t\t\t// the modal. dryRunOK is still true from the preflight, so\n\t\t\t\t// the gate at the top of commitMerge passes.\n\t\t\t\trenderError(out.body);\n\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t}).catch(function() {\n\t\t\t\trenderError({ message: tx('preview_network_error') });\n\t\t\t\tconfirmBtn.disabled = false;\n\t\t\t});\n\t\t}\n\n\t\tfunction postMerge(dryRun) {\n\t\t\treturn fetch(endpoint, {\n\t\t\t\tmethod: 'POST',\n\t\t\t\tcredentials: 'same-origin',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken()\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\tsurvivor_id: current.survivorId,\n\t\t\t\t\tloser_ids: loserIDs(),\n\t\t\t\t\tdry_run: dryRun\n\t\t\t\t})\n\t\t\t}).then(function(resp) {\n\t\t\t\treturn resp.json().then(function(body) {\n\t\t\t\t\tif (resp.ok) return { kind: 'success', body: body };\n\t\t\t\t\tif (resp.status === 409 && body.error === 'collisions') {\n\t\t\t\t\t\treturn { kind: 'collisions', body: body };\n\t\t\t\t\t}\n\t\t\t\t\treturn { kind: 'error', body: body };\n\t\t\t\t});\n\t\t\t});\n\t\t}\n\n\t\tfunction renderPreview(body) {\n\t\t\tpreviewBody.innerHTML = '';\n\t\t\tvar moved = body.moved || [];\n\t\t\tvar warnings = body.warnings || [];\n\t\t\tif (moved.length === 0 && warnings.length === 0) {\n\t\t\t\tvar none = document.createElement('p');\n\t\t\t\tnone.className = 'text-sm';\n\t\t\t\tnone.textContent = tx('preview_empty');\n\t\t\t\tpreviewBody.appendChild(none);\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (moved.length > 0) {\n\t\t\t\tvar movedHeading = document.createElement('p');\n\t\t\t\tmovedHeading.className = 'text-sm font-medium text-gray-700 dark:text-gray-300';\n\t\t\t\tmovedHeading.textContent = tx('moves_heading').replace('%d', moved.length);\n\t\t\t\tpreviewBody.appendChild(movedHeading);\n\t\t\t\tvar ul = document.createElement('ul');\n\t\t\t\tul.className = 'mt-1 list-disc list-inside space-y-1 text-xs font-mono text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto';\n\t\t\t\tmoved.forEach(function(m) {\n\t\t\t\t\tvar li = document.createElement('li');\n\t\t\t\t\tli.textContent = m.name;\n\t\t\t\t\tul.appendChild(li);\n\t\t\t\t});\n\t\t\t\tpreviewBody.appendChild(ul);\n\t\t\t}\n\t\t\tif (body.survivor_override) {\n\t\t\t\tvar override = document.createElement('p');\n\t\t\t\toverride.className = 'mt-2 text-xs text-amber-700 dark:text-amber-300';\n\t\t\t\toverride.textContent = tx('warning_override');\n\t\t\t\tpreviewBody.appendChild(override);\n\t\t\t}\n\t\t\tif (warnings.length > 0) {\n\t\t\t\tvar warnHeading = document.createElement('p');\n\t\t\t\twarnHeading.className = 'mt-3 text-sm font-medium text-amber-700 dark:text-amber-300';\n\t\t\t\twarnHeading.textContent = tx('warnings_heading');\n\t\t\t\tpreviewBody.appendChild(warnHeading);\n\t\t\t\tvar wul = document.createElement('ul');\n\t\t\t\twul.className = 'mt-1 list-disc list-inside space-y-1 text-xs text-amber-700 dark:text-amber-300';\n\t\t\t\twarnings.forEach(function(w) {\n\t\t\t\t\tvar li = document.createElement('li');\n\t\t\t\t\tli.textContent = w;\n\t\t\t\t\twul.appendChild(li);\n\t\t\t\t});\n\t\t\t\tpreviewBody.appendChild(wul);\n\t\t\t}\n\t\t\tvar platformNote = document.createElement('p');\n\t\t\tplatformNote.className = 'mt-3 text-xs text-gray-500 dark:text-gray-400';\n\t\t\tplatformNote.textContent = tx('platform_rescan_note');\n\t\t\tpreviewBody.appendChild(platformNote);\n\t\t}\n\n\t\tfunction renderConflicts(body) {\n\t\t\tpreviewBody.innerHTML = '';\n\t\t\tvar heading = document.createElement('p');\n\t\t\theading.className = 'text-sm font-medium text-red-700 dark:text-red-300';\n\t\t\theading.textContent = tx('conflicts_heading');\n\t\t\tpreviewBody.appendChild(heading);\n\t\t\tvar help = document.createElement('p');\n\t\t\thelp.className = 'mt-1 text-xs text-gray-600 dark:text-gray-400';\n\t\t\thelp.textContent = tx('conflicts_help');\n\t\t\tpreviewBody.appendChild(help);\n\t\t\tvar conflicts = (body && body.conflicts) || [];\n\t\t\tif (conflicts.length > 0) {\n\t\t\t\tvar ul = document.createElement('ul');\n\t\t\t\tul.className = 'mt-2 list-disc list-inside space-y-2 text-xs font-mono text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto';\n\t\t\t\tconflicts.forEach(function(c) {\n\t\t\t\t\tvar li = document.createElement('li');\n\t\t\t\t\tli.textContent = c.name;\n\t\t\t\t\tvar sub = document.createElement('div');\n\t\t\t\t\tsub.className = 'ml-5 text-gray-500 dark:text-gray-400';\n\t\t\t\t\tsub.textContent = c.survivor_path + '  <->  ' + c.loser_path;\n\t\t\t\t\tli.appendChild(sub);\n\t\t\t\t\tul.appendChild(li);\n\t\t\t\t});\n\t\t\t\tpreviewBody.appendChild(ul);\n\t\t\t}\n\t\t}\n\n\t\tfunction renderError(body) {\n\t\t\tpreviewBody.innerHTML = '';\n\t\t\tvar msg = '';\n\t\t\tif (body && body.error === 'merge_in_progress') {\n\t\t\t\tmsg = tx('error_merge_in_progress');\n\t\t\t} else if (body && body.error === 'locked') {\n\t\t\t\tmsg = tx('error_locked');\n\t\t\t} else if (body && body.error === 'stale_group') {\n\t\t\t\tmsg = tx('error_stale_group');\n\t\t\t} else if (body && body.error === 'survivor_missing') {\n\t\t\t\tmsg = tx('error_survivor_missing');\n\t\t\t} else if (body && body.message) {\n\t\t\t\tmsg = body.message;\n\t\t\t} else {\n\t\t\t\tmsg = tx('error_unknown');\n\t\t\t}\n\t\t\tvar p = document.createElement('p');\n\t\t\tp.className = 'text-sm text-red-700 dark:text-red-300';\n\t\t\tp.textContent = msg;\n\t\t\tpreviewBody.appendChild(p);\n\t\t}\n\n\t\tfunction cssEscape(s) {\n\t\t\tif (window.CSS && window.CSS.escape) return window.CSS.escape(s);\n\t\t\treturn String(s).replace(/[^a-zA-Z0-9_-]/g, '\\\\$&');\n\t\t}\n\n\t\tdocument.addEventListener('click', function(e) {\n\t\t\tvar open = e.target.closest('[data-merge-open]');\n\t\t\tif (open) {\n\t\t\t\te.preventDefault();\n\t\t\t\topenModal(open.getAttribute('data-group-key'));\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (e.target.closest('[data-merge-close]')) {\n\t\t\t\tcloseModal();\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (e.target === backdrop) {\n\t\t\t\tcloseModal();\n\t\t\t}\n\t\t});\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.key === 'Escape' && !modal.classList.contains('hidden')) {\n\t\t\t\tcloseModal();\n\t\t\t}\n\t\t});\n\t\tconfirmBtn.addEventListener('click', commitMerge);\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
