@@ -56,7 +56,14 @@ if [ "$(id -u)" = "0" ]; then
         done
     fi
 
-    chown -R stillwater:"${PGID_GROUP:-stillwater}" /config /music 2>/dev/null || true
+    # Own /config only -- it is stillwater's private, unshared data. Deliberately
+    # do NOT chown /music: it is the user's media library, commonly a mount shared
+    # with other containers (Lidarr, Plex, etc.). A recursive chown there would (a)
+    # walk the entire library on every start, stalling boot, and (b) seize files
+    # from whatever UID those other services run as, locking them out. stillwater
+    # needs write access, not ownership -- provide a /music mount writable by
+    # PUID:PGID (group-writable is the norm) and the app writes NFO/images fine.
+    chown -R stillwater:"${PGID_GROUP:-stillwater}" /config 2>/dev/null || true
 
     case "${1:-}" in
         reset-credentials)
