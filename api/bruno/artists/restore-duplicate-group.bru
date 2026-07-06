@@ -1,0 +1,44 @@
+meta {
+  name: Restore Duplicate Group
+  type: http
+  seq: 26
+}
+
+delete {
+  url: {{apiBase}}/artists/duplicates/ignored/{{ignoredDuplicateGroupId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  #2219: un-ignores (restores) the group persisted by "Ignore Duplicate
+  Group" (seq 24) and located by "List Ignored Duplicate Groups" (seq 25).
+  On success the sidebar duplicates count cache is invalidated and the
+  refreshed manage-ignored table partial (HTML) is returned for the HTMX
+  outerHTML swap -- unlike the other artists/ requests, the success
+  response body is HTML, not JSON.
+}
+
+tests {
+  test("should return 200", function () {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is the HTML table partial", function () {
+    expect(res.headers['content-type']).to.include('text/html');
+  });
+
+  test("the restored group's key text is gone from the table now (or the empty-state renders)", function () {
+    // Signature-derived group_key defaults to '' for this fixture pair, so
+    // the row shows the "Unknown group" placeholder while present; either
+    // that copy is now absent from the partial, or nothing else is ignored
+    // and the empty-state copy renders instead.
+    var body = res.body || "";
+    var stillListed = body.indexOf('ignored-row-' + bru.getVar('ignoredDuplicateGroupId')) !== -1;
+    expect(stillListed).to.equal(false);
+  });
+}

@@ -1,0 +1,63 @@
+meta {
+  name: List Ignored Duplicate Groups
+  type: http
+  seq: 25
+}
+
+get {
+  url: {{apiBase}}/artists/duplicates/ignored
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  #2219: the manage-ignored view's JSON list. Runs after "Ignore Duplicate
+  Group" (seq 24) so the fixture-artist-1/fixture-artist-2 signature it
+  persisted is present. Captures the ignored row's id for "Restore Duplicate
+  Group" (seq 26) to target.
+}
+
+script:post-response {
+  // Hand the ignored row's id off to Restore Duplicate Group (seq 26) so it
+  // targets the fixture pair's row instead of a hardcoded id.
+  if (res.status === 200 && res.body && Array.isArray(res.body.items)) {
+    var target = res.body.items.find(function (item) {
+      return item.signature === 'fixture-artist-1|fixture-artist-2';
+    });
+    if (target) {
+      bru.setVar('ignoredDuplicateGroupId', target.id);
+    }
+  }
+}
+
+tests {
+  test("should return 200", function () {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response wraps items and a count", function () {
+    expect(res.body).to.be.an("object");
+    expect(res.body.items).to.be.an("array");
+    expect(res.body.count).to.equal(res.body.items.length);
+  });
+
+  test("includes the fixture pair ignored in the prior request", function () {
+    var found = res.body.items.some(function (item) {
+      return item.signature === "fixture-artist-1|fixture-artist-2";
+    });
+    expect(found).to.equal(true);
+  });
+
+  test("each item carries a derived member_count, not raw ids", function () {
+    var target = res.body.items.find(function (item) {
+      return item.signature === "fixture-artist-1|fixture-artist-2";
+    });
+    expect(target).to.be.an("object");
+    expect(target.id).to.be.a("string");
+    expect(target.member_count).to.equal(2);
+  });
+}
