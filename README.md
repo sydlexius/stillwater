@@ -26,7 +26,7 @@ edits from being clobbered the next time a server refreshes.
 ## Features
 
 - **Ten metadata providers, per-field fallback.** MusicBrainz, Fanart.tv,
-  Discogs, AudioDB, Spotify, Last.fm, Deezer, Genius, Wikidata, and Wikipedia,
+  Discogs, TheAudioDB, Spotify, Last.fm, Deezer, Genius, Wikidata, and Wikipedia,
   ranked per field so when one source comes up empty another fills the gap, plus
   opt-in DuckDuckGo web image search for the stragglers.
 - **Deliver by NFO writeback, direct API push, or both.** Write `artist.nfo`
@@ -41,7 +41,7 @@ edits from being clobbered the next time a server refreshes.
 - **Artwork pipeline.** Fetch, compare, and crop thumbnails, fanart, logos, and
   banners across providers from a single comparison view.
 - **Reports and a live dashboard.** Library-health scoring, a prioritized action
-  queue, duplicate detection, unmatched-file reports, and a live activity feed.
+  queue, duplicate detection, the Unmatched Files report, and a live activity feed.
 - **Runs on your hardware.** Single binary or container, SQLite, no cloud, no
   telemetry, no account, with a REST API at `/api/v1/` and webhooks for
   automation.
