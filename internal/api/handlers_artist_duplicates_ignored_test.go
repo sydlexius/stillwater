@@ -340,3 +340,101 @@ func TestHandleArtistDuplicatesRestore_ExecError(t *testing.T) {
 		t.Errorf("500 body must not leak the raw driver error; got %q", body)
 	}
 }
+
+// TestHandleArtistDuplicatesIgnoredPage_UnauthRendersLoginPage proves the
+// manage-ignored page gates through requireForeignAdmin exactly like the
+// duplicates and foreign-allowlist pages: an anonymous visitor gets the login
+// page, never the ignored-groups table. Mirrors
+// TestHandleForeignAllowlistPage_UnauthRendersLoginPage.
+func TestHandleArtistDuplicatesIgnoredPage_UnauthRendersLoginPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+
+	req := withI18nCtx(t, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/reports/duplicates/ignored", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesIgnoredPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unauthenticated request should get login page (200), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "artist-duplicates-ignored-table") {
+		t.Error("unauthenticated visitor must not see the ignored-groups table")
+	}
+	if !strings.Contains(body, "/api/v1/auth/login") {
+		t.Error("login page must have the login form action (/api/v1/auth/login)")
+	}
+}
+
+// TestHandleArtistDuplicatesIgnoredPage_AuthenticatedRendersPage is the
+// authenticated-path regression test for the manage-ignored page: an admin
+// request must render the real table (with the seeded row's group key), not
+// the login form. Mirrors TestHandleForeignAllowlistPage_AuthenticatedRendersPage.
+func TestHandleArtistDuplicatesIgnoredPage_AuthenticatedRendersPage(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+	seedIgnore(t, r.db, "the cure", "name_key", "a1", "b2")
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/duplicates/ignored", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesIgnoredPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("authenticated admin request should get 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "artist-duplicates-ignored-table") {
+		t.Error("authenticated admin must see the ignored-groups table container")
+	}
+	if !strings.Contains(body, "the cure") {
+		t.Error("the seeded ignored group's key must appear in the rendered table")
+	}
+	if strings.Contains(body, `type="password"`) {
+		t.Error("authenticated admin must not see a login password field")
+	}
+}
+
+// TestHandleArtistDuplicatesIgnoredPage_LoadError pins the page handler's 500
+// branch: LoadIgnoredGroups failing (table dropped) must 500, not silently
+// render an empty (and factually wrong) "no ignored groups" page.
+func TestHandleArtistDuplicatesIgnoredPage_LoadError(t *testing.T) {
+	t.Parallel()
+	r := newTestRouterFull(t)
+	dropIgnoredTable(t, r.db)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-admin")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/duplicates/ignored", nil))
+	w := httptest.NewRecorder()
+	r.handleArtistDuplicatesIgnoredPage(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%q", w.Code, w.Body.String())
+	}
+}
+
+// TestRenderIgnoredDuplicatesTable_LoadError pins the HTMX partial-render
+// error branch (the restore handler's post-mutation re-list, shared via
+// renderIgnoredDuplicatesTable): a LoadIgnoredGroups failure must 500 with the
+// generic envelope, not panic or leak the raw driver error, and never fall
+// through to rendering a stale or empty table as if the load had succeeded.
+func TestRenderIgnoredDuplicatesTable_LoadError(t *testing.T) {
+	r, db := countTestRouter(t)
+	dropIgnoredTable(t, db)
+
+	rec := httptest.NewRecorder()
+	r.renderIgnoredDuplicatesTable(rec, adminGet(t, "/x"), "test render error")
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"error":"internal"`) {
+		t.Errorf("body should carry the generic internal envelope; got %q", body)
+	}
+	if strings.Contains(body, "no such table") || strings.Contains(body, "sql:") {
+		t.Errorf("500 body must not leak the raw driver error; got %q", body)
+	}
+}

@@ -251,6 +251,39 @@ func TestLoadIgnoredGroups_NilDB(t *testing.T) {
 	}
 }
 
+// TestLoadIgnoredGroups_QueryError mirrors TestLoadIgnoredSignatures_QueryError
+// for the manage-view loader: a closed db must surface the query error wrapped
+// with the "loading ignored groups:" prefix, not a nil error or a panic, so the
+// page handler's 500 branch has something real to log and return.
+func TestLoadIgnoredGroups_QueryError(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+	got, err := LoadIgnoredGroups(context.Background(), db)
+	if err == nil {
+		t.Fatal("closed-db QueryContext must return an error, got nil")
+	}
+	if got != nil {
+		t.Errorf("on query error the returned slice must be nil, got %+v", got)
+	}
+	if !strings.Contains(err.Error(), "loading ignored groups:") {
+		t.Errorf("error = %q, want the 'loading ignored groups:' wrap", err.Error())
+	}
+}
+
+// TestMemberCount_EmptySignature pins the guard branch: an ignored group whose
+// signature was never set (a malformed row, or a future caller that forgets to
+// populate it) must report 0 members rather than the "0 pipes so 1 member"
+// arithmetic the non-empty branch uses, which would misleadingly claim a lone
+// phantom member for a group with no encoded members at all.
+func TestMemberCount_EmptySignature(t *testing.T) {
+	g := IgnoredDuplicateGroup{Signature: ""}
+	if got := g.MemberCount(); got != 0 {
+		t.Errorf("MemberCount() on empty signature = %d, want 0", got)
+	}
+}
+
 // TestRestoreDuplicateGroup_RoundTrip is the core AC test: an ignore is
 // persisted, then restored by id, and the signature set is empty afterward --
 // proving the group would reappear in both the page list and the count (both
