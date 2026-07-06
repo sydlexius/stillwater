@@ -32,10 +32,11 @@ import (
 // after "/artists/", with no further slash. It intentionally excludes
 // sibling routes carrying an extra segment, such as "/artists/{id}/images"
 // or "/artists/{id}/artwork-modal": those pages have no SCREEN_STEPS group
-// in tour.js, so loading the tour assets there would be dead weight. Mirrors
-// tour.js's own getCurrentScreen() artistDetail regex
-// (/^\/(?:next\/)?artists\/[^/]+$/) so the two stay in lockstep; if the tour
-// starts recognizing another /artists/... shape as artistDetail, update both.
+// in tour.js, so loading the tour assets there would be dead weight. This
+// only matches the canonical bare form; it does not match the legacy
+// "/next/artists/{id}" form that tour.js's getCurrentScreen() also
+// recognizes -- that form is covered independently below by assetsFor()'s
+// HasPrefix("/next") arm, so the two do not need to stay in lockstep.
 func isArtistDetailPath(path string) bool {
 	const prefix = "/artists/"
 	if !strings.HasPrefix(path, prefix) {

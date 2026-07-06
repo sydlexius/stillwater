@@ -260,6 +260,49 @@ describe('tour.js: button-triggered flow runs the full OOBE chain end-to-end (#2
     });
 });
 
+describe('tour.js: sort-dropdown un-hide/restore across the "Sort Artists" step lifecycle (#2228 hostile-review finding)', () => {
+    // Root cause coverage gap: driverStub's drive() only ever fires
+    // onDestroyStarted, so no test previously invoked a step's
+    // onHighlightStarted/onDeselected hooks. The #sort-dropdown step
+    // temporarily strips the "hidden" class so Driver.js can highlight it in
+    // card view (where sorting happens via this dropdown instead of table
+    // column headers), then must restore the class exactly as found once the
+    // step ends -- untested until now.
+    it('onHighlightStarted un-hides the element; onDeselected restores its prior hidden state', () => {
+        const driverCalls = [];
+        const { win } = createPage({
+            url: 'http://localhost:1973/artists',
+            nextEnabled: 'false',
+            bodyHtml: `
+                <div id="sw-sidebar"></div>
+                <div id="scan-btn"></div>
+                <div id="artist-search"></div>
+                <div id="artist-filter-trigger"></div>
+                <div id="sort-dropdown" class="hidden"></div>
+                <div id="view-toggle"></div>
+                <div id="artist-content"></div>
+            `,
+            driverCalls,
+        });
+        win.startGuidedTour();
+        assert.equal(driverCalls.length, 1, 'standalone artists tour must drive immediately -- already on target page');
+
+        const sortStep = driverCalls[0].steps.find((s) => s.element === '#sort-dropdown');
+        assert.ok(sortStep, 'the standalone tour must include the sort-dropdown step');
+        assert.equal(typeof sortStep.onHighlightStarted, 'function');
+        assert.equal(typeof sortStep.onDeselected, 'function');
+
+        const el = win.document.querySelector('#sort-dropdown');
+        assert.ok(el.classList.contains('hidden'), 'precondition: card-view default renders #sort-dropdown hidden');
+
+        sortStep.onHighlightStarted(el);
+        assert.ok(!el.classList.contains('hidden'), 'onHighlightStarted must remove "hidden" so Driver.js can highlight the element');
+
+        sortStep.onDeselected(el);
+        assert.ok(el.classList.contains('hidden'), 'onDeselected must restore "hidden" so card view is left exactly as found');
+    });
+});
+
 describe('tour.js: shouldAutoStart does not treat null===null as a chain match (fold-in fix)', () => {
     // Root cause: shouldAutoStart() checked `getChainNext() === screen` before
     // checking the pending flag. getChainNext() reads localStorage's

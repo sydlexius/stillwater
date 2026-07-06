@@ -350,6 +350,14 @@
                         }
                     },
                     onDeselected: function(element) {
+                        // Restore keys off the saved data-tour-forced-visible
+                        // flag rather than re-reading live view state (e.g.
+                        // "is card view still active?"). That is safe here
+                        // because Driver.js's overlay makes only
+                        // #sort-dropdown interactive for the duration of this
+                        // step -- the view-toggle buttons are not reachable,
+                        // so the view cannot change mid-step and invalidate
+                        // the saved flag.
                         if (element && element.getAttribute('data-tour-forced-visible') === 'true') {
                             element.classList.add('hidden');
                             element.removeAttribute('data-tour-forced-visible');
