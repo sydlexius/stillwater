@@ -729,9 +729,9 @@ func ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnored
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var39 string
-			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "foreign_files.shortcuts.tip_next"))
+			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignored_shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 324, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 324, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 			if templ_7745c5c3_Err != nil {
@@ -742,9 +742,9 @@ func ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnored
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var40 string
-			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "foreign_files.shortcuts.tip_prev"))
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.ignored_shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 325, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 325, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 			if templ_7745c5c3_Err != nil {
@@ -778,7 +778,7 @@ func ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnored
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "foreign_files.shortcuts.tip_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 333, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 335, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -789,9 +789,9 @@ func ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnored
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var43 string
-			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "foreign_files.shortcuts.tip_next"))
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 334, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 336, Col: 157}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -802,9 +802,9 @@ func ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnored
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var44 string
-			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "foreign_files.shortcuts.tip_prev"))
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 336, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 338, Col: 157}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -817,7 +817,7 @@ func ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnored
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_shortcuts.tip_restore"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 338, Col: 164}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 340, Col: 164}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -876,7 +876,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_empty"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 354, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 356, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -894,7 +894,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_group"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 360, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 362, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -907,7 +907,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_reason"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 361, Col: 143}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 363, Col: 143}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -920,7 +920,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_members"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 362, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 364, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -933,7 +933,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_ignored_at"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 363, Col: 147}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 365, Col: 147}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -946,7 +946,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_col_actions"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 364, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 366, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -964,7 +964,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var53 string
 				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue("ignored-row-" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 369, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 371, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 				if templ_7745c5c3_Err != nil {
@@ -977,7 +977,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var54 string
 				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 369, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 371, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 				if templ_7745c5c3_Err != nil {
@@ -991,7 +991,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 					var templ_7745c5c3_Var55 string
 					templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(r.GroupKey)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 372, Col: 21}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 374, Col: 21}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 					if templ_7745c5c3_Err != nil {
@@ -1005,7 +1005,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 					var templ_7745c5c3_Var56 string
 					templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.ignored_group_unknown"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 374, Col: 114}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 376, Col: 114}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 					if templ_7745c5c3_Err != nil {
@@ -1028,7 +1028,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 					var templ_7745c5c3_Var57 string
 					templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_mbid"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 379, Col: 177}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 381, Col: 177}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 					if templ_7745c5c3_Err != nil {
@@ -1046,7 +1046,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 					var templ_7745c5c3_Var58 string
 					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.reason_name_key"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 381, Col: 177}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 383, Col: 177}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 					if templ_7745c5c3_Err != nil {
@@ -1069,7 +1069,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var59 string
 				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(r.MemberCount))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 386, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 388, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 				if templ_7745c5c3_Err != nil {
@@ -1082,7 +1082,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var60 string
 				templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(r.CreatedAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 387, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 389, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 				if templ_7745c5c3_Err != nil {
@@ -1095,7 +1095,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var61 string
 				templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/artists/duplicates/ignored/" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 392, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 394, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
 				if templ_7745c5c3_Err != nil {
@@ -1108,7 +1108,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var62 string
 				templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.restore_response_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 395, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 397, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
 				if templ_7745c5c3_Err != nil {
@@ -1121,7 +1121,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var63 string
 				templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "artist_duplicates.restore_send_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 396, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 398, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
 				if templ_7745c5c3_Err != nil {
@@ -1134,7 +1134,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 				var templ_7745c5c3_Var64 string
 				templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.action_restore"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 400, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 402, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 				if templ_7745c5c3_Err != nil {
@@ -1192,7 +1192,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(mergeI18nJSON(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 417, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 419, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 		if templ_7745c5c3_Err != nil {
@@ -1205,7 +1205,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 430, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 432, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
@@ -1218,7 +1218,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var68 string
 		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.close"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 436, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 438, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
 		if templ_7745c5c3_Err != nil {
@@ -1231,7 +1231,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 445, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 447, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
@@ -1244,7 +1244,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var70 string
 		templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.survivor_legend"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 449, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 451, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 		if templ_7745c5c3_Err != nil {
@@ -1257,7 +1257,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var71 string
 		templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_heading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 455, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 457, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 		if templ_7745c5c3_Err != nil {
@@ -1270,7 +1270,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var72 string
 		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_loading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 458, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 460, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 		if templ_7745c5c3_Err != nil {
@@ -1283,7 +1283,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 468, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 470, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
@@ -1296,7 +1296,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var74 string
 		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.confirm_button"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 476, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 478, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 		if templ_7745c5c3_Err != nil {

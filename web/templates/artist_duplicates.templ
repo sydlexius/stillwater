@@ -321,19 +321,21 @@ templ ArtistDuplicatesIgnoredPage(assets AssetPaths, view ArtistDuplicatesIgnore
 			</div>
 			<div
 				data-sw-roving-list
-				data-sw-roving-label-j={ t(ctx, "foreign_files.shortcuts.tip_next") }
-				data-sw-roving-label-k={ t(ctx, "foreign_files.shortcuts.tip_prev") }
+				data-sw-roving-label-j={ t(ctx, "artist_duplicates.ignored_shortcuts.tip_next") }
+				data-sw-roving-label-k={ t(ctx, "artist_duplicates.ignored_shortcuts.tip_prev") }
 				data-sw-roving-label-Enter={ t(ctx, "artist_duplicates.ignored_shortcuts.tip_restore") }
 			>
 				@ArtistDuplicatesIgnoredTable(view)
 			</div>
 			// Keyboard tip line: mirrors the foreign-files/allowlist sw-list-tips footer.
-			// j/k navigate rows; Enter restores the focused group.
+			// j/k navigate rows; Enter restores the focused group. Uses dedicated
+			// ignored_shortcuts keys (not foreign_files.shortcuts) because this page
+			// lists duplicate groups, not files.
 			<p class="sw-list-tips" role="note">
 				<span class="font-medium">{ t(ctx, "foreign_files.shortcuts.tip_label") }:</span>
-				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_next") }</span></span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artist_duplicates.ignored_shortcuts.tip_next") }</span></span>
 				<span aria-hidden="true">·</span>
-				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "foreign_files.shortcuts.tip_prev") }</span></span>
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artist_duplicates.ignored_shortcuts.tip_prev") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">Enter</kbd><span class="ml-1">{ t(ctx, "artist_duplicates.ignored_shortcuts.tip_restore") }</span></span>
 			</p>

@@ -225,6 +225,8 @@
   "artist_duplicates.ignored_empty": "No ignored duplicate groups. Groups you ignore on the duplicates page appear here so you can restore them.",
   "artist_duplicates.ignored_group_unknown": "Unknown group",
   "artist_duplicates.ignored_page_title": "Ignored Duplicate Groups",
+  "artist_duplicates.ignored_shortcuts.tip_next": "next group",
+  "artist_duplicates.ignored_shortcuts.tip_prev": "previous group",
   "artist_duplicates.ignored_shortcuts.tip_restore": "Restore group",
   "artist_duplicates.ignored_subtitle": "Duplicate groups you have ignored. Restoring a group brings it back to the duplicates page and re-counts it in the sidebar.",
   "artist_duplicates.ignored_title": "Ignored duplicate groups",
