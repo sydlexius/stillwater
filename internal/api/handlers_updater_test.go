@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/updater"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 // testRouterWithUpdater creates a minimal Router with a real updater.Service.
@@ -687,7 +688,15 @@ func TestHandlePostUpdateApply_NonDocker(t *testing.T) {
 
 // TestHandleCheckWithMockServer verifies the full check path with a mock GitHub server.
 func TestHandleCheckWithMockServer(t *testing.T) {
-	t.Parallel()
+	// Not parallel: pins version.Version so the v999.0.0 mock release reads as
+	// newer. Since #2254 the default is the non-semver "dev" sentinel, which
+	// newerThan cannot parse (so nothing is ever "newer"); an explicit old
+	// semver current version is required for update_available to be true.
+	// Mutating the package global rules out t.Parallel (would race readers).
+	origVer := version.Version
+	version.Version = "0.9.6"
+	t.Cleanup(func() { version.Version = origVer })
+
 	r := testRouterWithUpdater(t)
 
 	releases := []map[string]interface{}{

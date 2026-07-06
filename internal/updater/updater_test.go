@@ -19,7 +19,25 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/version"
 )
+
+// TestMain pins a stable, old, valid-semver baseline for version.Version before
+// running the updater tests. These tests model an already-released binary
+// checking GitHub for a newer release, so newerThan(candidate, current) needs a
+// parseable current version. Since #2254 the production default is the
+// non-semver "dev" sentinel (raw go build), which parseSemver rejects -- with
+// that default every mock candidate would read as "not newer" and the
+// update-available / apply assertions would fail. Setting an explicit baseline
+// here decouples the tests from the production default; individual tests that
+// need a different current version still override version.Version themselves.
+func TestMain(m *testing.M) {
+	orig := version.Version
+	version.Version = "0.9.6"
+	code := m.Run()
+	version.Version = orig
+	os.Exit(code)
+}
 
 // buildTestService creates a Service backed by a real SQLite DB.
 func buildTestService(t *testing.T) *Service {
@@ -561,7 +579,7 @@ func TestCheckWithMockGitHub_Nightly(t *testing.T) {
 	if result.Channel != ChannelNightly {
 		t.Errorf("Channel = %q, want %q", result.Channel, ChannelNightly)
 	}
-	// version.Version at test time defaults to "0.9.6-rc.2" (a valid semver).
+	// version.Version is pinned to "0.9.6" (a valid semver) by TestMain.
 	// newerThan: candidate is nightly, current is semver -> cross-kind opt-in
 	// branch returns true. Locking this here prevents a future refactor from
 	// silently suppressing the stable->nightly pill.
@@ -1408,8 +1426,9 @@ func TestRunApplyWithOldRelease(t *testing.T) {
 	svc := buildTestService(t)
 	ctx := context.Background()
 
-	// Return a release with a very old version. With version.Version = "" (dev
-	// build), parseSemver("") fails so newerThan returns false for any tag.
+	// Return a release with a very old version (v0.0.1). TestMain pins the
+	// current version to "0.9.6", so newerThan(v0.0.1, 0.9.6) is false and
+	// runApply takes the "no update needed" path.
 	releases := []map[string]interface{}{
 		{
 			"tag_name":     "v0.0.1",
