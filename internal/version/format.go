@@ -21,12 +21,16 @@ var ErrInvalidSemver = errors.New("invalid semver")
 //
 // Format:
 //   - Release build: "v1.0.6 (commit abc1234, built 2026-05-09)"
-//   - Dev build (Commit or Date is "unknown"): "v1.0.6 (dev build)"
+//   - make build (git-describe version, no release marker): "v1.6.0-... (dev build)"
+//   - Raw go build (no ldflags, Version is the DevVersion sentinel): "dev build"
 //
 // The "v" prefix is added if Version does not already start with one,
 // because golang.org/x/mod/semver requires the "v" prefix, but the
 // ldflags injected value typically omits it (e.g., "1.0.6").
 func String() string {
+	if Version == DevVersion {
+		return "dev build"
+	}
 	v := canonicalVersion(Version)
 	if IsDevBuild() {
 		return v + " (dev build)"
@@ -34,16 +38,27 @@ func String() string {
 	return fmt.Sprintf("%s (commit %s, built %s)", v, Commit, Date)
 }
 
-// Validate asserts that Version is non-empty and parses as a valid semver
-// string according to golang.org/x/mod/semver rules (which require a "v"
-// prefix). It does not distinguish between dev and release builds -- a dev
-// fallback like "1.0.6" is a valid semver and Validate() succeeds.
+// Validate asserts that Version is non-empty and either the DevVersion
+// sentinel (non-release builds only) or a valid semver string according to
+// golang.org/x/mod/semver rules (which require a "v" prefix).
+//
+// The "dev" sentinel is accepted for non-release builds (raw go build, IDE,
+// CI), where full ldflags injection did not run. A release build must never
+// carry it -- goreleaser always injects the tag -- so it is rejected when
+// IsReleaseBuild() is true, keeping semver enforcement intact for real
+// releases.
 //
 // Returns a wrapped error on failure so callers can use errors.Is/As to
 // distinguish ErrEmpty from ErrInvalidSemver.
 func Validate() error {
 	if Version == "" {
 		return fmt.Errorf("version: ldflags injection may be missing: %w", ErrEmpty)
+	}
+	if Version == DevVersion {
+		if IsReleaseBuild() {
+			return fmt.Errorf("version: release build carries the %q sentinel (ldflags injection missing): %w", DevVersion, ErrInvalidSemver)
+		}
+		return nil
 	}
 	v := canonicalVersion(Version)
 	if !semver.IsValid(v) {
@@ -56,8 +71,10 @@ func Validate() error {
 // injection. It returns true when Commit or Date is "unknown", which is the
 // default value set in version.go for local/IDE builds.
 //
-// Version is NOT checked here because the dev fallback intentionally mirrors
-// the last release tag (e.g., "1.0.6") to keep semver comparisons sensible.
+// Version is NOT checked here: `make build` injects a real git-describe
+// Version alongside non-"unknown" Commit/Date, so Commit/Date are the reliable
+// dev signal. A raw `go build` leaves Version as the DevVersion sentinel, which
+// String()/Validate() handle explicitly.
 func IsDevBuild() bool {
 	return Commit == "unknown" || Date == "unknown"
 }

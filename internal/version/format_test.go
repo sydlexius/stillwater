@@ -209,6 +209,33 @@ func TestValidate_AcceptsPrereleaseAndBuildMetadata(t *testing.T) {
 	}
 }
 
+// The DevVersion sentinel ("dev") is the raw-`go build` fallback (#2254). It is
+// intentionally non-semver, so Validate accepts it ONLY for non-release builds
+// (BuildType unset) and rejects it for release builds, where goreleaser always
+// injects the tag. This keeps semver enforcement intact for real releases while
+// letting a dev/CI binary boot without a bogus "invalid semver" warning.
+func TestValidate_DevSentinel_NonReleaseOK(t *testing.T) {
+	withVersion(t, version.DevVersion, "unknown", "unknown")
+	withBuildType(t, "")
+	if err := version.Validate(); err != nil {
+		t.Errorf("Validate() should accept the %q sentinel on a non-release build, got: %v", version.DevVersion, err)
+	}
+}
+
+func TestValidate_DevSentinel_ReleaseRejected(t *testing.T) {
+	// A release build carrying the sentinel means ldflags injection failed --
+	// that must not pass validation.
+	withVersion(t, version.DevVersion, "abc1234", "2026-05-08")
+	withBuildType(t, "release")
+	err := version.Validate()
+	if err == nil {
+		t.Fatalf("Validate() should reject the %q sentinel on a release build, got nil", version.DevVersion)
+	}
+	if !errors.Is(err, version.ErrInvalidSemver) {
+		t.Errorf("Validate() dev-sentinel-on-release error should wrap ErrInvalidSemver, got: %v", err)
+	}
+}
+
 // ---- String ----
 
 func TestString_DevBuild(t *testing.T) {
@@ -244,6 +271,19 @@ func TestString_VPrefixNotDoubled(t *testing.T) {
 	s := version.String()
 	if strings.Contains(s, "vv") {
 		t.Errorf("String() should not double the 'v' prefix, got: %q", s)
+	}
+}
+
+// The DevVersion sentinel renders as a plain "dev build" -- no "vdev" (the
+// sentinel is not semver, so canonicalVersion's "v" prefix must not be applied).
+func TestString_DevSentinel(t *testing.T) {
+	withVersion(t, version.DevVersion, "unknown", "unknown")
+	s := version.String()
+	if s != "dev build" {
+		t.Errorf("String() for the %q sentinel should be %q, got: %q", version.DevVersion, "dev build", s)
+	}
+	if strings.Contains(s, "vdev") {
+		t.Errorf("String() must not prefix the dev sentinel with 'v', got: %q", s)
 	}
 }
 
