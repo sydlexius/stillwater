@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // TestIsArtistDetailPath verifies the canonical Artist Detail route match
@@ -42,6 +44,71 @@ func TestIsArtistDetailPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAssetsForBasePath verifies assetsFor() still loads the guided-tour
+// assets (DriverJS/DriverCSS/TourJS) on the promoted tour-eligible routes
+// when the server is deployed under a non-empty basePath (e.g.
+// "/stillwater"), and that the returned asset paths are prefixed with that
+// basePath. assetsFor() strips r.basePath from req.URL.Path before matching
+// the tour-eligible route switch (see handlers.go), so a request path that
+// still carries the basePath prefix -- as it would from a real mounted
+// request -- must match the same routes as an unprefixed deployment; a
+// regression here would silently disable the guided tour for every
+// sub-path-deployed instance (#2244 Codoki follow-up).
+func TestAssetsForBasePath(t *testing.T) {
+	t.Parallel()
+	const basePath = "/stillwater"
+
+	r := &Router{
+		logger:       slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
+		basePath:     basePath,
+		staticAssets: NewStaticAssets(fstest.MapFS{}, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))),
+	}
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"promoted dashboard root", basePath + "/"},
+		{"promoted artist detail", basePath + "/artists/42"},
+		{"guide route", basePath + "/guide"},
+		{"legacy next lane", basePath + "/next/artists"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			a := r.assetsFor(req)
+
+			if a.DriverJS == "" || a.DriverCSS == "" || a.TourJS == "" {
+				t.Fatalf("path %q: expected tour assets to be set, got DriverJS=%q DriverCSS=%q TourJS=%q",
+					tc.path, a.DriverJS, a.DriverCSS, a.TourJS)
+			}
+			for name, assetPath := range map[string]string{
+				"DriverJS":  a.DriverJS,
+				"DriverCSS": a.DriverCSS,
+				"TourJS":    a.TourJS,
+			} {
+				if !strings.HasPrefix(assetPath, basePath) {
+					t.Errorf("path %q: %s = %q, want prefix %q", tc.path, name, assetPath, basePath)
+				}
+			}
+			if a.BasePath != basePath {
+				t.Errorf("path %q: BasePath = %q, want %q", tc.path, a.BasePath, basePath)
+			}
+		})
+	}
+
+	t.Run("non-tour route under basePath does not load tour assets", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, basePath+"/settings", nil)
+		a := r.assetsFor(req)
+		if a.DriverJS != "" || a.DriverCSS != "" || a.TourJS != "" {
+			t.Errorf("expected no tour assets on /settings, got DriverJS=%q DriverCSS=%q TourJS=%q", a.DriverJS, a.DriverCSS, a.TourJS)
+		}
+	})
 }
 
 func TestHandleLogout(t *testing.T) {

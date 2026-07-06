@@ -26,8 +26,39 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOUR_PATH = resolve(__dirname, '../../web/static/js/tour.js');
 const TOUR_SRC = readFileSync(TOUR_PATH, 'utf-8');
 
-function wait(ms) {
-    return new Promise((r) => setTimeout(r, ms));
+// waitFor polls predicate() at `interval` ms until it returns a truthy value
+// or `timeout` ms elapse. tour.js's auto-start path (shouldAutoStart /
+// runAutoTour) does its screen-recognition and driver.js dispatch inside a
+// setTimeout so callers don't race a not-yet-parsed DOM; the tests previously
+// waited out a fixed real-time sleep (600ms/100ms) long enough to cover that
+// delay, which was both slow (~2.5s of dead wall-clock across the suite) and
+// technically flaky (a slow CI runner could still lose the race). Polling the
+// actual observable condition removes both problems, and the hard timeout
+// means a genuinely broken auto-start flow still fails the test instead of
+// hanging the suite.
+function waitFor(predicate, { timeout = 2000, interval = 20 } = {}) {
+    return new Promise((resolve, reject) => {
+        const start = Date.now();
+        const check = () => {
+            let result;
+            try {
+                result = predicate();
+            } catch (err) {
+                reject(err);
+                return;
+            }
+            if (result) {
+                resolve(result);
+                return;
+            }
+            if (Date.now() - start >= timeout) {
+                reject(new Error(`waitFor: condition not met within ${timeout}ms`));
+                return;
+            }
+            setTimeout(check, interval);
+        };
+        check();
+    });
 }
 
 // driverStub fakes window.driver.js.driver so tests never touch real
@@ -166,7 +197,12 @@ describe('tour.js: getCurrentScreen recognizes the promoted canonical dashboard 
             driverCalls,
         });
         win.console.error = (msg) => errors.push(msg);
-        await wait(600);
+        // tour.js's auto-start path resolves waitForTourTargets() then runs
+        // the drive-or-skip decision inside its own internal 500ms
+        // setTimeout (see web/static/js/tour.js); poll for whichever fires
+        // first -- a driver() call (success) or a logged error (failure) --
+        // instead of sleeping past that fixed delay.
+        await waitFor(() => driverCalls.length > 0 || errors.length > 0);
         assert.equal(errors.length, 0, 'must not log "unrecognised screen" for the promoted dashboard route "/"');
         assert.equal(driverCalls.length, 1, 'dashboard tour must actually drive -- a null getCurrentScreen() would silently no-op here');
         assert.equal(driverCalls[0].steps.length, 5, 'full 5-step dashboard group (first chain screen, no nav dedup)');
@@ -203,7 +239,9 @@ describe('tour.js: button-triggered flow runs the full OOBE chain end-to-end (#2
             storage,
             driverCalls,
         });
-        await wait(600);
+        // Poll for the dashboard screen's driver() call rather than sleeping
+        // past tour.js's internal 500ms drive-decision setTimeout.
+        await waitFor(() => driverCalls.length >= 1);
         assert.equal(driverCalls.length, 1, 'dashboard group must auto-run');
         assert.equal(driverCalls[0].steps.length, 5, 'dashboard chain screen keeps its 5 steps (first screen, no dedup)');
         assert.equal(dashboard.navigated[0], '/next/artists', 'must advance to the artists chain screen');
@@ -226,7 +264,8 @@ describe('tour.js: button-triggered flow runs the full OOBE chain end-to-end (#2
             storage,
             driverCalls,
         });
-        await wait(600);
+        // Poll for the artists screen's driver() call.
+        await waitFor(() => driverCalls.length >= 2);
         assert.equal(driverCalls.length, 2, 'artists group must auto-run');
         assert.equal(driverCalls[1].steps.length, 6, 'nav step is de-duped on the second chain screen (7 - 1)');
         assert.equal(artists.navigated[0], '/artists/42', 'must advance to the first artist-detail link picked from the DOM');
@@ -246,7 +285,8 @@ describe('tour.js: button-triggered flow runs the full OOBE chain end-to-end (#2
             storage,
             driverCalls,
         });
-        await wait(600);
+        // Poll for the artistDetail screen's driver() call.
+        await waitFor(() => driverCalls.length >= 3);
         assert.equal(driverCalls.length, 3, 'artistDetail group must auto-run');
         assert.equal(driverCalls[2].steps.length, 3, 'artistDetail keeps all 3 steps (first step is not #sw-sidebar)');
         assert.equal(detail.navigated.length, 0, 'chain is exhausted -- no further navigation');
@@ -321,7 +361,12 @@ describe('tour.js: shouldAutoStart does not treat null===null as a chain match (
         const errors = [];
         const { win } = createPage({ url: 'http://localhost:1973/settings', nextEnabled: 'true' });
         win.console.error = (msg) => errors.push(msg);
-        await wait(100);
+        // No wait needed here: shouldAutoStart() returns false synchronously
+        // for an unrecognized screen with no pending/chain state (the guard
+        // this test covers), so the auto-start branch -- and tour.js's
+        // internal 500ms drive-decision setTimeout -- never runs at all.
+        // createPage()'s win.eval(TOUR_SRC) has already run the whole
+        // top-level auto-start check by the time it returns.
         assert.equal(errors.length, 0, 'must not log "tour: auto-start on unrecognised screen: null"');
         assert.equal(win.localStorage.getItem('tour.completed'), null, 'markComplete() must not fire from a null===null false match');
     });
