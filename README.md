@@ -15,9 +15,7 @@ manages artwork, and pulls metadata from MusicBrainz and Fanart.tv, all
 from one web UI that works alongside Emby, Jellyfin, and Kodi.
 
 <p align="center">
-  <a href="VIDEO_URL_PLACEHOLDER">
-    <img src="docs/hero/hero-static.png" alt="Stillwater hero walkthrough (click to play)" width="800"/>
-  </a>
+  <video src="https://github.com/user-attachments/assets/cd51e696-f639-44c4-960d-9cce0c0659a9" poster="docs/hero/hero-static.png" width="800" controls></video>
 </p>
 
 **Full documentation:** <https://sydlexius.github.io/stillwater/>
