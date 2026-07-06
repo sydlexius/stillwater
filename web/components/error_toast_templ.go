@@ -10,8 +10,11 @@ import templruntime "github.com/a-h/templ/runtime"
 
 // ErrorToast renders a server-rendered fallback toast notification using a solid
 // background and left-border color coding. Level should be "error",
-// "warning", or "success". The toast renders inline where placed and
-// auto-dismisses after 5 seconds via a local script tag.
+// "warning", or "success". It is only used as an HTMX error-response body; the
+// client's htmx:responseError handler extracts the message text and shows it
+// via the JS toast manager (which owns dismissal). No inline <script> is
+// embedded here: one would never execute when the body is processed via
+// innerHTML/text extraction, and its source would leak as visible text.
 func ErrorToast(level, message string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -62,13 +65,13 @@ func ErrorToast(level, message string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/error_toast.templ`, Line: 18, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/error_toast.templ`, Line: 21, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</span> <button type=\"button\" onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100 shrink-0\" aria-label=\"Dismiss notification\">&times;</button></div><script>\n\t\tsetTimeout(function() {\n\t\t\tvar el = document.getElementById('error-toast');\n\t\t\tif (el) {\n\t\t\t\tel.style.opacity = '0';\n\t\t\t\tsetTimeout(function() { el.remove(); }, 300);\n\t\t\t}\n\t\t}, 5000);\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</span> <button type=\"button\" onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100 shrink-0\" aria-label=\"Dismiss notification\">&times;</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

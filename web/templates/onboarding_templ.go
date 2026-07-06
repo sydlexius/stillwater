@@ -2030,7 +2030,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "</button></div></div></div></div><script>\n\t\t\t\tvar parsedStep = parseInt(document.body.dataset.currentStep, 10);\n\t\t\t\tvar currentStep = isNaN(parsedStep) ? 0 : parsedStep;\n\t\t\t\tvar totalSteps = 7;\n\t\t\t\t// Conflict pre-flight (step 6) is invisible unless server-side\n\t\t\t\t// gating reports >=1 library AND >=1 enabled emby/jellyfin/lidarr\n\t\t\t\t// connection. The flag is rendered into a data attribute so JS\n\t\t\t\t// can skip the step on next/back without a server round-trip.\n\t\t\t\tvar conflictPreflightVisible = document.body.dataset.conflictPreflight === 'true';\n\t\t\t\tvar discoveryPhase = 'idle'; // idle, running, review\n\t\t\t\tvar discoveryPollTimer = null;\n\t\t\t\tvar discoveryReviewQueue = [];\n\t\t\t\tvar discoveryPollFailures = 0;\n\t\t\t\tvar bpEl = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar basePath = bpEl ? bpEl.content : '';\n\n\t\t\t\tfunction getCsrfToken() {\n\t\t\t\t\t// Defers to the canonical helper in preferences.js so all\n\t\t\t\t\t// X-CSRF-Token threading goes through one cookie parser.\n\t\t\t\t\treturn (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';\n\t\t\t\t}\n\n\t\t\t\t// recomputeConflictPreflight refreshes the cached\n\t\t\t\t// conflictPreflightVisible flag by re-reading libraries and\n\t\t\t\t// connections from the server. The initial value is snapshotted\n\t\t\t\t// from data-conflict-preflight at page load, but in-session\n\t\t\t\t// changes (adding the first library, saving the first qualifying\n\t\t\t\t// connection) would otherwise leave it stale and the user would\n\t\t\t\t// either skip step 6 entirely or land on it without prerequisites.\n\t\t\t\t// Mirrors the server gating in handlers.go (len(libs) > 0 AND a\n\t\t\t\t// qualifying enabled emby/jellyfin/lidarr connection).\n\t\t\t\tfunction recomputeConflictPreflight() {\n\t\t\t\t\tvar hdrs = {'X-CSRF-Token': getCsrfToken()};\n\t\t\t\t\t// Returning the promise lets callers (notably goToStep)\n\t\t\t\t\t// await the recompute and avoid landing on a stale\n\t\t\t\t\t// conflictPreflightVisible after a just-saved library\n\t\t\t\t\t// or qualifying connection.\n\t\t\t\t\t//\n\t\t\t\t\t// On non-2xx we throw so the .catch below fires and the\n\t\t\t\t\t// previously-cached visibility is preserved. A naive\n\t\t\t\t\t// `r.ok ? r.json() : []` would treat a transient 401/5xx\n\t\t\t\t\t// as \"no libraries / no connections\" and hide step 6,\n\t\t\t\t\t// silently dropping the user out of the pre-flight.\n\t\t\t\t\treturn Promise.all([\n\t\t\t\t\t\tfetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){\n\t\t\t\t\t\t\tif (!r.ok) throw new Error('libraries: HTTP ' + r.status);\n\t\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t\t}),\n\t\t\t\t\t\tfetch(basePath + '/api/v1/connections', {headers: hdrs}).then(function(r){\n\t\t\t\t\t\t\tif (!r.ok) throw new Error('connections: HTTP ' + r.status);\n\t\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t\t})\n\t\t\t\t\t]).then(function(results) {\n\t\t\t\t\t\tvar libs = results[0] || [];\n\t\t\t\t\t\tvar conns = results[1] || [];\n\t\t\t\t\t\tvar hasQualifying = conns.some(function(c) {\n\t\t\t\t\t\t\treturn c && c.enabled && (c.type === 'emby' || c.type === 'jellyfin' || c.type === 'lidarr');\n\t\t\t\t\t\t});\n\t\t\t\t\t\tconflictPreflightVisible = libs.length > 0 && hasQualifying;\n\t\t\t\t\t\t// Mirror to the data attribute so any later reader (and\n\t\t\t\t\t\t// goToStep on a fresh visit) sees the up-to-date value.\n\t\t\t\t\t\tdocument.body.dataset.conflictPreflight = conflictPreflightVisible ? 'true' : 'false';\n\t\t\t\t\t\tvar progress = document.getElementById('progress-conflict');\n\t\t\t\t\t\tvar line = document.getElementById('step-line-6');\n\t\t\t\t\t\tif (progress) progress.classList.toggle('hidden', !conflictPreflightVisible);\n\t\t\t\t\t\tif (line) line.classList.toggle('hidden', !conflictPreflightVisible);\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t// Leave the cached value in place on transient failures;\n\t\t\t\t\t\t// goToStep will still try to render step 6 if the user\n\t\t\t\t\t\t// navigates there manually.\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction removeFromReviewQueue(artistId) {\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\tdiscoveryReviewQueue.splice(i, 1);\n\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tvar current = summaryEl.textContent;\n\t\t\t\t\t\tvar prefix = current.indexOf('Discovery canceled.') === 0 ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\t\t\t\t\tvar amberSpan = document.querySelector('#discovery-review-badges span:nth-child(2)');\n\t\t\t\t\tif (amberSpan) {\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Re-entrancy guard. goToStep is async (it awaits the conflict\n\t\t\t\t// preflight recompute when transitioning to step 6), so a\n\t\t\t\t// rapid double-click on Next would otherwise launch two\n\t\t\t\t// concurrent invocations: both would await, both would\n\t\t\t\t// proceed, and the second would clobber currentStep based\n\t\t\t\t// on a stale view of the first's outcome. Dropping the\n\t\t\t\t// second invocation is the right UX -- the user wanted to\n\t\t\t\t// advance once.\n\t\t\t\tvar goToStepInFlight = false;\n\t\t\t\tasync function goToStep(step) {\n\t\t\t\t\tif (goToStepInFlight) return;\n\t\t\t\t\tgoToStepInFlight = true;\n\t\t\t\t\ttry {\n\t\t\t\t\tif (step < 0) step = 0;\n\t\t\t\t\tif (step > totalSteps) step = totalSteps;\n\t\t\t\t\t// When the requested target is step 6, await an\n\t\t\t\t\t// authoritative recompute before deciding whether to\n\t\t\t\t\t// land on 5/6/7. Without this, a user who saves the\n\t\t\t\t\t// last qualifying library/connection and immediately\n\t\t\t\t\t// clicks Next can race the in-flight recompute and\n\t\t\t\t\t// see step 6 wrongly skipped (or wrongly entered).\n\t\t\t\t\t// The recompute swallows its own fetch errors, so the\n\t\t\t\t\t// await never rejects under normal operation.\n\t\t\t\t\tif (step === 6) {\n\t\t\t\t\t\ttry { await recomputeConflictPreflight(); } catch (_) {}\n\t\t\t\t\t}\n\t\t\t\t\t// Skip the conflict pre-flight (step 6) when the gating\n\t\t\t\t\t// preconditions are not satisfied. We need the direction\n\t\t\t\t\t// (forward/back) to know whether to land on 5 or 7.\n\t\t\t\t\tif (step === 6 && !conflictPreflightVisible) {\n\t\t\t\t\t\tstep = step > currentStep ? 7 : 5;\n\t\t\t\t\t}\n\t\t\t\t\tcurrentStep = step;\n\n\t\t\t\t\t// Step 0 (intro) is outside the progress bar\n\t\t\t\t\tvar introStep = document.getElementById('wizard-step-0');\n\t\t\t\t\tvar progressBar = document.getElementById('progress-bar');\n\t\t\t\t\tif (introStep) introStep.classList.toggle('hidden', step !== 0);\n\t\t\t\t\tif (progressBar) progressBar.classList.toggle('hidden', step === 0);\n\n\t\t\t\t\tfor (var i = 1; i <= totalSteps; i++) {\n\t\t\t\t\t\tvar el = document.getElementById('wizard-step-' + i);\n\t\t\t\t\t\tif (el) el.classList.toggle('hidden', i !== step);\n\n\t\t\t\t\t\tvar dot = document.getElementById('step-dot-' + i);\n\t\t\t\t\t\tvar label = document.getElementById('step-label-' + i);\n\t\t\t\t\t\tvar line = document.getElementById('step-line-' + i);\n\t\t\t\t\t\tif (dot) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (label) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm text-gray-500 dark:text-gray-400 hidden sm:inline';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line) {\n\t\t\t\t\t\t\tvar base = i < step\n\t\t\t\t\t\t\t\t? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'\n\t\t\t\t\t\t\t\t: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';\n\t\t\t\t\t\t\t// Step 6's connector is conditionally hidden by\n\t\t\t\t\t\t\t// the template when the conflict pre-flight is\n\t\t\t\t\t\t\t// not gated in. Reassigning className here would\n\t\t\t\t\t\t\t// drop that hidden class, leaving a dangling\n\t\t\t\t\t\t\t// connector before the discovery dot.\n\t\t\t\t\t\t\tif (i === 6 && !conflictPreflightVisible) {\n\t\t\t\t\t\t\t\tbase = 'hidden ' + base;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tline.className = base;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.getElementById('back-btn').classList.toggle('hidden', step <= 0);\n\t\t\t\t\tvar nextBtn = document.getElementById('next-btn');\n\t\t\t\t\tnextBtn.classList.toggle('hidden', step >= totalSteps);\n\t\t\t\t\tnextBtn.textContent = step === 0 ? 'Get Started' : 'Next';\n\t\t\t\t\tdocument.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);\n\n\t\t\t\t\t// Step 7 (discovery) hides Back during progress/review phases.\n\t\t\t\t\tif (step === 7 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {\n\t\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t\t}\n\n\t\t\t\t\t// Step 6 (conflict pre-flight): trigger an HTMX-driven refresh\n\t\t\t\t\t// of the body partial each time the user lands here so we\n\t\t\t\t\t// always show fresh ledger data (peer state may have changed\n\t\t\t\t\t// since OOBE last loaded). triggerConflictRefresh re-closes\n\t\t\t\t\t// the gate before the request fires so a fast-clicking user\n\t\t\t\t\t// cannot bypass a fresh round-trip block during the in-flight\n\t\t\t\t\t// probe (the input would otherwise still hold the prior\n\t\t\t\t\t// render's \"0\").\n\t\t\t\t\tif (step === 6) {\n\t\t\t\t\t\ttriggerConflictRefresh();\n\t\t\t\t\t}\n\t\t\t\t\tupdateConflictGate();\n\n\t\t\t\t\t// Step 3 (platform): auto-select based on auth provider only if no platform is already selected\n\t\t\t\t\tif (step === 3) {\n\t\t\t\t\t\tvar userAuthProvider = document.body.dataset.userAuthProvider;\n\t\t\t\t\t\tif (userAuthProvider && (userAuthProvider === 'emby' || userAuthProvider === 'jellyfin')) {\n\t\t\t\t\t\t\tvar hasActiveCard = document.querySelector('[data-profile-card].border-blue-500') !== null;\n\t\t\t\t\t\t\tif (!hasActiveCard) {\n\t\t\t\t\t\t\t\t// Defer auto-select slightly to ensure DOM is fully updated\n\t\t\t\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\t\t\t\tautoSelectPlatformCard(userAuthProvider);\n\t\t\t\t\t\t\t\t}, 100);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.step\": String(step)})\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tconsole.warn('Failed to persist onboarding step:', err);\n\t\t\t\t\t});\n\t\t\t\t\t} finally {\n\t\t\t\t\t\tgoToStepInFlight = false;\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// updateConflictGate disables Next on step 6 when the rendered\n\t\t\t\t// conflict body sets the hidden #ob-conflict-block input to \"1\"\n\t\t\t\t// (round-trip / red state). Other states are advisory and leave\n\t\t\t\t// Next enabled. Called from goToStep and from htmx:afterSwap on\n\t\t\t\t// the conflict body so flipping the per-connection toggle and\n\t\t\t\t// re-rendering instantly re-evaluates whether Continue unlocks.\n\t\t\t\tfunction updateConflictGate() {\n\t\t\t\t\tvar nextBtn = document.getElementById('next-btn');\n\t\t\t\t\tif (!nextBtn) return;\n\t\t\t\t\tif (currentStep !== 6) {\n\t\t\t\t\t\t// Clear any disabled state left over from a prior visit\n\t\t\t\t\t\t// to step 6; otherwise a user who hit a round-trip block\n\t\t\t\t\t\t// and navigated back would find Next still grayed out\n\t\t\t\t\t\t// on the unrelated step.\n\t\t\t\t\t\tnextBtn.disabled = false;\n\t\t\t\t\t\tnextBtn.classList.remove('opacity-50', 'cursor-not-allowed');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar blockEl = document.getElementById('ob-conflict-block');\n\t\t\t\t\tvar blocked = blockEl && blockEl.value === '1';\n\t\t\t\t\tnextBtn.disabled = !!blocked;\n\t\t\t\t\tif (blocked) {\n\t\t\t\t\t\tnextBtn.classList.add('opacity-50', 'cursor-not-allowed');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tnextBtn.classList.remove('opacity-50', 'cursor-not-allowed');\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Re-evaluate the gate whenever the conflict body finishes\n\t\t\t\t// swapping (initial load, manual re-check, or post-toggle\n\t\t\t\t// refresh from the per-connection CTA). Also mirror the\n\t\t\t\t// rendered ob-conflict-block-state into the persistent\n\t\t\t\t// #ob-conflict-block input that updateConflictGate watches.\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\t\tif (evt.detail && evt.detail.target && evt.detail.target.id === 'ob-conflict-body') {\n\t\t\t\t\t\tvar s = document.getElementById('ob-conflict-block-state');\n\t\t\t\t\t\tvar t = document.getElementById('ob-conflict-block');\n\t\t\t\t\t\tif (s && t) { t.value = s.value; }\n\t\t\t\t\t\tupdateConflictGate();\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// triggerConflictRefresh re-closes the Continue gate before\n\t\t\t\t// firing the conflict-step request. The hidden input is the\n\t\t\t\t// only thing updateConflictGate consults, and the rendered\n\t\t\t\t// body only mutates it via the htmx:afterSwap sync. Without\n\t\t\t\t// resetting it here, every refresh path (step-6 re-entry,\n\t\t\t\t// retry button) would leave Continue enabled in the window\n\t\t\t\t// between trigger and swap-in, racing a fresh round-trip\n\t\t\t\t// block.\n\t\t\t\tfunction triggerConflictRefresh() {\n\t\t\t\t\tvar blockEl = document.getElementById('ob-conflict-block');\n\t\t\t\t\tif (blockEl) blockEl.value = '1';\n\t\t\t\t\tupdateConflictGate();\n\t\t\t\t\thtmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');\n\t\t\t\t}\n\n\t\t\t\t// Error path for the conflict-step HTMX request. Wired via\n\t\t\t\t// hx-on::response-error and hx-on::send-error on\n\t\t\t\t// #ob-conflict-body. Without this, a non-2xx response or a\n\t\t\t\t// network failure leaves the spinner up forever and the\n\t\t\t\t// gate input stuck at \"1\", which deadlocks Continue. Here\n\t\t\t\t// we release the gate so the wizard can advance and surface\n\t\t\t\t// a retry UI so the user can re-run the probe without\n\t\t\t\t// reloading the page.\n\t\t\t\tfunction onboardingConflictRequestFailed() {\n\t\t\t\t\tvar blockEl = document.getElementById('ob-conflict-block');\n\t\t\t\t\tif (blockEl) blockEl.value = '0';\n\t\t\t\t\tupdateConflictGate();\n\t\t\t\t\tvar body = document.getElementById('ob-conflict-body');\n\t\t\t\t\tif (!body) return;\n\t\t\t\t\tvar errorText = body.dataset.errorText || '';\n\t\t\t\t\tvar retryText = body.dataset.retryText || 'Retry';\n\t\t\t\t\tvar checkingText = body.dataset.checkingText || '';\n\t\t\t\t\tvar wrap = document.createElement('div');\n\t\t\t\t\twrap.className = 'flex flex-col items-center gap-3 py-8 text-sm text-amber-700 dark:text-amber-300';\n\t\t\t\t\tvar msg = document.createElement('p');\n\t\t\t\t\tmsg.textContent = errorText;\n\t\t\t\t\twrap.appendChild(msg);\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'inline-flex items-center rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-amber-800 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-900/20';\n\t\t\t\t\tbtn.textContent = retryText;\n\t\t\t\t\tbtn.addEventListener('click', function() {\n\t\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\t\tif (checkingText) btn.textContent = checkingText;\n\t\t\t\t\t\ttriggerConflictRefresh();\n\t\t\t\t\t});\n\t\t\t\t\twrap.appendChild(btn);\n\t\t\t\t\tbody.replaceChildren(wrap);\n\t\t\t\t}\n\n\t\t\t\tfunction finishWizard() {\n\t\t\t\t\tvar payload = {\"onboarding.completed\": \"true\"};\n\t\t\t\t\t// If the baseline sub-section is visible, include the\n\t\t\t\t\t// user's selection so the server can flip the\n\t\t\t\t\t// foreign_files.baseline_completed flag accordingly.\n\t\t\t\t\tvar baselineChoice = document.querySelector('input[name=\"baseline_choice\"]:checked');\n\t\t\t\t\tif (baselineChoice) {\n\t\t\t\t\t\tpayload[\"onboarding.baseline_choice\"] = baselineChoice.value;\n\t\t\t\t\t}\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify(payload)\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) throw new Error('HTTP ' + resp.status);\n\t\t\t\t\t\tif (typeof window.markTourPending === 'function') {\n\t\t\t\t\t\t\twindow.markTourPending();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// onboarding.templ does not load tour.js, so\n\t\t\t\t\t\t\t// markTourPending is undefined here -- write the same\n\t\t\t\t\t\t\t// keys it would so the tour auto-starts post-OOBE.\n\t\t\t\t\t\t\t// Key names mirror tour.js TOUR_COMPLETED_KEY / TOUR_PENDING_KEY.\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tlocalStorage.removeItem('tour.completed');\n\t\t\t\t\t\t\t\tlocalStorage.setItem('tour.pending', 'true');\n\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\tconsole.error('[onboarding] tour-pending fallback: localStorage unavailable', e);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Redirect to the vNext Dashboard -- the guided tour\n\t\t\t\t\t\t// auto-starts there from the SCREEN_STEPS.dashboard group.\n\t\t\t\t\t\twindow.location.href = basePath + '/next/';\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Failed to complete setup. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// obSkipLanguages explicitly resets the language preference\n\t\t\t\t// to [\"en\"] -- the shared LanguagePicker auto-saves on every\n\t\t\t\t// change, so the Continue button is just a step advance.\n\t\t\t\t// Skip forces the default regardless of any picks the user\n\t\t\t\t// already made in this session.\n\t\t\t\tfunction obSkipLanguages() {\n\t\t\t\t\tvar btn = document.getElementById('ob-lang-skip-btn');\n\t\t\t\t\tif (btn) { btn.disabled = true; }\n\t\t\t\t\tvar defaults = '[\"en\"]';\n\t\t\t\t\t// Hold the button disabled across the step transition so a\n\t\t\t\t\t// rapid double-click can't re-enter and fire a second\n\t\t\t\t\t// swPreferences.set() before the language step is hidden.\n\t\t\t\t\t// goToStepInFlight guards the step transition itself; this\n\t\t\t\t\t// guards the preference reset call.\n\t\t\t\t\tif (window.swPreferences && typeof window.swPreferences.set === 'function') {\n\t\t\t\t\t\twindow.swPreferences.set('metadata_languages', defaults).then(function() {\n\t\t\t\t\t\t\tgoToStep(3);\n\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\tconsole.warn('Language preference reset network error; continuing anyway.');\n\t\t\t\t\t\t\tgoToStep(3);\n\t\t\t\t\t\t});\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Fallback when preferences.js failed to load: advance\n\t\t\t\t\t// without persisting; the server-side default is \"en\".\n\t\t\t\t\tgoToStep(3);\n\t\t\t\t}\n\n\t\t\t\tfunction selectPlatform(el) {\n\t\t\t\t\tvar cards = el.closest('.grid').querySelectorAll('[data-profile-card]');\n\t\t\t\t\tcards.forEach(function(card) {\n\t\t\t\t\t\tcard.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\t});\n\t\t\t\t\tel.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\tel.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t}\n\n\t\t\t\tfunction autoSelectPlatformCard(platformId) {\n\t\t\t\t\t// Validate platformId against allowlist to prevent selector injection\n\t\t\t\t\tif (platformId !== 'emby' && platformId !== 'jellyfin') {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar card = document.querySelector('[data-profile-card][hx-post*=\"/' + platformId + '/\"]');\n\t\t\t\t\tif (card) {\n\t\t\t\t\t\tcard.click();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction onLibraryAfterRequest(event) {\n\t\t\t\t\tvar errorEl = document.getElementById('ob-library-error');\n\t\t\t\t\tif (event.detail.successful) {\n\t\t\t\t\t\tif (errorEl) errorEl.classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').reset();\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-add-library-btn').classList.remove('hidden');\n\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Show inline error from the server response.\n\t\t\t\t\t\tvar msg = 'Failed to add library. Please check the path and try again.';\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar xhr = event.detail.xhr;\n\t\t\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\t\tif (data.error) msg = data.error;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch (e) { /* use default message */ }\n\t\t\t\t\t\tif (errorEl) {\n\t\t\t\t\t\t\terrorEl.textContent = msg;\n\t\t\t\t\t\t\terrorEl.classList.remove('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Returns a Promise so callers (notably tests and any future\n\t\t\t\t// awaiter) can compose with the recompute. Most live callers\n\t\t\t\t// fire-and-forget; the goToStep step-6 await closes the\n\t\t\t\t// stale-flag race that would otherwise need awaiting here.\n\t\t\t\tfunction refreshLibraryList() {\n\t\t\t\t\treturn fetch(basePath + '/api/v1/libraries', {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(libs) {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (!libs || libs.length === 0) {\n\t\t\t\t\t\t\tlist.innerHTML = '<p id=\"ob-no-libraries\" class=\"text-sm text-gray-400 dark:text-gray-500 italic\">No libraries configured yet.</p>';\n\t\t\t\t\t\t\t// Library count contributes to step-6 gating;\n\t\t\t\t\t\t\t// refresh the cached visibility flag whenever the\n\t\t\t\t\t\t\t// list mutates. Returned so the chain is awaitable.\n\t\t\t\t\t\t\treturn recomputeConflictPreflight();\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar html = '';\n\t\t\t\t\t\tlibs.forEach(function(lib) {\n\t\t\t\t\t\t\tvar pathLine = lib.path ? '<div class=\"text-xs text-gray-500 dark:text-gray-400\">' + escapeHTML(lib.path) + '</div>' : '';\n\t\t\t\t\t\t\tvar connectionBadge = lib.connection_id ? '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">Connection</span>' : '';\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\" id=\"ob-lib-' + lib.id + '\">'\n\t\t\t\t\t\t\t\t+ '<div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHTML(lib.name) + '</div>'\n\t\t\t\t\t\t\t\t+ pathLine\n\t\t\t\t\t\t\t\t+ '<div class=\"flex items-center gap-1.5 mt-1\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">' + escapeHTML(lib.type) + '</span>'\n\t\t\t\t\t\t\t\t+ connectionBadge\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"deleteLibrary(\\'' + escapeJsString(lib.id) + '\\')\">'\n\t\t\t\t\t\t\t\t+ 'Remove'\n\t\t\t\t\t\t\t\t+ '</button>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tlist.innerHTML = html;\n\t\t\t\t\t\treturn recomputeConflictPreflight();\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (list) list.textContent = 'Failed to load libraries. Please refresh the page.';\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction deleteLibrary(id) {\n\t\t\t\t\tfetch(basePath + '/api/v1/libraries/' + id, {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\treturn res.json().then(function(data) { alert(data.error || 'Failed to delete library'); });\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Network error removing library. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction escapeJsString(s) {\n\t\t\t\t\treturn String(s)\n\t\t\t\t\t\t.replace(/\\\\/g, '\\\\\\\\')\n\t\t\t\t\t\t.replace(/'/g, \"\\\\'\")\n\t\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t\t.replace(/\"/g, '&quot;')\n\t\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t\t.replace(/\\r?\\n/g, '\\\\n');\n\t\t\t\t}\n\n\t\t\t\tfunction discoverLibraries(connID, connType) {\n\t\t\t\t\thtmx.ajax('GET', '/api/v1/connections/' + connID + '/libraries', {\n\t\t\t\t\t\ttarget: '#ob-discover-' + connType,\n\t\t\t\t\t\tswap: 'innerHTML'\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryProgress() {\n\t\t\t\t\tdiscoveryPhase = 'running';\n\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\tvar progress = document.getElementById('discovery-progress');\n\t\t\t\t\tvar review = document.getElementById('discovery-review');\n\t\t\t\t\tif (optIn) optIn.classList.add('hidden');\n\t\t\t\t\tif (progress) progress.classList.remove('hidden');\n\t\t\t\t\tif (review) review.classList.add('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t}\n\n\t\t\t\tfunction startDiscovery() {\n\t\t\t\t\t// Disable button immediately to prevent double-click spawning duplicate polls.\n\t\t\t\t\tvar startBtn = document.getElementById('discovery-start-btn');\n\t\t\t\t\tif (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\t\t\tvar msg = 'Failed to start discovery (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\talert(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json().then(function(data) {\n\t\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(data.total);\n\t\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\t} else if (data.total === 0) {\n\t\t\t\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\t\t\t\tif (optIn) {\n\t\t\t\t\t\t\t\t\toptIn.innerHTML = '';\n\t\t\t\t\t\t\t\t\tvar wrapper = document.createElement('div');\n\t\t\t\t\t\t\t\t\twrapper.className = 'flex flex-col items-center py-6';\n\t\t\t\t\t\t\t\t\tvar svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('class', 'w-12 h-12 text-green-600 dark:text-green-400 mb-3');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('fill', 'none');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('viewBox', '0 0 24 24');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke', 'currentColor');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke-width', '1.5');\n\t\t\t\t\t\t\t\t\tvar path = document.createElementNS('http://www.w3.org/2000/svg', 'path');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linecap', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linejoin', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('d', 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z');\n\t\t\t\t\t\t\t\t\tsvg.appendChild(path);\n\t\t\t\t\t\t\t\t\twrapper.appendChild(svg);\n\t\t\t\t\t\t\t\t\tvar p1 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp1.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';\n\t\t\t\t\t\t\t\t\tp1.textContent = 'All artists are already identified';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p1);\n\t\t\t\t\t\t\t\t\tvar p2 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp2.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1';\n\t\t\t\t\t\t\t\t\tp2.textContent = 'Nothing to discover. You are all set!';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p2);\n\t\t\t\t\t\t\t\t\toptIn.appendChild(wrapper);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\talert('Network error starting discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction pollDiscoveryStatus() {\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (!data) return;\n\t\t\t\t\t\tdiscoveryPollFailures = 0;\n\n\t\t\t\t\t\tvar processed = data.processed || 0;\n\t\t\t\t\t\tvar total = data.total || 0;\n\n\t\t\t\t\t\tvar processedEl = document.getElementById('discovery-processed');\n\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\tvar autoLinkedEl = document.getElementById('discovery-auto-linked');\n\t\t\t\t\t\tvar queuedEl = document.getElementById('discovery-queued');\n\t\t\t\t\t\tvar unmatchedEl = document.getElementById('discovery-unmatched');\n\t\t\t\t\t\tvar currentNameEl = document.getElementById('discovery-current-name');\n\n\t\t\t\t\t\tif (processedEl) processedEl.textContent = String(processed);\n\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(total);\n\t\t\t\t\t\tif (autoLinkedEl) autoLinkedEl.textContent = String(data.auto_linked || 0);\n\t\t\t\t\t\tif (queuedEl) queuedEl.textContent = String(data.queued || 0);\n\t\t\t\t\t\tif (unmatchedEl) unmatchedEl.textContent = String(data.unmatched || 0);\n\t\t\t\t\t\tif (currentNameEl) currentNameEl.textContent = data.current_name || '';\n\n\t\t\t\t\t\tvar barWidth = total > 0 ? Math.round((processed / total) * 100) : 0;\n\t\t\t\t\t\tvar barEl = document.getElementById('discovery-bar');\n\t\t\t\t\t\tif (barEl) barEl.style.width = barWidth + '%';\n\n\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 1000);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdiscoveryReviewQueue = data.review_queue || [];\n\t\t\t\t\t\t\tshowDiscoveryComplete(data, data.status === 'canceled');\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction cancelDiscovery() {\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\t\talert('Failed to cancel discovery. The job may still be running.');\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Success: polling will detect canceled status\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\talert('Network error cancelling discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryComplete(data, wasCanceled) {\n\t\t\t\t\tif (discoveryReviewQueue.length > 0) {\n\t\t\t\t\t\tshowDiscoveryReview(data, wasCanceled);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// No items to review -- show completion in the progress panel.\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) cancelBtn.classList.add('hidden');\n\n\t\t\t\t\tvar statusText = wasCanceled ? 'Discovery canceled.' : 'Discovery complete.';\n\t\t\t\t\tvar summaryText = String(data.auto_linked || 0) + ' artists linked'\n\t\t\t\t\t\t+ (wasCanceled ? ' before cancellation.' : ' automatically.');\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tif (progressEl) {\n\t\t\t\t\t\tvar heading = progressEl.querySelector('h2');\n\t\t\t\t\t\tif (heading) {\n\t\t\t\t\t\t\tvar sibling = heading.nextElementSibling;\n\t\t\t\t\t\t\tif (sibling && sibling.tagName === 'P') {\n\t\t\t\t\t\t\t\tsibling.textContent = statusText;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar paras = progressEl.querySelectorAll('p');\n\t\t\t\t\t\tvar lastP = paras.length > 0 ? paras[paras.length - 1] : null;\n\t\t\t\t\t\tif (lastP) {\n\t\t\t\t\t\t\tlastP.textContent = summaryText;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tdiscoveryPhase = 'review';\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryReview(data, wasCanceled) {\n\t\t\t\t\tdiscoveryPhase = 'review';\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tvar reviewEl = document.getElementById('discovery-review');\n\t\t\t\t\tif (progressEl) progressEl.classList.add('hidden');\n\t\t\t\t\tif (reviewEl) reviewEl.classList.remove('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\n\t\t\t\t\tvar prefix = wasCanceled ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\n\t\t\t\t\tvar badgesEl = document.getElementById('discovery-review-badges');\n\t\t\t\t\tif (badgesEl) {\n\t\t\t\t\t\tbadgesEl.textContent = '';\n\t\t\t\t\t\tvar greenSpan = document.createElement('span');\n\t\t\t\t\t\tgreenSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700/30 text-green-700 dark:text-green-400';\n\t\t\t\t\t\tgreenSpan.textContent = String(data.auto_linked || 0) + ' auto-linked';\n\t\t\t\t\t\tbadgesEl.appendChild(greenSpan);\n\n\t\t\t\t\t\tvar amberSpan = document.createElement('span');\n\t\t\t\t\t\tamberSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700/30 text-amber-700 dark:text-amber-400';\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t\tbadgesEl.appendChild(amberSpan);\n\n\t\t\t\t\t\tvar graySpan = document.createElement('span');\n\t\t\t\t\t\tgraySpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600/30 text-gray-600 dark:text-gray-400';\n\t\t\t\t\t\tgraySpan.textContent = String(data.unmatched || 0) + ' no match';\n\t\t\t\t\t\tbadgesEl.appendChild(graySpan);\n\t\t\t\t\t}\n\n\t\t\t\t\tbuildReviewAccordion();\n\t\t\t\t}\n\n\t\t\t\tfunction buildReviewAccordion() {\n\t\t\t\t\tvar list = document.getElementById('discovery-review-list');\n\t\t\t\t\tif (!list) return;\n\t\t\t\t\tlist.textContent = '';\n\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tvar item = discoveryReviewQueue[i];\n\n\t\t\t\t\t\t// Compute initials: first letter of each word, max 2, uppercased\n\t\t\t\t\t\tvar words = item.artist_name.trim().split(/\\s+/);\n\t\t\t\t\t\tvar initials = '';\n\t\t\t\t\t\tfor (var w = 0; w < words.length && w < 2; w++) {\n\t\t\t\t\t\t\tinitials += words[w].charAt(0).toUpperCase();\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tvar tierLabel = item.tier === 'album' ? 'album match' : 'name match';\n\t\t\t\t\t\tvar candidateCount = item.candidates ? item.candidates.length : 0;\n\n\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\trow.id = 'review-row-' + item.artist_id;\n\t\t\t\t\t\trow.className = 'rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden';\n\n\t\t\t\t\t\t// Header button\n\t\t\t\t\t\tvar headerBtn = document.createElement('button');\n\t\t\t\t\t\theaderBtn.type = 'button';\n\t\t\t\t\t\theaderBtn.className = 'w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors';\n\t\t\t\t\t\theaderBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\theaderBtn.setAttribute('aria-controls', 'review-content-' + item.artist_id);\n\t\t\t\t\t\theaderBtn.onclick = function(b) { return function() { toggleReviewRow(b); }; }(headerBtn);\n\t\t\t\t\t\theaderBtn.innerHTML = '<div class=\"w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0\">'\n\t\t\t\t\t\t\t+ escapeHTML(initials)\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100 truncate block\">' + escapeHTML(item.artist_name) + '</span>'\n\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500 dark:text-gray-400\">' + String(candidateCount) + ' candidate' + (candidateCount !== 1 ? 's' : '') + ' / ' + escapeHTML(tierLabel) + '</span>'\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-gray-400 shrink-0 transition-transform\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M19 9l-7 7-7-7\"/></svg>';\n\n\t\t\t\t\t\t// Expandable content (hidden by default)\n\t\t\t\t\t\tvar content = document.createElement('div');\n\t\t\t\t\t\tcontent.className = 'hidden border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 p-3';\n\t\t\t\t\t\tcontent.id = 'review-content-' + item.artist_id;\n\t\t\t\t\t\tcontent.innerHTML = buildCandidateCards(item);\n\n\t\t\t\t\t\trow.appendChild(headerBtn);\n\t\t\t\t\t\trow.appendChild(content);\n\t\t\t\t\t\tlist.appendChild(row);\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction toggleReviewRow(btn) {\n\t\t\t\t\tvar content = btn.nextElementSibling;\n\t\t\t\t\tif (content) content.classList.toggle('hidden');\n\t\t\t\t\tvar svg = btn.querySelector('svg');\n\t\t\t\t\tif (svg) svg.classList.toggle('rotate-180');\n\t\t\t\t\tvar expanded = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\t\tbtn.setAttribute('aria-expanded', String(!expanded));\n\t\t\t\t}\n\n\t\t\t\tfunction buildCandidateCards(item) {\n\t\t\t\t\tvar html = '<div class=\"space-y-2\">';\n\t\t\t\t\tvar candidates = item.candidates || [];\n\n\t\t\t\t\tfor (var c = 0; c < candidates.length; c++) {\n\t\t\t\t\t\tvar cand = candidates[c];\n\t\t\t\t\t\thtml += '<button type=\"button\" onclick=\"linkCandidate(\\'' + escapeJsString(item.artist_id) + '\\', \\'' + escapeJsString(cand.musicbrainz_id) + '\\', this)\"'\n\t\t\t\t\t\t\t+ ' class=\"w-full text-left rounded border border-gray-200 dark:border-gray-600 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors\">';\n\n\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between\">'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHTML(cand.name) + '</div>';\n\n\t\t\t\t\t\t// Type, country, disambiguation line\n\t\t\t\t\t\tvar meta = '';\n\t\t\t\t\t\tif (cand.type) meta += escapeHTML(cand.type);\n\t\t\t\t\t\tif (cand.country) meta += (meta ? ' from ' : '') + escapeHTML(cand.country);\n\t\t\t\t\t\tif (cand.disambiguation) meta += (meta ? ' ' : '') + '<span class=\"italic\">(' + escapeHTML(cand.disambiguation) + ')</span>';\n\t\t\t\t\t\tif (meta) html += '<div class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">' + meta + '</div>';\n\n\t\t\t\t\t\t// MBID in monospace\n\t\t\t\t\t\tif (cand.musicbrainz_id) {\n\t\t\t\t\t\t\thtml += '<div class=\"text-[10px] text-gray-400 font-mono mt-0.5 truncate\">' + escapeHTML(cand.musicbrainz_id) + '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t// Album match badge\n\t\t\t\t\t\tif (cand.album_comparison && cand.album_comparison.local_count > 0) {\n\t\t\t\t\t\t\tvar pct = cand.album_comparison.match_percent || 0;\n\t\t\t\t\t\t\tvar badgeClasses;\n\t\t\t\t\t\t\tif (pct >= 60) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700/30';\n\t\t\t\t\t\t\t} else if (pct >= 30) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/30';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700/30';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\thtml += '<div class=\"mt-1.5 flex items-center gap-2\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ' + badgeClasses + '\">'\n\t\t\t\t\t\t\t\t+ String(cand.album_comparison.match_count || 0) + '/' + String(cand.album_comparison.local_count) + ' albums'\n\t\t\t\t\t\t\t\t+ '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex-1\n\n\t\t\t\t\t\t// Score on the right\n\t\t\t\t\t\tif (cand.score > 0) {\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center gap-2 ml-3 shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500\">' + String(cand.score) + '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex justify-between\n\t\t\t\t\t\thtml += '</button>';\n\t\t\t\t\t}\n\n\t\t\t\t\t// Skip button\n\t\t\t\t\thtml += '<button type=\"button\" onclick=\"skipReviewArtist(\\'' + escapeJsString(item.artist_id) + '\\')\"'\n\t\t\t\t\t\t+ ' class=\"w-full text-center rounded border border-dashed border-gray-300 dark:border-gray-600 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors\">'\n\t\t\t\t\t\t+ 'Skip this artist'\n\t\t\t\t\t\t+ '</button>';\n\n\t\t\t\t\thtml += '</div>';\n\t\t\t\t\treturn html;\n\t\t\t\t}\n\n\t\t\t\tfunction linkCandidate(artistId, mbid, btn) {\n\t\t\t\t\t// Disable all candidate buttons in this row to prevent concurrent link requests.\n\t\t\t\t\tvar row = btn.closest('[id^=\"review-row-\"]');\n\t\t\t\t\tif (row && row.dataset.linking === '1') return;\n\t\t\t\t\tif (row) row.dataset.linking = '1';\n\t\t\t\t\tvar rowButtons = row ? row.querySelectorAll('button') : [btn];\n\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\trowButtons[i].disabled = true;\n\t\t\t\t\t\trowButtons[i].style.opacity = '0.5';\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify/link', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': getCsrfToken()\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({artist_id: artistId, mbid: mbid})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tvar msg = 'Failed to link artist (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\tthrow new Error(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\t// Find the artist name before removing from queue\n\t\t\t\t\t\tvar artistName = artistId;\n\t\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\t\tartistName = discoveryReviewQueue[i].artist_name;\n\t\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tremoveFromReviewQueue(artistId);\n\n\t\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\t\tif (row) {\n\t\t\t\t\t\t\trow.className = 'rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 overflow-hidden';\n\t\t\t\t\t\t\trow.innerHTML = '<div class=\"flex items-center gap-3 px-3 py-2\">'\n\t\t\t\t\t\t\t\t+ '<div class=\"w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-green-600 dark:text-green-400\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"/></svg>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">' + escapeHTML(artistName) + '</span>'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-green-600 dark:text-green-400 ml-2\">Linked successfully</span>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tif (row) delete row.dataset.linking;\n\t\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\t\trowButtons[i].disabled = false;\n\t\t\t\t\t\t\trowButtons[i].style.opacity = '1';\n\t\t\t\t\t\t}\n\t\t\t\t\t\talert(err.message || 'Failed to link artist');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction skipReviewArtist(artistId) {\n\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\tif (!row) return;\n\t\t\t\t\tremoveFromReviewQueue(artistId);\n\t\t\t\t\trow.classList.add('opacity-50');\n\t\t\t\t\t// Hide the expandable content (second child of the row)\n\t\t\t\t\tvar children = row.children;\n\t\t\t\t\tif (children.length > 1) {\n\t\t\t\t\t\tchildren[1].classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Collapse the chevron and reset aria-expanded\n\t\t\t\t\tvar headerBtn = row.querySelector('button');\n\t\t\t\t\tif (headerBtn) headerBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\tvar svg = row.querySelector('button svg');\n\t\t\t\t\tif (svg) svg.classList.remove('rotate-180');\n\t\t\t\t}\n\n\t\t\t\t// Returns the recompute Promise so callers can compose. Most\n\t\t\t\t// live callers fire-and-forget; the goToStep step-6 await\n\t\t\t\t// closes the stale-flag race that would otherwise need\n\t\t\t\t// awaiting here.\n\t\t\t\tfunction onConnectionSaved(connType, xhr) {\n\t\t\t\t\tvar form = document.getElementById('ob-conn-form-' + connType);\n\t\t\t\t\tvar success = document.getElementById('ob-conn-success-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tvar btn = document.getElementById('ob-conn-btn-' + connType);\n\t\t\t\t\tif (form) form.classList.add('hidden');\n\t\t\t\t\tif (success) success.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.classList.add('hidden');\n\t\t\t\t\tdocument.body.dispatchEvent(new Event('clobberRecheck'));\n\t\t\t\t\t// Saving an emby/jellyfin/lidarr connection is the other half\n\t\t\t\t\t// of the step-6 gate; refresh the cached flag so the user\n\t\t\t\t\t// won't be skipped past the conflict pre-flight.\n\t\t\t\t\tvar recomputeP = recomputeConflictPreflight();\n\t\t\t\t\tif (dot) {\n\t\t\t\t\t\tdot.classList.remove('bg-gray-400', 'dark:bg-gray-500');\n\t\t\t\t\t\tdot.classList.add('bg-green-500');\n\t\t\t\t\t}\n\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\tif (data.id) {\n\t\t\t\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\t\t\t\tif (testBtn) {\n\t\t\t\t\t\t\t\t\ttestBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\ttestBtn.onclick = function() { testConnection(data.id, connType); };\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t// Lidarr is read-only (MBID seeding); no libraries to discover.\n\t\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(data.id, connType); };\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch(e) {}\n\t\t\t\t\t}\n\t\t\t\t\treturn recomputeP;\n\t\t\t\t}\n\n\t\t\t\tfunction testConnection(connID, connType) {\n\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\tvar resultEl = document.getElementById('ob-conn-test-result-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tif (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/connections/' + connID + '/test', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (data.status === 'ok') {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }\n\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\tif (!discoverBtn.dataset.bound) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(connID, connType); };\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.dataset.bound = '1';\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Failed: ' + (data.message || 'unknown error'); }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500'; }\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Network error'; }\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Initialize to the correct step on page load. We defer to\n\t\t\t\t// DOMContentLoaded so that on direct-resume to step 6, the\n\t\t\t\t// htmx.trigger('oobeConflictRefresh') inside goToStep fires\n\t\t\t\t// after htmx has scanned the body and bound the\n\t\t\t\t// hx-trigger=\"oobeConflictRefresh from:body\" listener; firing\n\t\t\t\t// during parsing dispatches into a not-yet-bound listener and\n\t\t\t\t// the conflict body never loads.\n\t\t\t\tfunction obInit() {\n\t\t\t\t\tif (currentStep !== 0) {\n\t\t\t\t\t\tgoToStep(currentStep);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (document.readyState === 'loading') {\n\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', obInit);\n\t\t\t\t} else {\n\t\t\t\t\tobInit();\n\t\t\t\t}\n\t\t\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "</button></div></div></div></div><script>\n\t\t\t\tvar parsedStep = parseInt(document.body.dataset.currentStep, 10);\n\t\t\t\tvar currentStep = isNaN(parsedStep) ? 0 : parsedStep;\n\t\t\t\tvar totalSteps = 7;\n\t\t\t\t// Conflict pre-flight (step 6) is invisible unless server-side\n\t\t\t\t// gating reports >=1 library AND >=1 enabled emby/jellyfin/lidarr\n\t\t\t\t// connection. The flag is rendered into a data attribute so JS\n\t\t\t\t// can skip the step on next/back without a server round-trip.\n\t\t\t\tvar conflictPreflightVisible = document.body.dataset.conflictPreflight === 'true';\n\t\t\t\tvar discoveryPhase = 'idle'; // idle, running, review\n\t\t\t\tvar discoveryPollTimer = null;\n\t\t\t\tvar discoveryReviewQueue = [];\n\t\t\t\tvar discoveryPollFailures = 0;\n\t\t\t\tvar bpEl = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar basePath = bpEl ? bpEl.content : '';\n\n\t\t\t\tfunction getCsrfToken() {\n\t\t\t\t\t// Defers to the canonical helper in preferences.js so all\n\t\t\t\t\t// X-CSRF-Token threading goes through one cookie parser.\n\t\t\t\t\treturn (typeof window.swCsrfToken === 'function') ? window.swCsrfToken() : '';\n\t\t\t\t}\n\n\t\t\t\t// recomputeConflictPreflight refreshes the cached\n\t\t\t\t// conflictPreflightVisible flag by re-reading libraries and\n\t\t\t\t// connections from the server. The initial value is snapshotted\n\t\t\t\t// from data-conflict-preflight at page load, but in-session\n\t\t\t\t// changes (adding the first library, saving the first qualifying\n\t\t\t\t// connection) would otherwise leave it stale and the user would\n\t\t\t\t// either skip step 6 entirely or land on it without prerequisites.\n\t\t\t\t// Mirrors the server gating in handlers.go (len(libs) > 0 AND a\n\t\t\t\t// qualifying enabled emby/jellyfin/lidarr connection).\n\t\t\t\tfunction recomputeConflictPreflight() {\n\t\t\t\t\tvar hdrs = {'X-CSRF-Token': getCsrfToken()};\n\t\t\t\t\t// Returning the promise lets callers (notably goToStep)\n\t\t\t\t\t// await the recompute and avoid landing on a stale\n\t\t\t\t\t// conflictPreflightVisible after a just-saved library\n\t\t\t\t\t// or qualifying connection.\n\t\t\t\t\t//\n\t\t\t\t\t// On non-2xx we throw so the .catch below fires and the\n\t\t\t\t\t// previously-cached visibility is preserved. A naive\n\t\t\t\t\t// `r.ok ? r.json() : []` would treat a transient 401/5xx\n\t\t\t\t\t// as \"no libraries / no connections\" and hide step 6,\n\t\t\t\t\t// silently dropping the user out of the pre-flight.\n\t\t\t\t\treturn Promise.all([\n\t\t\t\t\t\tfetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){\n\t\t\t\t\t\t\tif (!r.ok) throw new Error('libraries: HTTP ' + r.status);\n\t\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t\t}),\n\t\t\t\t\t\tfetch(basePath + '/api/v1/connections', {headers: hdrs}).then(function(r){\n\t\t\t\t\t\t\tif (!r.ok) throw new Error('connections: HTTP ' + r.status);\n\t\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t\t})\n\t\t\t\t\t]).then(function(results) {\n\t\t\t\t\t\tvar libs = results[0] || [];\n\t\t\t\t\t\tvar conns = results[1] || [];\n\t\t\t\t\t\tvar hasQualifying = conns.some(function(c) {\n\t\t\t\t\t\t\treturn c && c.enabled && (c.type === 'emby' || c.type === 'jellyfin' || c.type === 'lidarr');\n\t\t\t\t\t\t});\n\t\t\t\t\t\tconflictPreflightVisible = libs.length > 0 && hasQualifying;\n\t\t\t\t\t\t// Mirror to the data attribute so any later reader (and\n\t\t\t\t\t\t// goToStep on a fresh visit) sees the up-to-date value.\n\t\t\t\t\t\tdocument.body.dataset.conflictPreflight = conflictPreflightVisible ? 'true' : 'false';\n\t\t\t\t\t\tvar progress = document.getElementById('progress-conflict');\n\t\t\t\t\t\tvar line = document.getElementById('step-line-6');\n\t\t\t\t\t\tif (progress) progress.classList.toggle('hidden', !conflictPreflightVisible);\n\t\t\t\t\t\tif (line) line.classList.toggle('hidden', !conflictPreflightVisible);\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t// Leave the cached value in place on transient failures;\n\t\t\t\t\t\t// goToStep will still try to render step 6 if the user\n\t\t\t\t\t\t// navigates there manually.\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction removeFromReviewQueue(artistId) {\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\tdiscoveryReviewQueue.splice(i, 1);\n\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tvar current = summaryEl.textContent;\n\t\t\t\t\t\tvar prefix = current.indexOf('Discovery canceled.') === 0 ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\t\t\t\t\tvar amberSpan = document.querySelector('#discovery-review-badges span:nth-child(2)');\n\t\t\t\t\tif (amberSpan) {\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Re-entrancy guard. goToStep is async (it awaits the conflict\n\t\t\t\t// preflight recompute when transitioning to step 6), so a\n\t\t\t\t// rapid double-click on Next would otherwise launch two\n\t\t\t\t// concurrent invocations: both would await, both would\n\t\t\t\t// proceed, and the second would clobber currentStep based\n\t\t\t\t// on a stale view of the first's outcome. Dropping the\n\t\t\t\t// second invocation is the right UX -- the user wanted to\n\t\t\t\t// advance once.\n\t\t\t\tvar goToStepInFlight = false;\n\t\t\t\tasync function goToStep(step) {\n\t\t\t\t\tif (goToStepInFlight) return;\n\t\t\t\t\tgoToStepInFlight = true;\n\t\t\t\t\ttry {\n\t\t\t\t\tif (step < 0) step = 0;\n\t\t\t\t\tif (step > totalSteps) step = totalSteps;\n\t\t\t\t\t// When the requested target is step 6, await an\n\t\t\t\t\t// authoritative recompute before deciding whether to\n\t\t\t\t\t// land on 5/6/7. Without this, a user who saves the\n\t\t\t\t\t// last qualifying library/connection and immediately\n\t\t\t\t\t// clicks Next can race the in-flight recompute and\n\t\t\t\t\t// see step 6 wrongly skipped (or wrongly entered).\n\t\t\t\t\t// The recompute swallows its own fetch errors, so the\n\t\t\t\t\t// await never rejects under normal operation.\n\t\t\t\t\tif (step === 6) {\n\t\t\t\t\t\ttry { await recomputeConflictPreflight(); } catch (_) {}\n\t\t\t\t\t}\n\t\t\t\t\t// Skip the conflict pre-flight (step 6) when the gating\n\t\t\t\t\t// preconditions are not satisfied. We need the direction\n\t\t\t\t\t// (forward/back) to know whether to land on 5 or 7.\n\t\t\t\t\tif (step === 6 && !conflictPreflightVisible) {\n\t\t\t\t\t\tstep = step > currentStep ? 7 : 5;\n\t\t\t\t\t}\n\t\t\t\t\tcurrentStep = step;\n\n\t\t\t\t\t// Step 0 (intro) is outside the progress bar\n\t\t\t\t\tvar introStep = document.getElementById('wizard-step-0');\n\t\t\t\t\tvar progressBar = document.getElementById('progress-bar');\n\t\t\t\t\tif (introStep) introStep.classList.toggle('hidden', step !== 0);\n\t\t\t\t\tif (progressBar) progressBar.classList.toggle('hidden', step === 0);\n\n\t\t\t\t\tfor (var i = 1; i <= totalSteps; i++) {\n\t\t\t\t\t\tvar el = document.getElementById('wizard-step-' + i);\n\t\t\t\t\t\tif (el) el.classList.toggle('hidden', i !== step);\n\n\t\t\t\t\t\tvar dot = document.getElementById('step-dot-' + i);\n\t\t\t\t\t\tvar label = document.getElementById('step-label-' + i);\n\t\t\t\t\t\tvar line = document.getElementById('step-line-' + i);\n\t\t\t\t\t\tif (dot) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (label) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm text-gray-500 dark:text-gray-400 hidden sm:inline';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line) {\n\t\t\t\t\t\t\tvar base = i < step\n\t\t\t\t\t\t\t\t? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'\n\t\t\t\t\t\t\t\t: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';\n\t\t\t\t\t\t\t// Step 6's connector is conditionally hidden by\n\t\t\t\t\t\t\t// the template when the conflict pre-flight is\n\t\t\t\t\t\t\t// not gated in. Reassigning className here would\n\t\t\t\t\t\t\t// drop that hidden class, leaving a dangling\n\t\t\t\t\t\t\t// connector before the discovery dot.\n\t\t\t\t\t\t\tif (i === 6 && !conflictPreflightVisible) {\n\t\t\t\t\t\t\t\tbase = 'hidden ' + base;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tline.className = base;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.getElementById('back-btn').classList.toggle('hidden', step <= 0);\n\t\t\t\t\tvar nextBtn = document.getElementById('next-btn');\n\t\t\t\t\tnextBtn.classList.toggle('hidden', step >= totalSteps);\n\t\t\t\t\tnextBtn.textContent = step === 0 ? 'Get Started' : 'Next';\n\t\t\t\t\tdocument.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);\n\n\t\t\t\t\t// Step 7 (discovery) hides Back during progress/review phases.\n\t\t\t\t\tif (step === 7 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {\n\t\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t\t}\n\n\t\t\t\t\t// Step 6 (conflict pre-flight): trigger an HTMX-driven refresh\n\t\t\t\t\t// of the body partial each time the user lands here so we\n\t\t\t\t\t// always show fresh ledger data (peer state may have changed\n\t\t\t\t\t// since OOBE last loaded). triggerConflictRefresh re-closes\n\t\t\t\t\t// the gate before the request fires so a fast-clicking user\n\t\t\t\t\t// cannot bypass a fresh round-trip block during the in-flight\n\t\t\t\t\t// probe (the input would otherwise still hold the prior\n\t\t\t\t\t// render's \"0\").\n\t\t\t\t\tif (step === 6) {\n\t\t\t\t\t\ttriggerConflictRefresh();\n\t\t\t\t\t}\n\t\t\t\t\tupdateConflictGate();\n\n\t\t\t\t\t// Step 3 (platform): auto-select based on auth provider only if no platform is already selected\n\t\t\t\t\tif (step === 3) {\n\t\t\t\t\t\tvar userAuthProvider = document.body.dataset.userAuthProvider;\n\t\t\t\t\t\tif (userAuthProvider && (userAuthProvider === 'emby' || userAuthProvider === 'jellyfin')) {\n\t\t\t\t\t\t\tvar hasActiveCard = document.querySelector('[data-profile-card].border-blue-500') !== null;\n\t\t\t\t\t\t\tif (!hasActiveCard) {\n\t\t\t\t\t\t\t\t// Defer auto-select slightly to ensure DOM is fully updated\n\t\t\t\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\t\t\t\tautoSelectPlatformCard(userAuthProvider);\n\t\t\t\t\t\t\t\t}, 100);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.step\": String(step)})\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tconsole.warn('Failed to persist onboarding step:', err);\n\t\t\t\t\t});\n\t\t\t\t\t} finally {\n\t\t\t\t\t\tgoToStepInFlight = false;\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// updateConflictGate disables Next on step 6 when the rendered\n\t\t\t\t// conflict body sets the hidden #ob-conflict-block input to \"1\"\n\t\t\t\t// (round-trip / red state). Other states are advisory and leave\n\t\t\t\t// Next enabled. Called from goToStep and from htmx:afterSwap on\n\t\t\t\t// the conflict body so flipping the per-connection toggle and\n\t\t\t\t// re-rendering instantly re-evaluates whether Continue unlocks.\n\t\t\t\tfunction updateConflictGate() {\n\t\t\t\t\tvar nextBtn = document.getElementById('next-btn');\n\t\t\t\t\tif (!nextBtn) return;\n\t\t\t\t\tif (currentStep !== 6) {\n\t\t\t\t\t\t// Clear any disabled state left over from a prior visit\n\t\t\t\t\t\t// to step 6; otherwise a user who hit a round-trip block\n\t\t\t\t\t\t// and navigated back would find Next still grayed out\n\t\t\t\t\t\t// on the unrelated step.\n\t\t\t\t\t\tnextBtn.disabled = false;\n\t\t\t\t\t\tnextBtn.classList.remove('opacity-50', 'cursor-not-allowed');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar blockEl = document.getElementById('ob-conflict-block');\n\t\t\t\t\tvar blocked = blockEl && blockEl.value === '1';\n\t\t\t\t\tnextBtn.disabled = !!blocked;\n\t\t\t\t\tif (blocked) {\n\t\t\t\t\t\tnextBtn.classList.add('opacity-50', 'cursor-not-allowed');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tnextBtn.classList.remove('opacity-50', 'cursor-not-allowed');\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Re-evaluate the gate whenever the conflict body finishes\n\t\t\t\t// swapping (initial load, manual re-check, or post-toggle\n\t\t\t\t// refresh from the per-connection CTA). Also mirror the\n\t\t\t\t// rendered ob-conflict-block-state into the persistent\n\t\t\t\t// #ob-conflict-block input that updateConflictGate watches.\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\t\tif (evt.detail && evt.detail.target && evt.detail.target.id === 'ob-conflict-body') {\n\t\t\t\t\t\tvar s = document.getElementById('ob-conflict-block-state');\n\t\t\t\t\t\tvar t = document.getElementById('ob-conflict-block');\n\t\t\t\t\t\tif (s && t) { t.value = s.value; }\n\t\t\t\t\t\tupdateConflictGate();\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// triggerConflictRefresh re-closes the Continue gate before\n\t\t\t\t// firing the conflict-step request. The hidden input is the\n\t\t\t\t// only thing updateConflictGate consults, and the rendered\n\t\t\t\t// body only mutates it via the htmx:afterSwap sync. Without\n\t\t\t\t// resetting it here, every refresh path (step-6 re-entry,\n\t\t\t\t// retry button) would leave Continue enabled in the window\n\t\t\t\t// between trigger and swap-in, racing a fresh round-trip\n\t\t\t\t// block.\n\t\t\t\tfunction triggerConflictRefresh() {\n\t\t\t\t\tvar blockEl = document.getElementById('ob-conflict-block');\n\t\t\t\t\tif (blockEl) blockEl.value = '1';\n\t\t\t\t\tupdateConflictGate();\n\t\t\t\t\thtmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');\n\t\t\t\t}\n\n\t\t\t\t// Error path for the conflict-step HTMX request. Wired via\n\t\t\t\t// hx-on::response-error and hx-on::send-error on\n\t\t\t\t// #ob-conflict-body. Without this, a non-2xx response or a\n\t\t\t\t// network failure leaves the spinner up forever and the\n\t\t\t\t// gate input stuck at \"1\", which deadlocks Continue. Here\n\t\t\t\t// we release the gate so the wizard can advance and surface\n\t\t\t\t// a retry UI so the user can re-run the probe without\n\t\t\t\t// reloading the page.\n\t\t\t\tfunction onboardingConflictRequestFailed() {\n\t\t\t\t\tvar blockEl = document.getElementById('ob-conflict-block');\n\t\t\t\t\tif (blockEl) blockEl.value = '0';\n\t\t\t\t\tupdateConflictGate();\n\t\t\t\t\tvar body = document.getElementById('ob-conflict-body');\n\t\t\t\t\tif (!body) return;\n\t\t\t\t\tvar errorText = body.dataset.errorText || '';\n\t\t\t\t\tvar retryText = body.dataset.retryText || 'Retry';\n\t\t\t\t\tvar checkingText = body.dataset.checkingText || '';\n\t\t\t\t\tvar wrap = document.createElement('div');\n\t\t\t\t\twrap.className = 'flex flex-col items-center gap-3 py-8 text-sm text-amber-700 dark:text-amber-300';\n\t\t\t\t\tvar msg = document.createElement('p');\n\t\t\t\t\tmsg.textContent = errorText;\n\t\t\t\t\twrap.appendChild(msg);\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'inline-flex items-center rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-amber-800 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-900/20';\n\t\t\t\t\tbtn.textContent = retryText;\n\t\t\t\t\tbtn.addEventListener('click', function() {\n\t\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\t\tif (checkingText) btn.textContent = checkingText;\n\t\t\t\t\t\ttriggerConflictRefresh();\n\t\t\t\t\t});\n\t\t\t\t\twrap.appendChild(btn);\n\t\t\t\t\tbody.replaceChildren(wrap);\n\t\t\t\t}\n\n\t\t\t\tfunction finishWizard() {\n\t\t\t\t\tvar payload = {\"onboarding.completed\": \"true\"};\n\t\t\t\t\t// If the baseline sub-section is visible, include the\n\t\t\t\t\t// user's selection so the server can flip the\n\t\t\t\t\t// foreign_files.baseline_completed flag accordingly.\n\t\t\t\t\tvar baselineChoice = document.querySelector('input[name=\"baseline_choice\"]:checked');\n\t\t\t\t\tif (baselineChoice) {\n\t\t\t\t\t\tpayload[\"onboarding.baseline_choice\"] = baselineChoice.value;\n\t\t\t\t\t}\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify(payload)\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) throw new Error('HTTP ' + resp.status);\n\t\t\t\t\t\tif (typeof window.markTourPending === 'function') {\n\t\t\t\t\t\t\twindow.markTourPending();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// onboarding.templ does not load tour.js, so\n\t\t\t\t\t\t\t// markTourPending is undefined here -- write the same\n\t\t\t\t\t\t\t// keys it would so the tour auto-starts post-OOBE.\n\t\t\t\t\t\t\t// Key names mirror tour.js TOUR_COMPLETED_KEY / TOUR_PENDING_KEY.\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tlocalStorage.removeItem('tour.completed');\n\t\t\t\t\t\t\t\tlocalStorage.setItem('tour.pending', 'true');\n\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\tconsole.error('[onboarding] tour-pending fallback: localStorage unavailable', e);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Redirect to the dashboard -- the guided tour\n\t\t\t\t\t\t// auto-starts there from the SCREEN_STEPS.dashboard group.\n\t\t\t\t\t\twindow.location.href = basePath + '/';\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Failed to complete setup. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// obSkipLanguages explicitly resets the language preference\n\t\t\t\t// to [\"en\"] -- the shared LanguagePicker auto-saves on every\n\t\t\t\t// change, so the Continue button is just a step advance.\n\t\t\t\t// Skip forces the default regardless of any picks the user\n\t\t\t\t// already made in this session.\n\t\t\t\tfunction obSkipLanguages() {\n\t\t\t\t\tvar btn = document.getElementById('ob-lang-skip-btn');\n\t\t\t\t\tif (btn) { btn.disabled = true; }\n\t\t\t\t\tvar defaults = '[\"en\"]';\n\t\t\t\t\t// Hold the button disabled across the step transition so a\n\t\t\t\t\t// rapid double-click can't re-enter and fire a second\n\t\t\t\t\t// swPreferences.set() before the language step is hidden.\n\t\t\t\t\t// goToStepInFlight guards the step transition itself; this\n\t\t\t\t\t// guards the preference reset call.\n\t\t\t\t\tif (window.swPreferences && typeof window.swPreferences.set === 'function') {\n\t\t\t\t\t\twindow.swPreferences.set('metadata_languages', defaults).then(function() {\n\t\t\t\t\t\t\tgoToStep(3);\n\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\tconsole.warn('Language preference reset network error; continuing anyway.');\n\t\t\t\t\t\t\tgoToStep(3);\n\t\t\t\t\t\t});\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Fallback when preferences.js failed to load: advance\n\t\t\t\t\t// without persisting; the server-side default is \"en\".\n\t\t\t\t\tgoToStep(3);\n\t\t\t\t}\n\n\t\t\t\tfunction selectPlatform(el) {\n\t\t\t\t\tvar cards = el.closest('.grid').querySelectorAll('[data-profile-card]');\n\t\t\t\t\tcards.forEach(function(card) {\n\t\t\t\t\t\tcard.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\t});\n\t\t\t\t\tel.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\tel.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t}\n\n\t\t\t\tfunction autoSelectPlatformCard(platformId) {\n\t\t\t\t\t// Validate platformId against allowlist to prevent selector injection\n\t\t\t\t\tif (platformId !== 'emby' && platformId !== 'jellyfin') {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar card = document.querySelector('[data-profile-card][hx-post*=\"/' + platformId + '/\"]');\n\t\t\t\t\tif (card) {\n\t\t\t\t\t\tcard.click();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction onLibraryAfterRequest(event) {\n\t\t\t\t\tvar errorEl = document.getElementById('ob-library-error');\n\t\t\t\t\tif (event.detail.successful) {\n\t\t\t\t\t\tif (errorEl) errorEl.classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').reset();\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-add-library-btn').classList.remove('hidden');\n\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Show inline error from the server response.\n\t\t\t\t\t\tvar msg = 'Failed to add library. Please check the path and try again.';\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar xhr = event.detail.xhr;\n\t\t\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\t\tif (data.error) msg = data.error;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch (e) { /* use default message */ }\n\t\t\t\t\t\tif (errorEl) {\n\t\t\t\t\t\t\terrorEl.textContent = msg;\n\t\t\t\t\t\t\terrorEl.classList.remove('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Returns a Promise so callers (notably tests and any future\n\t\t\t\t// awaiter) can compose with the recompute. Most live callers\n\t\t\t\t// fire-and-forget; the goToStep step-6 await closes the\n\t\t\t\t// stale-flag race that would otherwise need awaiting here.\n\t\t\t\tfunction refreshLibraryList() {\n\t\t\t\t\treturn fetch(basePath + '/api/v1/libraries', {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(libs) {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (!libs || libs.length === 0) {\n\t\t\t\t\t\t\tlist.innerHTML = '<p id=\"ob-no-libraries\" class=\"text-sm text-gray-400 dark:text-gray-500 italic\">No libraries configured yet.</p>';\n\t\t\t\t\t\t\t// Library count contributes to step-6 gating;\n\t\t\t\t\t\t\t// refresh the cached visibility flag whenever the\n\t\t\t\t\t\t\t// list mutates. Returned so the chain is awaitable.\n\t\t\t\t\t\t\treturn recomputeConflictPreflight();\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar html = '';\n\t\t\t\t\t\tlibs.forEach(function(lib) {\n\t\t\t\t\t\t\tvar pathLine = lib.path ? '<div class=\"text-xs text-gray-500 dark:text-gray-400\">' + escapeHTML(lib.path) + '</div>' : '';\n\t\t\t\t\t\t\tvar connectionBadge = lib.connection_id ? '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">Connection</span>' : '';\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\" id=\"ob-lib-' + lib.id + '\">'\n\t\t\t\t\t\t\t\t+ '<div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHTML(lib.name) + '</div>'\n\t\t\t\t\t\t\t\t+ pathLine\n\t\t\t\t\t\t\t\t+ '<div class=\"flex items-center gap-1.5 mt-1\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">' + escapeHTML(lib.type) + '</span>'\n\t\t\t\t\t\t\t\t+ connectionBadge\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"deleteLibrary(\\'' + escapeJsString(lib.id) + '\\')\">'\n\t\t\t\t\t\t\t\t+ 'Remove'\n\t\t\t\t\t\t\t\t+ '</button>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tlist.innerHTML = html;\n\t\t\t\t\t\treturn recomputeConflictPreflight();\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (list) list.textContent = 'Failed to load libraries. Please refresh the page.';\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction deleteLibrary(id) {\n\t\t\t\t\tfetch(basePath + '/api/v1/libraries/' + id, {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\treturn res.json().then(function(data) { alert(data.error || 'Failed to delete library'); });\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Network error removing library. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction escapeJsString(s) {\n\t\t\t\t\treturn String(s)\n\t\t\t\t\t\t.replace(/\\\\/g, '\\\\\\\\')\n\t\t\t\t\t\t.replace(/'/g, \"\\\\'\")\n\t\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t\t.replace(/\"/g, '&quot;')\n\t\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t\t.replace(/\\r?\\n/g, '\\\\n');\n\t\t\t\t}\n\n\t\t\t\tfunction discoverLibraries(connID, connType) {\n\t\t\t\t\thtmx.ajax('GET', '/api/v1/connections/' + connID + '/libraries', {\n\t\t\t\t\t\ttarget: '#ob-discover-' + connType,\n\t\t\t\t\t\tswap: 'innerHTML'\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryProgress() {\n\t\t\t\t\tdiscoveryPhase = 'running';\n\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\tvar progress = document.getElementById('discovery-progress');\n\t\t\t\t\tvar review = document.getElementById('discovery-review');\n\t\t\t\t\tif (optIn) optIn.classList.add('hidden');\n\t\t\t\t\tif (progress) progress.classList.remove('hidden');\n\t\t\t\t\tif (review) review.classList.add('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t}\n\n\t\t\t\tfunction startDiscovery() {\n\t\t\t\t\t// Disable button immediately to prevent double-click spawning duplicate polls.\n\t\t\t\t\tvar startBtn = document.getElementById('discovery-start-btn');\n\t\t\t\t\tif (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\t\t\tvar msg = 'Failed to start discovery (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\talert(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json().then(function(data) {\n\t\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(data.total);\n\t\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\t} else if (data.total === 0) {\n\t\t\t\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\t\t\t\tif (optIn) {\n\t\t\t\t\t\t\t\t\toptIn.innerHTML = '';\n\t\t\t\t\t\t\t\t\tvar wrapper = document.createElement('div');\n\t\t\t\t\t\t\t\t\twrapper.className = 'flex flex-col items-center py-6';\n\t\t\t\t\t\t\t\t\tvar svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('class', 'w-12 h-12 text-green-600 dark:text-green-400 mb-3');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('fill', 'none');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('viewBox', '0 0 24 24');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke', 'currentColor');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke-width', '1.5');\n\t\t\t\t\t\t\t\t\tvar path = document.createElementNS('http://www.w3.org/2000/svg', 'path');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linecap', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linejoin', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('d', 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z');\n\t\t\t\t\t\t\t\t\tsvg.appendChild(path);\n\t\t\t\t\t\t\t\t\twrapper.appendChild(svg);\n\t\t\t\t\t\t\t\t\tvar p1 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp1.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';\n\t\t\t\t\t\t\t\t\tp1.textContent = 'All artists are already identified';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p1);\n\t\t\t\t\t\t\t\t\tvar p2 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp2.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1';\n\t\t\t\t\t\t\t\t\tp2.textContent = 'Nothing to discover. You are all set!';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p2);\n\t\t\t\t\t\t\t\t\toptIn.appendChild(wrapper);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\talert('Network error starting discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction pollDiscoveryStatus() {\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (!data) return;\n\t\t\t\t\t\tdiscoveryPollFailures = 0;\n\n\t\t\t\t\t\tvar processed = data.processed || 0;\n\t\t\t\t\t\tvar total = data.total || 0;\n\n\t\t\t\t\t\tvar processedEl = document.getElementById('discovery-processed');\n\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\tvar autoLinkedEl = document.getElementById('discovery-auto-linked');\n\t\t\t\t\t\tvar queuedEl = document.getElementById('discovery-queued');\n\t\t\t\t\t\tvar unmatchedEl = document.getElementById('discovery-unmatched');\n\t\t\t\t\t\tvar currentNameEl = document.getElementById('discovery-current-name');\n\n\t\t\t\t\t\tif (processedEl) processedEl.textContent = String(processed);\n\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(total);\n\t\t\t\t\t\tif (autoLinkedEl) autoLinkedEl.textContent = String(data.auto_linked || 0);\n\t\t\t\t\t\tif (queuedEl) queuedEl.textContent = String(data.queued || 0);\n\t\t\t\t\t\tif (unmatchedEl) unmatchedEl.textContent = String(data.unmatched || 0);\n\t\t\t\t\t\tif (currentNameEl) currentNameEl.textContent = data.current_name || '';\n\n\t\t\t\t\t\tvar barWidth = total > 0 ? Math.round((processed / total) * 100) : 0;\n\t\t\t\t\t\tvar barEl = document.getElementById('discovery-bar');\n\t\t\t\t\t\tif (barEl) barEl.style.width = barWidth + '%';\n\n\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 1000);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdiscoveryReviewQueue = data.review_queue || [];\n\t\t\t\t\t\t\tshowDiscoveryComplete(data, data.status === 'canceled');\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction cancelDiscovery() {\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\t\talert('Failed to cancel discovery. The job may still be running.');\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Success: polling will detect canceled status\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\talert('Network error cancelling discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryComplete(data, wasCanceled) {\n\t\t\t\t\tif (discoveryReviewQueue.length > 0) {\n\t\t\t\t\t\tshowDiscoveryReview(data, wasCanceled);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// No items to review -- show completion in the progress panel.\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) cancelBtn.classList.add('hidden');\n\n\t\t\t\t\tvar statusText = wasCanceled ? 'Discovery canceled.' : 'Discovery complete.';\n\t\t\t\t\tvar summaryText = String(data.auto_linked || 0) + ' artists linked'\n\t\t\t\t\t\t+ (wasCanceled ? ' before cancellation.' : ' automatically.');\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tif (progressEl) {\n\t\t\t\t\t\tvar heading = progressEl.querySelector('h2');\n\t\t\t\t\t\tif (heading) {\n\t\t\t\t\t\t\tvar sibling = heading.nextElementSibling;\n\t\t\t\t\t\t\tif (sibling && sibling.tagName === 'P') {\n\t\t\t\t\t\t\t\tsibling.textContent = statusText;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar paras = progressEl.querySelectorAll('p');\n\t\t\t\t\t\tvar lastP = paras.length > 0 ? paras[paras.length - 1] : null;\n\t\t\t\t\t\tif (lastP) {\n\t\t\t\t\t\t\tlastP.textContent = summaryText;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tdiscoveryPhase = 'review';\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryReview(data, wasCanceled) {\n\t\t\t\t\tdiscoveryPhase = 'review';\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tvar reviewEl = document.getElementById('discovery-review');\n\t\t\t\t\tif (progressEl) progressEl.classList.add('hidden');\n\t\t\t\t\tif (reviewEl) reviewEl.classList.remove('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\n\t\t\t\t\tvar prefix = wasCanceled ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\n\t\t\t\t\tvar badgesEl = document.getElementById('discovery-review-badges');\n\t\t\t\t\tif (badgesEl) {\n\t\t\t\t\t\tbadgesEl.textContent = '';\n\t\t\t\t\t\tvar greenSpan = document.createElement('span');\n\t\t\t\t\t\tgreenSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700/30 text-green-700 dark:text-green-400';\n\t\t\t\t\t\tgreenSpan.textContent = String(data.auto_linked || 0) + ' auto-linked';\n\t\t\t\t\t\tbadgesEl.appendChild(greenSpan);\n\n\t\t\t\t\t\tvar amberSpan = document.createElement('span');\n\t\t\t\t\t\tamberSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700/30 text-amber-700 dark:text-amber-400';\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t\tbadgesEl.appendChild(amberSpan);\n\n\t\t\t\t\t\tvar graySpan = document.createElement('span');\n\t\t\t\t\t\tgraySpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600/30 text-gray-600 dark:text-gray-400';\n\t\t\t\t\t\tgraySpan.textContent = String(data.unmatched || 0) + ' no match';\n\t\t\t\t\t\tbadgesEl.appendChild(graySpan);\n\t\t\t\t\t}\n\n\t\t\t\t\tbuildReviewAccordion();\n\t\t\t\t}\n\n\t\t\t\tfunction buildReviewAccordion() {\n\t\t\t\t\tvar list = document.getElementById('discovery-review-list');\n\t\t\t\t\tif (!list) return;\n\t\t\t\t\tlist.textContent = '';\n\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tvar item = discoveryReviewQueue[i];\n\n\t\t\t\t\t\t// Compute initials: first letter of each word, max 2, uppercased\n\t\t\t\t\t\tvar words = item.artist_name.trim().split(/\\s+/);\n\t\t\t\t\t\tvar initials = '';\n\t\t\t\t\t\tfor (var w = 0; w < words.length && w < 2; w++) {\n\t\t\t\t\t\t\tinitials += words[w].charAt(0).toUpperCase();\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tvar tierLabel = item.tier === 'album' ? 'album match' : 'name match';\n\t\t\t\t\t\tvar candidateCount = item.candidates ? item.candidates.length : 0;\n\n\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\trow.id = 'review-row-' + item.artist_id;\n\t\t\t\t\t\trow.className = 'rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden';\n\n\t\t\t\t\t\t// Header button\n\t\t\t\t\t\tvar headerBtn = document.createElement('button');\n\t\t\t\t\t\theaderBtn.type = 'button';\n\t\t\t\t\t\theaderBtn.className = 'w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors';\n\t\t\t\t\t\theaderBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\theaderBtn.setAttribute('aria-controls', 'review-content-' + item.artist_id);\n\t\t\t\t\t\theaderBtn.onclick = function(b) { return function() { toggleReviewRow(b); }; }(headerBtn);\n\t\t\t\t\t\theaderBtn.innerHTML = '<div class=\"w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0\">'\n\t\t\t\t\t\t\t+ escapeHTML(initials)\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100 truncate block\">' + escapeHTML(item.artist_name) + '</span>'\n\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500 dark:text-gray-400\">' + String(candidateCount) + ' candidate' + (candidateCount !== 1 ? 's' : '') + ' / ' + escapeHTML(tierLabel) + '</span>'\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-gray-400 shrink-0 transition-transform\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M19 9l-7 7-7-7\"/></svg>';\n\n\t\t\t\t\t\t// Expandable content (hidden by default)\n\t\t\t\t\t\tvar content = document.createElement('div');\n\t\t\t\t\t\tcontent.className = 'hidden border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 p-3';\n\t\t\t\t\t\tcontent.id = 'review-content-' + item.artist_id;\n\t\t\t\t\t\tcontent.innerHTML = buildCandidateCards(item);\n\n\t\t\t\t\t\trow.appendChild(headerBtn);\n\t\t\t\t\t\trow.appendChild(content);\n\t\t\t\t\t\tlist.appendChild(row);\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction toggleReviewRow(btn) {\n\t\t\t\t\tvar content = btn.nextElementSibling;\n\t\t\t\t\tif (content) content.classList.toggle('hidden');\n\t\t\t\t\tvar svg = btn.querySelector('svg');\n\t\t\t\t\tif (svg) svg.classList.toggle('rotate-180');\n\t\t\t\t\tvar expanded = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\t\tbtn.setAttribute('aria-expanded', String(!expanded));\n\t\t\t\t}\n\n\t\t\t\tfunction buildCandidateCards(item) {\n\t\t\t\t\tvar html = '<div class=\"space-y-2\">';\n\t\t\t\t\tvar candidates = item.candidates || [];\n\n\t\t\t\t\tfor (var c = 0; c < candidates.length; c++) {\n\t\t\t\t\t\tvar cand = candidates[c];\n\t\t\t\t\t\thtml += '<button type=\"button\" onclick=\"linkCandidate(\\'' + escapeJsString(item.artist_id) + '\\', \\'' + escapeJsString(cand.musicbrainz_id) + '\\', this)\"'\n\t\t\t\t\t\t\t+ ' class=\"w-full text-left rounded border border-gray-200 dark:border-gray-600 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors\">';\n\n\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between\">'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHTML(cand.name) + '</div>';\n\n\t\t\t\t\t\t// Type, country, disambiguation line\n\t\t\t\t\t\tvar meta = '';\n\t\t\t\t\t\tif (cand.type) meta += escapeHTML(cand.type);\n\t\t\t\t\t\tif (cand.country) meta += (meta ? ' from ' : '') + escapeHTML(cand.country);\n\t\t\t\t\t\tif (cand.disambiguation) meta += (meta ? ' ' : '') + '<span class=\"italic\">(' + escapeHTML(cand.disambiguation) + ')</span>';\n\t\t\t\t\t\tif (meta) html += '<div class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">' + meta + '</div>';\n\n\t\t\t\t\t\t// MBID in monospace\n\t\t\t\t\t\tif (cand.musicbrainz_id) {\n\t\t\t\t\t\t\thtml += '<div class=\"text-[10px] text-gray-400 font-mono mt-0.5 truncate\">' + escapeHTML(cand.musicbrainz_id) + '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t// Album match badge\n\t\t\t\t\t\tif (cand.album_comparison && cand.album_comparison.local_count > 0) {\n\t\t\t\t\t\t\tvar pct = cand.album_comparison.match_percent || 0;\n\t\t\t\t\t\t\tvar badgeClasses;\n\t\t\t\t\t\t\tif (pct >= 60) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700/30';\n\t\t\t\t\t\t\t} else if (pct >= 30) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/30';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700/30';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\thtml += '<div class=\"mt-1.5 flex items-center gap-2\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ' + badgeClasses + '\">'\n\t\t\t\t\t\t\t\t+ String(cand.album_comparison.match_count || 0) + '/' + String(cand.album_comparison.local_count) + ' albums'\n\t\t\t\t\t\t\t\t+ '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex-1\n\n\t\t\t\t\t\t// Score on the right\n\t\t\t\t\t\tif (cand.score > 0) {\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center gap-2 ml-3 shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500\">' + String(cand.score) + '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex justify-between\n\t\t\t\t\t\thtml += '</button>';\n\t\t\t\t\t}\n\n\t\t\t\t\t// Skip button\n\t\t\t\t\thtml += '<button type=\"button\" onclick=\"skipReviewArtist(\\'' + escapeJsString(item.artist_id) + '\\')\"'\n\t\t\t\t\t\t+ ' class=\"w-full text-center rounded border border-dashed border-gray-300 dark:border-gray-600 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors\">'\n\t\t\t\t\t\t+ 'Skip this artist'\n\t\t\t\t\t\t+ '</button>';\n\n\t\t\t\t\thtml += '</div>';\n\t\t\t\t\treturn html;\n\t\t\t\t}\n\n\t\t\t\tfunction linkCandidate(artistId, mbid, btn) {\n\t\t\t\t\t// Disable all candidate buttons in this row to prevent concurrent link requests.\n\t\t\t\t\tvar row = btn.closest('[id^=\"review-row-\"]');\n\t\t\t\t\tif (row && row.dataset.linking === '1') return;\n\t\t\t\t\tif (row) row.dataset.linking = '1';\n\t\t\t\t\tvar rowButtons = row ? row.querySelectorAll('button') : [btn];\n\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\trowButtons[i].disabled = true;\n\t\t\t\t\t\trowButtons[i].style.opacity = '0.5';\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify/link', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': getCsrfToken()\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({artist_id: artistId, mbid: mbid})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tvar msg = 'Failed to link artist (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\tthrow new Error(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\t// Find the artist name before removing from queue\n\t\t\t\t\t\tvar artistName = artistId;\n\t\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\t\tartistName = discoveryReviewQueue[i].artist_name;\n\t\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tremoveFromReviewQueue(artistId);\n\n\t\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\t\tif (row) {\n\t\t\t\t\t\t\trow.className = 'rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 overflow-hidden';\n\t\t\t\t\t\t\trow.innerHTML = '<div class=\"flex items-center gap-3 px-3 py-2\">'\n\t\t\t\t\t\t\t\t+ '<div class=\"w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-green-600 dark:text-green-400\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"/></svg>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">' + escapeHTML(artistName) + '</span>'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-green-600 dark:text-green-400 ml-2\">Linked successfully</span>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tif (row) delete row.dataset.linking;\n\t\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\t\trowButtons[i].disabled = false;\n\t\t\t\t\t\t\trowButtons[i].style.opacity = '1';\n\t\t\t\t\t\t}\n\t\t\t\t\t\talert(err.message || 'Failed to link artist');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction skipReviewArtist(artistId) {\n\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\tif (!row) return;\n\t\t\t\t\tremoveFromReviewQueue(artistId);\n\t\t\t\t\trow.classList.add('opacity-50');\n\t\t\t\t\t// Hide the expandable content (second child of the row)\n\t\t\t\t\tvar children = row.children;\n\t\t\t\t\tif (children.length > 1) {\n\t\t\t\t\t\tchildren[1].classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Collapse the chevron and reset aria-expanded\n\t\t\t\t\tvar headerBtn = row.querySelector('button');\n\t\t\t\t\tif (headerBtn) headerBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\tvar svg = row.querySelector('button svg');\n\t\t\t\t\tif (svg) svg.classList.remove('rotate-180');\n\t\t\t\t}\n\n\t\t\t\t// Returns the recompute Promise so callers can compose. Most\n\t\t\t\t// live callers fire-and-forget; the goToStep step-6 await\n\t\t\t\t// closes the stale-flag race that would otherwise need\n\t\t\t\t// awaiting here.\n\t\t\t\tfunction onConnectionSaved(connType, xhr) {\n\t\t\t\t\tvar form = document.getElementById('ob-conn-form-' + connType);\n\t\t\t\t\tvar success = document.getElementById('ob-conn-success-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tvar btn = document.getElementById('ob-conn-btn-' + connType);\n\t\t\t\t\tif (form) form.classList.add('hidden');\n\t\t\t\t\tif (success) success.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.classList.add('hidden');\n\t\t\t\t\tdocument.body.dispatchEvent(new Event('clobberRecheck'));\n\t\t\t\t\t// Saving an emby/jellyfin/lidarr connection is the other half\n\t\t\t\t\t// of the step-6 gate; refresh the cached flag so the user\n\t\t\t\t\t// won't be skipped past the conflict pre-flight.\n\t\t\t\t\tvar recomputeP = recomputeConflictPreflight();\n\t\t\t\t\tif (dot) {\n\t\t\t\t\t\tdot.classList.remove('bg-gray-400', 'dark:bg-gray-500');\n\t\t\t\t\t\tdot.classList.add('bg-green-500');\n\t\t\t\t\t}\n\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\tif (data.id) {\n\t\t\t\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\t\t\t\tif (testBtn) {\n\t\t\t\t\t\t\t\t\ttestBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\ttestBtn.onclick = function() { testConnection(data.id, connType); };\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t// Lidarr is read-only (MBID seeding); no libraries to discover.\n\t\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(data.id, connType); };\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch(e) {}\n\t\t\t\t\t}\n\t\t\t\t\treturn recomputeP;\n\t\t\t\t}\n\n\t\t\t\tfunction testConnection(connID, connType) {\n\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\tvar resultEl = document.getElementById('ob-conn-test-result-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tif (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/connections/' + connID + '/test', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (data.status === 'ok') {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }\n\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\tif (!discoverBtn.dataset.bound) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(connID, connType); };\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.dataset.bound = '1';\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Failed: ' + (data.message || 'unknown error'); }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500'; }\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Network error'; }\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Initialize to the correct step on page load. We defer to\n\t\t\t\t// DOMContentLoaded so that on direct-resume to step 6, the\n\t\t\t\t// htmx.trigger('oobeConflictRefresh') inside goToStep fires\n\t\t\t\t// after htmx has scanned the body and bound the\n\t\t\t\t// hx-trigger=\"oobeConflictRefresh from:body\" listener; firing\n\t\t\t\t// during parsing dispatches into a not-yet-bound listener and\n\t\t\t\t// the conflict body never loads.\n\t\t\t\tfunction obInit() {\n\t\t\t\t\tif (currentStep !== 0) {\n\t\t\t\t\t\tgoToStep(currentStep);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (document.readyState === 'loading') {\n\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', obInit);\n\t\t\t\t} else {\n\t\t\t\t\tobInit();\n\t\t\t\t}\n\t\t\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2116,43 +2116,30 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "<div class=\"flex items-center gap-1.5 mt-1\"><span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var144 string
-		templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Type)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1663, Col: 148}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "<div class=\"flex items-center gap-1.5 mt-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if lib.ConnectionID != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var145 string
-			templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.connection"))
+			var templ_7745c5c3_Var144 string
+			templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.connection"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1665, Col: 168}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1664, Col: 168}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2160,29 +2147,29 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var146 templ.ComponentScript = onboardingDeleteLibrary(lib.ID)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var146.Call)
+		var templ_7745c5c3_Var145 templ.ComponentScript = onboardingDeleteLibrary(lib.ID)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var145.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var147 string
-		templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.remove"))
+		var templ_7745c5c3_Var146 string
+		templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.remove"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1674, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1673, Col: 28}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "</button></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2206,190 +2193,190 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var148 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var148 == nil {
-			templ_7745c5c3_Var148 = templ.NopComponent
+		templ_7745c5c3_Var147 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var147 == nil {
+			templ_7745c5c3_Var147 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var149 = []any{"relative rounded-lg border-2 p-4 cursor-pointer transition-colors",
+		var templ_7745c5c3_Var148 = []any{"relative rounded-lg border-2 p-4 cursor-pointer transition-colors",
 			templ.KV("border-blue-500 bg-blue-50 dark:bg-blue-900/20", p.IsActive),
 			templ.KV("border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600", !p.IsActive),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var149...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var148...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "<div data-profile-card class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "<div data-profile-card class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var149 string
+		templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var148).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var149)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var150 string
-		templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var149).String())
+		templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/platforms/" + p.ID + "/activate")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1686, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var150)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "\" hx-post=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var151 string
-		templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/platforms/" + p.ID + "/activate")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1687, Col: 53}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var151)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) selectPlatform(this)\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) selectPlatform(this)\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if logoSrcSet(p.ID) != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "<img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "<img src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var151 string
+			templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(p.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1694, Col: 25}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var151)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "\" srcset=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var152 string
-			templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(p.ID))
+			templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1695, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1695, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var152)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "\" srcset=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var153 string
-			templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(p.ID))
+			templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1696, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1702, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var153)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "<img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var154 string
-			templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(p.ID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1703, Col: 25}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var154)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "<h3 class=\"font-semibold text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "<h3 class=\"font-semibold text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var155 string
-		templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
+		var templ_7745c5c3_Var154 string
+		templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1709, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1708, Col: 79}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var154))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "</h3></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "</h3></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if p.IsActive {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "<span class=\"inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "<span class=\"inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var156 string
-			templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.active"))
+			var templ_7745c5c3_Var155 string
+			templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.active"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1713, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1712, Col: 30}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 188, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, "</div><div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1\"><div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 188, "</div><div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1\"><div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var157 string
-		templ_7745c5c3_Var157, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.nfo_label"))
+		var templ_7745c5c3_Var156 string
+		templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.nfo_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1719, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1718, Col: 36}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var157))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 190, " ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, " ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if p.NFOEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "<span class=\"text-green-600 dark:text-green-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 190, "<span class=\"text-green-600 dark:text-green-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var157 string
+			templ_7745c5c3_Var157, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.enabled"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1720, Col: 80}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var157))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "<span class=\"text-gray-400 dark:text-gray-500\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var158 string
-			templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.enabled"))
+			templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1721, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1722, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var158))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "<span class=\"text-gray-400 dark:text-gray-500\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var159 string
-			templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1723, Col: 79}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2413,246 +2400,246 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var160 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var160 == nil {
-			templ_7745c5c3_Var160 = templ.NopComponent
+		templ_7745c5c3_Var159 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var159 == nil {
+			templ_7745c5c3_Var159 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 196, "<div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var161 string
-		templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-provider-card-" + string(pk.Name))
+		var templ_7745c5c3_Var160 string
+		templ_7745c5c3_Var160, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-provider-card-" + string(pk.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1731, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1730, Col: 48}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var161)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var160)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 196, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if logoSrcSet(string(pk.Name)) != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 198, "<img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, "<img src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var161 string
+			templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(pk.Name)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1735, Col: 36}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var161)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 198, "\" srcset=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var162 string
-			templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(pk.Name)))
+			templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1736, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1736, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var162)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 199, "\" srcset=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 199, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var163 string
-			templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(string(pk.Name)))
+			templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1737, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1743, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var163)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 201, "<img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var164 string
-			templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(pk.Name)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1744, Col: 36}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var164)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 202, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 201, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		var templ_7745c5c3_Var165 = []any{"h-2.5 w-2.5 shrink-0 rounded-full",
+		var templ_7745c5c3_Var164 = []any{"h-2.5 w-2.5 shrink-0 rounded-full",
 			templ.KV("bg-green-500", pk.Status == "ok" || pk.Status == "not_required"),
 			templ.KV("bg-yellow-500", pk.Status == "untested"),
 			templ.KV("bg-red-500", pk.Status == "invalid" || pk.Status == "error"),
 			templ.KV("bg-gray-400 dark:bg-gray-500", pk.Status == "unconfigured"),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var165...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var164...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 203, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 202, "<div class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var165 string
+		templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var164).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var165)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 203, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var166 string
-		templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var165).String())
+		templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(pk.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1759, Col: 87}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var166)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 204, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var167 string
-		templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.JoinStringErrs(pk.DisplayName)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1760, Col: 87}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var167))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 205, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 204, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if !pk.RequiresKey && !pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 206, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 205, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var167 string
+			templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.no_api_key_required"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1761, Col: 102}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var167))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 206, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else if pk.OptionalKey && pk.HasKey {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 207, "<div class=\"text-xs text-green-600 dark:text-green-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var168 string
-			templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.no_api_key_required"))
+			templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.premium_key_configured"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1762, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1763, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var168))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 207, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 208, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		} else if pk.OptionalKey && pk.HasKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 208, "<div class=\"text-xs text-green-600 dark:text-green-400\">")
+		} else if pk.OptionalKey {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 209, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var169 string
-			templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.premium_key_configured"))
+			templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.free_tier"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1764, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1765, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var169))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 209, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 210, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		} else if pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 210, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		} else if pk.HasKey {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 211, "<div class=\"text-xs text-green-600 dark:text-green-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var170 string
-			templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.free_tier"))
+			templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.key_configured"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1766, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1767, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var170))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 211, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 212, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		} else if pk.HasKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 212, "<div class=\"text-xs text-green-600 dark:text-green-400\">")
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 213, "<div class=\"text-xs text-amber-600 dark:text-amber-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var171 string
-			templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.key_configured"))
+			templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.api_key_required"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1768, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1769, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 213, "</div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 214, "<div class=\"text-xs text-amber-600 dark:text-amber-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var172 string
-			templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.api_key_required"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1770, Col: 101}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 215, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 214, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 216, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 215, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if pk.RequiresKey || pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "<div class=\"flex items-center gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 216, "<div class=\"flex items-center gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.HelpURL != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 218, "<a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var173 templ.SafeURL
-				templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(pk.HelpURL))
+				var templ_7745c5c3_Var172 templ.SafeURL
+				templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(pk.HelpURL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1778, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1777, Col: 39}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 218, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-sm text-blue-600 dark:text-blue-400 hover:underline\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var173 string
+				templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(getKeyLinkText(ctx, pk.AccessTier))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1782, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 219, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-sm text-blue-600 dark:text-blue-400 hover:underline\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var174 string
-				templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(getKeyLinkText(ctx, pk.AccessTier))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1783, Col: 43}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 220, "</a> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 219, "</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2661,234 +2648,234 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 221, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 220, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var175 templ.ComponentScript = toggleOnboardingKeyInput(string(pk.Name))
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var175.Call)
+			var templ_7745c5c3_Var174 templ.ComponentScript = toggleOnboardingKeyInput(string(pk.Name))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var174.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 222, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 221, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.HasKey {
-				var templ_7745c5c3_Var176 string
-				templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.update"))
+				var templ_7745c5c3_Var175 string
+				templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.update"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1792, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1791, Col: 32}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				var templ_7745c5c3_Var176 string
+				templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.configure"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1793, Col: 35}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-			} else {
-				var templ_7745c5c3_Var177 string
-				templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.configure"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1794, Col: 35}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 223, "</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 222, "</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.HasKey {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 224, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 223, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var177 string
+				templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/providers/" + string(pk.Name) + "/test")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1800, Col: 65}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var177)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 224, "\" hx-target=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var178 string
-				templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/providers/" + string(pk.Name) + "/test")
+				templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.ResolveAttributeValue("#ob-test-result-" + string(pk.Name))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1801, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1801, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var178)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 225, "\" hx-target=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 225, "\" hx-swap=\"innerHTML\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var179 string
-				templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.ResolveAttributeValue("#ob-test-result-" + string(pk.Name))
+				templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.test"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1802, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1804, Col: 30}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var179)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 226, "\" hx-swap=\"innerHTML\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var179))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var180 string
-				templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.test"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1805, Col: 30}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 227, "</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 226, "</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 228, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 227, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 229, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 228, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if pk.RequiresKey || pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 230, "<div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 229, "<div id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var180 string
+			templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-key-input-" + string(pk.Name))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1811, Col: 46}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var180)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 230, "\" class=\"hidden mt-3\"><form class=\"flex flex-col gap-2\" hx-put=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var181 string
-			templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-key-input-" + string(pk.Name))
+			templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/providers/" + string(pk.Name) + "/key")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1812, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1814, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var181)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 231, "\" class=\"hidden mt-3\"><form class=\"flex flex-col gap-2\" hx-put=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 231, "\" hx-target=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var182 string
-			templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/providers/" + string(pk.Name) + "/key")
+			templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.ResolveAttributeValue("#ob-provider-card-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1815, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1815, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var182)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 232, "\" hx-target=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var183 string
-			templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.ResolveAttributeValue("#ob-provider-card-" + string(pk.Name))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1816, Col: 55}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var183)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 233, "\" hx-swap=\"outerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 232, "\" hx-swap=\"outerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.Name == provider.NameSpotify {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 234, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"client_id\" placeholder=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 233, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"client_id\" placeholder=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var183 string
+				templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.client_id_placeholder"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1823, Col: 64}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var183)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 234, "\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required> <input type=\"password\" name=\"client_secret\" placeholder=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var184 string
-				templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.client_id_placeholder"))
+				templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.client_secret_placeholder"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1824, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1833, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var184)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 235, "\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required> <input type=\"password\" name=\"client_secret\" placeholder=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var185 string
-				templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.client_secret_placeholder"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1834, Col: 68}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var185)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 236, "\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div><p class=\"text-xs text-gray-500 dark:text-gray-400\">Requires a Spotify Premium subscription and a registered <a href=\"https://developer.spotify.com\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-600 dark:text-blue-400 hover:underline\">Spotify Developer</a> app.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 235, "\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div><p class=\"text-xs text-gray-500 dark:text-gray-400\">Requires a Spotify Premium subscription and a registered <a href=\"https://developer.spotify.com\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-600 dark:text-blue-400 hover:underline\">Spotify Developer</a> app.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 237, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"api_key\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 236, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"api_key\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if pk.OptionalKey {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 238, " placeholder=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 237, " placeholder=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var185 string
+					templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.premium_api_key_placeholder"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1851, Col: 71}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var185)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 238, "\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 239, " placeholder=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var186 string
-					templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.premium_api_key_placeholder"))
+					templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.api_key_placeholder"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1852, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1853, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var186)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 239, "\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 240, " placeholder=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var187 string
-					templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.api_key_placeholder"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1854, Col: 63}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var187)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 241, "\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 240, "\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 242, " autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 241, " autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 243, "<div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 242, "<div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var188 string
-			templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.save"))
+			var templ_7745c5c3_Var187 string
+			templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.save"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1865, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1864, Col: 146}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 244, "</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 243, "</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2896,47 +2883,47 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 245, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 244, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var189 templ.ComponentScript = toggleOnboardingKeyInput(string(pk.Name))
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var189.Call)
+			var templ_7745c5c3_Var188 templ.ComponentScript = toggleOnboardingKeyInput(string(pk.Name))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var188.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 246, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 245, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var189 string
+			templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1865, Col: 277}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 246, "</button></div></form></div><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var190 string
-			templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
+			templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-test-result-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1866, Col: 277}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1869, Col: 48}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var190))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 247, "</button></div></form></div><div id=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var190)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var191 string
-			templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-test-result-" + string(pk.Name))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1870, Col: 48}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var191)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 248, "\" class=\"text-xs mt-1\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 247, "\" class=\"text-xs mt-1\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 249, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 248, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2973,178 +2960,178 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var192 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var192 == nil {
-			templ_7745c5c3_Var192 = templ.NopComponent
+		templ_7745c5c3_Var191 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var191 == nil {
+			templ_7745c5c3_Var191 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 250, "<div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 249, "<div id=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var192 string
+		templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-ws-card-" + string(ws.Name))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1882, Col: 42}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var192)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 250, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\"><img src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var193 string
-		templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-ws-card-" + string(ws.Name))
+		templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(ws.Name)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1883, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1885, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var193)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 251, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\"><img src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 251, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var194 string
-		templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(string(ws.Name)))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1886, Col: 39}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var194)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 252, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var195 = []any{"h-2.5 w-2.5 shrink-0 rounded-full",
+		var templ_7745c5c3_Var194 = []any{"h-2.5 w-2.5 shrink-0 rounded-full",
 			templ.KV("bg-green-500", ws.Enabled),
 			templ.KV("bg-gray-400 dark:bg-gray-500", !ws.Enabled),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var195...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var194...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 253, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 252, "<div class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var195 string
+		templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var194).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var195)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 253, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var196 string
-		templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var195).String())
+		templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(ws.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1894, Col: 87}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var196)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 254, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 254, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var197 string
-		templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinStringErrs(ws.DisplayName)
+		templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.no_api_key_required"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1895, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1895, Col: 101}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var197))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 255, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 255, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var198 string
-		templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.no_api_key_required"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1896, Col: 101}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 256, "</div></div></div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var199 = []any{"text-sm px-3 py-1.5 rounded border transition-colors",
+		var templ_7745c5c3_Var198 = []any{"text-sm px-3 py-1.5 rounded border transition-colors",
 			templ.KV("border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40", ws.Enabled),
 			templ.KV("border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", !ws.Enabled),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var199...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var198...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 257, "<button type=\"button\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 256, "<button type=\"button\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var199 string
+		templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var198).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var199)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 257, "\" hx-put=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var200 string
-		templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var199).String())
+		templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/providers/websearch/" + string(ws.Name) + "/toggle")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1905, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var200)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 258, "\" hx-put=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 258, "\" hx-vals=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var201 string
-		templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.ResolveAttributeValue("/api/v1/providers/websearch/" + string(ws.Name) + "/toggle")
+		templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.ResolveAttributeValue(webSearchToggleJSON(!ws.Enabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1906, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1906, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var201)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 259, "\" hx-vals=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 259, "\" hx-target=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var202 string
-		templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.ResolveAttributeValue(webSearchToggleJSON(!ws.Enabled))
+		templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.ResolveAttributeValue("#ob-ws-card-" + string(ws.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1907, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1907, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var202)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 260, "\" hx-target=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var203 string
-		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.ResolveAttributeValue("#ob-ws-card-" + string(ws.Name))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1908, Col: 48}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var203)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 261, "\" hx-swap=\"outerHTML\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 260, "\" hx-swap=\"outerHTML\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if ws.Enabled {
-			var templ_7745c5c3_Var204 string
-			templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.enabled"))
+			var templ_7745c5c3_Var203 string
+			templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.enabled"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1912, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1911, Col: 31}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			var templ_7745c5c3_Var204 string
+			templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1913, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		} else {
-			var templ_7745c5c3_Var205 string
-			templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1914, Col: 32}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 262, "</button></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 261, "</button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3168,116 +3155,116 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var206 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var206 == nil {
-			templ_7745c5c3_Var206 = templ.NopComponent
+		templ_7745c5c3_Var205 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var205 == nil {
+			templ_7745c5c3_Var205 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 263, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between\"><div class=\"flex items-start gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 262, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between\"><div class=\"flex items-start gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if logoSrcSet(connType) != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 264, "<img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 263, "<img src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var206 string
+			templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(connType))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1926, Col: 29}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var206)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 264, "\" srcset=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var207 string
-			templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(connType))
+			templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1927, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1927, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var207)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 265, "\" srcset=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 265, "\" alt=\"\" class=\"h-6 w-6 shrink-0 mt-0.5\" aria-hidden=\"true\"> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 266, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var208 string
-			templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(connType))
+			templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1928, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1934, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var208)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 266, "\" alt=\"\" class=\"h-6 w-6 shrink-0 mt-0.5\" aria-hidden=\"true\"> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 267, "<img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var209 string
-			templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(connType))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1935, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var209)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 268, "\" alt=\"\" class=\"h-6 w-6 shrink-0 mt-0.5\" aria-hidden=\"true\"> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 267, "\" alt=\"\" class=\"h-6 w-6 shrink-0 mt-0.5\" aria-hidden=\"true\"> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if findConnectionByType(conns, connType) != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 269, "<div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 268, "<div id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var209 string
+			templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-dot-" + connType)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1941, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var209)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 269, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500\"></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 270, "<div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var210 string
 			templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-dot-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1942, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1943, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var210)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 270, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500\"></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 271, "<div id=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var211 string
-			templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-dot-" + connType)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1944, Col: 40}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var211)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 272, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 271, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 273, "<div><div class=\"flex items-center gap-1.5\"><span class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 272, "<div><div class=\"flex items-center gap-1.5\"><span class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var212 string
-		templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(displayName)
+		var templ_7745c5c3_Var211 string
+		templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs(displayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1948, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1947, Col: 86}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 274, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 273, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3285,68 +3272,68 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 275, "<button type=\"button\" class=\"text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 274, "<button type=\"button\" class=\"text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var213 templ.ComponentScript = toggleObConnectionInfo(connType)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var213.Call)
+		var templ_7745c5c3_Var212 templ.ComponentScript = toggleObConnectionInfo(connType)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var212.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 276, "\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 275, "\" aria-label=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var213 string
+		templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "onboarding.more_info_about", displayName))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1952, Col: 70}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var213)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 276, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z\"></path></svg></button></div><div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var214 string
-		templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "onboarding.more_info_about", displayName))
+		templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-info-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1953, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1959, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var214)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 277, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z\"></path></svg></button></div><div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 277, "\" class=\"hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var215 string
-		templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-info-" + connType)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1960, Col: 41}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var215)
+		templ_7745c5c3_Err = templ_7745c5c3_Var205.Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 278, "\" class=\"hidden\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templ_7745c5c3_Var206.Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 279, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 278, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if findConnectionByType(conns, connType) != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 280, "<div class=\"flex items-center gap-2 shrink-0\"><span class=\"text-xs text-green-600 dark:text-green-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 279, "<div class=\"flex items-center gap-2 shrink-0\"><span class=\"text-xs text-green-600 dark:text-green-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var216 string
-			templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.connected"))
+			var templ_7745c5c3_Var215 string
+			templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.connected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1967, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1966, Col: 90}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 281, "</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 280, "</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3354,50 +3341,50 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 282, "<button type=\"button\" id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 281, "<button type=\"button\" id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var217 string
-			templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-" + connType)
+			var templ_7745c5c3_Var216 string
+			templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1970, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1969, Col: 37}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var217)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 283, "\" class=\"text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var216)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var218 templ.ComponentScript = initTestConnection(findConnectionByType(conns, connType).ID, connType)
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var218.Call)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 282, "\" class=\"text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 284, "\">")
+			var templ_7745c5c3_Var217 templ.ComponentScript = initTestConnection(findConnectionByType(conns, connType).ID, connType)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var217.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var219 string
-			templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.test"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1974, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 283, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 285, "</button> ")
+			var templ_7745c5c3_Var218 string
+			templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.test"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1973, Col: 29}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 284, "</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if connType != "lidarr" {
-				var templ_7745c5c3_Var220 = []any{"text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors",
+				var templ_7745c5c3_Var219 = []any{"text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors",
 					templ.KV("hidden", findConnectionByType(conns, connType).Status != "ok"),
 				}
-				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var220...)
+				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var219...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3405,60 +3392,60 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 286, "<button type=\"button\" id=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 285, "<button type=\"button\" id=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var220 string
+				templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-discover-btn-" + connType)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1978, Col: 46}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var220)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 286, "\" class=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var221 string
-				templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-discover-btn-" + connType)
+				templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var219).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1979, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var221)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 287, "\" class=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 287, "\" onclick=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var222 string
-				templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var220).String())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1, Col: 0}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var222)
+				var templ_7745c5c3_Var222 templ.ComponentScript = initDiscoverLibraries(findConnectionByType(conns, connType).ID, connType)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var222.Call)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 288, "\" onclick=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 288, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var223 templ.ComponentScript = initDiscoverLibraries(findConnectionByType(conns, connType).ID, connType)
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var223.Call)
+				var templ_7745c5c3_Var223 string
+				templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.discover_libraries"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1985, Col: 48}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 289, "\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var224 string
-				templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.discover_libraries"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1986, Col: 48}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 290, "</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 289, "</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 291, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 290, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3467,138 +3454,138 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 292, "<button id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 291, "<button id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var225 string
-			templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-btn-" + connType)
+			var templ_7745c5c3_Var224 string
+			templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-btn-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1992, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1991, Col: 35}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var225)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 293, "\" type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0\" onclick=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var224)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var226 templ.ComponentScript = toggleObConnectionForm(connType)
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var226.Call)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 292, "\" type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 294, "\">")
+			var templ_7745c5c3_Var225 templ.ComponentScript = toggleObConnectionForm(connType)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var225.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var227 string
-			templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.configure"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1997, Col: 33}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var227))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 293, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 295, "</button>")
+			var templ_7745c5c3_Var226 string
+			templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.configure"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1996, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 294, "</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 296, "</div><div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 295, "</div><div id=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var227 string
+		templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-form-" + connType)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2000, Col: 38}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var227)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 296, "\" class=\"hidden mt-3 pl-5.5\"><form class=\"space-y-3\" data-conn-type=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var228 string
-		templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-form-" + connType)
+		templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.ResolveAttributeValue(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2001, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2003, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var228)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 297, "\" class=\"hidden mt-3 pl-5.5\"><form class=\"space-y-3\" data-conn-type=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 297, "\" hx-post=\"/api/v1/connections\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) onConnectionSaved(this.dataset.connType, event.detail.xhr)\"><input type=\"hidden\" name=\"type\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var229 string
 		templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.ResolveAttributeValue(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2004, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2008, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var229)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 298, "\" hx-post=\"/api/v1/connections\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) onConnectionSaved(this.dataset.connType, event.detail.xhr)\"><input type=\"hidden\" name=\"type\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 298, "\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var230 string
-		templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.ResolveAttributeValue(connType)
+		templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "onboarding.server_name_placeholder", displayName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2009, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2012, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var230)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 299, "\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 299, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"url\" type=\"url\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var231 string
-		templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "onboarding.server_name_placeholder", displayName))
+		templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "onboarding.server_url_placeholder", exampleURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2013, Col: 78}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2019, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var231)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 300, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"url\" type=\"url\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 300, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"api_key\" type=\"text\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var232 string
-		templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "onboarding.server_url_placeholder", exampleURL))
+		templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.api_key_placeholder"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2020, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2026, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var232)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 301, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"api_key\" type=\"text\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 301, "\" required autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var233 string
-		templ_7745c5c3_Var233, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "onboarding.api_key_placeholder"))
+		templ_7745c5c3_Var233, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.save"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2027, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2035, Col: 145}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var233)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 302, "\" required autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var233))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var234 string
-		templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.save"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2036, Col: 145}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var234))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 302, "</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3606,197 +3593,197 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 304, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var235 templ.ComponentScript = toggleObConnectionForm(connType)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var235.Call)
+		var templ_7745c5c3_Var234 templ.ComponentScript = toggleObConnectionForm(connType)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var234.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 305, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 304, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var235 string
+		templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2036, Col: 267}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var235))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 305, "</button></div></form><div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var236 string
-		templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
+		templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-result-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2037, Col: 267}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2039, Col: 41}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var236))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 306, "</button></div></form><div id=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var236)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var237 string
-		templ_7745c5c3_Var237, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-result-" + connType)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2040, Col: 41}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var237)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 307, "\" class=\"mt-2\"></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 306, "\" class=\"mt-2\"></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if findConnectionByType(conns, connType) != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 308, "<div class=\"mt-2 pl-6\"><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 307, "<div class=\"mt-2 pl-6\"><div id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var237 string
+			templ_7745c5c3_Var237, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-result-" + connType)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2043, Col: 47}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var237)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 308, "\" class=\"text-xs mt-1\"></div><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var238 string
-			templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-result-" + connType)
+			templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-discover-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2044, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2044, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var238)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 309, "\" class=\"text-xs mt-1\"></div><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 309, "\" class=\"mt-2\"></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 310, "<div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var239 string
-			templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-discover-" + connType)
+			templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-success-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2045, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2047, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var239)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 310, "\" class=\"mt-2\"></div></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 311, "<div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 311, "\" class=\"hidden mt-3 pl-6\"><div class=\"flex items-center gap-3\"><p class=\"text-xs text-green-600 dark:text-green-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var240 string
-			templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-success-" + connType)
+			templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.connected_success"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2048, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2049, Col: 99}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var240)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var240))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 312, "\" class=\"hidden mt-3 pl-6\"><div class=\"flex items-center gap-3\"><p class=\"text-xs text-green-600 dark:text-green-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 312, "</p><button type=\"button\" id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var241 string
-			templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.connected_success"))
+			templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2050, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2052, Col: 37}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var241))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var241)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 313, "</p><button type=\"button\" id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 313, "\" class=\"hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var242 string
-			templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-" + connType)
+			templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.test"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2053, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2055, Col: 29}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var242)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 314, "\" class=\"hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var242))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var243 string
-			templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.test"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2056, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var243))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 315, "</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 314, "</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if connType != "lidarr" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 316, "<button type=\"button\" id=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 315, "<button type=\"button\" id=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var243 string
+				templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-discover-btn-" + connType)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2060, Col: 46}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var243)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 316, "\" class=\"hidden text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var244 string
-				templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-discover-btn-" + connType)
+				templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.discover_libraries"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2061, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2063, Col: 48}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var244)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 317, "\" class=\"hidden text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var244))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var245 string
-				templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "onboarding.discover_libraries"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2064, Col: 48}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var245))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 318, "</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 317, "</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, "</div><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 318, "</div><div id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var245 string
+			templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-result-" + connType)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2067, Col: 47}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var245)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, "\" class=\"text-xs mt-1\"></div><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var246 string
-			templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-conn-test-result-" + connType)
+			templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-discover-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2068, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2068, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var246)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 320, "\" class=\"text-xs mt-1\"></div><div id=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var247 string
-			templ_7745c5c3_Var247, templ_7745c5c3_Err = templ.ResolveAttributeValue("ob-discover-" + connType)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 2069, Col: 39}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var247)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 321, "\" class=\"mt-2\"></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 320, "\" class=\"mt-2\"></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 322, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 321, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

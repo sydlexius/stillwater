@@ -62,18 +62,11 @@
         "";
       if (typeof url !== "string") return;
       if (url.indexOf("/stillwater-managed") !== -1) {
-        // Refresh banner + detected panels immediately. On the settings
-        // page the iOS toggle and card copy are rendered server-side from
-        // the DB row we just mutated, and there is no per-toggle render
-        // endpoint; do a soft reload so the toggle button reflects the
-        // new state consistently with the banner. Other pages only show
-        // the banner and detected panels, which refreshConflictSurfaces
-        // already handles.
-        var path = window.location.pathname || "";
-        if (path.indexOf("/settings") !== -1) {
-          window.location.reload();
-          return;
-        }
+        // Refresh banner + detected panels immediately. The toggle button
+        // itself is repainted in place by swStillwaterManagedAfterRequest
+        // (aria-checked/classes/knob/hx-vals from the JSON response), so a
+        // full page reload is unnecessary -- and on the settings page a
+        // reload collapsed the expanded connection gear panel (regression).
         refreshConflictSurfaces();
       }
     });

@@ -219,17 +219,21 @@ templ Sidebar(data SidebarData) {
 		<!-- Low-frequency destinations: Logs, Settings (admin-only), Preferences -->
 		<div class="sw-sidebar-section">
 			<ul role="list" class="sw-sidebar-nav-list">
-				<li>
-					<a
-						href={ templ.SafeURL(data.BasePath + "/logs") }
-						class="sw-sidebar-link"
-						data-path="/logs"
-						aria-label={ t(ctx, "nav.logs") }
-					>
-						@components.IconDocumentText("sw-sidebar-icon")
-						<span class="sw-sidebar-label">{ t(ctx, "nav.logs") }</span>
-					</a>
-				</li>
+				// Logs is admin-only (the /logs page + API enforce administrator);
+				// gate the nav item so operators don't see a link they can't use.
+				if data.IsAdmin {
+					<li>
+						<a
+							href={ templ.SafeURL(data.BasePath + "/logs") }
+							class="sw-sidebar-link"
+							data-path="/logs"
+							aria-label={ t(ctx, "nav.logs") }
+						>
+							@components.IconDocumentText("sw-sidebar-icon")
+							<span class="sw-sidebar-label">{ t(ctx, "nav.logs") }</span>
+						</a>
+					</li>
+				}
 				if data.IsAdmin {
 					<li>
 						<a

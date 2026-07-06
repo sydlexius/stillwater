@@ -961,9 +961,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								console.error('[onboarding] tour-pending fallback: localStorage unavailable', e);
 							}
 						}
-						// Redirect to the vNext Dashboard -- the guided tour
+						// Redirect to the dashboard -- the guided tour
 						// auto-starts there from the SCREEN_STEPS.dashboard group.
-						window.location.href = basePath + '/next/';
+						window.location.href = basePath + '/';
 					}).catch(function() {
 						alert('Failed to complete setup. Please try again.');
 					});
@@ -1660,7 +1660,6 @@ templ onboardingLibraryRow(lib library.Library) {
 				<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
 			}
 			<div class="flex items-center gap-1.5 mt-1">
-				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
 				if lib.ConnectionID != "" {
 					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ t(ctx, "common.connection") }</span>
 				}

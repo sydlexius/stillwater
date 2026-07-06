@@ -2,8 +2,11 @@ package components
 
 // ErrorToast renders a server-rendered fallback toast notification using a solid
 // background and left-border color coding. Level should be "error",
-// "warning", or "success". The toast renders inline where placed and
-// auto-dismisses after 5 seconds via a local script tag.
+// "warning", or "success". It is only used as an HTMX error-response body; the
+// client's htmx:responseError handler extracts the message text and shows it
+// via the JS toast manager (which owns dismissal). No inline <script> is
+// embedded here: one would never execute when the body is processed via
+// innerHTML/text extraction, and its source would leak as visible text.
 templ ErrorToast(level, message string) {
 	<div
 		id="error-toast"
@@ -25,13 +28,4 @@ templ ErrorToast(level, message string) {
 			&times;
 		</button>
 	</div>
-	<script>
-		setTimeout(function() {
-			var el = document.getElementById('error-toast');
-			if (el) {
-				el.style.opacity = '0';
-				setTimeout(function() { el.remove(); }, 300);
-			}
-		}, 5000);
-	</script>
 }
