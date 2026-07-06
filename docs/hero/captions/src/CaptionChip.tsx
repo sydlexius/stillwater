@@ -31,8 +31,12 @@ export const CaptionChip: React.FC<ChipProps> = ({ text, delayFrames, shotFrames
   });
   const translateY = interpolate(appear, [0, 1], [16, 0]);
 
-  // Fade OUT over the last ~0.4s of the shot so the cut is never abrupt.
-  const exit = interpolate(frame, [shotFrames - 14, shotFrames - 4], [1, 0], {
+  // Fade OUT over the last ~0.4s of the shot so the cut is never abrupt. Derive
+  // the window from fps (like the fade-in) so it holds if FPS changes, and floor
+  // the offsets at 0 so very short shots still resolve to a valid rising range.
+  const exitStart = Math.max(0, shotFrames - Math.round(0.4 * fps));
+  const exitEnd = Math.max(exitStart + 1, shotFrames - Math.round(0.13 * fps));
+  const exit = interpolate(frame, [exitStart, exitEnd], [1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });

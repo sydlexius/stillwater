@@ -4,8 +4,8 @@
   "private": true,
   "description": "Remotion caption layer for the #1756 README hero: kinetic frosted-glass caption chips composited over the Reframed screen capture. Proof-of-concept.",
   "scripts": {
-    "render": "remotion render src/index.ts HeroCaptions out/proof.mp4",
-    "still": "remotion still src/index.ts HeroCaptions out/frame.png",
+    "render": "remotion render src/index.ts HeroStitched out/proof.mp4",
+    "still": "remotion still src/index.ts HeroStitched out/frame.png",
     "studio": "remotion studio src/index.ts"
   },
   "dependencies": {
@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
     "typescript": "^5.4.0"
   }
 }

@@ -21,7 +21,7 @@ import { CLIPS } from "./clips.generated";
 
 const PHRASES: Record<string, string[]> = Object.fromEntries(SHOTS.map((s) => [s.name, s.phrases]));
 const STAGGER_SEC = 0.42;
-const OUTRO_SEC = 2.6; // Oleo wordmark outro appended after the loop clip
+export const OUTRO_SEC = 2.6; // Oleo wordmark outro appended after the loop clip (single source of truth; Root reuses it)
 
 const FADE_OUT = 0.55;
 const FADE_IN = 0.65;
@@ -47,11 +47,11 @@ const ClipCaptions: React.FC<{ captions: { group: string; atSec: number }[]; cli
         const nextAt = captions[ci + 1] ? Math.round(captions[ci + 1].atSec * fps) : clipFrames;
         const shotFrames = Math.max(1, nextAt - from);
         return (
-          <Sequence key={cap.group} from={from} durationInFrames={shotFrames} name={cap.group}>
+          <Sequence key={`${cap.group}-${ci}`} from={from} durationInFrames={shotFrames} name={cap.group}>
             {phrases.map((ph, i) => {
               const { x, y } = chipPlacement(i, phrases.length);
               return (
-                <CaptionChip key={i} text={ph} delayFrames={Math.round(i * STAGGER_SEC * fps)} shotFrames={shotFrames} x={x} y={y} />
+                <CaptionChip key={`${cap.group}-${i}`} text={ph} delayFrames={Math.round(i * STAGGER_SEC * fps)} shotFrames={shotFrames} x={x} y={y} />
               );
             })}
           </Sequence>

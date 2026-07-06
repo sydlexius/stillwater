@@ -40,8 +40,21 @@ MAX_ACCEPT = 10  # give the maintainer a generous set to pick 5 from
 PD_ALLOW = re.compile(r"public domain|^pd|cc0|cc-zero|no restrictions|cc by|cc-by", re.I)
 LIC_DENY = re.compile(r"noncommercial|-nc|noderiv|-nd|fair use|all rights reserved", re.I)
 # ImageMagick's default font lookup is broken on some hosts; point label
-# rendering at a concrete system TTF.
-FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+# rendering at a concrete system TTF. Probe a few common locations across
+# macOS/Linux so the contact sheet regenerates on any host; fall back to None
+# (let ImageMagick use its own default) if none are present.
+def _find_font():
+    for p in (
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ):
+        if os.path.exists(p):
+            return p
+    return None
+
+
+FONT = _find_font()
 DL_DELAY = 0.8  # polite gap between thumbnail downloads (Commons 429s on bursts)
 
 # File-namespace search terms + portrait categories. Union then dedupe; any
@@ -176,10 +189,11 @@ def main():
     for idx, fname, _ in accepted:
         src = os.path.join(OUT, fname)
         lab = os.path.join(OUT, f".lab-{idx:02d}.png")
+        font_args = ["-font", FONT] if FONT else []
         subprocess.run(["magick", src, "-resize", "260x260^", "-gravity", "center",
                         "-extent", "260x260", "-background", "#0b0f17",
                         "-gravity", "South", "-splice", "0x28",
-                        "-font", FONT, "-pointsize", "20", "-fill", "white", "-annotate", "+0+4",
+                        *font_args, "-pointsize", "20", "-fill", "white", "-annotate", "+0+4",
                         f"#{idx}", lab], check=True)
         labeled.append(lab)
     sheet = os.path.join(OUT, "contact-sheet.png")

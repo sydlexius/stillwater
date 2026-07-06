@@ -105,4 +105,9 @@ else
   echo "NOTE: server :$PORT not reachable; keeping existing $REFRESH_OUT" >&2
 fi
 
+# The recorder (open-fixture.mjs/nav-clips.mjs) readFileSync's this fragment. If
+# the live capture didn't run/failed AND no committed copy exists, fail loudly
+# here rather than letting the recorder die later with an opaque ENOENT.
+[ -f "$REFRESH_OUT" ] || { echo "FATAL: no $REFRESH_OUT (live capture unavailable and no committed fallback)" >&2; exit 1; }
+
 echo "Mock generation complete."

@@ -35,7 +35,12 @@ const out = clips.map((c, i) => {
     { stdio: 'ignore' },
   );
   const durSec = +probe(dest).toFixed(3);
-  const captions = c.captions.map((cap) => ({ group: cap.group, atSec: +Math.max(0, cap.atSec - ss).toFixed(3) }));
+  const captions = c.captions.map((cap) => {
+    // Guard against a non-numeric atSec: NaN.toFixed() -> "NaN", which
+    // JSON.stringify emits as null in the generated TS and breaks the number type.
+    const at = Number.isFinite(cap.atSec) ? Math.max(0, cap.atSec - ss) : 0;
+    return { group: cap.group, atSec: +at.toFixed(3) };
+  });
   console.log(`[build-clips] ${idx}-${c.name}: trim @${ss}s -> ${durSec}s, ${captions.length} caption group(s)`);
   return { name: c.name, src: `clips/${idx}-${c.name}.mp4`, durSec, captions };
 });

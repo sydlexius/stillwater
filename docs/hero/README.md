@@ -5,7 +5,7 @@ README: real UI footage, a synthetic cursor with click ripples, kinetic captions
 scene-to-scene dip-to-black fades, and an Oleo Script "Stillwater" wordmark outro.
 
 Everything here is **source**. The rendered video, the trimmed clips, the generated
-clip manifest, the fixture database, and the built binary are working-dir artifacts
+clip manifest, the fixture database, and the built binary are working-directory artifacts
 and are **not** committed (see the two `.gitignore` files). The final video is
 GitHub-hosted (uploaded as a PR attachment, not stored in git); the committed
 `hero-static.png` is the poster / click-to-play fallback the README links to.
@@ -40,7 +40,7 @@ Prereqs: Go toolchain; Node + `npm ci` in `docs/hero/captions/`; `ffmpeg` + `ffp
 `fonttools` (for the wordmark); the Playwright bundled **chromium** (never
 firefox/webkit - their teardown can kill a live browser). The 12 PD composer
 portraits are committed under `portraits/`; only re-run `fetch-portraits.sh` to
-refresh them (it re-verifies each Commons license and rewrites `PD-SOURCES.md`).
+refresh them (it re-verifies each image's Commons license and rewrites `PD-SOURCES.md`).
 
 ```bash
 # 1. Seed + start the fixture server on :1991 (builds the binary if missing, seeds
@@ -52,7 +52,7 @@ HERO_PORT=1991 HERO_DIR=/tmp/hero-1756 docs/hero/seed-fixture.sh
 
 # 2. (Optional) regenerate the route-mock fixtures (PD candidate grid + metadata
 #    fragment) if you changed mocks/candidates/ or the composer data.
-node docs/hero/mocks/gen-mocks.sh
+bash docs/hero/mocks/gen-mocks.sh
 
 # 3. Record each screen as its own clip (bundled chromium, dark theme, synthetic
 #    black cursor + click ripple, provider routes mocked to PD data-URIs).

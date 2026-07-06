@@ -7,7 +7,7 @@
 //   clips.json = [{ name, file, durSec, captions:[{group, atSec}] }]  (atSec is the
 //   time WITHIN the clip when that caption group should appear).
 import { chromium, request as pwRequest } from 'playwright';
-import { mkdirSync, readFileSync, renameSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +25,9 @@ const mockHTML = (n) => readFileSync(join(MOCKS, n), 'utf8');
 const log = (m) => console.log(`[nav-clips] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Start from an empty RAW dir so a stale .webm from an interrupted prior run
+// can never be mistaken for the current recording.
+rmSync(RAW, { recursive: true, force: true });
 mkdirSync(RAW, { recursive: true });
 
 const api = await pwRequest.newContext({ baseURL: BASE });
@@ -32,7 +35,9 @@ const health = await api.get('/api/v1/health');
 if (!health.ok()) throw new Error(`fixture not healthy on ${BASE}`);
 const csrf = (health.headers()['set-cookie'] || '').match(/csrf_token=([^;]+)/)?.[1] || '';
 const login = await api.post('/api/v1/auth/login', { headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, Cookie: `csrf_token=${csrf}` }, data: JSON.stringify({ username: USER, password: PASS }) });
+if (!login.ok()) throw new Error(`login failed: ${login.status()}`);
 const session = (login.headers()['set-cookie'] || '').match(/session=([^;]+)/)?.[1];
+if (!session) throw new Error('session cookie missing after login');
 log('authenticated');
 
 const browser = await chromium.launch({ headless: true });
@@ -145,10 +150,12 @@ const recordClip = async (name, body) => {
   await body({ page, mark, goto, moveClick, feature, tryStep });
 
   const durSec = +((Date.now() - t0) / 1000).toFixed(2);
+  // Playwright exposes this page's exact recording path; close() finalizes it.
+  // Using it directly avoids a RAW directory scan that could pick the wrong file.
+  const video = page.video();
   await page.close(); // finalizes the video
-  // newest webm in RAW is this page's clip
-  const webms = readdirSync(RAW).filter((f) => f.endsWith('.webm')).map((f) => join(RAW, f)).sort((a, b) => a.localeCompare(b));
-  const src = webms.at(-1);
+  const src = video ? await video.path() : null;
+  if (!src) throw new Error(`no recorded video for clip ${name}`);
   const idx = String(clips.length + 1).padStart(2, '0');
   const dest = join(OUT, `${idx}-${name}.webm`);
   renameSync(src, dest);

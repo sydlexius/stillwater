@@ -1,10 +1,12 @@
 import React from "react";
 import { Composition } from "remotion";
-import { HeroStitched, STITCHED_TOTAL_FRAMES } from "./HeroStitched";
+import { HeroStitched, OUTRO_SEC, STITCHED_TOTAL_FRAMES } from "./HeroStitched";
 import { Outro } from "./Outro";
 import { FPS } from "./shots";
 
-const OUTRO_FRAMES = Math.round(2.5 * FPS); // ~2.5s outro
+// Reuse HeroStitched's OUTRO_SEC so the standalone preview compositions stay in
+// sync with the stitched render (was hardcoded 2.5s, drifting from 2.6s).
+const OUTRO_FRAMES = Math.round(OUTRO_SEC * FPS);
 
 export const RemotionRoot: React.FC = () => {
   return (

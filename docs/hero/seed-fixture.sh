@@ -105,9 +105,12 @@ echo "server healthy (pid $SRV)"
 # 5. Mask provider keys via the app's settings API (validly encrypted dummies).
 CJ="$HERO_DIR/_seed_cj"; curl -s -c "$CJ" "http://127.0.0.1:$PORT/api/v1/health" >/dev/null
 CSRF="$(grep csrf_token "$CJ" | awk '{print $7}')"
-curl -s -b "$CJ" -c "$CJ" -X POST "http://127.0.0.1:$PORT/api/v1/auth/login" \
+LOGIN_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -b "$CJ" -c "$CJ" -X POST "http://127.0.0.1:$PORT/api/v1/auth/login" \
   -H "Content-Type: application/json" -H "X-CSRF-Token: $CSRF" \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" >/dev/null
+  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}")"
+# Make login failure fatal: otherwise every settings PUT below silently 401s and
+# the script still reports "Fixture ready" with the keys never actually set.
+[ "$LOGIN_STATUS" = "200" ] || { echo "FATAL: fixture login failed (HTTP $LOGIN_STATUS)" >&2; exit 1; }
 for kv in \
   "provider.fanarttv.api_key=FAKE-FANARTTV-KEY-000000000000" \
   "provider.audiodb.api_key=FAKE-AUDIODB-KEY-0000000000000" \
