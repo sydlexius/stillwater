@@ -19,6 +19,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -125,7 +126,10 @@ func (r *Router) handleArtistDuplicatesRestore(w http.ResponseWriter, req *http.
 		})
 		return
 	}
-	id := req.PathValue("id")
+	// Trim so a whitespace-only path segment (e.g. "%20") is caught by the
+	// empty check below rather than falling through to RestoreDuplicateGroup
+	// and surfacing a wrapped 500 for what is really a malformed request.
+	id := strings.TrimSpace(req.PathValue("id"))
 	if id == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":   "invalid_request",

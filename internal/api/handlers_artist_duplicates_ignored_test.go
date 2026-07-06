@@ -279,6 +279,30 @@ func TestHandleArtistDuplicatesRestore_MissingID(t *testing.T) {
 	}
 }
 
+// TestHandleArtistDuplicatesRestore_WhitespaceID pins the CR-flagged edge case:
+// a whitespace-only id (e.g. a client sending "%20") must 400 like the empty-id
+// case, not fall through to RestoreDuplicateGroup and surface a wrapped 500 for
+// what is really a malformed request.
+func TestHandleArtistDuplicatesRestore_WhitespaceID(t *testing.T) {
+	r, _ := countTestRouter(t)
+	rec := httptest.NewRecorder()
+	// A literal whitespace id is not a valid URL target byte-for-byte (a real
+	// client would send it percent-encoded, e.g. "%20"), so build the request
+	// against a placeholder path and set the whitespace-only path value
+	// directly -- mirroring how the mux would decode "%20" into PathValue
+	// before the handler ever sees it.
+	req := adminRestoreReq(t, "placeholder", "administrator")
+	req.SetPathValue("id", "   ")
+	r.handleArtistDuplicatesRestore(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"error":"invalid_request"`) {
+		t.Errorf("body should carry the invalid_request envelope; got %q", body)
+	}
+}
+
 // TestHandleArtistDuplicatesRestore_NilDB pins the 503 branch.
 func TestHandleArtistDuplicatesRestore_NilDB(t *testing.T) {
 	r := &Router{
