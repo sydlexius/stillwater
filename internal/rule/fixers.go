@@ -96,6 +96,13 @@ type LockNFOResolver interface {
 	ResolveLockNFO(ctx context.Context, a *artist.Artist) bool
 }
 
+// activeProfileProvider resolves the active platform profile. *platform.Service
+// satisfies it in production; tests inject a stub. Used to gate NFO creation on
+// the active profile's NFOEnabled flag (#2306: Plex does not use .nfo files).
+type activeProfileProvider interface {
+	GetActive(ctx context.Context) (*platform.Profile, error)
+}
+
 // NFOFixer creates missing artist.nfo files from the artist's current metadata.
 type NFOFixer struct {
 	SnapshotService    *nfo.SnapshotService
@@ -103,6 +110,7 @@ type NFOFixer struct {
 	fsCheck            *SharedFSCheck
 	expectedWrites     *watcher.ExpectedWrites
 	lockResolver       LockNFOResolver
+	platformService    activeProfileProvider
 }
 
 // NewNFOFixer creates an NFOFixer with an optional shared-filesystem guard.
@@ -110,13 +118,14 @@ type NFOFixer struct {
 // platform-specific NFO element mapping; if nil, the default mapping is used.
 // lockResolver supplies the OR-of-knobs (artist.Locked || library.NFOLockData)
 // per issue #1726; when nil the fixer falls back to artist.Locked only.
-func NewNFOFixer(snapshotService *nfo.SnapshotService, nfoSettings *nfo.NFOSettingsService, fsCheck *SharedFSCheck, expectedWrites *watcher.ExpectedWrites, lockResolver LockNFOResolver) *NFOFixer {
+func NewNFOFixer(snapshotService *nfo.SnapshotService, nfoSettings *nfo.NFOSettingsService, fsCheck *SharedFSCheck, expectedWrites *watcher.ExpectedWrites, lockResolver LockNFOResolver, platformService activeProfileProvider) *NFOFixer {
 	return &NFOFixer{
 		SnapshotService:    snapshotService,
 		nfoSettingsService: nfoSettings,
 		fsCheck:            fsCheck,
 		expectedWrites:     expectedWrites,
 		lockResolver:       lockResolver,
+		platformService:    platformService,
 	}
 }
 
@@ -134,6 +143,21 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 			Fixed:   false,
 			Message: "skipped: NFO write disabled for shared-filesystem library; platform may overwrite",
 		}, nil
+	}
+
+	// #2306: honor the active platform profile. Plex (nfo_enabled=0) does not use
+	// .nfo files, so do not create one. Fail-open (write) when the profile can't
+	// be resolved -- see platform.NFOWriteAllowed. Nil service also fails open so
+	// existing callers/tests that omit it keep writing.
+	if f.platformService != nil {
+		prof, profErr := f.platformService.GetActive(ctx)
+		if !platform.NFOWriteAllowed(prof, profErr) {
+			return &FixResult{
+				RuleID:  RuleNFOExists,
+				Fixed:   false,
+				Message: "skipped: active platform profile has NFO writing disabled (Plex)",
+			}, nil
+		}
 	}
 
 	target := filepath.Join(a.Path, "artist.nfo")

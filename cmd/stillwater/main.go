@@ -907,7 +907,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	a.ruleEngine.SetReleaseGroupFetcher(releaseGroupFetcher)
 
 	fixers := []rule.Fixer{
-		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites, a.publisher),
+		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites, a.publisher, a.platformService),
 		rule.NewMetadataFixer(a.orchestrator, logger),
 		rule.NewNameLanguageFixer(a.orchestrator, logger),
 		rule.NewImageFixer(a.orchestrator, a.platformService, a.fsCheck, logger),
