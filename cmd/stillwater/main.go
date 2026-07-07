@@ -346,14 +346,16 @@ func (a *Application) setupLogging() error {
 	return nil
 }
 
-// migrateSchema runs all pending goose migrations against a short-lived,
-// foreign-keys-OFF handle and closes it.
+// migrateSchema runs all pending goose migrations against a short-lived handle
+// opened via database.Open (whose DSN does not set foreign_keys) and closes it.
 //
-// Issue #2272: migrations run FK-OFF because goose rebuilds tables and rewrites
-// child rows (015 rebuilds artists; 009/019 sweep orphaned child rows), which
-// FK enforcement would obstruct. This handle opens the real path directly (not
-// through any seam) and is closed before the caller opens the long-lived
-// runtime pool, so the two never contend for SQLite's single writer connection.
+// Issue #2272: the migration handle deliberately does NOT force FK enforcement
+// the way the runtime pool (OpenRuntime) does. Individual migrations toggle
+// PRAGMA foreign_keys themselves as needed (e.g. 015 rebuilds the artists table
+// with FK off; 009/019 sweep orphaned child rows), so forcing it on for the
+// whole run would obstruct them. This handle opens the real path directly (not
+// through any seam) and is closed before the caller opens the long-lived runtime
+// pool, so the two never contend for SQLite's single writer connection.
 func migrateSchema(dbPath string) error {
 	// #2272 review: the two-pool bootstrap opens the migration handle and the
 	// runtime pool on SEPARATE sequential connections, so an in-memory database

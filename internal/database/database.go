@@ -113,12 +113,14 @@ func EnableForeignKeys(db *sql.DB) error {
 }
 
 // VerifyForeignKeys is the runtime FK self-check. Unlike EnableForeignKeys it
-// does NOT mutate: it acquires a FRESH connection from the pool and reads
-// PRAGMA foreign_keys on it WITHOUT first executing PRAGMA foreign_keys = ON.
-// It therefore reflects what a newly-opened or recycled connection actually
-// sees, which is exactly the state a DSN/driver regression would break. Reading
-// on a fresh connection (rather than a mutated one) is what makes this able to
-// CATCH such a regression instead of masking it.
+// does NOT mutate: it acquires a connection from the pool (via db.Conn, which
+// may be a newly opened or a reused idle connection) and reads PRAGMA
+// foreign_keys on it WITHOUT first executing PRAGMA foreign_keys = ON. Because
+// the OpenRuntime DSN sets foreign_keys(1), EVERY connection the pool opens is
+// FK-on; a DSN/driver regression would instead leave them FK-off. Reading the
+// state (rather than setting it first) is what lets this CATCH such a regression
+// instead of masking it -- a mutating check would turn FK on itself and then
+// always observe it on.
 //
 // It returns a clear error if FK enforcement is not active (value != 1),
 // meaning the OpenRuntime DSN pragma is not enforcing foreign keys and
@@ -138,7 +140,7 @@ func VerifyForeignKeys(db *sql.DB) error {
 		return fmt.Errorf("checking foreign_keys pragma: %w", err)
 	}
 	if fkOn != 1 {
-		return fmt.Errorf("foreign_keys pragma not enforced on a fresh connection (got %d); "+
+		return fmt.Errorf("foreign_keys pragma not enforced on a pool connection (got %d); "+
 			"the OpenRuntime DSN pragma is not enforcing foreign keys, so ON DELETE CASCADE will not fire", fkOn)
 	}
 	return nil
