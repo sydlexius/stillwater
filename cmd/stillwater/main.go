@@ -199,7 +199,12 @@ func WithDBOpener(fn func(path string) (*sql.DB, error)) Option {
 func newApplication(opts ...Option) *Application {
 	a := &Application{
 		encKeyResolver: resolveEncryptionKey,
-		dbOpener:       database.Open,
+		// The seam produces the long-lived RUNTIME pool, which must enforce
+		// foreign keys on every connection (#2272), so it defaults to
+		// OpenRuntime. Migrations open a separate FK-off handle via
+		// database.Open directly (not through this seam). Tests override this
+		// to inject a substitute pool.
+		dbOpener: database.OpenRuntime,
 	}
 	for _, o := range opts {
 		o(a)
@@ -341,25 +346,105 @@ func (a *Application) setupLogging() error {
 	return nil
 }
 
-// openStorage opens the SQLite database, enables foreign keys, runs migrations,
-// reloads logging settings from DB, and derives the image cache directory.
+// migrateSchema runs all pending goose migrations against a short-lived handle
+// opened via database.Open (whose DSN does not set foreign_keys) and closes it.
+//
+// Issue #2272: the migration handle deliberately does NOT force FK enforcement
+// the way the runtime pool (OpenRuntime) does. Individual migrations toggle
+// PRAGMA foreign_keys themselves as needed (e.g. 015 rebuilds the artists table
+// with FK off; 009/019 sweep orphaned child rows), so forcing it on for the
+// whole run would obstruct them. This handle opens the real path directly (not
+// through any seam) and is closed before the caller opens the long-lived runtime
+// pool, so the two never contend for SQLite's single writer connection.
+func migrateSchema(dbPath string) error {
+	// #2272 review: the two-pool bootstrap opens the migration handle and the
+	// runtime pool on SEPARATE sequential connections, so an in-memory database
+	// (:memory:) would lose its schema between them. Reject it with a clear
+	// error rather than silently serving an empty schema -- the runtime DB must
+	// be file-backed. (DB-layer unit tests that want an in-memory database call
+	// database.Open directly, not this bootstrap path.)
+	if isInMemoryPath(dbPath) {
+		return fmt.Errorf("in-memory database path %q is not supported: the FK-off migration handle and the FK-on runtime pool are separate connections and cannot share an in-memory schema; configure a file-backed database path", dbPath)
+	}
+	migDB, err := database.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("opening database for migrations: %w", err)
+	}
+	if err := database.Migrate(migDB); err != nil {
+		_ = migDB.Close()
+		return fmt.Errorf("running migrations: %w", err)
+	}
+	if err := migDB.Close(); err != nil {
+		return fmt.Errorf("closing migration database handle: %w", err)
+	}
+	return nil
+}
+
+// isInMemoryPath reports whether dbPath refers to a SQLite in-memory database,
+// which cannot be shared across the separate migration and runtime connections
+// the #2272 two-pool bootstrap opens.
+func isInMemoryPath(dbPath string) bool {
+	p := strings.ToLower(strings.TrimSpace(dbPath))
+	// Covers ":memory:", the "file::memory:?cache=shared" URI form, and the
+	// "file:name?mode=memory" DSN form. A real on-disk path never contains
+	// ":memory:" or "mode=memory".
+	return strings.Contains(p, ":memory:") || strings.Contains(p, "mode=memory")
+}
+
+// openMigratedRuntimeDB migrates the schema FK-off, then opens and returns the
+// long-lived FK-ON runtime pool (database.OpenRuntime, whose DSN sets
+// foreign_keys(1) so ON DELETE CASCADE fires on every connection). It runs the
+// non-mutating VerifyForeignKeys self-check before returning. This is the
+// bootstrap used by the offline CLI recovery commands (resetCredentials /
+// resetPassword); the server's openStorage inlines the equivalent steps so it
+// can route the runtime pool through the a.dbOpener test seam.
+func openMigratedRuntimeDB(dbPath string) (*sql.DB, error) {
+	if err := migrateSchema(dbPath); err != nil {
+		return nil, err
+	}
+	db, err := database.OpenRuntime(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("opening database: %w", err)
+	}
+	if err := database.VerifyForeignKeys(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("verifying foreign keys: %w", err)
+	}
+	return db, nil
+}
+
+// openStorage runs pending migrations on a short-lived foreign-keys-OFF handle,
+// then opens the long-lived runtime pool and VERIFIES that foreign-key
+// enforcement is active on it (the OpenRuntime DSN pragma is the mechanism; the
+// verification is non-mutating -- see #2272). It then reloads logging settings
+// from the DB and derives the image cache directory.
 func (a *Application) openStorage() error {
 	if a.logger == nil {
 		return errors.New("openStorage: setupLogging must run first")
 	}
+	// Issue #2272: run migrations FK-OFF on a short-lived handle, then serve
+	// from a long-lived FK-ON runtime pool. The runtime pool comes from
+	// a.dbOpener (default database.OpenRuntime) so tests can inject a
+	// substitute; migrations always use the real FK-off database.Open path.
+	if err := migrateSchema(a.cfg.Database.Path); err != nil {
+		return err
+	}
+
 	db, err := a.dbOpener(a.cfg.Database.Path)
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
-	a.db = db
 
-	// Issue #1078: enable PRAGMA foreign_keys so ON DELETE CASCADE fires.
-	if err := database.EnableForeignKeys(db); err != nil {
-		return fmt.Errorf("enabling foreign keys: %w", err)
+	// Verification self-check: confirm FK enforcement is genuinely active on a
+	// FRESH connection from the runtime pool (the OpenRuntime DSN pragma is the
+	// actual mechanism; this non-mutating check fails loudly if a driver/DSN
+	// regression left it off). Assign a.db only after it passes so a failed
+	// verify leaves a.db nil and does not leak the handle.
+	if err := database.VerifyForeignKeys(db); err != nil {
+		_ = db.Close()
+		return fmt.Errorf("verifying foreign keys on runtime pool: %w", err)
 	}
-	if err := database.Migrate(db); err != nil {
-		return fmt.Errorf("running migrations: %w", err)
-	}
+	a.db = db
 	a.logger.Info("database ready", slog.String("path", a.cfg.Database.Path))
 
 	// Reload logging settings from DB (overrides config file values if present).
@@ -1527,18 +1612,13 @@ func resetCredentials() error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	db, err := database.Open(cfg.Database.Path)
+	// Issue #2272: migrate FK-off on a short-lived handle, then operate on a
+	// FK-on runtime pool (mirrors openStorage).
+	db, err := openMigratedRuntimeDB(cfg.Database.Path)
 	if err != nil {
-		return fmt.Errorf("opening database: %w", err)
+		return err
 	}
 	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
-
-	if err := database.EnableForeignKeys(db); err != nil {
-		return fmt.Errorf("enabling foreign keys: %w", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		return fmt.Errorf("running migrations: %w", err)
-	}
 
 	ctx := context.Background()
 
@@ -1582,18 +1662,13 @@ func resetPassword(username, password string) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	db, err := database.Open(cfg.Database.Path)
+	// Issue #2272: migrate FK-off on a short-lived handle, then operate on a
+	// FK-on runtime pool (mirrors openStorage).
+	db, err := openMigratedRuntimeDB(cfg.Database.Path)
 	if err != nil {
-		return fmt.Errorf("opening database: %w", err)
+		return err
 	}
 	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
-
-	if err := database.EnableForeignKeys(db); err != nil {
-		return fmt.Errorf("enabling foreign keys: %w", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		return fmt.Errorf("running migrations: %w", err)
-	}
 
 	if password == "" {
 		password, err = promptPassword()

@@ -21,8 +21,11 @@ func newTestApp(t *testing.T, opts ...Option) *Application {
 	t.Helper()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
+	// Mirror production: the runtime pool comes from OpenRuntime (FK-on via DSN)
+	// so openStorage's VerifyForeignKeys self-check passes. Tests that want the
+	// verify to FAIL inject their own FK-off database.Open opener.
 	defaultOpener := func(path string) (*sql.DB, error) {
-		return database.Open(path)
+		return database.OpenRuntime(path)
 	}
 	base := []Option{WithDBOpener(defaultOpener)}
 	app := newApplication(append(base, opts...)...)
@@ -150,6 +153,27 @@ func TestOpenStorage_DBOpenFailure(t *testing.T) {
 	}
 }
 
+// TestOpenStorage_FKVerifyFailureClosesHandle asserts the Copilot finding fix:
+// when the FK self-check fails, openStorage must close the opened handle and
+// leave a.db nil (no leak, no half-initialized Application). It injects an
+// FK-off database.Open handle so VerifyForeignKeys fails on a fresh connection.
+func TestOpenStorage_FKVerifyFailureClosesHandle(t *testing.T) {
+	app := newTestApp(t, WithDBOpener(func(path string) (*sql.DB, error) {
+		// FK-off handle: Open does NOT set the foreign_keys DSN pragma, so the
+		// non-mutating VerifyForeignKeys self-check will report FK unenforced.
+		return database.Open(path)
+	}))
+	defer initLogging(t, app)()
+
+	err := app.openStorage()
+	if err == nil {
+		t.Fatal("expected error from openStorage when FK verification fails")
+	}
+	if app.db != nil {
+		t.Fatal("db must be nil when FK verification fails (handle must be closed, a.db left nil)")
+	}
+}
+
 func TestOpenStorage_ImageCacheDirDerived(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "data", "stillwater.db")
@@ -169,6 +193,132 @@ func TestOpenStorage_ImageCacheDirDerived(t *testing.T) {
 	if app.imageCacheDir != wantDir {
 		t.Errorf("imageCacheDir = %q; want %q", app.imageCacheDir, wantDir)
 	}
+}
+
+// TestOpenMigratedRuntimeDB verifies the offline-CLI bootstrap helper
+// (used by resetCredentials / resetPassword): it migrates the schema and
+// returns a runtime pool with FK enforcement active. Issue #2272.
+func TestOpenMigratedRuntimeDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "reset.db")
+
+	db, err := openMigratedRuntimeDB(dbPath)
+	if err != nil {
+		t.Fatalf("openMigratedRuntimeDB: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Migration ran: a core table exists and is queryable.
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artists`).Scan(&n); err != nil {
+		t.Fatalf("querying migrated artists table: %v", err)
+	}
+
+	// FK enforcement is active on the returned runtime pool.
+	var fkOn int
+	if err := db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fkOn); err != nil {
+		t.Fatalf("reading foreign_keys pragma: %v", err)
+	}
+	if fkOn != 1 {
+		t.Errorf("foreign_keys = %d, want 1 (runtime pool must enforce FKs)", fkOn)
+	}
+}
+
+// TestMigrateSchema verifies the FK-off migration helper applies migrations and
+// leaves no open handle behind (the caller opens the runtime pool afterward).
+func TestMigrateSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mig.db")
+
+	if err := migrateSchema(dbPath); err != nil {
+		t.Fatalf("migrateSchema: %v", err)
+	}
+
+	// Reopen independently and confirm the schema is present -- proving the
+	// migration handle committed and was released cleanly.
+	db, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopening migrated db: %v", err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM artists`).Scan(&n); err != nil {
+		t.Fatalf("querying migrated artists table: %v", err)
+	}
+}
+
+// TestResetCredentials_ClearsUsers drives the offline resetCredentials CLI
+// path end to end: it points config at a seeded temp DB via SW_DB_PATH, runs
+// the command, and asserts the user rows were cleared. This also exercises the
+// FK-on runtime bootstrap the command now uses (issue #2272).
+func TestResetCredentials_ClearsUsers(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "creds.db")
+
+	// Seed a user so the DELETE has something to remove.
+	seed, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening seed db: %v", err)
+	}
+	if err := database.Migrate(seed); err != nil {
+		t.Fatalf("migrate seed db: %v", err)
+	}
+	ctx := context.Background()
+	insertUser(t, ctx, seed, "admin", "pw", "admin")
+	_ = seed.Close()
+
+	// Point config at the temp DB and away from any real config file.
+	t.Setenv("SW_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.toml"))
+	t.Setenv("SW_DB_PATH", dbPath)
+
+	if err := resetCredentials(); err != nil {
+		t.Fatalf("resetCredentials: %v", err)
+	}
+
+	verify, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopening db: %v", err)
+	}
+	defer verify.Close()
+	var n int
+	if err := verify.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		t.Fatalf("counting users: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("users count after resetCredentials = %d, want 0", n)
+	}
+}
+
+// TestResetPassword_ChangesPassword drives the offline resetPassword CLI path
+// end to end against a seeded temp DB (issue #2272 bootstrap).
+func TestResetPassword_ChangesPassword(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "pw.db")
+
+	seed, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening seed db: %v", err)
+	}
+	if err := database.Migrate(seed); err != nil {
+		t.Fatalf("migrate seed db: %v", err)
+	}
+	ctx := context.Background()
+	insertUser(t, ctx, seed, "admin", "oldpass", "admin")
+	_ = seed.Close()
+
+	t.Setenv("SW_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.toml"))
+	t.Setenv("SW_DB_PATH", dbPath)
+
+	if err := resetPassword("admin", "resetpw123"); err != nil {
+		t.Fatalf("resetPassword: %v", err)
+	}
+
+	verify, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopening db: %v", err)
+	}
+	defer verify.Close()
+	assertPassword(t, ctx, verify, "admin", "resetpw123")
+	assertPasswordWrong(t, ctx, verify, "admin", "oldpass")
 }
 
 // --- wireSecurity tests ---
@@ -1037,5 +1187,32 @@ func TestLoadConfig_MalformedFile(t *testing.T) {
 	err := app.loadConfig()
 	if err == nil {
 		t.Fatal("expected an error for a malformed config file, got nil")
+	}
+}
+
+// TestIsInMemoryPath verifies the #2272 in-memory guard classifies the SQLite
+// in-memory DSN forms as unshareable while leaving file-backed paths alone.
+func TestIsInMemoryPath(t *testing.T) {
+	inMem := []string{":memory:", " :memory: ", ":MEMORY:", "file::memory:?cache=shared", "file:x?mode=memory"}
+	for _, p := range inMem {
+		if !isInMemoryPath(p) {
+			t.Errorf("isInMemoryPath(%q) = false, want true", p)
+		}
+	}
+	fileBacked := []string{"/config/stillwater.db", "stillwater.db", "/tmp/test.db", ""}
+	for _, p := range fileBacked {
+		if isInMemoryPath(p) {
+			t.Errorf("isInMemoryPath(%q) = true, want false", p)
+		}
+	}
+}
+
+// TestMigrateSchema_RejectsInMemory confirms the two-pool bootstrap refuses an
+// in-memory database path (its schema cannot survive the migration handle being
+// closed before the runtime pool opens) rather than silently serving an empty
+// schema.
+func TestMigrateSchema_RejectsInMemory(t *testing.T) {
+	if err := migrateSchema(":memory:"); err == nil {
+		t.Fatal("migrateSchema(\":memory:\") = nil, want an in-memory rejection error")
 	}
 }
