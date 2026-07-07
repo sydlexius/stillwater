@@ -49,7 +49,7 @@ func TestRuntimeFKCascadeSurvivesConnectionChurn(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	// Verification self-check, mirroring production startup.
-	if err := EnableForeignKeys(db); err != nil {
+	if err := VerifyForeignKeys(db); err != nil {
 		t.Fatalf("verifying foreign keys on runtime pool: %v", err)
 	}
 
@@ -122,6 +122,40 @@ func TestRuntimeFKCascadeSurvivesConnectionChurn(t *testing.T) {
 		if n != 0 {
 			t.Errorf("%s rows for a-churn = %d, want 0 (ON DELETE CASCADE must fire on the recycled connection)", c.table, n)
 		}
+	}
+}
+
+// TestVerifyForeignKeys proves the runtime self-check genuinely detects FK
+// enforcement state rather than masking it: it must pass on an OpenRuntime
+// handle (FK enforced via the DSN pragma on every fresh connection) and FAIL on
+// a plain Open handle (FK-off, because VerifyForeignKeys does NOT mutate FK on
+// before reading). If VerifyForeignKeys mutated (like EnableForeignKeys), the
+// Open case below would wrongly pass -- that is exactly the useless-self-check
+// regression this test guards against (Codoki finding, #2272).
+func TestVerifyForeignKeys(t *testing.T) {
+	dbPath := t.TempDir() + "/stillwater.db"
+
+	runtimeDB, err := OpenRuntime(dbPath)
+	if err != nil {
+		t.Fatalf("opening runtime pool: %v", err)
+	}
+	t.Cleanup(func() { _ = runtimeDB.Close() })
+
+	if err := VerifyForeignKeys(runtimeDB); err != nil {
+		t.Errorf("VerifyForeignKeys on OpenRuntime handle: got error %v, want nil (DSN pragma enforces FK)", err)
+	}
+
+	// A plain Open handle never enforces FK (no PRAGMA = ON, no DSN pragma), so
+	// a NON-mutating check must report the failure.
+	offPath := t.TempDir() + "/stillwater-off.db"
+	offDB, err := Open(offPath)
+	if err != nil {
+		t.Fatalf("opening FK-off handle: %v", err)
+	}
+	t.Cleanup(func() { _ = offDB.Close() })
+
+	if err := VerifyForeignKeys(offDB); err == nil {
+		t.Error("VerifyForeignKeys on FK-off Open handle: got nil, want a non-nil error (a mutating check would wrongly pass here)")
 	}
 }
 

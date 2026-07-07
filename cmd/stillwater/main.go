@@ -372,10 +372,10 @@ func migrateSchema(dbPath string) error {
 // openMigratedRuntimeDB migrates the schema FK-off, then opens and returns the
 // long-lived FK-ON runtime pool (database.OpenRuntime, whose DSN sets
 // foreign_keys(1) so ON DELETE CASCADE fires on every connection). It runs the
-// EnableForeignKeys self-check before returning. This is the bootstrap used by
-// the offline CLI recovery commands (resetCredentials / resetPassword); the
-// server's openStorage inlines the equivalent steps so it can route the runtime
-// pool through the a.dbOpener test seam.
+// non-mutating VerifyForeignKeys self-check before returning. This is the
+// bootstrap used by the offline CLI recovery commands (resetCredentials /
+// resetPassword); the server's openStorage inlines the equivalent steps so it
+// can route the runtime pool through the a.dbOpener test seam.
 func openMigratedRuntimeDB(dbPath string) (*sql.DB, error) {
 	if err := migrateSchema(dbPath); err != nil {
 		return nil, err
@@ -384,7 +384,7 @@ func openMigratedRuntimeDB(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
-	if err := database.EnableForeignKeys(db); err != nil {
+	if err := database.VerifyForeignKeys(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("verifying foreign keys: %w", err)
 	}
@@ -409,14 +409,17 @@ func (a *Application) openStorage() error {
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
-	a.db = db
 
-	// Verification self-check: confirm FK enforcement is genuinely active on
-	// the runtime pool (the OpenRuntime DSN pragma is the actual mechanism;
-	// this fails loudly if a driver/DSN regression left it off).
-	if err := database.EnableForeignKeys(db); err != nil {
+	// Verification self-check: confirm FK enforcement is genuinely active on a
+	// FRESH connection from the runtime pool (the OpenRuntime DSN pragma is the
+	// actual mechanism; this non-mutating check fails loudly if a driver/DSN
+	// regression left it off). Assign a.db only after it passes so a failed
+	// verify leaves a.db nil and does not leak the handle.
+	if err := database.VerifyForeignKeys(db); err != nil {
+		_ = db.Close()
 		return fmt.Errorf("verifying foreign keys on runtime pool: %w", err)
 	}
+	a.db = db
 	a.logger.Info("database ready", slog.String("path", a.cfg.Database.Path))
 
 	// Reload logging settings from DB (overrides config file values if present).

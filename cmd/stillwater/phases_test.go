@@ -21,8 +21,11 @@ func newTestApp(t *testing.T, opts ...Option) *Application {
 	t.Helper()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
+	// Mirror production: the runtime pool comes from OpenRuntime (FK-on via DSN)
+	// so openStorage's VerifyForeignKeys self-check passes. Tests that want the
+	// verify to FAIL inject their own FK-off database.Open opener.
 	defaultOpener := func(path string) (*sql.DB, error) {
-		return database.Open(path)
+		return database.OpenRuntime(path)
 	}
 	base := []Option{WithDBOpener(defaultOpener)}
 	app := newApplication(append(base, opts...)...)
@@ -147,6 +150,27 @@ func TestOpenStorage_DBOpenFailure(t *testing.T) {
 	}
 	if app.db != nil {
 		t.Fatal("db must be nil when openStorage fails")
+	}
+}
+
+// TestOpenStorage_FKVerifyFailureClosesHandle asserts the Copilot finding fix:
+// when the FK self-check fails, openStorage must close the opened handle and
+// leave a.db nil (no leak, no half-initialized Application). It injects an
+// FK-off database.Open handle so VerifyForeignKeys fails on a fresh connection.
+func TestOpenStorage_FKVerifyFailureClosesHandle(t *testing.T) {
+	app := newTestApp(t, WithDBOpener(func(path string) (*sql.DB, error) {
+		// FK-off handle: Open does NOT set the foreign_keys DSN pragma, so the
+		// non-mutating VerifyForeignKeys self-check will report FK unenforced.
+		return database.Open(path)
+	}))
+	defer initLogging(t, app)()
+
+	err := app.openStorage()
+	if err == nil {
+		t.Fatal("expected error from openStorage when FK verification fails")
+	}
+	if app.db != nil {
+		t.Fatal("db must be nil when FK verification fails (handle must be closed, a.db left nil)")
 	}
 }
 

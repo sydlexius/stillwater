@@ -72,19 +72,21 @@ func open(dbPath, dsnParams string) (*sql.DB, error) {
 }
 
 // EnableForeignKeys issues PRAGMA foreign_keys = ON and verifies the pragma is
-// active on the pool.
+// active on the connection it runs on. This is the TEST-ENABLE path: test
+// fixtures call it on an Open (FK-off) handle to obtain cascade semantics for
+// the handle's lifetime (Open handles are single-writer, so the mutated
+// connection is the only one). It is NOT the runtime self-check -- because it
+// MUTATES FK on before reading it back, it cannot detect a DSN/driver
+// regression that fails to enforce FK on fresh connections (it would turn FK on
+// itself and then observe it on). Use VerifyForeignKeys for the runtime
+// self-check.
 //
 // Since #2272 the AUTHORITATIVE mechanism for FK enforcement on the runtime
 // pool is the foreign_keys(1) DSN pragma set by OpenRuntime, which applies to
-// every (including recycled) connection. EnableForeignKeys is retained as a
-// startup SELF-CHECK: production calls it once on the runtime handle to confirm
-// FK enforcement is genuinely active and fail loudly if not (a defense against
-// a driver/DSN regression). It is no longer the sole mechanism, and it is NOT a
-// substitute for the DSN pragma -- the PRAGMA it issues only affects the
-// connection(s) currently checked out, whereas the DSN pragma covers every
-// connection the pool later opens. Tests that want cascade semantics on an
-// Open (FK-off) handle may still call it, but such handles are single-writer so
-// the effect holds for their lifetime.
+// every (including recycled) connection. EnableForeignKeys is NOT a substitute
+// for the DSN pragma -- the PRAGMA it issues only affects the connection(s)
+// currently checked out, whereas the DSN pragma covers every connection the
+// pool later opens.
 func EnableForeignKeys(db *sql.DB) error {
 	ctx := context.Background()
 	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
@@ -96,6 +98,38 @@ func EnableForeignKeys(db *sql.DB) error {
 	}
 	if fkOn != 1 {
 		return fmt.Errorf("foreign_keys pragma not enabled (got %d); FK CASCADE will not fire", fkOn)
+	}
+	return nil
+}
+
+// VerifyForeignKeys is the runtime FK self-check. Unlike EnableForeignKeys it
+// does NOT mutate: it acquires a FRESH connection from the pool and reads
+// PRAGMA foreign_keys on it WITHOUT first executing PRAGMA foreign_keys = ON.
+// It therefore reflects what a newly-opened or recycled connection actually
+// sees, which is exactly the state a DSN/driver regression would break. Reading
+// on a fresh connection (rather than a mutated one) is what makes this able to
+// CATCH such a regression instead of masking it.
+//
+// It returns a clear error if FK enforcement is not active (value != 1),
+// meaning the OpenRuntime DSN pragma is not enforcing foreign keys and
+// ON DELETE CASCADE would not fire. Production calls this once on the runtime
+// pool at startup so a regression fails loudly rather than silently orphaning
+// child rows (see #2272).
+func VerifyForeignKeys(db *sql.DB) error {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquiring connection for foreign_keys self-check: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var fkOn int
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fkOn); err != nil {
+		return fmt.Errorf("checking foreign_keys pragma: %w", err)
+	}
+	if fkOn != 1 {
+		return fmt.Errorf("foreign_keys pragma not enforced on a fresh connection (got %d); "+
+			"the OpenRuntime DSN pragma is not enforcing foreign keys, so ON DELETE CASCADE will not fire", fkOn)
 	}
 	return nil
 }
