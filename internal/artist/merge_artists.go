@@ -567,13 +567,21 @@ func enumerateChildren(path string) (subdirs, files []os.DirEntry, symlinks []st
 		return nil, nil, nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		// OS/NAS junk ($RECYCLE.BIN, @eaDir, Thumbs.db, desktop.ini, ...):
-		// never a real album/loose file, must not trip collision gating.
+		// OS/NAS junk ($RECYCLE.BIN, @eaDir, Thumbs.db, desktop.ini,
+		// .DS_Store, .Trashes, ...): never a real album/loose file, must not
+		// trip collision gating. Classify junk BEFORE the generic dot-prefix
+		// skip below -- several junk names are themselves dot-prefixed
+		// (.DS_Store, .Trash, .Trashes), and if the hidden-file skip ran
+		// first they would be silently dropped instead of entering the
+		// `ignored` bucket, so removeIgnoredJunk would never sweep them and
+		// the leftover would block the final loser-dir unlink (#30).
 		if IsIgnoredSystemName(e.Name()) {
 			ignored = append(ignored, e)
+			continue
+		}
+		// Non-junk hidden entries (dotfiles/dotdirs that are not OS/NAS junk)
+		// are skipped: not album content, not a mergeable child.
+		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		// os.DirEntry.Type returns the mode bits without following links;
@@ -628,14 +636,38 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 			fmt.Sprintf("skipped symlink %q under %s (symlinks are not followed during merge)", sym, loser.Path))
 	}
 	for _, sd := range subdirs {
+		survivorChild := filepath.Join(survivorPath, sd.Name())
 		// extrafanart/ and extrathumbs/ are additive: both artists' extra
 		// images can coexist under the survivor, so a same-named collision
-		// here must NOT halt the merge. The commit phase merges their
-		// contents instead of refusing (#28).
+		// here must NOT halt the merge -- BUT only when the survivor's
+		// same-named entry is itself a directory (or absent, i.e. a plain
+		// whole-dir move). If the survivor entry is a FILE or SYMLINK, the
+		// additive content-merge cannot descend into it, so report it as a
+		// collision like any other rather than silently skipping (which would
+		// let the commit phase fail inside mergeAdditiveDir) (#28).
 		if isAdditiveMergeDir(sd.Name()) {
-			continue
+			info, statErr := os.Lstat(survivorChild)
+			switch {
+			case os.IsNotExist(statErr):
+				// Survivor lacks it entirely; commit does a whole-dir move.
+				continue
+			case statErr != nil:
+				return fmt.Errorf("checking survivor additive dir %s: %w", survivorChild, statErr)
+			case info.Mode().IsDir():
+				// Real directory on both sides: additive content-merge, no halt.
+				// (os.Lstat + IsDir treats a symlink as NOT a directory.)
+				continue
+			default:
+				// Survivor entry exists but is a file or symlink: cannot merge
+				// the loser's additive dir into it. Surface as a conflict.
+				result.Conflicts = append(result.Conflicts, ConflictItem{
+					Name:         sd.Name(),
+					SurvivorPath: survivorChild,
+					LoserPath:    filepath.Join(loser.Path, sd.Name()),
+				})
+				continue
+			}
 		}
-		survivorChild := filepath.Join(survivorPath, sd.Name())
 		if _, statErr := os.Lstat(survivorChild); statErr == nil {
 			result.Conflicts = append(result.Conflicts, ConflictItem{
 				Name:         sd.Name(),
@@ -819,10 +851,20 @@ func moveLoserSubdirs(loserPath, survivorPath string, subdirs []os.DirEntry, res
 // the caller falls back to a whole-directory move. After a merge the drained
 // loser dir (only junk / empties remain) is removed.
 func mergeAdditiveSubdirIfPresent(src, dst string, result *MergeResult) (merged bool, err error) {
-	if _, statErr := os.Lstat(dst); os.IsNotExist(statErr) {
+	info, statErr := os.Lstat(dst)
+	if os.IsNotExist(statErr) {
 		return false, nil
 	} else if statErr != nil {
 		return false, fmt.Errorf("checking survivor additive dir %s: %w", dst, statErr)
+	}
+	// Defensive guard: pre-flight (preflightOneLoser) reports a conflict when
+	// the survivor's same-named entry is a file or symlink, so the commit
+	// phase should never reach this with a non-directory dst. Fail loudly with
+	// a clear error rather than letting mergeAdditiveDir's os.ReadDir(dst)
+	// produce an opaque failure if that invariant is ever violated.
+	if !info.Mode().IsDir() {
+		return false, fmt.Errorf("%w: survivor entry %s exists but is not a directory; cannot merge additive dir into it",
+			ErrMergeCollisions, dst)
 	}
 	if err := mergeAdditiveDir(src, dst, result); err != nil {
 		return false, err

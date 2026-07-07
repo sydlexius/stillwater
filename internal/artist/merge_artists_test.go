@@ -199,9 +199,12 @@ func TestEnumerateChildren(t *testing.T) {
 		t.Errorf("files = %v, want [artist.nfo]", dirNames(files))
 	}
 	// The junk entries must be bucketed separately -- present in `ignored`,
-	// absent from subdirs and files (so they never gate a collision).
-	if !equalStringSets(dirNames(ignored), []string{"@eaDir", "Thumbs.db"}) {
-		t.Errorf("ignored = %v, want [@eaDir Thumbs.db]", dirNames(ignored))
+	// absent from subdirs and files (so they never gate a collision). This
+	// includes the DOT-prefixed junk (.DS_Store): junk classification runs
+	// ahead of the generic hidden-entry skip, so dot-prefixed junk lands in
+	// `ignored` (for the commit-phase sweep) rather than being dropped (#30).
+	if !equalStringSets(dirNames(ignored), []string{"@eaDir", "Thumbs.db", ".DS_Store"}) {
+		t.Errorf("ignored = %v, want [@eaDir Thumbs.db .DS_Store]", dirNames(ignored))
 	}
 	if len(symlinks) != 1 || symlinks[0] != "link-to-A" {
 		t.Errorf("symlinks = %v, want [link-to-A]", symlinks)
@@ -330,14 +333,14 @@ func TestMergeArtists_CleanMerge(t *testing.T) {
 	for _, album := range []string{"Disintegration", "Pornography", "Bloodflowers"} {
 		full := filepath.Join(filepath.Dir(filepath.Dir(filepath.Join(filepath.Dir(""))))) // sink
 		_ = full
-		survivor, _ := svc.GetByID(ctx, survivorID)
+		survivor := mustGetArtist(t, svc, ctx, survivorID)
 		p := filepath.Join(survivor.Path, album)
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("expected %s on disk: %v", p, err)
 		}
 	}
 	// Loose file moved.
-	survivor, _ := svc.GetByID(ctx, survivorID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
 	if _, err := os.Stat(filepath.Join(survivor.Path, "artist.nfo")); err != nil {
 		t.Errorf("expected artist.nfo on survivor: %v", err)
 	}
@@ -380,8 +383,8 @@ func TestMergeArtists_CollisionHalt(t *testing.T) {
 	ctx := context.Background()
 
 	// Inject a collision: survivor and loser both have "Disintegration".
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 	if err := os.Mkdir(filepath.Join(loser.Path, "Disintegration"), 0o755); err != nil {
 		t.Fatalf("mkdir collision: %v", err)
 	}
@@ -420,8 +423,8 @@ func TestMergeArtists_ExtrafanartMergesNoConflict(t *testing.T) {
 	svc, _, survivorID, loserID := mergeSetup(t)
 	ctx := context.Background()
 
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 
 	// Both artists have an extrafanart/ dir. Survivor has fanart1.jpg; loser
 	// has fanart1.jpg (basename clash -> keep both) and fanart2.jpg (unique).
@@ -471,6 +474,76 @@ func TestMergeArtists_ExtrafanartMergesNoConflict(t *testing.T) {
 	}
 }
 
+// When the survivor's same-named additive entry is a regular FILE (not a
+// directory) and the loser has a real extrafanart/ directory, the merge must
+// treat it as a COLLISION rather than an additive merge: mergeAdditiveDir
+// cannot descend into a file, so pre-flight halts before any FS mutation. The
+// survivor's file must be left untouched and no success claimed.
+func TestMergeArtists_AdditiveNameSurvivorIsFileConflicts(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
+
+	// Survivor has a regular FILE named "extrafanart"; loser has a real
+	// "extrafanart/" directory with an image inside.
+	survExtraFile := filepath.Join(survivor.Path, "extrafanart")
+	if err := os.WriteFile(survExtraFile, []byte("survivor-file"), 0o600); err != nil {
+		t.Fatalf("write survivor extrafanart file: %v", err)
+	}
+	loseExtra := filepath.Join(loser.Path, "extrafanart")
+	if err := os.MkdirAll(loseExtra, 0o755); err != nil {
+		t.Fatalf("mkdir loser extrafanart: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "fanart1.jpg"), []byte("loser-1"), 0o600); err != nil {
+		t.Fatalf("write loser fanart1: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	})
+	if !errors.Is(err, ErrMergeCollisions) {
+		t.Fatalf("err = %v, want ErrMergeCollisions", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result alongside ErrMergeCollisions")
+	}
+	foundConflict := false
+	for _, c := range res.Conflicts {
+		if c.Name == "extrafanart" {
+			foundConflict = true
+			break
+		}
+	}
+	if !foundConflict {
+		t.Errorf("expected an extrafanart conflict, got Conflicts = %v", res.Conflicts)
+	}
+	if len(res.Moved) != 0 {
+		t.Errorf("expected nothing moved on collision halt, got %d", len(res.Moved))
+	}
+
+	// Survivor's file is untouched (not overwritten, not turned into a dir).
+	assertFileContent(t, survExtraFile, "survivor-file")
+	info, statErr := os.Lstat(survExtraFile)
+	if statErr != nil {
+		t.Fatalf("stat survivor extrafanart: %v", statErr)
+	}
+	if !info.Mode().IsRegular() {
+		t.Errorf("survivor extrafanart mode = %v, want regular file", info.Mode())
+	}
+	// Loser dir and its image still present; loser row not deleted.
+	if _, err := os.Stat(filepath.Join(loseExtra, "fanart1.jpg")); err != nil {
+		t.Errorf("loser fanart1 gone after halt: %v", err)
+	}
+	if _, err := svc.GetByID(ctx, loserID); err != nil {
+		t.Errorf("loser row deleted on collision halt: %v", err)
+	}
+}
+
 // When the survivor has NO extrafanart/extrathumbs dir but the loser does, the
 // additive path must fall through to a plain whole-directory move (not a
 // content-merge), and the loser dir must still unlink cleanly.
@@ -479,8 +552,8 @@ func TestMergeArtists_ExtrathumbsWholeDirMoveWhenSurvivorLacks(t *testing.T) {
 	svc, _, survivorID, loserID := mergeSetup(t)
 	ctx := context.Background()
 
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 
 	loseExtra := filepath.Join(loser.Path, "extrathumbs")
 	if err := os.MkdirAll(loseExtra, 0o755); err != nil {
@@ -514,8 +587,8 @@ func TestMergeArtists_AdditiveMergeSkipsJunkMovesSubdir(t *testing.T) {
 	svc, _, survivorID, loserID := mergeSetup(t)
 	ctx := context.Background()
 
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 
 	survExtra := filepath.Join(survivor.Path, "extrafanart")
 	loseExtra := filepath.Join(loser.Path, "extrafanart")
@@ -567,6 +640,19 @@ func TestMergeArtists_AdditiveMergeSkipsJunkMovesSubdir(t *testing.T) {
 	}
 }
 
+// mustGetArtist loads an artist by ID and fails the test immediately on error.
+// Merge scenario setup repeatedly re-loads the survivor/loser to read their
+// on-disk Path; discarding the error there can mask a broken fixture and let a
+// nil-deref or a wrong assertion surface far from the real cause.
+func mustGetArtist(t *testing.T, svc *Service, ctx context.Context, id string) *Artist {
+	t.Helper()
+	a, err := svc.GetByID(ctx, id)
+	if err != nil {
+		t.Fatalf("GetByID(%q): %v", id, err)
+	}
+	return a
+}
+
 // assertFileContent fails the test unless the file at path exists and its
 // bytes equal want. Used to prove the additive merge kept BOTH artists' copies
 // under distinct names rather than overwriting or misrouting one.
@@ -587,8 +673,8 @@ func TestMergeArtists_JunkSubdirDoesNotHalt(t *testing.T) {
 	svc, _, survivorID, loserID := mergeSetup(t)
 	ctx := context.Background()
 
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 
 	// A Synology @eaDir junk cache exists on BOTH sides. Pre-fix this
 	// same-named subdir would be flagged as a halting collision; it must be
@@ -648,7 +734,7 @@ func TestMergeArtists_DryRun(t *testing.T) {
 		t.Errorf("DryRun deleted %d losers, want 0", len(res.LosersDeleted))
 	}
 	// Both directories still on disk.
-	loser, _ := svc.GetByID(ctx, loserID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 	if _, err := os.Stat(loser.Path); err != nil {
 		t.Errorf("loser dir gone after dry run: %v", err)
 	}
@@ -914,8 +1000,8 @@ func TestMergeArtists_LooseFileCollision(t *testing.T) {
 	svc, _, survivorID, loserID := mergeSetup(t)
 	ctx := context.Background()
 
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 
 	// Seed the survivor with a folder.jpg that collides with one we'll
 	// add to the loser. The mergeSetup loser already has an artist.nfo
@@ -1085,8 +1171,8 @@ func TestMergeArtists_DryRunDeletesPreview(t *testing.T) {
 	svc, _, survivorID, loserID := mergeSetup(t)
 	ctx := context.Background()
 
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 
 	// Seed a loose file collision: same name on both sides.
 	if err := os.WriteFile(filepath.Join(survivor.Path, "folder.jpg"), []byte("survivor-jpg"), 0o600); err != nil {
@@ -1152,8 +1238,8 @@ func TestMergeArtists_LooseFileCollision_SurvivorDirectory(t *testing.T) {
 	svc, _, survivorID, loserID := mergeSetup(t)
 	ctx := context.Background()
 
-	survivor, _ := svc.GetByID(ctx, survivorID)
-	loser, _ := svc.GetByID(ctx, loserID)
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	loser := mustGetArtist(t, svc, ctx, loserID)
 
 	// Place a DIRECTORY named "folder.jpg" under the survivor -- same name
 	// as a loose file we add to the loser. This is the edge case: the
