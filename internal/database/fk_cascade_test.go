@@ -409,6 +409,22 @@ func TestOpen_UncreatableParentErrors(t *testing.T) {
 	}
 }
 
+// TestEnableForeignKeys_ClosedPoolErrors covers the connection-acquisition
+// error branch: enabling FK on an already-closed pool must fail loudly.
+func TestEnableForeignKeys_ClosedPoolErrors(t *testing.T) {
+	t.Parallel()
+	db, err := Open(filepath.Join(t.TempDir(), "closed-enable.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := EnableForeignKeys(db); err == nil {
+		t.Error("EnableForeignKeys on a closed pool = nil, want error")
+	}
+}
+
 // TestOpen_PingFailureErrors covers open()'s ping-failure branch: a path that is
 // an existing directory opens lazily but cannot be pinged as a SQLite database,
 // so open() must close the handle and return a wrapped error.

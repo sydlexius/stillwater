@@ -89,11 +89,21 @@ func open(dbPath, dsnParams string) (*sql.DB, error) {
 // pool later opens.
 func EnableForeignKeys(db *sql.DB) error {
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+	// Pin a SINGLE connection for both PRAGMA statements. PRAGMA foreign_keys is
+	// per-connection, so enabling it on one pooled connection and reading it
+	// back on another would be unreliable. The pool is single-writer via
+	// SetMaxOpenConns(1), but pinning the connection makes this
+	// correct-by-construction rather than reliant on that invariant.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquiring connection to enable foreign keys: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
 		return fmt.Errorf("enabling foreign keys: %w", err)
 	}
 	var fkOn int
-	if err := db.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fkOn); err != nil {
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fkOn); err != nil {
 		return fmt.Errorf("checking foreign_keys pragma: %w", err)
 	}
 	if fkOn != 1 {
