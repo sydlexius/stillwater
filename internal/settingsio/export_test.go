@@ -230,6 +230,141 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRoundTrip_ProviderKeyCrossInstance proves a configured provider API key
+// survives a full export/import into a fresh, independently-encrypted instance
+// without re-entry (#2277). The two instances use different encryptors (each
+// newTestServices call builds a fresh random key), so a key that decrypts on
+// the target can only have been re-encrypted under the target key by the
+// dedicated ProviderKeys import path -- not carried verbatim as source
+// ciphertext. It also pins that a stale key_status does not resurrect on import.
+func TestRoundTrip_ProviderKeyCrossInstance(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+	const secretKey = "fanart-secret-key-value"
+	if err := provSettings.SetAPIKey(ctx, provider.NameFanartTV, secretKey); err != nil {
+		t.Fatalf("seeding provider key: %v", err)
+	}
+	// Give the source a non-empty status so we can assert it is cleared (not
+	// carried forward as a stale "valid") on the target after import.
+	if err := provSettings.SetKeyStatus(ctx, provider.NameFanartTV, "valid"); err != nil {
+		t.Fatalf("seeding key status: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	passphrase := "provider-key-roundtrip-passphrase"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Fresh target instance with its own encryptor.
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	if _, err := svc2.Import(ctx, envelope, passphrase); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	got, err := provSettings2.GetAPIKey(ctx, provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetAPIKey on target: %v", err)
+	}
+	if got != secretKey {
+		t.Errorf("provider key not decryptable on target: got %q, want %q", got, secretKey)
+	}
+
+	status, err := provSettings2.GetKeyStatus(ctx, provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus on target: %v", err)
+	}
+	if status != "" {
+		t.Errorf("key status should be cleared (untested) after import, got %q", status)
+	}
+}
+
+// TestImport_LegacyEnvelopeProviderKeySkip guarantees that a pre-fix envelope
+// (which still duplicates provider.<name>.api_key / key_status into the generic
+// settings blob) is repaired rather than corrupted on import (#2277). The
+// import-side skip is unconditional across all versions, so the undecryptable
+// source ciphertext in Payload.Settings must be ignored and the correct value
+// taken from the dedicated Payload.ProviderKeys section. Plaintext provider
+// settings and unrelated keys must still round-trip through the generic blob.
+func TestImport_LegacyEnvelopeProviderKeySkip(t *testing.T) {
+	ctx := context.Background()
+
+	const correctKey = "correct-fanart-key"
+	// A legacy v1.5 envelope carries the duplicated (source-encrypted, so
+	// target-undecryptable) rows in Settings alongside the authoritative
+	// plaintext in ProviderKeys. We stand in an obviously-bogus ciphertext for
+	// the api_key row: if importSettings failed to skip it, it would clobber the
+	// re-encrypted key and GetAPIKey on the target would not return correctKey.
+	payload := Payload{
+		Settings: map[string]string{
+			"provider.fanarttv.api_key":    "SOURCE-CIPHERTEXT-NOT-DECRYPTABLE-BY-TARGET",
+			"provider.fanarttv.key_status": "valid",
+			"provider.fanarttv.base_url":   "https://webservice.fanart.tv",
+			"test.key":                     "keep-me",
+		},
+		ProviderKeys: map[string]string{
+			string(provider.NameFanartTV): correctKey,
+		},
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshaling legacy payload: %v", err)
+	}
+	passphrase := "legacy-envelope-passphrase"
+	data, salt, err := encryptWithPassphrase(payloadJSON, passphrase)
+	if err != nil {
+		t.Fatalf("encrypting legacy payload: %v", err)
+	}
+	envelope := &Envelope{Version: "1.5", Salt: salt, Data: data}
+
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	if _, err := svc2.Import(ctx, envelope, passphrase); err != nil {
+		t.Fatalf("Import legacy envelope: %v", err)
+	}
+
+	got, err := provSettings2.GetAPIKey(ctx, provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetAPIKey on target: %v", err)
+	}
+	if got != correctKey {
+		t.Errorf("legacy envelope not repaired: got %q, want %q (source ciphertext was not skipped)", got, correctKey)
+	}
+
+	status, err := provSettings2.GetKeyStatus(ctx, provider.NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus on target: %v", err)
+	}
+	if status != "" {
+		t.Errorf("stale key_status should not resurrect, got %q", status)
+	}
+
+	// The plaintext base_url and unrelated key must still round-trip through the
+	// generic settings blob -- the skip is narrow to api_key/key_status only.
+	var baseURL, testVal string
+	if err := db2.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'provider.fanarttv.base_url'`).Scan(&baseURL); err != nil {
+		t.Fatalf("scanning base_url: %v", err)
+	}
+	if baseURL != "https://webservice.fanart.tv" {
+		t.Errorf("plaintext base_url should round-trip, got %q", baseURL)
+	}
+	if err := db2.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'test.key'`).Scan(&testVal); err != nil {
+		t.Fatalf("scanning test.key: %v", err)
+	}
+	if testVal != "keep-me" {
+		t.Errorf("unrelated setting should round-trip, got %q", testVal)
+	}
+}
+
 // TestRoundTrip_ConnectionVerifyPathAfterUpdate pins that the Lidarr
 // VerifyPathAfterUpdate opt-in (#1640 toggle) survives the connection
 // export/import round-trip introduced in envelope v1.5 (#1692). Without

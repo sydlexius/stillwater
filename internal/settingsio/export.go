@@ -65,7 +65,15 @@ var pbkdf2Iterations = defaultPBKDF2Iterations
 //     (#1692). Pre-1.5 envelopes lack the field, so legacy imports must
 //     preserve the target's existing value instead of clobbering it with
 //     a decoded zero.
-const CurrentEnvelopeVersion = "1.5"
+//   - "1.6": provider `api_key`/`key_status` rows are no longer duplicated
+//     into the generic settings blob; they are carried solely by the
+//     dedicated ProviderKeys section (decrypted at export, re-encrypted under
+//     the target key at import). This fixes an import-order collision where
+//     the generic blob's source-encrypted ciphertext overwrote the
+//     re-encrypted key and left it undecryptable on the target (#2277). The
+//     import-side skip is unconditional across all versions, so legacy
+//     envelopes carrying the duplicated rows are repaired on import too.
+const CurrentEnvelopeVersion = "1.6"
 
 // supportedEnvelopeVersions lists the envelope versions Import will accept.
 // Older versions are accepted for backward compatibility (their newer fields
@@ -77,6 +85,7 @@ var supportedEnvelopeVersions = map[string]bool{
 	"1.3": true,
 	"1.4": true,
 	"1.5": true,
+	"1.6": true,
 }
 
 // envelopeCarriesConnectionV14Fields reports whether an envelope of the given
@@ -357,6 +366,14 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 		var k, v string
 		if err := rows.Scan(&k, &v); err != nil {
 			return nil, fmt.Errorf("scanning setting: %w", err)
+		}
+		// Provider API keys and statuses are carried solely by the dedicated
+		// ProviderKeys section (decrypted here, re-encrypted under the target
+		// key on import). Duplicating the source-encrypted ciphertext into the
+		// generic settings blob served no purpose and caused an import-order
+		// collision (see isProviderKeyOwnedSetting); exclude it from the blob.
+		if isProviderKeyOwnedSetting(k) {
+			continue
 		}
 		payload.Settings[k] = v
 	}

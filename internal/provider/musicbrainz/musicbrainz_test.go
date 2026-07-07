@@ -284,6 +284,27 @@ func TestGetArtistServerError(t *testing.T) {
 	}
 }
 
+// TestDoRequestAuthError verifies that a 401/403 from a (self-hosted/private)
+// mirror is classified as an auth failure, not transient unavailability, so the
+// API layer can report a credentials problem rather than "cannot reach" (#2278).
+func TestDoRequestAuthError(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+		a := newTestAdapter(t, srv.URL)
+		err := a.TestConnection(context.Background())
+		srv.Close()
+		if err == nil {
+			t.Fatalf("status %d: expected error, got nil", status)
+		}
+		var authErr *provider.ErrAuthRequired
+		if !errors.As(err, &authErr) {
+			t.Errorf("status %d: expected *provider.ErrAuthRequired, got %T: %v", status, err, err)
+		}
+	}
+}
+
 func TestGetImagesReturnsNil(t *testing.T) {
 	a := newTestAdapter(t, "http://localhost")
 	images, err := a.GetImages(context.Background(), "any-id")

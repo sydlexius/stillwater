@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -19,6 +20,34 @@ import (
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
+// isProviderKeyOwnedSetting reports whether a settings KV key is owned by the
+// dedicated provider-key import path (importProviderKeys) rather than the
+// generic settings blob. These are exactly the encrypted-at-rest API key rows
+// (`provider.<name>.api_key`) and their test-status companions
+// (`provider.<name>.key_status`), both written by ImportSetAPIKeyTx.
+//
+// importProviderKeys re-encrypts the authoritative copy (from the dedicated
+// Payload.ProviderKeys section) under the target instance key before
+// importSettings runs. Export no longer duplicates these rows into
+// Payload.Settings, but legacy (pre-1.6) envelopes did carry them there as
+// source-encrypted ciphertext; without this skip, importSettings would
+// overwrite the re-encrypted key with that undecryptable source ciphertext (and
+// resurrect the stale key_status). The skip is applied unconditionally for all
+// envelope versions, since legacy envelopes carry the bad ciphertext in
+// Payload.Settings and always also carry the correct value in
+// Payload.ProviderKeys.
+//
+// Other `provider.*` settings (base_url, rate_limit, rate_limit_ceiling,
+// field_verbosity.*, websearch.<name>.enabled, priority.*,
+// name_similarity_threshold) are plaintext, have no dedicated encrypted import
+// path, and must keep round-tripping through the generic settings blob -- none
+// of them end in `.api_key` or `.key_status`, so this predicate leaves them
+// untouched.
+func isProviderKeyOwnedSetting(key string) bool {
+	return strings.HasPrefix(key, "provider.") &&
+		(strings.HasSuffix(key, ".api_key") || strings.HasSuffix(key, ".key_status"))
+}
+
 // importSettings upserts every key-value pair from the exported settings map
 // into the settings KV table. The timestamp is fixed for the entire batch so
 // that multiple calls within a single import produce a consistent updated_at.
@@ -27,6 +56,15 @@ import (
 func (s *Service) importSettings(ctx context.Context, db dbExecutor, settings map[string]string, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range settings {
+		// Provider API keys and their statuses are owned by importProviderKeys,
+		// which runs earlier in the transaction and re-encrypts them under the
+		// target instance key. Skipping them here prevents the generic blob's
+		// source-encrypted (target-undecryptable) ciphertext from clobbering the
+		// authoritative copy. result.Settings therefore counts only rows we
+		// actually apply.
+		if isProviderKeyOwnedSetting(k) {
+			continue
+		}
 		_, err := db.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,

@@ -85,6 +85,30 @@ it. A wrong passphrase fails AES-GCM tag verification, surfaced as
 scope across the whole app is a planned follow-up; the export path is the
 densest use of the boundary, so it is documented here.)
 
+Because at-rest secrets are sealed under a per-install server key, they cannot
+cross instances as raw ciphertext -- the target instance holds a different key
+and could never decrypt them. Provider API keys are therefore carried only by
+the dedicated `ProviderKeys` payload section: they are decrypted at export and
+re-encrypted under the target instance key on import. They are deliberately
+**not** carried by the generic `settings` key-value dump. An earlier version did
+duplicate `provider.<name>.api_key` and `provider.<name>.key_status` into that
+generic blob as source-encrypted ciphertext, which caused an import-order
+collision: the dedicated section re-encrypted the key correctly, then the
+generic-settings apply overwrote it with the undecryptable source ciphertext,
+leaving the key unusable on the target (#2277). The import side now skips those
+two provider-owned key rows unconditionally for all envelope versions, so older
+bundles that still carry the duplicated rows are repaired rather than corrupted.
+This split exists precisely because an encrypted-at-rest value needs the
+decrypt-at-source / re-encrypt-at-target handling that a plaintext key-value
+blob cannot provide; plaintext provider settings (base URL, rate limits, field
+verbosity, priorities) have no such need and continue to round-trip through the
+generic `settings` dump.
+
+One known, separate limitation: a custom MusicBrainz mirror `base_url`
+round-trips to the database but is not live-applied to the running adapter until
+restart. That is out of scope here -- the API mirror handlers are the only
+live-reload path and are not reachable from `settingsio`.
+
 ## Transactional per-section apply
 
 `ImportWithOptions` wraps every section write in one `sql.Tx`. A deferred
