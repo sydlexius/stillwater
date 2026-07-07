@@ -129,6 +129,10 @@ Most metadata providers (Fanart.tv, Discogs, TheAudioDB, and others) require a f
 {: #settings-providers-provider-config-client-id }
 - **Client Secret** -- The OAuth application secret issued alongside the Client ID. Stored encrypted at rest. Treat it like a password and do not share it.
 {: #settings-providers-provider-config-client-secret }
+- **Client Access Token**
+{: #settings-providers-provider-config-client-access-token }
+- **API Key**
+{: #settings-providers-provider-config-api-key }
 - **Server** -- Which MusicBrainz endpoint Stillwater queries. Pick a preset or supply a custom mirror URL.
 {: #settings-providers-provider-config-server }
 - **Official** -- Send requests to musicbrainz.org. The public service is rate-limited to roughly one request per second.

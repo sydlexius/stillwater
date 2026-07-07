@@ -22,16 +22,6 @@ func testCtx(tb testing.TB) context.Context {
 	return i18n.WithTranslator(context.Background(), bundle.Translator("en"))
 }
 
-func TestProviderKeyLabel_GeniusUsesClientAccessToken(t *testing.T) {
-	ctx := testCtx(t)
-	if got := providerKeyLabel(ctx, provider.NameGenius); got != "Client Access Token" {
-		t.Errorf("providerKeyLabel(genius) = %q, want %q", got, "Client Access Token")
-	}
-	if got := providerKeyLabel(ctx, provider.NameMusicBrainz); got != "API Key" {
-		t.Errorf("providerKeyLabel(musicbrainz) = %q, want %q", got, "API Key")
-	}
-}
-
 func TestProviderKeyPlaceholder_GeniusAndFallbacks(t *testing.T) {
 	ctx := testCtx(t)
 	if got := providerKeyPlaceholder(ctx, provider.NameGenius, false); got != "Enter Client Access Token..." {

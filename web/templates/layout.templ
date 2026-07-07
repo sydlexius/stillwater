@@ -877,7 +877,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 							// tag-strip would remove only the tags and leave the
 							// script/style body as visible text.
 							stripped = body
-								.replace(/<(script|style)[^>]*>[\s\S]*?<\/(script|style)>/gi, '')
+								.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
 								.replace(/<[^>]*>/g, '').trim();
 						}
 						// Decode HTML entities (apostrophes, ampersands, etc.)

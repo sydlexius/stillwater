@@ -726,16 +726,6 @@ func keyPlaceholder(ctx context.Context, optionalKey bool) string {
 	return t(ctx, "settings.provider_keys.key_placeholder")
 }
 
-// providerKeyLabel returns the credential field label for a provider. Genius
-// issues a "Client Access Token" rather than an API key, so it gets bespoke
-// copy; every other provider uses the generic "API Key" label.
-func providerKeyLabel(ctx context.Context, name provider.ProviderName) string {
-	if name == provider.NameGenius {
-		return t(ctx, "settings.provider_config.client_access_token")
-	}
-	return t(ctx, "settings.provider_config.api_key")
-}
-
 // providerKeyPlaceholder returns the credential input placeholder for a
 // provider, honoring Genius's "Client Access Token" wording; other providers
 // fall back to keyPlaceholder (which handles the premium-tier copy).
