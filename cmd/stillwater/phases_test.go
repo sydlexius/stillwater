@@ -171,6 +171,132 @@ func TestOpenStorage_ImageCacheDirDerived(t *testing.T) {
 	}
 }
 
+// TestOpenMigratedRuntimeDB verifies the offline-CLI bootstrap helper
+// (used by resetCredentials / resetPassword): it migrates the schema and
+// returns a runtime pool with FK enforcement active. Issue #2272.
+func TestOpenMigratedRuntimeDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "reset.db")
+
+	db, err := openMigratedRuntimeDB(dbPath)
+	if err != nil {
+		t.Fatalf("openMigratedRuntimeDB: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Migration ran: a core table exists and is queryable.
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artists`).Scan(&n); err != nil {
+		t.Fatalf("querying migrated artists table: %v", err)
+	}
+
+	// FK enforcement is active on the returned runtime pool.
+	var fkOn int
+	if err := db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fkOn); err != nil {
+		t.Fatalf("reading foreign_keys pragma: %v", err)
+	}
+	if fkOn != 1 {
+		t.Errorf("foreign_keys = %d, want 1 (runtime pool must enforce FKs)", fkOn)
+	}
+}
+
+// TestMigrateSchema verifies the FK-off migration helper applies migrations and
+// leaves no open handle behind (the caller opens the runtime pool afterward).
+func TestMigrateSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mig.db")
+
+	if err := migrateSchema(dbPath); err != nil {
+		t.Fatalf("migrateSchema: %v", err)
+	}
+
+	// Reopen independently and confirm the schema is present -- proving the
+	// migration handle committed and was released cleanly.
+	db, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopening migrated db: %v", err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM artists`).Scan(&n); err != nil {
+		t.Fatalf("querying migrated artists table: %v", err)
+	}
+}
+
+// TestResetCredentials_ClearsUsers drives the offline resetCredentials CLI
+// path end to end: it points config at a seeded temp DB via SW_DB_PATH, runs
+// the command, and asserts the user rows were cleared. This also exercises the
+// FK-on runtime bootstrap the command now uses (issue #2272).
+func TestResetCredentials_ClearsUsers(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "creds.db")
+
+	// Seed a user so the DELETE has something to remove.
+	seed, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening seed db: %v", err)
+	}
+	if err := database.Migrate(seed); err != nil {
+		t.Fatalf("migrate seed db: %v", err)
+	}
+	ctx := context.Background()
+	insertUser(t, ctx, seed, "admin", "pw", "admin")
+	_ = seed.Close()
+
+	// Point config at the temp DB and away from any real config file.
+	t.Setenv("SW_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.toml"))
+	t.Setenv("SW_DB_PATH", dbPath)
+
+	if err := resetCredentials(); err != nil {
+		t.Fatalf("resetCredentials: %v", err)
+	}
+
+	verify, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopening db: %v", err)
+	}
+	defer verify.Close()
+	var n int
+	if err := verify.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		t.Fatalf("counting users: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("users count after resetCredentials = %d, want 0", n)
+	}
+}
+
+// TestResetPassword_ChangesPassword drives the offline resetPassword CLI path
+// end to end against a seeded temp DB (issue #2272 bootstrap).
+func TestResetPassword_ChangesPassword(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "pw.db")
+
+	seed, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening seed db: %v", err)
+	}
+	if err := database.Migrate(seed); err != nil {
+		t.Fatalf("migrate seed db: %v", err)
+	}
+	ctx := context.Background()
+	insertUser(t, ctx, seed, "admin", "oldpass", "admin")
+	_ = seed.Close()
+
+	t.Setenv("SW_CONFIG_PATH", filepath.Join(t.TempDir(), "nonexistent.toml"))
+	t.Setenv("SW_DB_PATH", dbPath)
+
+	if err := resetPassword("admin", "resetpw123"); err != nil {
+		t.Fatalf("resetPassword: %v", err)
+	}
+
+	verify, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopening db: %v", err)
+	}
+	defer verify.Close()
+	assertPassword(t, ctx, verify, "admin", "resetpw123")
+	assertPasswordWrong(t, ctx, verify, "admin", "oldpass")
+}
+
 // --- wireSecurity tests ---
 
 func TestWireSecurity_HappyPath(t *testing.T) {

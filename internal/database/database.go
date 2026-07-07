@@ -10,30 +10,52 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Open opens a SQLite database at the given path with WAL mode enabled.
-// It creates the parent directory if it does not exist.
+// Open opens a SQLite database at the given path with WAL mode enabled and
+// foreign key enforcement intentionally OFF. It creates the parent directory
+// if it does not exist.
+//
+// This is the MIGRATION / test-fixture open path. Goose migrations run against
+// a handle from Open so they can rebuild tables and rewrite child rows without
+// tripping FK constraints (migration 015 rebuilds the artists table; migration
+// 009/019 rewrite child rows). Test fixtures that rely on insert-without-parent
+// shortcuts also use Open. The long-lived RUNTIME pool must instead come from
+// OpenRuntime so ON DELETE CASCADE fires on every connection (see #2272).
 func Open(dbPath string) (*sql.DB, error) {
+	return open(dbPath, "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+}
+
+// OpenRuntime opens the long-lived SQLite pool the running server serves from.
+// Unlike Open, its DSN sets foreign_keys(1) so PRAGMA foreign_keys is ON for
+// EVERY connection the pool hands out, including connections that are recycled
+// or freshly reopened by database/sql.
+//
+// Issue #2272: PRAGMA foreign_keys is a PER-CONNECTION setting that defaults
+// OFF. The previous design turned it on once via EnableForeignKeys after Open,
+// but that only affected the connection(s) then in the pool; when a pooled
+// connection was discarded and reopened, FK enforcement reverted OFF and artist
+// delete/merge cascades silently no-opped, orphaning child rows across the
+// child tables that declare REFERENCES artists(id) ON DELETE CASCADE. Setting
+// foreign_keys(1) in the DSN makes modernc.org/sqlite apply the pragma on each
+// new connection, so the cascade fires reliably. Migrations still use Open
+// (FK-off); only the serving pool uses OpenRuntime.
+func OpenRuntime(dbPath string) (*sql.DB, error) {
+	return open(dbPath, "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+}
+
+// open is the shared implementation for Open and OpenRuntime. dsnParams is the
+// DSN query string (leading '?') carrying the modernc PRAGMA parameters.
+//
+// modernc.org/sqlite reads PRAGMAs from the DSN via _pragma=NAME(VALUE) query
+// parameters. The legacy _foreign_keys=ON / _journal_mode=WAL shorthand used by
+// mattn/go-sqlite3 is silently ignored here, so the modernc form is required
+// for the PRAGMAs to actually apply on every connection.
+func open(dbPath, dsnParams string) (*sql.DB, error) {
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("creating database directory: %w", err)
 	}
 
-	// modernc.org/sqlite reads PRAGMAs from the DSN via _pragma=NAME(VALUE)
-	// query parameters. The legacy _foreign_keys=ON / _journal_mode=WAL
-	// shorthand used by mattn/go-sqlite3 is silently ignored here. Use the
-	// modernc form so the PRAGMAs actually apply on every connection.
-	//
-	// Foreign key enforcement is intentionally NOT set here. Issue #1078
-	// established that PRAGMA foreign_keys must be on for the ON DELETE
-	// CASCADE declarations to fire, but turning it on by default broke a
-	// large body of existing test fixtures that rely on insert-without-
-	// parent shortcuts. EnableForeignKeys is the explicit opt-in that
-	// production main calls; tests that need cascade semantics call it
-	// (or a local PRAGMA) themselves.
-	db, err := sql.Open(
-		"sqlite",
-		dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)",
-	)
+	db, err := sql.Open("sqlite", dbPath+dsnParams)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -49,14 +71,20 @@ func Open(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// EnableForeignKeys turns on PRAGMA foreign_keys for the connection pool and
-// verifies that the pragma took effect. Issue #1078: modernc.org/sqlite does
-// not respect the legacy _foreign_keys=ON DSN shorthand, so the only reliable
-// way to get FK CASCADE enforcement is to issue PRAGMA explicitly. Production
-// startup calls this immediately after Open so artist deletes actually
-// cascade through artist_platform_ids, artist_images, rule_violations, and
-// the other child tables. Tests that exercise cascade behavior call this
-// (or run a local PRAGMA) explicitly.
+// EnableForeignKeys issues PRAGMA foreign_keys = ON and verifies the pragma is
+// active on the pool.
+//
+// Since #2272 the AUTHORITATIVE mechanism for FK enforcement on the runtime
+// pool is the foreign_keys(1) DSN pragma set by OpenRuntime, which applies to
+// every (including recycled) connection. EnableForeignKeys is retained as a
+// startup SELF-CHECK: production calls it once on the runtime handle to confirm
+// FK enforcement is genuinely active and fail loudly if not (a defense against
+// a driver/DSN regression). It is no longer the sole mechanism, and it is NOT a
+// substitute for the DSN pragma -- the PRAGMA it issues only affects the
+// connection(s) currently checked out, whereas the DSN pragma covers every
+// connection the pool later opens. Tests that want cascade semantics on an
+// Open (FK-off) handle may still call it, but such handles are single-writer so
+// the effect holds for their lifetime.
 func EnableForeignKeys(db *sql.DB) error {
 	ctx := context.Background()
 	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
