@@ -432,14 +432,18 @@ func TestScan_SkipsHiddenDirs(t *testing.T) {
 func TestScan_Exclusions(t *testing.T) {
 	t.Parallel()
 	libDir := t.TempDir()
-	createArtistDir(t, libDir, "Various Artists", "folder.jpg")
+	// "Soundtrack" exercises the operator-editable exclusion list (creates
+	// the artist row, flags IsExcluded). It is NOT one of the built-in
+	// non-artist names (Various Artists / VA), which are dropped entirely --
+	// those are covered by TestScan_SkipsVariousArtists.
+	createArtistDir(t, libDir, "Soundtrack", "folder.jpg")
 	createArtistDir(t, libDir, "Nirvana", "folder.jpg")
 	createArtistDir(t, libDir, "OST", "fanart.jpg")
 
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := NewService(artistSvc, nil, nil, logger, libDir, []string{"Various Artists", "VA", "OST"})
+	svc := NewService(artistSvc, nil, nil, logger, libDir, []string{"Soundtrack", "OST"})
 	ctx := context.Background()
 
 	if _, err := svc.Run(ctx); err != nil {
@@ -451,13 +455,13 @@ func TestScan_Exclusions(t *testing.T) {
 		t.Errorf("NewArtists = %d, want 3", final.NewArtists)
 	}
 
-	// Check Various Artists is excluded
-	va, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Various Artists"))
+	// Check Soundtrack is excluded (operator exclusion list -> row created, flagged)
+	va, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Soundtrack"))
 	if va == nil {
-		t.Fatal("Various Artists not found")
+		t.Fatal("Soundtrack not found")
 	}
 	if !va.IsExcluded {
-		t.Error("Various Artists should be excluded")
+		t.Error("Soundtrack should be excluded")
 	}
 	if va.ExclusionReason == "" {
 		t.Error("ExclusionReason should be set")
@@ -479,6 +483,80 @@ func TestScan_Exclusions(t *testing.T) {
 	}
 	if !ost.IsExcluded {
 		t.Error("OST should be excluded")
+	}
+}
+
+func TestScan_SkipsSystemJunkDirs(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	// OS/NAS junk: none of these should become an artist, and none should be
+	// counted as a scanned directory. Mix of dot-prefixed and not.
+	for _, junk := range []string{
+		"$RECYCLE.BIN",
+		"System Volume Information",
+		"@eaDir",
+		"@__thumb",
+		"lost+found",
+		".Trashes",
+	} {
+		createArtistDir(t, libDir, junk, "folder.jpg")
+	}
+	// A case-variant to confirm matching is case-insensitive.
+	createArtistDir(t, libDir, "system volume information", "folder.jpg")
+	createArtistDir(t, libDir, "Nirvana", "folder.jpg")
+
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	final := waitForScan(t, svc, 5*time.Second)
+
+	if final.NewArtists != 1 {
+		t.Errorf("NewArtists = %d, want 1 (only Nirvana)", final.NewArtists)
+	}
+	if final.TotalDirectories != 1 {
+		t.Errorf("TotalDirectories = %d, want 1 (junk dirs not counted)", final.TotalDirectories)
+	}
+	// The real artist survives.
+	if nir, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Nirvana")); nir == nil {
+		t.Error("Nirvana should have been created")
+	}
+	// A junk dir must not have produced a row.
+	if junk, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "@eaDir")); junk != nil {
+		t.Error("@eaDir should not have been created as an artist")
+	}
+}
+
+func TestScan_SkipsVariousArtists(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	// Built-in non-artist placeholder buckets: dropped entirely (no row).
+	for _, name := range []string{"Various Artists", "Various", "VA", "various artist"} {
+		createArtistDir(t, libDir, name, "folder.jpg")
+	}
+	// Guard against over-broad matching: a real artist whose name merely
+	// starts with "Various" MUST still be scanned.
+	createArtistDir(t, libDir, "Various Voices", "folder.jpg")
+	createArtistDir(t, libDir, "Nirvana", "folder.jpg")
+
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	final := waitForScan(t, svc, 5*time.Second)
+
+	if final.NewArtists != 2 {
+		t.Errorf("NewArtists = %d, want 2 (Various Voices + Nirvana)", final.NewArtists)
+	}
+	if va, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Various Artists")); va != nil {
+		t.Error("Various Artists should not have been created as an artist")
+	}
+	if vv, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Various Voices")); vv == nil {
+		t.Error("Various Voices is a real artist and should have been created")
 	}
 }
 

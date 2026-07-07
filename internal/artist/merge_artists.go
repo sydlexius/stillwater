@@ -555,14 +555,25 @@ func albumDirCount(path string) int {
 // enumerateChildren splits a directory's entries into album subdirs and
 // loose files. Dotfiles are excluded. Symlinks are skipped (and reported
 // to warnings via the caller) -- following a symlink during a destructive
-// merge would extend the blast radius outside the artist tree.
-func enumerateChildren(path string) (subdirs, files []os.DirEntry, symlinks []string, err error) {
+// merge would extend the blast radius outside the artist tree. OS/NAS junk
+// entries ($RECYCLE.BIN, @eaDir, Thumbs.db, ...) are returned in the
+// separate `ignored` bucket so the collision walk never treats them as a
+// mergeable child (a stray @eaDir on both sides must not halt the merge);
+// the commit phase removes them so the loser directory can still be
+// unlinked (#30).
+func enumerateChildren(path string) (subdirs, files []os.DirEntry, symlinks []string, ignored []os.DirEntry, err error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("reading %s: %w", path, err)
+		return nil, nil, nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		// OS/NAS junk ($RECYCLE.BIN, @eaDir, Thumbs.db, desktop.ini, ...):
+		// never a real album/loose file, must not trip collision gating.
+		if IsIgnoredSystemName(e.Name()) {
+			ignored = append(ignored, e)
 			continue
 		}
 		// os.DirEntry.Type returns the mode bits without following links;
@@ -577,7 +588,7 @@ func enumerateChildren(path string) (subdirs, files []os.DirEntry, symlinks []st
 			files = append(files, e)
 		}
 	}
-	return subdirs, files, symlinks, nil
+	return subdirs, files, symlinks, ignored, nil
 }
 
 // preflightAllLosers walks every loser and collects collisions before any FS
@@ -608,7 +619,7 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 	if _, statErr := os.Lstat(loser.Path); os.IsNotExist(statErr) {
 		return nil
 	}
-	subdirs, files, symlinks, err := enumerateChildren(loser.Path)
+	subdirs, files, symlinks, _, err := enumerateChildren(loser.Path)
 	if err != nil {
 		return err
 	}
@@ -617,6 +628,13 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 			fmt.Sprintf("skipped symlink %q under %s (symlinks are not followed during merge)", sym, loser.Path))
 	}
 	for _, sd := range subdirs {
+		// extrafanart/ and extrathumbs/ are additive: both artists' extra
+		// images can coexist under the survivor, so a same-named collision
+		// here must NOT halt the merge. The commit phase merges their
+		// contents instead of refusing (#28).
+		if isAdditiveMergeDir(sd.Name()) {
+			continue
+		}
 		survivorChild := filepath.Join(survivorPath, sd.Name())
 		if _, statErr := os.Lstat(survivorChild); statErr == nil {
 			result.Conflicts = append(result.Conflicts, ConflictItem{
@@ -684,7 +702,7 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 		return true, nil
 	}
 
-	subdirs, files, symlinks, err := enumerateChildren(loser.Path)
+	subdirs, files, symlinks, ignored, err := enumerateChildren(loser.Path)
 	if err != nil {
 		return false, err
 	}
@@ -697,23 +715,8 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 			fmt.Sprintf("skipped symlink %q under %s during execute (not following symlinks during merge)", sym, loser.Path))
 	}
 
-	for _, sd := range subdirs {
-		src := filepath.Join(loser.Path, sd.Name())
-		dst := filepath.Join(survivorPath, sd.Name())
-		// Defensive re-check: a concurrent process could have created the
-		// destination between the pre-flight walk and now. RenameDirAtomic
-		// requires the destination to not exist.
-		if _, statErr := os.Lstat(dst); statErr == nil {
-			// Surface as a warning rather than failing the whole merge;
-			// the user can re-run after resolving the new collision.
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("destination %s appeared between pre-flight and commit; left %s in place", dst, src))
-			continue
-		}
-		if err := filesystem.RenameDirAtomic(src, dst); err != nil {
-			return false, fmt.Errorf("moving %s to %s: %w", src, dst, err)
-		}
-		result.Moved = append(result.Moved, MovedItem{Name: sd.Name(), From: src, To: dst})
+	if err := moveLoserSubdirs(loser.Path, survivorPath, subdirs, result); err != nil {
+		return false, err
 	}
 
 	for _, f := range files {
@@ -746,6 +749,10 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 		result.Moved = append(result.Moved, MovedItem{Name: f.Name(), From: src, To: dst})
 	}
 
+	if err := removeIgnoredJunk(loser.Path, ignored); err != nil {
+		return false, err
+	}
+
 	// Defensive empty check before unlinking: os.Remove on a non-empty
 	// directory returns a clear error, which we surface so the operator
 	// can investigate (a real leftover should be rare given the
@@ -767,6 +774,151 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 		return false, fmt.Errorf("removing empty loser dir %s: %w", loser.Path, err)
 	}
 	return true, nil
+}
+
+// moveLoserSubdirs moves every album subdirectory from the loser into the
+// survivor during the commit phase. extrafanart/ and extrathumbs/ are additive:
+// when the survivor already has one, the loser's extra images are merged into
+// it (keeping both on a basename clash) instead of colliding; otherwise the
+// whole directory moves via an atomic rename. A destination that appeared
+// between pre-flight and commit is left in place with a warning (#28).
+func moveLoserSubdirs(loserPath, survivorPath string, subdirs []os.DirEntry, result *MergeResult) error {
+	for _, sd := range subdirs {
+		src := filepath.Join(loserPath, sd.Name())
+		dst := filepath.Join(survivorPath, sd.Name())
+		if isAdditiveMergeDir(sd.Name()) {
+			merged, err := mergeAdditiveSubdirIfPresent(src, dst, result)
+			if err != nil {
+				return err
+			}
+			if merged {
+				continue
+			}
+			// Survivor has no such dir: fall through to the whole-dir move.
+		}
+		// Defensive re-check: a concurrent process could have created the
+		// destination between the pre-flight walk and now. RenameDirAtomic
+		// requires the destination to not exist.
+		if _, statErr := os.Lstat(dst); statErr == nil {
+			// Surface as a warning rather than failing the whole merge;
+			// the user can re-run after resolving the new collision.
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("destination %s appeared between pre-flight and commit; left %s in place", dst, src))
+			continue
+		}
+		if err := filesystem.RenameDirAtomic(src, dst); err != nil {
+			return fmt.Errorf("moving %s to %s: %w", src, dst, err)
+		}
+		result.Moved = append(result.Moved, MovedItem{Name: sd.Name(), From: src, To: dst})
+	}
+	return nil
+}
+
+// mergeAdditiveSubdirIfPresent merges src into dst when dst already exists,
+// returning merged=true; when dst does not exist it returns merged=false so
+// the caller falls back to a whole-directory move. After a merge the drained
+// loser dir (only junk / empties remain) is removed.
+func mergeAdditiveSubdirIfPresent(src, dst string, result *MergeResult) (merged bool, err error) {
+	if _, statErr := os.Lstat(dst); os.IsNotExist(statErr) {
+		return false, nil
+	} else if statErr != nil {
+		return false, fmt.Errorf("checking survivor additive dir %s: %w", dst, statErr)
+	}
+	if err := mergeAdditiveDir(src, dst, result); err != nil {
+		return false, err
+	}
+	if err := os.RemoveAll(src); err != nil {
+		return false, fmt.Errorf("removing merged additive dir %s: %w", src, err)
+	}
+	return true, nil
+}
+
+// removeIgnoredJunk deletes the OS/NAS junk entries ($RECYCLE.BIN, @eaDir,
+// Thumbs.db, ...) that enumerateChildren deliberately set aside. It is never
+// authoritative content, and leaving it behind would keep the loser directory
+// non-empty and block the unlink at the end of the merge (#30). Every entry is
+// inside loserPath, which the merge is unlinking wholesale, so removing it is
+// in-scope.
+func removeIgnoredJunk(loserPath string, ignored []os.DirEntry) error {
+	for _, e := range ignored {
+		p := filepath.Join(loserPath, e.Name())
+		if e.IsDir() {
+			if err := os.RemoveAll(p); err != nil {
+				return fmt.Errorf("removing ignored junk dir %s: %w", p, err)
+			}
+			continue
+		}
+		if err := filesystem.RemoveFileSafe(p); err != nil {
+			return fmt.Errorf("removing ignored junk file %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
+// mergeAdditiveDir merges the contents of an additive loser subdirectory
+// (extrafanart/ or extrathumbs/) into the survivor's same-named directory.
+// Each entry moves under the survivor; on a basename clash the loser's file is
+// preserved under a de-duplicated name so BOTH artists' extra images survive
+// (the additive contract for #28). Junk (dotfiles, OS/NAS caches) is left in
+// place for the caller's os.RemoveAll to sweep. Symlinks are skipped for the
+// same blast-radius reason as the top-level walk.
+func mergeAdditiveDir(src, dst string, result *MergeResult) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("reading additive merge dir %s: %w", src, err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") || IsIgnoredSystemName(e.Name()) {
+			continue
+		}
+		if e.Type()&os.ModeSymlink != 0 {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("skipped symlink %q under %s (symlinks are not followed during merge)", e.Name(), src))
+			continue
+		}
+		srcChild := filepath.Join(src, e.Name())
+		dstChild := filepath.Join(dst, e.Name())
+		if _, statErr := os.Lstat(dstChild); statErr == nil {
+			// Basename clash: keep both by relocating the loser's copy to a
+			// free name rather than overwriting or refusing.
+			unique, uErr := uniqueDestName(dst, e.Name())
+			if uErr != nil {
+				return uErr
+			}
+			dstChild = filepath.Join(dst, unique)
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("checking additive destination %s: %w", dstChild, statErr)
+		}
+		if e.IsDir() {
+			if err := filesystem.RenameDirAtomic(srcChild, dstChild); err != nil {
+				return fmt.Errorf("moving additive dir %s to %s: %w", srcChild, dstChild, err)
+			}
+		} else {
+			if err := filesystem.RenameFileAtomic(srcChild, dstChild); err != nil {
+				return fmt.Errorf("moving additive file %s to %s: %w", srcChild, dstChild, err)
+			}
+		}
+		result.Moved = append(result.Moved, MovedItem{Name: filepath.Base(dstChild), From: srcChild, To: dstChild})
+	}
+	return nil
+}
+
+// uniqueDestName returns a base name of the form "{stem}-{n}{ext}" that does
+// not yet exist in dir, used to preserve a colliding additive image alongside
+// the survivor's copy. The bounded loop guards against an unbounded scan on a
+// pathological directory; in practice the first candidate is free.
+func uniqueDestName(dir, name string) (string, error) {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for i := 1; i < 10000; i++ {
+		candidate := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if _, err := os.Lstat(filepath.Join(dir, candidate)); os.IsNotExist(err) {
+			return candidate, nil
+		} else if err != nil {
+			return "", fmt.Errorf("probing unique name %s in %s: %w", candidate, dir, err)
+		}
+	}
+	return "", fmt.Errorf("%w: could not find a free name for %s in %s", ErrMergeInvalidRequest, name, dir)
 }
 
 // commitMergeDB runs the final DB transaction: fill-empty MBID forward from

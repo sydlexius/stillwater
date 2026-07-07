@@ -172,13 +172,21 @@ func TestEnumerateChildren(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".DS_Store"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write .DS_Store: %v", err)
 	}
+	// Non-dot-prefixed OS/NAS junk: must land in the `ignored` bucket, not in
+	// subdirs/files, so collision gating never trips on it (#30).
+	if err := os.Mkdir(filepath.Join(root, "@eaDir"), 0o755); err != nil {
+		t.Fatalf("mkdir @eaDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Thumbs.db"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write Thumbs.db: %v", err)
+	}
 	target := filepath.Join(root, "Album A")
 	link := filepath.Join(root, "link-to-A")
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlink unsupported on this platform: %v", err)
 	}
 
-	subdirs, files, symlinks, err := enumerateChildren(root)
+	subdirs, files, symlinks, ignored, err := enumerateChildren(root)
 	if err != nil {
 		t.Fatalf("enumerateChildren: %v", err)
 	}
@@ -189,6 +197,11 @@ func TestEnumerateChildren(t *testing.T) {
 	}
 	if len(files) != 1 || files[0].Name() != "artist.nfo" {
 		t.Errorf("files = %v, want [artist.nfo]", dirNames(files))
+	}
+	// The junk entries must be bucketed separately -- present in `ignored`,
+	// absent from subdirs and files (so they never gate a collision).
+	if !equalStringSets(dirNames(ignored), []string{"@eaDir", "Thumbs.db"}) {
+		t.Errorf("ignored = %v, want [@eaDir Thumbs.db]", dirNames(ignored))
 	}
 	if len(symlinks) != 1 || symlinks[0] != "link-to-A" {
 		t.Errorf("symlinks = %v, want [link-to-A]", symlinks)
@@ -399,6 +412,215 @@ func TestMergeArtists_CollisionHalt(t *testing.T) {
 	}
 	if _, err := svc.GetByID(ctx, loserID); err != nil {
 		t.Errorf("loser row deleted on collision halt: %v", err)
+	}
+}
+
+func TestMergeArtists_ExtrafanartMergesNoConflict(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor, _ := svc.GetByID(ctx, survivorID)
+	loser, _ := svc.GetByID(ctx, loserID)
+
+	// Both artists have an extrafanart/ dir. Survivor has fanart1.jpg; loser
+	// has fanart1.jpg (basename clash -> keep both) and fanart2.jpg (unique).
+	survExtra := filepath.Join(survivor.Path, "extrafanart")
+	loseExtra := filepath.Join(loser.Path, "extrafanart")
+	for _, d := range []string{survExtra, loseExtra} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(survExtra, "fanart1.jpg"), []byte("survivor-1"), 0o600); err != nil {
+		t.Fatalf("write survivor fanart1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "fanart1.jpg"), []byte("loser-1"), 0o600); err != nil {
+		t.Fatalf("write loser fanart1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "fanart2.jpg"), []byte("loser-2"), 0o600); err != nil {
+		t.Fatalf("write loser fanart2: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v (extrafanart must not halt)", err)
+	}
+	if len(res.Conflicts) != 0 {
+		t.Errorf("Conflicts = %v, want none (extrafanart is additive)", res.Conflicts)
+	}
+
+	// Survivor's own image untouched; loser's unique image moved in; the
+	// clashing image preserved under a de-duplicated name (keep both).
+	// Assert CONTENT, not mere existence: a bug that overwrote the survivor's
+	// copy with the loser's (or routed the survivor's copy to the -1 name)
+	// would leave both files present and slip past an existence-only check.
+	assertFileContent(t, filepath.Join(survExtra, "fanart1.jpg"), "survivor-1")
+	assertFileContent(t, filepath.Join(survExtra, "fanart1-1.jpg"), "loser-1")
+	assertFileContent(t, filepath.Join(survExtra, "fanart2.jpg"), "loser-2")
+	// Loser directory fully removed.
+	if _, err := os.Stat(loser.Path); !os.IsNotExist(err) {
+		t.Errorf("expected loser dir removed, got err = %v", err)
+	}
+	if _, err := svc.GetByID(ctx, loserID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected loser row deleted, got err = %v", err)
+	}
+}
+
+// When the survivor has NO extrafanart/extrathumbs dir but the loser does, the
+// additive path must fall through to a plain whole-directory move (not a
+// content-merge), and the loser dir must still unlink cleanly.
+func TestMergeArtists_ExtrathumbsWholeDirMoveWhenSurvivorLacks(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor, _ := svc.GetByID(ctx, survivorID)
+	loser, _ := svc.GetByID(ctx, loserID)
+
+	loseExtra := filepath.Join(loser.Path, "extrathumbs")
+	if err := os.MkdirAll(loseExtra, 0o755); err != nil {
+		t.Fatalf("mkdir loser extrathumbs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "thumb1.jpg"), []byte("loser-thumb"), 0o600); err != nil {
+		t.Fatalf("write loser thumb: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+	if len(res.Conflicts) != 0 {
+		t.Errorf("Conflicts = %v, want none", res.Conflicts)
+	}
+	// Whole dir moved intact (content preserved), survivor now owns it.
+	assertFileContent(t, filepath.Join(survivor.Path, "extrathumbs", "thumb1.jpg"), "loser-thumb")
+	if _, err := os.Stat(loser.Path); !os.IsNotExist(err) {
+		t.Errorf("expected loser dir removed, got err = %v", err)
+	}
+}
+
+// The additive content-merge must skip junk/dotfiles (leaving them for the
+// wholesale sweep, never carrying them into the survivor) and must move a
+// nested subdirectory via the dir branch, while both sides' real images survive.
+func TestMergeArtists_AdditiveMergeSkipsJunkMovesSubdir(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor, _ := svc.GetByID(ctx, survivorID)
+	loser, _ := svc.GetByID(ctx, loserID)
+
+	survExtra := filepath.Join(survivor.Path, "extrafanart")
+	loseExtra := filepath.Join(loser.Path, "extrafanart")
+	if err := os.MkdirAll(survExtra, 0o755); err != nil {
+		t.Fatalf("mkdir survivor extrafanart: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(survExtra, "keep.jpg"), []byte("survivor"), 0o600); err != nil {
+		t.Fatalf("write survivor keep: %v", err)
+	}
+	// Loser extrafanart: a real file, a junk file, a dotfile, and a nested dir.
+	if err := os.MkdirAll(filepath.Join(loseExtra, "nested"), 0o755); err != nil {
+		t.Fatalf("mkdir loser nested: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "new.jpg"), []byte("loser"), 0o600); err != nil {
+		t.Fatalf("write loser new: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "Thumbs.db"), []byte("junk"), 0o600); err != nil {
+		t.Fatalf("write junk: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, ".hidden"), []byte("dot"), 0o600); err != nil {
+		t.Fatalf("write dotfile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "nested", "inner.jpg"), []byte("inner"), 0o600); err != nil {
+		t.Fatalf("write nested inner: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+	if len(res.Conflicts) != 0 {
+		t.Errorf("Conflicts = %v, want none", res.Conflicts)
+	}
+	// Both real images survive; nested dir moved via the dir branch.
+	assertFileContent(t, filepath.Join(survExtra, "keep.jpg"), "survivor")
+	assertFileContent(t, filepath.Join(survExtra, "new.jpg"), "loser")
+	assertFileContent(t, filepath.Join(survExtra, "nested", "inner.jpg"), "inner")
+	// Junk and dotfiles were swept, never carried into the survivor.
+	if _, err := os.Stat(filepath.Join(survExtra, "Thumbs.db")); !os.IsNotExist(err) {
+		t.Error("Thumbs.db junk must not be merged into survivor extrafanart")
+	}
+	if _, err := os.Stat(filepath.Join(survExtra, ".hidden")); !os.IsNotExist(err) {
+		t.Error("dotfile must not be merged into survivor extrafanart")
+	}
+	if _, err := os.Stat(loser.Path); !os.IsNotExist(err) {
+		t.Errorf("expected loser dir removed, got err = %v", err)
+	}
+}
+
+// assertFileContent fails the test unless the file at path exists and its
+// bytes equal want. Used to prove the additive merge kept BOTH artists' copies
+// under distinct names rather than overwriting or misrouting one.
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Errorf("read %s: %v", path, err)
+		return
+	}
+	if string(got) != want {
+		t.Errorf("%s content = %q, want %q", path, got, want)
+	}
+}
+
+func TestMergeArtists_JunkSubdirDoesNotHalt(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	survivor, _ := svc.GetByID(ctx, survivorID)
+	loser, _ := svc.GetByID(ctx, loserID)
+
+	// A Synology @eaDir junk cache exists on BOTH sides. Pre-fix this
+	// same-named subdir would be flagged as a halting collision; it must be
+	// ignored and swept so the merge completes.
+	for _, base := range []string{survivor.Path, loser.Path} {
+		if err := os.MkdirAll(filepath.Join(base, "@eaDir", "SYNOPHOTO"), 0o755); err != nil {
+			t.Fatalf("mkdir @eaDir under %s: %v", base, err)
+		}
+	}
+	// A junk file on the loser too, to confirm it is swept, not moved.
+	if err := os.WriteFile(filepath.Join(loser.Path, "Thumbs.db"), []byte("junk"), 0o600); err != nil {
+		t.Fatalf("write Thumbs.db: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v (junk subdir must not halt)", err)
+	}
+	if len(res.Conflicts) != 0 {
+		t.Errorf("Conflicts = %v, want none (junk must not collide)", res.Conflicts)
+	}
+	// Loser dir removed despite the leftover junk.
+	if _, err := os.Stat(loser.Path); !os.IsNotExist(err) {
+		t.Errorf("expected loser dir removed, got err = %v", err)
+	}
+	// Junk was not carried into the survivor.
+	if _, err := os.Stat(filepath.Join(survivor.Path, "Thumbs.db")); !os.IsNotExist(err) {
+		t.Errorf("loser Thumbs.db should not have been moved into survivor")
 	}
 }
 
@@ -1396,4 +1618,460 @@ func equalStringSets(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// --- Commit-phase filesystem fault injection ---------------------------------
+//
+// The following tests force EACCES failures inside the destructive commit-phase
+// helpers (moveLoserSubdirs / mergeAdditiveSubdirIfPresent / mergeAdditiveDir /
+// removeIgnoredJunk) by making the survivor or loser directory read-only
+// (chmod 0500) right before MergeArtists runs. Each asserts three things: the
+// merge surfaces a NON-nil error wrapping the underlying cause; the error is
+// NOT miscategorized as one of the recoverable merge sentinels (a failed FS
+// write must stay a generic 500-class error, not a 409/422/423 that the UI
+// treats as retryable); and a FAILED merge did NOT silently claim success --
+// the loser row is preserved so the next scan reconciles rather than
+// resurrecting, and no half-state is misreported as complete.
+//
+// Root bypasses POSIX permission bits, so each test skips under root (the
+// chmod 0500 would not produce EACCES). Mirrors the idiom in
+// service_rename_test.go's TestRenameDirectory_RenameError.
+
+// faultMergeSetup seeds a library with a survivor and a loser directory, both
+// empty, and returns the service plus both IDs and both absolute paths. Unlike
+// mergeSetup it leaves the directory CONTENTS to the caller so each
+// fault-injection test can stage exactly the child layout its scenario needs
+// (only-junk loser, only-extrafanart loser, single-album loser, ...) before
+// chmod-ing a directory read-only.
+func faultMergeSetup(t *testing.T) (svc *Service, survivorID, loserID, survivorPath, loserPath string) {
+	t.Helper()
+	db := newTestDB(t)
+	svc = NewService(db)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		 VALUES ('lib-fault', 'lib-fault', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		root); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+
+	survivorPath = filepath.Join(root, "The Cure")
+	loserPath = filepath.Join(root, "Cure, The")
+	for _, p := range []string{survivorPath, loserPath} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", p, err)
+		}
+	}
+
+	survivor := &Artist{Name: "The Cure", SortName: "Cure, The", Path: survivorPath, LibraryID: "lib-fault"}
+	loser := &Artist{Name: "The Cure", SortName: "Cure, The", Path: loserPath, LibraryID: "lib-fault"}
+	if err := svc.Create(ctx, survivor); err != nil {
+		t.Fatalf("Create survivor: %v", err)
+	}
+	if err := svc.Create(ctx, loser); err != nil {
+		t.Fatalf("Create loser: %v", err)
+	}
+	return svc, survivor.ID, loser.ID, survivorPath, loserPath
+}
+
+// assertNotMergeSentinel fails when err matches one of the recoverable merge
+// sentinels. A raw filesystem write failure must NOT be laundered into a
+// sentinel the handler maps to a retryable 4xx.
+func assertNotMergeSentinel(t *testing.T, err error) {
+	t.Helper()
+	for _, sentinel := range []error{
+		ErrMergeInProgress, ErrMergeCollisions, ErrMergeStaleGroup,
+		ErrMergeLocked, ErrMergeInvalidRequest, ErrMergeSurvivorMissing,
+	} {
+		if errors.Is(err, sentinel) {
+			t.Fatalf("FS-write failure matched recoverable sentinel %v; expected a generic error", sentinel)
+		}
+	}
+}
+
+// TestMergeArtists_AdditiveRenameIntoReadOnlySurvivorFails forces the
+// "moving additive file ..." branch in mergeAdditiveDir and its propagation up
+// through mergeAdditiveSubdirIfPresent -> moveLoserSubdirs -> executeLoserMerge
+// -> MergeArtists. The survivor already has an extrafanart/ dir (so the merge
+// takes the additive content-merge path, not the whole-dir move), but that dir
+// is read-only, so relocating the loser's unique image into it fails with
+// EACCES. The loser row and directory must be left intact.
+func TestMergeArtists_AdditiveRenameIntoReadOnlySurvivorFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+	svc, survivorID, loserID, survivorPath, loserPath := faultMergeSetup(t)
+	ctx := context.Background()
+
+	survExtra := filepath.Join(survivorPath, "extrafanart")
+	loseExtra := filepath.Join(loserPath, "extrafanart")
+	for _, d := range []string{survExtra, loseExtra} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(survExtra, "keep.jpg"), []byte("survivor"), 0o600); err != nil {
+		t.Fatalf("write survivor keep: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "new.jpg"), []byte("loser"), 0o600); err != nil {
+		t.Fatalf("write loser new: %v", err)
+	}
+
+	// Read-only survivor extrafanart: the relocation of new.jpg into it fails.
+	if err := os.Chmod(survExtra, 0o500); err != nil {
+		t.Fatalf("chmod survivor extrafanart ro: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(survExtra, 0o755) })
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err == nil {
+		t.Fatal("MergeArtists: expected FS error moving additive file, got nil")
+	}
+	if !strings.Contains(err.Error(), "moving additive file") {
+		t.Errorf("err = %v, want it to wrap %q", err, "moving additive file")
+	}
+	if !strings.Contains(err.Error(), "merging loser") {
+		t.Errorf("err = %v, want it to be wrapped by the per-loser context %q", err, "merging loser")
+	}
+	assertNotMergeSentinel(t, err)
+	if res == nil {
+		t.Fatal("expected non-nil partial result alongside the error")
+	}
+	// Failed merge must not claim the loser was removed or its row deleted.
+	if len(res.Removed) != 0 {
+		t.Errorf("Removed = %v, want empty (loser dir not unlinked)", res.Removed)
+	}
+	if len(res.LosersDeleted) != 0 {
+		t.Errorf("LosersDeleted = %v, want empty (DB phase never ran)", res.LosersDeleted)
+	}
+	if _, err := svc.GetByID(ctx, loserID); err != nil {
+		t.Errorf("loser row deleted after a failed merge: %v", err)
+	}
+	if _, err := os.Stat(loserPath); err != nil {
+		t.Errorf("loser dir removed after a failed merge: %v", err)
+	}
+	// The loser's image stayed put; survivor's own image was not corrupted.
+	assertFileContent(t, filepath.Join(loseExtra, "new.jpg"), "loser")
+	assertFileContent(t, filepath.Join(survExtra, "keep.jpg"), "survivor")
+}
+
+// TestMergeArtists_RemoveMergedAdditiveDirFails forces the
+// "removing merged additive dir ..." branch in mergeAdditiveSubdirIfPresent.
+// The additive content-merge SUCCEEDS (the loser's image is relocated into the
+// survivor's writable extrafanart/), but the subsequent os.RemoveAll of the
+// drained loser subdir fails because the loser's TOP-LEVEL directory is
+// read-only (unlinking a child needs write on the parent). This proves that a
+// post-move failure still surfaces an error and does not delete the loser row.
+func TestMergeArtists_RemoveMergedAdditiveDirFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+	svc, survivorID, loserID, survivorPath, loserPath := faultMergeSetup(t)
+	ctx := context.Background()
+
+	survExtra := filepath.Join(survivorPath, "extrafanart")
+	loseExtra := filepath.Join(loserPath, "extrafanart")
+	for _, d := range []string{survExtra, loseExtra} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(survExtra, "keep.jpg"), []byte("survivor"), 0o600); err != nil {
+		t.Fatalf("write survivor keep: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "new.jpg"), []byte("loser"), 0o600); err != nil {
+		t.Fatalf("write loser new: %v", err)
+	}
+
+	// Read-only loser TOP dir: the inner rename out of loseExtra still works
+	// (write lives on loseExtra, 0755), but RemoveAll(loseExtra) needs write
+	// on loserPath and fails.
+	if err := os.Chmod(loserPath, 0o500); err != nil {
+		t.Fatalf("chmod loser ro: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(loserPath, 0o755) })
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err == nil {
+		t.Fatal("MergeArtists: expected FS error removing merged additive dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "removing merged additive dir") {
+		t.Errorf("err = %v, want it to wrap %q", err, "removing merged additive dir")
+	}
+	assertNotMergeSentinel(t, err)
+	if res == nil {
+		t.Fatal("expected non-nil partial result alongside the error")
+	}
+	if len(res.LosersDeleted) != 0 {
+		t.Errorf("LosersDeleted = %v, want empty (DB phase never ran)", res.LosersDeleted)
+	}
+	if _, err := svc.GetByID(ctx, loserID); err != nil {
+		t.Errorf("loser row deleted after a failed merge: %v", err)
+	}
+	// The additive move itself completed before the RemoveAll failure: the
+	// loser's image is now under the survivor. Restore perms so the assertion
+	// (and t.TempDir cleanup) can read/remove the tree.
+	if err := os.Chmod(loserPath, 0o755); err != nil {
+		t.Fatalf("chmod loser rw for assert: %v", err)
+	}
+	assertFileContent(t, filepath.Join(survExtra, "new.jpg"), "loser")
+	assertFileContent(t, filepath.Join(survExtra, "keep.jpg"), "survivor")
+}
+
+// TestMergeArtists_RemoveIgnoredJunkFails forces both error branches of
+// removeIgnoredJunk (the RemoveAll dir branch and the RemoveFileSafe file
+// branch). The loser directory contains ONLY an OS/NAS junk entry, so the
+// commit phase moves nothing and proceeds straight to junk removal, which
+// fails because the loser directory is read-only. Two subtests cover the dir
+// (@eaDir) and file (Thumbs.db) branches respectively.
+func TestMergeArtists_RemoveIgnoredJunkFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+
+	cases := []struct {
+		name     string
+		junkName string
+		isDir    bool
+		wantMsg  string
+	}{
+		{"junk dir", "@eaDir", true, "removing ignored junk dir"},
+		{"junk file", "Thumbs.db", false, "removing ignored junk file"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, survivorID, loserID, _, loserPath := faultMergeSetup(t)
+			ctx := context.Background()
+
+			junkPath := filepath.Join(loserPath, tc.junkName)
+			if tc.isDir {
+				if err := os.MkdirAll(junkPath, 0o755); err != nil {
+					t.Fatalf("mkdir junk dir: %v", err)
+				}
+			} else {
+				if err := os.WriteFile(junkPath, []byte("junk"), 0o600); err != nil {
+					t.Fatalf("write junk file: %v", err)
+				}
+			}
+
+			// Read-only loser dir: removing the junk child needs write on it.
+			if err := os.Chmod(loserPath, 0o500); err != nil {
+				t.Fatalf("chmod loser ro: %v", err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(loserPath, 0o755) })
+
+			res, err := svc.MergeArtists(ctx, MergeRequest{
+				SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+			})
+			if err == nil {
+				t.Fatal("MergeArtists: expected FS error removing ignored junk, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("err = %v, want it to wrap %q", err, tc.wantMsg)
+			}
+			assertNotMergeSentinel(t, err)
+			if res == nil {
+				t.Fatal("expected non-nil partial result alongside the error")
+			}
+			if len(res.LosersDeleted) != 0 {
+				t.Errorf("LosersDeleted = %v, want empty (DB phase never ran)", res.LosersDeleted)
+			}
+			if _, err := svc.GetByID(ctx, loserID); err != nil {
+				t.Errorf("loser row deleted after a failed merge: %v", err)
+			}
+		})
+	}
+}
+
+// TestMergeArtists_MoveAlbumIntoReadOnlySurvivorFails forces the
+// "moving <src> to <dst>" branch in moveLoserSubdirs for a NORMAL (non-
+// additive) album subdir. The survivor directory is read-only, so the atomic
+// rename of the loser's album into it fails with EACCES (both the os.Rename and
+// its copy fallback need write on the destination parent). The pre-flight walk
+// still passes because the album does not yet exist under the survivor. A
+// failed move must leave the album in the loser and preserve the loser row.
+func TestMergeArtists_MoveAlbumIntoReadOnlySurvivorFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+	svc, survivorID, loserID, survivorPath, loserPath := faultMergeSetup(t)
+	ctx := context.Background()
+
+	album := filepath.Join(loserPath, "Pornography")
+	if err := os.MkdirAll(album, 0o755); err != nil {
+		t.Fatalf("mkdir loser album: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(album, "track.flac"), []byte("audio"), 0o600); err != nil {
+		t.Fatalf("write album track: %v", err)
+	}
+
+	// Read-only survivor: RenameDirAtomic of the album into it fails.
+	if err := os.Chmod(survivorPath, 0o500); err != nil {
+		t.Fatalf("chmod survivor ro: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(survivorPath, 0o755) })
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err == nil {
+		t.Fatal("MergeArtists: expected FS error moving album subdir, got nil")
+	}
+	if !strings.Contains(err.Error(), "moving") {
+		t.Errorf("err = %v, want it to wrap the move-failure message", err)
+	}
+	assertNotMergeSentinel(t, err)
+	if res == nil {
+		t.Fatal("expected non-nil partial result alongside the error")
+	}
+	if len(res.Moved) != 0 {
+		t.Errorf("Moved = %v, want empty (rename failed before recording)", res.Moved)
+	}
+	if len(res.LosersDeleted) != 0 {
+		t.Errorf("LosersDeleted = %v, want empty (DB phase never ran)", res.LosersDeleted)
+	}
+	if _, err := svc.GetByID(ctx, loserID); err != nil {
+		t.Errorf("loser row deleted after a failed merge: %v", err)
+	}
+	// Restore perms so the album assertion and t.TempDir cleanup can proceed.
+	if err := os.Chmod(survivorPath, 0o755); err != nil {
+		t.Fatalf("chmod survivor rw for assert: %v", err)
+	}
+	assertFileContent(t, filepath.Join(album, "track.flac"), "audio")
+}
+
+// TestMergeArtists_AdditiveMergeReadErrors covers the two read-side error
+// branches of mergeAdditiveDir: the os.ReadDir failure on an unreadable loser
+// additive dir ("reading additive merge dir ..."), and the os.Lstat failure on
+// a survivor additive dir whose search bit is cleared ("checking additive
+// destination ..."). Both reach mergeAdditiveDir because the survivor already
+// has an extrafanart/ dir (the additive content-merge path), and both must
+// surface a generic error that preserves the loser row.
+func TestMergeArtists_AdditiveMergeReadErrors(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+
+	cases := []struct {
+		name string
+		// chmodTarget is the extrafanart dir to lock down; mode is applied to it.
+		lockSurvivor bool
+		mode         os.FileMode
+		wantMsg      string
+	}{
+		{"loser additive dir unreadable", false, 0o000, "reading additive merge dir"},
+		{"survivor additive dir not searchable", true, 0o600, "checking additive destination"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, survivorID, loserID, survivorPath, loserPath := faultMergeSetup(t)
+			ctx := context.Background()
+
+			survExtra := filepath.Join(survivorPath, "extrafanart")
+			loseExtra := filepath.Join(loserPath, "extrafanart")
+			for _, d := range []string{survExtra, loseExtra} {
+				if err := os.MkdirAll(d, 0o755); err != nil {
+					t.Fatalf("mkdir %s: %v", d, err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(survExtra, "keep.jpg"), []byte("survivor"), 0o600); err != nil {
+				t.Fatalf("write survivor keep: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(loseExtra, "new.jpg"), []byte("loser"), 0o600); err != nil {
+				t.Fatalf("write loser new: %v", err)
+			}
+
+			target := loseExtra
+			if tc.lockSurvivor {
+				target = survExtra
+			}
+			if err := os.Chmod(target, tc.mode); err != nil {
+				t.Fatalf("chmod %s: %v", target, err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(target, 0o755) })
+
+			res, err := svc.MergeArtists(ctx, MergeRequest{
+				SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+			})
+			if err == nil {
+				t.Fatal("MergeArtists: expected additive read error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("err = %v, want it to wrap %q", err, tc.wantMsg)
+			}
+			assertNotMergeSentinel(t, err)
+			if res == nil {
+				t.Fatal("expected non-nil partial result alongside the error")
+			}
+			if len(res.LosersDeleted) != 0 {
+				t.Errorf("LosersDeleted = %v, want empty (DB phase never ran)", res.LosersDeleted)
+			}
+			if _, err := svc.GetByID(ctx, loserID); err != nil {
+				t.Errorf("loser row deleted after a failed merge: %v", err)
+			}
+		})
+	}
+}
+
+// TestMergeArtists_AdditiveMergeSkipsSymlink exercises the symlink-skip branch
+// inside mergeAdditiveDir: a symlink living in the loser's extrafanart/ must NOT
+// be followed into the survivor (blast-radius containment), must be recorded as
+// a warning, and the merge must otherwise complete -- the real image moves and
+// the drained loser dir is unlinked. This is a success path (no error) that
+// covers the additive-dir symlink branch the error tests cannot reach.
+func TestMergeArtists_AdditiveMergeSkipsSymlink(t *testing.T) {
+	t.Parallel()
+	svc, survivorID, loserID, survivorPath, loserPath := faultMergeSetup(t)
+	ctx := context.Background()
+
+	survExtra := filepath.Join(survivorPath, "extrafanart")
+	loseExtra := filepath.Join(loserPath, "extrafanart")
+	for _, d := range []string{survExtra, loseExtra} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(survExtra, "keep.jpg"), []byte("survivor"), 0o600); err != nil {
+		t.Fatalf("write survivor keep: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "new.jpg"), []byte("loser"), 0o600); err != nil {
+		t.Fatalf("write loser new: %v", err)
+	}
+	// A symlink in the loser's additive dir; the target need not exist because
+	// it is never followed.
+	if err := os.Symlink(filepath.Join(loserPath, "elsewhere"), filepath.Join(loseExtra, "link.jpg")); err != nil {
+		t.Fatalf("symlink loser additive: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v (symlink in additive dir must not fail the merge)", err)
+	}
+	// Real image moved; symlink NOT carried into the survivor.
+	assertFileContent(t, filepath.Join(survExtra, "new.jpg"), "loser")
+	if _, statErr := os.Lstat(filepath.Join(survExtra, "link.jpg")); !os.IsNotExist(statErr) {
+		t.Errorf("symlink was carried into survivor extrafanart: err = %v", statErr)
+	}
+	// Warning recorded and loser dir swept clean.
+	found := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "skipped symlink") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a skipped-symlink warning, got %v", res.Warnings)
+	}
+	if _, statErr := os.Stat(loserPath); !os.IsNotExist(statErr) {
+		t.Errorf("expected loser dir removed after symlink-tolerant merge, got err = %v", statErr)
+	}
 }

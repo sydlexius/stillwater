@@ -385,6 +385,18 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			if strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
+			// Skip OS/NAS junk directories ($RECYCLE.BIN, System Volume
+			// Information, @eaDir, lost+found, ...) and compilation
+			// placeholder buckets (Various Artists / Various / VA). These are
+			// never real artists, so drop them before they become an artist
+			// row or a scanned directory. The dot-prefixed junk (.Trash,
+			// .DS_Store) is already caught by the hidden-dir skip above; this
+			// covers the non-dot-prefixed names the built-in sets add. These
+			// are distinct from the operator-editable exclusion list, which
+			// still CREATES the artist and flags it IsExcluded (#30, #41).
+			if artist.IsIgnoredSystemName(entry.Name()) || artist.IsNonArtistDirName(entry.Name()) {
+				continue
+			}
 
 			s.mu.Lock()
 			result.TotalDirectories++
