@@ -11,11 +11,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 
 	"golang.org/x/time/rate"
 )
+
+// providerTestFailureMessage maps a TestConnection error to an accurate,
+// localized user-facing message. It distinguishes a credential failure
+// (missing/invalid key, or a 401/403 from a mirror) from a connectivity/URL
+// failure (unreachable host, bad base URL, timeout), so a self-hosted mirror
+// that fails because its base URL is wrong no longer reports "credentials"
+// (#2278). Anything else falls back to a generic test-failed message. The raw
+// error is logged separately by the caller (scrubbed); this only produces the
+// display string.
+func providerTestFailureMessage(ctx context.Context, testErr error) string {
+	tr := i18n.TFromCtx(ctx)
+	switch {
+	case provider.IsAuthError(testErr):
+		return tr.T("settings.provider_keys.test_failed.credentials")
+	case provider.IsConnectivityError(testErr):
+		return tr.T("settings.provider_keys.test_failed.connectivity")
+	default:
+		return tr.T("settings.provider_keys.test_failed.generic")
+	}
+}
 
 // handleListProviders returns the status of all providers and their API key configuration.
 func (r *Router) handleListProviders(w http.ResponseWriter, req *http.Request) {
@@ -151,7 +172,7 @@ func (r *Router) testProviderKeyFailed(w http.ResponseWriter, req *http.Request,
 	// URL whose query string carries the credential (e.g. Fanart.tv's api_key),
 	// which url.Error does not redact. ScrubError redacts sensitive params.
 	r.logger.Error("provider key test failed before save", "provider", name, "error", provider.ScrubError(testErr))
-	const sanitizedMsg = "Unable to verify provider credentials"
+	sanitizedMsg := providerTestFailureMessage(req.Context(), testErr)
 	if isHTMXRequest(req) {
 		if isOOBE {
 			w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
@@ -319,6 +340,7 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 
 	if err := testable.TestConnection(req.Context()); err != nil {
 		r.logger.Error("provider test failed", "provider", name, "error", err)
+		failMsg := providerTestFailureMessage(req.Context(), err)
 		statusPersisted := true
 		if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "invalid"); setErr != nil {
 			r.logger.Error("persisting provider test failure status", "provider", name, "error", setErr)
@@ -334,13 +356,13 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 			}
 			// Only update the status dot if the status was actually persisted.
 			if statusPersisted {
-				renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "error", "Unable to verify provider credentials", "invalid"))
+				renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "error", failMsg, "invalid"))
 			} else {
-				renderTempl(w, req, templates.ProviderTestResult("error", "Unable to verify provider credentials"))
+				renderTempl(w, req, templates.ProviderTestResult("error", failMsg))
 			}
 			return
 		}
-		resp := map[string]any{"status": "error", "error": "Unable to verify provider credentials"}
+		resp := map[string]any{"status": "error", "error": failMsg}
 		if !statusPersisted {
 			resp["status_persisted"] = false
 		}
@@ -791,7 +813,7 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 		if err := testable.TestConnection(testCtx); err != nil {
 			r.logger.Error("mirror auto-test failed", "provider", name, "error", err)
 			testResult = "error"
-			testError = "Unable to verify provider credentials"
+			testError = providerTestFailureMessage(req.Context(), err)
 		}
 	}
 

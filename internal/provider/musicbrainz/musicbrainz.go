@@ -765,6 +765,15 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 		}
 	}
 
+	// A self-hosted / private mirror can require authentication and answer 401 or
+	// 403. Classify these as an auth failure (not transient unavailability) so
+	// the UI reports a credentials problem rather than "cannot reach". Mirrors
+	// the pattern used by the Discogs/LastFM/Genius adapters.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, &provider.ErrAuthRequired{Provider: provider.NameMusicBrainz}
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{

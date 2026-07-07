@@ -396,6 +396,41 @@ func TestRateLimitErrorHelpers(t *testing.T) {
 	}
 }
 
+// TestAuthConnectivityErrorHelpers exercises IsAuthError / IsConnectivityError,
+// the classifier helpers the API layer uses to distinguish a credential failure
+// from a connectivity/URL failure when reporting a provider test result (#2278).
+func TestAuthConnectivityErrorHelpers(t *testing.T) {
+	t.Parallel()
+
+	authErr := &ErrAuthRequired{Provider: NameMusicBrainz}
+	connErr := &ErrProviderUnavailable{Provider: NameMusicBrainz}
+
+	if !IsAuthError(authErr) {
+		t.Error("IsAuthError(*ErrAuthRequired): expected true")
+	}
+	if IsAuthError(connErr) {
+		t.Error("IsAuthError(*ErrProviderUnavailable): expected false")
+	}
+	if !IsConnectivityError(connErr) {
+		t.Error("IsConnectivityError(*ErrProviderUnavailable): expected true")
+	}
+	if IsConnectivityError(authErr) {
+		t.Error("IsConnectivityError(*ErrAuthRequired): expected false")
+	}
+	// Ordinary errors are neither.
+	for _, ordinary := range []error{
+		&ErrNotFound{Provider: NameMusicBrainz, ID: "x"},
+		errors.New("some plain error"),
+	} {
+		if IsAuthError(ordinary) {
+			t.Errorf("IsAuthError(%v): expected false", ordinary)
+		}
+		if IsConnectivityError(ordinary) {
+			t.Errorf("IsConnectivityError(%v): expected false", ordinary)
+		}
+	}
+}
+
 // TestAIMDConcurrency is a race-detector test that hammers RecordSuccess and
 // RecordFailure from multiple goroutines concurrently. It does not assert
 // specific limit values; the race detector catches unsafe concurrent access.

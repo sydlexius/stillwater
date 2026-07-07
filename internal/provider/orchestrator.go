@@ -402,6 +402,29 @@ func IsRateLimitError(err error) bool {
 	return errors.As(err, &unavailable)
 }
 
+// IsAuthError reports whether err is (or wraps) an *ErrAuthRequired: the
+// provider rejected the request for credential reasons (missing/invalid API
+// key, or a 401/403 from a mirror). The API layer uses this to surface an
+// accurate "credentials" message instead of collapsing every test failure into
+// one string.
+func IsAuthError(err error) bool {
+	var authRequired *ErrAuthRequired
+	return errors.As(err, &authRequired)
+}
+
+// IsConnectivityError reports whether err is (or wraps) an
+// *ErrProviderUnavailable: the provider could not be reached (DNS/dial/timeout,
+// exhausted retries) or returned an unexpected non-auth status. The API layer
+// uses this to surface a "check the base URL / network connectivity" message.
+// Note this shares the *ErrProviderUnavailable type with IsRateLimitError
+// (429/503 carry the same type); callers that care about the distinction should
+// branch on auth first, then treat the remainder as connectivity, which is an
+// accurate enough characterization for a one-shot connection test.
+func IsConnectivityError(err error) bool {
+	var unavailable *ErrProviderUnavailable
+	return errors.As(err, &unavailable)
+}
+
 // retryAfterAttr returns a slog attribute carrying the server-advised backoff
 // from an *ErrProviderUnavailable, or an empty (elided) attribute when the error
 // is not provider-unavailable or carried no Retry-After. This is the consumer of

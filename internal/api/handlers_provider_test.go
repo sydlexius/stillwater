@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
 )
@@ -1011,11 +1013,58 @@ func TestHandleSetProviderKey_SkipTest(t *testing.T) {
 	}
 }
 
+// reqWithEnTranslator attaches the embedded English translator to the request's
+// context so handlers that resolve user-facing copy via i18n.TFromCtx return the
+// real strings (the i18n middleware is bypassed when handlers are called
+// directly in tests).
+func reqWithEnTranslator(t *testing.T, req *http.Request) *http.Request {
+	t.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+	return req.WithContext(i18n.WithTranslator(req.Context(), bundle.Translator("en")))
+}
+
+// TestProviderTestFailureMessage covers the three classification branches of
+// the shared resolver directly: an auth error -> credentials copy, a
+// connectivity error -> "check base URL" copy, and any other error -> the
+// generic fallback (#2278).
+func TestProviderTestFailureMessage(t *testing.T) {
+	t.Parallel()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+	ctx := i18n.WithTranslator(context.Background(), bundle.Translator("en"))
+
+	cases := []struct {
+		name    string
+		err     error
+		wantKey string
+	}{
+		{"auth", &provider.ErrAuthRequired{Provider: provider.NameMusicBrainz}, "settings.provider_keys.test_failed.credentials"},
+		{"connectivity", &provider.ErrProviderUnavailable{Provider: provider.NameMusicBrainz}, "settings.provider_keys.test_failed.connectivity"},
+		{"generic", errors.New("some other failure"), "settings.provider_keys.test_failed.generic"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want := bundle.Translator("en").T(tc.wantKey)
+			if got := providerTestFailureMessage(ctx, tc.err); got != want {
+				t.Errorf("providerTestFailureMessage(%s) = %q, want %q", tc.name, got, want)
+			}
+		})
+	}
+}
+
 // TestHandleSetProviderKey_TestFails_JSON verifies that a failed connection test
-// returns 422 JSON with test_failed status.
+// returns 422 JSON with test_failed status. A 5xx from the mirror is a
+// connectivity/URL failure (not a credential problem), so the classified
+// message must be the connectivity one -- never "credentials" (#2278).
 func TestHandleSetProviderKey_TestFails_JSON(t *testing.T) {
 	t.Parallel()
-	// Server that returns 500 to make TestConnection fail.
+	// Server that returns 500 to make TestConnection fail with a connectivity
+	// (ErrProviderUnavailable) error.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -1028,6 +1077,7 @@ func TestHandleSetProviderKey_TestFails_JSON(t *testing.T) {
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("name", "musicbrainz")
+	req = reqWithEnTranslator(t, req)
 	w := httptest.NewRecorder()
 	r.handleSetProviderKey(w, req)
 
@@ -1041,11 +1091,46 @@ func TestHandleSetProviderKey_TestFails_JSON(t *testing.T) {
 	if resp["status"] != "test_failed" {
 		t.Errorf("status = %q, want %q", resp["status"], "test_failed")
 	}
-	// Pin the exact sanitized message: the test_failed path must return a
-	// generic string, never the raw provider/internal error, so a regression
-	// that leaks the underlying TestConnection failure is caught here.
-	if resp["error"] != "Unable to verify provider credentials" {
-		t.Errorf("error = %q, want sanitized %q", resp["error"], "Unable to verify provider credentials")
+	// A 5xx is connectivity, not credentials. Pin the connectivity copy: the
+	// path must classify the failure accurately and never leak the raw error.
+	const wantMsg = "Unable to reach the provider. Check the base URL and network connectivity."
+	if resp["error"] != wantMsg {
+		t.Errorf("error = %q, want connectivity message %q", resp["error"], wantMsg)
+	}
+}
+
+// TestHandleSetProviderKey_TestFailsAuth_JSON verifies that a 401/403 from a
+// mirror is classified as a credential failure, so the message is the
+// credentials copy rather than the connectivity one (#2278).
+func TestHandleSetProviderKey_TestFailsAuth_JSON(t *testing.T) {
+	t.Parallel()
+	// Server that returns 401 so MusicBrainz's doRequest yields ErrAuthRequired.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	r := testRouterWithTestServer(t, srv.URL)
+
+	body := `{"api_key":"badkey"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/key",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "musicbrainz")
+	req = reqWithEnTranslator(t, req)
+	w := httptest.NewRecorder()
+	r.handleSetProviderKey(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	const wantMsg = "Unable to verify provider credentials"
+	if resp["error"] != wantMsg {
+		t.Errorf("error = %q, want credentials message %q", resp["error"], wantMsg)
 	}
 }
 
