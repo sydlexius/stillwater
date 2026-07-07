@@ -54,3 +54,19 @@ LICENSE text eol=lf
 *.eot binary
 *.db binary
 *.sqlite binary
+
+# Generated files. linguist-generated collapses them in GitHub PR diffs and is
+# honored by review bots (CodeRabbit, Copilot) so they skip the churn; Codoki
+# (no repo config) is covered the same way. Regenerate via `make generate` /
+# `make generate-docs` -- never hand-edit these.
+*_templ.go linguist-generated=true
+web/static/css/styles.css linguist-generated=true
+docs/_generated/** linguist-generated=true
+**/_doc-anchors.txt linguist-generated=true
+**/_settings-anchors.txt linguist-generated=true
+docs/site/src/reference/environment-variables.md linguist-generated=true
+docs/site/src/reference/rules-catalogue.md linguist-generated=true
+docs/site/src/reference/providers.md linguist-generated=true
+docs/site/src/reference/cli.md linguist-generated=true
+docs/site/src/reference/preferences.md linguist-generated=true
+docs/site/src/reference/settings-by-tab.md linguist-generated=true
