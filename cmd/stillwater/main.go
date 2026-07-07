@@ -355,6 +355,15 @@ func (a *Application) setupLogging() error {
 // through any seam) and is closed before the caller opens the long-lived
 // runtime pool, so the two never contend for SQLite's single writer connection.
 func migrateSchema(dbPath string) error {
+	// #2272 review: the two-pool bootstrap opens the migration handle and the
+	// runtime pool on SEPARATE sequential connections, so an in-memory database
+	// (:memory:) would lose its schema between them. Reject it with a clear
+	// error rather than silently serving an empty schema -- the runtime DB must
+	// be file-backed. (DB-layer unit tests that want an in-memory database call
+	// database.Open directly, not this bootstrap path.)
+	if isInMemoryPath(dbPath) {
+		return fmt.Errorf("in-memory database path %q is not supported: the FK-off migration handle and the FK-on runtime pool are separate connections and cannot share an in-memory schema; configure a file-backed database path", dbPath)
+	}
 	migDB, err := database.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("opening database for migrations: %w", err)
@@ -367,6 +376,17 @@ func migrateSchema(dbPath string) error {
 		return fmt.Errorf("closing migration database handle: %w", err)
 	}
 	return nil
+}
+
+// isInMemoryPath reports whether dbPath refers to a SQLite in-memory database,
+// which cannot be shared across the separate migration and runtime connections
+// the #2272 two-pool bootstrap opens.
+func isInMemoryPath(dbPath string) bool {
+	p := strings.ToLower(strings.TrimSpace(dbPath))
+	// Covers ":memory:", the "file::memory:?cache=shared" URI form, and the
+	// "file:name?mode=memory" DSN form. A real on-disk path never contains
+	// ":memory:" or "mode=memory".
+	return strings.Contains(p, ":memory:") || strings.Contains(p, "mode=memory")
 }
 
 // openMigratedRuntimeDB migrates the schema FK-off, then opens and returns the
@@ -391,8 +411,11 @@ func openMigratedRuntimeDB(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// openStorage opens the SQLite database, enables foreign keys, runs migrations,
-// reloads logging settings from DB, and derives the image cache directory.
+// openStorage runs pending migrations on a short-lived foreign-keys-OFF handle,
+// then opens the long-lived runtime pool and VERIFIES that foreign-key
+// enforcement is active on it (the OpenRuntime DSN pragma is the mechanism; the
+// verification is non-mutating -- see #2272). It then reloads logging settings
+// from the DB and derives the image cache directory.
 func (a *Application) openStorage() error {
 	if a.logger == nil {
 		return errors.New("openStorage: setupLogging must run first")

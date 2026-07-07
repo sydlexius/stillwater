@@ -1189,3 +1189,30 @@ func TestLoadConfig_MalformedFile(t *testing.T) {
 		t.Fatal("expected an error for a malformed config file, got nil")
 	}
 }
+
+// TestIsInMemoryPath verifies the #2272 in-memory guard classifies the SQLite
+// in-memory DSN forms as unshareable while leaving file-backed paths alone.
+func TestIsInMemoryPath(t *testing.T) {
+	inMem := []string{":memory:", " :memory: ", ":MEMORY:", "file::memory:?cache=shared", "file:x?mode=memory"}
+	for _, p := range inMem {
+		if !isInMemoryPath(p) {
+			t.Errorf("isInMemoryPath(%q) = false, want true", p)
+		}
+	}
+	fileBacked := []string{"/config/stillwater.db", "stillwater.db", "/tmp/test.db", ""}
+	for _, p := range fileBacked {
+		if isInMemoryPath(p) {
+			t.Errorf("isInMemoryPath(%q) = true, want false", p)
+		}
+	}
+}
+
+// TestMigrateSchema_RejectsInMemory confirms the two-pool bootstrap refuses an
+// in-memory database path (its schema cannot survive the migration handle being
+// closed before the runtime pool opens) rather than silently serving an empty
+// schema.
+func TestMigrateSchema_RejectsInMemory(t *testing.T) {
+	if err := migrateSchema(":memory:"); err == nil {
+		t.Fatal("migrateSchema(\":memory:\") = nil, want an in-memory rejection error")
+	}
+}

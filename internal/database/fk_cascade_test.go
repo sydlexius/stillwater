@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -372,4 +374,48 @@ func TestMigration019_GeneralOrphanCleanup(t *testing.T) {
 		t.Fatalf("re-running Migrate after 019: %v", err)
 	}
 	assertState("second Migrate")
+}
+
+// TestVerifyForeignKeys_ClosedPoolErrors covers the connection-acquisition
+// error branch: a self-check against an already-closed pool must fail loudly
+// rather than reporting FK enforcement as active.
+func TestVerifyForeignKeys_ClosedPoolErrors(t *testing.T) {
+	t.Parallel()
+	db, err := OpenRuntime(filepath.Join(t.TempDir(), "closed.db"))
+	if err != nil {
+		t.Fatalf("OpenRuntime: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := VerifyForeignKeys(db); err == nil {
+		t.Error("VerifyForeignKeys on a closed pool = nil, want error")
+	}
+}
+
+// TestOpen_UncreatableParentErrors covers open()'s MkdirAll failure branch: a
+// path whose parent component is a regular file (not a directory) cannot have
+// its directory created, so Open must return a wrapped error.
+func TestOpen_UncreatableParentErrors(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), "iam-a-file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// filepath.Dir("<file>/child.db") == "<file>", which MkdirAll cannot create
+	// because a non-directory already exists at that path.
+	if _, err := Open(filepath.Join(file, "child.db")); err == nil {
+		t.Error("Open under a regular-file parent = nil, want error")
+	}
+}
+
+// TestOpen_PingFailureErrors covers open()'s ping-failure branch: a path that is
+// an existing directory opens lazily but cannot be pinged as a SQLite database,
+// so open() must close the handle and return a wrapped error.
+func TestOpen_PingFailureErrors(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir() // an existing directory is not a valid SQLite file
+	if _, err := Open(dir); err == nil {
+		t.Error("Open on a directory path = nil, want a ping error")
+	}
 }
