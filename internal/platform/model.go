@@ -28,6 +28,23 @@ func (p *Profile) Editable() bool {
 	return !p.IsBuiltin || p.ID == "custom"
 }
 
+// NFOWriteAllowed reports whether Stillwater should write .nfo files for the
+// active platform profile. It is fail-open: when the profile cannot be resolved
+// (nil profile or a lookup error) writes are allowed, because the contract is
+// "write .nfo for every profile except Plex". Only a resolved profile with
+// NFOEnabled=false (Plex, seeded nfo_enabled=0) suppresses writes.
+//
+// Callers pass the result of Service.GetActive(ctx) directly:
+//
+//	prof, err := svc.GetActive(ctx)
+//	if !platform.NFOWriteAllowed(prof, err) { /* skip NFO write */ }
+func NFOWriteAllowed(prof *Profile, err error) bool {
+	if err != nil || prof == nil {
+		return true
+	}
+	return prof.NFOEnabled
+}
+
 // ImageNaming maps image types to their filename patterns.
 // Each type supports multiple filenames (e.g., folder.jpg + artist.jpg for thumb).
 type ImageNaming struct {
