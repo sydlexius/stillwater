@@ -863,6 +863,15 @@ func mergeAdditiveSubdirIfPresent(src, dst string, result *MergeResult) (merged 
 	// a clear error rather than letting mergeAdditiveDir's os.ReadDir(dst)
 	// produce an opaque failure if that invariant is ever violated.
 	if !info.Mode().IsDir() {
+		// Record the collision so result.Conflicts stays consistent with the
+		// preflight path (which appends a ConflictItem for a file/symlink
+		// survivor entry); consumers/UI otherwise see ErrMergeCollisions with
+		// no corresponding conflict entry.
+		result.Conflicts = append(result.Conflicts, ConflictItem{
+			Name:         filepath.Base(dst),
+			SurvivorPath: dst,
+			LoserPath:    src,
+		})
 		return false, fmt.Errorf("%w: survivor entry %s exists but is not a directory; cannot merge additive dir into it",
 			ErrMergeCollisions, dst)
 	}

@@ -2161,3 +2161,39 @@ func TestMergeArtists_AdditiveMergeSkipsSymlink(t *testing.T) {
 		t.Errorf("expected loser dir removed after symlink-tolerant merge, got err = %v", statErr)
 	}
 }
+
+// TestMergeAdditiveSubdirIfPresent_SurvivorFileConflicts exercises the defensive
+// guard directly: when the survivor's same-named additive entry is a plain file
+// (an invariant preflight normally catches first), the commit helper must record
+// a ConflictItem AND return ErrMergeCollisions, keeping result.Conflicts
+// consistent with the preflight path (Codoki #2276).
+func TestMergeAdditiveSubdirIfPresent_SurvivorFileConflicts(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	src := filepath.Join(root, "loser", "extrafanart")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(root, "survivor", "extrafanart")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := &MergeResult{}
+	merged, err := mergeAdditiveSubdirIfPresent(src, dst, result)
+	if merged {
+		t.Errorf("merged = true, want false")
+	}
+	if !errors.Is(err, ErrMergeCollisions) {
+		t.Errorf("err = %v, want ErrMergeCollisions", err)
+	}
+	if len(result.Conflicts) != 1 {
+		t.Fatalf("Conflicts = %d, want 1 (%+v)", len(result.Conflicts), result.Conflicts)
+	}
+	if c := result.Conflicts[0]; c.Name != "extrafanart" || c.SurvivorPath != dst || c.LoserPath != src {
+		t.Errorf("ConflictItem = %+v, want {Name:extrafanart SurvivorPath:%s LoserPath:%s}", c, dst, src)
+	}
+}
