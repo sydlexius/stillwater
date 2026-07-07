@@ -339,7 +339,7 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
 
 	if err := testable.TestConnection(req.Context()); err != nil {
-		r.logger.Error("provider test failed", "provider", name, "error", err)
+		r.logger.Error("provider test failed", "provider", name, "error", provider.ScrubError(err))
 		failMsg := providerTestFailureMessage(req.Context(), err)
 		statusPersisted := true
 		if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "invalid"); setErr != nil {
@@ -811,7 +811,7 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 		testCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
 		defer cancel()
 		if err := testable.TestConnection(testCtx); err != nil {
-			r.logger.Error("mirror auto-test failed", "provider", name, "error", err)
+			r.logger.Error("mirror auto-test failed", "provider", name, "error", provider.ScrubError(err))
 			testResult = "error"
 			testError = providerTestFailureMessage(req.Context(), err)
 		}

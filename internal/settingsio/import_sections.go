@@ -26,14 +26,16 @@ import (
 // (`provider.<name>.api_key`) and their test-status companions
 // (`provider.<name>.key_status`), both written by ImportSetAPIKeyTx.
 //
-// Export duplicates these rows into Payload.Settings as source-encrypted
-// ciphertext, and importProviderKeys re-encrypts the authoritative copy under
-// the target instance key before importSettings runs. Without this skip,
-// importSettings would overwrite the re-encrypted key with the undecryptable
-// source ciphertext (and resurrect the stale key_status). The skip is applied
-// unconditionally for all envelope versions, since legacy envelopes carry the
-// same bad ciphertext in Payload.Settings and always also carry the correct
-// value in Payload.ProviderKeys.
+// importProviderKeys re-encrypts the authoritative copy (from the dedicated
+// Payload.ProviderKeys section) under the target instance key before
+// importSettings runs. Export no longer duplicates these rows into
+// Payload.Settings, but legacy (pre-1.6) envelopes did carry them there as
+// source-encrypted ciphertext; without this skip, importSettings would
+// overwrite the re-encrypted key with that undecryptable source ciphertext (and
+// resurrect the stale key_status). The skip is applied unconditionally for all
+// envelope versions, since legacy envelopes carry the bad ciphertext in
+// Payload.Settings and always also carry the correct value in
+// Payload.ProviderKeys.
 //
 // Other `provider.*` settings (base_url, rate_limit, rate_limit_ceiling,
 // field_verbosity.*, websearch.<name>.enabled, priority.*,
