@@ -58,6 +58,7 @@ higher-priority category.
 
 - Do not comment on test function names, test comment wording, or test variable naming
 - Do not suggest refactoring working code for hypothetical testability improvements
+- Do not review or comment on generated files: `*_templ.go` (templ output), `web/static/css/styles.css` (Tailwind), `docs/_generated/**`, `*_doc-anchors.txt`, `*_settings-anchors.txt`, and the generated docs-site reference pages (environment-variables, rules-catalogue, providers, cli, preferences, settings-by-tab). They are regenerated from source via `make generate` / `make generate-docs`.
 
 ## PR reviewers
 
