@@ -22,6 +22,20 @@ func testCtx(tb testing.TB) context.Context {
 	return i18n.WithTranslator(context.Background(), bundle.Translator("en"))
 }
 
+func TestProviderKeyPlaceholder_GeniusAndFallbacks(t *testing.T) {
+	ctx := testCtx(t)
+	if got := providerKeyPlaceholder(ctx, provider.NameGenius, false); got != "Enter Client Access Token..." {
+		t.Errorf("providerKeyPlaceholder(genius) = %q, want %q", got, "Enter Client Access Token...")
+	}
+	if got := providerKeyPlaceholder(ctx, provider.NameMusicBrainz, false); got != "Enter API key..." {
+		t.Errorf("providerKeyPlaceholder(musicbrainz, required) = %q, want %q", got, "Enter API key...")
+	}
+	// optionalKey routes to the premium-tier copy via keyPlaceholder.
+	if got := providerKeyPlaceholder(ctx, provider.NameMusicBrainz, true); got != "Enter premium API key..." {
+		t.Errorf("providerKeyPlaceholder(musicbrainz, optional) = %q, want %q", got, "Enter premium API key...")
+	}
+}
+
 func TestLogoSrc_BasePath(t *testing.T) {
 	tests := []struct {
 		name string

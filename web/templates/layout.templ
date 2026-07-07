@@ -873,7 +873,12 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 							} catch (e) { /* not JSON; fall through */ }
 						}
 						if (!isJSON) {
-							stripped = body.replace(/<[^>]*>/g, '').trim();
+							// Drop <script>/<style> blocks ENTIRELY first: a plain
+							// tag-strip would remove only the tags and leave the
+							// script/style body as visible text.
+							stripped = body
+								.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
+								.replace(/<[^>]*>/g, '').trim();
 						}
 						// Decode HTML entities (apostrophes, ampersands, etc.)
 						// that the server escaped via html.EscapeString. A

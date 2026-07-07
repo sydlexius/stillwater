@@ -821,7 +821,6 @@ templ settingsLibraryRow(lib library.Library) {
 				<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
 			}
 			<div class="flex items-center gap-1.5 mt-1">
-				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
 				if lib.ConnectionID != "" {
 					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ t(ctx, "settings.libraries.connection_badge") }</span>
 				}
@@ -1105,11 +1104,17 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							</p>
 						} else {
 							<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-								<label for={ "api-key-" + string(pk.Name) } class="sr-only">{ t(ctx, "settings.provider_config.api_key") }</label>
+								<label for={ "api-key-" + string(pk.Name) } class="sr-only">
+									if pk.Name == provider.NameGenius {
+										{ t(ctx, "settings.provider_config.client_access_token") }
+									} else {
+										{ t(ctx, "settings.provider_config.api_key") }
+									}
+								</label>
 								@components.SecretInput(
 									"api-key-"+string(pk.Name),
 									"api_key",
-									keyPlaceholder(ctx, pk.OptionalKey),
+									providerKeyPlaceholder(ctx, pk.Name, pk.OptionalKey),
 									"flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
 									true,
 									"",

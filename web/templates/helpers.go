@@ -726,6 +726,16 @@ func keyPlaceholder(ctx context.Context, optionalKey bool) string {
 	return t(ctx, "settings.provider_keys.key_placeholder")
 }
 
+// providerKeyPlaceholder returns the credential input placeholder for a
+// provider, honoring Genius's "Client Access Token" wording; other providers
+// fall back to keyPlaceholder (which handles the premium-tier copy).
+func providerKeyPlaceholder(ctx context.Context, name provider.ProviderName, optionalKey bool) string {
+	if name == provider.NameGenius {
+		return t(ctx, "settings.provider_keys.genius_key_placeholder")
+	}
+	return keyPlaceholder(ctx, optionalKey)
+}
+
 // rateLimitText formats a RateLimitInfo into a short human-readable string.
 func rateLimitText(rl *provider.RateLimitInfo) string {
 	if rl == nil {
