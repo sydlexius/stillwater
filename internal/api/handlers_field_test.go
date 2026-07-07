@@ -90,7 +90,7 @@ func TestHandleFieldUpdate_NoPath_SkipsWriteBack(t *testing.T) {
 	}
 }
 
-func TestHandleFieldUpdate_NoNFO_SkipsWriteBack(t *testing.T) {
+func TestHandleFieldUpdate_NoNFO_CreatesNFO(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
 
@@ -115,9 +115,11 @@ func TestHandleFieldUpdate_NoNFO_SkipsWriteBack(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	// No artist.nfo should have been created
-	if _, err := os.Stat(filepath.Join(dir, "artist.nfo")); err == nil {
-		t.Error("artist.nfo was created but NFOExists was false; write-back should have been skipped")
+	// #2306: write-back now CREATES a missing artist.nfo instead of silently
+	// skipping. The test router wires no platform profile, so the profile gate
+	// fails open (writes).
+	if _, err := os.Stat(filepath.Join(dir, "artist.nfo")); err != nil {
+		t.Errorf("artist.nfo should have been created for a missing-NFO artist, stat err=%v", err)
 	}
 }
 
@@ -377,7 +379,7 @@ func TestExtractFieldValue_QueryParamNotAccepted(t *testing.T) {
 	}
 }
 
-func TestWriteBackNFO_StatNotExist(t *testing.T) {
+func TestWriteBackNFO_MissingCreates(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouter(t)
 
@@ -389,11 +391,12 @@ func TestWriteBackNFO_StatNotExist(t *testing.T) {
 		t.Fatalf("updating artist: %v", err)
 	}
 
-	// Do NOT seed an artist.nfo on disk -- file is missing
+	// No artist.nfo on disk. #2306: WriteBackNFO now CREATES it from the artist's
+	// metadata instead of returning early. The test router wires no platform
+	// profile, so the profile gate fails open (writes).
 	r.publisher.WriteBackNFO(context.Background(), a)
 
-	// Verify no NFO was created (the NotExist branch should return early)
-	if _, err := os.Stat(filepath.Join(dir, "artist.nfo")); err == nil {
-		t.Error("artist.nfo was created but should have been skipped (file did not exist on disk)")
+	if _, err := os.Stat(filepath.Join(dir, "artist.nfo")); err != nil {
+		t.Errorf("artist.nfo should have been created when missing, stat err=%v", err)
 	}
 }

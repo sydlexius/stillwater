@@ -57,7 +57,7 @@ type Deps struct {
 	LibraryService     libraryResolver
 	NFOSnapshotService *nfo.SnapshotService
 	NFOSettingsService *nfo.NFOSettingsService
-	PlatformService    namingConfigProvider
+	PlatformService    activeProfileProvider
 	ExpectedWrites     expectedWritesTracker
 	ImageCacheDir      string
 	Logger             *slog.Logger
@@ -101,7 +101,7 @@ type Publisher struct {
 	libraryService     libraryResolver
 	nfoSnapshotService *nfo.SnapshotService
 	nfoSettingsService *nfo.NFOSettingsService
-	platformService    namingConfigProvider
+	platformService    activeProfileProvider
 	expectedWrites     expectedWritesTracker
 	imageCacheDir      string
 	logger             *slog.Logger
@@ -142,7 +142,10 @@ type libraryResolver interface {
 	FindForArtistPath(ctx context.Context, artistPath string) (*library.Library, error)
 }
 
-type namingConfigProvider interface {
+// activeProfileProvider resolves the active platform profile. The publisher uses
+// it for image-naming config and to gate NFO write-back on the profile's
+// NFOEnabled flag (#2306). *platform.Service satisfies it.
+type activeProfileProvider interface {
 	GetActive(ctx context.Context) (*platform.Profile, error)
 }
 
@@ -270,8 +273,9 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 	if p.platformService != nil {
 		prof, profErr := p.platformService.GetActive(ctx)
 		if !platform.NFOWriteAllowed(prof, profErr) {
-			p.logger.Info("NFO write-back skipped: active platform profile has NFO writing disabled (Plex)",
-				slog.String("artist_id", a.ID))
+			p.logger.Info("NFO write-back skipped: NFO writing is disabled for the active platform profile",
+				slog.String("artist_id", a.ID),
+				slog.String("profile", prof.Name))
 			return
 		}
 	}

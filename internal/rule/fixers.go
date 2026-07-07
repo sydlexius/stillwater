@@ -155,7 +155,7 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 			return &FixResult{
 				RuleID:  RuleNFOExists,
 				Fixed:   false,
-				Message: "skipped: active platform profile has NFO writing disabled (Plex)",
+				Message: fmt.Sprintf("skipped: NFO writing is disabled for the active platform profile %q", prof.Name),
 			}, nil
 		}
 	}

@@ -18,7 +18,7 @@ import (
 func TestWriteBackNFO_MissingNFO_CreateGatedByProfile(t *testing.T) {
 	cases := []struct {
 		name     string
-		provider namingConfigProvider // nil = no service = fail-open
+		provider activeProfileProvider // nil = no service = fail-open
 		wantFile bool
 	}{
 		{"no profile service: fail-open create", nil, true},
