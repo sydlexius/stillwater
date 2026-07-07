@@ -2,6 +2,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,7 @@ func TestWriteBackNFO_MissingNFO_CreateGatedByProfile(t *testing.T) {
 		{"no profile service: fail-open create", nil, true},
 		{"emby enabled: create", &fakePlatformProvider{profile: &platform.Profile{Name: "Emby", NFOEnabled: true}}, true},
 		{"plex disabled: skip", &fakePlatformProvider{profile: &platform.Profile{Name: "Plex", NFOEnabled: false}}, false},
+		{"getactive error: fail-open create (no nil-deref panic)", &fakePlatformProvider{err: errors.New("db down")}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

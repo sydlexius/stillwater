@@ -152,10 +152,17 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 	if f.platformService != nil {
 		prof, profErr := f.platformService.GetActive(ctx)
 		if !platform.NFOWriteAllowed(prof, profErr) {
+			// prof is non-nil here (NFOWriteAllowed fails open on a nil profile or
+			// a lookup error), but guard defensively so the message never depends
+			// on that non-local invariant.
+			profileName := "unknown"
+			if prof != nil {
+				profileName = prof.Name
+			}
 			return &FixResult{
 				RuleID:  RuleNFOExists,
 				Fixed:   false,
-				Message: fmt.Sprintf("skipped: NFO writing is disabled for the active platform profile %q", prof.Name),
+				Message: fmt.Sprintf("skipped: NFO writing is disabled for the active platform profile %q", profileName),
 			}, nil
 		}
 	}

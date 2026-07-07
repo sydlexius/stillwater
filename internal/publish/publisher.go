@@ -273,9 +273,16 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 	if p.platformService != nil {
 		prof, profErr := p.platformService.GetActive(ctx)
 		if !platform.NFOWriteAllowed(prof, profErr) {
+			// prof is non-nil here (NFOWriteAllowed fails open on a nil profile or
+			// a lookup error), but guard defensively so logging never depends on
+			// that non-local invariant.
+			profileName := "unknown"
+			if prof != nil {
+				profileName = prof.Name
+			}
 			p.logger.Info("NFO write-back skipped: NFO writing is disabled for the active platform profile",
 				slog.String("artist_id", a.ID),
-				slog.String("profile", prof.Name))
+				slog.String("profile", profileName))
 			return
 		}
 	}

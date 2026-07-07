@@ -2,6 +2,7 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,11 +29,13 @@ func TestNFOFixer_ProfileGate(t *testing.T) {
 	cases := []struct {
 		name      string
 		prof      *platform.Profile
+		err       error
 		wantFixed bool
 		wantFile  bool
 	}{
-		{"plex disabled: skip", &platform.Profile{Name: "Plex", NFOEnabled: false}, false, false},
-		{"emby enabled: write", &platform.Profile{Name: "Emby", NFOEnabled: true}, true, true},
+		{"plex disabled: skip", &platform.Profile{Name: "Plex", NFOEnabled: false}, nil, false, false},
+		{"emby enabled: write", &platform.Profile{Name: "Emby", NFOEnabled: true}, nil, true, true},
+		{"getactive error: fail-open write (no nil-deref panic)", nil, errors.New("db down"), true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -47,7 +50,7 @@ func TestNFOFixer_ProfileGate(t *testing.T) {
 			f := &NFOFixer{
 				fsCheck:         nonSharedFSCheck(),
 				lockResolver:    stubLockResolver{value: false},
-				platformService: stubActiveProfile{prof: tc.prof},
+				platformService: stubActiveProfile{prof: tc.prof, err: tc.err},
 			}
 			res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleNFOExists})
 			if err != nil {
