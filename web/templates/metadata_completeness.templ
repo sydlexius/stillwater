@@ -4,7 +4,47 @@ import (
 	"fmt"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/components"
 )
+
+// metaCompletenessSort is the client-side sort handler for the
+// metadata-completeness table (#2304). The table is a fixed "worst N by health"
+// slice with no pagination, so sorting reorders the already-rendered rows in
+// place (preserving the selection) rather than issuing a server round-trip.
+// Clicking a header cycles none -> asc -> desc -> off, where "off" restores the
+// default health-ascending order (the worst-N ordering the rows arrive in). It
+// updates every header's caret opacity + aria-sort to reflect the active column.
+script metaCompletenessSort(col string) {
+	var table = document.getElementById('meta-completeness-tbl');
+	if (!table || !table.tBodies.length) return;
+	var tbody = table.tBodies[0];
+	var th = table.querySelector('th[data-sort-col="' + col + '"]');
+	var cur = th ? th.getAttribute('aria-sort') : 'none';
+	// asc -> desc -> off (default), else (none/other column) -> asc.
+	var state = cur === 'ascending' ? 'desc' : (cur === 'descending' ? 'off' : 'asc');
+	var sortCol = state === 'off' ? 'health' : col;
+	var asc = state !== 'desc';
+	var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+	rows.sort(function (a, b) {
+		var cmp;
+		if (sortCol === 'health') {
+			cmp = (parseFloat(a.getAttribute('data-health')) || 0) - (parseFloat(b.getAttribute('data-health')) || 0);
+		} else {
+			// localeCompare (accent-insensitive) keeps the client name order close
+			// to the server-side name collation for accented/Unicode names.
+			cmp = (a.getAttribute('data-name') || '').localeCompare(b.getAttribute('data-name') || '', undefined, { sensitivity: 'base' });
+		}
+		return asc ? cmp : -cmp;
+	});
+	rows.forEach(function (r) { tbody.appendChild(r); });
+	function setCaret(el, on) { if (el) { el.classList.toggle('opacity-100', on); el.classList.toggle('opacity-30', !on); } }
+	table.querySelectorAll('th[data-sort-col]').forEach(function (h) {
+		var active = h.getAttribute('data-sort-col') === sortCol;
+		h.setAttribute('aria-sort', active ? (asc ? 'ascending' : 'descending') : 'none');
+		setCaret(h.querySelector('.sw-sort-asc'), active && asc);
+		setCaret(h.querySelector('.sw-sort-desc'), active && !asc);
+	});
+}
 
 // MetadataCompletenessData holds the data for the completeness page section.
 type MetadataCompletenessData struct {
@@ -24,23 +64,25 @@ templ MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) {
 		if len(report.LowestCompleteness) > 0 {
 			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{ t(ctx, "metadata.lowest_completeness") }</h3>
 			<div class="overflow-x-auto">
-				<table class="min-w-full text-sm">
+				<table id="meta-completeness-tbl" class="min-w-full text-sm">
 					<thead>
 						<tr class="border-b border-gray-200 dark:border-gray-700">
-							<th class="text-left py-1 pr-4 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "metadata.artist_column") }</th>
-							<th class="text-right py-1 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "metadata.health_column") }</th>
+							@components.SortableHeader("name", "name", "", "", t(ctx, "metadata.artist_column"), false, metaCompletenessSort("name"))
+							<!-- The "worst N" rows arrive already health-ascending, so seed the
+							     Health header's caret + aria-sort to match that initial order. -->
+							@components.SortableHeader("health", "health", "health", "asc", t(ctx, "metadata.health_column"), true, metaCompletenessSort("health"))
 						</tr>
 					</thead>
 					<tbody>
 						for _, a := range report.LowestCompleteness {
-							<tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700">
+							<tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700" data-name={ a.Name } data-health={ fmt.Sprintf("%.4f", a.HealthScore) }>
 								<td class="py-1 pr-4">
 									<a
 										href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
 										class="text-blue-600 dark:text-blue-400 hover:underline truncate block max-w-xs"
 									>{ a.Name }</a>
 								</td>
-								<td class="py-1 text-right">
+								<td class="py-1 text-center">
 									<span
 										class={
 											"font-medium",

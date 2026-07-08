@@ -970,6 +970,77 @@ func TestList_SortOrder(t *testing.T) {
 	}
 }
 
+// TestList_SortComplianceColumns verifies the compliance-report sort keys
+// (#2304): the native nfo_exists column, the MBID provider-presence sort, and
+// an image-presence sort each order artists by presence (0 then 1 ascending).
+// These exercise the EXISTS() ORDER BY expressions added to
+// validatedOrderClause, not just the generated SQL string.
+func TestList_SortComplianceColumns(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// "Has" has NFO metadata, an MBID, and a thumb image. "Missing" has none.
+	has := testArtist("Has", "/music/Has")
+	has.NFOExists = true
+	has.MusicBrainzID = "11111111-1111-1111-1111-111111111111"
+	if err := svc.Create(ctx, has); err != nil {
+		t.Fatalf("Create has: %v", err)
+	}
+	missing := testArtist("Missing", "/music/Missing")
+	if err := svc.Create(ctx, missing); err != nil {
+		t.Fatalf("Create missing: %v", err)
+	}
+	// Give "Has" a present thumb image; "Missing" gets none.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, exists_flag) VALUES (?, ?, 'thumb', 1)`,
+		"img-has-thumb", has.ID); err != nil {
+		t.Fatalf("insert thumb image: %v", err)
+	}
+
+	// Give "Has" a present slot-0 fanart and logo so every compliance image
+	// column agrees with what the grid displays (fanart is slot-0-gated).
+	for _, it := range []string{"fanart", "logo"} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag) VALUES (?, ?, ?, 0, 1)`,
+			"img-has-"+it, has.ID, it); err != nil {
+			t.Fatalf("insert %s image: %v", it, err)
+		}
+	}
+
+	// EXISTS()/native column evaluates to 0 (absent) or 1 (present); ASC puts
+	// the "Missing" artist first, DESC puts "Has" first.
+	for _, key := range []string{"nfo_exists", "mbid", "thumb", "fanart", "logo"} {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			asc, _, err := svc.List(ctx, ListParams{Sort: key, Order: "asc"})
+			if err != nil {
+				t.Fatalf("%s asc: List: %v", key, err)
+			}
+			if len(asc) != 2 || asc[0].Name != "Missing" || asc[1].Name != "Has" {
+				t.Errorf("%s asc: got %v, want [Missing Has]", key, names(asc))
+			}
+			desc, _, err := svc.List(ctx, ListParams{Sort: key, Order: "desc"})
+			if err != nil {
+				t.Fatalf("%s desc: List: %v", key, err)
+			}
+			if len(desc) != 2 || desc[0].Name != "Has" || desc[1].Name != "Missing" {
+				t.Errorf("%s desc: got %v, want [Has Missing]", key, names(desc))
+			}
+		})
+	}
+}
+
+// names extracts artist names for readable test failure output.
+func names(as []Artist) []string {
+	out := make([]string, len(as))
+	for i, a := range as {
+		out[i] = a.Name
+	}
+	return out
+}
+
 func TestLibraryID_RoundTrip(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)

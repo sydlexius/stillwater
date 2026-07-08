@@ -489,7 +489,7 @@ func sanitizeCSV(s string) string {
 // can stop processing. PageSize respects the per-user preference stored in the
 // database; an explicit page_size query param overrides it.
 func (r *Router) complianceListParams(w http.ResponseWriter, req *http.Request) (artist.ListParams, bool) {
-	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
+	sortKey, ok := validateSortParam(w, req, allowedComplianceSort)
 	if !ok {
 		return artist.ListParams{}, false
 	}

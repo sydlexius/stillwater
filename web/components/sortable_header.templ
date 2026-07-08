@@ -1,0 +1,61 @@
+package components
+
+// caretActiveClass returns the opacity class for one direction caret of a
+// sortable header. Both carets always render (so every sortable column shows a
+// dimmed up/down affordance signalling it can be sorted); the caret matching
+// the active sort direction is shown at full opacity, the rest are dimmed.
+func caretActiveClass(curSort, curOrder, sortKey, order string) string {
+	if curSort == sortKey && curOrder == order {
+		return "opacity-100"
+	}
+	return "opacity-30"
+}
+
+// ariaSortValue maps the active sort state to the ARIA aria-sort token for a
+// column header, so assistive tech announces the current sort direction.
+func ariaSortValue(curSort, curOrder, sortKey string) string {
+	if curSort != sortKey {
+		return "none"
+	}
+	if curOrder == "desc" {
+		return "descending"
+	}
+	return "ascending"
+}
+
+// SortableHeader renders a report-table column header with the shared sort
+// affordance (#2304). Every sortable column shows a dimmed up/down caret pair so
+// users can see which columns are sortable; the active column highlights the
+// caret for the current direction. Parameters:
+//   - dataCol: the column identity used by the ColumnToggle show/hide feature
+//     (must match the matching <td> data-col and the ColumnDef key).
+//   - sortKey: the sort param the handler cycles on (e.g. health_score).
+//   - curSort/curOrder: the active sort state, used to highlight the correct
+//     caret and set aria-sort. An empty curSort means no active sort (both
+//     carets dimmed) -- the "off" state of the asc/desc/off cycle.
+//   - center: center-align the header (numeric/status columns); default left.
+//   - onClick: the caller-supplied handler; each report table drives its own
+//     sort mechanism (server-side HTMX vs client-side reorder) through it.
+templ SortableHeader(dataCol, sortKey, curSort, curOrder, label string, center bool, onClick templ.ComponentScript) {
+	<th
+		scope="col"
+		data-col={ dataCol }
+		data-sort-col={ sortKey }
+		aria-sort={ ariaSortValue(curSort, curOrder, sortKey) }
+		class={ "px-4 py-3 text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400",
+			templ.KV("text-center", center), templ.KV("text-left", !center) }
+	>
+		<button
+			type="button"
+			onclick={ onClick }
+			class={ "inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200",
+				templ.KV("mx-auto", center) }
+		>
+			{ label }
+			<span class="ml-0.5 inline-flex flex-col leading-none" aria-hidden="true">
+				<svg class={ "sw-sort-asc h-2 w-2", caretActiveClass(curSort, curOrder, sortKey, "asc") } fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+				<svg class={ "sw-sort-desc -mt-0.5 h-2 w-2", caretActiveClass(curSort, curOrder, sortKey, "desc") } fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
+			</span>
+		</button>
+	</th>
+}

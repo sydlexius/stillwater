@@ -908,6 +908,12 @@ func TestValidatedOrderClause_AllSortKeys(t *testing.T) {
 		{"health_score", "health_score"},
 		{"updated_at", "updated_at"},
 		{"created_at", "created_at"},
+		// Compliance-report columns: native column + EXISTS() presence sorts.
+		{"nfo_exists", "nfo_exists"},
+		{"thumb", "image_type = 'thumb'"},
+		{"fanart", "image_type = 'fanart'"},
+		{"logo", "image_type = 'logo'"},
+		{"mbid", "provider = 'musicbrainz'"},
 		// Empty/unknown keys normalize to name (Validate() defense-in-depth).
 		{"", "name"},
 		{"totally_unknown", "name"},

@@ -185,6 +185,28 @@ func validatedOrderClause(params ListParams) string {
 		col = "updated_at"
 	case "created_at":
 		col = "created_at"
+	case "nfo_exists":
+		// Native artists column (0/1); sorts artists with NFO metadata
+		// together for the compliance "Metadata" column.
+		col = "nfo_exists"
+	// The image and MBID compliance columns have no native artists column;
+	// they sort on presence of a related row. Each expression is a fixed
+	// string literal (image types and provider are constants), so no user
+	// input reaches the SQL string -- matching the imageExistsClause shape in
+	// this file and the has-MBID predicate in sqlite_completeness.go. SQLite
+	// evaluates EXISTS() to 0/1, giving a stable two-group ordering.
+	case "thumb":
+		col = "EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1)"
+	case "fanart":
+		// Fanart is multi-slot (extrafanart), but the compliance grid's Fanart
+		// icon reflects slot 0 only (applyImageMetadata gates FanartExists on
+		// SlotIndex == 0). Constrain the sort to slot 0 so the ordering agrees
+		// with the displayed icon; thumb/logo are single-slot and need no gate.
+		col = "EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND slot_index = 0 AND exists_flag = 1)"
+	case "logo":
+		col = "EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1)"
+	case "mbid":
+		col = "EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz' AND provider_id <> '')"
 	default:
 		col = "name"
 	}

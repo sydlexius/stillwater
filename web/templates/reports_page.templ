@@ -285,7 +285,7 @@ templ repPaneCompliance(assets AssetPaths, data ComplianceData) {
 				value={ data.Search }
 				placeholder={ t(ctx, "common.search_artists") }
 				hx-get="/reports/compliance"
-				hx-trigger="keyup changed delay:300ms"
+				hx-trigger="keyup changed delay:300ms, sortchanged"
 				hx-target="#compliance-results"
 				hx-swap="outerHTML"
 				hx-include="[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
@@ -531,17 +531,33 @@ templ repComplianceScript() {
 			});
 		}
 
-		// Column sort: swap sort/order hidden inputs and re-trigger HTMX search.
+		// Column sort: swap sort/order hidden inputs and re-issue the compliance
+		// search request. The search input carries the request contract
+		// (hx-get/target/swap/include), so we fire its dedicated "sortchanged"
+		// trigger rather than a synthetic "keyup" -- keyup is gated by the
+		// input's "changed" modifier, which suppresses the request when the
+		// search term itself has not changed (the reason header sorting never
+		// actually fired). "sortchanged" has no such guard, so every header
+		// click re-sorts (#2304).
 		function sortBy(col) {
 			var sortInput = document.getElementById('compliance-sort');
 			var orderInput = document.getElementById('compliance-order');
 			if (!sortInput || !orderInput) return;
 			var curSort = sortInput.value;
 			var curOrder = orderInput.value;
-			orderInput.value = (curSort === col && curOrder === 'asc') ? 'desc' : 'asc';
-			sortInput.value = col;
+			// Cycle the clicked column: asc -> desc -> off. "off" clears the sort
+			// param so the server falls back to the default ordering (name asc).
+			if (curSort === col && curOrder === 'asc') {
+				orderInput.value = 'desc';
+			} else if (curSort === col && curOrder === 'desc') {
+				sortInput.value = '';
+				orderInput.value = 'asc';
+			} else {
+				sortInput.value = col;
+				orderInput.value = 'asc';
+			}
 			var searchInput = document.querySelector('[name="search"]');
-			if (searchInput) htmx.trigger(searchInput, 'keyup');
+			if (searchInput) htmx.trigger(searchInput, 'sortchanged');
 		}
 
 		// Bulk selection helpers.

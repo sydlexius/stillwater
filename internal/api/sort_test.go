@@ -147,6 +147,49 @@ func TestSortAllowlist_AcceptsKnown(t *testing.T) {
 	}
 }
 
+// TestComplianceSortScope asserts the compliance-report columns added in #2304
+// (nfo_exists + the image/MBID presence keys) are accepted only by the
+// compliance endpoints, not by the general artist list endpoint. This locks in
+// the deliberate separation of allowedComplianceSort from allowedArtistSort.
+func TestComplianceSortScope(t *testing.T) {
+	t.Parallel()
+	complianceKeys := []string{"nfo_exists", "thumb", "fanart", "logo", "mbid"}
+
+	t.Run("compliance accepts report keys", func(t *testing.T) {
+		t.Parallel()
+		for _, key := range complianceKeys {
+			key := key
+			t.Run(key, func(t *testing.T) {
+				t.Parallel()
+				r, _ := testRouter(t)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/compliance?sort="+key+"&order=asc", nil)
+				w := httptest.NewRecorder()
+				r.handleReportCompliance(w, req)
+				if w.Code != http.StatusOK {
+					t.Fatalf("compliance sort=%s: status = %d, want 200 (body=%q)", key, w.Code, w.Body.String())
+				}
+			})
+		}
+	})
+
+	t.Run("artist list rejects report-only keys", func(t *testing.T) {
+		t.Parallel()
+		for _, key := range complianceKeys {
+			key := key
+			t.Run(key, func(t *testing.T) {
+				t.Parallel()
+				r, _ := testRouter(t)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/artists?sort="+key, nil)
+				w := httptest.NewRecorder()
+				r.handleListArtists(w, req)
+				if w.Code != http.StatusBadRequest {
+					t.Fatalf("artist list sort=%s: status = %d, want 400 (report-only key must not leak to the artist list)", key, w.Code)
+				}
+			})
+		}
+	})
+}
+
 // TestSortAllowlist_RejectsUnknownOrder asserts the order parameter is also
 // allowlisted; only "", "asc", "desc" are accepted. Mirrors the sort test by
 // asserting both the 400 status and the structured error envelope content.
