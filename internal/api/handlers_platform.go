@@ -243,9 +243,13 @@ func (r *Router) syncNFORuleToActiveProfile(ctx context.Context, w http.Response
 	if !want {
 		state = "disabled"
 	}
-	// map[string]any keeps a stable shape; marshal cannot fail for these types.
+	// Profile names are user-controlled (custom profiles) and unbounded; truncate
+	// before it goes into the HX-Trigger response header so a pathologically long
+	// name can't inflate the header and fail the response write (same guard the
+	// syncWarning trigger applies). map[string]any keeps a stable shape; marshal
+	// cannot fail for these types.
 	payload, _ := json.Marshal(map[string]any{
-		"nfoRuleToggled": map[string]string{"state": state, "profile": profileName},
+		"nfoRuleToggled": map[string]string{"state": state, "profile": truncateWarning(profileName)},
 	})
 	w.Header().Set("HX-Trigger", string(payload))
 }
