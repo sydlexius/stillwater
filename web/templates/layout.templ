@@ -918,6 +918,43 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					var msgs = Array.isArray(detail) ? detail : [detail];
 					msgs.forEach(function(m) { showWarningToast(m); });
 				});
+				// R5 (#2306): the server sets an "nfoRuleToggled" HX-Trigger when
+				// activating a platform profile flips the nfo_exists rule, so the
+				// change is never silent. Disabling (Plex-style, no .nfo files) shows
+				// an informational modal; re-enabling shows a success toast.
+				document.body.addEventListener('nfoRuleToggled', function(evt) {
+					var detail = (evt && evt.detail && typeof evt.detail === 'object' && 'value' in evt.detail)
+						? evt.detail.value
+						: evt.detail;
+					if (!detail || typeof detail !== 'object') {
+						return;
+					}
+					var i18n = window.swI18n || {};
+					var profile = detail.profile || '';
+					var fill = function(s) { return String(s).split('{profile}').join(profile); };
+					if (detail.state === 'disabled') {
+						var body = fill(i18n.nfoDisabledBody || '{profile} does not use .nfo files, so NFO generation was turned off.');
+						var title = i18n.nfoDisabledTitle || 'NFO Generation Turned Off';
+						if (typeof window.showConfirmDialog === 'function') {
+							window.showConfirmDialog(body, null, function() {}, {
+								title: title,
+								acceptText: (i18n.dismiss || 'Dismiss'),
+								hideCancel: true,
+								// Subtle outlined dismiss -- no solid color fill (neither the
+								// destructive red default nor a loud primary), since this modal
+								// only informs.
+								acceptClass: 'rounded border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400'
+							});
+						} else if (typeof showWarningToast === 'function') {
+							showWarningToast(body);
+						}
+					} else if (detail.state === 'enabled') {
+						var msg = fill(i18n.nfoEnabledToast || 'NFO generation re-enabled for {profile}.');
+						if (typeof showSuccessToast === 'function') {
+							showSuccessToast(msg);
+						}
+					}
+				});
 			</script>
 	<script>
 				// Confirmation modal interceptor for HTMX hx-confirm events.
@@ -972,6 +1009,10 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 								rememberWrapper: document.getElementById('confirm-modal-remember-wrapper'),
 								backdrop: document.getElementById('confirm-backdrop')
 							};
+							// Remember the default (destructive) accept-button class so
+							// callers that override acceptClass (e.g. informational modals)
+							// don't permanently restyle the button for later confirms.
+							modal.defaultAcceptClass = modal.accept ? modal.accept.className : '';
 						}
 						return modal;
 					}
@@ -1021,8 +1062,17 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						if (opts && opts.acceptText && m.accept) {
 							m.accept.textContent = opts.acceptText;
 						}
-						if (opts && opts.acceptClass && m.accept) {
-							m.accept.className = opts.acceptClass;
+						if (m.accept) {
+							// Apply an override when given, otherwise restore the default
+							// class so a prior override doesn't leak into this dialog.
+							m.accept.className = (opts && opts.acceptClass) ? opts.acceptClass : m.defaultAcceptClass;
+						}
+						// Informational modals (opts.hideCancel) present a single dismiss
+						// button. Toggle each open so the shared modal reverts to a normal
+						// Cancel+Accept confirm dialog for every other caller.
+						var infoOnly = !!(opts && opts.hideCancel);
+						if (m.cancel) {
+							m.cancel.classList.toggle('hidden', infoOnly);
 						}
 						// Reset the "Don't ask again" toggle to unchecked each time.
 						if (m.remember) {
@@ -1035,8 +1085,13 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 							m.rememberWrapper.classList.add('hidden');
 						}
 						m.el.classList.remove('hidden');
-						// Move focus to Cancel so keyboard users can dismiss immediately.
-						if (m.cancel) m.cancel.focus();
+						// Move focus to the first available dismiss control: Cancel when
+						// present, otherwise the single Accept button on an info modal.
+						if (!infoOnly && m.cancel) {
+							m.cancel.focus();
+						} else if (m.accept) {
+							m.accept.focus();
+						}
 					}
 
 					function hideModal() {
@@ -1051,7 +1106,8 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						if (m.title) m.title.textContent = _confirm;
 						if (m.accept) {
 							m.accept.textContent = _confirm;
-							m.accept.className = 'rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2';
+							// Single source of truth: the pristine class captured in getModal.
+							m.accept.className = m.defaultAcceptClass;
 						}
 						// Return focus to the element that triggered the dialog.
 						if (_modalOpener && typeof _modalOpener.focus === 'function') {

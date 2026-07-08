@@ -1,5 +1,4 @@
 [
-  "activatePlatform",
   "applyViolationCandidate",
   "batchFetchFanart",
   "bulkDismissViolations",

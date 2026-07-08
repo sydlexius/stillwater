@@ -363,6 +363,11 @@ func layoutI18nJSON(ctx context.Context) string {
 		"confirm":         t(ctx, "common.confirm"),
 		"reauth":          t(ctx, "notifications.reauth"),
 		"reauth_aria":     t(ctx, "notifications.reauth_aria"),
+		"dismiss":         t(ctx, "common.dismiss"),
+		// R5 (#2306): profile-switch NFO-rule popup copy.
+		"nfoDisabledTitle": t(ctx, "settings.platform_profile.nfo_disabled_title"),
+		"nfoDisabledBody":  t(ctx, "settings.platform_profile.nfo_disabled_body"),
+		"nfoEnabledToast":  t(ctx, "settings.platform_profile.nfo_enabled_toast"),
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
