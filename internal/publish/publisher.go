@@ -5,6 +5,7 @@
 package publish
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/filesystem"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
@@ -55,7 +57,7 @@ type Deps struct {
 	LibraryService     libraryResolver
 	NFOSnapshotService *nfo.SnapshotService
 	NFOSettingsService *nfo.NFOSettingsService
-	PlatformService    namingConfigProvider
+	PlatformService    activeProfileProvider
 	ExpectedWrites     expectedWritesTracker
 	ImageCacheDir      string
 	Logger             *slog.Logger
@@ -99,7 +101,7 @@ type Publisher struct {
 	libraryService     libraryResolver
 	nfoSnapshotService *nfo.SnapshotService
 	nfoSettingsService *nfo.NFOSettingsService
-	platformService    namingConfigProvider
+	platformService    activeProfileProvider
 	expectedWrites     expectedWritesTracker
 	imageCacheDir      string
 	logger             *slog.Logger
@@ -140,7 +142,10 @@ type libraryResolver interface {
 	FindForArtistPath(ctx context.Context, artistPath string) (*library.Library, error)
 }
 
-type namingConfigProvider interface {
+// activeProfileProvider resolves the active platform profile. The publisher uses
+// it for image-naming config and to gate NFO write-back on the profile's
+// NFOEnabled flag (#2306). *platform.Service satisfies it.
+type activeProfileProvider interface {
 	GetActive(ctx context.Context) (*platform.Profile, error)
 }
 
@@ -235,10 +240,13 @@ func (p *Publisher) PublishMetadata(ctx context.Context, a *artist.Artist) {
 }
 
 // WriteBackNFO writes the artist's current metadata to its artist.nfo file
-// (best effort). Skips silently when the artist has no filesystem path or no
-// existing NFO file on disk -- creating new NFOs from scratch is the rule
-// engine's job. The on-disk check (os.Stat) guards against stale NFOExists
-// flags when the file has been deleted or moved since the last scan.
+// (best effort). When no NFO exists on disk it CREATES one from the artist's
+// metadata (#2306: Stillwater's contract is to manage the NFO); when one exists
+// it is rewritten in place. Both are gated by the active platform profile --
+// Plex (nfo_enabled=0) does not use .nfo files, so the write is skipped (logged,
+// not silent). Skips when the artist has no filesystem path. The on-disk check
+// (os.Stat) guards against stale NFOExists flags when the file was deleted or
+// moved since the last scan.
 func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 	if p == nil {
 		return
@@ -247,16 +255,36 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 		return
 	}
 	nfoPath := filepath.Join(a.Path, "artist.nfo")
-	if _, err := os.Stat(nfoPath); err != nil {
-		if os.IsNotExist(err) {
-			return
-		}
+
+	_, statErr := os.Stat(nfoPath)
+	missing := os.IsNotExist(statErr)
+	if statErr != nil && !missing {
 		p.logger.Warn("NFO write-back stat error",
 			slog.String("artist_id", a.ID),
 			slog.String("nfo_path", nfoPath),
-			slog.String("error", err.Error()),
+			slog.String("error", statErr.Error()),
 		)
 		return
+	}
+
+	// #2306: honor the active platform profile. Plex does not use .nfo files, so
+	// neither create nor rewrite one. Fail-open when the profile can't be
+	// resolved (see platform.NFOWriteAllowed).
+	if p.platformService != nil {
+		prof, profErr := p.platformService.GetActive(ctx)
+		if !platform.NFOWriteAllowed(prof, profErr) {
+			// prof is non-nil here (NFOWriteAllowed fails open on a nil profile or
+			// a lookup error), but guard defensively so logging never depends on
+			// that non-local invariant.
+			profileName := "unknown"
+			if prof != nil {
+				profileName = prof.Name
+			}
+			p.logger.Info("NFO write-back skipped: NFO writing is disabled for the active platform profile",
+				slog.String("artist_id", a.ID),
+				slog.String("profile", profileName))
+			return
+		}
 	}
 
 	// Register expected write so the filesystem watcher does not treat
@@ -266,21 +294,43 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 		defer p.expectedWrites.Remove(nfoPath)
 	}
 
-	// Read the current NFO field map to apply platform-specific element mapping.
-	fm := nfo.DefaultFieldMap()
-	if p.nfoSettingsService != nil {
-		var fmErr error
-		fm, fmErr = p.nfoSettingsService.GetFieldMap(ctx)
-		if fmErr != nil {
-			p.logger.Warn("reading NFO field map, using default",
-				slog.String("artist_id", a.ID),
-				slog.String("error", fmErr.Error()),
-			)
-			fm = nfo.DefaultFieldMap()
+	fm := p.resolveNFOFieldMap(ctx, a)
+	lockNFO := p.ResolveLockNFO(ctx, a)
+
+	if missing {
+		// #2306: create a new artist.nfo from the artist's current metadata,
+		// using the same field-map + lockdata shaping the rule fixer applies.
+		nfoData := nfo.FromArtistWithFieldMap(a, fm)
+		nfoData.LockData = lockNFO
+		// Stamp provenance so an external overwrite can be detected on read,
+		// matching the rewrite path (WriteBackArtistNFOWithFieldMap).
+		nfoData.Stillwater = &nfo.StillwaterMeta{
+			Version: nfo.StillwaterVersion,
+			Written: time.Now().UTC().Format(time.RFC3339),
 		}
+		var buf bytes.Buffer
+		if err := nfo.Write(&buf, nfoData); err != nil {
+			p.logger.Error("generating NFO for create",
+				slog.String("artist_id", a.ID),
+				slog.String("error", err.Error()),
+			)
+			return
+		}
+		if err := filesystem.WriteFileAtomic(nfoPath, buf.Bytes(), 0o644); err != nil {
+			p.logger.Error("creating NFO",
+				slog.String("artist_id", a.ID),
+				slog.String("nfo_path", nfoPath),
+				slog.String("error", err.Error()),
+			)
+			return
+		}
+		// Keep the in-memory artist consistent with the file just written so a
+		// caller that returns `a` directly (e.g. handleLockArtist) reports
+		// nfo_exists=true.
+		a.NFOExists = true
+		return
 	}
 
-	lockNFO := p.ResolveLockNFO(ctx, a)
 	if err := nfo.WriteBackArtistNFOWithFieldMap(ctx, a, p.nfoSnapshotService, p.logger, fm, lockNFO); err != nil {
 		p.logger.Error("NFO write-back failed",
 			slog.String("artist_id", a.ID),
@@ -288,6 +338,24 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 			slog.String("error", err.Error()),
 		)
 	}
+}
+
+// resolveNFOFieldMap reads the configured NFO field map for platform-specific
+// element mapping, falling back to the default when no settings service is
+// wired or the read fails.
+func (p *Publisher) resolveNFOFieldMap(ctx context.Context, a *artist.Artist) nfo.NFOFieldMap {
+	if p.nfoSettingsService == nil {
+		return nfo.DefaultFieldMap()
+	}
+	fm, err := p.nfoSettingsService.GetFieldMap(ctx)
+	if err != nil {
+		p.logger.Warn("reading NFO field map, using default",
+			slog.String("artist_id", a.ID),
+			slog.String("error", err.Error()),
+		)
+		return nfo.DefaultFieldMap()
+	}
+	return fm
 }
 
 // PushMetadataAsync pushes the artist's current metadata to all connected

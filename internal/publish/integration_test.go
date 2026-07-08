@@ -306,24 +306,9 @@ func TestWriteBackNFO_NoPath(t *testing.T) {
 	// Nothing observable; the assertion is "did not panic".
 }
 
-// TestWriteBackNFO_NoExistingNFOSkipped verifies that an artist directory
-// without a pre-existing artist.nfo is left alone; creating new NFOs is the
-// rule engine's job, per the package doc.
-func TestWriteBackNFO_NoExistingNFOSkipped(t *testing.T) {
-	dir := writeArtistDir(t, "") // no artist.nfo
-	ew := newRecordingExpectedWrites()
-	p := New(Deps{Logger: silentLogger(), ExpectedWrites: ew})
-	p.WriteBackNFO(context.Background(), &artist.Artist{ID: "a", Path: dir, Name: "X"})
-
-	if _, err := os.Stat(filepath.Join(dir, "artist.nfo")); !os.IsNotExist(err) {
-		t.Errorf("expected NFO to remain absent, stat err=%v", err)
-	}
-	added, removed := ew.snapshot()
-	if len(added) != 0 || len(removed) != 0 {
-		t.Errorf("ExpectedWrites should not be touched when no NFO exists: added=%v removed=%v",
-			added, removed)
-	}
-}
+// #2306: WriteBackNFO now CREATES a missing artist.nfo (gated by the active
+// platform profile) rather than silently skipping. That behavior is covered by
+// TestWriteBackNFO_MissingNFO_CreateGatedByProfile in writeback_nfo_create_test.go.
 
 // TestWriteBackNFO_HappyPath verifies that an existing NFO is rewritten with
 // the current metadata and that the expectedWrites tracker is properly

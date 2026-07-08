@@ -53,12 +53,13 @@ const (
 // defaultRules defines the built-in rules seeded on first startup.
 var defaultRules = []Rule{
 	{
-		ID:          RuleNFOExists,
-		Name:        "NFO file exists",
-		Description: "Artist directory must contain an artist.nfo file",
-		Category:    RuleCategoryNFO,
-		Enabled:     true,
-		Config:      RuleConfig{Severity: "error"},
+		ID:             RuleNFOExists,
+		Name:           "NFO file exists",
+		Description:    "Artist directory must contain an artist.nfo file",
+		Category:       RuleCategoryNFO,
+		Enabled:        true,
+		AutomationMode: AutomationModeAuto,
+		Config:         RuleConfig{Severity: "error"},
 	},
 	{
 		ID:          RuleNFOHasMBID,

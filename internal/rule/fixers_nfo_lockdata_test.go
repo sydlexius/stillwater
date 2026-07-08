@@ -103,7 +103,7 @@ func TestNFOFixer_NoResolverFallsBackToArtistLocked(t *testing.T) {
 				MusicBrainzID: "mbid-fb",
 				Locked:        tc.locked,
 			}
-			f := NewNFOFixer(nil, nil, nonSharedFSCheck(), nil, nil)
+			f := NewNFOFixer(nil, nil, nonSharedFSCheck(), nil, nil, nil)
 			res, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleNFOExists})
 			if err != nil {
 				t.Fatalf("Fix: %v", err)
