@@ -545,8 +545,17 @@ templ repComplianceScript() {
 			if (!sortInput || !orderInput) return;
 			var curSort = sortInput.value;
 			var curOrder = orderInput.value;
-			orderInput.value = (curSort === col && curOrder === 'asc') ? 'desc' : 'asc';
-			sortInput.value = col;
+			// Cycle the clicked column: asc -> desc -> off. "off" clears the sort
+			// param so the server falls back to the default ordering (name asc).
+			if (curSort === col && curOrder === 'asc') {
+				orderInput.value = 'desc';
+			} else if (curSort === col && curOrder === 'desc') {
+				sortInput.value = '';
+				orderInput.value = 'asc';
+			} else {
+				sortInput.value = col;
+				orderInput.value = 'asc';
+			}
 			var searchInput = document.querySelector('[name="search"]');
 			if (searchInput) htmx.trigger(searchInput, 'sortchanged');
 		}

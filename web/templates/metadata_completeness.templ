@@ -10,19 +10,24 @@ import (
 // metaCompletenessSort is the client-side sort handler for the
 // metadata-completeness table (#2304). The table is a fixed "worst N by health"
 // slice with no pagination, so sorting reorders the already-rendered rows in
-// place (preserving the selection) rather than issuing a server round-trip. It
-// toggles asc/desc off the clicked header's aria-sort and updates every
-// header's caret + aria-sort to reflect the active column.
+// place (preserving the selection) rather than issuing a server round-trip.
+// Clicking a header cycles none -> asc -> desc -> off, where "off" restores the
+// default health-ascending order (the worst-N ordering the rows arrive in). It
+// updates every header's caret opacity + aria-sort to reflect the active column.
 script metaCompletenessSort(col string) {
 	var table = document.getElementById('meta-completeness-tbl');
 	if (!table || !table.tBodies.length) return;
 	var tbody = table.tBodies[0];
 	var th = table.querySelector('th[data-sort-col="' + col + '"]');
-	var asc = !th || th.getAttribute('aria-sort') !== 'ascending';
+	var cur = th ? th.getAttribute('aria-sort') : 'none';
+	// asc -> desc -> off (default), else (none/other column) -> asc.
+	var state = cur === 'ascending' ? 'desc' : (cur === 'descending' ? 'off' : 'asc');
+	var sortCol = state === 'off' ? 'health' : col;
+	var asc = state !== 'desc';
 	var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
 	rows.sort(function (a, b) {
 		var cmp;
-		if (col === 'health') {
+		if (sortCol === 'health') {
 			cmp = (parseFloat(a.getAttribute('data-health')) || 0) - (parseFloat(b.getAttribute('data-health')) || 0);
 		} else {
 			// localeCompare (accent-insensitive) keeps the client name order close
@@ -32,13 +37,12 @@ script metaCompletenessSort(col string) {
 		return asc ? cmp : -cmp;
 	});
 	rows.forEach(function (r) { tbody.appendChild(r); });
+	function setCaret(el, on) { if (el) { el.classList.toggle('opacity-100', on); el.classList.toggle('opacity-30', !on); } }
 	table.querySelectorAll('th[data-sort-col]').forEach(function (h) {
-		var active = h.getAttribute('data-sort-col') === col;
+		var active = h.getAttribute('data-sort-col') === sortCol;
 		h.setAttribute('aria-sort', active ? (asc ? 'ascending' : 'descending') : 'none');
-		var up = h.querySelector('.sw-sort-asc');
-		var down = h.querySelector('.sw-sort-desc');
-		if (up) up.style.display = (active && asc) ? '' : 'none';
-		if (down) down.style.display = (active && !asc) ? '' : 'none';
+		setCaret(h.querySelector('.sw-sort-asc'), active && asc);
+		setCaret(h.querySelector('.sw-sort-desc'), active && !asc);
 	});
 }
 

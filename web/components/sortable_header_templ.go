@@ -8,14 +8,15 @@ package components
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// sortCaretVis returns "" when (sortKey, order) is the active sort so its caret
-// shows, else "display:none". Shared three-state indicator logic for the report
-// tables, mirroring the artists list's inline check.
-func sortCaretVis(curSort, curOrder, sortKey, order string) string {
+// caretActiveClass returns the opacity class for one direction caret of a
+// sortable header. Both carets always render (so every sortable column shows a
+// dimmed up/down affordance signalling it can be sorted); the caret matching
+// the active sort direction is shown at full opacity, the rest are dimmed.
+func caretActiveClass(curSort, curOrder, sortKey, order string) string {
 	if curSort == sortKey && curOrder == order {
-		return ""
+		return "opacity-100"
 	}
-	return "display:none"
+	return "opacity-30"
 }
 
 // ariaSortValue maps the active sort state to the ARIA aria-sort token for a
@@ -30,15 +31,16 @@ func ariaSortValue(curSort, curOrder, sortKey string) string {
 	return "ascending"
 }
 
-// SortableHeader renders a report-table column header with the canonical
-// caret-button sort affordance shared across report tables (#2304), matching
-// the artists list motif. Parameters:
+// SortableHeader renders a report-table column header with the shared sort
+// affordance (#2304). Every sortable column shows a dimmed up/down caret pair so
+// users can see which columns are sortable; the active column highlights the
+// caret for the current direction. Parameters:
 //   - dataCol: the column identity used by the ColumnToggle show/hide feature
 //     (must match the matching <td> data-col and the ColumnDef key).
 //   - sortKey: the sort param the handler cycles on (e.g. health_score).
-//   - curSort/curOrder: the active sort state, used to show the correct caret
-//     and set aria-sort. Client-sorted tables pass "" so no caret shows until
-//     the client script toggles it.
+//   - curSort/curOrder: the active sort state, used to highlight the correct
+//     caret and set aria-sort. An empty curSort means no active sort (both
+//     carets dimmed) -- the "off" state of the asc/desc/off cycle.
 //   - center: center-align the header (numeric/status columns); default left.
 //   - onClick: the caller-supplied handler; each report table drives its own
 //     sort mechanism (server-side HTMX vs client-side reorder) through it.
@@ -76,7 +78,7 @@ func SortableHeader(dataCol, sortKey, curSort, curOrder, label string, center bo
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(dataCol)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 40, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 42, Col: 20}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -89,7 +91,7 @@ func SortableHeader(dataCol, sortKey, curSort, curOrder, label string, center bo
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(sortKey)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 41, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 43, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
@@ -102,7 +104,7 @@ func SortableHeader(dataCol, sortKey, curSort, curOrder, label string, center bo
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(ariaSortValue(curSort, curOrder, sortKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 42, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 44, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -164,39 +166,57 @@ func SortableHeader(dataCol, sortKey, curSort, curOrder, label string, center bo
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 52, Col: 10}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 54, Col: 10}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " <svg class=\"sw-sort-asc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " <span class=\"ml-0.5 inline-flex flex-col leading-none\" aria-hidden=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var11 string
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(sortCaretVis(curSort, curOrder, sortKey, "asc"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 53, Col: 162}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+		var templ_7745c5c3_Var11 = []any{"sw-sort-asc h-2 w-2", caretActiveClass(curSort, curOrder, sortKey, "asc")}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var11...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 15.75l7.5-7.5 7.5 7.5\"></path></svg> <svg class=\"sw-sort-desc h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" style=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<svg class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(sortCaretVis(curSort, curOrder, sortKey, "desc"))
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var11).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 54, Col: 164}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 8.25l-7.5 7.5-7.5-7.5\"></path></svg></button></th>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"3\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 15.75l7.5-7.5 7.5 7.5\"></path></svg> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var13 = []any{"sw-sort-desc -mt-0.5 h-2 w-2", caretActiveClass(curSort, curOrder, sortKey, "desc")}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var13...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<svg class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var14 string
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var13).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/sortable_header.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"3\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 8.25l-7.5 7.5-7.5-7.5\"></path></svg></span></button></th>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

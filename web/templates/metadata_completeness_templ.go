@@ -18,21 +18,26 @@ import (
 // metaCompletenessSort is the client-side sort handler for the
 // metadata-completeness table (#2304). The table is a fixed "worst N by health"
 // slice with no pagination, so sorting reorders the already-rendered rows in
-// place (preserving the selection) rather than issuing a server round-trip. It
-// toggles asc/desc off the clicked header's aria-sort and updates every
-// header's caret + aria-sort to reflect the active column.
+// place (preserving the selection) rather than issuing a server round-trip.
+// Clicking a header cycles none -> asc -> desc -> off, where "off" restores the
+// default health-ascending order (the worst-N ordering the rows arrive in). It
+// updates every header's caret opacity + aria-sort to reflect the active column.
 func metaCompletenessSort(col string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_metaCompletenessSort_24a8`,
-		Function: `function __templ_metaCompletenessSort_24a8(col){var table = document.getElementById('meta-completeness-tbl');
+		Name: `__templ_metaCompletenessSort_a55a`,
+		Function: `function __templ_metaCompletenessSort_a55a(col){var table = document.getElementById('meta-completeness-tbl');
 	if (!table || !table.tBodies.length) return;
 	var tbody = table.tBodies[0];
 	var th = table.querySelector('th[data-sort-col="' + col + '"]');
-	var asc = !th || th.getAttribute('aria-sort') !== 'ascending';
+	var cur = th ? th.getAttribute('aria-sort') : 'none';
+	// asc -> desc -> off (default), else (none/other column) -> asc.
+	var state = cur === 'ascending' ? 'desc' : (cur === 'descending' ? 'off' : 'asc');
+	var sortCol = state === 'off' ? 'health' : col;
+	var asc = state !== 'desc';
 	var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
 	rows.sort(function (a, b) {
 		var cmp;
-		if (col === 'health') {
+		if (sortCol === 'health') {
 			cmp = (parseFloat(a.getAttribute('data-health')) || 0) - (parseFloat(b.getAttribute('data-health')) || 0);
 		} else {
 			// localeCompare (accent-insensitive) keeps the client name order close
@@ -42,17 +47,16 @@ func metaCompletenessSort(col string) templ.ComponentScript {
 		return asc ? cmp : -cmp;
 	});
 	rows.forEach(function (r) { tbody.appendChild(r); });
+	function setCaret(el, on) { if (el) { el.classList.toggle('opacity-100', on); el.classList.toggle('opacity-30', !on); } }
 	table.querySelectorAll('th[data-sort-col]').forEach(function (h) {
-		var active = h.getAttribute('data-sort-col') === col;
+		var active = h.getAttribute('data-sort-col') === sortCol;
 		h.setAttribute('aria-sort', active ? (asc ? 'ascending' : 'descending') : 'none');
-		var up = h.querySelector('.sw-sort-asc');
-		var down = h.querySelector('.sw-sort-desc');
-		if (up) up.style.display = (active && asc) ? '' : 'none';
-		if (down) down.style.display = (active && !asc) ? '' : 'none';
+		setCaret(h.querySelector('.sw-sort-asc'), active && asc);
+		setCaret(h.querySelector('.sw-sort-desc'), active && !asc);
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_metaCompletenessSort_24a8`, col),
-		CallInline: templ.SafeScriptInline(`__templ_metaCompletenessSort_24a8`, col),
+		Call:       templ.SafeScript(`__templ_metaCompletenessSort_a55a`, col),
+		CallInline: templ.SafeScriptInline(`__templ_metaCompletenessSort_a55a`, col),
 	}
 }
 
@@ -93,7 +97,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "metadata.no_artists"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 55, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 59, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -111,7 +115,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "metadata.average_coverage", report.OverallScore, report.TotalArtists))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 58, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 62, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -129,7 +133,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "metadata.lowest_completeness"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 61, Col: 115}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 65, Col: 115}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -163,7 +167,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 					var templ_7745c5c3_Var5 string
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(a.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 74, Col: 123}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 78, Col: 123}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 					if templ_7745c5c3_Err != nil {
@@ -176,7 +180,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.4f", a.HealthScore))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 74, Col: 174}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 78, Col: 174}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 					if templ_7745c5c3_Err != nil {
@@ -189,7 +193,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 					var templ_7745c5c3_Var7 templ.SafeURL
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath() + "/artists/" + a.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 77, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 81, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -202,7 +206,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 79, Col: 18}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 83, Col: 18}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -241,7 +245,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f%%", a.HealthScore))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 90, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 94, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
