@@ -21,6 +21,24 @@ var allowedArtistSort = map[string]string{
 	"created_at":   "created_at",
 }
 
+// allowedComplianceSort extends the shared artist sort allowlist with the
+// compliance-report-only columns (#2304): metadata (nfo_exists) plus the
+// image/MBID presence columns. These sort on presence of a related row rather
+// than a native artists column; validatedOrderClause expresses each as a
+// literal EXISTS() term (see internal/artist/scan.go). Kept separate from
+// allowedArtistSort so the general artist list/search endpoints do not
+// advertise or accept these report-specific keys.
+var allowedComplianceSort = func() map[string]string {
+	m := make(map[string]string, len(allowedArtistSort)+5)
+	for k, v := range allowedArtistSort {
+		m[k] = v
+	}
+	for _, k := range []string{"nfo_exists", "thumb", "fanart", "logo", "mbid"} {
+		m[k] = k
+	}
+	return m
+}()
+
 // allowedViolationSort is the allowlist for rule violation list/export
 // endpoints. The empty key is allowed and resolves to the parser default
 // ("severity"). Keys mirror the documented ViolationListParams.Sort values.

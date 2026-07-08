@@ -40,6 +40,38 @@ templ StatusBadge(exists bool, label string) {
 	}
 }
 
+// StatusBadgeIcon renders the same present/absent status pill as StatusBadge but
+// icon-only: it drops the visible label to avoid repeating the column header in
+// every row of a table whose header already names the attribute (#2304). The
+// label is preserved as the accessible name (aria-label) and hover title, so
+// screen-reader users still hear "Metadata: found" / "Metadata: missing" -- the
+// label is the badge's only accessible name, so it must not simply be deleted.
+templ StatusBadgeIcon(exists bool, label string) {
+	if exists {
+		<span
+			class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 p-1 text-green-800 dark:text-green-200"
+			title={ label + ": found" }
+			aria-label={ label + ": found" }
+			role="img"
+		>
+			<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
+			</svg>
+		</span>
+	} else {
+		<span
+			class="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900 p-1 text-red-800 dark:text-red-200"
+			title={ label + ": missing" }
+			aria-label={ label + ": missing" }
+			role="img"
+		>
+			<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+			</svg>
+		</span>
+	}
+}
+
 // SeverityBadge renders a pill badge for rule violation severity levels.
 // Uses design tokens (--sw-severity-error, --sw-severity-warning, --sw-severity-info)
 // for consistent theming. Always renders icon + text for accessibility.

@@ -67,15 +67,14 @@ type ComplianceSummaryData struct {
 	ProfileName string // Active platform profile name for image terminology
 }
 
-// sortIcon returns the sort direction indicator for a column header.
-func sortIcon(currentSort, col, currentOrder string) string {
-	if currentSort != col {
-		return ""
-	}
-	if currentOrder == "desc" {
-		return " ↓"
-	}
-	return " ↑"
+// complianceSortScript is the click handler for the compliance table's shared
+// SortableHeader cells. It delegates to the page-global sortBy (defined in
+// reports_page.templ), which cycles the sort/order hidden inputs and re-triggers
+// the HTMX search so ordering happens server-side with correct cross-page
+// semantics. Routing every header through one handler keeps the report tables'
+// sort behaviour consistent rather than forked per column.
+script complianceSortScript(col string) {
+	sortBy(col)
 }
 
 // coverageChartJSON serializes library coverage data as JSON for Chart.js.
@@ -167,43 +166,13 @@ templ ComplianceTable(data ComplianceData) {
 							/>
 							<span class="sr-only">{ t(ctx, "report.select_column") }</span>
 						</th>
-						<th
-							scope="col"
-							data-col="artist"
-							class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
-							tabindex="0"
-							role="button"
-							onclick="sortBy('name')"
-							onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('name')}"
-						>
-							{ t(ctx, "common.artist") }{ sortIcon(data.Sort, "name", data.Order) }
-						</th>
-						<th
-							scope="col"
-							data-col="score"
-							class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
-							tabindex="0"
-							role="button"
-							onclick="sortBy('health_score')"
-							onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('health_score')}"
-						>
-							{ t(ctx, "report.score") }{ sortIcon(data.Sort, "health_score", data.Order) }
-						</th>
-						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ t(ctx, "common.metadata") }
-						</th>
-						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ img.ImageTermFor("thumb", data.ProfileName) }
-						</th>
-						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ img.ImageTermFor("fanart", data.ProfileName) }
-						</th>
-						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							{ img.ImageTermFor("logo", data.ProfileName) }
-						</th>
-						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							MBID
-						</th>
+						@components.SortableHeader("artist", "name", data.Sort, data.Order, t(ctx, "common.artist"), false, complianceSortScript("name"))
+						@components.SortableHeader("score", "health_score", data.Sort, data.Order, t(ctx, "report.score"), true, complianceSortScript("health_score"))
+						@components.SortableHeader("metadata", "nfo_exists", data.Sort, data.Order, t(ctx, "common.metadata"), true, complianceSortScript("nfo_exists"))
+						@components.SortableHeader("thumb", "thumb", data.Sort, data.Order, img.ImageTermFor("thumb", data.ProfileName), true, complianceSortScript("thumb"))
+						@components.SortableHeader("fanart", "fanart", data.Sort, data.Order, img.ImageTermFor("fanart", data.ProfileName), true, complianceSortScript("fanart"))
+						@components.SortableHeader("logo", "logo", data.Sort, data.Order, img.ImageTermFor("logo", data.ProfileName), true, complianceSortScript("logo"))
+						@components.SortableHeader("mbid", "mbid", data.Sort, data.Order, "MBID", true, complianceSortScript("mbid"))
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
@@ -249,19 +218,19 @@ templ complianceRow(row ComplianceRow, profileName string, basePath string) {
 			</span>
 		</td>
 		<td data-col="metadata" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.NFOExists, "Metadata")
+			@components.StatusBadgeIcon(row.Artist.NFOExists, "Metadata")
 		</td>
 		<td data-col="thumb" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.ThumbExists, img.ImageTermFor("thumb", profileName))
+			@components.StatusBadgeIcon(row.Artist.ThumbExists, img.ImageTermFor("thumb", profileName))
 		</td>
 		<td data-col="fanart" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.FanartExists, img.ImageTermFor("fanart", profileName))
+			@components.StatusBadgeIcon(row.Artist.FanartExists, img.ImageTermFor("fanart", profileName))
 		</td>
 		<td data-col="logo" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.LogoExists, img.ImageTermFor("logo", profileName))
+			@components.StatusBadgeIcon(row.Artist.LogoExists, img.ImageTermFor("logo", profileName))
 		</td>
 		<td data-col="mbid" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.MusicBrainzID != "", "MBID")
+			@components.StatusBadgeIcon(row.Artist.MusicBrainzID != "", "MBID")
 		</td>
 	</tr>
 }
