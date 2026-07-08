@@ -11,7 +11,7 @@
     "method": "POST",
     "path": "/platforms/{id}/activate",
     "handler": "handleSetActivePlatform",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "addAlias",

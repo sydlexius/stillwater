@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/components"
@@ -185,11 +187,67 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 	if !ok {
 		return
 	}
-	if err := r.platformService.SetActive(req.Context(), id); err != nil {
+	ctx := req.Context()
+	if err := r.platformService.SetActive(ctx, id); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	// R5 (#2306): couple the nfo_exists rule to the newly-active profile so the
+	// NFO-generation contract matches the platform, and inform the user of the
+	// change (never silent). Sets an HX-Trigger header, so it must run before
+	// writeJSON writes the status line.
+	r.syncNFORuleToActiveProfile(ctx, w)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
+}
+
+// syncNFORuleToActiveProfile toggles the nfo_exists rule to match the currently
+// active platform profile (R5, #2306): Plex (NFOEnabled=false) disables it, every
+// other profile enables it (auto). The publisher/fixer write-gate already reads
+// the active profile at write time, so this keeps the *rule* state -- and the
+// user's mental model -- in sync. When the state actually changes it sets an
+// HX-Trigger ("nfoRuleToggled") so the UI surfaces it (modal when disabled, toast
+// when re-enabled). It is best-effort and fail-open: a missing rule service, a
+// rule lookup/update error, or an unresolved profile never blocks activation --
+// an unresolved profile keeps NFO enabled (the standing contract), and a rule
+// error simply leaves the rule in its current state.
+func (r *Router) syncNFORuleToActiveProfile(ctx context.Context, w http.ResponseWriter) {
+	if r.ruleService == nil {
+		return
+	}
+	prof, profErr := r.platformService.GetActive(ctx)
+	want := platform.NFOWriteAllowed(prof, profErr) // true => rule should be enabled
+	rl, err := r.ruleService.GetByID(ctx, rule.RuleNFOExists)
+	if err != nil {
+		r.logger.WarnContext(ctx, "nfo_exists rule lookup failed during profile activation; leaving rule unchanged", "error", err)
+		return
+	}
+	if rl.Enabled == want {
+		return // already in the right state: no churn, no popup
+	}
+	rl.Enabled = want
+	if want {
+		// Re-enabling restores the default automation so the contract self-heals.
+		rl.AutomationMode = rule.AutomationModeAuto
+	}
+	if err := r.ruleService.Update(ctx, rl); err != nil {
+		r.logger.WarnContext(ctx, "failed toggling nfo_exists rule on profile activation", "error", err, "enabled", want)
+		return
+	}
+	profileName := "the active profile"
+	if prof != nil && prof.Name != "" {
+		profileName = prof.Name
+	}
+	r.logger.InfoContext(ctx, "nfo_exists rule toggled to match active platform profile", "enabled", want, "profile", profileName)
+
+	state := "enabled"
+	if !want {
+		state = "disabled"
+	}
+	// map[string]any keeps a stable shape; marshal cannot fail for these types.
+	payload, _ := json.Marshal(map[string]any{
+		"nfoRuleToggled": map[string]string{"state": state, "profile": profileName},
+	})
+	w.Header().Set("HX-Trigger", string(payload))
 }
 
 // handleSettingsPage renders the settings HTML page.

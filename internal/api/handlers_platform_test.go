@@ -11,6 +11,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 // testRouterWithPlatformForUpdate returns a Router with platform service and
@@ -254,5 +255,153 @@ func TestGetUserBoolPreference_RomanizationFallback(t *testing.T) {
 	// getUserBoolPreference must now return false.
 	if got := r.getUserBoolPreference(ctx, PrefMetadataNameRomanization, true); got {
 		t.Error("after storing false: expected getUserBoolPreference to return false")
+	}
+}
+
+// TestSetActivePlatform_CouplesNFORule verifies R5 (#2306): activating a
+// Plex-style (NFO-disabled) profile turns the nfo_exists rule off and emits the
+// nfoRuleToggled HX-Trigger; activating a non-Plex profile turns it back on
+// (auto); and re-activating the already-active state is a silent no-op.
+func TestSetActivePlatform_CouplesNFORule(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithPlatform(t)
+	ctx := context.Background()
+
+	profs, err := r.platformService.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var plexID, embyID string
+	for _, p := range profs {
+		if !p.NFOEnabled && plexID == "" {
+			plexID = p.ID
+		}
+		if p.NFOEnabled && embyID == "" {
+			embyID = p.ID
+		}
+	}
+	if plexID == "" || embyID == "" {
+		t.Fatalf("need a Plex-style and a non-Plex builtin profile; got %d profiles", len(profs))
+	}
+
+	// nfo_exists seeds enabled+auto (R4), so the rule starts on.
+	rl, err := r.ruleService.GetByID(ctx, rule.RuleNFOExists)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !rl.Enabled {
+		t.Fatalf("precondition: nfo_exists should start enabled")
+	}
+
+	activate := func(id string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/platforms/"+id+"/activate", nil)
+		req.SetPathValue("id", id)
+		w := httptest.NewRecorder()
+		r.handleSetActivePlatform(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("activate %s: status %d (%s)", id, w.Code, w.Body.String())
+		}
+		return w
+	}
+	triggerState := func(w *httptest.ResponseRecorder) string {
+		t.Helper()
+		h := w.Header().Get("HX-Trigger")
+		if h == "" {
+			return ""
+		}
+		var payload map[string]map[string]string
+		if err := json.Unmarshal([]byte(h), &payload); err != nil {
+			t.Fatalf("bad HX-Trigger %q: %v", h, err)
+		}
+		return payload["nfoRuleToggled"]["state"]
+	}
+	ruleEnabled := func() bool {
+		t.Helper()
+		got, err := r.ruleService.GetByID(ctx, rule.RuleNFOExists)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		return got.Enabled
+	}
+
+	// Activate Plex -> rule off + "disabled" trigger.
+	if s := triggerState(activate(plexID)); s != "disabled" {
+		t.Errorf("plex activate: trigger state = %q, want disabled", s)
+	}
+	if ruleEnabled() {
+		t.Errorf("plex activate: nfo_exists should be disabled")
+	}
+
+	// Activate a non-Plex profile -> rule on (auto) + "enabled" trigger.
+	if s := triggerState(activate(embyID)); s != "enabled" {
+		t.Errorf("non-plex activate: trigger state = %q, want enabled", s)
+	}
+	got, _ := r.ruleService.GetByID(ctx, rule.RuleNFOExists)
+	if !got.Enabled {
+		t.Errorf("non-plex activate: nfo_exists should be enabled")
+	}
+	if got.AutomationMode != rule.AutomationModeAuto {
+		t.Errorf("non-plex activate: automation = %q, want auto", got.AutomationMode)
+	}
+
+	// Re-activate the same (already-enabled) profile -> no state change, no trigger.
+	if h := activate(embyID).Header().Get("HX-Trigger"); h != "" {
+		t.Errorf("no-op activate should not set HX-Trigger, got %q", h)
+	}
+}
+
+// TestSetActivePlatform_InvalidID covers the SetActive error path: activating a
+// nonexistent profile returns 400 and never toggles the rule.
+func TestSetActivePlatform_InvalidID(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithPlatform(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/platforms/nope/activate", nil)
+	req.SetPathValue("id", "nope")
+	w := httptest.NewRecorder()
+	r.handleSetActivePlatform(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body=%q)", w.Code, w.Body.String())
+	}
+	if h := w.Header().Get("HX-Trigger"); h != "" {
+		t.Errorf("failed activation should not set HX-Trigger, got %q", h)
+	}
+}
+
+// TestSetActivePlatform_NilRuleService is the fail-open path: with no rule
+// service wired, activation still succeeds and simply skips the rule coupling.
+func TestSetActivePlatform_NilRuleService(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithPlatform(t)
+	r.ruleService = nil
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/platforms/plex/activate", nil)
+	req.SetPathValue("id", "plex")
+	w := httptest.NewRecorder()
+	r.handleSetActivePlatform(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", w.Code, w.Body.String())
+	}
+	if h := w.Header().Get("HX-Trigger"); h != "" {
+		t.Errorf("nil rule service should not set HX-Trigger, got %q", h)
+	}
+}
+
+// TestSetActivePlatform_RuleLookupError is the fail-open path when the
+// nfo_exists rule is absent: activation still succeeds, no trigger, no panic.
+func TestSetActivePlatform_RuleLookupError(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithPlatform(t)
+	if _, err := r.db.ExecContext(context.Background(), `DELETE FROM rules WHERE id = ?`, rule.RuleNFOExists); err != nil {
+		t.Fatalf("deleting nfo_exists rule: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/platforms/plex/activate", nil)
+	req.SetPathValue("id", "plex")
+	w := httptest.NewRecorder()
+	r.handleSetActivePlatform(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", w.Code, w.Body.String())
+	}
+	if h := w.Header().Get("HX-Trigger"); h != "" {
+		t.Errorf("rule lookup error should not set HX-Trigger, got %q", h)
 	}
 }
