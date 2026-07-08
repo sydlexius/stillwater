@@ -201,6 +201,12 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 	} else {
 		nfoData.LockData = a.Locked
 	}
+	// Stamp provenance so an external overwrite can be detected on read,
+	// matching the write-back and discography paths (#2306).
+	nfoData.Stillwater = &nfo.StillwaterMeta{
+		Version: nfo.StillwaterVersion,
+		Written: time.Now().UTC().Format(time.RFC3339),
+	}
 	var buf bytes.Buffer
 	if err := nfo.Write(&buf, nfoData); err != nil {
 		return nil, fmt.Errorf("generating nfo: %w", err)

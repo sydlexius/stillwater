@@ -35,7 +35,8 @@ func TestWriteBackNFO_MissingNFO_CreateGatedByProfile(t *testing.T) {
 			deps.PlatformService = tc.provider
 			p := New(deps)
 
-			p.WriteBackNFO(context.Background(), &artist.Artist{ID: "a", Path: dir, Name: "Schumann"})
+			a := &artist.Artist{ID: "a", Path: dir, Name: "Schumann"}
+			p.WriteBackNFO(context.Background(), a)
 
 			_, statErr := os.Stat(filepath.Join(dir, "artist.nfo"))
 			gotFile := statErr == nil
@@ -50,6 +51,16 @@ func TestWriteBackNFO_MissingNFO_CreateGatedByProfile(t *testing.T) {
 				if !strings.Contains(string(data), "Schumann") {
 					t.Errorf("created NFO missing artist name; got:\n%s", data)
 				}
+				// #2306: create path stamps <stillwater> provenance and marks the
+				// in-memory artist so callers report nfo_exists=true.
+				if !strings.Contains(string(data), "<stillwater") {
+					t.Errorf("created NFO missing <stillwater> provenance stamp; got:\n%s", data)
+				}
+				if !a.NFOExists {
+					t.Error("a.NFOExists was not set to true after create")
+				}
+			} else if a.NFOExists {
+				t.Error("a.NFOExists must stay false when the write is skipped (Plex)")
 			}
 		})
 	}

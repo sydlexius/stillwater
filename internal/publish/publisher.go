@@ -302,6 +302,12 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 		// using the same field-map + lockdata shaping the rule fixer applies.
 		nfoData := nfo.FromArtistWithFieldMap(a, fm)
 		nfoData.LockData = lockNFO
+		// Stamp provenance so an external overwrite can be detected on read,
+		// matching the rewrite path (WriteBackArtistNFOWithFieldMap).
+		nfoData.Stillwater = &nfo.StillwaterMeta{
+			Version: nfo.StillwaterVersion,
+			Written: time.Now().UTC().Format(time.RFC3339),
+		}
 		var buf bytes.Buffer
 		if err := nfo.Write(&buf, nfoData); err != nil {
 			p.logger.Error("generating NFO for create",
@@ -316,7 +322,12 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 				slog.String("nfo_path", nfoPath),
 				slog.String("error", err.Error()),
 			)
+			return
 		}
+		// Keep the in-memory artist consistent with the file just written so a
+		// caller that returns `a` directly (e.g. handleLockArtist) reports
+		// nfo_exists=true.
+		a.NFOExists = true
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -59,10 +60,14 @@ func TestNFOFixer_ProfileGate(t *testing.T) {
 			if res.Fixed != tc.wantFixed {
 				t.Errorf("Fixed=%v want %v (msg=%q)", res.Fixed, tc.wantFixed, res.Message)
 			}
-			_, statErr := os.Stat(filepath.Join(dir, "artist.nfo"))
+			data, statErr := os.ReadFile(filepath.Join(dir, "artist.nfo"))
 			gotFile := statErr == nil
 			if gotFile != tc.wantFile {
 				t.Errorf("artist.nfo exists=%v want %v", gotFile, tc.wantFile)
+			}
+			// #2306: created NFOs carry the <stillwater> provenance stamp.
+			if tc.wantFile && !strings.Contains(string(data), "<stillwater") {
+				t.Errorf("created NFO missing <stillwater> provenance stamp; got:\n%s", data)
 			}
 		})
 	}
