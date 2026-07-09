@@ -123,16 +123,93 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		var _cropper = null;
 		var _currentRatio = NaN;
 		var _pendingRatio = NaN;
-		function openCropModal(imgSrc, imageType, initialRatio, append) {
+		// #2281 QOL #48: true once the user has actually interacted with the
+		// crop box (see the 'crop' listener attached inside the Cropper ready
+		// callback below -- registering it there, not before, means Cropper's
+		// own initial auto-crop-area setup does not count as "interacted").
+		// guardedCloseCropModal reads this to decide whether closing needs a
+		// discard confirmation; closeCropModal itself always resets it.
+		var _cropDirty = false;
+		function markCropDirty() { _cropDirty = true; }
+
+		// isRemoteImageSrc reports whether src is a cross-origin http(s) URL
+		// (a provider result, e.g. Discogs) rather than a same-origin saved
+		// file or an already-staged data: URI. Cropper.js/canvas taints on
+		// the former without a staging round-trip (#2281 QOL #47).
+		function isRemoteImageSrc(src) {
+			return /^https?:\/\//i.test(src) && src.indexOf(window.location.origin) !== 0;
+		}
+
+		// stageAndLoadCrop downloads a remote provider URL through the
+		// same-origin /images/stage endpoint and loads the returned data: URI
+		// into the crop image, instead of loading imgSrc directly (which
+		// would taint the canvas for a provider that does not send CORS
+		// headers). Falls back to a generic load-failure message if staging
+		// itself fails.
+		function stageAndLoadCrop(imgSrc, imageType) {
+			var modal = document.getElementById('crop-modal');
+			var cropImage = document.getElementById('crop-image');
+			var artistID = modal.dataset.artistId;
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+			var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+			var statusEl = document.getElementById('upload-status');
+			if (statusEl) {
+				var loading = document.createElement('span');
+				loading.className = 'text-sm text-gray-500';
+				loading.textContent = modal.dataset.msgStaging || 'Loading image for cropping...';
+				statusEl.replaceChildren(loading);
+			}
+			fetch(bp + '/api/v1/artists/' + artistID + '/images/stage', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json', 'X-CSRF-Token': token},
+				body: JSON.stringify({url: imgSrc, type: imageType}),
+				credentials: 'same-origin'
+			}).then(function(r) {
+				return r.json().catch(function() { return {}; }).then(function(data) {
+					return {ok: r.ok, data: data};
+				});
+			}).then(function(result) {
+				if (!result.ok || !result.data || !result.data.image_data) {
+					closeCropModal();
+					showCropStageFailure(modal);
+					return;
+				}
+				if (statusEl) statusEl.replaceChildren();
+				cropImage.src = result.data.image_data;
+			}).catch(function() {
+				closeCropModal();
+				showCropStageFailure(modal);
+			});
+		}
+
+		// showCropStageFailure surfaces a generic error when the staging
+		// fetch itself fails (network error, private/invalid URL, non-image
+		// bytes) -- the only case that still needs a fallback message, since
+		// the taint-then-"save first" workaround is no longer the normal path.
+		function showCropStageFailure(modal) {
+			var statusEl = document.getElementById('upload-status');
+			if (!statusEl) return;
+			var s = document.createElement('span');
+			s.className = 'text-sm text-amber-600';
+			s.textContent = (modal && modal.dataset.msgCropLoadFailed) || 'Could not load this image for cropping. Please try again.';
+			statusEl.replaceChildren(s);
+		}
+
+		// openCropModal opens the crop dialog for imgSrc. slot (optional) is
+		// the explicit fanart slot (#2281 QOL #48) this crop should persist
+		// to; stashed on the modal so saveCroppedImage can thread it into the
+		// /images/crop POST without re-deriving it.
+		function openCropModal(imgSrc, imageType, initialRatio, append, slot) {
 			var modal = document.getElementById('crop-modal');
 			var cropImage = document.getElementById('crop-image');
 			var cropType = document.getElementById('crop-type');
 			var lockCb = document.getElementById('crop-lock-ratio');
-			cropImage.crossOrigin = 'anonymous';
 			if (imageType) cropType.value = imageType;
-			// Persist the append/replace intent on the modal so saveCroppedImage
-			// can read it without threading it through Cropper.js state.
+			// Persist the append/replace intent (and #2281 slot) on the modal
+			// so saveCroppedImage can read them without threading them
+			// through Cropper.js state.
 			modal.dataset.append = append ? '1' : '0';
+			modal.dataset.slot = (slot === undefined || slot === null) ? '' : String(slot);
 			// Toggle BOTH `hidden` and `flex` so only one display class is
 			// active at a time. The template default is `hidden` only --
 			// co-applying `hidden` + `flex` would be a Tailwind cascade trap
@@ -154,6 +231,7 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			// destroyed) Cropper instance and bypasses the inline error.
 			window._cropper = null;
 			_currentRatio = NaN;
+			_cropDirty = false;
 			_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
 			if (lockCb) lockCb.checked = false;
 			// Attach handlers before setting src: cached images fire onload
@@ -168,22 +246,27 @@ templ ArtworkManageEditor(data ImageSearchData) {
 							setCropRatio(_pendingRatio);
 							_pendingRatio = NaN;
 						}
+						// Registered here (after Cropper's own initial
+						// crop-box setup), not before construction, so only
+						// genuine user interaction (drag/resize/move) marks
+						// the session dirty -- see the _cropDirty comment.
+						cropImage.addEventListener('crop', markCropDirty);
 					}
 				});
 				window._cropper = _cropper;
 			};
 			cropImage.onerror = function() {
 				closeCropModal();
-				var statusEl = document.getElementById('upload-status');
-				if (statusEl) {
-					var s = document.createElement('span');
-					s.className = 'text-sm text-amber-600';
-					var editorEl = document.querySelector('[data-artist-id][data-image-type]');
-					s.textContent = editorEl ? editorEl.dataset.msgCorsCrop : 'Cannot crop this image directly (CORS). Save it first, then crop.';
-					statusEl.replaceChildren(s);
-				}
+				showCropStageFailure(modal);
 			};
-			cropImage.src = imgSrc;
+			// #2281 QOL #47: a remote provider URL is staged same-origin
+			// first (avoids the canvas taint); an already-staged data: URI or
+			// a same-origin saved file loads directly.
+			if (isRemoteImageSrc(imgSrc)) {
+				stageAndLoadCrop(imgSrc, imageType);
+			} else {
+				cropImage.src = imgSrc;
+			}
 		}
 		function closeCropModal() {
 			var modal = document.getElementById('crop-modal');
@@ -200,6 +283,7 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			if (cropImage) {
 				cropImage.onload = null;
 				cropImage.onerror = null;
+				cropImage.removeEventListener('crop', markCropDirty);
 			}
 			if (_cropper) {
 				_cropper.destroy();
@@ -208,6 +292,31 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			// Mirror the open path so the readiness guard in
 			// saveCroppedImage sees a clean state next time.
 			window._cropper = null;
+			_cropDirty = false;
+		}
+		// guardedCloseCropModal is the discard-guard entry point (#2281 QOL
+		// #48): the header X, footer Cancel, and backdrop click all route
+		// through this instead of calling closeCropModal() directly, so
+		// in-progress crop work is never silently discarded. An untouched
+		// modal (never dirtied) still closes immediately with no prompt.
+		function guardedCloseCropModal() {
+			if (!_cropDirty) {
+				closeCropModal();
+				return;
+			}
+			if (typeof window.showConfirmDialog !== 'function') {
+				// Capability check fails loudly rather than silently
+				// discarding: log so a missing/broken confirm-modal system
+				// is visible, but still let the user close the dialog.
+				console.error('showConfirmDialog unavailable; closing the crop modal without a discard confirmation');
+				closeCropModal();
+				return;
+			}
+			var modal = document.getElementById('crop-modal');
+			var message = (modal && modal.dataset.confirmDiscard) || 'Discard your in-progress crop?';
+			window.showConfirmDialog(message, 'crop-discard', function() {
+				closeCropModal();
+			});
 		}
 		function setCropRatio(ratio) {
 			_currentRatio = ratio;
@@ -248,7 +357,6 @@ templ imageSearchContextualized(data ImageSearchData) {
 		class="max-w-4xl mx-auto space-y-6"
 		data-artist-id={ data.Artist.ID }
 		data-image-type={ data.SelectedType }
-		data-msg-cors-crop={ t(ctx, "image.msg_cors_crop") }
 		data-msg-needs-crop={ t(ctx, "image.msg_needs_crop") }
 		data-msg-uploading={ t(ctx, "image.msg_uploading") }
 		data-msg-upload-failed={ t(ctx, "image.msg_upload_failed") }
@@ -599,7 +707,10 @@ templ imageSearchContextualized(data ImageSearchData) {
 					// data.append mirrors the server's own append decision (same
 					// type == "fanart" && FanartExists condition) so the auto-opened
 					// crop modal appends when the triggering upload/fetch would have.
-					openCropModal(data.image_data, data.type, data.required_ratio, !!data.append);
+					// data.slot (#2281 QOL #48) is echoed back only when the
+					// triggering fetch carried an explicit fanart slot, so the
+					// follow-up crop save persists to that same slot.
+					openCropModal(data.image_data, data.type, data.required_ratio, !!data.append, data.slot);
 					setStatus(container.dataset.msgNeedsCrop, 'text-amber-600');
 				}
 
@@ -636,17 +747,46 @@ templ imageSearchContextualized(data ImageSearchData) {
 					if (fileInput.files.length > 0) uploadFile(fileInput.files[0]);
 				});
 
+				// #2281 QOL #48: per-slot fetch/replace on the backdrop management
+				// gallery (backdrop_management.templ's FanartManagementGallery)
+				// reuses this SAME modal + submit handler rather than a second
+				// one. swOpenFetchUrlForSlot sets _fetchUrlSlot before showing the
+				// modal; the submit handler below threads it into the request and
+				// resets it afterward so a later "current type" fetch does not
+				// inherit a stale slot.
+				var _fetchUrlSlot = null;
+				window.swOpenFetchUrlForSlot = function(slot) {
+					_fetchUrlSlot = slot;
+					var input = document.getElementById('fetch-url-input');
+					if (input) input.value = '';
+					document.getElementById('fetch-url-modal').classList.remove('hidden');
+				};
+				// swOpenCropForSlot opens the crop modal directly on a saved
+				// backdrop slot's same-origin file (no staging needed: it is
+				// already our own saved file, not a remote provider URL).
+				window.swOpenCropForSlot = function(slot) {
+					if (typeof openCropModal !== 'function') return;
+					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+					var src = bp + '/api/v1/artists/' + artistID + '/images/fanart/' + slot + '/file';
+					openCropModal(src, 'fanart', 16 / 9, false, slot);
+				};
+
 				document.getElementById('fetch-url-submit').addEventListener('click', function() {
 					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 					var url = document.getElementById('fetch-url-input').value.trim();
 					if (!url) return;
 					var modal = document.getElementById('fetch-url-modal');
+					var slot = _fetchUrlSlot;
+					_fetchUrlSlot = null;
+					var fetchType = (slot !== null) ? 'fanart' : imageType;
 					setStatus(container.dataset.msgFetching, 'text-gray-500');
 					modal.classList.add('hidden');
+					var reqBody = {url: url, type: fetchType};
+					if (slot !== null) reqBody.slot = slot;
 					fetch(bp + '/api/v1/artists/' + artistID + '/images/fetch', {
 						method: 'POST',
 						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
-						body: JSON.stringify({url: url, type: imageType}),
+						body: JSON.stringify(reqBody),
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {

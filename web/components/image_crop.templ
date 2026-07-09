@@ -11,6 +11,11 @@ templ ImageCropModal(artistID string) {
 	<div
 		id="crop-modal"
 		class="fixed inset-0 z-50 hidden bg-black/50 items-center justify-center p-4"
+		data-artist-id={ artistID }
+		data-confirm-discard="Discard your in-progress crop?"
+		data-msg-staging="Loading image for cropping..."
+		data-msg-crop-load-failed="Could not load this image for cropping. Please try again."
+		onclick="if (event.target === this) guardedCloseCropModal()"
 	>
 		<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
 			<div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -18,7 +23,7 @@ templ ImageCropModal(artistID string) {
 				<button
 					type="button"
 					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-					onclick="closeCropModal()"
+					onclick="guardedCloseCropModal()"
 				>
 					X
 				</button>
@@ -66,7 +71,7 @@ templ ImageCropModal(artistID string) {
 				<button
 					type="button"
 					class="px-4 py-2.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
-					onclick="closeCropModal()"
+					onclick="guardedCloseCropModal()"
 				>
 					Cancel
 				</button>
@@ -117,9 +122,14 @@ script saveCroppedImage(artistID string) {
 		showCropError('Cannot extract the cropped image. The source image is cross-origin and the browser blocked canvas access. Save it to disk first, then crop.');
 		return;
 	}
+	var cropModal = document.getElementById('crop-modal');
 	var cropType = document.getElementById('crop-type').value;
 	// append intent was stashed on the modal by openCropModal at open time.
-	var cropAppend = document.getElementById('crop-modal').dataset.append === '1';
+	var cropAppend = cropModal.dataset.append === '1';
+	// #2281 QOL #48: an explicit fanart slot, also stashed on the modal by
+	// openCropModal, takes priority over append server-side. Empty string
+	// (the no-slot default) means "omit the field" for backward compat.
+	var cropSlot = cropModal.dataset.slot;
 	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
 	// unnecessary format conversion and larger file sizes.
 	var mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
@@ -131,20 +141,25 @@ script saveCroppedImage(artistID string) {
 	// double-submits (rapid double-click would otherwise queue two saves).
 	if (saveBtn) saveBtn.disabled = true;
 
+	var cropBody = {
+		image_data: base64,
+		type: cropType,
+		x: 0, y: 0,
+		width: canvas.width,
+		height: canvas.height,
+		append: cropAppend
+	};
+	if (cropSlot !== undefined && cropSlot !== '') {
+		cropBody.slot = parseInt(cropSlot, 10);
+	}
+
 	fetch(bp + '/api/v1/artists/' + artistID + '/images/crop', {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
 			'X-CSRF-Token': token
 		},
-		body: JSON.stringify({
-			image_data: base64,
-			type: cropType,
-			x: 0, y: 0,
-			width: canvas.width,
-			height: canvas.height,
-			append: cropAppend
-		})
+		body: JSON.stringify(cropBody)
 	}).then(function(r) {
 		// Parse the body so we can surface the server's error message when
 		// present. Default to an empty object if the body is not JSON so the

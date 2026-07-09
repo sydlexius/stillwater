@@ -22,6 +22,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 // init registers a text/html body decoder for the kin-openapi validator. The
@@ -327,6 +328,87 @@ func TestHandleImageFetch_FanartAppend(t *testing.T) {
 	}
 }
 
+// TestHandleImageFetch_ExplicitSlot_ReplacesThatSlotOnly covers #2281 QOL #48
+// on the fetch path: an explicit slot must overwrite only that numbered
+// fanart file, leaving the primary untouched.
+func TestHandleImageFetch_ExplicitSlot_ReplacesThatSlotOnly(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "FetchSlot", SortName: "FetchSlot", Path: dir, FanartExists: true}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	names := seedFanartSlots(t, r, dir, 2) // slots 0, 1
+	primaryBefore, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading seed primary: %v", err)
+	}
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 1920, 1080)}}
+	body := strings.NewReader(`{"url":"https://8.8.8.8/bg.jpg","type":"fanart","slot":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	saved, _ := resp["saved"].([]any)
+	if len(saved) != 1 || saved[0] != names[1] {
+		t.Errorf("saved = %v, want [%q] (slot 1 only)", saved, names[1])
+	}
+
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading primary after slot fetch: %v", err)
+	}
+	if !bytes.Equal(primaryBefore, primaryAfter) {
+		t.Error("slot=1 fetch must not touch the primary (slot 0)")
+	}
+}
+
+// TestHandleImageFetch_ExplicitSlot_OutOfRangeRejected covers the no-gaps
+// validation on the fetch path: a slot at/beyond the current count is
+// rejected with a generic 400. The default stub transport from
+// newImageHandlerTestServer would happily "succeed" a fetch if the handler
+// incorrectly reached the network path, so a 400 here also pins that the
+// out-of-range check runs before any save.
+func TestHandleImageFetch_ExplicitSlot_OutOfRangeRejected(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "FetchSlotOOR", SortName: "FetchSlotOOR", Path: dir, FanartExists: true}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	seedFanartSlots(t, r, dir, 1) // slot 0 only
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/bg.jpg","type":"fanart","slot":5}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("directory entries = %d, want 1 (only the seeded slot 0, nothing saved)", len(entries))
+	}
+}
+
 func TestHandleImageFetch_InvalidJSON(t *testing.T) {
 	t.Parallel()
 	r, svc := newImageHandlerTestServer(t)
@@ -347,6 +429,138 @@ func TestHandleImageFetch_InvalidJSON(t *testing.T) {
 	r.handleImageFetch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestHandleImageStage_Success covers #2281 QOL #47: a successful stage
+// returns a base64 data: URI and, critically, saves nothing, publishes no
+// event, and never touches the pipeline -- it is a pure read.
+func TestHandleImageStage_Success(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "StageOK", SortName: "StageOK", Path: dir}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	called := make(chan struct{}, 1)
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
+			select {
+			case called <- struct{}{}:
+			default:
+			}
+			return &rule.RunResult{}, nil
+		},
+	}
+	r.pipeline = stub
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 640, 480)}}
+	body := strings.NewReader(`{"url":"https://8.8.8.8/discogs.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	dataURI, _ := resp["image_data"].(string)
+	if !strings.HasPrefix(dataURI, "data:image/jpeg;base64,") {
+		t.Errorf("image_data = %q, want a data:image/jpeg;base64,... URI", dataURI)
+	}
+	if resp["type"] != "thumb" {
+		t.Errorf("type = %v, want %q", resp["type"], "thumb")
+	}
+
+	// Nothing saved to disk.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("directory entries = %d, want 0 (staging must not save to disk); entries=%v", len(entries), entries)
+	}
+	// Pipeline never invoked (staging runs no rules).
+	select {
+	case <-called:
+		t.Error("staging must not invoke the rule pipeline")
+	default:
+	}
+}
+
+// TestHandleImageStage_RejectsPrivateURL mirrors the fetch endpoint's SSRF
+// guard: staging reuses the same isPrivateURL check.
+func TestHandleImageStage_RejectsPrivateURL(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StagePriv", SortName: "StagePriv", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{"url":"http://127.0.0.1/secret.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleImageStage_InvalidType rejects an unsupported type before any
+// network fetch.
+func TestHandleImageStage_InvalidType(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StageBadType", SortName: "StageBadType", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/x.jpg","type":"poster"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	// Pattern B (see TestHandleImageFetch_InvalidJSON): "poster" fails the
+	// OpenAPI enum before reaching the handler, so exercise the handler's own
+	// invalid-type rejection directly rather than through serveValidated.
+	r.handleImageStage(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleImageStage_NonImageBytesRejected covers the img.DetectFormat
+// validation: a successful HTTP fetch that is not actually image data must be
+// rejected rather than staged.
+func TestHandleImageStage_NonImageBytesRejected(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StageNotImage", SortName: "StageNotImage", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: []byte("<html>not an image</html>")}}
+	body := strings.NewReader(`{"url":"https://8.8.8.8/x.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusBadGateway && w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 or 502 for non-image bytes; body: %s", w.Code, w.Body.String())
 	}
 }
 

@@ -1624,6 +1624,13 @@
     "covered": true
   },
   {
+    "operationId": "stageImage",
+    "method": "POST",
+    "path": "/artists/{id}/images/stage",
+    "handler": "handleImageStage",
+    "covered": true
+  },
+  {
     "operationId": "startBulkAction",
     "method": "POST",
     "path": "/artists/bulk-actions",

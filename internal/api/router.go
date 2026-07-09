@@ -794,6 +794,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/search", wrapAuth(r.handleImageSearch, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/websearch", wrapAuth(r.handleWebImageSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/crop", wrapAuth(r.handleImageCrop, authMw))
+	// #2281: read-only staging fetch so the crop modal can load a cross-origin
+	// provider image same-origin (as a base64 data: URI) without a tainted
+	// canvas. Saves nothing, runs no rules, publishes no events.
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/stage", wrapAuth(r.handleImageStage, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/logo/trim", wrapAuth(r.handleLogoTrim, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/{type}/revert", wrapAuth(r.handleImageRevert, authMw))
 	// Multi-fanart routes

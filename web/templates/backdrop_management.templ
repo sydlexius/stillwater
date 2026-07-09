@@ -74,6 +74,30 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 								<span class="font-mono">{ " " + formatFileSizeTempl(item.Size) }</span>
 							</span>
 							<div class="flex items-center gap-1">
+								// #2281 QOL #48: crop/fetch-replace on any saved backdrop
+								// slot, not just the primary. Discrete siblings of the
+								// move/delete controls, wired to the shared crop-modal +
+								// fetch-url-modal via swOpenCropForSlot/swOpenFetchUrlForSlot
+								// (image_search.templ), which are only defined once the
+								// editor page's script IIFE has run.
+								<button
+									type="button"
+									class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+									title={ t(ctx, "image.crop_this_fanart") }
+									aria-label={ t(ctx, "image.crop_this_fanart") }
+									onclick={ templ.JSFuncCall("window.swOpenCropForSlot", item.Index) }
+								>
+									{ t(ctx, "common.crop") }
+								</button>
+								<button
+									type="button"
+									class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+									title={ t(ctx, "image.fetch_replace_fanart") }
+									aria-label={ t(ctx, "image.fetch_replace_fanart") }
+									onclick={ templ.JSFuncCall("window.swOpenFetchUrlForSlot", item.Index) }
+								>
+									{ t(ctx, "image.fetch") }
+								</button>
 								if item.Index > 0 {
 									<button
 										type="button"
