@@ -2884,3 +2884,237 @@ func TestHandleLogoTrim_BackupFailureAborts(t *testing.T) {
 		t.Error("original logo must be preserved when pre-trim backup fails")
 	}
 }
+
+// TestHandleImageCrop_AppendFanart_AppendsNewFile proves #2314: cropping a
+// newly added fanart (append=true) with a primary already present appends a
+// new numbered file rather than overwriting the primary.
+func TestHandleImageCrop_AppendFanart_AppendsNewFile(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop Append Artist", SortName: "Crop Append Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	// FanartExists is derived from the artist_images side table (hydrated on
+	// every GetByID), not the in-memory struct passed to Create -- seed it the
+	// way a real prior save would have, via updateArtistImageFlag.
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+	primaryBefore, err := os.ReadFile(filepath.Join(dir, "fanart.jpg"))
+	if err != nil {
+		t.Fatalf("reading seed primary: %v", err)
+	}
+
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 1280, 720)), nil); err != nil {
+		t.Fatalf("encoding crop input: %v", err)
+	}
+	reqBody, _ := json.Marshal(map[string]any{
+		"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+		"type":       "fanart",
+		"x":          0, "y": 0, "width": 1280, "height": 720,
+		"append": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageCrop(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, "fanart.jpg"))
+	if err != nil {
+		t.Fatalf("reading primary after crop: %v", err)
+	}
+	if !bytes.Equal(primaryBefore, primaryAfter) {
+		t.Error("primary fanart.jpg was overwritten; append=true must leave it untouched")
+	}
+	// The exact appended filename depends on the active naming convention
+	// (fanart1.jpg / fanart2.jpg); assert on the response contract instead of
+	// a hardcoded name.
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	saved, _ := resp["saved"].([]any)
+	if len(saved) != 1 {
+		t.Fatalf("saved = %v, want exactly one newly-appended file", saved)
+	}
+	if savedName, _ := saved[0].(string); savedName == "fanart.jpg" {
+		t.Errorf("saved file %q must not be the primary; append=true must add a new numbered file", savedName)
+	}
+	if _, err := os.Stat(filepath.Join(dir, saved[0].(string))); err != nil {
+		t.Errorf("expected appended file %v to exist on disk: %v", saved[0], err)
+	}
+	if count, _ := resp["count"].(float64); count != 2 {
+		t.Errorf("count = %v, want 2 after appending a second fanart", resp["count"])
+	}
+
+	updated, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if updated.FanartCount != 2 {
+		t.Errorf("FanartCount = %d, want 2 after append", updated.FanartCount)
+	}
+}
+
+// TestHandleImageCrop_ReplacePrimary_NoAppend proves the recrop-of-primary
+// path (append absent/false) still replaces the primary fanart in place,
+// even when a primary already exists -- the counterpart to
+// TestHandleImageCrop_AppendFanart_AppendsNewFile.
+func TestHandleImageCrop_ReplacePrimary_NoAppend(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop Replace Artist", SortName: "Crop Replace Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+	primaryBefore, err := os.ReadFile(filepath.Join(dir, "fanart.jpg"))
+	if err != nil {
+		t.Fatalf("reading seed primary: %v", err)
+	}
+
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 1280, 720)), nil); err != nil {
+		t.Fatalf("encoding crop input: %v", err)
+	}
+	// No "append" field: defaults to false (recrop-of-primary).
+	reqBody, _ := json.Marshal(map[string]any{
+		"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+		"type":       "fanart",
+		"x":          0, "y": 0, "width": 1280, "height": 720,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageCrop(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, "fanart.jpg"))
+	if err != nil {
+		t.Fatalf("reading primary after crop: %v", err)
+	}
+	if bytes.Equal(primaryBefore, primaryAfter) {
+		t.Error("expected fanart.jpg to be overwritten by the recrop")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fanart2.jpg")); err == nil {
+		t.Error("no-append recrop must not create fanart2.jpg")
+	}
+}
+
+// TestHandleImageUpload_NeedsCrop_IncludesAppend proves the needs_crop JSON
+// response from handleImageUpload carries the same append decision the
+// upload's own fanart-append branch would take, so the client's auto-opened
+// crop modal can carry it through to handleImageCrop (#2314).
+func TestHandleImageUpload_NeedsCrop_IncludesAppend(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Needs Crop Append", SortName: "Needs Crop Append", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	if err := mw.WriteField("type", "fanart"); err != nil {
+		t.Fatalf("writing field: %v", err)
+	}
+	partHeader := make(map[string][]string)
+	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="fanart.jpg"`}
+	partHeader["Content-Type"] = []string{"image/jpeg"}
+	fw, err := mw.CreatePart(partHeader)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	// Mismatched aspect ratio (square) so this hits the needs_crop branch.
+	if err := jpeg.Encode(fw, image.NewRGBA(image.Rect(0, 0, 500, 500)), nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageUpload(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got, ok := resp["needs_crop"].(bool); !ok || !got {
+		t.Fatalf("expected needs_crop=true, got %v", resp["needs_crop"])
+	}
+	if got, ok := resp["append"].(bool); !ok || !got {
+		t.Errorf("expected append=true (fanart already exists), got %v", resp["append"])
+	}
+}
+
+// TestHandleImageCrop_AppendRequested_NoPrimary_SavesAsPrimary proves the
+// append branch requires a.FanartExists, not just the client's append flag:
+// append=true with no existing primary must fall through to the single-slot
+// save path and create the primary, not a numbered append file.
+func TestHandleImageCrop_AppendRequested_NoPrimary_SavesAsPrimary(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop Append No Primary", SortName: "Crop Append No Primary", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// No existing fanart.jpg seeded, and FanartExists is never flagged.
+
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 1280, 720)), nil); err != nil {
+		t.Fatalf("encoding crop input: %v", err)
+	}
+	reqBody, _ := json.Marshal(map[string]any{
+		"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+		"type":       "fanart",
+		"x":          0, "y": 0, "width": 1280, "height": 720,
+		"append": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageCrop(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg (primary) to be created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fanart1.jpg")); err == nil {
+		t.Error("append=true with no existing primary must not create a numbered append file")
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	saved, _ := resp["saved"].([]any)
+	if len(saved) != 1 || saved[0] != "fanart.jpg" {
+		t.Errorf("saved = %v, want [\"fanart.jpg\"]", saved)
+	}
+}

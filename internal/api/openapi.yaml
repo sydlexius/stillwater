@@ -4018,6 +4018,9 @@ paths:
                   image_data:
                     type: string
                     description: Base64-encoded data URI of the uploaded image. Present only when needs_crop is true, for use in a client-side crop tool.
+                  append:
+                    type: boolean
+                    description: True when type is fanart and a primary fanart already exists, meaning the eventual crop-save should append a new numbered fanart rather than replace the primary. Present only when needs_crop is true.
         "409":
           description: Write blocked by the conflict ledger
           content:
@@ -4119,6 +4122,9 @@ paths:
                   image_data:
                     type: string
                     description: Base64-encoded data URI of the fetched image. Present only when needs_crop is true, for use in a client-side crop tool.
+                  append:
+                    type: boolean
+                    description: True when type is fanart and a primary fanart already exists, meaning the eventual crop-save should append a new numbered fanart rather than replace the primary. Present only when needs_crop is true.
         "204":
           description: Image fetched and saved (HTMX request); HX-Refresh response header tells the client to reload.
         "400":
@@ -4235,6 +4241,9 @@ paths:
                   type: integer
                 height:
                   type: integer
+                append:
+                  type: boolean
+                  description: When type is fanart and a primary fanart already exists, true appends the crop result as a new numbered fanart instead of replacing the primary.
               required: [image_data, type]
       responses:
         "200":
@@ -4260,6 +4269,9 @@ paths:
                     items:
                       type: string
                     description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+                  count:
+                    type: integer
+                    description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
         "409":
           description: Write blocked by the conflict ledger
           content:

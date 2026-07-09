@@ -123,13 +123,16 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		var _cropper = null;
 		var _currentRatio = NaN;
 		var _pendingRatio = NaN;
-		function openCropModal(imgSrc, imageType, initialRatio) {
+		function openCropModal(imgSrc, imageType, initialRatio, append) {
 			var modal = document.getElementById('crop-modal');
 			var cropImage = document.getElementById('crop-image');
 			var cropType = document.getElementById('crop-type');
 			var lockCb = document.getElementById('crop-lock-ratio');
 			cropImage.crossOrigin = 'anonymous';
 			if (imageType) cropType.value = imageType;
+			// Persist the append/replace intent on the modal so saveCroppedImage
+			// can read it without threading it through Cropper.js state.
+			modal.dataset.append = append ? '1' : '0';
 			// Toggle BOTH `hidden` and `flex` so only one display class is
 			// active at a time. The template default is `hidden` only --
 			// co-applying `hidden` + `flex` would be a Tailwind cascade trap
@@ -231,7 +234,9 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			var src = trigger.dataset.src;
 			var imgType = trigger.dataset.type;
 			if (src && typeof openCropModal === 'function') {
-				openCropModal(src, imgType);
+				// This trigger only ever re-crops the currently-displayed primary
+				// image (indexed fanart is excluded above), so it always replaces.
+				openCropModal(src, imgType, undefined, false);
 			}
 		})();
 	</script>
@@ -576,7 +581,10 @@ templ imageSearchContextualized(data ImageSearchData) {
 					if (cropType) cropType.value = data.type;
 					// Pass the required ratio so the Cropper ready callback
 					// applies it reliably instead of a timing-dependent setTimeout.
-					openCropModal(data.image_data, data.type, data.required_ratio);
+					// data.append mirrors the server's own append decision (same
+					// type == "fanart" && FanartExists condition) so the auto-opened
+					// crop modal appends when the triggering upload/fetch would have.
+					openCropModal(data.image_data, data.type, data.required_ratio, !!data.append);
 					setStatus(container.dataset.msgNeedsCrop, 'text-amber-600');
 				}
 
@@ -797,14 +805,14 @@ templ imageSortBar(activeSort string) {
 
 // ImageSearchResults renders the grid of image results from providers.
 // This is used as an HTMX partial response.
-templ ImageSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
+templ ImageSearchResults(artistID string, images []provider.ImageResult, activeSort string, fanartExists bool) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_providers") }</p>
 	} else {
 		@imageSortBar(activeSort)
 		<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {
-				@components.ImageCard(artistID, img)
+				@components.ImageCard(artistID, img, fanartExists)
 			}
 		</div>
 	}
@@ -897,7 +905,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 
 // WebImageSearchResults renders the grid of web search image results.
 // This is used as an HTMX partial response for the "Extend Search" flow.
-templ WebImageSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
+templ WebImageSearchResults(artistID string, images []provider.ImageResult, activeSort string, fanartExists bool) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_web_search") }</p>
 	} else {
@@ -907,7 +915,7 @@ templ WebImageSearchResults(artistID string, images []provider.ImageResult, acti
 		@imageSortBar(activeSort)
 		<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {
-				@components.ImageCard(artistID, img)
+				@components.ImageCard(artistID, img, fanartExists)
 			}
 		</div>
 	}
@@ -955,5 +963,6 @@ script openCropForType(imgSrc string, imageType string) {
 		var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
 		if (trigger) trigger.setAttribute('aria-expanded', 'false');
 	}
-	openCropModal(imgSrc, imageType);
+	// Explicit recrop-of-existing action: always replaces the primary, never appends.
+	openCropModal(imgSrc, imageType, undefined, false);
 }

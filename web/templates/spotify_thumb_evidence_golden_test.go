@@ -117,7 +117,7 @@ func TestImageSearchResults_SpotifyThumbSource_Golden(t *testing.T) {
 		{URL: "https://assets.fanart.tv/thumb.jpg", Type: provider.ImageThumb, Source: "fanarttv", Width: 500, Height: 500},
 	}
 	var buf bytes.Buffer
-	if err := ImageSearchResults("artist-1", images, "").Render(ctx, &buf); err != nil {
+	if err := ImageSearchResults("artist-1", images, "", false).Render(ctx, &buf); err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	rendered := buf.String()

@@ -300,6 +300,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 					"height":         geo.Height,
 					"image_data":     dataURI,
 					"type":           imageType,
+					"append":         imageType == "fanart" && a.FanartExists,
 				})
 				return
 			}
@@ -428,6 +429,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 					"height":         geo.Height,
 					"image_data":     dataURI,
 					"type":           imageType,
+					"append":         imageType == "fanart" && a.FanartExists,
 				})
 				return
 			}
@@ -526,7 +528,7 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 		if typeFilter == "fanart" {
 			renderTempl(w, req, templates.FanartSearchResults(artistID, images, sortBy))
 		} else {
-			renderTempl(w, req, templates.ImageSearchResults(artistID, images, sortBy))
+			renderTempl(w, req, templates.ImageSearchResults(artistID, images, sortBy, a.FanartExists))
 		}
 		return
 	}
@@ -597,7 +599,7 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 	sortImageResults(allImages, sortBy)
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy))
+		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy, a.FanartExists))
 		return
 	}
 
@@ -633,6 +635,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		Y         int    `json:"y"`
 		Width     int    `json:"width"`
 		Height    int    `json:"height"`
+		Append    bool   `json:"append"`
 	}
 	if !DecodeJSON(w, req, &body) {
 		return
@@ -687,33 +690,38 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	cropMeta.Mode = "user"
 	cropMeta.DHash = "" // Force recomputation from the cropped image data.
 
+	// Fanart: append as next numbered file when the client signals an "add
+	// fanart" crop and a primary already exists, mirroring upload/fetch's
+	// append branch. Otherwise fall through to the provenance-preserving
+	// single-slot overwrite (recrop-of-primary and all non-fanart types).
+	if body.Type == "fanart" && a.FanartExists && body.Append {
+		appendMeta := &img.ExifMeta{Source: "user", Mode: "user", Fetched: time.Now().UTC()}
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), imgData, appendMeta)
+		if saveErr != nil {
+			r.logger.Error("appending cropped fanart", "artist_id", artistID, "error", saveErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
+			return
+		}
+		r.finalizeImageSave(req.Context(), w, a, body.Type, saved, imageSaveFinalization{
+			isHTMX:         false,
+			syncBehavior:   syncNone,
+			isFanartAppend: true,
+			publishOrder:   publishBeforeRuleEval,
+		})
+		return
+	}
+
 	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData, cropMeta)
 	if err != nil {
 		r.logger.Error("saving cropped image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
-	r.enforceCacheLimitIfNeeded(req.Context(), a)
-
-	r.updateArtistImageFlag(req.Context(), a, body.Type)
-
-	if r.eventBus != nil {
-		r.eventBus.Publish(event.Event{
-			Type: event.ArtistUpdated,
-			Data: map[string]any{"artist_id": a.ID},
-		})
-	}
-	r.InvalidateHealthCache()
-
-	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-	defer cancel()
-	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, body.Type)
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":        "ok",
-		"saved":         saved,
-		"type":          body.Type,
-		"sync_warnings": warnings,
+	r.finalizeImageSave(req.Context(), w, a, body.Type, saved, imageSaveFinalization{
+		isHTMX:         false,
+		syncBehavior:   syncSingle,
+		isFanartAppend: false,
+		publishOrder:   publishBeforeRuleEval,
 	})
 }
 

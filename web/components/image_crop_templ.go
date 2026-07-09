@@ -63,8 +63,8 @@ func ImageCropModal(artistID string) templ.Component {
 
 func saveCroppedImage(artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveCroppedImage_886b`,
-		Function: `function __templ_saveCroppedImage_886b(artistID){// Set up error surfacing first so the early-exit guards below have
+		Name: `__templ_saveCroppedImage_4d17`,
+		Function: `function __templ_saveCroppedImage_4d17(artistID){// Set up error surfacing first so the early-exit guards below have
 	// somewhere to report. Without this, an unready cropper or a tainted
 	// canvas would return silently and leave the modal sitting open with no
 	// feedback to the user (the original #1124 symptom from the user side).
@@ -98,6 +98,8 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 		return;
 	}
 	var cropType = document.getElementById('crop-type').value;
+	// append intent was stashed on the modal by openCropModal at open time.
+	var cropAppend = document.getElementById('crop-modal').dataset.append === '1';
 	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
 	// unnecessary format conversion and larger file sizes.
 	var mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
@@ -120,7 +122,8 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 			type: cropType,
 			x: 0, y: 0,
 			width: canvas.width,
-			height: canvas.height
+			height: canvas.height,
+			append: cropAppend
 		})
 	}).then(function(r) {
 		// Parse the body so we can surface the server's error message when
@@ -158,8 +161,8 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 		reEnableSaveBtn();
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveCroppedImage_886b`, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_886b`, artistID),
+		Call:       templ.SafeScript(`__templ_saveCroppedImage_4d17`, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_4d17`, artistID),
 	}
 }
 
