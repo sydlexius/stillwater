@@ -770,16 +770,27 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 		if isAdditiveMergeDir(sd.Name()) {
 			info, statErr := os.Lstat(survivorChild)
 			switch {
-			case os.IsNotExist(statErr), statErr == nil && info.Mode().IsDir():
-				// The two "relocates" arms: survivor lacks it entirely (commit
-				// does a whole-dir move) OR both sides are real directories
-				// (additive content-merge, no halt). Both plan the same move.
-				// (os.Lstat + IsDir treats a symlink as NOT a directory.)
+			case os.IsNotExist(statErr):
+				// Survivor lacks it entirely: commit does a whole-dir move
+				// (moveLoserSubdirs falls through to RenameDirAtomic when
+				// mergeAdditiveSubdirIfPresent sees no destination). Preview
+				// the same single-entry whole-dir move.
 				result.Moved = append(result.Moved, MovedItem{
 					Name: sd.Name(),
 					From: filepath.Join(loser.Path, sd.Name()),
 					To:   survivorChild,
 				})
+				continue
+			case statErr == nil && info.Mode().IsDir():
+				// Both sides are real directories: commit does a per-file
+				// content-merge (mergeAdditiveDir), not a directory rename.
+				// Mirror that here so the dry-run Moved preview has the same
+				// shape as what commit will actually produce, instead of a
+				// single misleading whole-dir "Moved" entry.
+				// (os.Lstat + IsDir treats a symlink as NOT a directory.)
+				if err := previewMergeAdditiveDir(filepath.Join(loser.Path, sd.Name()), survivorChild, result); err != nil {
+					return err
+				}
 				continue
 			case statErr != nil:
 				return fmt.Errorf("checking survivor additive dir %s: %w", survivorChild, statErr)
@@ -1090,6 +1101,47 @@ func mergeAdditiveDir(src, dst string, result *MergeResult) error {
 			}
 		}
 		result.Moved = append(result.Moved, MovedItem{Name: filepath.Base(dstChild), From: srcChild, To: dstChild})
+	}
+	return nil
+}
+
+// previewMergeAdditiveDir mirrors mergeAdditiveDir's per-file merge decisions
+// during pre-flight, without touching the filesystem, so the dry-run Moved
+// preview matches what the commit phase actually does for the
+// both-dirs-exist additive-merge case (extrafanart/extrathumbs). A symlink
+// is warned about exactly as mergeAdditiveDir does at commit; a basename
+// clash previews the same de-duplicated destination name via uniqueDestName
+// (itself read-only -- it only os.Lstats candidate names, it does not
+// create anything).
+func previewMergeAdditiveDir(loserDir, survivorDir string, result *MergeResult) error {
+	entries, err := os.ReadDir(loserDir)
+	if err != nil {
+		return fmt.Errorf("reading additive merge dir %s: %w", loserDir, err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") || IsIgnoredSystemName(e.Name()) {
+			continue
+		}
+		if e.Type()&os.ModeSymlink != 0 {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("skipped symlink %q under %s (symlinks are not followed during merge)", e.Name(), loserDir))
+			continue
+		}
+		srcChild := filepath.Join(loserDir, e.Name())
+		dstName := e.Name()
+		if _, statErr := os.Lstat(filepath.Join(survivorDir, dstName)); statErr == nil {
+			// Basename clash: preview the same de-duplicated name
+			// mergeAdditiveDir will pick at commit time.
+			unique, uErr := uniqueDestName(survivorDir, e.Name())
+			if uErr != nil {
+				return uErr
+			}
+			dstName = unique
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("checking additive destination %s: %w", filepath.Join(survivorDir, dstName), statErr)
+		}
+		dstChild := filepath.Join(survivorDir, dstName)
+		result.Moved = append(result.Moved, MovedItem{Name: dstName, From: srcChild, To: dstChild})
 	}
 	return nil
 }

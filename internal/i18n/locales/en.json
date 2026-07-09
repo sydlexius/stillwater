@@ -243,7 +243,7 @@
   "artist_duplicates.merge_modal.exclude_label": "Include in merge",
   "artist_duplicates.merge_modal.moves_heading": "Moves planned (%d):",
   "artist_duplicates.merge_modal.no_sources_selected": "Select at least one source artist to merge into the survivor.",
-  "artist_duplicates.merge_modal.platform_rescan_note": "Stillwater automatically refreshes connected media servers (Emby, Jellyfin, Lidarr) after a merge so they pick up the new location and drop stale entries. If a server is offline during the merge, trigger a library refresh there manually.",
+  "artist_duplicates.merge_modal.platform_rescan_note": "Stillwater automatically refreshes connected media servers (Emby, Jellyfin, Lidarr) after a merge so they pick up the new location. Emby and Jellyfin also drop stale entries automatically; on Lidarr, remove the old entry manually if it lingers. If a server is offline during the merge, trigger a library refresh there manually.",
   "artist_duplicates.merge_modal.preview_empty": "Nothing to move. The merge will only delete the empty loser directory and its database row.",
   "artist_duplicates.merge_modal.preview_heading": "Preview",
   "artist_duplicates.merge_modal.preview_loading": "Checking for collisions...",

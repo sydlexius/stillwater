@@ -330,9 +330,11 @@ components:
             $ref: "#/components/schemas/MergePlatformResult"
           description: >-
             Per-connection outcomes of the post-merge platform refresh
-            (survivor re-index + stale loser eviction) over the connections
-            that mapped the survivor or any loser. Present only on a committed
-            merge when a refresher is wired; absent on dry-run.
+            (survivor re-index; stale loser eviction on platforms that
+            support it -- currently Emby and Jellyfin, not Lidarr) over the
+            connections that mapped the survivor or any loser. Present only
+            on a committed merge when a refresher is wired; absent on
+            dry-run.
       required: [survivor_id, survivor_path]
     MergePlatformResult:
       type: object
@@ -706,8 +708,7 @@ components:
           type: boolean
           description: When true, issues a follow-up GET after rename PUT to verify path wasn't coerced. Lidarr only.
         path_mappings:
-          type: array
-          nullable: true
+          type: [array, "null"]
           description: Host-to-platform path prefix mappings applied before a rename/merge PUT. Empty or null for non-Lidarr and shared-mount Lidarr connections.
           items:
             $ref: "#/components/schemas/PathMapping"
@@ -8590,6 +8591,23 @@ paths:
                   type: array
                   items:
                     $ref: "#/components/schemas/PathMapping"
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              description: >-
+                Parallel host_prefix / platform_prefix arrays, as posted by
+                the settings UI's HTMX form. The two arrays must be the same
+                length; index i of host_prefix pairs with index i of
+                platform_prefix to form one mapping.
+              properties:
+                host_prefix:
+                  type: array
+                  items:
+                    type: string
+                platform_prefix:
+                  type: array
+                  items:
+                    type: string
       responses:
         "200":
           description: Mappings updated; returns the updated connection.

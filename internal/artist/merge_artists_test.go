@@ -839,6 +839,108 @@ func TestMergeArtists_DryRunReportsAdditiveDirMove(t *testing.T) {
 	}
 }
 
+// TestMergeArtists_AdditiveBothDirsExistPreviewMatchesCommit guards the fix
+// for the dry-run/commit Moved-shape mismatch on the both-dirs-exist
+// additive-dir case: when survivor AND loser both already have an
+// extrafanart/ directory, commit does a per-file content-merge
+// (mergeAdditiveDir), not a whole-directory rename, so the dry-run preview
+// must report the SAME per-file shape rather than one misleading
+// whole-directory "Moved" entry. Without the fix, the dry-run branch would
+// report a single {Name: "extrafanart"} entry while commit actually produced
+// per-file entries with de-duplicated names on a basename clash.
+func TestMergeArtists_AdditiveBothDirsExistPreviewMatchesCommit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// seedBothDirsExist gives survivor and loser each an extrafanart/ dir:
+	// survivor has fanart1.jpg; loser has fanart1.jpg (basename clash -> kept
+	// under a de-duplicated name) and fanart2.jpg (unique -> moved as-is).
+	seedBothDirsExist := func(t *testing.T, survivorPath, loserPath string) {
+		t.Helper()
+		survExtra := filepath.Join(survivorPath, "extrafanart")
+		loseExtra := filepath.Join(loserPath, "extrafanart")
+		for _, d := range []string{survExtra, loseExtra} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatalf("mkdir %s: %v", d, err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(survExtra, "fanart1.jpg"), []byte("survivor-1"), 0o600); err != nil {
+			t.Fatalf("write survivor fanart1: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(loseExtra, "fanart1.jpg"), []byte("loser-1"), 0o600); err != nil {
+			t.Fatalf("write loser fanart1: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(loseExtra, "fanart2.jpg"), []byte("loser-2"), 0o600); err != nil {
+			t.Fatalf("write loser fanart2: %v", err)
+		}
+	}
+
+	// extrafanartMovedNames filters Moved to just the entries under an
+	// extrafanart/ dir and returns their sorted basenames, so the assertion
+	// isolates the additive-dir shape from the other loose-file/album moves
+	// mergeSetup's fixture also produces.
+	extrafanartMovedNames := func(items []MovedItem) []string {
+		var out []string
+		for _, m := range items {
+			if filepath.Base(filepath.Dir(m.From)) == "extrafanart" {
+				out = append(out, m.Name)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	wantNames := []string{"fanart1-1.jpg", "fanart2.jpg"}
+
+	// --- dry-run side ---
+	dsvc, _, dSurvivorID, dLoserID := mergeSetup(t)
+	dSurvivor := mustGetArtist(t, dsvc, ctx, dSurvivorID)
+	dLoser := mustGetArtist(t, dsvc, ctx, dLoserID)
+	seedBothDirsExist(t, dSurvivor.Path, dLoser.Path)
+
+	dryRes, err := dsvc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  dSurvivorID,
+		LoserIDs:    []string{dLoserID},
+		DryRun:      true,
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists dry-run: %v", err)
+	}
+	dryExtra := extrafanartMovedNames(dryRes.Moved)
+	if !equalStringSets(dryExtra, wantNames) {
+		t.Errorf("dry-run extrafanart Moved = %v, want %v (per-file, not a single whole-dir entry)", dryExtra, wantNames)
+	}
+	// Dry-run must not touch disk.
+	if _, statErr := os.Stat(filepath.Join(dLoser.Path, "extrafanart", "fanart1.jpg")); statErr != nil {
+		t.Errorf("dry-run mutated filesystem: loser extrafanart/fanart1.jpg missing: %v", statErr)
+	}
+
+	// --- commit side ---
+	csvc, _, cSurvivorID, cLoserID := mergeSetup(t)
+	cSurvivor := mustGetArtist(t, csvc, ctx, cSurvivorID)
+	cLoser := mustGetArtist(t, csvc, ctx, cLoserID)
+	seedBothDirsExist(t, cSurvivor.Path, cLoser.Path)
+
+	commitRes, err := csvc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  cSurvivorID,
+		LoserIDs:    []string{cLoserID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists commit: %v", err)
+	}
+	commitExtra := extrafanartMovedNames(commitRes.Moved)
+	if !equalStringSets(commitExtra, wantNames) {
+		t.Errorf("commit extrafanart Moved = %v, want %v", commitExtra, wantNames)
+	}
+
+	// The two shapes must match: same set of names, same count -- this is
+	// the actual regression guard (preview == what commit really does).
+	if !equalStringSets(dryExtra, commitExtra) {
+		t.Errorf("dry-run/commit Moved shape mismatch: dry-run = %v, commit = %v", dryExtra, commitExtra)
+	}
+}
+
 func TestMergeArtists_LockedRefused(t *testing.T) {
 	t.Parallel()
 	svc, _, survivorID, loserID := mergeSetup(t)
