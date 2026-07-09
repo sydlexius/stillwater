@@ -672,27 +672,11 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		imgData = cropped
 	}
 
-	// Preserve existing provenance metadata if present, updating the timestamp.
-	var cropMeta *img.ExifMeta
-	patterns := r.getActiveNamingConfig(req.Context(), body.Type)
-	if filePath, found := img.FindExistingImage(r.imageDir(a), patterns); found {
-		if existing, readErr := img.ReadProvenance(filePath); readErr == nil && existing != nil {
-			cropMeta = existing
-		} else if readErr != nil {
-			r.logger.Debug("could not read existing provenance for crop, using fresh metadata",
-				slog.String("artist_id", artistID), slog.String("path", filePath), slog.String("error", readErr.Error()))
-		}
-	}
-	if cropMeta == nil {
-		cropMeta = &img.ExifMeta{Source: "user"}
-	}
-	cropMeta.Fetched = time.Now().UTC()
-	cropMeta.Mode = "user"
-	cropMeta.DHash = "" // Force recomputation from the cropped image data.
-
 	// Fanart: append as next numbered file when the client signals an "add
-	// fanart" crop and a primary already exists, mirroring upload/fetch's
-	// append branch. Otherwise fall through to the provenance-preserving
+	// fanart" crop and a primary already exists, mirroring upload's append
+	// branch (syncNone). fetch's append branch uses syncAllFanart instead;
+	// reconciling fanart-append sync behavior across upload/fetch/crop is
+	// tracked in #2317. Otherwise fall through to the provenance-preserving
 	// single-slot overwrite (recrop-of-primary and all non-fanart types).
 	if body.Type == "fanart" && a.FanartExists && body.Append {
 		appendMeta := &img.ExifMeta{Source: "user", Mode: "user", Fetched: time.Now().UTC()}
@@ -710,6 +694,25 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		})
 		return
 	}
+
+	// Preserve existing provenance metadata if present, updating the timestamp.
+	// Skipped for the append branch above, which never uses cropMeta.
+	var cropMeta *img.ExifMeta
+	patterns := r.getActiveNamingConfig(req.Context(), body.Type)
+	if filePath, found := img.FindExistingImage(r.imageDir(a), patterns); found {
+		if existing, readErr := img.ReadProvenance(filePath); readErr == nil && existing != nil {
+			cropMeta = existing
+		} else if readErr != nil {
+			r.logger.Debug("could not read existing provenance for crop, using fresh metadata",
+				slog.String("artist_id", artistID), slog.String("path", filePath), slog.String("error", readErr.Error()))
+		}
+	}
+	if cropMeta == nil {
+		cropMeta = &img.ExifMeta{Source: "user"}
+	}
+	cropMeta.Fetched = time.Now().UTC()
+	cropMeta.Mode = "user"
+	cropMeta.DHash = "" // Force recomputation from the cropped image data.
 
 	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData, cropMeta)
 	if err != nil {

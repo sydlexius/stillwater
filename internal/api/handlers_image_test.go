@@ -3010,6 +3010,14 @@ func TestHandleImageCrop_ReplacePrimary_NoAppend(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "fanart2.jpg")); err == nil {
 		t.Error("no-append recrop must not create fanart2.jpg")
 	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if count, _ := resp["count"].(float64); count != 1 {
+		t.Errorf("count = %v, want 1 after replacing the sole primary", resp["count"])
+	}
 }
 
 // TestHandleImageUpload_NeedsCrop_IncludesAppend proves the needs_crop JSON
@@ -3116,5 +3124,84 @@ func TestHandleImageCrop_AppendRequested_NoPrimary_SavesAsPrimary(t *testing.T) 
 	saved, _ := resp["saved"].([]any)
 	if len(saved) != 1 || saved[0] != "fanart.jpg" {
 		t.Errorf("saved = %v, want [\"fanart.jpg\"]", saved)
+	}
+	if count, _ := resp["count"].(float64); count != 1 {
+		t.Errorf("count = %v, want 1 after saving the first fanart as primary", resp["count"])
+	}
+}
+
+// TestHandleImageCrop_AppendFanart_WriteFailureReturns500 covers the
+// processAndAppendFanart failure path: when the artist directory rejects new
+// writes, the handler must return 500 with its existing generic error and
+// must not disturb the pre-existing primary. Mirrors the write-failure
+// injection approach used by TestHandleLogoTrim_BackupFailureAborts (seed a
+// filesystem state that blocks the save), adapted to the append branch,
+// which has no backup-dir step of its own to target.
+func TestHandleImageCrop_AppendFanart_WriteFailureReturns500(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod write-bit semantics are Unix-specific")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger a write failure")
+	}
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop Append Write Failure", SortName: "Crop Append Write Failure", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+	primaryBefore, err := os.ReadFile(filepath.Join(dir, "fanart.jpg"))
+	if err != nil {
+		t.Fatalf("reading seed primary: %v", err)
+	}
+
+	// Drop the write bit so the append save's temp-file creation fails while
+	// existing reads (directory scan for the next fanart index) still succeed.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("Chmod dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 1280, 720)), nil); err != nil {
+		t.Fatalf("encoding crop input: %v", err)
+	}
+	reqBody, _ := json.Marshal(map[string]any{
+		"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+		"type":       "fanart",
+		"x":          0, "y": 0, "width": 1280, "height": 720,
+		"append": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageCrop(w, req)
+
+	_ = os.Chmod(dir, 0o755)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["error"] != "failed to save image" {
+		t.Errorf("error = %q, want %q", resp["error"], "failed to save image")
+	}
+
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, "fanart.jpg"))
+	if err != nil {
+		t.Fatalf("reading primary after failed append: %v", err)
+	}
+	if !bytes.Equal(primaryBefore, primaryAfter) {
+		t.Error("primary fanart.jpg must be untouched when the append save fails")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fanart1.jpg")); err == nil {
+		t.Error("no appended file should exist after a failed append save")
 	}
 }
