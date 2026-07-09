@@ -123,12 +123,17 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		var _cropper = null;
 		var _currentRatio = NaN;
 		var _pendingRatio = NaN;
-		// #2281 QOL #48: true once the user has actually interacted with the
-		// crop box (see the 'crop' listener attached inside the Cropper ready
-		// callback below -- registering it there, not before, means Cropper's
-		// own initial auto-crop-area setup does not count as "interacted").
-		// guardedCloseCropModal reads this to decide whether closing needs a
-		// discard confirmation; closeCropModal itself always resets it.
+		// #2281 QOL #48 (widened for #2323): true once an image is actually
+		// loaded and ready in the cropper -- set in the Cropper `ready`
+		// callback below, on EVERY entry route (direct, provider fetch, URL
+		// fetch, web search), not only after the user drags/resizes the crop
+		// box. Reaching a ready cropper already represents real forward
+		// progress (a chosen image staged for saving), so closing without a
+		// prompt at that point would silently discard it. Still false during
+		// the brief staging/loading window before an image is ready -- there
+		// is nothing to lose yet at that point. guardedCloseCropModal reads
+		// this to decide whether closing needs a discard confirmation;
+		// closeCropModal itself always resets it.
 		var _cropDirty = false;
 		function markCropDirty() { _cropDirty = true; }
 
@@ -246,10 +251,22 @@ templ ArtworkManageEditor(data ImageSearchData) {
 							setCropRatio(_pendingRatio);
 							_pendingRatio = NaN;
 						}
-						// Registered here (after Cropper's own initial
-						// crop-box setup), not before construction, so only
-						// genuine user interaction (drag/resize/move) marks
-						// the session dirty -- see the _cropDirty comment.
+						// #2281/#2323 discard-guard fix: mark the session dirty
+						// as soon as an image is actually loaded and ready to
+						// crop, not only after the user drags/resizes the crop
+						// box. Every entry route (direct, provider fetch, URL
+						// fetch, web search) reaches this same ready() callback
+						// via the shared openCropModal, so reaching this point
+						// at all means real forward progress (a chosen image is
+						// staged and ready to save) that would be silently lost
+						// on an unguarded outside-click -- UAT caught this on
+						// the web-search route specifically, where a user picks
+						// a result and clicks Crop but never touches the crop
+						// box before clicking away. Still attach the 'crop'
+						// listener too: harmless once already dirty, and keeps
+						// the session marked dirty if a future change narrows
+						// this back down.
+						markCropDirty();
 						cropImage.addEventListener('crop', markCropDirty);
 					}
 				});
@@ -295,10 +312,13 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			_cropDirty = false;
 		}
 		// guardedCloseCropModal is the discard-guard entry point (#2281 QOL
-		// #48): the header X, footer Cancel, and backdrop click all route
-		// through this instead of calling closeCropModal() directly, so
-		// in-progress crop work is never silently discarded. An untouched
-		// modal (never dirtied) still closes immediately with no prompt.
+		// #48, widened for #2323): the header X, footer Cancel, and backdrop
+		// click all route through this instead of calling closeCropModal()
+		// directly, so in-progress crop work is never silently discarded --
+		// on every entry route (direct, provider fetch, URL fetch, web
+		// search), since they all share this same modal/guard. A modal that
+		// is still staging/loading an image (Cropper not yet ready, nothing
+		// to lose) still closes immediately with no prompt.
 		function guardedCloseCropModal() {
 			if (!_cropDirty) {
 				closeCropModal();
