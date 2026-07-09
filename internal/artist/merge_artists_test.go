@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -349,17 +350,9 @@ func TestMergeArtists_CleanMerge(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(parent, "Cure, The")); !os.IsNotExist(err) {
 		t.Errorf("expected loser dir removed, got err = %v", err)
 	}
-	// Platform-rescan warning attached.
-	found := false
-	for _, w := range res.Warnings {
-		if strings.Contains(w, "Connected platforms") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected platform-rescan warning, got %v", res.Warnings)
-	}
+	// The platform-rescan warning is no longer emitted by MergeArtists itself;
+	// it moved to MergeAndReconcile (and only when no refresher is wired). See
+	// merge_reconcile_test.go for the manual-refresh-reminder coverage.
 
 	// Post-merge: detection no longer reports the group.
 	groups, err := DetectDuplicates(ctx, db)
@@ -403,8 +396,13 @@ func TestMergeArtists_CollisionHalt(t *testing.T) {
 	if len(res.Conflicts) == 0 {
 		t.Errorf("expected at least one Conflict, got 0")
 	}
-	if len(res.Moved) != 0 {
-		t.Errorf("expected nothing moved, got %d", len(res.Moved))
+	// The pre-flight walk previews planned moves for this loser's
+	// non-colliding children (2 albums + 1 loose file) even though the
+	// "Disintegration" collision halts the merge before any FS mutation.
+	// Nothing was ACTUALLY moved (verified below via os.Stat); this is the
+	// dry-run-style preview populated by preflightOneLoser (Finding #2 fix).
+	if got, want := len(res.Moved), 3; got != want {
+		t.Errorf("planned Moved = %d, want %d (preview, no FS mutation)", got, want)
 	}
 	// Both directories still exist; both rows still in DB.
 	if _, err := os.Stat(loser.Path); err != nil {
@@ -522,8 +520,12 @@ func TestMergeArtists_AdditiveNameSurvivorIsFileConflicts(t *testing.T) {
 	if !foundConflict {
 		t.Errorf("expected an extrafanart conflict, got Conflicts = %v", res.Conflicts)
 	}
-	if len(res.Moved) != 0 {
-		t.Errorf("expected nothing moved on collision halt, got %d", len(res.Moved))
+	// The pre-flight walk previews planned moves for this loser's
+	// non-colliding children (2 albums + 1 loose file from mergeSetup) even
+	// though the extrafanart collision halts the merge before any FS
+	// mutation actually occurs (verified below).
+	if got, want := len(res.Moved), 3; got != want {
+		t.Errorf("planned Moved = %d, want %d (preview, no FS mutation)", got, want)
 	}
 
 	// Survivor's file is untouched (not overwritten, not turned into a dir).
@@ -727,8 +729,11 @@ func TestMergeArtists_DryRun(t *testing.T) {
 	if !res.DryRun {
 		t.Errorf("DryRun flag not set in result")
 	}
-	if len(res.Moved) != 0 {
-		t.Errorf("DryRun moved %d, want 0", len(res.Moved))
+	// mergeSetup's loser has two non-colliding albums and one loose file;
+	// the dry-run pre-flight walk now previews these as planned moves
+	// (Finding #2 fix) even though nothing has actually moved on disk.
+	if got, want := len(res.Moved), 3; got != want {
+		t.Errorf("DryRun moved %d, want %d (planned-move preview)", got, want)
 	}
 	if len(res.LosersDeleted) != 0 {
 		t.Errorf("DryRun deleted %d losers, want 0", len(res.LosersDeleted))
@@ -741,6 +746,96 @@ func TestMergeArtists_DryRun(t *testing.T) {
 	// Loser row still in DB.
 	if _, err := svc.GetByID(ctx, loserID); err != nil {
 		t.Errorf("loser deleted on dry run: %v", err)
+	}
+}
+
+// TestMergeArtists_DryRunReportsPlannedMoves is the regression test for
+// Finding #2: the dry-run pre-flight walk must populate result.Moved with
+// the PLANNED moves (top-level child granularity: each non-colliding album
+// subdir and each loose file that a real merge would relocate), not leave it
+// empty. mergeSetup already seeds a survivor with one album ("Disintegration")
+// and a loser with two distinct albums ("Pornography", "Bloodflowers") plus
+// one loose file ("artist.nfo"), none of which collide with the survivor.
+func TestMergeArtists_DryRunReportsPlannedMoves(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		DryRun:      true,
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists dry-run: %v", err)
+	}
+	if !res.DryRun {
+		t.Errorf("DryRun = false, want true")
+	}
+
+	got := movedNames(res.Moved)
+	want := []string{"Bloodflowers", "Pornography", "artist.nfo"}
+	if !equalStringSets(got, want) {
+		t.Errorf("dry-run Moved = %v, want %v", got, want)
+	}
+
+	// Dry-run must not touch disk: loser dir and its children still exist.
+	loser := mustGetArtist(t, svc, ctx, loserID)
+	if _, statErr := os.Stat(loser.Path); statErr != nil {
+		t.Errorf("dry-run mutated filesystem: loser dir missing: %v", statErr)
+	}
+	for _, name := range []string{"Pornography", "Bloodflowers", "artist.nfo"} {
+		if _, statErr := os.Stat(filepath.Join(loser.Path, name)); statErr != nil {
+			t.Errorf("dry-run mutated filesystem: loser child %s missing: %v", name, statErr)
+		}
+	}
+}
+
+// TestMergeArtists_DryRunReportsAdditiveDirMove guards the dry-run additive-dir
+// recording branch (preflightOneLoser's isAdditiveMergeDir arm): a loser
+// extrafanart/ the survivor LACKS must appear in res.Moved on a DRY-RUN, not
+// only on commit. Without this test the additive-move recording is exercised in
+// commit mode only, so a future edit could silently drop it from the preview.
+// The assertion targets the extrafanart entry specifically (not just the count)
+// so a regression that omits exactly the additive arm still fails.
+func TestMergeArtists_DryRunReportsAdditiveDirMove(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	// Loser gains an extrafanart/ dir the survivor does not have; a real merge
+	// would relocate it whole (the os.IsNotExist "relocates" arm).
+	loser := mustGetArtist(t, svc, ctx, loserID)
+	loseExtra := filepath.Join(loser.Path, "extrafanart")
+	if err := os.MkdirAll(loseExtra, 0o755); err != nil {
+		t.Fatalf("mkdir loser extrafanart: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(loseExtra, "fanart1.jpg"), []byte("loser-1"), 0o600); err != nil {
+		t.Fatalf("write loser fanart: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		DryRun:      true,
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists dry-run: %v", err)
+	}
+	if !res.DryRun {
+		t.Errorf("DryRun = false, want true")
+	}
+
+	got := movedNames(res.Moved)
+	if !slices.Contains(got, "extrafanart") {
+		t.Errorf("dry-run Moved = %v, want it to include the planned \"extrafanart\" additive-dir move", got)
+	}
+
+	// Dry-run must not touch disk: the loser's extrafanart/ still exists.
+	if _, statErr := os.Stat(loseExtra); statErr != nil {
+		t.Errorf("dry-run mutated filesystem: loser extrafanart missing: %v", statErr)
 	}
 }
 
@@ -1215,9 +1310,12 @@ func TestMergeArtists_DryRunDeletesPreview(t *testing.T) {
 		t.Errorf("dry-run should not remove loser dir: %v", err)
 	}
 
-	// Dry-run Moved, Removed, and LosersDeleted must be empty.
-	if len(res.Moved) != 0 {
-		t.Errorf("DryRun Moved = %v, want empty", res.Moved)
+	// Dry-run Moved previews the non-colliding children from mergeSetup's
+	// fixture (2 albums + 1 loose file); folder.jpg collides and is
+	// previewed under Deleted instead (asserted above). Removed and
+	// LosersDeleted stay empty since a dry-run never mutates the DB.
+	if got, want := len(res.Moved), 3; got != want {
+		t.Errorf("DryRun Moved = %v (%d entries), want %d (planned-move preview)", res.Moved, got, want)
 	}
 	if len(res.Removed) != 0 {
 		t.Errorf("DryRun Removed = %v, want empty", res.Removed)
@@ -1685,6 +1783,17 @@ func dirNames(entries []os.DirEntry) []string {
 	out := make([]string, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, e.Name())
+	}
+	sort.Strings(out)
+	return out
+}
+
+// movedNames returns the sorted set of MovedItem.Name values, used to assert
+// dry-run and commit-phase Moved contents without caring about ordering.
+func movedNames(items []MovedItem) []string {
+	out := make([]string, 0, len(items))
+	for _, m := range items {
+		out = append(out, m.Name)
 	}
 	sort.Strings(out)
 	return out
@@ -2195,5 +2304,137 @@ func TestMergeAdditiveSubdirIfPresent_SurvivorFileConflicts(t *testing.T) {
 	}
 	if c := result.Conflicts[0]; c.Name != "extrafanart" || c.SurvivorPath != dst || c.LoserPath != src {
 		t.Errorf("ConflictItem = %+v, want {Name:extrafanart SurvivorPath:%s LoserPath:%s}", c, dst, src)
+	}
+}
+
+// TestMergeArtists_CapturesAffectedConnectionsBeforeDelete proves a
+// committed merge records the survivor's display name and the sorted,
+// distinct union of platform connection IDs mapped to the survivor or any
+// loser -- captured before commitMergeDB deletes the loser rows (whose
+// platform_ids cascade away on delete).
+func TestMergeArtists_CapturesAffectedConnectionsBeforeDelete(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	// Seed connections for the platform_ids FK, then map survivor and loser
+	// to distinct connections (see platform_ids_test.go for this pattern).
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES ('conn-emby', 'Test Emby', 'emby', 'http://emby:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding conn-emby: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES ('conn-jf', 'Test Jellyfin', 'jellyfin', 'http://jf:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding conn-jf: %v", err)
+	}
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID survivor: %v", err)
+	}
+	if err := svc.SetPlatformID(ctx, loserID, "conn-jf", "jf-1"); err != nil {
+		t.Fatalf("SetPlatformID loser: %v", err)
+	}
+
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID,
+		LoserIDs:   []string{loserID},
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	if res.SurvivorName != survivor.Name {
+		t.Errorf("SurvivorName = %q, want %q", res.SurvivorName, survivor.Name)
+	}
+	want := []string{"conn-emby", "conn-jf"}
+	if !equalStringSets(res.AffectedConnectionIDs, want) {
+		t.Errorf("AffectedConnectionIDs = %v, want %v", res.AffectedConnectionIDs, want)
+	}
+	// Also confirm sorted order, not just set equality.
+	if len(res.AffectedConnectionIDs) == 2 && res.AffectedConnectionIDs[0] != "conn-emby" {
+		t.Errorf("AffectedConnectionIDs = %v, want sorted [conn-emby conn-jf]", res.AffectedConnectionIDs)
+	}
+}
+
+// TestMergeArtists_DryRunPopulatesSurvivorNameNotConnections locks in the
+// asymmetry between the two capture fields. SurvivorName is free (the survivor
+// is already resolved when the result is built) so a dry-run carries it.
+// AffectedConnectionIDs requires a DB read whose whole purpose is to run before
+// commitMergeDB cascades the loser's platform_ids away; a dry-run returns before
+// that point and must therefore report no connections.
+func TestMergeArtists_DryRunPopulatesSurvivorNameNotConnections(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES ('conn-emby', 'Test Emby', 'emby', 'http://emby:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding conn-emby: %v", err)
+	}
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID survivor: %v", err)
+	}
+
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID,
+		LoserIDs:   []string{loserID},
+		DryRun:     true,
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists dry-run: %v", err)
+	}
+
+	if res.SurvivorName != survivor.Name {
+		t.Errorf("dry-run SurvivorName = %q, want %q (populated on dry-run)", res.SurvivorName, survivor.Name)
+	}
+	if len(res.AffectedConnectionIDs) != 0 {
+		t.Errorf("dry-run AffectedConnectionIDs = %v, want empty (capture runs only on a committed merge)", res.AffectedConnectionIDs)
+	}
+}
+
+// TestMergeArtists_AffectedConnectionsDeduplicatesSharedConnection covers the
+// "distinct" half of the distinct-sorted-union contract. Survivor and loser both
+// map to the SAME connection (via different platform artist IDs), so a collector
+// that merely concatenated the two enumerations would report it twice.
+func TestMergeArtists_AffectedConnectionsDeduplicatesSharedConnection(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES ('conn-emby', 'Test Emby', 'emby', 'http://emby:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding conn-emby: %v", err)
+	}
+	// Distinct platform artist IDs: the (connection_id, platform_artist_id)
+	// pair is unique, but both rows point at the same connection.
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID survivor: %v", err)
+	}
+	if err := svc.SetPlatformID(ctx, loserID, "conn-emby", "emby-2"); err != nil {
+		t.Fatalf("SetPlatformID loser: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID: survivorID,
+		LoserIDs:   []string{loserID},
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	want := []string{"conn-emby"}
+	if len(res.AffectedConnectionIDs) != len(want) || res.AffectedConnectionIDs[0] != want[0] {
+		t.Errorf("AffectedConnectionIDs = %v, want exactly %v (shared connection must appear once)", res.AffectedConnectionIDs, want)
 	}
 }

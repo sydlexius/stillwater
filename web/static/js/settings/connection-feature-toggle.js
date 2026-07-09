@@ -152,5 +152,44 @@
     }
   };
 
+  // swPathMappingsAfterRequest reports the outcome of the Lidarr-only path
+  // mapping form's hx-post (hx-swap="none") in the adjacent inline result span.
+  // On success it shows the localized "saved" confirmation; on failure it shows
+  // the server's error text (falling back to the localized data-sw-error).
+  // Bound via hx-on:htmx:after-request="swPathMappingsAfterRequest(this, event)".
+  window.swPathMappingsAfterRequest = function (formEl, event) {
+    var connID = formEl && formEl.dataset ? formEl.dataset.connId : '';
+    var resultEl;
+    var msg;
+    var errText;
+    // Fail loudly on a missing data-conn-id: without it the result span cannot
+    // be resolved, so a render regression that drops the attribute must surface.
+    if (!connID) {
+      console.error('swPathMappingsAfterRequest: missing data-conn-id on form; cannot show result', formEl);
+      return;
+    }
+    resultEl = document.getElementById('path-mapping-result-' + connID);
+    if (!resultEl) {
+      console.error('swPathMappingsAfterRequest: missing result span for connection', connID);
+      return;
+    }
+    if (event.detail.successful) {
+      resultEl.textContent = (formEl.dataset && formEl.dataset.swOk) || 'Path mappings saved.';
+      resultEl.classList.remove('hidden', 'text-red-600', 'dark:text-red-400');
+      resultEl.classList.add('text-green-600', 'dark:text-green-400');
+    } else {
+      errText = '';
+      try {
+        errText = (JSON.parse(event.detail.xhr.responseText || '{}') || {}).error || '';
+      } catch (_) {
+        errText = '';
+      }
+      msg = errText || (formEl.dataset && formEl.dataset.swError) || 'Could not save the path mappings. Try again.';
+      resultEl.textContent = msg;
+      resultEl.classList.remove('hidden', 'text-green-600', 'dark:text-green-400');
+      resultEl.classList.add('text-red-600', 'dark:text-red-400');
+    }
+  };
+
   window.swConnectionFeatureToggle = { toggle: toggleConnectionFeature };
 })();

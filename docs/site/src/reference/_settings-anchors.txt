@@ -56,6 +56,7 @@ settings-connections-connections-feature-image-write
 settings-connections-connections-feature-toggles
 settings-connections-connections-manage-title
 settings-connections-connections-not-configured
+settings-connections-connections-path-mapping-title
 settings-connections-connections-pick-type
 settings-connections-connections-sends-heading
 settings-connections-connections-server-name

@@ -107,8 +107,15 @@ func (s *Service) importProviderKeys(ctx context.Context, db dbExecutor, keys ma
 // envelope version not yet added to envelopeCarriesConnectionV15Fields),
 // the field decoded as a zero value and must not be copied onto the
 // target's existing connection row for the same reason as V14.
-func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []ConnectionExport, result *ImportResult, carryV14Fields, carryV15Fields bool) error {
-	for _, ce := range conns {
+//
+// carryV17Fields plays the same role for the v1.7-only PathMappings field: a
+// pre-1.7 envelope decoded it as nil, so it must not clobber the target's
+// existing Lidarr path mappings.
+func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []ConnectionExport, result *ImportResult, carryV14Fields, carryV15Fields, carryV17Fields bool) error {
+	// Index rather than range-value: ConnectionExport is large enough that a
+	// per-iteration value copy trips gocritic's rangeValCopy.
+	for i := range conns {
+		ce := &conns[i]
 		existing, err := s.connectionSvc.ImportGetByTypeAndURLTx(ctx, db, ce.Type, ce.URL)
 		if err != nil {
 			return fmt.Errorf("looking up connection %q: %w", ce.Name, err)
@@ -125,7 +132,7 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 			// type-discriminated sub-config (#1686). existing already carries
 			// the matching sub-config from the DB scan; platform identity is
 			// preserved when already resolved (see applyExportConfig).
-			applyExportConfig(existing, ce, carryV14Fields, carryV15Fields)
+			applyExportConfig(existing, *ce, carryV14Fields, carryV15Fields, carryV17Fields)
 			if err := s.connectionSvc.ImportUpdateTx(ctx, db, existing); err != nil {
 				return fmt.Errorf("updating connection %q: %w", ce.Name, err)
 			}
@@ -141,7 +148,7 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 				FeatureManageServerFiles: ce.FeatureManageServerFiles,
 				PreStillwaterConfigJSON:  ce.PreStillwaterConfigJSON,
 			}
-			applyExportConfig(c, ce, true, true)
+			applyExportConfig(c, *ce, true, true, true)
 			if err := s.connectionSvc.ImportCreateTx(ctx, db, c); err != nil {
 				return fmt.Errorf("creating connection %q: %w", ce.Name, err)
 			}
@@ -162,7 +169,7 @@ func (s *Service) importConnections(ctx context.Context, db dbExecutor, conns []
 // the live peer and is only seeded from the envelope when conn does not already
 // have one resolved - so a fresh row (empty) takes the envelope value while an
 // existing row keeps its own.
-func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14, gateV15 bool) {
+func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14, gateV15, gateV17 bool) {
 	switch conn.Type {
 	case connection.TypeLidarr:
 		if conn.Lidarr == nil {
@@ -170,6 +177,9 @@ func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14
 		}
 		if gateV15 {
 			conn.Lidarr.VerifyPathAfterUpdate = ce.VerifyPathAfterUpdate
+		}
+		if gateV17 {
+			conn.Lidarr.PathMappings = ce.PathMappings
 		}
 	case connection.TypeEmby:
 		if conn.Emby == nil {

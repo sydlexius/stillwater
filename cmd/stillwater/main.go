@@ -895,6 +895,13 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	// natural home for this orchestration.
 	a.artistService.SetPlatformRenameSyncer(a.publisher)
 
+	// Wire the post-merge platform refresher so Service.MergeAndReconcile
+	// re-indexes the survivor and evicts stale loser items on Emby/Jellyfin
+	// (library scan) and Lidarr (survivor artist refresh) after a merge
+	// (#2303). Load-bearing: without this the refresher stays nil and every
+	// merge falls back to the manual-refresh warning instead of fanning out.
+	a.artistService.SetPlatformMergeRefresher(a.publisher)
+
 	logoPaddingFixer := rule.NewLogoPaddingFixer(a.platformService, a.fsCheck, logger)
 	logoPaddingFixer.SetImageFetcher(a.imageBridge, a.ruleEngine.ConsumeAPIImage)
 

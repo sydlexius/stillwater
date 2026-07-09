@@ -156,8 +156,14 @@ type MergeResult struct {
 	// confirmation hint; the merge still proceeds.
 	SurvivorOverride bool
 
-	// Moved lists every filesystem rename performed (album subdirs and
-	// loose files). Empty when DryRun is true or Conflicts is non-empty.
+	// Moved lists filesystem relocations. On a dry-run it lists the PLANNED
+	// moves (each non-colliding album subdir and loose file that a real merge
+	// would relocate). On a committed merge it lists the moves ACTUALLY
+	// performed. Note Moved can be non-empty even when Conflicts halted the
+	// merge: a loser that has both a colliding child and non-colliding
+	// siblings previews the siblings here while the collision is recorded in
+	// Conflicts. Callers must treat Conflicts (not an empty Moved) as the
+	// halt signal.
 	Moved []MovedItem
 
 	// Conflicts lists every would-be filesystem collision found by the
@@ -190,6 +196,42 @@ type MergeResult struct {
 	// LosersDeleted lists the loser artist IDs whose rows were deleted
 	// inside the final DB transaction.
 	LosersDeleted []string
+
+	// SurvivorName is the survivor artist's stored display name at merge time.
+	// Used by MergeAndReconcile to compute the canonical directory; not part
+	// of the core FS/DB merge. Populated on BOTH dry-run and committed merges
+	// (the survivor is already resolved when the result is built, so this is
+	// free). Contrast AffectedConnectionIDs, which requires a pre-delete DB
+	// capture and is therefore empty on dry-run.
+	SurvivorName string
+
+	// AffectedConnectionIDs is the distinct, sorted union of platform
+	// connection IDs that mapped the survivor or ANY loser at merge time.
+	// Captured before commitMergeDB deletes the loser rows (whose platform_ids
+	// FK-cascade away). MergeAndReconcile refreshes exactly this set so the
+	// survivor's absorbed albums are indexed and stale loser items are dropped.
+	// Empty on dry-run.
+	AffectedConnectionIDs []string
+
+	// CanonicalRename is non-nil when MergeAndReconcile relocated the survivor
+	// to its canonical directory after the merge committed. Nil when the
+	// survivor was already canonical, on dry-run, or when the rename failed
+	// (a warning is recorded instead). Populated only by MergeAndReconcile.
+	CanonicalRename *CanonicalRenameResult
+
+	// PlatformRefresh lists the post-merge per-connection refresh outcomes
+	// (survivor re-index + stale loser eviction). Populated only by
+	// MergeAndReconcile when a refresher is wired; empty otherwise.
+	PlatformRefresh []PlatformRefreshResult
+}
+
+// CanonicalRenameResult records the survivor's post-merge relocation to its
+// canonical directory, including the per-platform path-sync outcomes returned
+// by the chained RenameDirectory call.
+type CanonicalRenameResult struct {
+	OldPath   string
+	NewPath   string
+	Platforms []PlatformRemapResult
 }
 
 // MergeArtists consolidates the loser artists into the survivor per req. See
@@ -255,6 +297,7 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 	result := &MergeResult{
 		DryRun:           req.DryRun,
 		SurvivorID:       survivor.ID,
+		SurvivorName:     survivor.Name,
 		SurvivorPath:     survivor.Path,
 		SurvivorOverride: override,
 	}
@@ -273,10 +316,11 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		return result, nil
 	}
 
-	// Clear the deletion preview populated by the pre-flight walk; the
-	// commit loop (executeLoserMerge) will repopulate result.Deleted with
-	// entries for files that were actually removed.
+	// Clear the previews populated by the pre-flight walk; the commit loop
+	// (executeLoserMerge) repopulates result.Moved and result.Deleted with
+	// entries for children that were ACTUALLY moved/removed.
 	result.Deleted = nil
+	result.Moved = nil
 
 	// Commit phase: per-loser, move each album subdir, delete each
 	// colliding loose file, move each non-colliding loose file, then
@@ -296,6 +340,11 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		}
 	}
 
+	// Capture affected platform connections BEFORE the loser rows (and their
+	// platform_ids) are deleted by commitMergeDB. MergeAndReconcile refreshes
+	// this set post-commit.
+	result.AffectedConnectionIDs = s.collectAffectedConnectionIDs(ctx, survivor.ID, losers)
+
 	// DB phase: fill-empty MBID forward, then delete loser rows. FKs
 	// cascade (artist_provider_ids, artist_images, artist_libraries,
 	// platform IDs, aliases, members, snapshots, history). One TX so the
@@ -306,9 +355,6 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 
 	s.markDirtyBestEffort(ctx, survivor.ID)
 
-	result.Warnings = append(result.Warnings,
-		"Connected platforms (Emby/Jellyfin/Lidarr) still reference the deleted loser paths. Trigger a library refresh on each platform to drop the stale items.")
-
 	slog.Info("merged near-duplicate artists",
 		"survivor_id", survivor.ID,
 		"survivor_path", survivor.Path,
@@ -317,6 +363,82 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		"warnings", len(result.Warnings))
 
 	return result, nil
+}
+
+// MergeAndReconcile runs a merge and then reconciles the survivor's directory
+// and connected platforms. It exists as a wrapper (not inline in MergeArtists)
+// because MergeArtists holds renameMu for its whole duration and the chained
+// RenameDirectory also takes renameMu; the reconcile steps therefore run only
+// after MergeArtists has returned and released the lock. Nesting the rename
+// inside MergeArtists would self-deadlock on the non-reentrant renameMu.
+//
+// Order: MergeArtists -> (if survivor non-canonical) RenameDirectory to the
+// canonical basename (which also re-issues the path to platforms) -> refresh
+// every affected connection so the survivor's absorbed albums are indexed and
+// stale loser items drop. Dry-runs and failed merges return straight from
+// MergeArtists with no reconcile. Reconcile steps are best-effort: their
+// failures never fail the merge; they record warnings / structured outcomes.
+func (s *Service) MergeAndReconcile(ctx context.Context, req MergeRequest) (*MergeResult, error) {
+	result, err := s.MergeArtists(ctx, req)
+	if err != nil || req.DryRun {
+		return result, err
+	}
+	s.reconcileSurvivorCanonicalPath(ctx, req.ArticleMode, result)
+	s.refreshAffectedPlatforms(ctx, result)
+	return result, nil
+}
+
+// reconcileSurvivorCanonicalPath renames the survivor to CanonicalDirName when
+// its current basename differs, reusing RenameDirectory (which propagates the
+// new path to platforms). Directory-match only: it never mutates survivor.Name
+// or resolves localized aliases (that is RuleNameLanguagePref's job). Best-
+// effort: a rename error is recorded as a warning and the merged-but-non-
+// canonical state is left for the directory-name rule to flag later.
+func (s *Service) reconcileSurvivorCanonicalPath(ctx context.Context, articleMode string, result *MergeResult) {
+	canonicalDir := CanonicalDirName(result.SurvivorName, articleMode)
+	if canonicalDir == "" || strings.EqualFold(filepath.Base(result.SurvivorPath), canonicalDir) {
+		return // cannot compute, or already canonical (case-insensitive).
+	}
+	oldPath := result.SurvivorPath
+	newPath, platforms, err := s.RenameDirectory(ctx, result.SurvivorID, canonicalDir)
+	if err != nil {
+		if errors.Is(err, ErrRenameNoChange) {
+			return // already canonical by RenameDirectory's exact check.
+		}
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("could not move survivor to canonical directory %q: %v", canonicalDir, err))
+		return
+	}
+	result.SurvivorPath = newPath
+	result.CanonicalRename = &CanonicalRenameResult{OldPath: oldPath, NewPath: newPath, Platforms: platforms}
+}
+
+// refreshAffectedPlatforms triggers the post-merge platform refresh over the
+// connections captured before the loser rows were deleted. When no refresher
+// is wired it records the manual-refresh reminder (the behavior the removed
+// unconditional warning used to provide, now gated on refresh being absent).
+func (s *Service) refreshAffectedPlatforms(ctx context.Context, result *MergeResult) {
+	if len(result.AffectedConnectionIDs) == 0 {
+		return // no connected platforms indexed any member.
+	}
+	if s.mergeRefresher == nil {
+		result.Warnings = append(result.Warnings,
+			"Connected platforms still reference the merged directories. Trigger a library refresh on each so they pick up the new location.")
+		return
+	}
+	refreshed, err := s.mergeRefresher.SyncMergeRefresh(ctx, result.SurvivorID, result.AffectedConnectionIDs)
+	if err != nil {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("post-merge platform refresh could not start: %v", err))
+		return
+	}
+	result.PlatformRefresh = refreshed
+	for _, r := range refreshed {
+		if r.Result == PlatformRemapFailed {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("platform refresh failed for connection %s: %s", r.ConnectionID, r.Error))
+		}
+	}
 }
 
 // validateMergeRequest enforces the structural request shape (non-empty
@@ -648,15 +770,19 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 		if isAdditiveMergeDir(sd.Name()) {
 			info, statErr := os.Lstat(survivorChild)
 			switch {
-			case os.IsNotExist(statErr):
-				// Survivor lacks it entirely; commit does a whole-dir move.
+			case os.IsNotExist(statErr), statErr == nil && info.Mode().IsDir():
+				// The two "relocates" arms: survivor lacks it entirely (commit
+				// does a whole-dir move) OR both sides are real directories
+				// (additive content-merge, no halt). Both plan the same move.
+				// (os.Lstat + IsDir treats a symlink as NOT a directory.)
+				result.Moved = append(result.Moved, MovedItem{
+					Name: sd.Name(),
+					From: filepath.Join(loser.Path, sd.Name()),
+					To:   survivorChild,
+				})
 				continue
 			case statErr != nil:
 				return fmt.Errorf("checking survivor additive dir %s: %w", survivorChild, statErr)
-			case info.Mode().IsDir():
-				// Real directory on both sides: additive content-merge, no halt.
-				// (os.Lstat + IsDir treats a symlink as NOT a directory.)
-				continue
 			default:
 				// Survivor entry exists but is a file or symlink: cannot merge
 				// the loser's additive dir into it. Surface as a conflict.
@@ -674,7 +800,14 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 				SurvivorPath: survivorChild,
 				LoserPath:    filepath.Join(loser.Path, sd.Name()),
 			})
-		} else if !os.IsNotExist(statErr) {
+		} else if os.IsNotExist(statErr) {
+			// Survivor lacks this subdir; a real merge moves it whole.
+			result.Moved = append(result.Moved, MovedItem{
+				Name: sd.Name(),
+				From: filepath.Join(loser.Path, sd.Name()),
+				To:   survivorChild,
+			})
+		} else {
 			return fmt.Errorf("checking survivor child %s: %w", survivorChild, statErr)
 		}
 	}
@@ -698,7 +831,14 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 				Name: f.Name(),
 				Path: filepath.Join(loser.Path, f.Name()),
 			})
-		} else if !os.IsNotExist(statErr) {
+		} else if os.IsNotExist(statErr) {
+			// Survivor lacks this loose file; a real merge moves it.
+			result.Moved = append(result.Moved, MovedItem{
+				Name: f.Name(),
+				From: filepath.Join(loser.Path, f.Name()),
+				To:   survivorChild,
+			})
+		} else {
 			return fmt.Errorf("checking survivor loose file %s: %w", survivorChild, statErr)
 		}
 	}
@@ -970,6 +1110,39 @@ func uniqueDestName(dir, name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("%w: could not find a free name for %s in %s", ErrMergeInvalidRequest, name, dir)
+}
+
+// collectAffectedConnectionIDs returns the distinct, sorted union of platform
+// connection IDs mapping the survivor or any loser. Called before the loser
+// rows are deleted (their platform_ids cascade away on delete), so the
+// post-merge platform refresh can reach every connection that indexed a member.
+// Best-effort: a per-artist enumeration error is logged and skipped rather than
+// failing the merge, since the merge itself has already moved files on disk.
+func (s *Service) collectAffectedConnectionIDs(ctx context.Context, survivorID string, losers []NearDuplicateArtist) []string {
+	seen := make(map[string]struct{})
+	add := func(id string) {
+		pids, err := s.GetPlatformIDs(ctx, id)
+		if err != nil {
+			slog.Warn("merge: enumerating platform IDs for affected-connection capture",
+				"artist_id", id, "error", err)
+			return
+		}
+		for _, p := range pids {
+			if p.ConnectionID != "" {
+				seen[p.ConnectionID] = struct{}{}
+			}
+		}
+	}
+	add(survivorID)
+	for _, l := range losers {
+		add(l.ID)
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // commitMergeDB runs the final DB transaction: fill-empty MBID forward from

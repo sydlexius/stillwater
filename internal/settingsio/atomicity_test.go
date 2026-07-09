@@ -367,7 +367,7 @@ func TestImport_AtomicSameSectionRollback(t *testing.T) {
 		carryV15Fields    = true // envelope is v1.5+ (irrelevant here; new row)
 		overwriteExisting = true // standard import semantics
 	)
-	if err := svc.importConnections(ctx, tx, conns, &ImportResult{}, carryV15Fields, overwriteExisting); err != nil {
+	if err := svc.importConnections(ctx, tx, conns, &ImportResult{}, carryV15Fields, overwriteExisting, overwriteExisting); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("importConnections inside tx: %v", err)
 	}

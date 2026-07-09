@@ -219,19 +219,39 @@ type mergeDeletedPayload struct {
 	Path string `json:"path"`
 }
 
+// mergePlatformPayload mirrors artist.PlatformRemapResult and
+// artist.PlatformRefreshResult (identical shape) in snake_case. error is
+// omitted when empty so a successful outcome does not carry the field.
+type mergePlatformPayload struct {
+	ConnectionID string `json:"connection_id"`
+	Result       string `json:"result"`
+	Error        string `json:"error,omitempty"`
+}
+
+// mergeCanonicalRenamePayload mirrors artist.CanonicalRenameResult in
+// snake_case: the survivor's post-merge relocation to its canonical directory
+// plus the per-platform path-sync outcomes from the chained rename.
+type mergeCanonicalRenamePayload struct {
+	OldPath   string                 `json:"old_path"`
+	NewPath   string                 `json:"new_path"`
+	Platforms []mergePlatformPayload `json:"platforms,omitempty"`
+}
+
 // mergeResultPayload mirrors artist.MergeResult in snake_case. Conflicts is
 // omitted when empty so success responses do not carry the field.
 type mergeResultPayload struct {
-	DryRun           bool                   `json:"dry_run"`
-	SurvivorID       string                 `json:"survivor_id"`
-	SurvivorPath     string                 `json:"survivor_path"`
-	SurvivorOverride bool                   `json:"survivor_override"`
-	Moved            []mergeMovedPayload    `json:"moved,omitempty"`
-	Deleted          []mergeDeletedPayload  `json:"deleted,omitempty"`
-	Conflicts        []mergeConflictPayload `json:"conflicts,omitempty"`
-	Removed          []string               `json:"removed,omitempty"`
-	Warnings         []string               `json:"warnings,omitempty"`
-	LosersDeleted    []string               `json:"losers_deleted,omitempty"`
+	DryRun           bool                         `json:"dry_run"`
+	SurvivorID       string                       `json:"survivor_id"`
+	SurvivorPath     string                       `json:"survivor_path"`
+	SurvivorOverride bool                         `json:"survivor_override"`
+	Moved            []mergeMovedPayload          `json:"moved,omitempty"`
+	Deleted          []mergeDeletedPayload        `json:"deleted,omitempty"`
+	Conflicts        []mergeConflictPayload       `json:"conflicts,omitempty"`
+	Removed          []string                     `json:"removed,omitempty"`
+	Warnings         []string                     `json:"warnings,omitempty"`
+	LosersDeleted    []string                     `json:"losers_deleted,omitempty"`
+	CanonicalRename  *mergeCanonicalRenamePayload `json:"canonical_rename,omitempty"`
+	PlatformRefresh  []mergePlatformPayload       `json:"platform_refresh,omitempty"`
 }
 
 // handleArtistsMerge processes POST /api/v1/artists/merge. Admin-only via
@@ -267,7 +287,11 @@ func (r *Router) handleArtistsMerge(w http.ResponseWriter, req *http.Request) {
 		ArticleMode: r.lookupArticleMode(req),
 	}
 
-	result, err := r.artistService.MergeArtists(req.Context(), mergeReq)
+	// MergeAndReconcile (not MergeArtists) so a committed merge also relocates
+	// the survivor to its canonical directory and refreshes connected
+	// platforms. Dry-runs return early inside MergeAndReconcile with no
+	// reconcile, preserving the preview-only contract.
+	result, err := r.artistService.MergeAndReconcile(req.Context(), mergeReq)
 	if err != nil {
 		r.respondMergeError(w, err, result)
 		return
@@ -394,6 +418,42 @@ func toMergeDeletedPayloads(in []artist.DeletedItem) []mergeDeletedPayload {
 	return out
 }
 
+// toMergeRemapPayloads maps the per-platform outcomes from a chained rename.
+func toMergeRemapPayloads(in []artist.PlatformRemapResult) []mergePlatformPayload {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]mergePlatformPayload, 0, len(in))
+	for _, p := range in {
+		out = append(out, mergePlatformPayload{ConnectionID: p.ConnectionID, Result: p.Result, Error: p.Error})
+	}
+	return out
+}
+
+// toMergePlatformRefreshPayloads maps the per-connection post-merge refresh
+// outcomes. Same shape as toMergeRemapPayloads but a distinct source type.
+func toMergePlatformRefreshPayloads(in []artist.PlatformRefreshResult) []mergePlatformPayload {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]mergePlatformPayload, 0, len(in))
+	for _, p := range in {
+		out = append(out, mergePlatformPayload{ConnectionID: p.ConnectionID, Result: p.Result, Error: p.Error})
+	}
+	return out
+}
+
+func toMergeCanonicalRenamePayload(cr *artist.CanonicalRenameResult) *mergeCanonicalRenamePayload {
+	if cr == nil {
+		return nil
+	}
+	return &mergeCanonicalRenamePayload{
+		OldPath:   cr.OldPath,
+		NewPath:   cr.NewPath,
+		Platforms: toMergeRemapPayloads(cr.Platforms),
+	}
+}
+
 func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 	if r == nil {
 		return mergeResultPayload{}
@@ -409,6 +469,8 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 		Removed:          r.Removed,
 		Warnings:         r.Warnings,
 		LosersDeleted:    r.LosersDeleted,
+		CanonicalRename:  toMergeCanonicalRenamePayload(r.CanonicalRename),
+		PlatformRefresh:  toMergePlatformRefreshPayloads(r.PlatformRefresh),
 	}
 }
 

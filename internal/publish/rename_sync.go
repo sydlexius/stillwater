@@ -169,7 +169,15 @@ func (p *Publisher) syncOne(ctx context.Context, artistID, newPath string, pid a
 		return res
 	}
 
-	if err := updater.UpdateArtistPath(callCtx, pid.PlatformArtistID, newPath); err != nil {
+	// Translate the host artist path into the platform's namespace before the
+	// PUT. For a shared-mount deployment (or any non-Lidarr peer) MapArtistPath
+	// returns newPath unchanged, so this is a no-op; for a split-mount Lidarr
+	// with configured PathMappings it rewrites the prefix so Lidarr receives a
+	// path it can resolve instead of one it rejects or silently coerces against
+	// its Root Folder list. This covers both rename and the merge propagation
+	// #2303 routes through the same UpdateArtistPath chokepoint.
+	platformPath := conn.MapArtistPath(newPath)
+	if err := updater.UpdateArtistPath(callCtx, pid.PlatformArtistID, platformPath); err != nil {
 		// Bound the surfaced error: Jellyfin's postFullItem can wrap up to
 		// 1 MB of peer response body into the returned error, and the full
 		// string flows into the JSON response and into operator log lines.

@@ -73,7 +73,12 @@ var pbkdf2Iterations = defaultPBKDF2Iterations
 //     re-encrypted key and left it undecryptable on the target (#2277). The
 //     import-side skip is unconditional across all versions, so legacy
 //     envelopes carrying the duplicated rows are repaired on import too.
-const CurrentEnvelopeVersion = "1.6"
+//   - "1.7": adds path_mappings to ConnectionExport so the Lidarr
+//     host<->platform path-mapping list survives export/import (#2303).
+//     Pre-1.7 envelopes lack the field, so legacy imports must preserve the
+//     target's existing mappings instead of clobbering them with a decoded
+//     nil.
+const CurrentEnvelopeVersion = "1.7"
 
 // supportedEnvelopeVersions lists the envelope versions Import will accept.
 // Older versions are accepted for backward compatibility (their newer fields
@@ -86,6 +91,7 @@ var supportedEnvelopeVersions = map[string]bool{
 	"1.4": true,
 	"1.5": true,
 	"1.6": true,
+	"1.7": true,
 }
 
 // envelopeCarriesConnectionV14Fields reports whether an envelope of the given
@@ -102,7 +108,7 @@ var supportedEnvelopeVersions = map[string]bool{
 // out to avoid shadowing the imported `version` package.
 func envelopeCarriesConnectionV14Fields(envelopeVersion string) bool {
 	switch envelopeVersion {
-	case "1.4", "1.5":
+	case "1.4", "1.5", "1.6", "1.7":
 		return true
 	default:
 		return false
@@ -122,7 +128,25 @@ func envelopeCarriesConnectionV14Fields(envelopeVersion string) bool {
 // (unlikely) need their own gating function rather than reusing this one.
 func envelopeCarriesConnectionV15Fields(envelopeVersion string) bool {
 	switch envelopeVersion {
-	case "1.5":
+	case "1.5", "1.6", "1.7":
+		return true
+	default:
+		return false
+	}
+}
+
+// envelopeCarriesConnectionV17Fields reports whether an envelope of the given
+// version carries the v1.7-only connection field (PathMappings). Pre-1.7
+// envelopes lack the field, so deserializing leaves it nil; copying that nil
+// onto an existing target row would silently wipe the Lidarr path mappings the
+// operator had set. Returning false here lets importConnections preserve the
+// target's existing mappings instead.
+//
+// When introducing a v1.8+ envelope that ALSO carries PathMappings, add the
+// new version to the case below.
+func envelopeCarriesConnectionV17Fields(envelopeVersion string) bool {
+	switch envelopeVersion {
+	case "1.7":
 		return true
 	default:
 		return false
@@ -195,6 +219,11 @@ type ConnectionExport struct {
 	PreStillwaterConfigJSON  string `json:"pre_stillwater_config_json,omitempty"`
 	PlatformUserID           string `json:"platform_user_id,omitempty"`
 	PlatformServerID         string `json:"platform_server_id,omitempty"`
+	// PathMappings carries the Lidarr host<->platform path-mapping list so a
+	// split-mount deployment's rename/merge remapping config survives a
+	// restore (#2303). Empty for non-Lidarr connections and shared-mount
+	// Lidarr connections.
+	PathMappings []connection.PathMapping `json:"path_mappings,omitempty"`
 }
 
 // PriorityExport holds a field's provider priority list.
@@ -420,6 +449,7 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 			PreStillwaterConfigJSON:  c.PreStillwaterConfigJSON,
 			PlatformUserID:           c.GetPlatformUserID(),
 			PlatformServerID:         c.GetPlatformServerID(),
+			PathMappings:             c.GetPathMappings(),
 		})
 	}
 
@@ -657,7 +687,7 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 	if err := s.importProviderKeys(ctx, tx, payload.ProviderKeys, result); err != nil {
 		return nil, fmt.Errorf("importing provider keys: %w", err)
 	}
-	if err := s.importConnections(ctx, tx, payload.Connections, result, envelopeCarriesConnectionV14Fields(v), envelopeCarriesConnectionV15Fields(v)); err != nil {
+	if err := s.importConnections(ctx, tx, payload.Connections, result, envelopeCarriesConnectionV14Fields(v), envelopeCarriesConnectionV15Fields(v), envelopeCarriesConnectionV17Fields(v)); err != nil {
 		return nil, fmt.Errorf("importing connections: %w", err)
 	}
 	if err := s.importPlatformProfiles(ctx, tx, payload.PlatformProfiles, result); err != nil {

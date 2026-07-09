@@ -35,7 +35,7 @@ type DBExecutor interface {
 // writes inside the same transaction.
 func (s *Service) ImportGetByTypeAndURLTx(ctx context.Context, db DBExecutor, connType, url string) (*Connection, error) {
 	row := db.QueryRowContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings
 		FROM connections WHERE type = ? AND url = ? ORDER BY created_at DESC LIMIT 1
 	`, connType, url)
 	c, err := s.scanConnection(row)
@@ -75,9 +75,13 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, c *Connecti
 	if err != nil {
 		return fmt.Errorf("encrypting api key: %w", err)
 	}
+	pathMappingsJSON, err := EncodePathMappings(c.GetPathMappings())
+	if err != nil {
+		return err
+	}
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, feature_metadata_push, feature_trigger_refresh, feature_manage_server_files, verify_path_after_update, platform_user_id, platform_server_id, pre_stillwater_config_json, path_mappings)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		c.ID, c.Name, c.Type, c.URL, encKey,
 		dbutil.BoolToInt(c.Enabled), c.Status, c.StatusMessage,
@@ -89,6 +93,7 @@ func (s *Service) ImportCreateTx(ctx context.Context, db DBExecutor, c *Connecti
 		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
 		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
+		pathMappingsJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("creating connection: %w", err)
@@ -110,6 +115,10 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connecti
 	if err != nil {
 		return fmt.Errorf("encrypting api key: %w", err)
 	}
+	pathMappingsJSON, err := EncodePathMappings(c.GetPathMappings())
+	if err != nil {
+		return err
+	}
 	result, err := db.ExecContext(ctx, `
 		UPDATE connections SET
 			name = ?, type = ?, url = ?, encrypted_api_key = ?, enabled = ?,
@@ -119,7 +128,8 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connecti
 			feature_manage_server_files = ?,
 			verify_path_after_update = ?,
 			platform_user_id = ?, platform_server_id = ?,
-			pre_stillwater_config_json = ?
+			pre_stillwater_config_json = ?,
+			path_mappings = ?
 		WHERE id = ?
 	`,
 		c.Name, c.Type, c.URL, encKey, dbutil.BoolToInt(c.Enabled),
@@ -131,6 +141,7 @@ func (s *Service) ImportUpdateTx(ctx context.Context, db DBExecutor, c *Connecti
 		dbutil.BoolToInt(c.GetVerifyPathAfterUpdate()),
 		c.GetPlatformUserID(), c.GetPlatformServerID(),
 		c.PreStillwaterConfigJSON,
+		pathMappingsJSON,
 		c.ID,
 	)
 	if err != nil {

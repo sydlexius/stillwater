@@ -163,6 +163,134 @@ func TestHandleArtistsMerge_DryRun(t *testing.T) {
 	}
 }
 
+// fakeMergeRefresher implements artist.PlatformMergeRefresher, recording the
+// survivor + connection set the handler-driven MergeAndReconcile passes and
+// returning an OK outcome per connection so the payload mapping is exercised.
+type fakeMergeRefresher struct {
+	gotSurvivor string
+	gotConns    []string
+}
+
+func (f *fakeMergeRefresher) SyncMergeRefresh(_ context.Context, survivorID string, connectionIDs []string) ([]artist.PlatformRefreshResult, error) {
+	f.gotSurvivor = survivorID
+	f.gotConns = connectionIDs
+	out := make([]artist.PlatformRefreshResult, 0, len(connectionIDs))
+	for _, c := range connectionIDs {
+		out = append(out, artist.PlatformRefreshResult{ConnectionID: c, Result: artist.PlatformRemapOK})
+	}
+	return out, nil
+}
+
+// seedNonCanonicalMergeFixture is like seedMergeFixture but the survivor's
+// directory basename ("Cure, The") is NOT canonical for its name ("The Cure")
+// in prefix mode, so a committed MergeAndReconcile relocates it.
+func seedNonCanonicalMergeFixture(t *testing.T, svc *artist.Service, db *sql.DB) (survivorID, loserID string) {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at) VALUES ('lib-merge-nc', 'lib-merge-nc', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		root); err != nil {
+		t.Fatalf("seed library: %v", err)
+	}
+	survivorPath := filepath.Join(root, "Cure, The") // non-canonical in prefix mode
+	loserPath := filepath.Join(root, "Cure Dup")
+	for _, p := range []string{survivorPath, loserPath} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", p, err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(survivorPath, "Album A"), 0o755); err != nil {
+		t.Fatalf("mkdir survivor album: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(loserPath, "Album B"), 0o755); err != nil {
+		t.Fatalf("mkdir loser album: %v", err)
+	}
+	survivor := &artist.Artist{Name: "The Cure", SortName: "Cure, The", Path: survivorPath, LibraryID: "lib-merge-nc"}
+	loser := &artist.Artist{Name: "The Cure", SortName: "Cure, The", Path: loserPath, LibraryID: "lib-merge-nc"}
+	if err := svc.Create(ctx, survivor); err != nil {
+		t.Fatalf("Create survivor: %v", err)
+	}
+	if err := svc.Create(ctx, loser); err != nil {
+		t.Fatalf("Create loser: %v", err)
+	}
+	return survivor.ID, loser.ID
+}
+
+// TestHandleArtistsMerge_PlatformRefresh proves the handler routes through
+// MergeAndReconcile and surfaces the fan-out outcomes: with a refresher wired
+// and the survivor mapped to a connection, the response carries platform_refresh
+// keyed by that connection.
+func TestHandleArtistsMerge_PlatformRefresh(t *testing.T) {
+	t.Parallel()
+	r, svc, db := mergeTestRouter(t)
+	ref := &fakeMergeRefresher{}
+	svc.SetPlatformMergeRefresher(ref)
+	survivorID, loserID, _ := seedMergeFixture(t, svc, db)
+
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at) VALUES ('conn-emby', 'conn-emby', 'emby', 'http://x:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+	); err != nil {
+		t.Fatalf("seed connection: %v", err)
+	}
+	if err := svc.SetPlatformID(ctx, survivorID, "conn-emby", "emby-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	r.handleArtistsMerge(rec, adminReq(t, map[string]any{
+		"survivor_id": survivorID, "loser_ids": []string{loserID}, "dry_run": false,
+	}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got mergeResultPayload
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(got.PlatformRefresh) != 1 || got.PlatformRefresh[0].ConnectionID != "conn-emby" || got.PlatformRefresh[0].Result != "ok" {
+		t.Errorf("platform_refresh = %+v, want one conn-emby ok entry", got.PlatformRefresh)
+	}
+	if ref.gotSurvivor != survivorID {
+		t.Errorf("refresher survivor = %q, want %q", ref.gotSurvivor, survivorID)
+	}
+	// Survivor "The Cure" is already prefix-canonical: no rename in the payload.
+	if got.CanonicalRename != nil {
+		t.Errorf("canonical_rename = %+v, want nil (survivor already canonical)", got.CanonicalRename)
+	}
+}
+
+// TestHandleArtistsMerge_CanonicalRename proves the canonical_rename payload is
+// surfaced when a committed merge relocates a non-canonical survivor directory.
+func TestHandleArtistsMerge_CanonicalRename(t *testing.T) {
+	t.Parallel()
+	r, svc, db := mergeTestRouter(t)
+	survivorID, loserID := seedNonCanonicalMergeFixture(t, svc, db)
+
+	rec := httptest.NewRecorder()
+	r.handleArtistsMerge(rec, adminReq(t, map[string]any{
+		"survivor_id": survivorID, "loser_ids": []string{loserID}, "dry_run": false,
+	}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got mergeResultPayload
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got.CanonicalRename == nil {
+		t.Fatalf("canonical_rename = nil, want non-nil (survivor path %s)", got.SurvivorPath)
+	}
+	if filepath.Base(got.CanonicalRename.NewPath) != "The Cure" {
+		t.Errorf("canonical_rename.new_path base = %s, want \"The Cure\"", filepath.Base(got.CanonicalRename.NewPath))
+	}
+	if filepath.Base(got.CanonicalRename.OldPath) != "Cure, The" {
+		t.Errorf("canonical_rename.old_path base = %s, want \"Cure, The\"", filepath.Base(got.CanonicalRename.OldPath))
+	}
+}
+
 func TestHandleArtistsMerge_Collisions(t *testing.T) {
 	t.Parallel()
 	r, svc, db := mergeTestRouter(t)
