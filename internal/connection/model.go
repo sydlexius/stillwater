@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -28,6 +29,28 @@ type LidarrConfig struct {
 	// rarely drifts and the extra request roughly doubles the per-rename
 	// HTTP cost.
 	VerifyPathAfterUpdate bool `json:"verify_path_after_update,omitempty"`
+	// PathMappings translates the artist-directory path prefixes Stillwater
+	// sees on disk into the prefixes the Lidarr peer expects for the same
+	// location (see Connection.MapArtistPath). Empty (the default) sends the
+	// path verbatim - correct for shared-mount deployments where Stillwater's
+	// container and Lidarr address the library identically. Operators on split
+	// mounts enter the pair(s) so a rename/merge propagates a path Lidarr can
+	// resolve instead of one it rejects or silently coerces against its Root
+	// Folder list (#2303).
+	PathMappings []PathMapping `json:"path_mappings,omitempty"`
+}
+
+// PathMapping translates one host-filesystem path prefix (as Stillwater sees
+// the artist directory) to the prefix the platform expects for the same
+// location. A peer such as Lidarr may mount the shared library under a
+// different path than Stillwater's container - e.g. Stillwater sees
+// "/music/Artist" while Lidarr addresses it as "/data/Artist" - so sending the
+// host path verbatim breaks the platform-side rename. #2303.
+type PathMapping struct {
+	// HostPrefix is the leading path segment as Stillwater sees it on disk.
+	HostPrefix string `json:"host_prefix"`
+	// PlatformPrefix is the corresponding leading segment on the platform.
+	PlatformPrefix string `json:"platform_prefix"`
 }
 
 // EmbyConfig holds the fields that are only meaningful for an Emby
@@ -135,6 +158,91 @@ func (c *Connection) GetVerifyPathAfterUpdate() bool {
 		return c.Lidarr.VerifyPathAfterUpdate
 	}
 	return false
+}
+
+// GetPathMappings returns the Lidarr host-to-platform path-mapping list, or
+// nil for non-Lidarr / unresolved connections. Nil-safe.
+func (c *Connection) GetPathMappings() []PathMapping {
+	if c.Lidarr != nil {
+		return c.Lidarr.PathMappings
+	}
+	return nil
+}
+
+// MapArtistPath translates a host artist path into the platform's namespace
+// using the connection's Lidarr PathMappings. It applies the mapping whose
+// HostPrefix is the longest path-prefix of hostPath - a separator-boundary
+// match, so "/music/jazz" does not claim "/music/jazzfusion" (the same rule
+// library.pathContains uses) - replacing that prefix with the corresponding
+// PlatformPrefix. When no mapping matches, the Lidarr config is nil, or
+// hostPath is empty, hostPath is returned unchanged, preserving the pre-#2303
+// verbatim behavior for shared-mount deployments.
+//
+// Comparison uses forward-slash semantics because platform paths cross the
+// wire in POSIX form regardless of the host OS. Nil-safe: callers holding a
+// mixed-type or unresolved connection may call it unconditionally.
+func (c *Connection) MapArtistPath(hostPath string) string {
+	if c == nil || c.Lidarr == nil || hostPath == "" {
+		return hostPath
+	}
+	bestLen := -1
+	mapped := hostPath
+	for _, m := range c.Lidarr.PathMappings {
+		host := strings.TrimRight(m.HostPrefix, "/")
+		if host == "" {
+			continue
+		}
+		remainder, ok := pathRemainder(hostPath, host)
+		if !ok {
+			continue
+		}
+		if len(host) > bestLen {
+			bestLen = len(host)
+			mapped = strings.TrimRight(m.PlatformPrefix, "/") + remainder
+		}
+	}
+	return mapped
+}
+
+// pathRemainder reports whether prefix is a separator-bounded path prefix of
+// path (forward-slash semantics); on a match it returns the trailing portion,
+// which is "" for an exact match or begins with "/" otherwise. Grafting the
+// platform prefix onto this remainder reconstructs the translated path.
+func pathRemainder(path, prefix string) (string, bool) {
+	if path == prefix {
+		return "", true
+	}
+	if strings.HasPrefix(path, prefix+"/") {
+		return path[len(prefix):], true
+	}
+	return "", false
+}
+
+// EncodePathMappings serializes a path-mapping list to the JSON stored in the
+// connections.path_mappings column. An empty or nil list encodes as "" so the
+// column default and a verbatim connection are indistinguishable on disk.
+func EncodePathMappings(m []PathMapping) (string, error) {
+	if len(m) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "", fmt.Errorf("encoding path mappings: %w", err)
+	}
+	return string(b), nil
+}
+
+// DecodePathMappings parses the connections.path_mappings column back into a
+// list. "" (the column default / a verbatim connection) decodes to nil.
+func DecodePathMappings(s string) ([]PathMapping, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var m []PathMapping
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		return nil, fmt.Errorf("decoding path mappings: %w", err)
+	}
+	return m, nil
 }
 
 // GetFeatureLibraryImport reports the library-import toggle. False for Lidarr

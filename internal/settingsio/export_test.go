@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -420,6 +421,67 @@ func TestRoundTrip_ConnectionVerifyPathAfterUpdate(t *testing.T) {
 	}
 	if !got.GetVerifyPathAfterUpdate() {
 		t.Error("VerifyPathAfterUpdate did not survive export/import round-trip")
+	}
+}
+
+// TestRoundTrip_ConnectionPathMappings pins that the Lidarr host<->platform
+// path-mapping list (#2303) survives the connection export/import round-trip
+// introduced in envelope v1.7. Without this, a backup taken after the operator
+// configures the mapping would silently restore with paths sent verbatim,
+// re-breaking split-mount rename propagation.
+func TestRoundTrip_ConnectionPathMappings(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+	want := []connection.PathMapping{
+		{HostPrefix: "/music", PlatformPrefix: "/data/media"},
+	}
+	c := &connection.Connection{
+		Name:    "Lidarr Split",
+		Type:    "lidarr",
+		URL:     "http://lidarr.local:8686",
+		APIKey:  "lidarr-key",
+		Enabled: true,
+		Lidarr:  &connection.LidarrConfig{PathMappings: want},
+	}
+	if err := connSvc.Create(ctx, c); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	envelope, err := svc.Export(ctx, "test-passphrase")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if envelope.Version != CurrentEnvelopeVersion {
+		t.Errorf("envelope version: got %q, want %q", envelope.Version, CurrentEnvelopeVersion)
+	}
+
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	if _, err := svc2.Import(ctx, envelope, "test-passphrase"); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	conns, err := connSvc2.List(ctx)
+	if err != nil {
+		t.Fatalf("listing imported connections: %v", err)
+	}
+	var got *connection.Connection
+	for i := range conns {
+		if conns[i].Name == "Lidarr Split" {
+			got = &conns[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("imported connections missing %q; got %d rows", "Lidarr Split", len(conns))
+	}
+	if !reflect.DeepEqual(got.GetPathMappings(), want) {
+		t.Errorf("PathMappings did not survive export/import: got %+v, want %+v", got.GetPathMappings(), want)
 	}
 }
 

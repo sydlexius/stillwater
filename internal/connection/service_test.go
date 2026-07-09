@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -751,6 +752,91 @@ func TestVerifyPathAfterUpdate_RoundTrip(t *testing.T) {
 	}
 	if reloaded.Lidarr == nil || !reloaded.Lidarr.VerifyPathAfterUpdate {
 		t.Error("VerifyPathAfterUpdate should survive an Update that did not change it")
+	}
+}
+
+// TestPathMappings_RoundTrip exercises the persistence half of the #2303
+// path-mapping list: a Lidarr connection created with mappings reads them back
+// after GetByID, they survive an Update that does not touch them, and clearing
+// them (empty slice) reads back as no mappings.
+func TestPathMappings_RoundTrip(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	want := []PathMapping{
+		{HostPrefix: "/music", PlatformPrefix: "/data/media"},
+		{HostPrefix: "/media/audio", PlatformPrefix: "/mnt/audio"},
+	}
+	conn := &Connection{
+		Name:   "Lidarr split mount",
+		Type:   TypeLidarr,
+		URL:    "http://localhost:8686",
+		APIKey: "key",
+		Lidarr: &LidarrConfig{PathMappings: want},
+	}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Lidarr == nil || !reflect.DeepEqual(got.Lidarr.PathMappings, want) {
+		t.Fatalf("PathMappings after round-trip = %+v, want %+v", got.GetPathMappings(), want)
+	}
+
+	// Update without touching the field; it must persist.
+	got.Name = "renamed"
+	if err := svc.Update(ctx, got); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	reloaded, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after update: %v", err)
+	}
+	if !reflect.DeepEqual(reloaded.GetPathMappings(), want) {
+		t.Errorf("PathMappings should survive an Update that did not change it: got %+v", reloaded.GetPathMappings())
+	}
+
+	// Clear the mappings; the column returns to empty and reads back nil.
+	reloaded.Lidarr.PathMappings = nil
+	if err := svc.Update(ctx, reloaded); err != nil {
+		t.Fatalf("update (clear): %v", err)
+	}
+	cleared, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after clear: %v", err)
+	}
+	if len(cleared.GetPathMappings()) != 0 {
+		t.Errorf("PathMappings after clear = %+v, want none", cleared.GetPathMappings())
+	}
+}
+
+// TestPathMappings_DefaultsEmpty pins the back-compat default: a Lidarr
+// connection created without mappings reads back with none, so shared-mount
+// deployments keep verbatim path propagation.
+func TestPathMappings_DefaultsEmpty(t *testing.T) {
+	t.Parallel()
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	conn := &Connection{
+		Name:   "Lidarr shared mount",
+		Type:   TypeLidarr,
+		URL:    "http://localhost:8687",
+		APIKey: "key",
+	}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(got.GetPathMappings()) != 0 {
+		t.Errorf("default PathMappings = %+v, want none", got.GetPathMappings())
 	}
 }
 

@@ -1533,6 +1533,13 @@
     "covered": true
   },
   {
+    "operationId": "setPathMappings",
+    "method": "POST",
+    "path": "/connections/{id}/path-mappings",
+    "handler": "handleSetPathMappings",
+    "covered": true
+  },
+  {
     "operationId": "setPlatformID",
     "method": "PUT",
     "path": "/artists/{id}/platform-ids/{connectionId}",

@@ -144,6 +144,65 @@ func TestSyncRename_PartialFailureDoesNotStopFanout(t *testing.T) {
 	}
 }
 
+// TestSyncRename_AppliesPathMapping is the #2303 guard: a Lidarr connection
+// with a configured PathMapping must send the platform-namespace path to
+// UpdateArtistPath, while a connection with no mapping sends the host path
+// verbatim. The translation happens in syncOne, independent of the per-client
+// factory, so a single fake covers both connections.
+func TestSyncRename_AppliesPathMapping(t *testing.T) {
+	fake := &fakePathUpdater{}
+
+	orig := renamePathUpdaterFactory
+	renamePathUpdaterFactory = func(_ *connection.Connection, _ *slog.Logger) (pathUpdater, bool) {
+		return fake, true
+	}
+	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+
+	// Mapped connection: /music -> /data/media.
+	mapped := &connection.Connection{
+		ID: "c-mapped", Name: "mapped", Type: connection.TypeLidarr, URL: "http://lid", Enabled: true,
+		Lidarr: &connection.LidarrConfig{PathMappings: []connection.PathMapping{
+			{HostPrefix: "/music", PlatformPrefix: "/data/media"},
+		}},
+	}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-mapped", PlatformArtistID: "42"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{"c-mapped": mapped}},
+		Logger:            silentLogger(),
+	})
+	if _, err := p.SyncRename(context.Background(), "a1", "/music/OldName", "/music/NewName"); err != nil {
+		t.Fatalf("SyncRename (mapped): %v", err)
+	}
+	if fake.gotPath != "/data/media/NewName" {
+		t.Errorf("mapped path sent = %q, want %q", fake.gotPath, "/data/media/NewName")
+	}
+
+	// Unmapped connection: same host path must reach the platform verbatim.
+	fake2 := &fakePathUpdater{}
+	renamePathUpdaterFactory = func(_ *connection.Connection, _ *slog.Logger) (pathUpdater, bool) {
+		return fake2, true
+	}
+	unmapped := &connection.Connection{
+		ID: "c-plain", Name: "plain", Type: connection.TypeLidarr, URL: "http://lid2", Enabled: true,
+		Lidarr: &connection.LidarrConfig{},
+	}
+	p2 := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-plain", PlatformArtistID: "43"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{"c-plain": unmapped}},
+		Logger:            silentLogger(),
+	})
+	if _, err := p2.SyncRename(context.Background(), "a1", "/music/OldName", "/music/NewName"); err != nil {
+		t.Fatalf("SyncRename (unmapped): %v", err)
+	}
+	if fake2.gotPath != "/music/NewName" {
+		t.Errorf("unmapped path sent = %q, want verbatim %q", fake2.gotPath, "/music/NewName")
+	}
+}
+
 // TestSyncRename_NoPlatformIDs covers the early-return when the artist has
 // no mappings: nil slice, nil error, no factory invocation.
 func TestSyncRename_NoPlatformIDs(t *testing.T) {

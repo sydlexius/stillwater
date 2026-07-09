@@ -265,11 +265,14 @@ components:
           items:
             $ref: "#/components/schemas/MergeMovedItem"
           description: >-
-            Every filesystem rename performed (album subdirs first, then
-            non-colliding loose files). Empty on dry-run. Album-subdirectory
-            collisions return HTTP 409 with the MergeCollisionsResponse shape.
-            Loose-file same-name collisions that are safely superseded by a
-            survivor regular file are represented in `deleted`.
+            Filesystem relocations. On a dry-run this lists the PLANNED moves
+            (each non-colliding album subdir and loose file a real merge would
+            relocate); on a committed merge it lists the moves ACTUALLY
+            performed (album subdirs first, then non-colliding loose files).
+            Album-subdirectory collisions return HTTP 409 with the
+            MergeCollisionsResponse shape. Loose-file same-name collisions that
+            are safely superseded by a survivor regular file are represented in
+            `deleted`.
         deleted:
           type: array
           items:
@@ -305,15 +308,68 @@ components:
             type: string
           description: >-
             Non-fatal observations (symlinks skipped, destination-appeared
-            race left a subdirectory in place, the standing reminder that
-            connected platforms still index the loser path until the
-            operator triggers a refresh).
+            race left a subdirectory in place, a canonical-rename failure, a
+            per-platform refresh failure, or -- when no refresher is wired --
+            the reminder to trigger a library refresh manually).
         losers_deleted:
           type: array
           items:
             type: string
           description: Loser artist IDs whose rows were deleted by the merge transaction.
+        canonical_rename:
+          allOf:
+            - $ref: "#/components/schemas/MergeCanonicalRename"
+          description: >-
+            Present only when a committed merge relocated the survivor to its
+            canonical directory (survivor was not already canonical). Absent on
+            dry-run, when the survivor was already canonical, or when the rename
+            failed (a warning is recorded instead).
+        platform_refresh:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergePlatformResult"
+          description: >-
+            Per-connection outcomes of the post-merge platform refresh
+            (survivor re-index; stale loser eviction on platforms that
+            support it -- currently Emby and Jellyfin, not Lidarr) over the
+            connections that mapped the survivor or any loser. Present only
+            on a committed merge when a refresher is wired; absent on
+            dry-run.
       required: [survivor_id, survivor_path]
+    MergePlatformResult:
+      type: object
+      description: >-
+        Outcome of a single platform operation (post-merge refresh or the
+        chained canonical rename's path sync) on one connection.
+      required: [connection_id, result]
+      properties:
+        connection_id:
+          type: string
+          description: Platform connection ID.
+        result:
+          type: string
+          enum: [ok, failed]
+        error:
+          type: string
+          description: User-safe summary of the failure. Present only when result is "failed".
+    MergeCanonicalRename:
+      type: object
+      description: >-
+        The survivor's post-merge relocation to its canonical directory,
+        including the per-platform path-sync outcomes from the chained rename.
+      required: [old_path, new_path]
+      properties:
+        old_path:
+          type: string
+          description: Survivor directory path before the canonical rename.
+        new_path:
+          type: string
+          description: Survivor directory path after the canonical rename.
+        platforms:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergePlatformResult"
+          description: Per-platform outcomes of re-issuing the new path to connected platforms.
     MergeCollisionsResponse:
       description: >-
         409 response body returned when the orchestrator refused to merge.
@@ -651,12 +707,28 @@ components:
         verify_path_after_update:
           type: boolean
           description: When true, issues a follow-up GET after rename PUT to verify path wasn't coerced. Lidarr only.
+        path_mappings:
+          type: [array, "null"]
+          description: Host-to-platform path prefix mappings applied before a rename/merge PUT. Empty or null for non-Lidarr and shared-mount Lidarr connections.
+          items:
+            $ref: "#/components/schemas/PathMapping"
         library_count:
           type: integer
           description: Number of libraries associated with this connection. Present in the single-connection detail response only, not in the list response.
         artist_count:
           type: integer
           description: Total number of artists across all libraries for this connection. Present in the single-connection detail response only, not in the list response.
+    PathMapping:
+      type: object
+      description: One host-to-platform path prefix translation for a Lidarr connection (#2303).
+      required: [host_prefix, platform_prefix]
+      properties:
+        host_prefix:
+          type: string
+          description: The leading path segment as Stillwater sees the artist directory on disk.
+        platform_prefix:
+          type: string
+          description: The corresponding leading segment the platform (Lidarr) expects.
     Webhook:
       type: object
       properties:
@@ -8486,6 +8558,80 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Persisting the toggle failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /connections/{id}/path-mappings:
+    post:
+      tags: [Connections]
+      summary: Replace host-to-platform path mappings (Lidarr only)
+      operationId: setPathMappings
+      description: >
+        Replaces the Lidarr host<->platform path-mapping list. The supplied
+        list fully replaces any existing mappings (PUT-like); an empty or
+        omitted list clears them, restoring verbatim path propagation. Each
+        mapping must carry both a non-empty host prefix and platform prefix.
+        Lidarr only; returns 400 for non-Lidarr connections.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path_mappings:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/PathMapping"
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              description: >-
+                Parallel host_prefix / platform_prefix arrays, as posted by
+                the settings UI's HTMX form. The two arrays must be the same
+                length; index i of host_prefix pairs with index i of
+                platform_prefix to form one mapping.
+              properties:
+                host_prefix:
+                  type: array
+                  items:
+                    type: string
+                platform_prefix:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Mappings updated; returns the updated connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionResponse"
+        "400":
+          description: >
+            Invalid request. Returned when the connection id is missing, the
+            body could not be parsed, a mapping is missing one of its two
+            prefixes, or the connection is not a Lidarr connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Persisting the mappings failed
           content:
             application/json:
               schema:

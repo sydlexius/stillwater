@@ -2,7 +2,7 @@
 description: Move your Stillwater configuration to another instance with an encrypted bundle.
 ---
 
-<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.6, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, UserExport, ImportOptions.AdminFallbackTokens, pbkdf2Iterations 600_000, transactional Import wrapping the per-section apply), internal/settingsio/users.go (id-first probe with ErrUserIDCollision halt), internal/settingsio/tokens.go (admin-fallback path), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import, POST /api/v1/setup/restore), internal/api/handlers_setup_restore.go (pre-admin OOBE restore handler with HasUsers gate + serialization mutex), web/templates/settings.templ maintenance tab (export passphrase + import upload + admin-fallback checkbox), web/templates/setup.templ (Start fresh / Restore from backup mode cards). -->
+<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.7, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, UserExport, ImportOptions.AdminFallbackTokens, pbkdf2Iterations 600_000, transactional Import wrapping the per-section apply), internal/settingsio/users.go (id-first probe with ErrUserIDCollision halt), internal/settingsio/tokens.go (admin-fallback path), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import, POST /api/v1/setup/restore), internal/api/handlers_setup_restore.go (pre-admin OOBE restore handler with HasUsers gate + serialization mutex), web/templates/settings.templ maintenance tab (export passphrase + import upload + admin-fallback checkbox), web/templates/setup.templ (Start fresh / Restore from backup mode cards). -->
 
 # Export and import settings
 

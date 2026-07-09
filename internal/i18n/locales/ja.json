@@ -21,7 +21,7 @@
   "artist_duplicates.merge_modal.exclude_label": "統合に含める",
   "artist_duplicates.merge_modal.moves_heading": "予定されている移動 (%d):",
   "artist_duplicates.merge_modal.no_sources_selected": "残存アーティストに統合するソースアーティストを少なくとも1人選択してください。",
-  "artist_duplicates.merge_modal.platform_rescan_note": "接続済みのメディアサーバー（Emby、Jellyfin、Lidarr）はまだ古いディレクトリパスをインデックスしています。統合後、各サーバーでライブラリの更新をトリガーして新しい場所を認識させてください。",
+  "artist_duplicates.merge_modal.platform_rescan_note": "統合後、Stillwater は接続済みのメディアサーバー（Emby、Jellyfin、Lidarr）を自動的に更新し、新しい場所を認識させます。Emby と Jellyfin では古いエントリも自動的に削除されますが、Lidarr では残っている場合は手動で削除してください。統合中にサーバーがオフラインの場合は、そのサーバーで手動でライブラリの更新を実行してください。",
   "artist_duplicates.merge_modal.preview_empty": "移動するものはありません。統合は空の非残存ディレクトリとそのデータベース行を削除するだけです。",
   "artist_duplicates.merge_modal.preview_heading": "プレビュー",
   "artist_duplicates.merge_modal.preview_loading": "衝突を確認中...",

@@ -43,6 +43,10 @@ type connectionResponse struct {
 	// for non-Lidarr connections (the nil-safe getter returns false). See
 	// connection.LidarrConfig.VerifyPathAfterUpdate (#1685/#1640).
 	VerifyPathAfterUpdate bool `json:"verify_path_after_update"`
+	// PathMappings is the Lidarr-only host<->platform path-mapping list. Empty
+	// for non-Lidarr connections and shared-mount Lidarr connections. See
+	// connection.LidarrConfig.PathMappings (#2303).
+	PathMappings []connection.PathMapping `json:"path_mappings"`
 }
 
 func toConnectionResponse(c connection.Connection) connectionResponse {
@@ -64,6 +68,7 @@ func toConnectionResponse(c connection.Connection) connectionResponse {
 		FeatureMetadataPush:   c.GetFeatureMetadataPush(),
 		FeatureTriggerRefresh: c.GetFeatureTriggerRefresh(),
 		VerifyPathAfterUpdate: c.GetVerifyPathAfterUpdate(),
+		PathMappings:          c.GetPathMappings(),
 	}
 	if c.LastCheckedAt != nil {
 		s := c.LastCheckedAt.UTC().Format(time.RFC3339)
@@ -912,6 +917,169 @@ func setVerifyPathAfterUpdate(c *connection.Connection, enabled bool) {
 		c.Lidarr = &connection.LidarrConfig{}
 	}
 	c.Lidarr.VerifyPathAfterUpdate = enabled
+}
+
+// pathMappingsRequest is the body of handleSetPathMappings. The full list
+// replaces the connection's existing mappings (PUT-like semantics): an empty
+// or omitted list clears them, restoring verbatim path propagation.
+type pathMappingsRequest struct {
+	PathMappings []connection.PathMapping `json:"path_mappings"`
+}
+
+// handleSetPathMappings replaces the Lidarr-only host<->platform path-mapping
+// list (connection.Lidarr.PathMappings). When set, the rename/merge publisher
+// rewrites an artist path's host prefix to the platform prefix before the
+// UpdateArtistPath PUT so a split-mount Lidarr receives a path it can resolve
+// instead of one it rejects or silently coerces against its Root Folder list
+// (#2303).
+//
+// POST /api/v1/connections/{id}/path-mappings
+// Body: {"path_mappings": [{"host_prefix": "/music", "platform_prefix": "/data"}]}
+//
+// Mirrors handleSetVerifyPathAfterUpdate: non-Lidarr connections are rejected
+// (400) because the field is unrepresentable on Emby/Jellyfin sub-configs, and
+// a per-connection mutex (pathMappingsMu) serializes the read-modify-write. The
+// existence + type gate runs BEFORE the per-id LoadOrStore so unknown or
+// wrong-type ids never grow the mutex map.
+func (r *Router) handleSetPathMappings(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing connection id"})
+		return
+	}
+
+	raw, ok := parsePathMappingsBody(w, req)
+	if !ok {
+		return
+	}
+
+	mappings, err := sanitizePathMappings(raw)
+	if err != nil {
+		r.logger.Warn("sanitizing path mappings", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path mappings"})
+		return
+	}
+
+	// Existence + type gate BEFORE allocating per-id serialization state, so an
+	// unknown or non-Lidarr id returns without ever touching the mutex map.
+	if gate, gerr := r.connectionService.GetByID(req.Context(), id); gerr != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	} else if gate.Type != connection.TypeLidarr {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
+		return
+	}
+
+	muIface, _ := r.pathMappingsMu.LoadOrStore(id, &sync.Mutex{})
+	connMu := muIface.(*sync.Mutex)
+	connMu.Lock()
+	defer connMu.Unlock()
+
+	existing, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+	// Re-check the type under the lock: a concurrent type change between the
+	// pre-lock gate and here must still yield the documented 400, not a 500.
+	if existing.Type != connection.TypeLidarr {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
+		return
+	}
+
+	setPathMappings(existing, mappings)
+
+	if err := r.connectionService.Update(req.Context(), existing); err != nil {
+		r.logger.Error("updating path-mappings failed", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toConnectionResponse(*existing))
+}
+
+// parsePathMappingsBody reads the request mappings from either a JSON body
+// ({"path_mappings": [...]}) or an HTMX form post carrying parallel
+// host_prefix / platform_prefix fields. The two encodings let API/curl callers
+// send structured JSON while the settings form posts plain form-urlencoded
+// pairs without any client-side array assembly. On a parse error it writes the
+// 400 and returns ok=false. An empty/absent list is valid (it clears mappings).
+func parsePathMappingsBody(w http.ResponseWriter, req *http.Request) ([]connection.PathMapping, bool) {
+	ct := req.Header.Get("Content-Type")
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	if strings.TrimSpace(strings.ToLower(ct)) == "application/json" {
+		var body pathMappingsRequest
+		dec := json.NewDecoder(http.MaxBytesReader(w, req.Body, 64*1024))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return nil, false
+		}
+		return body.PathMappings, true
+	}
+
+	// Form-encoded: parallel host_prefix / platform_prefix arrays. Length
+	// mismatch is a malformed submission, not a half-mapping, so reject it here
+	// rather than letting sanitize pad with empties.
+	req.Body = http.MaxBytesReader(w, req.Body, 64*1024)
+	if err := req.ParseForm(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form body"})
+		return nil, false
+	}
+	hosts := req.PostForm["host_prefix"]
+	platforms := req.PostForm["platform_prefix"]
+	if len(hosts) != len(platforms) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "host_prefix and platform_prefix counts must match"})
+		return nil, false
+	}
+	out := make([]connection.PathMapping, 0, len(hosts))
+	for i := range hosts {
+		out = append(out, connection.PathMapping{HostPrefix: hosts[i], PlatformPrefix: platforms[i]})
+	}
+	return out, true
+}
+
+// sanitizePathMappings trims whitespace from each pair and drops fully-empty
+// entries (so a stray blank row in the UI is ignored). A pair with exactly one
+// side filled is rejected: a half-mapping would translate a prefix to "" (or
+// from ""), silently corrupting every path it matched. A prefix that reduces to
+// "" after MapArtistPath's own TrimRight("/") -- i.e. "" or a bare "/" -- is
+// also rejected: MapArtistPath skips a "/" HostPrefix as a silent no-op, and a
+// "/" PlatformPrefix would strip the host prefix entirely, so persisting either
+// would echo back a saved-looking mapping that never behaves as configured. The
+// returned slice is nil when no valid mappings remain, which clears the column.
+func sanitizePathMappings(in []connection.PathMapping) ([]connection.PathMapping, error) {
+	var out []connection.PathMapping
+	for _, m := range in {
+		host := strings.TrimSpace(m.HostPrefix)
+		platform := strings.TrimSpace(m.PlatformPrefix)
+		if host == "" && platform == "" {
+			continue
+		}
+		if host == "" || platform == "" {
+			return nil, errors.New("each path mapping needs both a host prefix and a platform prefix")
+		}
+		// Match MapArtistPath's TrimRight("/") so a prefix that is only
+		// slashes ("/" or "//") is rejected here rather than silently ignored
+		// at map time.
+		if strings.TrimRight(host, "/") == "" || strings.TrimRight(platform, "/") == "" {
+			return nil, errors.New("path mapping prefixes cannot be empty or the filesystem root")
+		}
+		out = append(out, connection.PathMapping{HostPrefix: host, PlatformPrefix: platform})
+	}
+	return out, nil
+}
+
+// setPathMappings replaces the Lidarr path-mapping list on c, allocating the
+// Lidarr sub-config first if a legacy row left it nil. Extracted as a pure
+// mutation (no I/O) so the nil-allocation branch is unit-testable without a DB.
+func setPathMappings(c *connection.Connection, mappings []connection.PathMapping) {
+	if c.Lidarr == nil {
+		c.Lidarr = &connection.LidarrConfig{}
+	}
+	c.Lidarr.PathMappings = mappings
 }
 
 // handleGetPlatformSettings returns the fetcher/saver/downloader configuration for all

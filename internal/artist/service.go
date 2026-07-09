@@ -166,6 +166,13 @@ type Service struct {
 	// platforms slice. The artist package owns only the interface so it
 	// does not need to import internal/connection or internal/publish.
 	platformSyncer PlatformRenameSyncer
+
+	// mergeRefresher, when non-nil, reconciles connected platforms after a
+	// merge (survivor re-index + stale loser eviction). Wired via
+	// SetPlatformMergeRefresher at startup; nil in tests that do not exercise
+	// platform refresh (MergeAndReconcile then records a manual-refresh
+	// warning rather than calling out).
+	mergeRefresher PlatformMergeRefresher
 }
 
 // SetHistoryService attaches a HistoryService to the artist Service so that

@@ -146,7 +146,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 		{Name: "Emby A", Type: "emby", URL: "http://emby.local:8096", APIKey: "key1", Enabled: true},
 	}
 	result := &ImportResult{}
-	if err := svc.importConnections(ctx, db, conns, result, true, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, result, true, true, true); err != nil {
 		t.Fatalf("importConnections (insert): %v", err)
 	}
 	if result.Connections != 1 {
@@ -157,7 +157,7 @@ func TestImportConnections_CreateAndUpdate(t *testing.T) {
 	conns[0].Name = "Emby A Renamed"
 	conns[0].APIKey = "key2"
 	result2 := &ImportResult{}
-	if err := svc.importConnections(ctx, db, conns, result2, true, true); err != nil {
+	if err := svc.importConnections(ctx, db, conns, result2, true, true, true); err != nil {
 		t.Fatalf("importConnections (update): %v", err)
 	}
 	if result2.Connections != 1 {
@@ -215,7 +215,7 @@ func TestImportConnections_PreV14EnvelopePreservesV14Fields(t *testing.T) {
 		APIKey: "key2", Enabled: true,
 		// v1.4-only fields explicitly left zero to model a pre-1.4 payload.
 	}}
-	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, false, false); err != nil {
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, false, false, false); err != nil {
 		t.Fatalf("importConnections (legacy envelope): %v", err)
 	}
 
@@ -323,7 +323,7 @@ func TestImportConnections_PreV15EnvelopePreservesV15Fields(t *testing.T) {
 		APIKey: "key2", Enabled: true,
 		// VerifyPathAfterUpdate explicitly left zero to model a pre-1.5 payload.
 	}}
-	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, false); err != nil {
+	if err := svc.importConnections(ctx, db, conns, &ImportResult{}, true, false, false); err != nil {
 		t.Fatalf("importConnections (legacy envelope): %v", err)
 	}
 
@@ -808,7 +808,7 @@ func TestImportConnections_DBError(t *testing.T) {
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	_ = db.Close()
 	conns := []ConnectionExport{{Name: "x", Type: "emby", URL: "http://localhost:8096"}}
-	err := svc.importConnections(t.Context(), db, conns, &ImportResult{}, true, true)
+	err := svc.importConnections(t.Context(), db, conns, &ImportResult{}, true, true, true)
 	if err == nil {
 		t.Fatal("expected error with closed DB, got nil")
 	}

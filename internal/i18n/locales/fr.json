@@ -21,7 +21,7 @@
   "artist_duplicates.merge_modal.exclude_label": "Inclure dans la fusion",
   "artist_duplicates.merge_modal.moves_heading": "Déplacements prévus (%d) :",
   "artist_duplicates.merge_modal.no_sources_selected": "Sélectionnez au moins un artiste source à fusionner avec le survivant.",
-  "artist_duplicates.merge_modal.platform_rescan_note": "Les serveurs multimédias connectés (Emby, Jellyfin, Lidarr) indexent toujours l'ancien chemin de dossier. Lancez un rafraîchissement de bibliothèque sur chacun après la fusion pour qu'ils détectent le nouvel emplacement.",
+  "artist_duplicates.merge_modal.platform_rescan_note": "Stillwater actualise automatiquement les serveurs multimédias connectés (Emby, Jellyfin, Lidarr) après une fusion afin qu'ils détectent le nouvel emplacement. Emby et Jellyfin suppriment également les entrées obsolètes automatiquement ; sur Lidarr, supprimez manuellement l'ancienne entrée si elle persiste. Si un serveur est hors ligne pendant la fusion, lancez-y un rafraîchissement de bibliothèque manuellement.",
   "artist_duplicates.merge_modal.preview_empty": "Rien à déplacer. La fusion supprimera uniquement le dossier vide perdant et sa ligne en base de données.",
   "artist_duplicates.merge_modal.preview_heading": "Aperçu",
   "artist_duplicates.merge_modal.preview_loading": "Vérification des collisions...",
