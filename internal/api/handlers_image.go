@@ -664,12 +664,14 @@ func (r *Router) handleImageStage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// fetchImageFromURL already validated the bytes decode as a supported
-	// image; DetectFormat again only to pick the right data: URI mime type.
-	format, _, err := img.DetectFormat(bytes.NewReader(data))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "downloaded file is not a valid image"})
-		return
-	}
+	// image (returning the 502 above on failure), so a second error here is
+	// unreachable for the SAME data -- DetectFormat is deterministic and was
+	// already run successfully inside fetchImageFromURL. Re-run only to learn
+	// the format for the data: URI mime type (mirrors handleImageFetch's
+	// needs_crop branch, which does the same after its own fetchImageFromURL
+	// call); the error is intentionally discarded rather than handled as a
+	// second unreachable branch.
+	format, _, _ := img.DetectFormat(bytes.NewReader(data))
 	var mimeType string
 	switch format {
 	case img.FormatPNG:

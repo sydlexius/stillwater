@@ -543,7 +543,12 @@ func TestHandleImageStage_InvalidType(t *testing.T) {
 
 // TestHandleImageStage_NonImageBytesRejected covers the img.DetectFormat
 // validation: a successful HTTP fetch that is not actually image data must be
-// rejected rather than staged.
+// rejected rather than staged. fetchImageFromURL runs DetectFormat itself and
+// returns an error before handleImageStage ever sees the bytes, so this is
+// deterministically a 502 (upstream fetch/decode failure), not a 400 --
+// handleImageStage's OWN post-fetch DetectFormat call can never fail on the
+// same data (see the comment at that call site), so there is no separate
+// reachable 400 case to also exercise here.
 func TestHandleImageStage_NonImageBytesRejected(t *testing.T) {
 	t.Parallel()
 	r, svc := newImageHandlerTestServer(t)
@@ -559,8 +564,8 @@ func TestHandleImageStage_NonImageBytesRejected(t *testing.T) {
 	req.SetPathValue("id", a.ID)
 
 	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
-	if w.Code != http.StatusBadGateway && w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 or 502 for non-image bytes; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 for non-image bytes; body: %s", w.Code, w.Body.String())
 	}
 }
 

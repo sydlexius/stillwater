@@ -4410,7 +4410,7 @@ paths:
                     type: string
                     description: Image type, echoed from the request.
         "400":
-          description: Invalid request (missing or unsupported URL, unsupported image type, malformed body, non-public URL, or non-image bytes)
+          description: Invalid request (missing or unsupported URL, unsupported image type, malformed body, or non-public URL)
           content:
             application/json:
               schema:

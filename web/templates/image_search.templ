@@ -429,7 +429,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 								type="button"
 								role="menuitem"
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('fetch-url-modal').classList.remove('hidden')"
+								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false'); if (typeof window.swOpenFetchUrlModal === 'function') { window.swOpenFetchUrlModal(); } else { console.error('swOpenFetchUrlModal unavailable; opening fetch-URL modal without clearing a stale per-slot fetch target'); document.getElementById('fetch-url-modal').classList.remove('hidden'); }"
 							>
 								@components.IconArrowDownTray("h-4 w-4")
 								{ t(ctx, "image.fetch_from_url") }
@@ -650,7 +650,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					<button
 						type="button"
 						class="px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						onclick="document.getElementById('fetch-url-modal').classList.add('hidden')"
+						onclick="if (typeof window.swCloseFetchUrlModal === 'function') { window.swCloseFetchUrlModal(); } else { console.error('swCloseFetchUrlModal unavailable; closing fetch-URL modal without clearing a stale per-slot fetch target'); document.getElementById('fetch-url-modal').classList.add('hidden'); }"
 					>
 						{ t(ctx, "common.cancel") }
 					</button>
@@ -754,7 +754,29 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// modal; the submit handler below threads it into the request and
 				// resets it afterward so a later "current type" fetch does not
 				// inherit a stale slot.
+				//
+				// _fetchUrlSlot must ALSO be cleared on every OTHER path that can
+				// leave the modal without submitting -- Cancel, and the
+				// Actions-menu "Fetch from URL" entry that opens this same modal
+				// for the current type -- otherwise a per-slot Fetch that gets
+				// cancelled leaves a stale slot armed, and the next "current
+				// type" fetch silently overwrites that backdrop slot instead of
+				// appending (data loss). swOpenFetchUrlModal/swCloseFetchUrlModal
+				// are the two page-level entry points that own clearing it; the
+				// Actions-menu button and the modal's Cancel button are wired to
+				// call them (falling back to a direct DOM toggle + console.error
+				// if this IIFE never ran, e.g. no matching container).
 				var _fetchUrlSlot = null;
+				window.swOpenFetchUrlModal = function() {
+					_fetchUrlSlot = null;
+					var input = document.getElementById('fetch-url-input');
+					if (input) input.value = '';
+					document.getElementById('fetch-url-modal').classList.remove('hidden');
+				};
+				window.swCloseFetchUrlModal = function() {
+					_fetchUrlSlot = null;
+					document.getElementById('fetch-url-modal').classList.add('hidden');
+				};
 				window.swOpenFetchUrlForSlot = function(slot) {
 					_fetchUrlSlot = slot;
 					var input = document.getElementById('fetch-url-input');
@@ -765,7 +787,13 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// backdrop slot's same-origin file (no staging needed: it is
 				// already our own saved file, not a remote provider URL).
 				window.swOpenCropForSlot = function(slot) {
-					if (typeof openCropModal !== 'function') return;
+					if (typeof openCropModal !== 'function') {
+						// Capability check fails loudly rather than silently
+						// no-opping the Crop button (mirrors guardedCloseCropModal's
+						// showConfirmDialog guard above).
+						console.error('openCropModal unavailable; cannot open the crop modal for fanart slot ' + slot);
+						return;
+					}
 					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 					var src = bp + '/api/v1/artists/' + artistID + '/images/fanart/' + slot + '/file';
 					openCropModal(src, 'fanart', 16 / 9, false, slot);
