@@ -61,7 +61,7 @@ func imageCardTypeLabel(rawType string) string {
 	return label
 }
 
-templ ImageCard(artistID string, img provider.ImageResult) {
+templ ImageCard(artistID string, img provider.ImageResult, fanartExists bool) {
 	<div
 		class={ "relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors", }
 		data-img-url={ img.URL }
@@ -71,6 +71,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 		data-img-height={ strconv.Itoa(img.Height) }
 		data-img-likes={ strconv.Itoa(img.Likes) }
 		data-img-area={ strconv.Itoa(img.Width * img.Height) }
+		data-crop-append?={ normalizeCardImageType(string(img.Type)) == "fanart" && fanartExists }
 	>
 		<div
 			class={
@@ -142,7 +143,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 				<button
 					type="button"
 					class="crop-btn hidden flex-1 items-center justify-center gap-1.5 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick="if(typeof openCropModal==='function') openCropModal(this.closest('[data-img-url]').dataset.imgUrl, this.closest('[data-img-url]').dataset.imgType)"
+					onclick="if(typeof openCropModal==='function') { var c=this.closest('[data-img-url]'); openCropModal(c.dataset.imgUrl, c.dataset.imgType, undefined, c.hasAttribute('data-crop-append')); }"
 				>
 					@IconCrop("h-4 w-4")
 					Crop

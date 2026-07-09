@@ -118,6 +118,8 @@ script saveCroppedImage(artistID string) {
 		return;
 	}
 	var cropType = document.getElementById('crop-type').value;
+	// append intent was stashed on the modal by openCropModal at open time.
+	var cropAppend = document.getElementById('crop-modal').dataset.append === '1';
 	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
 	// unnecessary format conversion and larger file sizes.
 	var mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
@@ -140,7 +142,8 @@ script saveCroppedImage(artistID string) {
 			type: cropType,
 			x: 0, y: 0,
 			width: canvas.width,
-			height: canvas.height
+			height: canvas.height,
+			append: cropAppend
 		})
 	}).then(function(r) {
 		// Parse the body so we can surface the server's error message when
