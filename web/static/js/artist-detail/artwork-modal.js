@@ -164,6 +164,14 @@
   }
 
   function onKeydown(e) {
+    // The lightbox can be opened on top of this modal as an in-modal zoom
+    // viewer (#2305: image_search.templ current-image, FanartManagementGallery
+    // thumbnails). While it is open it owns Escape/Tab: both dialogs attach
+    // independent document-level keydown listeners, so without this guard a
+    // single Escape would fire both closeLightbox() and closeModal(), and Tab
+    // could escape the lightbox's own focus trap into the modal underneath.
+    var lightbox = document.getElementById("sw-lightbox");
+    if (lightbox && !lightbox.classList.contains("hidden")) return;
     if (e.key === "Escape") {
       e.preventDefault();
       closeModal();

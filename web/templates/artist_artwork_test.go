@@ -43,8 +43,10 @@ func TestArtworkSection_SectionChrome(t *testing.T) {
 }
 
 // TestArtworkSection_IdentityTiles verifies aspect-true tiles for the three
-// single-slot kinds: a present image opens the lightbox; a missing image shows
-// an add-state that opens the modal (never a link to the retired image pages).
+// single-slot kinds: BOTH a present and a missing image open the Manage
+// Artwork modal pre-selected to the tile's kind (#2305: the lightbox is no
+// longer wired to these tiles -- it becomes an in-modal zoom viewer instead),
+// never a link to the retired image pages.
 func TestArtworkSection_IdentityTiles(t *testing.T) {
 	t.Parallel()
 
@@ -63,16 +65,25 @@ func TestArtworkSection_IdentityTiles(t *testing.T) {
 
 	for label, want := range map[string]string{
 		// Present images render at native aspect, height-normalized (no fixed box).
-		"native-aspect image":   "sw-artwork-native-img",
-		"logo checker bg":       "sw-artwork-checker",
-		"present-tile lightbox": "swLightbox.open(this.dataset.lightboxSrc",
-		"primary file url":      "/api/v1/artists/art-1/images/thumb/file",
-		"banner file url":       "/api/v1/artists/art-1/images/banner/file",
-		"primary dimensions":    "600x600",
+		"native-aspect image":      "sw-artwork-native-img",
+		"logo checker bg":          "sw-artwork-checker",
+		"present-tile opens modal": `data-sw-artwork-open`,
+		"present primary kind":     `data-artwork-kind="primary"`,
+		"present banner kind":      `data-artwork-kind="banner"`,
+		"hover-cue class":          "sw-artwork-tile-open",
+		"management label":         "Click to manage",
+		"primary file url":         "/api/v1/artists/art-1/images/thumb/file",
+		"banner file url":          "/api/v1/artists/art-1/images/banner/file",
+		"primary dimensions":       "600x600",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("identity tiles missing %s (%q)", label, want)
 		}
+	}
+	// The present-tile image button must no longer wire the lightbox directly;
+	// it opens the Manage Artwork modal instead (#2305).
+	if strings.Contains(out, "swLightbox.open(this.dataset.lightboxSrc") {
+		t.Error("present identity tile must not open the lightbox directly anymore (routes through the modal)")
 	}
 	// Present tiles must NOT impose a fixed aspect box (that would crop/squash).
 	if strings.Contains(out, "aspect-square") {
@@ -105,17 +116,29 @@ func TestArtworkSection_BackdropsCarousel(t *testing.T) {
 	withFanart := &ArtistDetailData{Artist: artist.Artist{ID: "art-1", Name: "BD", FanartCount: 3}}
 	out := renderArtworkSection(t, withFanart)
 	for label, want := range map[string]string{
-		"tile grid":           "sw-artwork-bd-grid",
-		"fanart-manage hook":  "data-sw-fanart-gallery",
-		"slot 0 file":         "/api/v1/artists/art-1/images/fanart/0/file",
-		"slot 2 file":         "/api/v1/artists/art-1/images/fanart/2/file",
-		"set-primary star":    `data-set-primary-index="1"`,
-		"inline add-tile":     "sw-artwork-bd-add",
-		"add opens backdrops": `data-artwork-kind="backdrops"`,
+		"tile grid":            "sw-artwork-bd-grid",
+		"fanart-manage hook":   "data-sw-fanart-gallery",
+		"slot 0 file":          "/api/v1/artists/art-1/images/fanart/0/file",
+		"slot 2 file":          "/api/v1/artists/art-1/images/fanart/2/file",
+		"set-primary star":     `data-set-primary-index="1"`,
+		"inline add-tile":      "sw-artwork-bd-add",
+		"add opens backdrops":  `data-artwork-kind="backdrops"`,
+		"tile opens modal":     `data-sw-artwork-open`,
+		"backdrop tile kind":   `data-artwork-kind="backdrops"`,
+		"tile hover-cue class": "sw-artwork-tile-open",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("backdrops grid missing %s (%q)", label, want)
 		}
+	}
+	// The backdrop image button must no longer wire the lightbox directly; it
+	// opens the Manage Artwork modal at kind=backdrops instead (#2305). The
+	// checkbox/set-primary quick-actions remain untouched z-elevated siblings.
+	if strings.Contains(out, "swLightbox.open(this.dataset.lightboxSrc") {
+		t.Error("backdrop tile must not open the lightbox directly anymore (routes through the modal)")
+	}
+	if !strings.Contains(out, `data-set-primary-index="1"`) {
+		t.Error("set-primary quick-action must remain intact alongside the modal-open rewiring")
 	}
 	// The next/ surface intentionally omits the stable channel's per-slot
 	// fanart sync-state badges (maintainer: not part of the next/ UX), so the

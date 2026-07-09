@@ -4578,6 +4578,18 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   height: 88px;
 }
 
+/* Populated tile image buttons (identity + backdrop) now open Manage Artwork
+ * (#2305), not the lightbox -- give them the same hover/cursor cue as the
+ * kind-switcher tabs so the click target reads as clickable-into-management.
+ * Token-driven (color-mix over --swd-ink-2) so no separate .dark override is
+ * needed, matching .sw-artwork-kind-tab:hover below. */
+.sw-next-artist-detail .sw-artwork-tile-open {
+  cursor: pointer;
+}
+.sw-next-artist-detail .sw-artwork-tile-open:hover {
+  background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+}
+
 /* Backdrops: a wrapping row of native-aspect, height-normalized tiles with the
  * [+] add immediately after the last one, the same height. */
 .sw-next-artist-detail .sw-artwork-bd-grid {

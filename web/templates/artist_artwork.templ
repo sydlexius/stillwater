@@ -95,10 +95,10 @@ func artworkTileAspectClass(kind string) string {
 }
 
 // artworkIdentityTile renders one aspect-true identity tile for a single-slot
-// kind (primary/logo/banner). A present image opens the lightbox via the
-// window.openLightbox global (lightbox.js); an empty tile opens the Manage
-// modal pre-selected to this kind (the single "Manage artwork" button in the
-// header is the management entry point for present images). When the image is
+// kind (primary/logo/banner). Both a present image and an empty tile open the
+// Manage modal pre-selected to this kind via data-sw-artwork-open (#2305: the
+// image click is the doorway into management; the modal's own current-image
+// view is the in-modal lightbox trigger). When the image is
 // low-resolution a severity dot overlay + tooltip flag the finding (#16; richer
 // per-image findings are a follow-up -- only the low-res flag is on the model
 // today).
@@ -126,15 +126,14 @@ templ artworkIdentityTile(artistID string, kind string, exists bool, w int, h in
 			<button
 				type="button"
 				class={
-					"relative inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500",
+					"sw-artwork-tile-open relative inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500",
 					templ.KV("sw-artwork-checker", kind == "logo"),
 					templ.KV("bg-gray-100 dark:bg-gray-900", kind != "logo"),
 				}
-				data-lightbox-src={ fileURL }
-				data-lightbox-alt={ t(ctx, artworkKindLabelKey(kind)) }
-				onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
-				title={ t(ctx, "image.view_full_size") }
-				aria-label={ t(ctx, "image.view_full_size") }
+				data-sw-artwork-open
+				data-artwork-kind={ kind }
+				title={ t(ctx, "artist.artwork.click_to_manage") }
+				aria-label={ t(ctx, "artist.artwork.click_to_manage") }
 			>
 				if lowRes {
 					@artworkFindingDot("warning", t(ctx, "artist.artwork.finding_low_res"))
@@ -250,7 +249,10 @@ templ artworkBackdropsCarousel(artistID string, fanartCount int) {
 
 // artworkBackdropTile renders one backdrop slot tile (aspect-video): a
 // multi-select checkbox, a primary badge (index 0) or a set-primary star
-// (index > 0, wired to fanart-manage.js), and the image (opens the lightbox).
+// (index > 0, wired to fanart-manage.js), and the image (opens the Manage
+// modal pre-selected to Backdrops; #2305). The checkbox and set-primary star
+// are z-elevated siblings of the image button, not descendants, so this
+// rewiring does not touch the multi-select/set-primary/delete workflow.
 templ artworkBackdropTile(artistID string, index int, total int) {
 	{{ fileURL := fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, index) }}
 	<div class="relative inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group bg-gray-100 dark:bg-gray-900">
@@ -285,12 +287,11 @@ templ artworkBackdropTile(artistID string, index int, total int) {
 		}
 		<button
 			type="button"
-			class="block focus:outline-none focus:ring-2 focus:ring-blue-500"
-			data-lightbox-src={ fileURL }
-			data-lightbox-alt={ tf(ctx, "image.backdrop_index", strconv.Itoa(index)) }
-			onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
-			title={ t(ctx, "image.view_full_size") }
-			aria-label={ t(ctx, "image.view_full_size") }
+			class="sw-artwork-tile-open block focus:outline-none focus:ring-2 focus:ring-blue-500"
+			data-sw-artwork-open
+			data-artwork-kind="backdrops"
+			title={ t(ctx, "artist.artwork.click_to_manage") }
+			aria-label={ t(ctx, "artist.artwork.click_to_manage") }
 		>
 			<img src={ fileURL } alt="" class="sw-artwork-native-img" loading="lazy"/>
 		</button>

@@ -10,10 +10,12 @@ import "github.com/sydlexius/stillwater/web/components"
 // the lightbox) and the stable tab share one copy instead of the next/ tiles
 // dead-ending on a missing overlay.
 templ LightboxOverlay() {
-	// Hidden by default; shown by window.swLightbox.open().
+	// Hidden by default; shown by window.swLightbox.open(). z-[60]: intentionally
+	// above the Manage Artwork modal's z-50 (#2305) so the lightbox reliably
+	// layers on top when opened as the modal's in-modal zoom viewer.
 	<div
 		id="sw-lightbox"
-		class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85"
+		class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/85"
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="sw-lightbox-title"

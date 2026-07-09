@@ -82,6 +82,34 @@ describe('lightbox: open and close lifecycle', () => {
     assert.equal(dom.window.document.activeElement, outsideBtn,
       'focus must return to the opener element after close');
   });
+
+  // #2305: the lightbox is now also opened from inside the Manage Artwork
+  // modal (current-image button / fanart gallery thumbnail). The opener
+  // capture is generic (document.activeElement at open time) so no code
+  // change was expected here -- this case verifies focus returns to that
+  // in-modal opener specifically, not just any page-level element.
+  it('close restores focus into the modal when opened from an in-modal image button', () => {
+    const dom = createDom({
+      html: `<!doctype html><html><body>
+<div id="artwork-modal">
+  <button id="modal-image-btn" data-lightbox-src="img.jpg">Current image</button>
+</div>
+<div id="sw-lightbox" class="hidden">
+  <button data-lightbox-close id="close-btn">Close</button>
+  <img id="sw-lightbox-img" src="" alt="">
+</div>
+</body></html>`,
+      modules: ['lightbox'],
+    });
+    const modalImageBtn = dom.window.document.getElementById('modal-image-btn');
+    modalImageBtn.focus();
+
+    dom.window.swLightbox.open('img.jpg', '');
+    dom.window.swLightbox.close();
+
+    assert.equal(dom.window.document.activeElement, modalImageBtn,
+      'focus must return into the modal, to the image button that opened the lightbox');
+  });
 });
 
 // ---------------------------------------------------------------------------

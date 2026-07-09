@@ -208,4 +208,47 @@ describe('artwork-modal: open and close', () => {
     assert.ok(m.classList.contains('hidden'), 'Escape must close the artwork modal');
     assert.ok(evt.defaultPrevented, 'Escape must call preventDefault');
   });
+
+  // #2305: the lightbox can be opened on top of this modal as an in-modal zoom
+  // viewer. While it is visible it must own Escape/Tab so a single Escape only
+  // closes the lightbox, leaving the modal open underneath.
+  it('Escape no-ops on the modal while the in-modal lightbox is open', () => {
+    const dom = createDom({ html: MODAL_HTML, modules: ['artworkModal'] });
+    dom.window.swArtworkModal.open('primary');
+    const m = dom.window.document.getElementById('artwork-modal');
+
+    const lightbox = dom.window.document.createElement('div');
+    lightbox.id = 'sw-lightbox';
+    lightbox.classList.add('flex'); // visible: no "hidden" class
+    dom.window.document.body.appendChild(lightbox);
+
+    const evt = new dom.window.KeyboardEvent('keydown', {
+      key: 'Escape', bubbles: true, cancelable: true,
+    });
+    dom.window.document.dispatchEvent(evt);
+
+    assert.ok(!m.classList.contains('hidden'),
+      'the artwork modal must stay open while the lightbox is visible on top of it');
+    assert.ok(!evt.defaultPrevented,
+      'the modal keydown handler must no-op (not preventDefault) while the lightbox is visible');
+  });
+
+  it('Escape closes the modal again once the in-modal lightbox is hidden', () => {
+    const dom = createDom({ html: MODAL_HTML, modules: ['artworkModal'] });
+    dom.window.swArtworkModal.open('primary');
+    const m = dom.window.document.getElementById('artwork-modal');
+
+    const lightbox = dom.window.document.createElement('div');
+    lightbox.id = 'sw-lightbox';
+    lightbox.classList.add('hidden'); // closed
+    dom.window.document.body.appendChild(lightbox);
+
+    const evt = new dom.window.KeyboardEvent('keydown', {
+      key: 'Escape', bubbles: true, cancelable: true,
+    });
+    dom.window.document.dispatchEvent(evt);
+
+    assert.ok(m.classList.contains('hidden'),
+      'Escape must still close the artwork modal once the lightbox is hidden again');
+  });
 });

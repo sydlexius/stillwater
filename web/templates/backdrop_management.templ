@@ -38,12 +38,24 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 				for _, item := range items {
 					<div class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group" data-fanart-index={ strconv.Itoa(item.Index) }>
-						<label class="cursor-pointer">
-							<input
-								type="checkbox"
-								class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-								value={ strconv.Itoa(item.Index) }
-							/>
+						<input
+							type="checkbox"
+							class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+							value={ strconv.Itoa(item.Index) }
+							aria-label={ tf(ctx, "artist.select_backdrop", strconv.Itoa(item.Index)) }
+						/>
+						// Discrete sibling of the checkbox (not nested), same pattern as
+						// artist_artwork.templ's artworkBackdropTile, so a future per-slot
+						// action (#2281: crop/fetch) can slot in beside it without nesting.
+						<button
+							type="button"
+							class="block w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+							data-lightbox-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
+							data-lightbox-alt={ item.Filename }
+							onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
+							title={ t(ctx, "image.view_full_size") }
+							aria-label={ t(ctx, "image.view_full_size") }
+						>
 							<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
 								<img
 									src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
@@ -52,7 +64,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 									loading="lazy"
 								/>
 							</div>
-						</label>
+						</button>
 						<div class="p-1.5 flex items-center justify-between">
 							<span class="text-xs text-gray-500 dark:text-gray-400">
 								{ item.Filename }

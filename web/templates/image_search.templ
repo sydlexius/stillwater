@@ -392,11 +392,26 @@ templ imageSearchContextualized(data ImageSearchData) {
 				}
 			>
 				if imageExistsForType(data.Artist, data.SelectedType) {
-					<img
-						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
-						alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
-						class="max-w-full max-h-96 object-contain"
-					/>
+					// The current-image is also the in-modal lightbox trigger (#2305):
+					// clicking it opens the shared LightboxOverlay() as a zoom viewer. A
+					// <button> keeps it keyboard-reachable; it does not replace the
+					// #image-drop-zone parent, so the drag/drop listeners bound to that
+					// parent (image_search.templ script below) are unaffected.
+					<button
+						type="button"
+						class="block max-w-full max-h-96 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						data-lightbox-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
+						data-lightbox-alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
+						onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
+						title={ t(ctx, "image.view_full_size") }
+						aria-label={ t(ctx, "image.view_full_size") }
+					>
+						<img
+							src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
+							alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
+							class="max-w-full max-h-96 object-contain"
+						/>
+					</button>
 				} else {
 					<div class="text-center text-gray-500 dark:text-gray-400">
 						@components.IconPlusCircle("mx-auto h-12 w-12")
