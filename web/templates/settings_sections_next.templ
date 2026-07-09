@@ -453,7 +453,7 @@ templ connectionPathMappings(c connection.Connection) {
 			@pathMappingRow("", "")
 			<button type="submit" class="rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 mt-1">{ t(ctx, "actions.save") }</button>
 		</form>
-		<span id={ "path-mapping-result-" + c.ID } class="hidden text-xs mt-1"></span>
+		<span id={ "path-mapping-result-" + c.ID } class="hidden text-xs mt-1" role="status" aria-live="polite" aria-atomic="true"></span>
 	</div>
 }
 

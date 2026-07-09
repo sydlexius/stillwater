@@ -154,8 +154,16 @@
 
   // swPathMappingsAfterRequest reports the outcome of the Lidarr-only path
   // mapping form's hx-post (hx-swap="none") in the adjacent inline result span.
-  // On success it shows the localized "saved" confirmation; on failure it shows
-  // the server's error text (falling back to the localized data-sw-error).
+  // On success it shows the localized "saved" confirmation, THEN refreshes the
+  // "connections" settings-fragment via swRefreshSettingsSection (the same
+  // targeted-refresh helper the adjacent Test button already uses on this row
+  // -- see section-refresh.js) so the server-rendered row list -- including a
+  // fresh trailing blank pathMappingRow -- replaces the stale in-DOM rows.
+  // Without this, hx-swap="none" leaves the just-saved values sitting in the
+  // form with no blank row to enter the NEXT mapping, forcing a manual page
+  // reload to add a second mapping (#2322 CR-4). On failure it shows the
+  // server's error text (falling back to the localized data-sw-error) and does
+  // NOT refresh, since nothing changed server-side.
   // Bound via hx-on:htmx:after-request="swPathMappingsAfterRequest(this, event)".
   window.swPathMappingsAfterRequest = function (formEl, event) {
     var connID = formEl && formEl.dataset ? formEl.dataset.connId : '';
@@ -177,6 +185,11 @@
       resultEl.textContent = (formEl.dataset && formEl.dataset.swOk) || 'Path mappings saved.';
       resultEl.classList.remove('hidden', 'text-red-600', 'dark:text-red-400');
       resultEl.classList.add('text-green-600', 'dark:text-green-400');
+      if (typeof window.swRefreshSettingsSection === 'function') {
+        window.swRefreshSettingsSection('connections');
+      } else {
+        console.error('swPathMappingsAfterRequest: swRefreshSettingsSection unavailable; new mapping rows will not appear without a reload');
+      }
     } else {
       errText = '';
       try {

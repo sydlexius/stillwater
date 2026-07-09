@@ -1118,6 +1118,18 @@ func previewMergeAdditiveDir(loserDir, survivorDir string, result *MergeResult) 
 	if err != nil {
 		return fmt.Errorf("reading additive merge dir %s: %w", loserDir, err)
 	}
+	// claimed tracks destination basenames already assigned to an earlier
+	// entry within THIS preview pass. uniqueDestName only os.Lstats the
+	// survivor dir, which a dry-run never actually writes to, so without this
+	// set two distinct loser entries that both resolve to the same
+	// de-duplicated name (e.g. one clashes to "foo-1.jpg", and a second loser
+	// entry is itself literally named "foo-1.jpg") would both preview moving
+	// to "foo-1.jpg" -- a false collision the real commit-time
+	// mergeAdditiveDir never produces, because it renames one file at a time
+	// so the on-disk check for the second file already sees the first file's
+	// new name (#2322 CR-2). Marking each chosen dstName as claimed mirrors
+	// that sequential effect without touching the filesystem.
+	claimed := make(map[string]struct{}, len(entries))
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".") || IsIgnoredSystemName(e.Name()) {
 			continue
@@ -1129,21 +1141,48 @@ func previewMergeAdditiveDir(loserDir, survivorDir string, result *MergeResult) 
 		}
 		srcChild := filepath.Join(loserDir, e.Name())
 		dstName := e.Name()
-		if _, statErr := os.Lstat(filepath.Join(survivorDir, dstName)); statErr == nil {
-			// Basename clash: preview the same de-duplicated name
-			// mergeAdditiveDir will pick at commit time.
-			unique, uErr := uniqueDestName(survivorDir, e.Name())
+		_, alreadyClaimed := claimed[dstName]
+		_, statErr := os.Lstat(filepath.Join(survivorDir, dstName))
+		switch {
+		case statErr == nil || alreadyClaimed:
+			// Basename clash (on disk, or against an earlier entry in this
+			// same pass): preview the same de-duplicated name mergeAdditiveDir
+			// will pick at commit time.
+			unique, uErr := uniquePreviewDestName(survivorDir, e.Name(), claimed)
 			if uErr != nil {
 				return uErr
 			}
 			dstName = unique
-		} else if !os.IsNotExist(statErr) {
+		case !os.IsNotExist(statErr):
 			return fmt.Errorf("checking additive destination %s: %w", filepath.Join(survivorDir, dstName), statErr)
 		}
+		claimed[dstName] = struct{}{}
 		dstChild := filepath.Join(survivorDir, dstName)
 		result.Moved = append(result.Moved, MovedItem{Name: dstName, From: srcChild, To: dstChild})
 	}
 	return nil
+}
+
+// uniquePreviewDestName mirrors uniqueDestName's "{stem}-{n}{ext}" probing but
+// also treats names already claimed within the current previewMergeAdditiveDir
+// pass as taken, since uniqueDestName's disk-only check cannot see them (a
+// dry-run never writes, so the filesystem never reflects an earlier preview
+// entry's chosen name).
+func uniquePreviewDestName(dir, name string, claimed map[string]struct{}) (string, error) {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for i := 1; i < 10000; i++ {
+		candidate := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if _, taken := claimed[candidate]; taken {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(dir, candidate)); os.IsNotExist(err) {
+			return candidate, nil
+		} else if err != nil {
+			return "", fmt.Errorf("probing unique name %s in %s: %w", candidate, dir, err)
+		}
+	}
+	return "", fmt.Errorf("%w: could not find a free name for %s in %s", ErrMergeInvalidRequest, name, dir)
 }
 
 // uniqueDestName returns a base name of the form "{stem}-{n}{ext}" that does
