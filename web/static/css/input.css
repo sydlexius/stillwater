@@ -4663,6 +4663,29 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   color: var(--swd-ink);
 }
 
+/* #2305/#2323 contrast fix: real axe-core on the Manage Artwork modal (light
+ * theme) measured the per-candidate Save/Compare/Crop buttons at 1.8:1 (fg
+ * #b6c2d4 on a white card) -- the DARK --swd-ink-2 value (rgb block below,
+ * .dark .sw-next-artist-detail) was the one resolving even though the card
+ * surface itself was light. Rather than leave these AA-critical buttons at
+ * the mercy of that token indirection, pin each theme's ink literally and
+ * !important so it cannot be shadowed: #334155 (light --swd-ink-2, ~10.4:1 on
+ * white) / #b6c2d4 (dark --swd-ink-2, ~9.9:1 on the dark card). Scoped to the
+ * exact 3 candidate-card button classes (not .sw-next-flat-btn, which the
+ * #1932 fix above already locks separately for the dark bulk bar). */
+.sw-next-artist-detail .image-card-save,
+.sw-next-artist-detail .compare-btn,
+.sw-next-artist-detail .crop-btn,
+.sw-next-artist-detail #compare-save-btn {
+  color: #334155 !important;
+}
+.dark .sw-next-artist-detail .image-card-save,
+.dark .sw-next-artist-detail .compare-btn,
+.dark .sw-next-artist-detail .crop-btn,
+.dark .sw-next-artist-detail #compare-save-btn {
+  color: #b6c2d4 !important;
+}
+
 /* #1932 contrast fix: the artwork-modal multi-select "Save All" button
  * (#fanart-bulk-save) is the ONLY .sw-next-flat-btn that sits on the dark
  * floating bulk bar (#fanart-bulk-bar, bg-gray-900/90) rather than a light
