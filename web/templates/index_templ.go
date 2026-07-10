@@ -281,7 +281,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\">---</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" role=\"img\">---</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -370,771 +370,784 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\">---</span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<span class=\"sw-stat-val\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var16 string
-				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", stats.TotalArtists))
+				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.stats_unavailable"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 213, Col: 146}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" role=\"img\">---</span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span class=\"sw-stat-val\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var17 string
+				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", stats.TotalArtists))
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 215, Col: 71}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</a><!-- Last-evaluated bubble: the existing localized status button (its\n\t\t\t\t     data-* carriers + run-rules onclick are preserved verbatim so the\n\t\t\t\t     updateLastEvaluated JS keeps binding to #last-evaluated-text). --><button type=\"button\" id=\"last-evaluated-text\" class=\"sw-stat-bubble flex flex-col justify-center px-4 py-3 text-left transition-colors\" onclick=\"swDashboardPanels && swDashboardPanels.openRunRules()\" data-label-prefix=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var17 string
-			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.last_evaluated"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 226, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" data-label-just-now=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</a><!-- Last-evaluated bubble: the existing localized status button (its\n\t\t\t\t     data-* carriers + run-rules onclick are preserved verbatim so the\n\t\t\t\t     updateLastEvaluated JS keeps binding to #last-evaluated-text). --><button type=\"button\" id=\"last-evaluated-text\" class=\"sw-stat-bubble flex flex-col justify-center px-4 py-3 text-left transition-colors\" onclick=\"swDashboardPanels && swDashboardPanels.openRunRules()\" data-label-prefix=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var18 string
-			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.just_now"))
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.last_evaluated"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 227, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 226, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" data-tpl-minutes=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" data-label-just-now=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var19 string
-			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.minutes_ago.other"))
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.just_now"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 228, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 227, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" data-tpl-hours=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" data-tpl-minutes=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var20 string
-			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.hours_ago.other"))
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.minutes_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 229, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 228, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-tpl-days=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-tpl-hours=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var21 string
-			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.days_ago.other"))
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.hours_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 230, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 229, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" data-label-never=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" data-tpl-days=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var22 string
-			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.never_short"))
+			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.days_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 231, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 230, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" data-label-unavailable=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" data-label-never=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var23 string
-			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.status_unavailable"))
+			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.never_short"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 232, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 231, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"><span class=\"sw-stat-label\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" data-label-unavailable=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var24 string
-			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.last_evaluated"))
+			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.status_unavailable"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 232, Col: 68}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\"><span class=\"sw-stat-label\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var25 string
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.last_evaluated"))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 234, Col: 69}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</span><span id=\"last-evaluated-value\" class=\"sw-stat-val sw-stat-val--sm\">---</span></button><!-- Auto-fixable bubble: count of active fixable violations across the\n\t\t\t\t     whole library (real, unfiltered). ACTIONABLE: links to the queue\n\t\t\t\t     scoped to fixable=yes so the user can act on these directly. No\n\t\t\t\t     trend line is rendered (no delta data is available). --><a href=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var25 templ.SafeURL
-			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/?fixable=yes"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 246, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" class=\"sw-stat-bubble flex flex-col justify-center px-4 py-3 transition-colors\"><span class=\"sw-stat-label\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span><span id=\"last-evaluated-value\" class=\"sw-stat-val sw-stat-val--sm\">---</span></button><!-- Auto-fixable bubble: count of active fixable violations across the\n\t\t\t\t     whole library (real, unfiltered). ACTIONABLE: links to the queue\n\t\t\t\t     scoped to fixable=yes so the user can act on these directly. No\n\t\t\t\t     trend line is rendered (no delta data is available). --><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var26 string
-			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.bubble_auto_fixable"))
+			var templ_7745c5c3_Var26 templ.SafeURL
+			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/?fixable=yes"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 249, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 246, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" class=\"sw-stat-bubble flex flex-col justify-center px-4 py-3 transition-colors\"><span class=\"sw-stat-label\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var27 string
+			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.bubble_auto_fixable"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 249, Col: 74}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if fixableCountsError {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<span class=\"sw-stat-val sw-stat-val--sm\" title=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var27 string
-				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.stats_unavailable"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 251, Col: 93}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" aria-label=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<span class=\"sw-stat-val sw-stat-val--sm\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.stats_unavailable"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 251, Col: 146}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 251, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\">---</span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<span class=\"sw-stat-val\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var29 string
-				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", autoFixableCount))
+				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.stats_unavailable"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 251, Col: 146}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" role=\"img\">---</span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<span class=\"sw-stat-val\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var30 string
+				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", autoFixableCount))
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 253, Col: 69}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</a><!-- Needs-you bubble: count of active NON-fixable violations (manual\n\t\t\t\t     review). ACTIONABLE (maintainer 2026-05-31): the bubble links to\n\t\t\t\t     the queue scoped to fixable=no, so clicking it surfaces exactly the\n\t\t\t\t     items that need manual review. The bubble shows just its label +\n\t\t\t\t     count, matching the other four bubbles (no sublabel). --><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</a><!-- Needs-you bubble: count of active NON-fixable violations (manual\n\t\t\t\t     review). ACTIONABLE (maintainer 2026-05-31): the bubble links to\n\t\t\t\t     the queue scoped to fixable=no, so clicking it surfaces exactly the\n\t\t\t\t     items that need manual review. The bubble shows just its label +\n\t\t\t\t     count, matching the other four bubbles (no sublabel). --><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var30 templ.SafeURL
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/?fixable=no"))
+			var templ_7745c5c3_Var31 templ.SafeURL
+			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/?fixable=no"))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 262, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" class=\"sw-stat-bubble flex flex-col justify-center px-4 py-3 transition-colors\"><span class=\"sw-stat-label\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var31 string
-			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.bubble_needs_you"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 265, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" class=\"sw-stat-bubble flex flex-col justify-center px-4 py-3 transition-colors\"><span class=\"sw-stat-label\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var32 string
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.bubble_needs_you"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 265, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if fixableCountsError {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<span class=\"sw-stat-val sw-stat-val--sm\" title=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var32 string
-				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.stats_unavailable"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 267, Col: 93}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\" aria-label=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<span class=\"sw-stat-val sw-stat-val--sm\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var33 string
 				templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.stats_unavailable"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 267, Col: 146}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 267, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\">---</span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<span class=\"sw-stat-val\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var34 string
-				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", needsYouCount))
+				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.stats_unavailable"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 267, Col: 146}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\" role=\"img\">---</span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<span class=\"sw-stat-val\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var35 string
+				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", needsYouCount))
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 269, Col: 66}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</a></div><div class=\"sw-next-toolbar sticky top-0 z-10 flex items-center gap-2 rounded-lg bg-gray-50/80 px-2 py-2 backdrop-blur dark:bg-gray-900/80\"><!-- Search wrapper. The \"/\" shortcut is advertised once in the\n\t\t\t\t     tip-line legend below (and the ? cheat sheet), so no inline\n\t\t\t\t     sw-kbd keycap is pinned here (avoids duplicating the hint). --><div class=\"relative min-w-[12rem] flex-1\"><input id=\"dashboard-search\" type=\"search\" name=\"search\" placeholder=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var35 string
-			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.search_placeholder"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 290, Col: 58}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</a></div><div class=\"sw-next-toolbar sticky top-0 z-10 flex items-center gap-2 rounded-lg bg-gray-50/80 px-2 py-2 backdrop-blur dark:bg-gray-900/80\"><!-- Search wrapper. The \"/\" shortcut is advertised once in the\n\t\t\t\t     tip-line legend below (and the ? cheat sheet), so no inline\n\t\t\t\t     sw-kbd keycap is pinned here (avoids duplicating the hint). --><div class=\"relative min-w-[12rem] flex-1\"><input id=\"dashboard-search\" type=\"search\" name=\"search\" placeholder=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.search_placeholder"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 291, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 290, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" data-sw-shortcut=\"/\" data-sw-shortcut-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var37 string
-			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.search"))
+			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.search_placeholder"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 293, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 291, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" class=\"block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-3 pr-8 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" data-sw-shortcut=\"/\" data-sw-shortcut-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var38 = []any{"inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var38...)
+			var templ_7745c5c3_Var38 string
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.search"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 293, Col: 67}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<button id=\"dashboard-filters-trigger\" type=\"button\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" class=\"block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-3 pr-8 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var39 string
-			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var38).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
+			var templ_7745c5c3_Var39 = []any{"inline-flex items-center gap-1.5 px-3 py-2 text-sm " + glassButton}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var39...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" aria-expanded=\"false\" aria-controls=\"dashboard-filter-flyout\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<button id=\"dashboard-filters-trigger\" type=\"button\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var40 string
-			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.filters"))
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var39).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 303, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" data-sw-shortcut=\"f\" data-sw-shortcut-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" aria-expanded=\"false\" aria-controls=\"dashboard-filter-flyout\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var41 string
-			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_filters"))
+			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 305, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 303, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" onclick=\"swDashboardPanels && swDashboardPanels.toggleFilters()\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z\"></path></svg><!-- The \"f\" shortcut is advertised once in the tip-line legend\n\t\t\t\t\t     below (and the ? cheat sheet); \"Filters\" lives in the title\n\t\t\t\t\t     tooltip. No inline sw-kbd keycap here (avoids duplication). --></button> <span class=\"ml-auto\"></span><!-- Bulk controls (the Select-all checkbox + the Fix/Dismiss split\n\t\t\t\t     button) now live in the Action-queue card HEAD, not this top\n\t\t\t\t     toolbar. The maintainer reversed the earlier \"the select all in the\n\t\t\t\t     filter bar is fine\" decision on 2026-05-31, moving both controls\n\t\t\t\t     into the queue-card head to match the prototype layout\n\t\t\t\t     (dashboard.jsx:142-146). See the queue-card section below for the\n\t\t\t\t     relocated markup; the ids/classes/attributes are unchanged so the\n\t\t\t\t     bulk JS binds exactly as before. --><!-- Run rules: the page's primary action, but per the maintainer's\n\t\t\t\t     no-solid-blue principle (#32) it uses the next/ thin-outline +\n\t\t\t\t     backdrop treatment (swd-line border, ink-2 text, subtle hover)\n\t\t\t\t     shared with the artist-detail header buttons (refresh/edit/\n\t\t\t\t     Actions). Solid blue is reserved for the active-toggle halo only. --><button id=\"dashboard-run-rules-btn\" type=\"button\" class=\"inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed\" style=\"border:1px solid var(--swd-line);color:var(--swd-ink-2)\" data-sw-shortcut=\"r\" data-sw-shortcut-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" data-sw-shortcut=\"f\" data-sw-shortcut-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var42 string
-			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.run_rules"))
+			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 338, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 305, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" onclick=\"swDashboardPanels && swDashboardPanels.openRunRules()\" data-confirm-title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" onclick=\"swDashboardPanels && swDashboardPanels.toggleFilters()\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z\"></path></svg><!-- The \"f\" shortcut is advertised once in the tip-line legend\n\t\t\t\t\t     below (and the ? cheat sheet); \"Filters\" lives in the title\n\t\t\t\t\t     tooltip. No inline sw-kbd keycap here (avoids duplication). --></button> <span class=\"ml-auto\"></span><!-- Bulk controls (the Select-all checkbox + the Fix/Dismiss split\n\t\t\t\t     button) now live in the Action-queue card HEAD, not this top\n\t\t\t\t     toolbar. The maintainer reversed the earlier \"the select all in the\n\t\t\t\t     filter bar is fine\" decision on 2026-05-31, moving both controls\n\t\t\t\t     into the queue-card head to match the prototype layout\n\t\t\t\t     (dashboard.jsx:142-146). See the queue-card section below for the\n\t\t\t\t     relocated markup; the ids/classes/attributes are unchanged so the\n\t\t\t\t     bulk JS binds exactly as before. --><!-- Run rules: the page's primary action, but per the maintainer's\n\t\t\t\t     no-solid-blue principle (#32) it uses the next/ thin-outline +\n\t\t\t\t     backdrop treatment (swd-line border, ink-2 text, subtle hover)\n\t\t\t\t     shared with the artist-detail header buttons (refresh/edit/\n\t\t\t\t     Actions). Solid blue is reserved for the active-toggle halo only. --><button id=\"dashboard-run-rules-btn\" type=\"button\" class=\"inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed\" style=\"border:1px solid var(--swd-line);color:var(--swd-ink-2)\" data-sw-shortcut=\"r\" data-sw-shortcut-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var43 string
-			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_title"))
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 340, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 338, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" data-confirm-body=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" onclick=\"swDashboardPanels && swDashboardPanels.openRunRules()\" data-confirm-title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var44 string
-			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_body"))
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 341, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 340, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\" data-confirm-accept=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\" data-confirm-body=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var45 string
-			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_accept"))
+			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_body"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 342, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 341, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "\" data-toast-started=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "\" data-confirm-accept=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var46 string
-			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.rule_evaluation_started"))
+			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.confirm_run_accept"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 343, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 342, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" data-toast-already-running=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" data-toast-started=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var47 string
-			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.already_running"))
+			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.rule_evaluation_started"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 344, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 343, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\" data-toast-failed=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\" data-toast-already-running=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var48 string
-			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.run_rules_failed"))
+			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "report.already_running"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 345, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 344, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" data-toast-network-error=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" data-toast-failed=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var49 string
-			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.network_error"))
+			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.run_rules_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 346, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 345, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z\"></path></svg> <span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\" data-toast-network-error=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var50 string
-			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.run_rules"))
+			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.network_error"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 351, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 346, Col: 62}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</span></button></div><div class=\"grid grid-cols-1 min-[1100px]:grid-cols-[minmax(0,1fr)_320px] gap-4\"><!-- Action-queue CARD (M55 #1334, prototype dashboard.jsx:140-157): the\n\t\t\t\t     queue reads as a contained .sw-dash-card. The HEAD carries the\n\t\t\t\t     \"Action Queue\" title, a \"Showing X-Y of Z, sorted by severity\" meta\n\t\t\t\t     (the #next-dash-count span, populated OOB from the queue fragment),\n\t\t\t\t     and the select-all + fix-selected controls (relocated from the\n\t\t\t\t     toolbar; ids preserved so the bulk JS binds unchanged). The rows\n\t\t\t\t     load into the .body.tight via HTMX; the in-body Prev/Next paging\n\t\t\t\t     footer (shared NextPagination, #sw-pagination) renders as a foot row. --><section class=\"sw-dash-card flex flex-col\" aria-labelledby=\"next-dash-queue-heading\"><div class=\"head\"><h2 id=\"next-dash-queue-heading\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z\"></path></svg> <span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var51 string
-			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.action_queue"))
+			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 365, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 351, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</h2><!-- \"Showing X-Y of Z, sorted by severity\", populated OOB from the\n\t\t\t\t\t\t     queue fragment on each (re)load. The .meta's margin-left:auto\n\t\t\t\t\t\t     pushes it (and the bulk controls that follow) to the right of\n\t\t\t\t\t\t     the title, mirroring the prototype's `.meta.row` group\n\t\t\t\t\t\t     (dashboard.jsx:142-146). --><span id=\"next-dash-count\" class=\"meta\"></span><!-- Bulk controls relocated from the top toolbar (maintainer\n\t\t\t\t\t\t     2026-05-31): the Select-all checkbox + the Fix/Dismiss split\n\t\t\t\t\t\t     button. A single Select-all checkbox plus a SPLIT button: the\n\t\t\t\t\t\t     primary face is \"Fix N selected\", the caret opens a small menu\n\t\t\t\t\t\t     whose only item is \"Dismiss N selected\". Both faces drive the\n\t\t\t\t\t\t     SAME bulk machinery (runBulkFix / runBulkDismiss) so no logic is\n\t\t\t\t\t\t     duplicated. All three start hidden (no selectable rows on load);\n\t\t\t\t\t\t     the bulk script reveals/disables them from updateBulkBar. The\n\t\t\t\t\t\t     split button is the queue's SECONDARY action (ghost treatment),\n\t\t\t\t\t\t     keeping Run rules the single primary. Every id / class / data-*\n\t\t\t\t\t\t     is preserved from the prior toolbar markup so the bulk JS binds\n\t\t\t\t\t\t     unchanged; only the location moved. --><!-- Select-all: decorated to match the prototype's\n\t\t\t\t\t\t     `btn ghost sm` (a small ghost-styled control with a check glyph +\n\t\t\t\t\t\t     \"Select all\" label, see dashboard.jsx queue head). The real\n\t\t\t\t\t\t     checkbox keeps its #toolbar-select-all id + change handler (it\n\t\t\t\t\t\t     drives setAllChecked / the bulk machinery); it is visually hidden\n\t\t\t\t\t\t     (`sr-only peer`) and the styled box renders from CSS, with the\n\t\t\t\t\t\t     check glyph shown via the peer-checked state and the dash glyph via\n\t\t\t\t\t\t     peer-indeterminate, so checked / indeterminate read clearly. --><label id=\"toolbar-select-all-wrap\" class=\"sw-select-all hidden cursor-pointer select-none items-center gap-1.5 whitespace-nowrap\"><input type=\"checkbox\" id=\"toolbar-select-all\" class=\"sr-only peer\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</span></button></div><div class=\"grid grid-cols-1 min-[1100px]:grid-cols-[minmax(0,1fr)_320px] gap-4\"><!-- Action-queue CARD (M55 #1334, prototype dashboard.jsx:140-157): the\n\t\t\t\t     queue reads as a contained .sw-dash-card. The HEAD carries the\n\t\t\t\t     \"Action Queue\" title, a \"Showing X-Y of Z, sorted by severity\" meta\n\t\t\t\t     (the #next-dash-count span, populated OOB from the queue fragment),\n\t\t\t\t     and the select-all + fix-selected controls (relocated from the\n\t\t\t\t     toolbar; ids preserved so the bulk JS binds unchanged). The rows\n\t\t\t\t     load into the .body.tight via HTMX; the in-body Prev/Next paging\n\t\t\t\t     footer (shared NextPagination, #sw-pagination) renders as a foot row. --><section class=\"sw-dash-card flex flex-col\" aria-labelledby=\"next-dash-queue-heading\"><div class=\"head\"><h2 id=\"next-dash-queue-heading\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var52 string
-			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.select_all"))
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.action_queue"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 400, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 365, Col: 73}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"> <span class=\"sw-select-all-box\" aria-hidden=\"true\"><svg class=\"sw-select-all-check h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"3\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 12.75l6 6 9-13.5\"></path></svg> <svg class=\"sw-select-all-dash h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"3\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M5 12h14\"></path></svg></span> <span class=\"hidden sm:inline\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</h2><!-- \"Showing X-Y of Z, sorted by severity\", populated OOB from the\n\t\t\t\t\t\t     queue fragment on each (re)load. The .meta's margin-left:auto\n\t\t\t\t\t\t     pushes it (and the bulk controls that follow) to the right of\n\t\t\t\t\t\t     the title, mirroring the prototype's `.meta.row` group\n\t\t\t\t\t\t     (dashboard.jsx:142-146). --><span id=\"next-dash-count\" class=\"meta\"></span><!-- Bulk controls relocated from the top toolbar (maintainer\n\t\t\t\t\t\t     2026-05-31): the Select-all checkbox + the Fix/Dismiss split\n\t\t\t\t\t\t     button. A single Select-all checkbox plus a SPLIT button: the\n\t\t\t\t\t\t     primary face is \"Fix N selected\", the caret opens a small menu\n\t\t\t\t\t\t     whose only item is \"Dismiss N selected\". Both faces drive the\n\t\t\t\t\t\t     SAME bulk machinery (runBulkFix / runBulkDismiss) so no logic is\n\t\t\t\t\t\t     duplicated. All three start hidden (no selectable rows on load);\n\t\t\t\t\t\t     the bulk script reveals/disables them from updateBulkBar. The\n\t\t\t\t\t\t     split button is the queue's SECONDARY action (ghost treatment),\n\t\t\t\t\t\t     keeping Run rules the single primary. Every id / class / data-*\n\t\t\t\t\t\t     is preserved from the prior toolbar markup so the bulk JS binds\n\t\t\t\t\t\t     unchanged; only the location moved. --><!-- Select-all: decorated to match the prototype's\n\t\t\t\t\t\t     `btn ghost sm` (a small ghost-styled control with a check glyph +\n\t\t\t\t\t\t     \"Select all\" label, see dashboard.jsx queue head). The real\n\t\t\t\t\t\t     checkbox keeps its #toolbar-select-all id + change handler (it\n\t\t\t\t\t\t     drives setAllChecked / the bulk machinery); it is visually hidden\n\t\t\t\t\t\t     (`sr-only peer`) and the styled box renders from CSS, with the\n\t\t\t\t\t\t     check glyph shown via the peer-checked state and the dash glyph via\n\t\t\t\t\t\t     peer-indeterminate, so checked / indeterminate read clearly. --><label id=\"toolbar-select-all-wrap\" class=\"sw-select-all hidden cursor-pointer select-none items-center gap-1.5 whitespace-nowrap\"><input type=\"checkbox\" id=\"toolbar-select-all\" class=\"sr-only peer\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var53 string
-			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.select_all"))
+			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.select_all"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 410, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 400, Col: 51}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</span></label><!-- Fix/Dismiss split button. The two segments share one bordered\n\t\t\t\t\t\t     group: the wide primary face fixes the selection, the narrow caret\n\t\t\t\t\t\t     toggles the menu. Hidden until the queue has rows. --><div id=\"toolbar-bulk-split\" class=\"relative hidden\"><div class=\"inline-flex items-stretch rounded-md border border-[var(--swd-line)]\"><button id=\"toolbar-fix-selected-btn\" type=\"button\" disabled class=\"inline-flex items-center gap-1.5 rounded-l-md px-2.5 py-2 text-sm font-medium text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap\" data-label-fix-none=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\"> <span class=\"sw-select-all-box\" aria-hidden=\"true\"><svg class=\"sw-select-all-check h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"3\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 12.75l6 6 9-13.5\"></path></svg> <svg class=\"sw-select-all-dash h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"3\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M5 12h14\"></path></svg></span> <span class=\"hidden sm:inline\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var54 string
-			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_none_selected"))
+			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.select_all"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 422, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 410, Col: 70}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\" data-label-fix-one=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "</span></label><!-- Fix/Dismiss split button. The two segments share one bordered\n\t\t\t\t\t\t     group: the wide primary face fixes the selection, the narrow caret\n\t\t\t\t\t\t     toggles the menu. Hidden until the queue has rows. --><div id=\"toolbar-bulk-split\" class=\"relative hidden\"><div class=\"inline-flex items-stretch rounded-md border border-[var(--swd-line)]\"><button id=\"toolbar-fix-selected-btn\" type=\"button\" disabled class=\"inline-flex items-center gap-1.5 rounded-l-md px-2.5 py-2 text-sm font-medium text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap\" data-label-fix-none=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var55 string
-			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_n_selected.one"))
+			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 423, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 422, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" data-label-fix-other=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" data-label-fix-one=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var56 string
-			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_n_selected.other"))
+			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_n_selected.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 424, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 423, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" data-label-fixing-progress=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" data-label-fix-other=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var57 string
-			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixing_progress"))
+			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fix_n_selected.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 425, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 424, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\" data-label-fixes-failed-one=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\" data-label-fixing-progress=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var58 string
-			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixes_failed.one"))
+			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixing_progress"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 426, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 425, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var58)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\" data-label-fixes-failed-other=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\" data-label-fixes-failed-one=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var59 string
-			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixes_failed.other"))
+			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixes_failed.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 427, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 426, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\" data-label-dismiss-failed=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\" data-label-fixes-failed-other=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var60 string
-			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_failed"))
+			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.fixes_failed.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 428, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 427, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" data-label-network-error=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" data-label-dismiss-failed=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var61 string
-			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.network_error"))
+			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 429, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 428, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" data-label-network-error=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var62 string
-			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fix_none_selected"))
+			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.network_error"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 431, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 429, Col: 66}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "</button> <button id=\"toolbar-bulk-menu-toggle\" type=\"button\" disabled class=\"inline-flex items-center rounded-r-md border-l border-[var(--swd-line)] px-1.5 py-2 text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed\" aria-haspopup=\"true\" aria-expanded=\"false\" aria-controls=\"toolbar-bulk-menu\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var63 string
-			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.more_bulk_actions"))
+			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fix_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 441, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 431, Col: 48}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 8.25l-7.5 7.5-7.5-7.5\"></path></svg></button></div><!-- Dropdown: Dismiss N selected. Closed by default; toggled by the\n\t\t\t\t\t\t\t     caret, dismissed on outside-click / Escape (bulk JS). --><div id=\"toolbar-bulk-menu\" class=\"sw-bulk-menu absolute right-0 z-30 mt-1 hidden min-w-[12rem] py-1\" role=\"menu\" aria-labelledby=\"toolbar-bulk-menu-toggle\"><button id=\"toolbar-dismiss-selected-btn\" type=\"button\" role=\"menuitem\" class=\"sw-bulk-menu-item block w-full px-3 py-2 text-left text-sm disabled:opacity-50 disabled:cursor-not-allowed\" data-label-dismiss-none=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</button> <button id=\"toolbar-bulk-menu-toggle\" type=\"button\" disabled class=\"inline-flex items-center rounded-r-md border-l border-[var(--swd-line)] px-1.5 py-2 text-[var(--swd-ink-2)] hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed\" aria-haspopup=\"true\" aria-expanded=\"false\" aria-controls=\"toolbar-bulk-menu\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var64 string
-			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_none_selected"))
+			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.more_bulk_actions"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 461, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 441, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" data-label-dismiss-one=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M19.5 8.25l-7.5 7.5-7.5-7.5\"></path></svg></button></div><!-- Dropdown: Dismiss N selected. Closed by default; toggled by the\n\t\t\t\t\t\t\t     caret, dismissed on outside-click / Escape (bulk JS). --><div id=\"toolbar-bulk-menu\" class=\"sw-bulk-menu absolute right-0 z-30 mt-1 hidden min-w-[12rem] py-1\" role=\"menu\" aria-labelledby=\"toolbar-bulk-menu-toggle\"><button id=\"toolbar-dismiss-selected-btn\" type=\"button\" role=\"menuitem\" class=\"sw-bulk-menu-item block w-full px-3 py-2 text-left text-sm disabled:opacity-50 disabled:cursor-not-allowed\" data-label-dismiss-none=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var65 string
-			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_n_selected.one"))
+			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 462, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 461, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" data-label-dismiss-other=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" data-label-dismiss-one=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var66 string
-			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_n_selected.other"))
+			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_n_selected.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 463, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 462, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" data-label-dismiss-other=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var67 string
-			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.dismiss_none_selected"))
+			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.dismiss_n_selected.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 465, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 463, Col: 80}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var67)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</button></div></div></div><div id=\"action-queue\" class=\"body tight\" hx-get=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var68 string
-			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue("/dashboard/actions" + initialQuery)
+			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.dismiss_none_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 473, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 465, Col: 52}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\" data-queue-query=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</button></div></div></div><div id=\"action-queue\" class=\"body tight\" hx-get=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var69 string
-			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(initialQuery)
+			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue("/dashboard/actions" + initialQuery)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 476, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 473, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "\" data-label-load-failed=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\" data-queue-query=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var70 string
-			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.load_failed"))
+			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(initialQuery)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 477, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 476, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\" data-label-retry=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\" data-label-load-failed=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var71 string
-			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.retry"))
+			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.load_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 478, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 477, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" hx-on::response-error=\"swDashboardPanels && swDashboardPanels.showQueueError(this)\" hx-on::send-error=\"swDashboardPanels && swDashboardPanels.showQueueError(this)\"><div class=\"space-y-1.5\" aria-busy=\"true\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" data-label-retry=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var72 string
+			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.retry"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 478, Col: 47}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\" hx-on::response-error=\"swDashboardPanels && swDashboardPanels.showQueueError(this)\" hx-on::send-error=\"swDashboardPanels && swDashboardPanels.showQueueError(this)\"><div class=\"space-y-1.5\" aria-busy=\"true\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1166,306 +1179,306 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</div></div></section><!-- Recent-activity rail (UAT #7 a11y): a labeled region (role=region\n\t\t\t\t     named by its heading) with AA-contrast text in both themes. Uses\n\t\t\t\t     the prototype .sw-dash-card surface so the rail matches the queue\n\t\t\t\t     card's raised look in both themes. --><!-- Recent-activity rail: sized to fit its content (header + rows +\n\t\t\t\t     View-all foot), NOT stretched to the grid row height. `self-start`\n\t\t\t\t     pins it to the top of the grid so a short queue does not pull the\n\t\t\t\t     rail down, and the card height follows its content. It stays sticky\n\t\t\t\t     while scrolling. The feed keeps overflow-y-auto purely as a scroll\n\t\t\t\t     safety once live SSE rows accumulate (capped at 50 in JS); the\n\t\t\t\t     max-height is a cap, not a stretch, so the card is only as tall as\n\t\t\t\t     its rows until that cap is reached. --><aside class=\"sw-dash-card hidden min-[1100px]:flex flex-col self-start sticky top-4\" role=\"region\" aria-labelledby=\"next-dash-activity-heading\"><div class=\"head\"><h2 id=\"next-dash-activity-heading\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var72 string
-			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.recent_activity"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 515, Col: 79}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</h2><span id=\"next-dash-activity-status\" class=\"meta inline-flex items-center gap-1.5 text-xs\" role=\"status\" data-label-live=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</div></div></section><!-- Recent-activity rail (UAT #7 a11y): a labeled region (role=region\n\t\t\t\t     named by its heading) with AA-contrast text in both themes. Uses\n\t\t\t\t     the prototype .sw-dash-card surface so the rail matches the queue\n\t\t\t\t     card's raised look in both themes. --><!-- Recent-activity rail: sized to fit its content (header + rows +\n\t\t\t\t     View-all foot), NOT stretched to the grid row height. `self-start`\n\t\t\t\t     pins it to the top of the grid so a short queue does not pull the\n\t\t\t\t     rail down, and the card height follows its content. It stays sticky\n\t\t\t\t     while scrolling. The feed keeps overflow-y-auto purely as a scroll\n\t\t\t\t     safety once live SSE rows accumulate (capped at 50 in JS); the\n\t\t\t\t     max-height is a cap, not a stretch, so the card is only as tall as\n\t\t\t\t     its rows until that cap is reached. --><aside class=\"sw-dash-card hidden min-[1100px]:flex flex-col self-start sticky top-4\" role=\"region\" aria-labelledby=\"next-dash-activity-heading\"><div class=\"head\"><h2 id=\"next-dash-activity-heading\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var73 string
-			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_status_live"))
+			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.recent_activity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 525, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 515, Col: 79}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\" data-label-reconnecting=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</h2><span id=\"next-dash-activity-status\" class=\"meta inline-flex items-center gap-1.5 text-xs\" role=\"status\" data-label-live=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var74 string
-			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_status_reconnecting"))
+			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_status_live"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 526, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 525, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\"><span id=\"next-dash-activity-status-dot\" class=\"inline-block h-2 w-2 rounded-full bg-gray-400\" aria-hidden=\"true\"></span> <span id=\"next-dash-activity-status-label\"></span></span></div><div id=\"next-dash-activity-feed\" class=\"body tight sw-activity-feed overflow-y-auto\" data-label-just-now=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\" data-label-reconnecting=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var75 string
-			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.just_now"))
+			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_status_reconnecting"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 535, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 526, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "\" data-tpl-minutes=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "\"><span id=\"next-dash-activity-status-dot\" class=\"inline-block h-2 w-2 rounded-full bg-gray-400\" aria-hidden=\"true\"></span> <span id=\"next-dash-activity-status-label\"></span></span></div><div id=\"next-dash-activity-feed\" class=\"body tight sw-activity-feed overflow-y-auto\" data-label-just-now=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var76 string
-			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.minutes_ago.other"))
+			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.just_now"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 536, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 535, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\" data-tpl-hours=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\" data-tpl-minutes=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var77 string
-			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.hours_ago.other"))
+			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.minutes_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 537, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 536, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var77)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\" data-tpl-days=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\" data-tpl-hours=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var78 string
-			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.days_ago.other"))
+			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.hours_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 538, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 537, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "\" data-label-view-artist=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "\" data-tpl-days=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var79 string
-			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.view_artist"))
+			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "time.days_ago.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 539, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 538, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" data-label-load-failed=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" data-label-view-artist=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var80 string
-			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_load_failed"))
+			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.view_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 540, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 539, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\" data-label-retry=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\" data-label-load-failed=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var81 string
-			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.retry"))
+			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.activity_load_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 541, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 540, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" data-base-path=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" data-label-retry=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var82 string
-			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath)
+			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.retry"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 542, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 541, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\" hx-get=\"/dashboard/activity\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-on::response-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\" hx-on::send-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\"></div><script>\n\t\t\t\t\t\t(function() {\n\t\t\t\t\t\t\tvar feed = document.getElementById('next-dash-activity-feed');\n\t\t\t\t\t\t\tvar status = document.getElementById('next-dash-activity-status');\n\t\t\t\t\t\t\tvar dot = document.getElementById('next-dash-activity-status-dot');\n\t\t\t\t\t\t\tvar label = document.getElementById('next-dash-activity-status-label');\n\t\t\t\t\t\t\tif (!feed || !status || !dot || !label) return;\n\n\t\t\t\t\t\t\t// SVG path \"d\" attributes for each activity kind icon.\n\t\t\t\t\t\t\t// These MUST stay byte-identical to activityKindIconPath\n\t\t\t\t\t\t\t// in web/templates/index.templ so a live row's\n\t\t\t\t\t\t\t// icon matches a server-rendered initial row's icon.\n\t\t\t\t\t\t\tvar SVG_PATHS = {\n\t\t\t\t\t\t\t\tset: 'M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\tcleared: 'M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\treverted: 'M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3',\n\t\t\t\t\t\t\t\tchanged: 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125'\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t// Icon tone classes per kind. Mirrors activityKindToneClass.\n\t\t\t\t\t\t\tvar KIND_TONE = {\n\t\t\t\t\t\t\t\tset: 'text-green-500 dark:text-green-400',\n\t\t\t\t\t\t\t\tcleared: 'text-red-500 dark:text-red-400',\n\t\t\t\t\t\t\t\treverted: 'text-amber-500 dark:text-amber-400',\n\t\t\t\t\t\t\t\tchanged: 'text-blue-500 dark:text-blue-400'\n\t\t\t\t\t\t\t};\n\n\t\t\t\t\t\t\tvar bp = feed.dataset.basePath || (function() {\n\t\t\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t\t\t})();\n\n\t\t\t\t\t\t\t// setStatus drives the connection indicator (UAT #9). When the\n\t\t\t\t\t\t\t// stream is live the dot PULSES green to read as an active\n\t\t\t\t\t\t\t// broadcast alongside the \"Live feed\" label; while\n\t\t\t\t\t\t\t// disconnected it is a steady amber dot with \"Reconnecting\",\n\t\t\t\t\t\t\t// so live vs reconnecting are distinct by motion + hue + word.\n\t\t\t\t\t\t\t// Labels come from data-* (no hardcoded copy, no \"SSE\").\n\t\t\t\t\t\t\tfunction setStatus(connected) {\n\t\t\t\t\t\t\t\tif (connected) {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelLive || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse';\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelReconnecting || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-amber-500';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tfunction esc(s) {\n\t\t\t\t\t\t\t\treturn String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// relTime formats a Date as a relative string using the\n\t\t\t\t\t\t\t// shared time.* i18n templates carried on the feed's\n\t\t\t\t\t\t\t// data-* attributes, matching activityRelTime so live and\n\t\t\t\t\t\t\t// initial rows agree.\n\t\t\t\t\t\t\tfunction relTime(d) {\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - d.getTime()) / 60000);\n\t\t\t\t\t\t\t\tvar ds = feed.dataset;\n\t\t\t\t\t\t\t\tif (diffMin < 1) return ds.labelJustNow || '';\n\t\t\t\t\t\t\t\tif (diffMin < 60) return (ds.tplMinutes || '').replace('{count}', diffMin);\n\t\t\t\t\t\t\t\tif (diffMin < 1440) return (ds.tplHours || '').replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\treturn (ds.tplDays || '').replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// buildRow constructs a rail row from the SSE payload in\n\t\t\t\t\t\t\t// the SAME shape as DashboardActivityRow (icon + text\n\t\t\t\t\t\t\t// + optional artist link + relative time).\n\t\t\t\t\t\t\tfunction buildRow(d) {\n\t\t\t\t\t\t\t\tvar kind = d.kind || 'changed';\n\t\t\t\t\t\t\t\tvar iconPath = SVG_PATHS[kind] || SVG_PATHS.changed;\n\t\t\t\t\t\t\t\tvar tone = KIND_TONE[kind] || KIND_TONE.changed;\n\t\t\t\t\t\t\t\tvar ts = d.ts ? new Date(d.ts) : new Date();\n\t\t\t\t\t\t\t\tif (isNaN(ts.getTime())) ts = new Date();\n\n\t\t\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\t\t\trow.className = 'sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm';\n\n\t\t\t\t\t\t\t\t// The live payload carries no artist name, so the\n\t\t\t\t\t\t\t\t// artist link (when artistId is present) shows the id\n\t\t\t\t\t\t\t\t// as a fallback label; the next HTMX refresh replaces\n\t\t\t\t\t\t\t\t// it with the named server row.\n\t\t\t\t\t\t\t\tvar artistLink = '';\n\t\t\t\t\t\t\t\tif (d.artistId) {\n\t\t\t\t\t\t\t\t\tartistLink = '<a href=\"' + esc(bp + '/artists/' + d.artistId) +\n\t\t\t\t\t\t\t\t\t\t'\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"' +\n\t\t\t\t\t\t\t\t\t\tesc(feed.dataset.labelViewArtist || '') + '\">' + esc(d.artistId) + '</a>';\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\trow.innerHTML =\n\t\t\t\t\t\t\t\t\t'<svg class=\"h-4 w-4 mt-0.5 shrink-0 ' + tone + '\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\">' +\n\t\t\t\t\t\t\t\t\t'<path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"' + iconPath + '\"></path></svg>' +\n\t\t\t\t\t\t\t\t\t'<div class=\"min-w-0 flex-1\">' +\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-start justify-between gap-2\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"truncate text-gray-800 dark:text-gray-200\">' + esc(d.text || '') + '</span>' +\n\t\t\t\t\t\t\t\t\t'<time datetime=\"' + esc(ts.toISOString()) + '\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">' + esc(relTime(ts)) + '</time>' +\n\t\t\t\t\t\t\t\t\t'</div>' + artistLink + '</div>';\n\t\t\t\t\t\t\t\treturn row;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// showError renders the rail's error state when the initial\n\t\t\t\t\t\t\t// hx-get load of /dashboard/activity fails (500 / network).\n\t\t\t\t\t\t\t// Without it a failed load left the rail blank but \"live\",\n\t\t\t\t\t\t\t// hiding the failure. Mirrors the queue's showQueueError: a\n\t\t\t\t\t\t\t// localized message + a Retry button that re-fires the load.\n\t\t\t\t\t\t\t// Strings come from the feed's data-* (server-localized).\n\t\t\t\t\t\t\tfunction showError() {\n\t\t\t\t\t\t\t\tvar failed = feed.dataset.labelLoadFailed || '';\n\t\t\t\t\t\t\t\tvar retry = feed.dataset.labelRetry || '';\n\t\t\t\t\t\t\t\tfeed.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-center justify-between gap-3 px-4 py-3\" role=\"alert\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + esc(failed) + '</span>' +\n\t\t\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-activity-retry inline-flex items-center rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + esc(retry) + '</button>' +\n\t\t\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\t\t\tvar btn = feed.querySelector('.sw-activity-retry');\n\t\t\t\t\t\t\t\tif (btn) btn.addEventListener('click', function() {\n\t\t\t\t\t\t\t\t\tif (window.htmx) window.htmx.ajax('GET', '/dashboard/activity', {target: '#next-dash-activity-feed', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\twindow.swDashboardActivity = { showError: showError };\n\n\t\t\t\t\t\t\tvar src;\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tsrc = new EventSource(bp + '/api/v1/events/stream');\n\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\t// EventSource construction failed (unsupported / blocked):\n\t\t\t\t\t\t\t\t// surface \"reconnecting\" so the indicator does not falsely\n\t\t\t\t\t\t\t\t// read live, and log so the failure is diagnosable.\n\t\t\t\t\t\t\t\tconsole.warn('SSE init failed', e);\n\t\t\t\t\t\t\t\tsetStatus(false);\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tsrc.onopen = function() { setStatus(true); };\n\t\t\t\t\t\t\tsrc.onerror = function() { setStatus(false); };\n\t\t\t\t\t\t\tsrc.addEventListener('activity.recent', function(e) {\n\t\t\t\t\t\t\t\tvar env = {};\n\t\t\t\t\t\t\t\ttry { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }\n\t\t\t\t\t\t\t\t// The SSE wire payload is an envelope; the structured\n\t\t\t\t\t\t\t\t// rail fields (ts, kind, text, artistId) are nested\n\t\t\t\t\t\t\t\t// under .data, NOT at the top level. Reading the top\n\t\t\t\t\t\t\t\t// level (the spike bug) yields blank rows.\n\t\t\t\t\t\t\t\tvar d = env.data || {};\n\t\t\t\t\t\t\t\t// When the rail boots empty it shows the idle hint\n\t\t\t\t\t\t\t\t// instead of rows; clear it before the first live row.\n\t\t\t\t\t\t\t\tif (feed.querySelector('.sw-activity-row') === null) {\n\t\t\t\t\t\t\t\t\tfeed.innerHTML = '';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tfeed.insertBefore(buildRow(d), feed.firstChild);\n\t\t\t\t\t\t\t\t// Cap at 50 rows in the DOM; drop the oldest (last).\n\t\t\t\t\t\t\t\twhile (feed.children.length > 50) {\n\t\t\t\t\t\t\t\t\tfeed.removeChild(feed.lastChild);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tsetStatus(true);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t})();\n\t\t\t\t\t</script><!-- Footer \"View all activity\" link (restored, mirrors the stable\n\t\t\t\t\t     dashboard's activity feed footer in web/templates/dashboard.templ):\n\t\t\t\t\t     a subtle blue-ink link with a right-chevron, targeting the same\n\t\t\t\t\t     /activity route. A hairline top border separates it from the rows;\n\t\t\t\t\t     it sits inside the content-sized card (does not re-stretch it). --><div class=\"border-t border-[var(--swd-line)] px-4 py-2.5\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\" data-base-path=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var83 templ.SafeURL
-			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/activity"))
+			var templ_7745c5c3_Var83 string
+			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.ResolveAttributeValue(assets.BasePath)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 542, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var83)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" hx-get=\"/dashboard/activity\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-on::response-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\" hx-on::send-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\"></div><script>\n\t\t\t\t\t\t(function() {\n\t\t\t\t\t\t\tvar feed = document.getElementById('next-dash-activity-feed');\n\t\t\t\t\t\t\tvar status = document.getElementById('next-dash-activity-status');\n\t\t\t\t\t\t\tvar dot = document.getElementById('next-dash-activity-status-dot');\n\t\t\t\t\t\t\tvar label = document.getElementById('next-dash-activity-status-label');\n\t\t\t\t\t\t\tif (!feed || !status || !dot || !label) return;\n\n\t\t\t\t\t\t\t// SVG path \"d\" attributes for each activity kind icon.\n\t\t\t\t\t\t\t// These MUST stay byte-identical to activityKindIconPath\n\t\t\t\t\t\t\t// in web/templates/index.templ so a live row's\n\t\t\t\t\t\t\t// icon matches a server-rendered initial row's icon.\n\t\t\t\t\t\t\tvar SVG_PATHS = {\n\t\t\t\t\t\t\t\tset: 'M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\tcleared: 'M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\treverted: 'M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3',\n\t\t\t\t\t\t\t\tchanged: 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125'\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t// Icon tone classes per kind. Mirrors activityKindToneClass.\n\t\t\t\t\t\t\tvar KIND_TONE = {\n\t\t\t\t\t\t\t\tset: 'text-green-500 dark:text-green-400',\n\t\t\t\t\t\t\t\tcleared: 'text-red-500 dark:text-red-400',\n\t\t\t\t\t\t\t\treverted: 'text-amber-500 dark:text-amber-400',\n\t\t\t\t\t\t\t\tchanged: 'text-blue-500 dark:text-blue-400'\n\t\t\t\t\t\t\t};\n\n\t\t\t\t\t\t\tvar bp = feed.dataset.basePath || (function() {\n\t\t\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t\t\t})();\n\n\t\t\t\t\t\t\t// setStatus drives the connection indicator (UAT #9). When the\n\t\t\t\t\t\t\t// stream is live the dot PULSES green to read as an active\n\t\t\t\t\t\t\t// broadcast alongside the \"Live feed\" label; while\n\t\t\t\t\t\t\t// disconnected it is a steady amber dot with \"Reconnecting\",\n\t\t\t\t\t\t\t// so live vs reconnecting are distinct by motion + hue + word.\n\t\t\t\t\t\t\t// Labels come from data-* (no hardcoded copy, no \"SSE\").\n\t\t\t\t\t\t\tfunction setStatus(connected) {\n\t\t\t\t\t\t\t\tif (connected) {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelLive || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse';\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelReconnecting || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-amber-500';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tfunction esc(s) {\n\t\t\t\t\t\t\t\treturn String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// relTime formats a Date as a relative string using the\n\t\t\t\t\t\t\t// shared time.* i18n templates carried on the feed's\n\t\t\t\t\t\t\t// data-* attributes, matching activityRelTime so live and\n\t\t\t\t\t\t\t// initial rows agree.\n\t\t\t\t\t\t\tfunction relTime(d) {\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - d.getTime()) / 60000);\n\t\t\t\t\t\t\t\tvar ds = feed.dataset;\n\t\t\t\t\t\t\t\tif (diffMin < 1) return ds.labelJustNow || '';\n\t\t\t\t\t\t\t\tif (diffMin < 60) return (ds.tplMinutes || '').replace('{count}', diffMin);\n\t\t\t\t\t\t\t\tif (diffMin < 1440) return (ds.tplHours || '').replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\treturn (ds.tplDays || '').replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// buildRow constructs a rail row from the SSE payload in\n\t\t\t\t\t\t\t// the SAME shape as DashboardActivityRow (icon + text\n\t\t\t\t\t\t\t// + optional artist link + relative time).\n\t\t\t\t\t\t\tfunction buildRow(d) {\n\t\t\t\t\t\t\t\tvar kind = d.kind || 'changed';\n\t\t\t\t\t\t\t\tvar iconPath = SVG_PATHS[kind] || SVG_PATHS.changed;\n\t\t\t\t\t\t\t\tvar tone = KIND_TONE[kind] || KIND_TONE.changed;\n\t\t\t\t\t\t\t\tvar ts = d.ts ? new Date(d.ts) : new Date();\n\t\t\t\t\t\t\t\tif (isNaN(ts.getTime())) ts = new Date();\n\n\t\t\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\t\t\trow.className = 'sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm';\n\n\t\t\t\t\t\t\t\t// The live payload carries no artist name, so the\n\t\t\t\t\t\t\t\t// artist link (when artistId is present) shows the id\n\t\t\t\t\t\t\t\t// as a fallback label; the next HTMX refresh replaces\n\t\t\t\t\t\t\t\t// it with the named server row.\n\t\t\t\t\t\t\t\tvar artistLink = '';\n\t\t\t\t\t\t\t\tif (d.artistId) {\n\t\t\t\t\t\t\t\t\tartistLink = '<a href=\"' + esc(bp + '/artists/' + d.artistId) +\n\t\t\t\t\t\t\t\t\t\t'\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"' +\n\t\t\t\t\t\t\t\t\t\tesc(feed.dataset.labelViewArtist || '') + '\">' + esc(d.artistId) + '</a>';\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\trow.innerHTML =\n\t\t\t\t\t\t\t\t\t'<svg class=\"h-4 w-4 mt-0.5 shrink-0 ' + tone + '\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\">' +\n\t\t\t\t\t\t\t\t\t'<path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"' + iconPath + '\"></path></svg>' +\n\t\t\t\t\t\t\t\t\t'<div class=\"min-w-0 flex-1\">' +\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-start justify-between gap-2\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"truncate text-gray-800 dark:text-gray-200\">' + esc(d.text || '') + '</span>' +\n\t\t\t\t\t\t\t\t\t'<time datetime=\"' + esc(ts.toISOString()) + '\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">' + esc(relTime(ts)) + '</time>' +\n\t\t\t\t\t\t\t\t\t'</div>' + artistLink + '</div>';\n\t\t\t\t\t\t\t\treturn row;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// showError renders the rail's error state when the initial\n\t\t\t\t\t\t\t// hx-get load of /dashboard/activity fails (500 / network).\n\t\t\t\t\t\t\t// Without it a failed load left the rail blank but \"live\",\n\t\t\t\t\t\t\t// hiding the failure. Mirrors the queue's showQueueError: a\n\t\t\t\t\t\t\t// localized message + a Retry button that re-fires the load.\n\t\t\t\t\t\t\t// Strings come from the feed's data-* (server-localized).\n\t\t\t\t\t\t\tfunction showError() {\n\t\t\t\t\t\t\t\tvar failed = feed.dataset.labelLoadFailed || '';\n\t\t\t\t\t\t\t\tvar retry = feed.dataset.labelRetry || '';\n\t\t\t\t\t\t\t\tfeed.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-center justify-between gap-3 px-4 py-3\" role=\"alert\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + esc(failed) + '</span>' +\n\t\t\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-activity-retry inline-flex items-center rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + esc(retry) + '</button>' +\n\t\t\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\t\t\tvar btn = feed.querySelector('.sw-activity-retry');\n\t\t\t\t\t\t\t\tif (btn) btn.addEventListener('click', function() {\n\t\t\t\t\t\t\t\t\tif (window.htmx) window.htmx.ajax('GET', '/dashboard/activity', {target: '#next-dash-activity-feed', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\twindow.swDashboardActivity = { showError: showError };\n\n\t\t\t\t\t\t\tvar src;\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tsrc = new EventSource(bp + '/api/v1/events/stream');\n\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\t// EventSource construction failed (unsupported / blocked):\n\t\t\t\t\t\t\t\t// surface \"reconnecting\" so the indicator does not falsely\n\t\t\t\t\t\t\t\t// read live, and log so the failure is diagnosable.\n\t\t\t\t\t\t\t\tconsole.warn('SSE init failed', e);\n\t\t\t\t\t\t\t\tsetStatus(false);\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tsrc.onopen = function() { setStatus(true); };\n\t\t\t\t\t\t\tsrc.onerror = function() { setStatus(false); };\n\t\t\t\t\t\t\tsrc.addEventListener('activity.recent', function(e) {\n\t\t\t\t\t\t\t\tvar env = {};\n\t\t\t\t\t\t\t\ttry { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }\n\t\t\t\t\t\t\t\t// The SSE wire payload is an envelope; the structured\n\t\t\t\t\t\t\t\t// rail fields (ts, kind, text, artistId) are nested\n\t\t\t\t\t\t\t\t// under .data, NOT at the top level. Reading the top\n\t\t\t\t\t\t\t\t// level (the spike bug) yields blank rows.\n\t\t\t\t\t\t\t\tvar d = env.data || {};\n\t\t\t\t\t\t\t\t// When the rail boots empty it shows the idle hint\n\t\t\t\t\t\t\t\t// instead of rows; clear it before the first live row.\n\t\t\t\t\t\t\t\tif (feed.querySelector('.sw-activity-row') === null) {\n\t\t\t\t\t\t\t\t\tfeed.innerHTML = '';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tfeed.insertBefore(buildRow(d), feed.firstChild);\n\t\t\t\t\t\t\t\t// Cap at 50 rows in the DOM; drop the oldest (last).\n\t\t\t\t\t\t\t\twhile (feed.children.length > 50) {\n\t\t\t\t\t\t\t\t\tfeed.removeChild(feed.lastChild);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tsetStatus(true);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t})();\n\t\t\t\t\t</script><!-- Footer \"View all activity\" link (restored, mirrors the stable\n\t\t\t\t\t     dashboard's activity feed footer in web/templates/dashboard.templ):\n\t\t\t\t\t     a subtle blue-ink link with a right-chevron, targeting the same\n\t\t\t\t\t     /activity route. A hairline top border separates it from the rows;\n\t\t\t\t\t     it sits inside the content-sized card (does not re-stretch it). --><div class=\"border-t border-[var(--swd-line)] px-4 py-2.5\"><a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var84 templ.SafeURL
+			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/activity"))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 711, Col: 58}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" class=\"inline-flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var84 string
-			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.view_all_activity"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 714, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, " <svg class=\"h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3\"></path></svg></a></div></aside></div><!-- Keyboard tip line (M55 #1334/#1790, UAT C1): mirrors the artists\n\t\t\t     .sw-list-tips footer (artists.templ) in structure: a role=note line of\n\t\t\t     sw-kbd chips. Shows the dashboard's action keys (/, f, r) AND the\n\t\t\t     roving layer adopted from the shared helper (#1789): j/k move card\n\t\t\t     focus, Enter opens the focused artist, u undoes the focused card while\n\t\t\t     its undo strip is showing. The inline-flex utility on each kbd is\n\t\t\t     required for the .sw-kbd chip's align-items/gap to apply. --><p class=\"sw-list-tips\" role=\"note\"><span class=\"font-medium\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "\" class=\"inline-flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var85 string
-			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_label"))
+			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.view_all_activity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 730, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 714, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, ":</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">/</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, " <svg class=\"h-3 w-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3\"></path></svg></a></div></aside></div><!-- Keyboard tip line (M55 #1334/#1790, UAT C1): mirrors the artists\n\t\t\t     .sw-list-tips footer (artists.templ) in structure: a role=note line of\n\t\t\t     sw-kbd chips. Shows the dashboard's action keys (/, f, r) AND the\n\t\t\t     roving layer adopted from the shared helper (#1789): j/k move card\n\t\t\t     focus, Enter opens the focused artist, u undoes the focused card while\n\t\t\t     its undo strip is showing. The inline-flex utility on each kbd is\n\t\t\t     required for the .sw-kbd chip's align-items/gap to apply. --><p class=\"sw-list-tips\" role=\"note\"><span class=\"font-medium\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var86 string
-			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.search"))
+			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 731, Col: 139}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 730, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">f</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, ":</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">/</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var87 string
-			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_filters"))
+			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.search"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 733, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 731, Col: 139}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">r</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">f</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var88 string
-			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.run_rules"))
+			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 735, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 733, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">j</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">r</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var89 string
-			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_next"))
+			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 737, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 735, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">k</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">j</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var90 string
-			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_prev"))
+			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 739, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 737, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">h</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">k</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var91 string
-			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_prev"))
+			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 741, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 739, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">l</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">h</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var92 string
-			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_next"))
+			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 743, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 741, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">Enter</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">l</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var93 string
-			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_open"))
+			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 745, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 743, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">u</kbd><span class=\"ml-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">Enter</kbd><span class=\"ml-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var94 string
-			templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_undo"))
+			templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_open"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 747, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 745, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</span></span></p><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar FILTER_ID = 'dashboard-filter-flyout';\n\n\t\t\t\t\tfunction panel(id) { return document.getElementById(id); }\n\t\t\t\t\tfunction isOpen(el) { return el && el.classList.contains('sw-filter-flyout--open'); }\n\n\t\t\t\t\tfunction closeFilter() {\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.close === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.close(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tfunction openFilter() {\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.open === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.open(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\t// basePath for fetch() POSTs (fetch is not htmx and does not get\n\t\t\t\t\t// the htmx:configRequest auto-prefix, so it needs bp manually).\n\t\t\t\t\tvar bp = (function() {\n\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t})();\n\n\t\t\t\t\t// getCSRF reads the csrf_token cookie for state-changing POSTs.\n\t\t\t\t\tfunction getCSRF() {\n\t\t\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\t\t\treturn m ? decodeURIComponent(m[1]) : '';\n\t\t\t\t\t}\n\n\t\t\t\t\t// handleSessionExpiry redirects to the login page on a 401 from a\n\t\t\t\t\t// direct fetch() (htmx's session.js only covers HX requests). The\n\t\t\t\t\t// login page is the app root (\"$bp/\"); the current location is\n\t\t\t\t\t// passed as ?return= so the user lands back here after login.\n\t\t\t\t\t// Mirrors web/static/js/preferences.js handleSessionExpiry. Prefer\n\t\t\t\t\t// the shared helper if a future build exposes one on swPreferences.\n\t\t\t\t\tfunction handleSessionExpiry() {\n\t\t\t\t\t\tif (window.swPreferences && typeof window.swPreferences.clearCache === 'function') {\n\t\t\t\t\t\t\twindow.swPreferences.clearCache();\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar relPath = window.location.pathname;\n\t\t\t\t\t\tif (bp && (relPath === bp || relPath.indexOf(bp + '/') === 0)) {\n\t\t\t\t\t\t\trelPath = relPath.substring(bp.length) || '/';\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar returnURL = relPath + window.location.search + window.location.hash;\n\t\t\t\t\t\twindow.location.href = bp + '/?return=' + encodeURIComponent(returnURL);\n\t\t\t\t\t}\n\n\t\t\t\t\t// openRunRules confirms, then starts an incremental rule run.\n\t\t\t\t\t// Reuses the global window.showConfirmDialog modal (defined in\n\t\t\t\t\t// layout.templ) and the same POST /api/v1/rules/run-all endpoint\n\t\t\t\t\t// the compliance page uses. Confirm copy + toast strings come\n\t\t\t\t\t// from the run-rules toolbar button's data-* attributes (i18n).\n\t\t\t\t\tfunction openRunRules() {\n\t\t\t\t\t\tvar btn = document.getElementById('dashboard-run-rules-btn');\n\t\t\t\t\t\tvar ds = btn ? btn.dataset : {};\n\t\t\t\t\t\tif (typeof window.showConfirmDialog !== 'function') return;\n\t\t\t\t\t\twindow.showConfirmDialog(ds.confirmBody || '', 'run_rules', function() {\n\t\t\t\t\t\t\tfetch(bp + '/api/v1/rules/run-all', {\n\t\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t\t\t'X-CSRF-Token': getCSRF()\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t\t\tif (r.status === 202) {\n\t\t\t\t\t\t\t\t\twindow.showSuccessToast && window.showSuccessToast(ds.toastStarted || '');\n\t\t\t\t\t\t\t\t} else if (r.status === 401) {\n\t\t\t\t\t\t\t\t\thandleSessionExpiry();\n\t\t\t\t\t\t\t\t} else if (r.status === 409) {\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast(ds.toastAlreadyRunning || '');\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast((ds.toastFailed || 'Run rules failed ({status})').replace('{status}', r.status));\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\t\twindow.showToast && window.showToast(ds.toastNetworkError || '');\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}, {\n\t\t\t\t\t\t\thtml: true,\n\t\t\t\t\t\t\ttitle: ds.confirmTitle || '',\n\t\t\t\t\t\t\tacceptText: ds.confirmAccept || '',\n\t\t\t\t\t\t\tacceptClass: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\t// reloadQueue re-issues the action-queue load. It is the single\n\t\t\t\t\t// entry point used by the error-state Retry button so the request\n\t\t\t\t\t// shape (root-relative path + current query string) matches the\n\t\t\t\t\t// other queue reloaders in this file; the global htmx:configRequest\n\t\t\t\t\t// listener auto-prepends basePath for \"/\"-rooted paths.\n\t\t\t\t\tfunction reloadQueue() {\n\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t}\n\n\t\t\t\t\t// applySearch merges the current search box value into the active\n\t\t\t\t\t// query string (preserving the flyout's tri-state +/- filter\n\t\t\t\t\t// params), rewrites the address bar to the user-facing\n\t\t\t\t\t// \"$bp/?<params>\" URL via replaceState, then reloads the\n\t\t\t\t\t// queue. Empty input removes the search param entirely. This is\n\t\t\t\t\t// the dashboard's search path: filter state lives in\n\t\t\t\t\t// window.location.search, so search must merge rather than\n\t\t\t\t\t// replace it.\n\t\t\t\t\tfunction applySearch(term) {\n\t\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\t\tif (term) {\n\t\t\t\t\t\t\tparams.set('search', term);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tparams.delete('search');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar qs = params.toString();\n\t\t\t\t\t\tvar userURL = bp + '/' + (qs ? '?' + qs : '');\n\t\t\t\t\t\thistory.replaceState(null, '', userURL);\n\t\t\t\t\t\treloadQueue();\n\t\t\t\t\t}\n\n\t\t\t\t\t// Debounced search input handler. Mirrors the 200ms delay the\n\t\t\t\t\t// stable search input used (delay:200ms) so typing cadence feels\n\t\t\t\t\t// identical across channels.\n\t\t\t\t\tvar searchTimer = null;\n\t\t\t\t\tfunction onSearchInput(evt) {\n\t\t\t\t\t\tif (searchTimer) clearTimeout(searchTimer);\n\t\t\t\t\t\tvar term = (evt.target.value || '').trim();\n\t\t\t\t\t\tsearchTimer = setTimeout(function() { applySearch(term); }, 200);\n\t\t\t\t\t}\n\n\t\t\t\t\t// showQueueError renders the action-queue error state (spec\n\t\t\t\t\t// 01-dashboard.md:54): a single banner row with a localized\n\t\t\t\t\t// \"Couldn't load violations\" message and a Retry button that\n\t\t\t\t\t// re-issues the load. Fired by the queue's hx-on::response-error /\n\t\t\t\t\t// hx-on::send-error handlers when the initial (or a filtered) load\n\t\t\t\t\t// fails, so a failure no longer leaves the user staring at the\n\t\t\t\t\t// skeleton forever. The localized strings come from the queue's\n\t\t\t\t\t// data-* attributes (server-localized); the Retry handler is bound\n\t\t\t\t\t// in JS rather than inline so no copy is hardcoded here.\n\t\t\t\t\tfunction showQueueError(queue) {\n\t\t\t\t\t\tif (!queue) return;\n\t\t\t\t\t\tvar failed = queue.dataset.labelLoadFailed || '';\n\t\t\t\t\t\tvar retry = queue.dataset.labelRetry || '';\n\t\t\t\t\t\tqueue.innerHTML =\n\t\t\t\t\t\t\t'<div class=\"sw-card flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900/50 dark:bg-red-900/20\" role=\"alert\">' +\n\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + failed + '</span>' +\n\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-queue-retry inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + retry + '</button>' +\n\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\tvar btn = queue.querySelector('.sw-queue-retry');\n\t\t\t\t\t\tif (btn) btn.addEventListener('click', reloadQueue);\n\t\t\t\t\t}\n\n\t\t\t\t\twindow.swDashboardPanels = {\n\t\t\t\t\t\ttoggleFilters: function() {\n\t\t\t\t\t\t\tif (isOpen(panel(FILTER_ID))) closeFilter(); else openFilter();\n\t\t\t\t\t\t},\n\t\t\t\t\t\topenRunRules: openRunRules,\n\t\t\t\t\t\tshowQueueError: showQueueError,\n\t\t\t\t\t\treloadQueue: reloadQueue,\n\t\t\t\t\t\thandleSessionExpiry: handleSessionExpiry,\n\t\t\t\t\t\tclose: function() { closeFilter(); }\n\t\t\t\t\t};\n\n\t\t\t\t\tvar filterWasOpen = false;\n\t\t\t\t\tdocument.body.addEventListener('htmx:beforeSwap', function(evt) {\n\t\t\t\t\t\tvar target = evt.detail && evt.detail.target;\n\t\t\t\t\t\tif (!target || target.id !== 'action-queue') return;\n\t\t\t\t\t\tfilterWasOpen = isOpen(panel(FILTER_ID));\n\t\t\t\t\t});\n\t\t\t\t\tdocument.body.addEventListener('htmx:afterSettle', function(evt) {\n\t\t\t\t\t\tvar target = evt.detail && evt.detail.target;\n\t\t\t\t\t\tif (!target || target.id !== 'action-queue') return;\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.initFromURL(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (filterWasOpen) openFilter();\n\t\t\t\t\t\tfilterWasOpen = false;\n\t\t\t\t\t});\n\t\t\t\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\t\t\t\tif (!evt.target || evt.target.id !== 'action-queue') return;\n\t\t\t\t\t\t// Root-relative path: the global htmx:configRequest listener\n\t\t\t\t\t\t// (layout.templ) auto-prepends basePath for \"/\"-rooted paths,\n\t\t\t\t\t\t// so prefixing bp here would double-prefix.\n\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions' + window.location.search, {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t});\n\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.initFromURL(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Wire the debounced search handler and hydrate the input from\n\t\t\t\t\t\t// any ?search= already in the URL (bookmarked / shared links).\n\t\t\t\t\t\tvar searchInput = document.getElementById('dashboard-search');\n\t\t\t\t\t\tif (searchInput) {\n\t\t\t\t\t\t\tvar initial = new URLSearchParams(window.location.search).get('search');\n\t\t\t\t\t\t\tif (initial) searchInput.value = initial;\n\t\t\t\t\t\t\tsearchInput.addEventListener('input', onSearchInput);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar bp = (function() {\n\t\t\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\treturn el ? el.content : '';\n\t\t\t\t\t})();\n\n\t\t\t\t\tvar queue = document.getElementById('action-queue');\n\t\t\t\t\t// Toolbar bulk controls (maintainer 2026-05-31): the floating bulk\n\t\t\t\t\t// bar was removed; the select-all + a Fix/Dismiss SPLIT button live\n\t\t\t\t\t// in the toolbar. The split button's primary face fixes the\n\t\t\t\t\t// selection; its caret opens a one-item menu (Dismiss selected).\n\t\t\t\t\t// Both faces drive the same runBulkFix / runBulkDismiss helpers.\n\t\t\t\t\tvar toolbarSelectAll = document.getElementById('toolbar-select-all');\n\t\t\t\t\tvar toolbarSelectAllWrap = document.getElementById('toolbar-select-all-wrap');\n\t\t\t\t\tvar bulkSplit = document.getElementById('toolbar-bulk-split');\n\t\t\t\t\tvar fixBtn = document.getElementById('toolbar-fix-selected-btn');\n\t\t\t\t\tvar menuToggle = document.getElementById('toolbar-bulk-menu-toggle');\n\t\t\t\t\tvar bulkMenu = document.getElementById('toolbar-bulk-menu');\n\t\t\t\t\tvar dismissBtn = document.getElementById('toolbar-dismiss-selected-btn');\n\t\t\t\t\tif (!queue || !fixBtn) return;\n\t\t\t\t\t// The fix button carries every localized bulk string (progress,\n\t\t\t\t\t// failed, network, dismiss-failed) on its data-* attributes, so it\n\t\t\t\t\t// is the single source of bulk i18n copy.\n\t\t\t\t\tvar L = fixBtn.dataset;\n\n\t\t\t\t\tvar lastChecked = null;\n\n\t\t\t\t\tfunction pluralize(count, one, other) {\n\t\t\t\t\t\tvar tpl = count === 1 ? one : other;\n\t\t\t\t\t\treturn tpl.replaceAll('{count}', String(count));\n\t\t\t\t\t}\n\n\t\t\t\t\t// showInline toggles an element's visibility while preserving its\n\t\t\t\t\t// flex/inline-flex display (the controls ship with `hidden`; `flex`\n\t\t\t\t\t// is added so their inner items lay out in a row when shown).\n\t\t\t\t\tfunction showInline(el, show) {\n\t\t\t\t\t\tif (!el) return;\n\t\t\t\t\t\tel.classList.toggle('hidden', !show);\n\t\t\t\t\t\tel.classList.toggle('flex', show);\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction closeMenu() {\n\t\t\t\t\t\tif (!bulkMenu) return;\n\t\t\t\t\t\tbulkMenu.classList.add('hidden');\n\t\t\t\t\t\tif (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t}\n\n\t\t\t\t\t// updateBulkControls keeps the toolbar select-all + split button in\n\t\t\t\t\t// sync with the live selection after every check/uncheck and every\n\t\t\t\t\t// queue (re)load: the controls hide entirely on an empty queue, the\n\t\t\t\t\t// fix/dismiss faces show count-aware labels, and a zero selection\n\t\t\t\t\t// disables the actions (a disabled \"Fix selected\").\n\t\t\t\t\tfunction updateBulkControls() {\n\t\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\t\tvar total = queue.querySelectorAll('.bulk-check').length;\n\t\t\t\t\t\t// The hidden in-queue mirror keeps #select-all-toggle in sync so\n\t\t\t\t\t\t// no JS path that references it is orphaned.\n\t\t\t\t\t\tvar toggle = document.getElementById('select-all-toggle');\n\t\t\t\t\t\tif (toggle) {\n\t\t\t\t\t\t\ttoggle.checked = total > 0 && checked.length === total;\n\t\t\t\t\t\t\ttoggle.indeterminate = checked.length > 0 && checked.length < total;\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Select-all + split button are only meaningful with rows present.\n\t\t\t\t\t\tshowInline(toolbarSelectAllWrap, total > 0);\n\t\t\t\t\t\tif (toolbarSelectAll) {\n\t\t\t\t\t\t\ttoolbarSelectAll.checked = total > 0 && checked.length === total;\n\t\t\t\t\t\t\ttoolbarSelectAll.indeterminate = checked.length > 0 && checked.length < total;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tshowInline(bulkSplit, total > 0);\n\t\t\t\t\t\tvar none = checked.length === 0;\n\t\t\t\t\t\tfixBtn.disabled = none;\n\t\t\t\t\t\tif (menuToggle) menuToggle.disabled = none;\n\t\t\t\t\t\tif (dismissBtn) dismissBtn.disabled = none;\n\t\t\t\t\t\tif (none) closeMenu();\n\t\t\t\t\t\tfixBtn.textContent = none\n\t\t\t\t\t\t\t? (L.labelFixNone || 'Fix selected')\n\t\t\t\t\t\t\t: pluralize(checked.length, L.labelFixOne || 'Fix 1 selected', L.labelFixOther || 'Fix {count} selected');\n\t\t\t\t\t\tif (dismissBtn) {\n\t\t\t\t\t\t\tdismissBtn.textContent = none\n\t\t\t\t\t\t\t\t? (dismissBtn.dataset.labelDismissNone || 'Dismiss selected')\n\t\t\t\t\t\t\t\t: pluralize(checked.length, dismissBtn.dataset.labelDismissOne || 'Dismiss 1 selected', dismissBtn.dataset.labelDismissOther || 'Dismiss {count} selected');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction getCSRF() {\n\t\t\t\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);\n\t\t\t\t\t\treturn match ? decodeURIComponent(match[1]) : '';\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction getCheckedIDs() {\n\t\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\t\treturn Array.prototype.map.call(checked, function(cb) { return cb.value; });\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction setAllChecked(state) {\n\t\t\t\t\t\tqueue.querySelectorAll('.bulk-check').forEach(function(cb) { cb.checked = state; });\n\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction reloadQueueRows() {\n\t\t\t\t\t\t// Root-relative: htmx:configRequest auto-prepends basePath.\n\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t}\n\n\t\t\t\t\tqueue.addEventListener('click', function(e) {\n\t\t\t\t\t\tvar cb = e.target;\n\t\t\t\t\t\tif (!cb.classList.contains('bulk-check')) return;\n\t\t\t\t\t\tif (e.shiftKey && lastChecked && lastChecked !== cb) {\n\t\t\t\t\t\t\tvar boxes = Array.from(queue.querySelectorAll('.bulk-check'));\n\t\t\t\t\t\t\tvar start = boxes.indexOf(lastChecked);\n\t\t\t\t\t\t\tvar end = boxes.indexOf(cb);\n\t\t\t\t\t\t\tif (start > -1 && end > -1) {\n\t\t\t\t\t\t\t\tvar lo = Math.min(start, end);\n\t\t\t\t\t\t\t\tvar hi = Math.max(start, end);\n\t\t\t\t\t\t\t\tfor (var i = lo; i <= hi; i++) { boxes[i].checked = cb.checked; }\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tlastChecked = cb;\n\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t});\n\t\t\t\t\tqueue.addEventListener('change', function(e) {\n\t\t\t\t\t\tif (e.target.id === 'select-all-toggle') { setAllChecked(e.target.checked); return; }\n\t\t\t\t\t\tif (e.target.classList.contains('bulk-check')) updateBulkControls();\n\t\t\t\t\t});\n\t\t\t\t\t// Toolbar select-all checkbox drives the same check/uncheck-all path.\n\t\t\t\t\tif (toolbarSelectAll) {\n\t\t\t\t\t\ttoolbarSelectAll.addEventListener('change', function() { setAllChecked(toolbarSelectAll.checked); });\n\t\t\t\t\t}\n\n\t\t\t\t\t// Split-button caret toggles the Dismiss menu; outside-click and\n\t\t\t\t\t// Escape close it. openMenu/closeMenu use explicit add/remove of the\n\t\t\t\t\t// `hidden` class (NOT classList.toggle's return value, which is\n\t\t\t\t\t// fragile) so the open/close state is unambiguous, and they keep\n\t\t\t\t\t// aria-expanded in sync. Opening moves focus to the Dismiss item so\n\t\t\t\t\t// the menu is keyboard-operable; closing via Escape returns focus to\n\t\t\t\t\t// the caret.\n\t\t\t\t\tfunction menuIsOpen() {\n\t\t\t\t\t\treturn bulkMenu && !bulkMenu.classList.contains('hidden');\n\t\t\t\t\t}\n\t\t\t\t\tfunction openMenu() {\n\t\t\t\t\t\tif (!bulkMenu || !menuToggle || menuToggle.disabled) return;\n\t\t\t\t\t\tbulkMenu.classList.remove('hidden');\n\t\t\t\t\t\tmenuToggle.setAttribute('aria-expanded', 'true');\n\t\t\t\t\t\tif (dismissBtn && !dismissBtn.disabled) dismissBtn.focus();\n\t\t\t\t\t}\n\t\t\t\t\tif (menuToggle && bulkMenu) {\n\t\t\t\t\t\tmenuToggle.addEventListener('click', function(e) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\te.stopPropagation();\n\t\t\t\t\t\t\tif (menuIsOpen()) closeMenu(); else openMenu();\n\t\t\t\t\t\t});\n\t\t\t\t\t\t// Outside-click closes the menu. The toggle's own click stops\n\t\t\t\t\t\t// propagation, so this only fires for clicks elsewhere.\n\t\t\t\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\t\t\t\tif (!menuIsOpen()) return;\n\t\t\t\t\t\t\tif (bulkSplit && !bulkSplit.contains(e.target)) closeMenu();\n\t\t\t\t\t\t});\n\t\t\t\t\t\t// Escape closes and restores focus to the caret.\n\t\t\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\t\t\tif (e.key !== 'Escape' || !menuIsOpen()) return;\n\t\t\t\t\t\t\tcloseMenu();\n\t\t\t\t\t\t\tif (menuToggle) menuToggle.focus();\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\t// runBulkDismiss POSTs the bulk-dismiss endpoint for the selection,\n\t\t\t\t\t// then reloads the queue. Failures surface a localized toast.\n\t\t\t\t\tvar bulkInFlight = false;\n\t\t\t\t\tfunction runBulkDismiss() {\n\t\t\t\t\t\tif (bulkInFlight) return;\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tcloseMenu();\n\t\t\t\t\t\tbulkInFlight = true;\n\t\t\t\t\t\tfixBtn.disabled = true;\n\t\t\t\t\t\tif (dismissBtn) dismissBtn.disabled = true;\n\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/bulk-dismiss', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },\n\t\t\t\t\t\t\tbody: JSON.stringify({ids: ids})\n\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\t\treloadQueueRows();\n\t\t\t\t\t\t\t} else if (res.status === 401) {\n\t\t\t\t\t\t\t\twindow.swDashboardPanels && window.swDashboardPanels.handleSessionExpiry && window.swDashboardPanels.handleSessionExpiry();\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tconsole.warn('bulk dismiss failed', res.status);\n\t\t\t\t\t\t\t\tvar tpl = L.labelDismissFailed || 'Dismiss failed ({status})';\n\t\t\t\t\t\t\t\twindow.showToast && window.showToast(tpl.replace('{status}', res.status));\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\t\tconsole.warn('bulk dismiss error', err);\n\t\t\t\t\t\t\twindow.showToast && window.showToast(L.labelNetworkError || 'Network error');\n\t\t\t\t\t\t}).finally(function() {\n\t\t\t\t\t\t\tbulkInFlight = false;\n\t\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\t// runBulkFix fixes the selection one at a time, showing live\n\t\t\t\t\t// \"Fixing N/total\" progress on the fix button, then reloads the\n\t\t\t\t\t// queue. The dismiss action is disabled for the duration so a\n\t\t\t\t\t// second bulk op cannot start mid-flight.\n\t\t\t\t\tfunction runBulkFix() {\n\t\t\t\t\t\tif (bulkInFlight) return;\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tcloseMenu();\n\t\t\t\t\t\tbulkInFlight = true;\n\t\t\t\t\t\tfixBtn.disabled = true;\n\t\t\t\t\t\tif (menuToggle) menuToggle.disabled = true;\n\t\t\t\t\t\tif (dismissBtn) dismissBtn.disabled = true;\n\t\t\t\t\t\tvar total = ids.length, failed = 0;\n\t\t\t\t\t\tvar progressTpl = L.labelFixingProgress || 'Fixing {current}/{total}...';\n\t\t\t\t\t\tfunction fixNext(i) {\n\t\t\t\t\t\t\tif (i >= ids.length) {\n\t\t\t\t\t\t\t\tbulkInFlight = false;\n\t\t\t\t\t\t\t\tif (failed > 0) {\n\t\t\t\t\t\t\t\t\tvar tpl = pluralize(failed, L.labelFixesFailedOne || '1 of {total} fixes failed', L.labelFixesFailedOther || '{failed} of {total} fixes failed');\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast(tpl.replace('{failed}', failed).replace('{total}', total));\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t// The queue reload re-runs updateBulkControls via\n\t\t\t\t\t\t\t\t// afterSwap, restoring the button labels/state.\n\t\t\t\t\t\t\t\treloadQueueRows();\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tfixBtn.textContent = progressTpl.replace('{current}', i + 1).replace('{total}', total);\n\t\t\t\t\t\t\tvar sessionExpired = false;\n\t\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/' + ids[i] + '/fix', {\n\t\t\t\t\t\t\t\tmethod: 'POST', headers: { 'X-CSRF-Token': getCSRF() }\n\t\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\t\tif (res.status === 401) {\n\t\t\t\t\t\t\t\t\t// Session gone: redirect to login and stop the loop\n\t\t\t\t\t\t\t\t\t// rather than churning through doomed requests.\n\t\t\t\t\t\t\t\t\tsessionExpired = true;\n\t\t\t\t\t\t\t\t\twindow.swDashboardPanels && window.swDashboardPanels.handleSessionExpiry && window.swDashboardPanels.handleSessionExpiry();\n\t\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\t\t\t\tconsole.warn('bulk fix failed', ids[i], res.status);\n\t\t\t\t\t\t\t\t\tfailed++;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t  .catch(function(err) { console.warn('bulk fix error', ids[i], err); failed++; })\n\t\t\t\t\t\t\t  .finally(function() { if (!sessionExpired) fixNext(i + 1); });\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfixNext(0);\n\t\t\t\t\t}\n\n\t\t\t\t\tfixBtn.addEventListener('click', runBulkFix);\n\t\t\t\t\tif (dismissBtn) dismissBtn.addEventListener('click', runBulkDismiss);\n\n\t\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\t\tif (e.detail.target && (e.detail.target.id === 'action-queue' || e.detail.target.id === 'action-queue-entries')) {\n\t\t\t\t\t\t\t// A fresh load has zero checked rows, so this reveals the\n\t\t\t\t\t\t\t// controls when the queue has rows and hides them when it\n\t\t\t\t\t\t\t// came back empty/errored. Prev/Next paging swaps only the\n\t\t\t\t\t\t\t// nested #action-queue-entries, so refresh the controls there\n\t\t\t\t\t\t\t// too or the select-all checkbox and bulk button go stale.\n\t\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\tdocument.body.addEventListener('dashboard:action-resolved', reloadQueueRows);\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar bp = (function() {\n\t\t\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\treturn el ? el.content : '';\n\t\t\t\t\t})();\n\t\t\t\t\tfunction updateLastEvaluated() {\n\t\t\t\t\t\tvar el = document.getElementById('last-evaluated-text');\n\t\t\t\t\t\tif (!el) { return; }\n\t\t\t\t\t\t// The bubble splits a static \"Last evaluated\" caption (rendered\n\t\t\t\t\t\t// server-side) from the dynamic value; write only the value span\n\t\t\t\t\t\t// so the caption survives. data-* carriers stay on the button.\n\t\t\t\t\t\tvar valEl = document.getElementById('last-evaluated-value') || el;\n\t\t\t\t\t\tvar d = el.dataset;\n\t\t\t\t\t\tfetch(bp + '/api/v1/rules/status')\n\t\t\t\t\t\t\t.then(function(res) {\n\t\t\t\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\t\t\t\tconsole.warn('last-evaluated fetch failed', res.status);\n\t\t\t\t\t\t\t\t\treturn null;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t\tif (!data) { valEl.textContent = d.labelUnavailable; return; }\n\t\t\t\t\t\t\t\tif (!data.last_evaluation_at) { valEl.textContent = d.labelNever; return; }\n\t\t\t\t\t\t\t\tvar evalTime = new Date(data.last_evaluation_at);\n\t\t\t\t\t\t\t\tif (isNaN(evalTime.getTime())) { valEl.textContent = d.labelUnavailable; return; }\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - evalTime) / 60000);\n\t\t\t\t\t\t\t\tvar rel;\n\t\t\t\t\t\t\t\tif (diffMin < 1) rel = d.labelJustNow;\n\t\t\t\t\t\t\t\telse if (diffMin < 60) rel = d.tplMinutes.replace('{count}', diffMin);\n\t\t\t\t\t\t\t\telse if (diffMin < 1440) rel = d.tplHours.replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\telse rel = d.tplDays.replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t\tvalEl.textContent = rel;\n\t\t\t\t\t\t\t\tel.title = evalTime.toLocaleString();\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\t\t\tconsole.warn('last-evaluated fetch error', err);\n\t\t\t\t\t\t\t\tvalEl.textContent = d.labelUnavailable;\n\t\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t\tupdateLastEvaluated();\n\t\t\t\t\t// Re-resolve after every action-queue reload so the stat tracks a\n\t\t\t\t\t// just-completed run without a full page refresh (#1796). A manual\n\t\t\t\t\t// \"Run rules\" reloads the queue when it settles, and the run-all\n\t\t\t\t\t// handler now advances last_evaluation_at (scheduler.MarkEvaluated),\n\t\t\t\t\t// so this re-fetch surfaces the new time. Mirrors the stable\n\t\t\t\t\t// dashboard, which re-runs updateLastEvaluated on the same event.\n\t\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\t\tif (e.detail && e.detail.target && e.detail.target.id === 'action-queue') {\n\t\t\t\t\t\t\tupdateLastEvaluated();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t// Dashboard keyboard shortcuts (M55 #1790, spec 01-dashboard.md:88).\n\t\t\t\t// The page-level action keys (/ f r) and the roving layer\n\t\t\t\t// (j/k move card focus, Enter opens the focused artist) are handled\n\t\t\t\t// entirely by the SHARED vendored helper (web/static/js/keyboard.js,\n\t\t\t\t// #1789) from the declarative data-sw-* attributes on the search\n\t\t\t\t// input, filter trigger, run-rules button, and #action-queue-entries\n\t\t\t\t// roving list. No bespoke keydown listener remains here.\n\t\t\t\t//\n\t\t\t\t// This block wires ONLY the per-screen CONTEXTUAL key u via the\n\t\t\t\t// helper's onContext() hook. u undoes the focused card, but ONLY when\n\t\t\t\t// that card currently shows its undo strip (the UndoToast that a Fix\n\t\t\t\t// swaps in via outerHTML). Because the action is CONDITIONAL on the\n\t\t\t\t// strip being present, the declarative data-sw-roving-context\n\t\t\t\t// attribute (which would unconditionally click a fixed target) is the\n\t\t\t\t// wrong mechanism; onContext lets the handler inspect the focused item\n\t\t\t\t// at press time and act only when the Undo button is live.\n\t\t\t\t(function () {\n\t\t\t\t\tif (!window.swKeyboardShortcuts || typeof window.swKeyboardShortcuts.onContext !== 'function') return;\n\t\t\t\t\t// scope matches data-sw-scope on the roving list; it is reserved\n\t\t\t\t\t// for forward-compat (the helper has one global ctxHandler today).\n\t\t\t\t\twindow.swKeyboardShortcuts.onContext('dashboard', function (item) {\n\t\t\t\t\t\tif (!item) return;\n\t\t\t\t\t\t// The undo strip (UndoToast) replaces the card via outerHTML on\n\t\t\t\t\t\t// a fix; its Undo button posts to /api/v1/fix-undo/<id>. Click it\n\t\t\t\t\t\t// only when present, so u is a no-op on a not-yet-fixed card.\n\t\t\t\t\t\tvar undoBtn = item.querySelector('button[hx-post*=\"/fix-undo/\"]');\n\t\t\t\t\t\tif (undoBtn) undoBtn.click();\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</span></span> <span aria-hidden=\"true\">·</span> <span class=\"inline-flex items-center\"><kbd class=\"sw-kbd inline-flex\">u</kbd><span class=\"ml-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var95 string
+			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_undo"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 747, Col: 141}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</span></span></p><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar FILTER_ID = 'dashboard-filter-flyout';\n\n\t\t\t\t\tfunction panel(id) { return document.getElementById(id); }\n\t\t\t\t\tfunction isOpen(el) { return el && el.classList.contains('sw-filter-flyout--open'); }\n\n\t\t\t\t\tfunction closeFilter() {\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.close === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.close(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tfunction openFilter() {\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.open === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.open(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\t// basePath for fetch() POSTs (fetch is not htmx and does not get\n\t\t\t\t\t// the htmx:configRequest auto-prefix, so it needs bp manually).\n\t\t\t\t\tvar bp = (function() {\n\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t})();\n\n\t\t\t\t\t// getCSRF reads the csrf_token cookie for state-changing POSTs.\n\t\t\t\t\tfunction getCSRF() {\n\t\t\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\t\t\treturn m ? decodeURIComponent(m[1]) : '';\n\t\t\t\t\t}\n\n\t\t\t\t\t// handleSessionExpiry redirects to the login page on a 401 from a\n\t\t\t\t\t// direct fetch() (htmx's session.js only covers HX requests). The\n\t\t\t\t\t// login page is the app root (\"$bp/\"); the current location is\n\t\t\t\t\t// passed as ?return= so the user lands back here after login.\n\t\t\t\t\t// Mirrors web/static/js/preferences.js handleSessionExpiry. Prefer\n\t\t\t\t\t// the shared helper if a future build exposes one on swPreferences.\n\t\t\t\t\tfunction handleSessionExpiry() {\n\t\t\t\t\t\tif (window.swPreferences && typeof window.swPreferences.clearCache === 'function') {\n\t\t\t\t\t\t\twindow.swPreferences.clearCache();\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar relPath = window.location.pathname;\n\t\t\t\t\t\tif (bp && (relPath === bp || relPath.indexOf(bp + '/') === 0)) {\n\t\t\t\t\t\t\trelPath = relPath.substring(bp.length) || '/';\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar returnURL = relPath + window.location.search + window.location.hash;\n\t\t\t\t\t\twindow.location.href = bp + '/?return=' + encodeURIComponent(returnURL);\n\t\t\t\t\t}\n\n\t\t\t\t\t// openRunRules confirms, then starts an incremental rule run.\n\t\t\t\t\t// Reuses the global window.showConfirmDialog modal (defined in\n\t\t\t\t\t// layout.templ) and the same POST /api/v1/rules/run-all endpoint\n\t\t\t\t\t// the compliance page uses. Confirm copy + toast strings come\n\t\t\t\t\t// from the run-rules toolbar button's data-* attributes (i18n).\n\t\t\t\t\tfunction openRunRules() {\n\t\t\t\t\t\tvar btn = document.getElementById('dashboard-run-rules-btn');\n\t\t\t\t\t\tvar ds = btn ? btn.dataset : {};\n\t\t\t\t\t\tif (typeof window.showConfirmDialog !== 'function') return;\n\t\t\t\t\t\twindow.showConfirmDialog(ds.confirmBody || '', 'run_rules', function() {\n\t\t\t\t\t\t\tfetch(bp + '/api/v1/rules/run-all', {\n\t\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t\t\t'X-CSRF-Token': getCSRF()\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t\t\tif (r.status === 202) {\n\t\t\t\t\t\t\t\t\twindow.showSuccessToast && window.showSuccessToast(ds.toastStarted || '');\n\t\t\t\t\t\t\t\t} else if (r.status === 401) {\n\t\t\t\t\t\t\t\t\thandleSessionExpiry();\n\t\t\t\t\t\t\t\t} else if (r.status === 409) {\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast(ds.toastAlreadyRunning || '');\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast((ds.toastFailed || 'Run rules failed ({status})').replace('{status}', r.status));\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\t\twindow.showToast && window.showToast(ds.toastNetworkError || '');\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}, {\n\t\t\t\t\t\t\thtml: true,\n\t\t\t\t\t\t\ttitle: ds.confirmTitle || '',\n\t\t\t\t\t\t\tacceptText: ds.confirmAccept || '',\n\t\t\t\t\t\t\tacceptClass: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\t// reloadQueue re-issues the action-queue load. It is the single\n\t\t\t\t\t// entry point used by the error-state Retry button so the request\n\t\t\t\t\t// shape (root-relative path + current query string) matches the\n\t\t\t\t\t// other queue reloaders in this file; the global htmx:configRequest\n\t\t\t\t\t// listener auto-prepends basePath for \"/\"-rooted paths.\n\t\t\t\t\tfunction reloadQueue() {\n\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t}\n\n\t\t\t\t\t// applySearch merges the current search box value into the active\n\t\t\t\t\t// query string (preserving the flyout's tri-state +/- filter\n\t\t\t\t\t// params), rewrites the address bar to the user-facing\n\t\t\t\t\t// \"$bp/?<params>\" URL via replaceState, then reloads the\n\t\t\t\t\t// queue. Empty input removes the search param entirely. This is\n\t\t\t\t\t// the dashboard's search path: filter state lives in\n\t\t\t\t\t// window.location.search, so search must merge rather than\n\t\t\t\t\t// replace it.\n\t\t\t\t\tfunction applySearch(term) {\n\t\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\t\tif (term) {\n\t\t\t\t\t\t\tparams.set('search', term);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tparams.delete('search');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar qs = params.toString();\n\t\t\t\t\t\tvar userURL = bp + '/' + (qs ? '?' + qs : '');\n\t\t\t\t\t\thistory.replaceState(null, '', userURL);\n\t\t\t\t\t\treloadQueue();\n\t\t\t\t\t}\n\n\t\t\t\t\t// Debounced search input handler. Mirrors the 200ms delay the\n\t\t\t\t\t// stable search input used (delay:200ms) so typing cadence feels\n\t\t\t\t\t// identical across channels.\n\t\t\t\t\tvar searchTimer = null;\n\t\t\t\t\tfunction onSearchInput(evt) {\n\t\t\t\t\t\tif (searchTimer) clearTimeout(searchTimer);\n\t\t\t\t\t\tvar term = (evt.target.value || '').trim();\n\t\t\t\t\t\tsearchTimer = setTimeout(function() { applySearch(term); }, 200);\n\t\t\t\t\t}\n\n\t\t\t\t\t// showQueueError renders the action-queue error state (spec\n\t\t\t\t\t// 01-dashboard.md:54): a single banner row with a localized\n\t\t\t\t\t// \"Couldn't load violations\" message and a Retry button that\n\t\t\t\t\t// re-issues the load. Fired by the queue's hx-on::response-error /\n\t\t\t\t\t// hx-on::send-error handlers when the initial (or a filtered) load\n\t\t\t\t\t// fails, so a failure no longer leaves the user staring at the\n\t\t\t\t\t// skeleton forever. The localized strings come from the queue's\n\t\t\t\t\t// data-* attributes (server-localized); the Retry handler is bound\n\t\t\t\t\t// in JS rather than inline so no copy is hardcoded here.\n\t\t\t\t\tfunction showQueueError(queue) {\n\t\t\t\t\t\tif (!queue) return;\n\t\t\t\t\t\tvar failed = queue.dataset.labelLoadFailed || '';\n\t\t\t\t\t\tvar retry = queue.dataset.labelRetry || '';\n\t\t\t\t\t\tqueue.innerHTML =\n\t\t\t\t\t\t\t'<div class=\"sw-card flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900/50 dark:bg-red-900/20\" role=\"alert\">' +\n\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + failed + '</span>' +\n\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-queue-retry inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + retry + '</button>' +\n\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\tvar btn = queue.querySelector('.sw-queue-retry');\n\t\t\t\t\t\tif (btn) btn.addEventListener('click', reloadQueue);\n\t\t\t\t\t}\n\n\t\t\t\t\twindow.swDashboardPanels = {\n\t\t\t\t\t\ttoggleFilters: function() {\n\t\t\t\t\t\t\tif (isOpen(panel(FILTER_ID))) closeFilter(); else openFilter();\n\t\t\t\t\t\t},\n\t\t\t\t\t\topenRunRules: openRunRules,\n\t\t\t\t\t\tshowQueueError: showQueueError,\n\t\t\t\t\t\treloadQueue: reloadQueue,\n\t\t\t\t\t\thandleSessionExpiry: handleSessionExpiry,\n\t\t\t\t\t\tclose: function() { closeFilter(); }\n\t\t\t\t\t};\n\n\t\t\t\t\tvar filterWasOpen = false;\n\t\t\t\t\tdocument.body.addEventListener('htmx:beforeSwap', function(evt) {\n\t\t\t\t\t\tvar target = evt.detail && evt.detail.target;\n\t\t\t\t\t\tif (!target || target.id !== 'action-queue') return;\n\t\t\t\t\t\tfilterWasOpen = isOpen(panel(FILTER_ID));\n\t\t\t\t\t});\n\t\t\t\t\tdocument.body.addEventListener('htmx:afterSettle', function(evt) {\n\t\t\t\t\t\tvar target = evt.detail && evt.detail.target;\n\t\t\t\t\t\tif (!target || target.id !== 'action-queue') return;\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.initFromURL(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (filterWasOpen) openFilter();\n\t\t\t\t\t\tfilterWasOpen = false;\n\t\t\t\t\t});\n\t\t\t\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\t\t\t\tif (!evt.target || evt.target.id !== 'action-queue') return;\n\t\t\t\t\t\t// Root-relative path: the global htmx:configRequest listener\n\t\t\t\t\t\t// (layout.templ) auto-prepends basePath for \"/\"-rooted paths,\n\t\t\t\t\t\t// so prefixing bp here would double-prefix.\n\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions' + window.location.search, {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t});\n\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\t\t\tif (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {\n\t\t\t\t\t\t\twindow.swFilterFlyout.initFromURL(FILTER_ID);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Wire the debounced search handler and hydrate the input from\n\t\t\t\t\t\t// any ?search= already in the URL (bookmarked / shared links).\n\t\t\t\t\t\tvar searchInput = document.getElementById('dashboard-search');\n\t\t\t\t\t\tif (searchInput) {\n\t\t\t\t\t\t\tvar initial = new URLSearchParams(window.location.search).get('search');\n\t\t\t\t\t\t\tif (initial) searchInput.value = initial;\n\t\t\t\t\t\t\tsearchInput.addEventListener('input', onSearchInput);\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar bp = (function() {\n\t\t\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\treturn el ? el.content : '';\n\t\t\t\t\t})();\n\n\t\t\t\t\tvar queue = document.getElementById('action-queue');\n\t\t\t\t\t// Toolbar bulk controls (maintainer 2026-05-31): the floating bulk\n\t\t\t\t\t// bar was removed; the select-all + a Fix/Dismiss SPLIT button live\n\t\t\t\t\t// in the toolbar. The split button's primary face fixes the\n\t\t\t\t\t// selection; its caret opens a one-item menu (Dismiss selected).\n\t\t\t\t\t// Both faces drive the same runBulkFix / runBulkDismiss helpers.\n\t\t\t\t\tvar toolbarSelectAll = document.getElementById('toolbar-select-all');\n\t\t\t\t\tvar toolbarSelectAllWrap = document.getElementById('toolbar-select-all-wrap');\n\t\t\t\t\tvar bulkSplit = document.getElementById('toolbar-bulk-split');\n\t\t\t\t\tvar fixBtn = document.getElementById('toolbar-fix-selected-btn');\n\t\t\t\t\tvar menuToggle = document.getElementById('toolbar-bulk-menu-toggle');\n\t\t\t\t\tvar bulkMenu = document.getElementById('toolbar-bulk-menu');\n\t\t\t\t\tvar dismissBtn = document.getElementById('toolbar-dismiss-selected-btn');\n\t\t\t\t\tif (!queue || !fixBtn) return;\n\t\t\t\t\t// The fix button carries every localized bulk string (progress,\n\t\t\t\t\t// failed, network, dismiss-failed) on its data-* attributes, so it\n\t\t\t\t\t// is the single source of bulk i18n copy.\n\t\t\t\t\tvar L = fixBtn.dataset;\n\n\t\t\t\t\tvar lastChecked = null;\n\n\t\t\t\t\tfunction pluralize(count, one, other) {\n\t\t\t\t\t\tvar tpl = count === 1 ? one : other;\n\t\t\t\t\t\treturn tpl.replaceAll('{count}', String(count));\n\t\t\t\t\t}\n\n\t\t\t\t\t// showInline toggles an element's visibility while preserving its\n\t\t\t\t\t// flex/inline-flex display (the controls ship with `hidden`; `flex`\n\t\t\t\t\t// is added so their inner items lay out in a row when shown).\n\t\t\t\t\tfunction showInline(el, show) {\n\t\t\t\t\t\tif (!el) return;\n\t\t\t\t\t\tel.classList.toggle('hidden', !show);\n\t\t\t\t\t\tel.classList.toggle('flex', show);\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction closeMenu() {\n\t\t\t\t\t\tif (!bulkMenu) return;\n\t\t\t\t\t\tbulkMenu.classList.add('hidden');\n\t\t\t\t\t\tif (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t}\n\n\t\t\t\t\t// updateBulkControls keeps the toolbar select-all + split button in\n\t\t\t\t\t// sync with the live selection after every check/uncheck and every\n\t\t\t\t\t// queue (re)load: the controls hide entirely on an empty queue, the\n\t\t\t\t\t// fix/dismiss faces show count-aware labels, and a zero selection\n\t\t\t\t\t// disables the actions (a disabled \"Fix selected\").\n\t\t\t\t\tfunction updateBulkControls() {\n\t\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\t\tvar total = queue.querySelectorAll('.bulk-check').length;\n\t\t\t\t\t\t// The hidden in-queue mirror keeps #select-all-toggle in sync so\n\t\t\t\t\t\t// no JS path that references it is orphaned.\n\t\t\t\t\t\tvar toggle = document.getElementById('select-all-toggle');\n\t\t\t\t\t\tif (toggle) {\n\t\t\t\t\t\t\ttoggle.checked = total > 0 && checked.length === total;\n\t\t\t\t\t\t\ttoggle.indeterminate = checked.length > 0 && checked.length < total;\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Select-all + split button are only meaningful with rows present.\n\t\t\t\t\t\tshowInline(toolbarSelectAllWrap, total > 0);\n\t\t\t\t\t\tif (toolbarSelectAll) {\n\t\t\t\t\t\t\ttoolbarSelectAll.checked = total > 0 && checked.length === total;\n\t\t\t\t\t\t\ttoolbarSelectAll.indeterminate = checked.length > 0 && checked.length < total;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tshowInline(bulkSplit, total > 0);\n\t\t\t\t\t\tvar none = checked.length === 0;\n\t\t\t\t\t\tfixBtn.disabled = none;\n\t\t\t\t\t\tif (menuToggle) menuToggle.disabled = none;\n\t\t\t\t\t\tif (dismissBtn) dismissBtn.disabled = none;\n\t\t\t\t\t\tif (none) closeMenu();\n\t\t\t\t\t\tfixBtn.textContent = none\n\t\t\t\t\t\t\t? (L.labelFixNone || 'Fix selected')\n\t\t\t\t\t\t\t: pluralize(checked.length, L.labelFixOne || 'Fix 1 selected', L.labelFixOther || 'Fix {count} selected');\n\t\t\t\t\t\tif (dismissBtn) {\n\t\t\t\t\t\t\tdismissBtn.textContent = none\n\t\t\t\t\t\t\t\t? (dismissBtn.dataset.labelDismissNone || 'Dismiss selected')\n\t\t\t\t\t\t\t\t: pluralize(checked.length, dismissBtn.dataset.labelDismissOne || 'Dismiss 1 selected', dismissBtn.dataset.labelDismissOther || 'Dismiss {count} selected');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction getCSRF() {\n\t\t\t\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);\n\t\t\t\t\t\treturn match ? decodeURIComponent(match[1]) : '';\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction getCheckedIDs() {\n\t\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\t\treturn Array.prototype.map.call(checked, function(cb) { return cb.value; });\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction setAllChecked(state) {\n\t\t\t\t\t\tqueue.querySelectorAll('.bulk-check').forEach(function(cb) { cb.checked = state; });\n\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction reloadQueueRows() {\n\t\t\t\t\t\t// Root-relative: htmx:configRequest auto-prepends basePath.\n\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t}\n\n\t\t\t\t\tqueue.addEventListener('click', function(e) {\n\t\t\t\t\t\tvar cb = e.target;\n\t\t\t\t\t\tif (!cb.classList.contains('bulk-check')) return;\n\t\t\t\t\t\tif (e.shiftKey && lastChecked && lastChecked !== cb) {\n\t\t\t\t\t\t\tvar boxes = Array.from(queue.querySelectorAll('.bulk-check'));\n\t\t\t\t\t\t\tvar start = boxes.indexOf(lastChecked);\n\t\t\t\t\t\t\tvar end = boxes.indexOf(cb);\n\t\t\t\t\t\t\tif (start > -1 && end > -1) {\n\t\t\t\t\t\t\t\tvar lo = Math.min(start, end);\n\t\t\t\t\t\t\t\tvar hi = Math.max(start, end);\n\t\t\t\t\t\t\t\tfor (var i = lo; i <= hi; i++) { boxes[i].checked = cb.checked; }\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tlastChecked = cb;\n\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t});\n\t\t\t\t\tqueue.addEventListener('change', function(e) {\n\t\t\t\t\t\tif (e.target.id === 'select-all-toggle') { setAllChecked(e.target.checked); return; }\n\t\t\t\t\t\tif (e.target.classList.contains('bulk-check')) updateBulkControls();\n\t\t\t\t\t});\n\t\t\t\t\t// Toolbar select-all checkbox drives the same check/uncheck-all path.\n\t\t\t\t\tif (toolbarSelectAll) {\n\t\t\t\t\t\ttoolbarSelectAll.addEventListener('change', function() { setAllChecked(toolbarSelectAll.checked); });\n\t\t\t\t\t}\n\n\t\t\t\t\t// Split-button caret toggles the Dismiss menu; outside-click and\n\t\t\t\t\t// Escape close it. openMenu/closeMenu use explicit add/remove of the\n\t\t\t\t\t// `hidden` class (NOT classList.toggle's return value, which is\n\t\t\t\t\t// fragile) so the open/close state is unambiguous, and they keep\n\t\t\t\t\t// aria-expanded in sync. Opening moves focus to the Dismiss item so\n\t\t\t\t\t// the menu is keyboard-operable; closing via Escape returns focus to\n\t\t\t\t\t// the caret.\n\t\t\t\t\tfunction menuIsOpen() {\n\t\t\t\t\t\treturn bulkMenu && !bulkMenu.classList.contains('hidden');\n\t\t\t\t\t}\n\t\t\t\t\tfunction openMenu() {\n\t\t\t\t\t\tif (!bulkMenu || !menuToggle || menuToggle.disabled) return;\n\t\t\t\t\t\tbulkMenu.classList.remove('hidden');\n\t\t\t\t\t\tmenuToggle.setAttribute('aria-expanded', 'true');\n\t\t\t\t\t\tif (dismissBtn && !dismissBtn.disabled) dismissBtn.focus();\n\t\t\t\t\t}\n\t\t\t\t\tif (menuToggle && bulkMenu) {\n\t\t\t\t\t\tmenuToggle.addEventListener('click', function(e) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\te.stopPropagation();\n\t\t\t\t\t\t\tif (menuIsOpen()) closeMenu(); else openMenu();\n\t\t\t\t\t\t});\n\t\t\t\t\t\t// Outside-click closes the menu. The toggle's own click stops\n\t\t\t\t\t\t// propagation, so this only fires for clicks elsewhere.\n\t\t\t\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\t\t\t\tif (!menuIsOpen()) return;\n\t\t\t\t\t\t\tif (bulkSplit && !bulkSplit.contains(e.target)) closeMenu();\n\t\t\t\t\t\t});\n\t\t\t\t\t\t// Escape closes and restores focus to the caret.\n\t\t\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\t\t\tif (e.key !== 'Escape' || !menuIsOpen()) return;\n\t\t\t\t\t\t\tcloseMenu();\n\t\t\t\t\t\t\tif (menuToggle) menuToggle.focus();\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\t// runBulkDismiss POSTs the bulk-dismiss endpoint for the selection,\n\t\t\t\t\t// then reloads the queue. Failures surface a localized toast.\n\t\t\t\t\tvar bulkInFlight = false;\n\t\t\t\t\tfunction runBulkDismiss() {\n\t\t\t\t\t\tif (bulkInFlight) return;\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tcloseMenu();\n\t\t\t\t\t\tbulkInFlight = true;\n\t\t\t\t\t\tfixBtn.disabled = true;\n\t\t\t\t\t\tif (dismissBtn) dismissBtn.disabled = true;\n\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/bulk-dismiss', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },\n\t\t\t\t\t\t\tbody: JSON.stringify({ids: ids})\n\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\t\treloadQueueRows();\n\t\t\t\t\t\t\t} else if (res.status === 401) {\n\t\t\t\t\t\t\t\twindow.swDashboardPanels && window.swDashboardPanels.handleSessionExpiry && window.swDashboardPanels.handleSessionExpiry();\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tconsole.warn('bulk dismiss failed', res.status);\n\t\t\t\t\t\t\t\tvar tpl = L.labelDismissFailed || 'Dismiss failed ({status})';\n\t\t\t\t\t\t\t\twindow.showToast && window.showToast(tpl.replace('{status}', res.status));\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\t\tconsole.warn('bulk dismiss error', err);\n\t\t\t\t\t\t\twindow.showToast && window.showToast(L.labelNetworkError || 'Network error');\n\t\t\t\t\t\t}).finally(function() {\n\t\t\t\t\t\t\tbulkInFlight = false;\n\t\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\t// runBulkFix fixes the selection one at a time, showing live\n\t\t\t\t\t// \"Fixing N/total\" progress on the fix button, then reloads the\n\t\t\t\t\t// queue. The dismiss action is disabled for the duration so a\n\t\t\t\t\t// second bulk op cannot start mid-flight.\n\t\t\t\t\tfunction runBulkFix() {\n\t\t\t\t\t\tif (bulkInFlight) return;\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tcloseMenu();\n\t\t\t\t\t\tbulkInFlight = true;\n\t\t\t\t\t\tfixBtn.disabled = true;\n\t\t\t\t\t\tif (menuToggle) menuToggle.disabled = true;\n\t\t\t\t\t\tif (dismissBtn) dismissBtn.disabled = true;\n\t\t\t\t\t\tvar total = ids.length, failed = 0;\n\t\t\t\t\t\tvar progressTpl = L.labelFixingProgress || 'Fixing {current}/{total}...';\n\t\t\t\t\t\tfunction fixNext(i) {\n\t\t\t\t\t\t\tif (i >= ids.length) {\n\t\t\t\t\t\t\t\tbulkInFlight = false;\n\t\t\t\t\t\t\t\tif (failed > 0) {\n\t\t\t\t\t\t\t\t\tvar tpl = pluralize(failed, L.labelFixesFailedOne || '1 of {total} fixes failed', L.labelFixesFailedOther || '{failed} of {total} fixes failed');\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast(tpl.replace('{failed}', failed).replace('{total}', total));\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t// The queue reload re-runs updateBulkControls via\n\t\t\t\t\t\t\t\t// afterSwap, restoring the button labels/state.\n\t\t\t\t\t\t\t\treloadQueueRows();\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tfixBtn.textContent = progressTpl.replace('{current}', i + 1).replace('{total}', total);\n\t\t\t\t\t\t\tvar sessionExpired = false;\n\t\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/' + ids[i] + '/fix', {\n\t\t\t\t\t\t\t\tmethod: 'POST', headers: { 'X-CSRF-Token': getCSRF() }\n\t\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\t\tif (res.status === 401) {\n\t\t\t\t\t\t\t\t\t// Session gone: redirect to login and stop the loop\n\t\t\t\t\t\t\t\t\t// rather than churning through doomed requests.\n\t\t\t\t\t\t\t\t\tsessionExpired = true;\n\t\t\t\t\t\t\t\t\twindow.swDashboardPanels && window.swDashboardPanels.handleSessionExpiry && window.swDashboardPanels.handleSessionExpiry();\n\t\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\t\t\t\tconsole.warn('bulk fix failed', ids[i], res.status);\n\t\t\t\t\t\t\t\t\tfailed++;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t  .catch(function(err) { console.warn('bulk fix error', ids[i], err); failed++; })\n\t\t\t\t\t\t\t  .finally(function() { if (!sessionExpired) fixNext(i + 1); });\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfixNext(0);\n\t\t\t\t\t}\n\n\t\t\t\t\tfixBtn.addEventListener('click', runBulkFix);\n\t\t\t\t\tif (dismissBtn) dismissBtn.addEventListener('click', runBulkDismiss);\n\n\t\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\t\tif (e.detail.target && (e.detail.target.id === 'action-queue' || e.detail.target.id === 'action-queue-entries')) {\n\t\t\t\t\t\t\t// A fresh load has zero checked rows, so this reveals the\n\t\t\t\t\t\t\t// controls when the queue has rows and hides them when it\n\t\t\t\t\t\t\t// came back empty/errored. Prev/Next paging swaps only the\n\t\t\t\t\t\t\t// nested #action-queue-entries, so refresh the controls there\n\t\t\t\t\t\t\t// too or the select-all checkbox and bulk button go stale.\n\t\t\t\t\t\t\tupdateBulkControls();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t\tdocument.body.addEventListener('dashboard:action-resolved', reloadQueueRows);\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar bp = (function() {\n\t\t\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\treturn el ? el.content : '';\n\t\t\t\t\t})();\n\t\t\t\t\tfunction updateLastEvaluated() {\n\t\t\t\t\t\tvar el = document.getElementById('last-evaluated-text');\n\t\t\t\t\t\tif (!el) { return; }\n\t\t\t\t\t\t// The bubble splits a static \"Last evaluated\" caption (rendered\n\t\t\t\t\t\t// server-side) from the dynamic value; write only the value span\n\t\t\t\t\t\t// so the caption survives. data-* carriers stay on the button.\n\t\t\t\t\t\tvar valEl = document.getElementById('last-evaluated-value') || el;\n\t\t\t\t\t\tvar d = el.dataset;\n\t\t\t\t\t\tfetch(bp + '/api/v1/rules/status')\n\t\t\t\t\t\t\t.then(function(res) {\n\t\t\t\t\t\t\t\tif (!res.ok) {\n\t\t\t\t\t\t\t\t\tconsole.warn('last-evaluated fetch failed', res.status);\n\t\t\t\t\t\t\t\t\treturn null;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t\tif (!data) { valEl.textContent = d.labelUnavailable; return; }\n\t\t\t\t\t\t\t\tif (!data.last_evaluation_at) { valEl.textContent = d.labelNever; return; }\n\t\t\t\t\t\t\t\tvar evalTime = new Date(data.last_evaluation_at);\n\t\t\t\t\t\t\t\tif (isNaN(evalTime.getTime())) { valEl.textContent = d.labelUnavailable; return; }\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - evalTime) / 60000);\n\t\t\t\t\t\t\t\tvar rel;\n\t\t\t\t\t\t\t\tif (diffMin < 1) rel = d.labelJustNow;\n\t\t\t\t\t\t\t\telse if (diffMin < 60) rel = d.tplMinutes.replace('{count}', diffMin);\n\t\t\t\t\t\t\t\telse if (diffMin < 1440) rel = d.tplHours.replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\telse rel = d.tplDays.replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t\tvalEl.textContent = rel;\n\t\t\t\t\t\t\t\tel.title = evalTime.toLocaleString();\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\t\t\tconsole.warn('last-evaluated fetch error', err);\n\t\t\t\t\t\t\t\tvalEl.textContent = d.labelUnavailable;\n\t\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t\tupdateLastEvaluated();\n\t\t\t\t\t// Re-resolve after every action-queue reload so the stat tracks a\n\t\t\t\t\t// just-completed run without a full page refresh (#1796). A manual\n\t\t\t\t\t// \"Run rules\" reloads the queue when it settles, and the run-all\n\t\t\t\t\t// handler now advances last_evaluation_at (scheduler.MarkEvaluated),\n\t\t\t\t\t// so this re-fetch surfaces the new time. Mirrors the stable\n\t\t\t\t\t// dashboard, which re-runs updateLastEvaluated on the same event.\n\t\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\t\tif (e.detail && e.detail.target && e.detail.target.id === 'action-queue') {\n\t\t\t\t\t\t\tupdateLastEvaluated();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t// Dashboard keyboard shortcuts (M55 #1790, spec 01-dashboard.md:88).\n\t\t\t\t// The page-level action keys (/ f r) and the roving layer\n\t\t\t\t// (j/k move card focus, Enter opens the focused artist) are handled\n\t\t\t\t// entirely by the SHARED vendored helper (web/static/js/keyboard.js,\n\t\t\t\t// #1789) from the declarative data-sw-* attributes on the search\n\t\t\t\t// input, filter trigger, run-rules button, and #action-queue-entries\n\t\t\t\t// roving list. No bespoke keydown listener remains here.\n\t\t\t\t//\n\t\t\t\t// This block wires ONLY the per-screen CONTEXTUAL key u via the\n\t\t\t\t// helper's onContext() hook. u undoes the focused card, but ONLY when\n\t\t\t\t// that card currently shows its undo strip (the UndoToast that a Fix\n\t\t\t\t// swaps in via outerHTML). Because the action is CONDITIONAL on the\n\t\t\t\t// strip being present, the declarative data-sw-roving-context\n\t\t\t\t// attribute (which would unconditionally click a fixed target) is the\n\t\t\t\t// wrong mechanism; onContext lets the handler inspect the focused item\n\t\t\t\t// at press time and act only when the Undo button is live.\n\t\t\t\t(function () {\n\t\t\t\t\tif (!window.swKeyboardShortcuts || typeof window.swKeyboardShortcuts.onContext !== 'function') return;\n\t\t\t\t\t// scope matches data-sw-scope on the roving list; it is reserved\n\t\t\t\t\t// for forward-compat (the helper has one global ctxHandler today).\n\t\t\t\t\twindow.swKeyboardShortcuts.onContext('dashboard', function (item) {\n\t\t\t\t\t\tif (!item) return;\n\t\t\t\t\t\t// The undo strip (UndoToast) replaces the card via outerHTML on\n\t\t\t\t\t\t// a fix; its Undo button posts to /api/v1/fix-undo/<id>. Click it\n\t\t\t\t\t\t// only when present, so u is a no-op on a not-yet-fixed card.\n\t\t\t\t\t\tvar undoBtn = item.querySelector('button[hx-post*=\"/fix-undo/\"]');\n\t\t\t\t\t\tif (undoBtn) undoBtn.click();\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1498,56 +1511,56 @@ func dashSkeletonRow(titleWidth, subtitleWidth string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var95 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var95 == nil {
-			templ_7745c5c3_Var95 = templ.NopComponent
+		templ_7745c5c3_Var96 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var96 == nil {
+			templ_7745c5c3_Var96 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "<div class=\"sw-dash-skeleton animate-pulse rounded-[10px] border border-gray-200/70 px-3 py-2.5 dark:border-gray-700/60\"><div class=\"flex items-center gap-3\"><div class=\"h-3.5 w-3.5 rounded bg-gray-200 dark:bg-gray-700\"></div><div class=\"h-8 w-8 shrink-0 rounded-full bg-gray-200 dark:bg-gray-700\"></div><div class=\"flex-1 space-y-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "<div class=\"sw-dash-skeleton animate-pulse rounded-[10px] border border-gray-200/70 px-3 py-2.5 dark:border-gray-700/60\"><div class=\"flex items-center gap-3\"><div class=\"h-3.5 w-3.5 rounded bg-gray-200 dark:bg-gray-700\"></div><div class=\"h-8 w-8 shrink-0 rounded-full bg-gray-200 dark:bg-gray-700\"></div><div class=\"flex-1 space-y-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var96 = []any{"h-3.5 rounded bg-gray-200 dark:bg-gray-700", titleWidth}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var96...)
+		var templ_7745c5c3_Var97 = []any{"h-3.5 rounded bg-gray-200 dark:bg-gray-700", titleWidth}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var97...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var97 string
-		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var96).String())
+		var templ_7745c5c3_Var98 string
+		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var97).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var97)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var98)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var98 = []any{"h-3 rounded bg-gray-200 dark:bg-gray-700", subtitleWidth}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var98...)
+		var templ_7745c5c3_Var99 = []any{"h-3 rounded bg-gray-200 dark:bg-gray-700", subtitleWidth}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var99...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var99 string
-		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var98).String())
+		var templ_7745c5c3_Var100 string
+		templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var99).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var99)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var100)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\"></div></div><div class=\"h-7 w-16 rounded bg-gray-200 dark:bg-gray-700\"></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "\"></div></div><div class=\"h-7 w-16 rounded bg-gray-200 dark:bg-gray-700\"></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1589,26 +1602,26 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var100 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var100 == nil {
-			templ_7745c5c3_Var100 = templ.NopComponent
+		templ_7745c5c3_Var101 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var101 == nil {
+			templ_7745c5c3_Var101 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(data.Violations) == 0 && data.Offset == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<span id=\"next-dash-count\" class=\"meta\" hx-swap-oob=\"true\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "<span id=\"next-dash-count\" class=\"meta\" hx-swap-oob=\"true\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var101 string
-			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
+			var templ_7745c5c3_Var102 string
+			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1349, Col: 158}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1617,98 +1630,98 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "       <input type=\"checkbox\" id=\"select-all-toggle\" class=\"hidden\" aria-hidden=\"true\" tabindex=\"-1\"> <span id=\"next-dash-count\" class=\"meta\" hx-swap-oob=\"true\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var102 string
-			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1360, Col: 158}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</span>                  <div id=\"action-queue-entries\" class=\"space-y-1.5\" data-sw-roving-list data-sw-scope=\"dashboard\" data-sw-roving-label-j=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "       <input type=\"checkbox\" id=\"select-all-toggle\" class=\"hidden\" aria-hidden=\"true\" tabindex=\"-1\"> <span id=\"next-dash-count\" class=\"meta\" hx-swap-oob=\"true\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var103 string
-			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_next"))
+			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1384, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1360, Col: 158}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var103)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "\" data-sw-roving-label-k=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "</span>                  <div id=\"action-queue-entries\" class=\"space-y-1.5\" data-sw-roving-list data-sw-scope=\"dashboard\" data-sw-roving-label-j=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var104 string
-			templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_prev"))
+			templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1385, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1384, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var104)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "\" data-sw-roving-label-Enter=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "\" data-sw-roving-label-k=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var105 string
-			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_open"))
+			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1386, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1385, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var105)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "\" data-sw-roving-label-h=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "\" data-sw-roving-label-Enter=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var106 string
-			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_prev"))
+			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_open"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1387, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1386, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var106)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\" data-sw-roving-label-l=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\" data-sw-roving-label-h=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var107 string
-			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_next"))
+			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1388, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1387, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "\" data-sw-roving-context-key=\"u\" data-sw-roving-context-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "\" data-sw-roving-label-l=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var108 string
-			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_undo"))
+			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1390, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1388, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var108)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "\" data-sw-roving-boundary-next=\"#sw-page-next\" data-sw-roving-boundary-prev=\"#sw-page-prev\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "\" data-sw-roving-context-key=\"u\" data-sw-roving-context-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var109 string
+			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_undo"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1390, Col: 72}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var109)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "\" data-sw-roving-boundary-next=\"#sw-page-next\" data-sw-roving-boundary-prev=\"#sw-page-prev\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1718,7 +1731,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1799,25 +1812,25 @@ func DashboardActionQueuePage(data ActionQueueData) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var109 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var109 == nil {
-			templ_7745c5c3_Var109 = templ.NopComponent
+		templ_7745c5c3_Var110 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var110 == nil {
+			templ_7745c5c3_Var110 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "<span id=\"next-dash-count\" class=\"meta\" hx-swap-oob=\"true\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "<span id=\"next-dash-count\" class=\"meta\" hx-swap-oob=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var110 string
-		templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
+		var templ_7745c5c3_Var111 string
+		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1455, Col: 157}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1891,64 +1904,64 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var111 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var111 == nil {
-			templ_7745c5c3_Var111 = templ.NopComponent
+		templ_7745c5c3_Var112 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var112 == nil {
+			templ_7745c5c3_Var112 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "<div id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var112 string
-		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.ResolveAttributeValue("queue-item-" + v.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1503, Col: 31}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var112)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "\" data-sw-roving-item data-sw-roving-key=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var113 string
-		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
+		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue("queue-item-" + v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1503, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1503, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var113)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "\"><a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "\" data-sw-roving-item data-sw-roving-key=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var114 templ.SafeURL
-		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + v.ArtistID))
+		var templ_7745c5c3_Var114 string
+		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1503, Col: 79}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "\"><a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var115 templ.SafeURL
+		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + v.ArtistID))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1505, Col: 60}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "\" data-sw-roving-activate class=\"sr-only\" tabindex=\"-1\" aria-hidden=\"true\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var115 string
-		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinStringErrs(v.ArtistName)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1510, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "</a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "\" data-sw-roving-activate class=\"sr-only\" tabindex=\"-1\" aria-hidden=\"true\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var116 string
+		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(v.ArtistName)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1510, Col: 17}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1956,7 +1969,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1988,39 +2001,39 @@ func DashboardActivityFeed(data ActivityFeedData) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var116 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var116 == nil {
-			templ_7745c5c3_Var116 = templ.NopComponent
+		templ_7745c5c3_Var117 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var117 == nil {
+			templ_7745c5c3_Var117 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(data.Changes) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "<div class=\"flex flex-col items-center gap-2 px-4 py-10 text-center\"><svg class=\"h-8 w-8 text-gray-300 dark:text-gray-600\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg><p class=\"text-sm text-gray-500 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var117 string
-			templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1529, Col: 90}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "</p><button type=\"button\" class=\"text-sm font-medium text-blue-600 hover:underline dark:text-blue-400\" onclick=\"swDashboardPanels && swDashboardPanels.openRunRules()\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "<div class=\"flex flex-col items-center gap-2 px-4 py-10 text-center\"><svg class=\"h-8 w-8 text-gray-300 dark:text-gray-600\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg><p class=\"text-sm text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var118 string
-			templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle_action"))
+			templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1535, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1529, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "</p><button type=\"button\" class=\"text-sm font-medium text-blue-600 hover:underline dark:text-blue-400\" onclick=\"swDashboardPanels && swDashboardPanels.openRunRules()\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var119 string
+			templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle_action"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1535, Col: 46}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "</button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2057,148 +2070,148 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var119 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var119 == nil {
-			templ_7745c5c3_Var119 = templ.NopComponent
+		templ_7745c5c3_Var120 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var120 == nil {
+			templ_7745c5c3_Var120 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "<div class=\"sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "<div class=\"sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var120 = []any{"h-4 w-4 mt-0.5 shrink-0", activityKindToneClass(activityChangeKind(c))}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var120...)
+		var templ_7745c5c3_Var121 = []any{"h-4 w-4 mt-0.5 shrink-0", activityKindToneClass(activityChangeKind(c))}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var121...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "<svg class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var121 string
-		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var120).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var121)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "<svg class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var122 string
-		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.ResolveAttributeValue(activityKindIconPath(activityChangeKind(c)))
+		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var121).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1553, Col: 103}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var122)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\"></path></svg><div class=\"min-w-0 flex-1\"><div class=\"flex items-start justify-between gap-2\"><span class=\"truncate text-gray-800 dark:text-gray-200\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var123 string
-		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(activityChangeText(ctx, c))
+		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(activityKindIconPath(activityChangeKind(c)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1557, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1553, Col: 103}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "</span> <time datetime=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\"></path></svg><div class=\"min-w-0 flex-1\"><div class=\"flex items-start justify-between gap-2\"><span class=\"truncate text-gray-800 dark:text-gray-200\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var124 string
-		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format(time.RFC3339))
+		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(activityChangeText(ctx, c))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1559, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1557, Col: 88}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var124)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "\" title=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "</span> <time datetime=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var125 string
-		templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
+		templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1560, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1559, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var125)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var126 string
-		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs(activityRelTime(ctx, c.CreatedAt))
+		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1563, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1560, Col: 58}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "</time></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var127 string
+		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(activityRelTime(ctx, c.CreatedAt))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1563, Col: 40}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</time></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if c.ArtistID != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "<a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "<a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var127 templ.SafeURL
-			templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + c.ArtistID))
+			var templ_7745c5c3_Var128 templ.SafeURL
+			templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + c.ArtistID))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1568, Col: 62}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var128 string
-			templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.view_artist"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1570, Col: 44}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var128)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var129 string
-			templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(c.ArtistName)
+			templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.view_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1572, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1570, Col: 44}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var129)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "</a>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var130 string
+			templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(c.ArtistName)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1572, Col: 19}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "</a>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

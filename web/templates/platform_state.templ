@@ -201,14 +201,14 @@ templ platformStateRow(field, swValue, platValue string, match, bothEmpty, mono 
 			if bothEmpty {
 				<span class="text-gray-300 dark:text-gray-600">--</span>
 			} else if match {
-				<span class="text-green-500" title={ t(ctx, "common.match") }>
-					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<span class="text-green-500" title={ t(ctx, "common.match") } aria-label={ t(ctx, "common.match") } role="img">
+					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
 					</svg>
 				</span>
 			} else {
-				<span class="text-amber-500" title={ t(ctx, "common.mismatch") }>
-					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<span class="text-amber-500" title={ t(ctx, "common.mismatch") } aria-label={ t(ctx, "common.mismatch") } role="img">
+					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z"></path>
 					</svg>
 				</span>
