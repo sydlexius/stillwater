@@ -137,6 +137,48 @@ func TestMergeAndReconcile_FullyUnlinkedSurvivorNoMBIDSkipsRefresh(t *testing.T)
 	}
 }
 
+// TestMergeAndReconcile_FullyUnlinkedSurvivorInheritsMBIDReachesRefresh is the
+// "one hop removed" variant of the #2325 reachability defect (CR-1). Here the
+// survivor has NO MBID of its own; a loser carries one, so commitMergeDB's
+// fill-empty inheritance stamps the loser's MBID onto the survivor's DB row.
+// The survivor is already at its canonical basename (no rename fires) and has
+// no platform_ids row anywhere (AffectedConnectionIDs empty). Because
+// MergeResult.SurvivorMBID is snapshotted from survivor.MBID ("") before the
+// inheritance runs, the reachability gate would still see "" and skip the
+// Lidarr self-heal UNLESS commitMergeDB backfills the inherited MBID onto the
+// in-memory result. This test proves that backfill: SyncMergeRefresh must be
+// reached (ref.calls == 1) via the inherited MBID. Reverting the backfill in
+// commitMergeDB makes this FAIL (ref.calls == 0).
+func TestMergeAndReconcile_FullyUnlinkedSurvivorInheritsMBIDReachesRefresh(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t) // survivor dir "The Cure" is prefix-canonical
+	ctx := context.Background()
+	ref := &recordingRefresher{}
+	svc.SetPlatformMergeRefresher(ref)
+
+	// Survivor has NO MBID; the loser carries one. commitMergeDB inherits it.
+	seedSurvivorMBID(t, db, loserID, "22222222-2222-2222-2222-222222222222")
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile: %v", err)
+	}
+	// Reachability via the INHERITED MBID: the gate must see the backfilled
+	// SurvivorMBID and invoke the self-heal entry point.
+	if ref.calls != 1 {
+		t.Fatalf("SyncMergeRefresh called %d times, want 1 (inherited MBID must backfill SurvivorMBID and reach self-heal)", ref.calls)
+	}
+	if res.SurvivorMBID != "22222222-2222-2222-2222-222222222222" {
+		t.Errorf("res.SurvivorMBID = %q, want the inherited MBID (backfilled by commitMergeDB)", res.SurvivorMBID)
+	}
+	// Reachability came from the inherited MBID, not a canonical rename.
+	if res.CanonicalRename != nil {
+		t.Errorf("CanonicalRename = %+v, want nil (survivor already canonical)", res.CanonicalRename)
+	}
+}
+
 // seedEmbyConn inserts the minimal "conn-emby" connections row so
 // SetPlatformID's FK is satisfied. Mirrors the inline connection-row seeding
 // the Task 2 tests use; all reconcile tests map the survivor to this one.

@@ -117,12 +117,16 @@ func (p *Publisher) SyncMergeRefresh(ctx context.Context, survivorID string, con
 	for connID := range survivorByConn {
 		alreadyLinked[connID] = true
 	}
-	if mbid := p.mbidFor(ctx, survivorID); mbid != "" {
+	// Detach from the originating HTTP request (WithoutCancel), mirroring
+	// refreshOne's post-commit best-effort context handling: the merge has
+	// already committed, so a client disconnect must not cancel this self-heal.
+	healCtx := context.WithoutCancel(ctx)
+	if mbid := p.mbidFor(healCtx, survivorID); mbid != "" {
 		inConnIDs := make(map[string]bool, len(connectionIDs))
 		for _, cid := range connectionIDs {
 			inConnIDs[cid] = true
 		}
-		for connID, platformArtistID := range p.selfHealLidarrLinks(ctx, survivorID, mbid, alreadyLinked) {
+		for connID, platformArtistID := range p.selfHealLidarrLinks(healCtx, survivorID, mbid, alreadyLinked) {
 			survivorByConn[connID] = platformArtistID
 			if !inConnIDs[connID] {
 				connectionIDs = append(connectionIDs, connID)

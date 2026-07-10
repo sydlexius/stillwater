@@ -1293,6 +1293,7 @@ func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArti
 	// result.Warnings AFTER tx.Commit() succeeds so a failed commit does
 	// not record a false-positive inheritance.
 	var inheritedMBIDWarning string
+	var inheritedMBID string
 	if survivor.MBID == "" {
 		for _, l := range losers {
 			if l.MBID == "" {
@@ -1306,6 +1307,7 @@ func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArti
 				survivor.ID, l.MBID); err != nil {
 				return fmt.Errorf("filling survivor mbid: %w", err)
 			}
+			inheritedMBID = l.MBID
 			inheritedMBIDWarning = fmt.Sprintf(
 				"survivor %s inherited MusicBrainz ID %s from loser %s", survivor.ID, l.MBID, l.ID)
 			break
@@ -1344,6 +1346,16 @@ func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArti
 	result.LosersDeleted = append(result.LosersDeleted, deletedIDs...)
 	if inheritedMBIDWarning != "" {
 		result.Warnings = append(result.Warnings, inheritedMBIDWarning)
+	}
+	// Backfill the inherited MBID onto the in-memory result snapshot. The
+	// SurvivorMBID captured in MergeArtists (from survivor.MBID) is "" for a
+	// fully-unlinked survivor with no MBID; without this the reachability gate
+	// in refreshAffectedPlatforms (which runs AFTER commitMergeDB) would still
+	// see "" and skip the Lidarr self-heal, even though the DB now holds the
+	// inherited MBID (#2325 CR-1). Deferred to post-commit alongside the warning
+	// so a failed commit records neither.
+	if inheritedMBID != "" {
+		result.SurvivorMBID = inheritedMBID
 	}
 	return nil
 }

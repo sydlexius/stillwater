@@ -111,8 +111,13 @@ func (p *Publisher) SyncRename(ctx context.Context, artistID, _ /* oldPath */, n
 	for _, pid := range platformIDs {
 		linked[pid.ConnectionID] = true
 	}
-	if mbid := p.mbidFor(ctx, artistID); mbid != "" {
-		for connID, platformArtistID := range p.selfHealLidarrLinks(ctx, artistID, mbid, linked) {
+	// Detach from the originating HTTP request (WithoutCancel), mirroring
+	// refreshOne's post-commit best-effort context handling: the rename has
+	// already committed on disk, so a client disconnect must not cancel this
+	// self-heal.
+	healCtx := context.WithoutCancel(ctx)
+	if mbid := p.mbidFor(healCtx, artistID); mbid != "" {
+		for connID, platformArtistID := range p.selfHealLidarrLinks(healCtx, artistID, mbid, linked) {
 			platformIDs = append(platformIDs, artist.PlatformID{
 				ArtistID:         artistID,
 				ConnectionID:     connID,
