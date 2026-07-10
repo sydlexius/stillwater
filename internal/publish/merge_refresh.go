@@ -85,7 +85,12 @@ var mergeRefresherFactory = func(conn *connection.Connection, logger *slog.Logge
 // Lidarr artist lingers pointing at the deleted folder and must be cleaned up on
 // the Lidarr side manually (broader eviction deferred to #2318).
 func (p *Publisher) SyncMergeRefresh(ctx context.Context, survivorID string, connectionIDs []string) ([]artist.PlatformRefreshResult, error) {
-	if p == nil || len(connectionIDs) == 0 {
+	// Only the nil-publisher guard remains: a fully-unlinked merge (empty
+	// connectionIDs) must still reach self-heal, since the whole point is to
+	// discover a Lidarr link that no pre-delete AffectedConnectionIDs entry
+	// captured. The refresh loop below is a no-op when connectionIDs stays
+	// empty after self-heal.
+	if p == nil {
 		return nil, nil
 	}
 	// Resolve the survivor's platform IDs once, keyed by connection, so Lidarr
@@ -101,6 +106,40 @@ func (p *Publisher) SyncMergeRefresh(ctx context.Context, survivorID string, con
 		for _, pid := range pids {
 			survivorByConn[pid.ConnectionID] = pid.PlatformArtistID
 		}
+	}
+
+	// Self-heal: a Lidarr connection linked only after the merge began (or never
+	// linked to the survivor) is absent from BOTH survivorByConn AND the
+	// pre-delete AffectedConnectionIDs. Resolve-by-MBID and union each freshly
+	// linked connection into both, so refreshOne can find the survivor's numeric
+	// ID and the loop actually visits the connection. Best-effort: never errors.
+	alreadyLinked := make(map[string]bool, len(survivorByConn))
+	for connID := range survivorByConn {
+		alreadyLinked[connID] = true
+	}
+	// Detach from the originating HTTP request (WithoutCancel), mirroring
+	// refreshOne's post-commit best-effort context handling: the merge has
+	// already committed, so a client disconnect must not cancel this self-heal.
+	healCtx := context.WithoutCancel(ctx)
+	if mbid := p.mbidFor(healCtx, survivorID); mbid != "" {
+		inConnIDs := make(map[string]bool, len(connectionIDs))
+		for _, cid := range connectionIDs {
+			inConnIDs[cid] = true
+		}
+		for connID, platformArtistID := range p.selfHealLidarrLinks(healCtx, survivorID, mbid, alreadyLinked) {
+			survivorByConn[connID] = platformArtistID
+			if !inConnIDs[connID] {
+				connectionIDs = append(connectionIDs, connID)
+				inConnIDs[connID] = true
+			}
+		}
+	}
+
+	// Nothing to reconcile: neither an affected connection nor a self-healed
+	// Lidarr link. Return nil (not an empty slice) to preserve the prior
+	// "no connections" contract for callers that distinguish the two.
+	if len(connectionIDs) == 0 {
+		return nil, nil
 	}
 	results := make([]artist.PlatformRefreshResult, 0, len(connectionIDs))
 	for _, cid := range connectionIDs {

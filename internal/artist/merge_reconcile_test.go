@@ -27,11 +27,13 @@ func (r *recordingSyncer) SyncRename(_ context.Context, artistID, _, newPath str
 type recordingRefresher struct {
 	survivorID string
 	conns      []string
+	calls      int
 	err        error
 	failConns  map[string]string // connID -> error string -> PlatformRemapFailed
 }
 
 func (r *recordingRefresher) SyncMergeRefresh(_ context.Context, survivorID string, connectionIDs []string) ([]PlatformRefreshResult, error) {
+	r.calls++
 	r.survivorID = survivorID
 	r.conns = append(r.conns, connectionIDs...)
 	if r.err != nil {
@@ -47,6 +49,134 @@ func (r *recordingRefresher) SyncMergeRefresh(_ context.Context, survivorID stri
 		out = append(out, res)
 	}
 	return out, nil
+}
+
+// seedSurvivorMBID inserts a musicbrainz provider row for the survivor so
+// DetectDuplicates surfaces a non-empty MBID and MergeResult.SurvivorMBID is
+// populated. This is the signal refreshAffectedPlatforms uses to reach the
+// Lidarr resolve-by-MBID self-heal on a fully-unlinked merge (#2325).
+func seedSurvivorMBID(t *testing.T, db *sql.DB, artistID, mbid string) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO artist_provider_ids (artist_id, provider, provider_id) VALUES (?, 'musicbrainz', ?)`,
+		artistID, mbid); err != nil {
+		t.Fatalf("seeding survivor MBID: %v", err)
+	}
+}
+
+// TestMergeAndReconcile_FullyUnlinkedSurvivorWithMBIDReachesRefresh is the
+// journey-level regression guard for the #2325 P1 reachability defect. A
+// survivor that is already at its canonical basename (no rename fires) and has
+// NO platform_ids row anywhere (AffectedConnectionIDs empty) -- the exact
+// "fully-unlinked merge" the Lidarr self-heal exists for -- must STILL reach
+// SyncMergeRefresh, because that is where the resolve-by-MBID self-heal lives.
+// Before the guard fix, refreshAffectedPlatforms returned early on the empty
+// affected set and this call never happened; this test FAILS on that code and
+// PASSES with the MBID-aware guard. The recordingRefresher stands in for the
+// publish layer (whose self-heal internals are unit-tested in that package);
+// what is proven HERE is that the real merge entry point actually invokes it.
+func TestMergeAndReconcile_FullyUnlinkedSurvivorWithMBIDReachesRefresh(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t) // survivor dir "The Cure" is prefix-canonical
+	ctx := context.Background()
+	ref := &recordingRefresher{}
+	svc.SetPlatformMergeRefresher(ref)
+
+	// Survivor has an MBID but NO connection / SetPlatformID -> fully unlinked.
+	seedSurvivorMBID(t, db, survivorID, "11111111-1111-1111-1111-111111111111")
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile: %v", err)
+	}
+	// Reachability is the whole point: SyncMergeRefresh must have been called
+	// (self-heal's entry point) even though there are zero affected connections.
+	if ref.calls != 1 {
+		t.Fatalf("SyncMergeRefresh called %d times, want 1 (self-heal must be reachable on a fully-unlinked MBID merge)", ref.calls)
+	}
+	if ref.survivorID != survivorID {
+		t.Errorf("refresh survivorID = %q, want %q", ref.survivorID, survivorID)
+	}
+	// Fully unlinked: the affected set passed through is empty (self-heal
+	// discovers Lidarr links itself, inside SyncMergeRefresh).
+	if len(ref.conns) != 0 {
+		t.Errorf("refresh connections = %v, want empty (fully-unlinked survivor)", ref.conns)
+	}
+	// Confirm the reachability came from the MBID gate, not a canonical rename.
+	if res.CanonicalRename != nil {
+		t.Errorf("CanonicalRename = %+v, want nil (survivor already canonical)", res.CanonicalRename)
+	}
+}
+
+// TestMergeAndReconcile_FullyUnlinkedSurvivorNoMBIDSkipsRefresh is the negative
+// guard against over-broadening the #2325 fix: a survivor with NO affected
+// connection AND NO MBID has nothing to reconcile, so SyncMergeRefresh must NOT
+// be called (no spurious refresh). This pins the "only reach self-heal when
+// there is an MBID" half of the relaxed guard.
+func TestMergeAndReconcile_FullyUnlinkedSurvivorNoMBIDSkipsRefresh(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+	ref := &recordingRefresher{}
+	svc.SetPlatformMergeRefresher(ref)
+
+	// No MBID seeded, no connection linked.
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile: %v", err)
+	}
+	if ref.calls != 0 {
+		t.Errorf("SyncMergeRefresh called %d times, want 0 (no MBID and no affected connection -> nothing to reconcile)", ref.calls)
+	}
+	if res.CanonicalRename != nil {
+		t.Errorf("CanonicalRename = %+v, want nil", res.CanonicalRename)
+	}
+}
+
+// TestMergeAndReconcile_FullyUnlinkedSurvivorInheritsMBIDReachesRefresh is the
+// "one hop removed" variant of the #2325 reachability defect (CR-1). Here the
+// survivor has NO MBID of its own; a loser carries one, so commitMergeDB's
+// fill-empty inheritance stamps the loser's MBID onto the survivor's DB row.
+// The survivor is already at its canonical basename (no rename fires) and has
+// no platform_ids row anywhere (AffectedConnectionIDs empty). Because
+// MergeResult.SurvivorMBID is snapshotted from survivor.MBID ("") before the
+// inheritance runs, the reachability gate would still see "" and skip the
+// Lidarr self-heal UNLESS commitMergeDB backfills the inherited MBID onto the
+// in-memory result. This test proves that backfill: SyncMergeRefresh must be
+// reached (ref.calls == 1) via the inherited MBID. Reverting the backfill in
+// commitMergeDB makes this FAIL (ref.calls == 0).
+func TestMergeAndReconcile_FullyUnlinkedSurvivorInheritsMBIDReachesRefresh(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t) // survivor dir "The Cure" is prefix-canonical
+	ctx := context.Background()
+	ref := &recordingRefresher{}
+	svc.SetPlatformMergeRefresher(ref)
+
+	// Survivor has NO MBID; the loser carries one. commitMergeDB inherits it.
+	seedSurvivorMBID(t, db, loserID, "22222222-2222-2222-2222-222222222222")
+
+	res, err := svc.MergeAndReconcile(ctx, MergeRequest{
+		SurvivorID: survivorID, LoserIDs: []string{loserID}, ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeAndReconcile: %v", err)
+	}
+	// Reachability via the INHERITED MBID: the gate must see the backfilled
+	// SurvivorMBID and invoke the self-heal entry point.
+	if ref.calls != 1 {
+		t.Fatalf("SyncMergeRefresh called %d times, want 1 (inherited MBID must backfill SurvivorMBID and reach self-heal)", ref.calls)
+	}
+	if res.SurvivorMBID != "22222222-2222-2222-2222-222222222222" {
+		t.Errorf("res.SurvivorMBID = %q, want the inherited MBID (backfilled by commitMergeDB)", res.SurvivorMBID)
+	}
+	// Reachability came from the inherited MBID, not a canonical rename.
+	if res.CanonicalRename != nil {
+		t.Errorf("CanonicalRename = %+v, want nil (survivor already canonical)", res.CanonicalRename)
+	}
 }
 
 // seedEmbyConn inserts the minimal "conn-emby" connections row so

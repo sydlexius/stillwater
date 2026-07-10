@@ -100,6 +100,32 @@ func (p *Publisher) SyncRename(ctx context.Context, artistID, _ /* oldPath */, n
 			Error:        "platform mappings unavailable: " + truncErr(err),
 		}}, nil
 	}
+	// Self-heal: resolve-by-MBID any enabled Lidarr connections not yet linked
+	// to this artist and append them so the rename's new path reaches Lidarr via
+	// the same MapArtistPath -> UpdateArtistPath chain below. The normal
+	// operator journey has zero Lidarr platform_ids rows, so without this the
+	// loop would never touch Lidarr. Best-effort: selfHealLidarrLinks never
+	// errors, so a heal failure cannot fail the rename. Covers standalone rename
+	// as well as the merge path that routes through here.
+	linked := make(map[string]bool, len(platformIDs))
+	for _, pid := range platformIDs {
+		linked[pid.ConnectionID] = true
+	}
+	// Detach from the originating HTTP request (WithoutCancel), mirroring
+	// refreshOne's post-commit best-effort context handling: the rename has
+	// already committed on disk, so a client disconnect must not cancel this
+	// self-heal.
+	healCtx := context.WithoutCancel(ctx)
+	if mbid := p.mbidFor(healCtx, artistID); mbid != "" {
+		for connID, platformArtistID := range p.selfHealLidarrLinks(healCtx, artistID, mbid, linked) {
+			platformIDs = append(platformIDs, artist.PlatformID{
+				ArtistID:         artistID,
+				ConnectionID:     connID,
+				PlatformArtistID: platformArtistID,
+			})
+		}
+	}
+
 	if len(platformIDs) == 0 {
 		return nil, nil
 	}
