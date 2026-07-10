@@ -96,9 +96,6 @@ jobs:
               - 'internal/connection/**'
               - 'internal/scraper/**'
               - 'internal/api/handlers_*'
-              - '!internal/api/handlers_foreign_files.go'
-              - '!internal/api/handlers_artist_duplicates.go'
-              - '!internal/api/handlers_library.go'
             docs:
               - 'docs/**'
 
