@@ -1659,6 +1659,19 @@ func (s *Service) SetPlatformID(ctx context.Context, artistID, connectionID, pla
 	return s.platformIDs.Set(ctx, artistID, connectionID, platformArtistID)
 }
 
+// SetPlatformIDStable is the divergence-aware, deterministic counterpart of
+// SetPlatformID for non-authoritative writers (scan resolution, manual-library
+// backfill, Lidarr self-heal). It keeps the lexicographically lower platform id
+// for a given (artist, connection) and returns an outcome describing whether a
+// divergent id was tie-broken, so callers can log the deterministic pick rather
+// than silently flip-flopping between duplicate platform items (#2344).
+func (s *Service) SetPlatformIDStable(ctx context.Context, artistID, connectionID, platformArtistID string) (PlatformIDStableOutcome, error) {
+	if artistID == "" || connectionID == "" || platformArtistID == "" {
+		return PlatformIDStableOutcome{}, fmt.Errorf("artist_id, connection_id, and platform_artist_id are required")
+	}
+	return s.platformIDs.SetStable(ctx, artistID, connectionID, platformArtistID)
+}
+
 // GetPlatformID retrieves the platform artist ID for an artist on a specific connection.
 // If no mapping exists, it returns an empty string and a nil error.
 func (s *Service) GetPlatformID(ctx context.Context, artistID, connectionID string) (string, error) {

@@ -37,7 +37,9 @@ func (r *reconcilePlatformLister) ListArtistsWithPlatformMappings(_ context.Cont
 	return r.artistIDs, r.listErr
 }
 
-func (r *reconcilePlatformLister) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+func (r *reconcilePlatformLister) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {
+	return artist.PlatformIDStableOutcome{}, nil
+}
 
 // fakeArtistGetter returns artists from a map keyed by ID.
 type fakeArtistGetter struct {
@@ -384,7 +386,9 @@ func (panicPlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([
 	panic("deliberate test panic in ListArtistsWithPlatformMappings")
 }
 
-func (panicPlatformLister) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+func (panicPlatformLister) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {
+	return artist.PlatformIDStableOutcome{}, nil
+}
 
 // --- additional coverage for uncovered branches ---
 
@@ -406,7 +410,9 @@ func (e *errPlatformListerIDs) ListArtistsWithPlatformMappings(_ context.Context
 	return e.artistIDs, nil
 }
 
-func (e *errPlatformListerIDs) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+func (e *errPlatformListerIDs) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {
+	return artist.PlatformIDStableOutcome{}, nil
+}
 
 // TestReconcileArtworkToPlatforms_NilGateWarns verifies that a nil imageWriteGate
 // logs a one-time Warn at reconcile start rather than silently bypassing gating.

@@ -115,9 +115,12 @@ type artistPlatformLister interface {
 	GetPlatformIDs(ctx context.Context, artistID string) ([]artist.PlatformID, error)
 	ListMembersByArtistID(ctx context.Context, artistID string) ([]artist.BandMember, error)
 	ListArtistsWithPlatformMappings(ctx context.Context) ([]string, error)
-	// SetPlatformID upserts an artist<->connection platform-ID mapping. Used by
-	// the Lidarr merge/rename self-heal to stamp a resolved-by-MBID link.
-	SetPlatformID(ctx context.Context, artistID, connectionID, platformArtistID string) error
+	// SetPlatformIDStable upserts an artist<->connection platform-ID mapping via
+	// the divergence-aware, deterministic stable set. Used by the Lidarr
+	// merge/rename self-heal to stamp a resolved-by-MBID link without silently
+	// clobbering an existing divergent id (#2344). Returns an outcome the caller
+	// logs on divergence; this best-effort path never propagates the error.
+	SetPlatformIDStable(ctx context.Context, artistID, connectionID, platformArtistID string) (artist.PlatformIDStableOutcome, error)
 }
 
 // artistGetter loads a full artist record by ID for the background reconciler.

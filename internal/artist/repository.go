@@ -232,8 +232,18 @@ type LowestCompletenessArtist struct {
 // artists and their IDs on external connections (Emby, Jellyfin, Lidarr).
 type PlatformIDRepository interface {
 	// Set stores or updates the mapping from a Stillwater artist to a
-	// platform-specific artist ID for the given connection.
+	// platform-specific artist ID for the given connection. It fully
+	// overwrites any existing id; use it only for explicit operator-driven
+	// writes (the platform-ids PUT handler).
 	Set(ctx context.Context, artistID, connectionID, platformArtistID string) error
+
+	// SetStable is the divergence-aware, deterministic variant used by
+	// non-authoritative writers (scan, manual-lib backfill, Lidarr self-heal).
+	// It keeps the lexicographically lower id for a given (artist, connection)
+	// and reports whether a divergent id was tie-broken, so callers log the
+	// deterministic pick instead of silently flip-flopping (#2344). Errors are
+	// reserved for genuine DB failures and ErrPlatformIDClaimedByAnotherArtist.
+	SetStable(ctx context.Context, artistID, connectionID, platformArtistID string) (PlatformIDStableOutcome, error)
 
 	// Get looks up the platform-specific artist ID for the given Stillwater
 	// artist and connection. If no mapping exists, it returns an empty string

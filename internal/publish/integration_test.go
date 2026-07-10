@@ -109,7 +109,9 @@ func (errPlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([]s
 	return nil, errors.New("listing platform ids failed")
 }
 
-func (errPlatformLister) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+func (errPlatformLister) SetPlatformIDStable(_ context.Context, _, _, _ string) (artist.PlatformIDStableOutcome, error) {
+	return artist.PlatformIDStableOutcome{}, nil
+}
 
 // --- BuildArtistPushData ---
 

@@ -234,6 +234,159 @@ func TestSetPlatformID_MultipleArtists(t *testing.T) {
 	}
 }
 
+// mustStable calls SetPlatformIDStable on connection "conn-1" and fails the test
+// on error. Used by the stable-set tests to seed a prior mapping before
+// asserting the tiebreak.
+func mustStable(t *testing.T, svc *Service, artistID, platformID string) PlatformIDStableOutcome {
+	t.Helper()
+	out, err := svc.SetPlatformIDStable(context.Background(), artistID, "conn-1", platformID)
+	if err != nil {
+		t.Fatalf("SetPlatformIDStable(%s, conn-1, %s): %v", artistID, platformID, err)
+	}
+	return out
+}
+
+// assertStored fails the test unless the stored platform id on "conn-1" equals want.
+func assertStored(t *testing.T, svc *Service, artistID, want string) {
+	t.Helper()
+	got, err := svc.GetPlatformID(context.Background(), artistID, "conn-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID(%s, conn-1): %v", artistID, err)
+	}
+	if got != want {
+		t.Errorf("stored platform id = %q, want %q", got, want)
+	}
+}
+
+// TestSetPlatformIDStable covers the divergence-aware, deterministic stable set
+// that stops the per-scan Emby duplicate-twin flip-flop (#2344).
+func TestSetPlatformIDStable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("first insert stores incoming, no divergence", func(t *testing.T) {
+		svc := setupPlatformIDTest(t)
+		a := createTestArtist(t, svc, "Radiohead")
+		out, err := svc.SetPlatformIDStable(ctx, a.ID, "conn-1", "emby-500")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Diverged || out.StoredID != "emby-500" || out.PreviousID != "" {
+			t.Errorf("first-insert outcome = %+v, want {StoredID:emby-500}", out)
+		}
+		assertStored(t, svc, a.ID, "emby-500")
+	})
+
+	t.Run("idempotent re-set is a no-op", func(t *testing.T) {
+		svc := setupPlatformIDTest(t)
+		a := createTestArtist(t, svc, "Radiohead")
+		mustStable(t, svc, a.ID, "emby-500")
+		out := mustStable(t, svc, a.ID, "emby-500")
+		if out.Diverged {
+			t.Errorf("idempotent re-set reported divergence: %+v", out)
+		}
+		if out.StoredID != "emby-500" || out.PreviousID != "emby-500" {
+			t.Errorf("idempotent outcome = %+v, want stored=prev=emby-500", out)
+		}
+		assertStored(t, svc, a.ID, "emby-500")
+	})
+
+	t.Run("divergent lower incoming wins and is reported", func(t *testing.T) {
+		svc := setupPlatformIDTest(t)
+		a := createTestArtist(t, svc, "Radiohead")
+		mustStable(t, svc, a.ID, "emby-500")
+		out := mustStable(t, svc, a.ID, "emby-100")
+		if !out.Diverged {
+			t.Error("expected Diverged=true for a divergent id")
+		}
+		if out.StoredID != "emby-100" || out.PreviousID != "emby-500" {
+			t.Errorf("outcome = %+v, want stored=emby-100 prev=emby-500", out)
+		}
+		// The lower incoming id replaces the higher stored id.
+		assertStored(t, svc, a.ID, "emby-100")
+	})
+
+	t.Run("divergent higher incoming loses tiebreak but is reported", func(t *testing.T) {
+		svc := setupPlatformIDTest(t)
+		a := createTestArtist(t, svc, "Radiohead")
+		mustStable(t, svc, a.ID, "emby-100")
+		out := mustStable(t, svc, a.ID, "emby-500")
+		if !out.Diverged {
+			t.Error("expected Diverged=true for a divergent id")
+		}
+		if out.StoredID != "emby-100" || out.PreviousID != "emby-100" {
+			t.Errorf("outcome = %+v, want stored=prev=emby-100", out)
+		}
+		// The lower existing id is kept; the higher incoming id is dropped.
+		assertStored(t, svc, a.ID, "emby-100")
+	})
+
+	t.Run("cross-artist collision returns the sentinel", func(t *testing.T) {
+		svc := setupPlatformIDTest(t)
+		a1 := createTestArtist(t, svc, "Radiohead")
+		a2 := createTestArtist(t, svc, "Bjork")
+		mustStable(t, svc, a1.ID, "emby-777")
+		_, err := svc.SetPlatformIDStable(ctx, a2.ID, "conn-1", "emby-777")
+		if !errors.Is(err, ErrPlatformIDClaimedByAnotherArtist) {
+			t.Errorf("got %v, want ErrPlatformIDClaimedByAnotherArtist", err)
+		}
+		// The original holder's mapping is untouched.
+		assertStored(t, svc, a1.ID, "emby-777")
+	})
+
+	t.Run("validation rejects empty fields", func(t *testing.T) {
+		svc := setupPlatformIDTest(t)
+		for _, tc := range []struct{ artistID, conn, pid string }{
+			{"", "conn-1", "x"},
+			{"a", "", "x"},
+			{"a", "conn-1", ""},
+		} {
+			if _, err := svc.SetPlatformIDStable(ctx, tc.artistID, tc.conn, tc.pid); err == nil {
+				t.Errorf("SetPlatformIDStable(%q,%q,%q): expected validation error", tc.artistID, tc.conn, tc.pid)
+			}
+		}
+	})
+}
+
+// TestSetPlatformIDStable_OrderIndependent is the core flip-flop regression
+// (#2344). Two Emby duplicate twins sharing one MBID resolve to a single artist
+// row; whichever order a scan stamps them, the stored platform id must converge
+// to the same deterministic winner. With the old full-overwrite Set the LAST
+// writer won, so reversing the enumeration order between scans flipped the
+// stored id -- and edits/pushes then landed on the phantom twin. This test
+// fails against that old behavior (the two orderings produce different ids).
+func TestSetPlatformIDStable_OrderIndependent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Forward order: stamp twin A then twin B.
+	forward := setupPlatformIDTest(t)
+	fa := createTestArtist(t, forward, "Radiohead")
+	mustStable(t, forward, fa.ID, "emby-A")
+	mustStable(t, forward, fa.ID, "emby-B")
+	fwd, err := forward.GetPlatformID(ctx, fa.ID, "conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reversed order: stamp twin B then twin A.
+	reverse := setupPlatformIDTest(t)
+	ra := createTestArtist(t, reverse, "Radiohead")
+	mustStable(t, reverse, ra.ID, "emby-B")
+	mustStable(t, reverse, ra.ID, "emby-A")
+	rev, err := reverse.GetPlatformID(ctx, ra.ID, "conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if fwd != rev {
+		t.Fatalf("order-dependent stored id: forward=%q reverse=%q (flip-flop not fixed)", fwd, rev)
+	}
+	if fwd != "emby-A" {
+		t.Errorf("stored id = %q, want deterministic lowest %q", fwd, "emby-A")
+	}
+}
+
 // setupPlatformPresenceTest creates a test service with emby, jellyfin, and lidarr connections.
 // Returns the service and db for direct SQL access in tests.
 func setupPlatformPresenceTest(t *testing.T) *Service {
