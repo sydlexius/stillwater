@@ -1191,7 +1191,7 @@ func TestExtractImageFetchParams_MalformedJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
 
-	_, _, err := extractImageFetchParams(req)
+	_, _, _, err := extractImageFetchParams(req)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
@@ -1206,7 +1206,7 @@ func TestExtractImageFetchParams_ValidJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
 
-	u, it, err := extractImageFetchParams(req)
+	u, it, slot, err := extractImageFetchParams(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1215,6 +1215,26 @@ func TestExtractImageFetchParams_ValidJSON(t *testing.T) {
 	}
 	if it != "thumb" {
 		t.Errorf("type = %q, want %q", it, "thumb")
+	}
+	if slot != nil {
+		t.Errorf("slot = %v, want nil (omitted in this request)", *slot)
+	}
+}
+
+// TestExtractImageFetchParams_WithSlot verifies the #2281 QOL #48 optional
+// fanart slot decodes correctly and stays nil when omitted (backward compat).
+func TestExtractImageFetchParams_WithSlot(t *testing.T) {
+	t.Parallel()
+	body := strings.NewReader(`{"url":"https://example.com/img.jpg","type":"fanart","slot":2}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	_, _, slot, err := extractImageFetchParams(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if slot == nil || *slot != 2 {
+		t.Fatalf("slot = %v, want 2", slot)
 	}
 }
 
@@ -3203,5 +3223,193 @@ func TestHandleImageCrop_AppendFanart_WriteFailureReturns500(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "fanart1.jpg")); err == nil {
 		t.Error("no appended file should exist after a failed append save")
+	}
+}
+
+// seedFanartSlots writes n fanart files (index 0..n-1) to dir using the
+// router's own active-profile naming (getActiveFanartPrimary/isKodiNumbering),
+// exactly as production code would name them, so the test does not hardcode
+// a numbering convention (Kodi vs Emby/Jellyfin) that could silently drift
+// from whatever profile the test router defaults to.
+func seedFanartSlots(t *testing.T, r *Router, dir string, n int) []string {
+	t.Helper()
+	primary := r.getActiveFanartPrimary(context.Background())
+	kodi := r.isKodiNumbering(context.Background())
+	names := make([]string, n)
+	for i := range n {
+		name := img.FanartFilename(primary, i, kodi)
+		writeJPEG(t, filepath.Join(dir, name), 1920, 1080)
+		names[i] = name
+	}
+	return names
+}
+
+// TestHandleImageCrop_ExplicitSlot_ReplacesThatSlotOnly covers #2281 QOL #48:
+// an explicit slot on the crop request must overwrite ONLY that numbered
+// fanart file, leaving the primary and other slots untouched.
+func TestHandleImageCrop_ExplicitSlot_ReplacesThatSlotOnly(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop Slot Artist", SortName: "Crop Slot Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	names := seedFanartSlots(t, r, dir, 3) // slots 0, 1, 2
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+	primaryBefore, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading seed primary: %v", err)
+	}
+	slot2Before, err := os.ReadFile(filepath.Join(dir, names[2]))
+	if err != nil {
+		t.Fatalf("reading seed slot 2: %v", err)
+	}
+
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 1280, 720)), nil); err != nil {
+		t.Fatalf("encoding crop input: %v", err)
+	}
+	slot := 1
+	reqBody, _ := json.Marshal(map[string]any{
+		"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+		"type":       "fanart",
+		"x":          0, "y": 0, "width": 1280, "height": 720,
+		"slot": slot,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageCrop(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	saved, _ := resp["saved"].([]any)
+	if len(saved) != 1 || saved[0] != names[1] {
+		t.Errorf("saved = %v, want [%q] (slot 1 only)", saved, names[1])
+	}
+
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading primary after slot crop: %v", err)
+	}
+	if !bytes.Equal(primaryBefore, primaryAfter) {
+		t.Error("slot=1 crop must not touch the primary (slot 0)")
+	}
+	slot2After, err := os.ReadFile(filepath.Join(dir, names[2]))
+	if err != nil {
+		t.Fatalf("reading slot 2 after slot crop: %v", err)
+	}
+	if !bytes.Equal(slot2Before, slot2After) {
+		t.Error("slot=1 crop must not touch slot 2")
+	}
+	slot1After, err := os.ReadFile(filepath.Join(dir, names[1]))
+	if err != nil {
+		t.Fatalf("reading slot 1 after crop: %v", err)
+	}
+	if bytes.Equal(slot1After, slot2Before) {
+		t.Error("slot 1 must actually have changed after the crop")
+	}
+}
+
+// TestHandleImageCrop_ExplicitSlot_OutOfRangeRejected covers the no-gaps
+// validation: a slot at or beyond the current count (or negative) must be
+// rejected with a generic 400, and must not touch the filesystem.
+func TestHandleImageCrop_ExplicitSlot_OutOfRangeRejected(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		slot int
+	}{
+		{"at count (would create a gap)", 2},
+		{"negative", -1},
+		{"far out of range", 99},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r, artistSvc := testRouterWithPlatform(t)
+			dir := t.TempDir()
+			a := &artist.Artist{Name: "Crop Slot OOR", SortName: "Crop Slot OOR", Path: dir}
+			if err := artistSvc.Create(context.Background(), a); err != nil {
+				t.Fatalf("creating artist: %v", err)
+			}
+			seedFanartSlots(t, r, dir, 2) // slots 0, 1 only
+			r.updateArtistImageFlag(context.Background(), a, "fanart")
+
+			var imgBuf bytes.Buffer
+			if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 1280, 720)), nil); err != nil {
+				t.Fatalf("encoding crop input: %v", err)
+			}
+			reqBody, _ := json.Marshal(map[string]any{
+				"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+				"type":       "fanart",
+				"x":          0, "y": 0, "width": 1280, "height": 720,
+				"slot": tt.slot,
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+			req.SetPathValue("id", a.ID)
+			w := httptest.NewRecorder()
+
+			r.handleImageCrop(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+			}
+			var resp map[string]string
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decoding response: %v", err)
+			}
+			if resp["error"] == "" {
+				t.Error("expected a generic error message")
+			}
+		})
+	}
+}
+
+// TestHandleImageCrop_NoSlot_BackwardCompatible confirms that omitting slot
+// entirely preserves the pre-#2281 recrop-of-primary behavior (the Slot field
+// is *int and defaults to nil when absent from the JSON body).
+func TestHandleImageCrop_NoSlot_BackwardCompatible(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop No Slot", SortName: "Crop No Slot", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	names := seedFanartSlots(t, r, dir, 1)
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, image.NewRGBA(image.Rect(0, 0, 1280, 720)), nil); err != nil {
+		t.Fatalf("encoding crop input: %v", err)
+	}
+	// No "slot" key at all in the JSON body.
+	reqBody, _ := json.Marshal(map[string]any{
+		"image_data": base64.StdEncoding.EncodeToString(imgBuf.Bytes()),
+		"type":       "fanart",
+		"x":          0, "y": 0, "width": 1280, "height": 720,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageCrop(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	saved, _ := resp["saved"].([]any)
+	if len(saved) != 1 || saved[0] != names[0] {
+		t.Errorf("saved = %v, want [%q] (recrop-of-primary, no slot supplied)", saved, names[0])
 	}
 }

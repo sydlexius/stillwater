@@ -22,6 +22,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 // init registers a text/html body decoder for the kin-openapi validator. The
@@ -327,6 +328,87 @@ func TestHandleImageFetch_FanartAppend(t *testing.T) {
 	}
 }
 
+// TestHandleImageFetch_ExplicitSlot_ReplacesThatSlotOnly covers #2281 QOL #48
+// on the fetch path: an explicit slot must overwrite only that numbered
+// fanart file, leaving the primary untouched.
+func TestHandleImageFetch_ExplicitSlot_ReplacesThatSlotOnly(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "FetchSlot", SortName: "FetchSlot", Path: dir, FanartExists: true}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	names := seedFanartSlots(t, r, dir, 2) // slots 0, 1
+	primaryBefore, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading seed primary: %v", err)
+	}
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 1920, 1080)}}
+	body := strings.NewReader(`{"url":"https://8.8.8.8/bg.jpg","type":"fanart","slot":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	saved, _ := resp["saved"].([]any)
+	if len(saved) != 1 || saved[0] != names[1] {
+		t.Errorf("saved = %v, want [%q] (slot 1 only)", saved, names[1])
+	}
+
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading primary after slot fetch: %v", err)
+	}
+	if !bytes.Equal(primaryBefore, primaryAfter) {
+		t.Error("slot=1 fetch must not touch the primary (slot 0)")
+	}
+}
+
+// TestHandleImageFetch_ExplicitSlot_OutOfRangeRejected covers the no-gaps
+// validation on the fetch path: a slot at/beyond the current count is
+// rejected with a generic 400. The default stub transport from
+// newImageHandlerTestServer would happily "succeed" a fetch if the handler
+// incorrectly reached the network path, so a 400 here also pins that the
+// out-of-range check runs before any save.
+func TestHandleImageFetch_ExplicitSlot_OutOfRangeRejected(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "FetchSlotOOR", SortName: "FetchSlotOOR", Path: dir, FanartExists: true}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	seedFanartSlots(t, r, dir, 1) // slot 0 only
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/bg.jpg","type":"fanart","slot":5}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("directory entries = %d, want 1 (only the seeded slot 0, nothing saved)", len(entries))
+	}
+}
+
 func TestHandleImageFetch_InvalidJSON(t *testing.T) {
 	t.Parallel()
 	r, svc := newImageHandlerTestServer(t)
@@ -347,6 +429,143 @@ func TestHandleImageFetch_InvalidJSON(t *testing.T) {
 	r.handleImageFetch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestHandleImageStage_Success covers #2281 QOL #47: a successful stage
+// returns a base64 data: URI and, critically, saves nothing, publishes no
+// event, and never touches the pipeline -- it is a pure read.
+func TestHandleImageStage_Success(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "StageOK", SortName: "StageOK", Path: dir}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	called := make(chan struct{}, 1)
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
+			select {
+			case called <- struct{}{}:
+			default:
+			}
+			return &rule.RunResult{}, nil
+		},
+	}
+	r.pipeline = stub
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 640, 480)}}
+	body := strings.NewReader(`{"url":"https://8.8.8.8/discogs.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	dataURI, _ := resp["image_data"].(string)
+	if !strings.HasPrefix(dataURI, "data:image/jpeg;base64,") {
+		t.Errorf("image_data = %q, want a data:image/jpeg;base64,... URI", dataURI)
+	}
+	if resp["type"] != "thumb" {
+		t.Errorf("type = %v, want %q", resp["type"], "thumb")
+	}
+
+	// Nothing saved to disk.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("directory entries = %d, want 0 (staging must not save to disk); entries=%v", len(entries), entries)
+	}
+	// Pipeline never invoked (staging runs no rules).
+	select {
+	case <-called:
+		t.Error("staging must not invoke the rule pipeline")
+	default:
+	}
+}
+
+// TestHandleImageStage_RejectsPrivateURL mirrors the fetch endpoint's SSRF
+// guard: staging reuses the same isPrivateURL check.
+func TestHandleImageStage_RejectsPrivateURL(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StagePriv", SortName: "StagePriv", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{"url":"http://127.0.0.1/secret.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleImageStage_InvalidType rejects an unsupported type before any
+// network fetch.
+func TestHandleImageStage_InvalidType(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StageBadType", SortName: "StageBadType", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/x.jpg","type":"poster"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	// Pattern B (see TestHandleImageFetch_InvalidJSON): "poster" fails the
+	// OpenAPI enum before reaching the handler, so exercise the handler's own
+	// invalid-type rejection directly rather than through serveValidated.
+	r.handleImageStage(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleImageStage_NonImageBytesRejected covers the img.DetectFormat
+// validation: a successful HTTP fetch that is not actually image data must be
+// rejected rather than staged. fetchImageFromURL runs DetectFormat itself and
+// returns an error before handleImageStage ever sees the bytes, so this is
+// deterministically a 502 (upstream fetch/decode failure), not a 400 --
+// handleImageStage's OWN post-fetch DetectFormat call can never fail on the
+// same data (see the comment at that call site), so there is no separate
+// reachable 400 case to also exercise here.
+func TestHandleImageStage_NonImageBytesRejected(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StageNotImage", SortName: "StageNotImage", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: []byte("<html>not an image</html>")}}
+	body := strings.NewReader(`{"url":"https://8.8.8.8/x.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 for non-image bytes; body: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -1090,4 +1309,423 @@ func (b *safeBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// ----------------------------------------------------------------------------
+// handleImageStage -- gaps in the existing coverage above: the pre-fetch
+// rejection branches other than "private URL" and "invalid type" were never
+// exercised (#2323 patch-coverage fix-round).
+// ----------------------------------------------------------------------------
+
+func TestHandleImageStage_ArtistNotFound(t *testing.T) {
+	t.Parallel()
+	r, _ := newImageHandlerTestServer(t)
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/x.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/missing/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "missing")
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleImageStage_MissingPathParam(t *testing.T) {
+	t.Parallel()
+	r, _ := newImageHandlerTestServer(t)
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/x.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists//images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	// Deliberately no SetPathValue("id", ...): RequirePathParam must reject an
+	// empty id before touching the artist service.
+	w := httptest.NewRecorder()
+
+	r.handleImageStage(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleImageStage_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StageBadJSON", SortName: "StageBadJSON", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{not valid json`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	// Pattern B (see TestHandleImageFetch_InvalidJSON): malformed JSON would be
+	// rejected by the request validator before reaching the handler; this
+	// exercises the handler's own decode-error path directly.
+	r.handleImageStage(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleImageStage_MissingURL(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StageNoURL", SortName: "StageNoURL", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{"url":"","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleImageStage_NonHTTPScheme(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "StageFTP", SortName: "StageFTP", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{"url":"ftp://example.com/x.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/stage", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageStage), req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "http://") {
+		t.Errorf("body should mention the required scheme; got %s", w.Body.String())
+	}
+}
+
+// ----------------------------------------------------------------------------
+// fetchRespondIfNeedsCrop -- gaps: the existing TestHandleImageFetch_NeedsCrop
+// only exercises the JPEG needs-crop-true branch. The no-crop-needed
+// (fall-through to a normal save), PNG mime-type, and explicit-slot-echo
+// branches were never hit (#2323 patch-coverage fix-round).
+// ----------------------------------------------------------------------------
+
+// TestHandleImageFetch_NoCropNeeded_JSON covers geo.NeedsCrop == false: a
+// square image against thumb's square requirement must fall through to a
+// normal save (still 200, but WITHOUT needs_crop in the response), not the
+// needs_crop branch. isHTMXRequest must be false and skip_crop absent so
+// fetchRespondIfNeedsCrop is actually called (matching the guard in
+// handleImageFetch); its own internal check must be what returns false here.
+func TestHandleImageFetch_NoCropNeeded_JSON(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "NoCropNeeded", SortName: "NoCropNeeded", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 500, 500)}}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/square.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["needs_crop"] == true {
+		t.Errorf("needs_crop = true for a 500x500 image against thumb's square requirement; want false/absent")
+	}
+}
+
+// TestHandleImageFetch_NeedsCrop_PNGFormat covers the img.FormatPNG branch of
+// fetchRespondIfNeedsCrop's mime-type switch (the existing NeedsCrop test only
+// exercises the JPEG default case).
+func TestHandleImageFetch_NeedsCrop_PNGFormat(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "NeedsCropPNG", SortName: "NeedsCropPNG", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Wide PNG against thumb's square requirement forces needs_crop.
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testPNG(t, 1000, 100)}}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/wide.png","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got, _ := resp["needs_crop"].(bool); !got {
+		t.Fatalf("needs_crop = %v, want true", resp["needs_crop"])
+	}
+	dataURI, _ := resp["image_data"].(string)
+	if !strings.HasPrefix(dataURI, "data:image/png;base64,") {
+		t.Errorf("image_data = %q, want a data:image/png;base64,... URI", dataURI)
+	}
+}
+
+// TestHandleImageFetch_NeedsCrop_EchoesSlot verifies fetchRespondIfNeedsCrop
+// threads an explicit fanart slot through the needs_crop response (#2281 QOL
+// #48), so the client's follow-up crop POST persists to the same slot this
+// fetch originated from -- without this, "slot" is silently absent from the
+// response and the crop would fall back to the primary/append path instead.
+func TestHandleImageFetch_NeedsCrop_EchoesSlot(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "NeedsCropSlot", SortName: "NeedsCropSlot", Path: dir}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	seedFanartSlots(t, r, dir, 3)
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+	// Square image against fanart's wide-aspect requirement forces needs_crop.
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 500, 500)}}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/mismatched.jpg","type":"fanart","slot":2}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got, _ := resp["needs_crop"].(bool); !got {
+		t.Fatalf("needs_crop = %v, want true (500x500 square vs fanart's wide aspect requirement)", resp["needs_crop"])
+	}
+	gotSlot, ok := resp["slot"].(float64)
+	if !ok || int(gotSlot) != 2 {
+		t.Errorf("slot field = %v (present=%v), want 2", resp["slot"], ok)
+	}
+}
+
+// TestHandleImageFetch_FormEncoded_ExplicitSlot covers extractImageFetchParams'
+// form-encoded slot-parsing branch (the existing FormEncoded_Success test and
+// the JSON-bodied ExplicitSlot tests never exercise the form path WITH a
+// slot value together).
+func TestHandleImageFetch_FormEncoded_ExplicitSlot(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "FormFetchSlot", SortName: "FormFetchSlot", Path: dir}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	names := seedFanartSlots(t, r, dir, 3) // slots 0, 1, 2
+	r.updateArtistImageFlag(context.Background(), a, "fanart")
+	primaryBefore, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading seed primary: %v", err)
+	}
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 1920, 1080)}}
+
+	form := "url=https%3A%2F%2F8.8.8.8%2Freplacement.jpg&type=fanart&slot=1"
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true",
+		strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading primary after form-encoded slot fetch: %v", err)
+	}
+	if !bytes.Equal(primaryBefore, primaryAfter) {
+		t.Error("a form-encoded slot=1 fetch must not touch the primary (slot 0)")
+	}
+	slot1After, err := os.ReadFile(filepath.Join(dir, names[1]))
+	if err != nil {
+		t.Fatalf("reading slot 1 after form-encoded fetch: %v", err)
+	}
+	if bytes.Equal(slot1After, primaryBefore) {
+		t.Error("slot 1 must actually have changed after the form-encoded fetch")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// #2331 CR-1: the fanart-slot TOCTOU race. handleImageFetch validates the
+// slot BEFORE the slow network fetch; handleImageFetchFanartSlot must
+// re-validate immediately before img.Save, since the fanart set can change
+// during the round-trip (reorder, delete, another save landing first).
+// ----------------------------------------------------------------------------
+
+// raceRoundTripper simulates "the fanart set changed during the network
+// round-trip": onRoundTrip runs (deleting a fanart file, shrinking the valid
+// slot range) BEFORE the stubbed image response is returned, reproducing the
+// exact window between handleImageFetch's pre-fetch validateFanartSlot call
+// and handleImageFetchFanartSlot's write.
+type raceRoundTripper struct {
+	onRoundTrip func()
+	body        []byte
+}
+
+func (r *raceRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if r.onRoundTrip != nil {
+		r.onRoundTrip()
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"image/jpeg"}},
+		Body:       io.NopCloser(bytes.NewReader(r.body)),
+		Request:    req,
+	}, nil
+}
+
+// TestHandleImageFetch_ExplicitSlot_RevalidatesAfterRaceDuringFetch is the
+// CR-1 regression test: a slot that was valid when handleImageFetch first
+// checked it (2 slots, requesting slot 1) must be rejected -- not silently
+// saved to a now-nonexistent file -- if the fanart set shrank to 1 slot
+// during the network fetch itself. Before the fix, handleImageFetchFanartSlot
+// went straight to img.Save with the stale slot number and no re-check.
+func TestHandleImageFetch_ExplicitSlot_RevalidatesAfterRaceDuringFetch(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "FetchSlotRace", SortName: "FetchSlotRace", Path: dir, FanartExists: true}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	names := seedFanartSlots(t, r, dir, 2) // slots 0, 1 -- slot 1 is valid at request time
+
+	r.ssrfClient = &http.Client{Transport: &raceRoundTripper{
+		body: testJPEG(t, 1920, 1080),
+		onRoundTrip: func() {
+			// Shrink the fanart set to 1 slot WHILE the "network fetch" is
+			// in flight, simulating a concurrent delete/reorder landing in
+			// the window between the pre-fetch validation and the write.
+			if err := os.Remove(filepath.Join(dir, names[1])); err != nil {
+				t.Fatalf("removing slot 1 mid-race: %v", err)
+			}
+		},
+	}}
+
+	body := strings.NewReader(`{"url":"https://8.8.8.8/bg.jpg","type":"fanart","slot":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (slot 1 no longer exists after the mid-fetch race); body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["error"] == "" {
+		t.Error("expected a non-empty error message")
+	}
+	// The primary (slot 0, still on disk) must be untouched by the rejected write.
+	primaryAfter, err := os.ReadFile(filepath.Join(dir, names[0]))
+	if err != nil {
+		t.Fatalf("reading primary after the rejected race-slot fetch: %v", err)
+	}
+	if len(primaryAfter) == 0 {
+		t.Error("primary (slot 0) must remain on disk and unmodified after the rejected write")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// #2331 CR-3: extractImageFetchParams' form-encoded slot parse failure must
+// error symmetrically with the JSON branch, not silently fall back to the
+// append/overwrite-primary default.
+// ----------------------------------------------------------------------------
+
+func TestHandleImageFetch_FormEncoded_InvalidSlot_Errors(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "FormBadSlot", SortName: "FormBadSlot", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	form := "url=https%3A%2F%2F8.8.8.8%2Fx.jpg&type=fanart&slot=1O" // "1O", not "10" -- a typo'd slot
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch",
+		strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	// Pattern B: a malformed slot value is a defense-in-depth case the spec's
+	// own validation would not catch (slot is a free-form form field), so
+	// call the handler directly rather than through serveValidated.
+	r.handleImageFetch(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (a malformed slot must error, matching the JSON branch), body: %s", w.Code, w.Body.String())
+	}
+}
+
+// ----------------------------------------------------------------------------
+// #2331 Copilot-1: the needs_crop response's "slot" field must only be
+// echoed for imageType == "fanart" -- slot is meaningless for any other
+// type. Also covers Codoki's suggested negative test: a slot supplied
+// alongside a non-fanart type is ignored (not rejected, not echoed, no
+// crash) -- the write path was already correctly gated on
+// imageType == "fanart" elsewhere; this locks the needs_crop response
+// contract to match.
+// ----------------------------------------------------------------------------
+
+func TestHandleImageFetch_NeedsCrop_SlotNotEchoedForNonFanart(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+	a := &artist.Artist{Name: "NeedsCropNonFanartSlot", SortName: "NeedsCropNonFanartSlot", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Wide image against thumb's square requirement forces needs_crop.
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: testJPEG(t, 1000, 100)}}
+
+	// A stray "slot" alongside a non-fanart type: meaningless, must be
+	// silently ignored rather than echoed back as if it mattered.
+	body := strings.NewReader(`{"url":"https://8.8.8.8/wide.jpg","type":"thumb","slot":2}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got, _ := resp["needs_crop"].(bool); !got {
+		t.Fatalf("needs_crop = %v, want true (1000x100 vs thumb's square requirement)", resp["needs_crop"])
+	}
+	if _, present := resp["slot"]; present {
+		t.Errorf("slot = %v must NOT be present in a needs_crop response for a non-fanart type (thumb)", resp["slot"])
+	}
 }

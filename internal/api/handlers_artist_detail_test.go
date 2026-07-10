@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -198,6 +200,93 @@ func TestHandleArtworkModal_UnauthenticatedRedirectsToLogin(t *testing.T) {
 	}
 	if strings.Contains(body, "artwork-modal-body") {
 		t.Errorf("unauthenticated request must not render the artwork editor body")
+	}
+}
+
+// fanartIndexedURLPattern matches the per-slot fanart file URL
+// (/images/fanart/{index}/file) that only appears in the rendered fragment
+// when handleArtworkModal's SelectedIndex validation actually accepted a
+// slot. The generic (unscoped) fanart file URL has no numeric segment, so a
+// bare regex match is an unambiguous signal either way -- no dependency on
+// i18n label text.
+var fanartIndexedURLPattern = regexp.MustCompile(`images/fanart/(\d+)/file`)
+
+// authedArtworkModalRequest builds an authenticated GET request against
+// handleArtworkModal for the given raw query string (e.g.
+// "kind=backdrops&slot=1") and returns the rendered body.
+func authedArtworkModalRequest(t *testing.T, r *Router, id, rawQuery string) string {
+	t.Helper()
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+id+"/artwork-modal?"+rawQuery, nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleArtworkModal(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for query %q; body: %s", w.Code, rawQuery, w.Body.String())
+	}
+	return w.Body.String()
+}
+
+// TestHandleArtworkModal_BackdropSlotSelection covers the #2323/#2281 item 4
+// SelectedIndex validation added in handleArtworkModal: an optional ?slot=
+// query param (only meaningful for kind=backdrops) must be validated against
+// the artist's actual fanart count and only then threaded into the rendered
+// hero as a per-slot file URL. Every rejection path (out-of-range, negative,
+// non-numeric, absent, wrong kind) must fall back to the generic unscoped
+// view rather than a bad or wrongly-scoped hero -- this is the exact
+// bounds-validation surface a stale/racing tile click or a tampered query
+// string would hit.
+func TestHandleArtworkModal_BackdropSlotSelection(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	// FanartCount is set directly at create time (matching the convention
+	// used elsewhere in this package, e.g. TestHandleFanartBatchDelete_*):
+	// handleArtworkModal's slot-bounds validation reads a.FanartCount from
+	// the Artist row, not a live disk recount, so the seeded files and the
+	// stored count must agree for the validation to be exercised correctly.
+	a := &artist.Artist{
+		Name: "Slot Select Artist", SortName: "Slot Select Artist", Path: dir,
+		FanartExists: true, FanartCount: 3,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	seedFanartSlots(t, r, dir, 3) // valid slots: 0, 1, 2
+
+	tests := []struct {
+		name      string
+		rawQuery  string
+		wantSlot  int  // expected matched index; only checked when wantMatch is true
+		wantMatch bool // whether an indexed fanart URL must appear at all
+	}{
+		{"valid mid-range slot", "kind=backdrops&slot=1", 1, true},
+		{"valid first slot", "kind=backdrops&slot=0", 0, true},
+		{"valid last slot", "kind=backdrops&slot=2", 2, true},
+		{"slot at count is out of range (no gap slot)", "kind=backdrops&slot=3", 0, false},
+		{"slot far out of range", "kind=backdrops&slot=99", 0, false},
+		{"negative slot", "kind=backdrops&slot=-1", 0, false},
+		{"non-numeric slot", "kind=backdrops&slot=abc", 0, false},
+		{"empty slot value", "kind=backdrops&slot=", 0, false},
+		{"slot param absent", "kind=backdrops", 0, false},
+		{"slot ignored for a non-backdrops kind", "kind=primary&slot=1", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			body := authedArtworkModalRequest(t, r, a.ID, tt.rawQuery)
+			match := fanartIndexedURLPattern.FindStringSubmatch(body)
+			if tt.wantMatch {
+				if match == nil {
+					t.Fatalf("query %q: expected an indexed fanart URL in the rendered body; none found", tt.rawQuery)
+				}
+				if match[1] != strconv.Itoa(tt.wantSlot) {
+					t.Errorf("query %q: indexed fanart URL slot = %s, want %d", tt.rawQuery, match[1], tt.wantSlot)
+				}
+			} else if match != nil {
+				t.Errorf("query %q: expected the generic unscoped fanart view (no indexed URL), got one for slot %s", tt.rawQuery, match[1])
+			}
+		})
 	}
 }
 

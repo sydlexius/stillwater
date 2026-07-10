@@ -347,6 +347,182 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// fanartSlotError distinguishes a bad-request (invalid/out-of-range slot)
+// from a server error (directory read failure) so callers can map it to the
+// right HTTP status (#2281 QOL #48).
+type fanartSlotError struct {
+	status int
+	msg    string
+}
+
+func (e *fanartSlotError) Error() string { return e.msg }
+
+// validateFanartSlot checks an explicit fanart slot against the current
+// on-disk set: it must reference an existing slot (no gaps), because this is
+// an edit of a saved backdrop (crop/fetch-replace), not a way to create one.
+// Shared by handleImageCrop and handleImageFetch's slot branches.
+func (r *Router) validateFanartSlot(ctx context.Context, dir string, slot int) *fanartSlotError {
+	primary := r.getActiveFanartPrimary(ctx)
+	existing, discoverErr := img.DiscoverFanart(dir, primary)
+	if discoverErr != nil && !errors.Is(discoverErr, os.ErrNotExist) {
+		r.logger.Error("discovering fanart for slot validation", slog.String("dir", dir), slog.String("error", discoverErr.Error()))
+		return &fanartSlotError{status: http.StatusInternalServerError, msg: "failed to read fanart directory"}
+	}
+	if slot < 0 || slot >= len(existing) {
+		return &fanartSlotError{status: http.StatusBadRequest, msg: "invalid fanart slot"}
+	}
+	return nil
+}
+
+// handleImageCropFanartSlot saves a crop result to an explicit fanart slot
+// (#2281 QOL #48: FanartManagementGallery's per-slot Crop control), preserving
+// existing provenance for that specific file when present -- mirrors the
+// non-slot recrop-of-primary path below. Writes the HTTP response itself.
+func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Request, a *artist.Artist, artistID string, slot int, imgData []byte) {
+	dir := r.imageDir(a)
+	if slotErr := r.validateFanartSlot(req.Context(), dir, slot); slotErr != nil {
+		writeJSON(w, slotErr.status, map[string]string{"error": slotErr.msg})
+		return
+	}
+
+	primary := r.getActiveFanartPrimary(req.Context())
+	kodiNumbering := r.isKodiNumbering(req.Context())
+	targetName := img.FanartFilename(primary, slot, kodiNumbering)
+	slotMeta := &img.ExifMeta{Source: "user"}
+	if existingPath, found := img.FindExistingImage(dir, []string{targetName}); found {
+		if existingMeta, readErr := img.ReadProvenance(existingPath); readErr == nil && existingMeta != nil {
+			slotMeta = existingMeta
+		}
+	}
+	slotMeta.Fetched = time.Now().UTC()
+	slotMeta.Mode = "user"
+	slotMeta.DHash = "" // Force recomputation from the cropped image data.
+
+	saved, saveErr := img.Save(dir, "fanart", imgData, []string{targetName}, false, slotMeta, r.logger)
+	if saveErr != nil {
+		r.logger.Error("saving cropped fanart slot",
+			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
+		return
+	}
+	r.finalizeImageSave(req.Context(), w, a, "fanart", saved, imageSaveFinalization{
+		isHTMX:         false,
+		syncBehavior:   syncAllFanart,
+		isFanartAppend: false,
+		publishOrder:   publishBeforeRuleEval,
+	})
+}
+
+// handleImageFetchFanartSlot saves a fetched image to an explicit fanart slot
+// (#2281 QOL #48: FanartManagementGallery's per-slot Fetch/Replace control).
+// Unlike the crop counterpart, it does not preserve prior provenance -- this
+// mirrors the non-slot fetch path below, which always builds fresh metadata
+// rather than reading back the file it is about to overwrite. Writes the HTTP
+// response itself.
+//
+// #2331 CR-1: the caller (handleImageFetch) validates the slot BEFORE the
+// slow network fetch, so re-validate here, immediately before the write --
+// the fanart set can change (reorder, delete, another save) during the
+// network round-trip, and a stale slot number must not silently land on the
+// wrong (or now out-of-range) file. handleImageCropFanartSlot does not need
+// this: it is synchronous with no network call between its own validation
+// and its write.
+func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Request, a *artist.Artist, artistID string, slot int, data []byte, imageURL string) {
+	dir := r.imageDir(a)
+	if slotErr := r.validateFanartSlot(req.Context(), dir, slot); slotErr != nil {
+		writeJSON(w, slotErr.status, map[string]string{"error": slotErr.msg})
+		return
+	}
+
+	primary := r.getActiveFanartPrimary(req.Context())
+	kodiNumbering := r.isKodiNumbering(req.Context())
+	targetName := img.FanartFilename(primary, slot, kodiNumbering)
+	slotMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
+
+	saved, saveErr := img.Save(dir, "fanart", data, []string{targetName}, false, slotMeta, r.logger)
+	if saveErr != nil {
+		r.logger.Error("saving fetched fanart slot",
+			slog.String("artist_id", artistID), slog.Int("slot", slot), slog.String("error", saveErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
+		return
+	}
+	r.finalizeImageSave(req.Context(), w, a, "fanart", saved, imageSaveFinalization{
+		isHTMX:         isHTMXRequest(req),
+		syncBehavior:   syncAllFanart,
+		isFanartAppend: false,
+		publishOrder:   publishBeforeRuleEval,
+	})
+}
+
+// validateImageFetchInput checks the fetch request's url/type before any
+// network or filesystem work. Returns a zero status/empty message on success;
+// otherwise the HTTP status and generic error message the caller should
+// write. Extracted from handleImageFetch to keep its cognitive complexity
+// down (gocognit).
+func validateImageFetchInput(ctx context.Context, imageURL, imageType string) (status int, errMsg string) {
+	if imageURL == "" {
+		return http.StatusBadRequest, "url is required"
+	}
+	if !validImageTypes[imageType] {
+		return http.StatusBadRequest, "invalid image type, must be: thumb, fanart, logo, banner"
+	}
+	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
+		return http.StatusBadRequest, "url must start with http:// or https://"
+	}
+	if isPrivateURL(ctx, imageURL) {
+		return http.StatusBadRequest, "url points to a private or reserved address"
+	}
+	return 0, ""
+}
+
+// fetchRespondIfNeedsCrop writes the needs_crop JSON response when the
+// fetched image's aspect ratio does not match the target slot, and reports
+// whether it did so (the caller must return immediately when true). Extracted
+// from handleImageFetch to keep its cognitive complexity down (gocognit).
+func (r *Router) fetchRespondIfNeedsCrop(w http.ResponseWriter, imageType string, data []byte, fanartExists bool, slot *int) bool {
+	w2, h2, dimErr := img.GetDimensions(bytes.NewReader(data))
+	if dimErr != nil {
+		return false
+	}
+	geo := img.CheckGeometry(w2, h2, imageType)
+	if !geo.NeedsCrop {
+		return false
+	}
+	format, _, _ := img.DetectFormat(bytes.NewReader(data))
+	var mimeType string
+	switch format {
+	case img.FormatPNG:
+		mimeType = "image/png"
+	case img.FormatWebP:
+		mimeType = "image/webp"
+	default:
+		mimeType = "image/jpeg"
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	resp := map[string]any{
+		"status":         "needs_crop",
+		"needs_crop":     true,
+		"required_ratio": geo.RequiredRatio,
+		"actual_ratio":   geo.ActualRatio,
+		"width":          geo.Width,
+		"height":         geo.Height,
+		"image_data":     "data:" + mimeType + ";base64," + encoded,
+		"type":           imageType,
+		"append":         imageType == "fanart" && fanartExists,
+	}
+	// #2281: thread the slot through so the follow-up crop POST persists to
+	// the same slot this fetch originated from. #2331 Copilot-1: slot is only
+	// meaningful for fanart -- echoing it for another type would misleadingly
+	// imply a per-slot save is possible there (the actual per-slot WRITE path
+	// is already correctly gated on imageType == "fanart" elsewhere; this
+	// gate keeps the needs_crop response's contract consistent with that).
+	if slot != nil && imageType == "fanart" {
+		resp["slot"] = *slot
+	}
+	writeJSON(w, http.StatusOK, resp)
+	return true
+}
+
 // handleImageFetch fetches an image from a URL and saves it for the artist.
 // POST /api/v1/artists/{id}/images/fetch
 func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
@@ -367,7 +543,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	imageURL, imageType, err := extractImageFetchParams(req)
+	imageURL, imageType, slot, err := extractImageFetchParams(req)
 	if err != nil {
 		r.logger.Debug("invalid image fetch request body",
 			slog.String("artist_id", artistID),
@@ -376,21 +552,20 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if imageURL == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url is required"})
+	if status, msg := validateImageFetchInput(req.Context(), imageURL, imageType); msg != "" {
+		writeJSON(w, status, map[string]string{"error": msg})
 		return
 	}
-	if !validImageTypes[imageType] {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type, must be: thumb, fanart, logo, banner"})
-		return
-	}
-	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url must start with http:// or https://"})
-		return
-	}
-	if isPrivateURL(req.Context(), imageURL) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url points to a private or reserved address"})
-		return
+
+	// #2281 QOL #48: an explicit fanart slot must already exist (no gaps) --
+	// fail fast before the network fetch below. slot is only meaningful for
+	// fanart; a slot on any other type is ignored (extractImageFetchParams
+	// does not gate on type).
+	if imageType == "fanart" && slot != nil {
+		if slotErr := r.validateFanartSlot(req.Context(), r.imageDir(a), *slot); slotErr != nil {
+			writeJSON(w, slotErr.status, map[string]string{"error": slotErr.msg})
+			return
+		}
 	}
 
 	data, err := r.fetchImageFromURL(req.Context(), imageURL)
@@ -402,41 +577,33 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	// Check geometry before saving. If the aspect ratio does not match the slot
 	// requirement, return the fetched image data for client-side cropping.
+	//
+	// #2331 CR-2: this used to also gate on !isHTMXRequest(req), skipping
+	// crop-detection for EVERY htmx-driven caller. /images/fetch is hit via
+	// hx-post from two distinct templ sites though (image_search.templ): the
+	// compare-panel "Use this one" button (already reviewed via the compare
+	// UI, genuinely wants no crop prompt -- it now opts out explicitly via
+	// ?skip_crop=true on its hx-post URL) and the provider/fanart search
+	// results' plain "Save" button (a first-pick from a thumbnail, which
+	// DOES need the same aspect-mismatch check as every non-HTMX caller --
+	// it has its own hx-on::after-request handler that opens the crop modal
+	// when the response comes back needs_crop). Keying on "is it HTMX" was
+	// too broad a proxy for "does this specific caller want the check" and
+	// silently skipped the check for the search-results Save button too.
 	skipCrop := req.URL.Query().Get("skip_crop") == "true"
-	if !skipCrop && !isHTMXRequest(req) {
-		w2, h2, dimErr := img.GetDimensions(bytes.NewReader(data))
-		if dimErr == nil {
-			geo := img.CheckGeometry(w2, h2, imageType)
-			if geo.NeedsCrop {
-				format, _, _ := img.DetectFormat(bytes.NewReader(data))
-				var mimeType string
-				switch format {
-				case img.FormatPNG:
-					mimeType = "image/png"
-				case img.FormatWebP:
-					mimeType = "image/webp"
-				default:
-					mimeType = "image/jpeg"
-				}
-				encoded := base64.StdEncoding.EncodeToString(data)
-				dataURI := "data:" + mimeType + ";base64," + encoded
-				writeJSON(w, http.StatusOK, map[string]any{
-					"status":         "needs_crop",
-					"needs_crop":     true,
-					"required_ratio": geo.RequiredRatio,
-					"actual_ratio":   geo.ActualRatio,
-					"width":          geo.Width,
-					"height":         geo.Height,
-					"image_data":     dataURI,
-					"type":           imageType,
-					"append":         imageType == "fanart" && a.FanartExists,
-				})
-				return
-			}
-		}
+	if !skipCrop && r.fetchRespondIfNeedsCrop(w, imageType, data, a.FanartExists, slot) {
+		return
 	}
 
 	fetchMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
+
+	// #2281 QOL #48: an explicit fanart slot replaces that specific saved
+	// backdrop (already validated to exist, above), taking priority over the
+	// append-next default below.
+	if imageType == "fanart" && slot != nil {
+		r.handleImageFetchFanartSlot(w, req, a, artistID, *slot, data, imageURL)
+		return
+	}
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
@@ -470,6 +637,86 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		syncBehavior:   syncSingle,
 		isFanartAppend: false,
 		publishOrder:   publishBeforeRuleEval,
+	})
+}
+
+// handleImageStage downloads a remote provider image and returns it as a
+// base64 data: URI, without saving anything (#2281 QOL #47). A provider image
+// (e.g. Discogs) loaded directly into Cropper.js taints the canvas under the
+// browser's same-origin policy, so the client stages it through this
+// same-origin round-trip first; a data: URI never taints the canvas. This
+// mirrors the existing needs_crop response shape but is otherwise a pure
+// read: it does not save to disk, touch backups, publish events, or run
+// rules. Reuses the same URL-scheme allowlist, isPrivateURL SSRF guard, and
+// fetchImageFromURL helper as handleImageFetch.
+// POST /api/v1/artists/{id}/images/stage
+func (r *Router) handleImageStage(w http.ResponseWriter, req *http.Request) {
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+
+	if _, err := r.artistService.GetByID(req.Context(), artistID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	var body struct {
+		URL  string `json:"url"`
+		Type string `json:"type"`
+	}
+	if !DecodeJSON(w, req, &body) {
+		return
+	}
+
+	if !validImageTypes[body.Type] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type, must be: thumb, fanart, logo, banner"})
+		return
+	}
+	if body.URL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url is required"})
+		return
+	}
+	if !strings.HasPrefix(body.URL, "http://") && !strings.HasPrefix(body.URL, "https://") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url must start with http:// or https://"})
+		return
+	}
+	if isPrivateURL(req.Context(), body.URL) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url points to a private or reserved address"})
+		return
+	}
+
+	data, err := r.fetchImageFromURL(req.Context(), body.URL)
+	if err != nil {
+		r.logger.Warn("staging image from URL", slog.String("url", body.URL), slog.String("error", err.Error()))
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to fetch image"})
+		return
+	}
+
+	// fetchImageFromURL already validated the bytes decode as a supported
+	// image (returning the 502 above on failure), so a second error here is
+	// unreachable for the SAME data -- DetectFormat is deterministic and was
+	// already run successfully inside fetchImageFromURL. Re-run only to learn
+	// the format for the data: URI mime type (mirrors handleImageFetch's
+	// needs_crop branch, which does the same after its own fetchImageFromURL
+	// call); the error is intentionally discarded rather than handled as a
+	// second unreachable branch.
+	format, _, _ := img.DetectFormat(bytes.NewReader(data))
+	var mimeType string
+	switch format {
+	case img.FormatPNG:
+		mimeType = "image/png"
+	case img.FormatWebP:
+		mimeType = "image/webp"
+	default:
+		mimeType = "image/jpeg"
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"image_data": "data:" + mimeType + ";base64," + encoded,
+		"type":       body.Type,
 	})
 }
 
@@ -636,6 +883,10 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		Width     int    `json:"width"`
 		Height    int    `json:"height"`
 		Append    bool   `json:"append"`
+		// Slot is the explicit fanart slot to overwrite (#2281 QOL #48: crop
+		// on any saved backdrop, not just the primary). Omitting it (nil)
+		// preserves the pre-#2281 canonical-slot/append behavior below.
+		Slot *int `json:"slot,omitempty"`
 	}
 	if !DecodeJSON(w, req, &body) {
 		return
@@ -670,6 +921,15 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		imgData = cropped
+	}
+
+	// #2281 QOL #48: an explicit fanart slot targets a specific saved backdrop
+	// (FanartManagementGallery's per-slot Crop control), taking priority over
+	// the Append branch below. The slot must already exist (no gaps): this is
+	// an edit of a saved backdrop, not a way to append a new one.
+	if body.Type == "fanart" && body.Slot != nil {
+		r.handleImageCropFanartSlot(w, req, a, artistID, *body.Slot, imgData)
+		return
 	}
 
 	// Fanart: append as next numbered file when the client signals an "add
@@ -1553,21 +1813,39 @@ func deleteImageFiles(remover FileRemover, dir string, patterns []string, logger
 // Supports both form-encoded (HTMX) and JSON payloads (API clients).
 // Provider image types (hdlogo, widethumb, background) are normalized to their
 // base types (logo, thumb, fanart) for filesystem naming.
-func extractImageFetchParams(req *http.Request) (string, string, error) {
+// extractImageFetchParams returns the requested URL, normalized image type,
+// and an optional fanart slot (#2281 QOL #48: per-slot fetch/replace). slot is
+// nil when omitted, preserving the pre-#2281 append-next/overwrite-primary
+// behavior in the caller.
+func extractImageFetchParams(req *http.Request) (string, string, *int, error) {
 	var rawURL, rawType string
+	var slot *int
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		var body struct {
 			URL  string `json:"url"`
 			Type string `json:"type"`
+			Slot *int   `json:"slot,omitempty"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-			return "", "", fmt.Errorf("invalid request body: %w", err)
+			return "", "", nil, fmt.Errorf("invalid request body: %w", err)
 		}
-		rawURL, rawType = body.URL, body.Type
+		rawURL, rawType, slot = body.URL, body.Type, body.Slot
 	} else {
 		rawURL, rawType = req.FormValue("url"), req.FormValue("type")
+		if slotStr := req.FormValue("slot"); slotStr != "" {
+			// #2331 CR-3: a malformed slot must error, matching the JSON
+			// branch's decode-failure behavior above. Silently dropping it
+			// (falling back to slot=nil, i.e. the append/overwrite-primary
+			// default) would let a typo'd slot ("1O") silently take the
+			// wrong action instead of surfacing the mistake.
+			n, err := strconv.Atoi(slotStr)
+			if err != nil {
+				return "", "", nil, fmt.Errorf("invalid slot: %w", err)
+			}
+			slot = &n
+		}
 	}
-	return rawURL, normalizeImageType(rawType), nil
+	return rawURL, normalizeImageType(rawType), slot, nil
 }
 
 // normalizeImageType maps provider-specific image types to the base types

@@ -4138,6 +4138,9 @@ paths:
                 type:
                   type: string
                   enum: [thumb, fanart, logo, banner]
+                slot:
+                  type: integer
+                  description: Explicit fanart slot to replace (0-based). Only meaningful when type is fanart; must already exist (no gaps). Omit to preserve the default append-next/overwrite-primary behavior.
               required: [url, type]
           application/x-www-form-urlencoded:
             schema:
@@ -4148,6 +4151,9 @@ paths:
                 type:
                   type: string
                   enum: [thumb, fanart, logo, banner]
+                slot:
+                  type: integer
+                  description: Explicit fanart slot to replace (0-based). Only meaningful when type is fanart; must already exist (no gaps). Omit to preserve the default append-next/overwrite-primary behavior.
               required: [url, type]
       responses:
         "200":
@@ -4197,6 +4203,9 @@ paths:
                   append:
                     type: boolean
                     description: True when type is fanart and a primary fanart already exists, meaning the eventual crop-save should append a new numbered fanart rather than replace the primary. Present only when needs_crop is true.
+                  slot:
+                    type: integer
+                    description: Echoes the request's explicit fanart slot so the follow-up crop POST persists to the same slot. Present only when needs_crop is true and a slot was supplied on the fetch request.
         "204":
           description: Image fetched and saved (HTMX request); HX-Refresh response header tells the client to reload.
         "400":
@@ -4316,6 +4325,9 @@ paths:
                 append:
                   type: boolean
                   description: When type is fanart and a primary fanart already exists, true appends the crop result as a new numbered fanart instead of replacing the primary.
+                slot:
+                  type: integer
+                  description: Explicit fanart slot to overwrite (0-based), taking priority over append. Only meaningful when type is fanart; must already exist (no gaps). Omit to preserve the default append/recrop-of-primary behavior.
               required: [image_data, type]
       responses:
         "200":
@@ -4350,6 +4362,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictWriteBlock"
+
+  /artists/{id}/images/stage:
+    post:
+      tags: [Images]
+      summary: Stage a remote provider image for cropping
+      description: >
+        Downloads a remote provider URL and returns it as a base64 data: URI
+        without saving anything, so the browser can crop a cross-origin image
+        (e.g. Discogs) same-origin without a tainted canvas (#2281). Read-only:
+        does not save to disk, touch backups, publish events, or run rules.
+      operationId: stageImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                type:
+                  type: string
+                  enum: [thumb, fanart, logo, banner]
+              required: [url, type]
+      responses:
+        "200":
+          description: Image downloaded and returned as a base64 data URI
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  image_data:
+                    type: string
+                    description: Base64-encoded data URI of the downloaded image.
+                  type:
+                    type: string
+                    description: Image type, echoed from the request.
+        "400":
+          description: Invalid request (missing or unsupported URL, unsupported image type, malformed body, or non-public URL)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Upstream image fetch failed (network error, non-2xx response, or decode failure)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/nfo/conflict:
     get:

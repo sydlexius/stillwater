@@ -81,6 +81,6 @@ func FuzzHandleImageFetch(f *testing.F) {
 			"/api/v1/artists/x/images/fetch", bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
 		// The decoder must not panic. Errors for invalid input are expected.
-		_, _, _ = extractImageFetchParams(req)
+		_, _, _, _ = extractImageFetchParams(req)
 	})
 }

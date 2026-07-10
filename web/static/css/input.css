@@ -4578,6 +4578,18 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   height: 88px;
 }
 
+/* Populated tile image buttons (identity + backdrop) now open Manage Artwork
+ * (#2305), not the lightbox -- give them the same hover/cursor cue as the
+ * kind-switcher tabs so the click target reads as clickable-into-management.
+ * Token-driven (color-mix over --swd-ink-2) so no separate .dark override is
+ * needed, matching .sw-artwork-kind-tab:hover below. */
+.sw-next-artist-detail .sw-artwork-tile-open {
+  cursor: pointer;
+}
+.sw-next-artist-detail .sw-artwork-tile-open:hover {
+  background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
+}
+
 /* Backdrops: a wrapping row of native-aspect, height-normalized tiles with the
  * [+] add immediately after the last one, the same height. */
 .sw-next-artist-detail .sw-artwork-bd-grid {
@@ -4649,6 +4661,59 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 .sw-next-artist-detail #compare-save-btn:hover {
   background: color-mix(in srgb, var(--swd-ink-2) 8%, transparent);
   color: var(--swd-ink);
+}
+
+/* #2305/#2323 contrast fix: real axe-core on the Manage Artwork modal (light
+ * theme) measured the per-candidate Save/Compare/Crop buttons at 1.8:1 (fg
+ * #b6c2d4 on a white card) -- the DARK --swd-ink-2 value (rgb block below,
+ * .dark .sw-next-artist-detail) was the one resolving even though the card
+ * surface itself was light. Rather than leave these AA-critical buttons at
+ * the mercy of that token indirection, pin each theme's ink literally and
+ * !important so it cannot be shadowed: #334155 (light --swd-ink-2, ~10.4:1 on
+ * white) / #b6c2d4 (dark --swd-ink-2, ~9.9:1 on the dark card). Scoped to the
+ * exact 3 candidate-card button classes (not .sw-next-flat-btn, which the
+ * #1932 fix above already locks separately for the dark bulk bar). */
+.sw-next-artist-detail .image-card-save,
+.sw-next-artist-detail .compare-btn,
+.sw-next-artist-detail .crop-btn,
+.sw-next-artist-detail #compare-save-btn {
+  color: #334155 !important;
+}
+.dark .sw-next-artist-detail .image-card-save,
+.dark .sw-next-artist-detail .compare-btn,
+.dark .sw-next-artist-detail .crop-btn,
+.dark .sw-next-artist-detail #compare-save-btn {
+  color: #b6c2d4 !important;
+}
+/* #2331 Copilot-2: the resting-state !important pins above ALSO shadowed
+ * this file's own pre-existing :hover rule (.sw-next-artist-detail
+ * .image-card-save:hover etc., which sets color: var(--swd-ink) with no
+ * !important) -- per CSS cascade rules, !important always wins over a
+ * non-!important declaration regardless of specificity or source order, so
+ * the intended hover ink-color change could never actually apply; only the
+ * hover background swap still worked. Restore it with matching-specificity
+ * !important hover rules, using the same literal (not var()) values as the
+ * resting-state fix for the same reason: --swd-ink is a different custom
+ * property than --swd-ink-2, and this file has no rendered evidence either
+ * way for whether it resolves correctly in this exact nested context, so
+ * pin literally rather than assume. #0f172a / #e6edf7 are this file's own
+ * --swd-ink token values (light/dark), already used elsewhere as the
+ * "emphasized" ink tier -- safe on both the white card (light) and the dark
+ * card (~#111827, dark) by a wide margin.
+ * LEAD: this is a rendered-CSS change -- live-verify getComputedStyle on
+ * :hover for these buttons in both themes before calling it fixed; do not
+ * assert from this diff alone (binding RENDERED EVIDENCE ONLY rule). */
+.sw-next-artist-detail .image-card-save:hover,
+.sw-next-artist-detail .compare-btn:hover,
+.sw-next-artist-detail .crop-btn:hover,
+.sw-next-artist-detail #compare-save-btn:hover {
+  color: #0f172a !important;
+}
+.dark .sw-next-artist-detail .image-card-save:hover,
+.dark .sw-next-artist-detail .compare-btn:hover,
+.dark .sw-next-artist-detail .crop-btn:hover,
+.dark .sw-next-artist-detail #compare-save-btn:hover {
+  color: #e6edf7 !important;
 }
 
 /* #1932 contrast fix: the artwork-modal multi-select "Save All" button

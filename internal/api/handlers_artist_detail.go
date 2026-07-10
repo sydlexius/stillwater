@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -33,9 +34,14 @@ func artworkKindToType(kind string) string {
 // scoped to the requested kind (promoted from the next/ channel in #1757
 // PR-3b). It reuses the same ImageSearchData the /artists/{id}/images page
 // builds (handleArtistImagesPage); that route remains registered. Capability
-// deltas vs the images page: this handler hardcodes AutoCrop:false and
-// SelectedIndex:-1 (the modal does not pre-select a slot). The modal shell
-// lazy-loads this fragment per active kind.
+// deltas vs the images page: this handler hardcodes AutoCrop:false.
+// SelectedIndex defaults to -1 (no slot pre-selected) but is set from an
+// optional ?slot= query param for kind=backdrops (#2323/#2281 item 4): the
+// backdrop tile carousel (artist_artwork.templ's data-artwork-slot) threads
+// which specific tile was clicked through artwork-modal.js's loadBody() to
+// here, so the "Current Backdrop" hero + Actions menu scope to that slot
+// instead of always showing the primary (slot 0) regardless of which tile
+// was clicked. The modal shell lazy-loads this fragment per active kind.
 func (r *Router) handleArtworkModal(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
@@ -67,6 +73,19 @@ func (r *Router) handleArtworkModal(w http.ResponseWriter, req *http.Request) {
 	}
 	selectedType := artworkKindToType(kind)
 
+	// #2323/#2281 item 4: only meaningful for kind=backdrops. Validate against
+	// the artist's actual fanart count so an out-of-range or garbage slot
+	// value (stale/racing tile click, tampered query string) falls back to
+	// the generic unscoped view rather than a 404-ing or wrongly-scoped hero.
+	selectedIndex := -1
+	if kind == "backdrops" {
+		if slotStr := req.URL.Query().Get("slot"); slotStr != "" {
+			if slot, slotErr := strconv.Atoi(slotStr); slotErr == nil && slot >= 0 && slot < a.FanartCount {
+				selectedIndex = slot
+			}
+		}
+	}
+
 	var webSearchEnabled bool
 	if r.providerSettings != nil {
 		var wsErr error
@@ -83,7 +102,7 @@ func (r *Router) handleArtworkModal(w http.ResponseWriter, req *http.Request) {
 		WebSearchEnabled: webSearchEnabled,
 		AutoFetchImages:  autoFetch,
 		SelectedType:     selectedType,
-		SelectedIndex:    -1,
+		SelectedIndex:    selectedIndex,
 		ProfileName:      r.getActiveProfileName(req.Context()),
 		AutoCrop:         false,
 		BasePath:         r.basePath,
