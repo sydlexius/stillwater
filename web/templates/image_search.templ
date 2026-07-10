@@ -371,8 +371,58 @@ templ ArtworkManageEditor(data ImageSearchData) {
 	</script>
 }
 
+// fanartHeroIndex returns the fanart slot the "Current Backdrop" hero panel
+// and its Actions menu should scope to, or -1 for the generic/non-indexed
+// case (every other kind, and fanart when no specific slot was clicked).
+//
+// #2323/#2281 item 4 fix: handleArtworkModal threads an optional slot index
+// from the clicked backdrop tile (artist_artwork.templ's data-artwork-slot)
+// into data.SelectedIndex. Before this, every backdrop tile -- primary or
+// not -- opened the modal showing the SAME unscoped primary-fanart hero,
+// because nothing threaded which tile was clicked through to the editor.
+// The Fanart Gallery grid below (FanartManagementGallery, htmx-loaded from
+// handleFanartList) was already correctly per-slot; only this hero+Actions
+// block was hardwired to the index-less /images/fanart/... endpoints (which
+// alias to slot 0).
+func fanartHeroIndex(data ImageSearchData) int {
+	if data.SelectedType == "fanart" && data.SelectedIndex >= 0 {
+		return data.SelectedIndex
+	}
+	return -1
+}
+
+// fanartSlotFileURL returns the API path for a specific fanart slot's image
+// file, reusing the existing GET /images/fanart/{index}/file route (already
+// relied on by swOpenCropForSlot and the crop-save path) rather than adding
+// a new endpoint.
+func fanartSlotFileURL(basePath, artistID string, index int) string {
+	return fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath, artistID, index)
+}
+
+// fanartHeroExists reports whether the hero panel has an image to show for
+// the given (possibly slot-scoped) selection. A non-negative idx is only
+// ever set by handleArtworkModal after validating the slot exists, so it is
+// unconditionally true; the generic case defers to the existing
+// imageExistsForType check.
+func fanartHeroExists(data ImageSearchData, idx int) bool {
+	if idx >= 0 {
+		return true
+	}
+	return imageExistsForType(data.Artist, data.SelectedType)
+}
+
+// fanartHeroURL returns the hero panel's image URL, scoped to idx's specific
+// fanart slot when set, else the existing generic per-type file URL.
+func fanartHeroURL(data ImageSearchData, idx int) string {
+	if idx >= 0 {
+		return fanartSlotFileURL(data.BasePath, data.Artist.ID, idx)
+	}
+	return fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType)
+}
+
 // imageSearchContextualized renders the single-type image editing layout.
 templ imageSearchContextualized(data ImageSearchData) {
+	{{ fanartIdx := fanartHeroIndex(data) }}
 	<div
 		class="max-w-4xl mx-auto space-y-6"
 		data-artist-id={ data.Artist.ID }
@@ -386,7 +436,11 @@ templ imageSearchContextualized(data ImageSearchData) {
 	>
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<div class="flex items-center justify-between mb-4">
-				<h2 class="text-lg font-semibold">{ tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</h2>
+				if fanartIdx >= 0 {
+					<h2 class="text-lg font-semibold">{ fmt.Sprintf("%s #%d", tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)), fanartIdx+1) }</h2>
+				} else {
+					<h2 class="text-lg font-semibold">{ tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</h2>
+				}
 				<div class="inline-flex items-center gap-1">
 					<div class="relative inline-flex" data-context-menu={ "img-actions-" + data.Artist.ID }>
 						<button
@@ -405,91 +459,46 @@ templ imageSearchContextualized(data ImageSearchData) {
 							class="hidden absolute right-0 top-full z-40 mt-1 min-w-[12rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
 							role="menu"
 						>
-							if data.Artist.MusicBrainzID != "" {
+							if fanartIdx >= 0 {
+								// #2323/#2281 item 4: this hero is scoped to a specific
+								// non-primary (or primary) backdrop slot, clicked directly
+								// from the tile carousel. Only offer actions that already
+								// have real per-slot plumbing (swOpenCropForSlot,
+								// swOpenFetchUrlForSlot, the per-slot DELETE endpoint).
+								// Provider Fetch/Web Search/Browse are deliberately omitted
+								// here rather than shown misleadingly: those flows save via
+								// the generic append/replace path (internal/api's
+								// /images/fetch and /images/upload), which has no slot
+								// parameter today, so a result picked from them cannot
+								// actually land in THIS slot. Surfacing them here would look
+								// scoped but silently write to the wrong place. Fixing that
+								// is a bigger, separate lift (thread slot through
+								// /images/fetch + /images/upload) -- flagged for a follow-up
+								// issue, not silently dropped.
 								<button
 									type="button"
 									role="menuitem"
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-									hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
-									hx-target="#image-results"
-									hx-swap="innerHTML"
-									hx-indicator="#search-spinner"
+									onclick={ templ.JSFuncCall("window.swOpenFetchUrlForSlot", fanartIdx) }
 								>
-									@components.IconMagnifyingGlass("h-4 w-4")
-									{ t(ctx, "image.fetch") }
+									@components.IconArrowDownTray("h-4 w-4")
+									{ t(ctx, "image.fetch_from_url") }
 								</button>
-							}
-							if data.WebSearchEnabled {
-								<button
-									type="button"
-									role="menuitem"
-									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20"
-									hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType) }
-									hx-target="#image-results"
-									hx-swap="innerHTML"
-									hx-indicator="#search-spinner"
-								>
-									@components.IconArrowTopRightOnSquare("h-4 w-4")
-									{ t(ctx, "image.web_search") }
-								</button>
-							}
-							if data.Artist.MusicBrainzID != "" || data.WebSearchEnabled {
-								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
-							}
-							<button
-								type="button"
-								role="menuitem"
-								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('image-file-input').click()"
-							>
-								@components.IconArrowUpTray("h-4 w-4")
-								{ t(ctx, "image.browse") }
-							</button>
-							<button
-								type="button"
-								role="menuitem"
-								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false'); if (typeof window.swOpenFetchUrlModal === 'function') { window.swOpenFetchUrlModal(); } else { console.error('swOpenFetchUrlModal unavailable; opening fetch-URL modal without clearing a stale per-slot fetch target'); document.getElementById('fetch-url-modal').classList.remove('hidden'); }"
-							>
-								@components.IconArrowDownTray("h-4 w-4")
-								{ t(ctx, "image.fetch_from_url") }
-							</button>
-							if imageExistsForType(data.Artist, data.SelectedType) {
 								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 								<button
 									type="button"
 									role="menuitem"
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-									onclick={ openCropForType(data.BasePath+fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
+									onclick={ templ.JSFuncCall("window.swOpenCropForSlot", fanartIdx) }
 								>
 									@components.IconCrop("h-4 w-4")
 									{ t(ctx, "common.crop") }
 								</button>
-								// Auto-trim padding: logo only (removes transparent/near-solid
-								// borders to tighten a logo). Distinct icon (scissors) from the
-								// crop glyph per design section 8/20.5. Gated via #1837.
-								if data.SelectedType == "logo" {
-									<button
-										type="button"
-										role="menuitem"
-										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", data.Artist.ID) }
-										hx-confirm={ t(ctx, "image.confirm_trim_logo") }
-										hx-swap="none"
-										data-sw-requires-image-write
-										data-msg-failed={ t(ctx, "image.trim_failed_short") }
-										hx-on::after-request="if(event.detail.successful) window.location.reload(); else if(event.detail.xhr.status!==409) alert(this.dataset.msgFailed);"
-										title={ t(ctx, "image.disabled_during_conflict") }
-									>
-										@components.IconScissors("h-4 w-4")
-										{ t(ctx, "artist.artwork.auto_trim") }
-									</button>
-								}
 								<button
 									type="button"
 									role="menuitem"
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-									hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
+									hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", data.Artist.ID, fanartIdx) }
 									hx-confirm={ tf(ctx, "image.confirm_delete_type", imageTypeLabel(data.SelectedType, data.ProfileName)) }
 									data-confirm-key="image-delete"
 									hx-swap="none"
@@ -498,6 +507,101 @@ templ imageSearchContextualized(data ImageSearchData) {
 									@components.IconTrash("h-4 w-4")
 									{ t(ctx, "common.delete") }
 								</button>
+							} else {
+								if data.Artist.MusicBrainzID != "" {
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
+										hx-target="#image-results"
+										hx-swap="innerHTML"
+										hx-indicator="#search-spinner"
+									>
+										@components.IconMagnifyingGlass("h-4 w-4")
+										{ t(ctx, "image.fetch") }
+									</button>
+								}
+								if data.WebSearchEnabled {
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+										hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType) }
+										hx-target="#image-results"
+										hx-swap="innerHTML"
+										hx-indicator="#search-spinner"
+									>
+										@components.IconArrowTopRightOnSquare("h-4 w-4")
+										{ t(ctx, "image.web_search") }
+									</button>
+								}
+								if data.Artist.MusicBrainzID != "" || data.WebSearchEnabled {
+									<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+								}
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('image-file-input').click()"
+								>
+									@components.IconArrowUpTray("h-4 w-4")
+									{ t(ctx, "image.browse") }
+								</button>
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false'); if (typeof window.swOpenFetchUrlModal === 'function') { window.swOpenFetchUrlModal(); } else { console.error('swOpenFetchUrlModal unavailable; opening fetch-URL modal without clearing a stale per-slot fetch target'); document.getElementById('fetch-url-modal').classList.remove('hidden'); }"
+								>
+									@components.IconArrowDownTray("h-4 w-4")
+									{ t(ctx, "image.fetch_from_url") }
+								</button>
+								if imageExistsForType(data.Artist, data.SelectedType) {
+									<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										onclick={ openCropForType(data.BasePath+fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
+									>
+										@components.IconCrop("h-4 w-4")
+										{ t(ctx, "common.crop") }
+									</button>
+									// Auto-trim padding: logo only (removes transparent/near-solid
+									// borders to tighten a logo). Distinct icon (scissors) from the
+									// crop glyph per design section 8/20.5. Gated via #1837.
+									if data.SelectedType == "logo" {
+										<button
+											type="button"
+											role="menuitem"
+											class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+											hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", data.Artist.ID) }
+											hx-confirm={ t(ctx, "image.confirm_trim_logo") }
+											hx-swap="none"
+											data-sw-requires-image-write
+											data-msg-failed={ t(ctx, "image.trim_failed_short") }
+											hx-on::after-request="if(event.detail.successful) window.location.reload(); else if(event.detail.xhr.status!==409) alert(this.dataset.msgFailed);"
+											title={ t(ctx, "image.disabled_during_conflict") }
+										>
+											@components.IconScissors("h-4 w-4")
+											{ t(ctx, "artist.artwork.auto_trim") }
+										</button>
+									}
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+										hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
+										hx-confirm={ tf(ctx, "image.confirm_delete_type", imageTypeLabel(data.SelectedType, data.ProfileName)) }
+										data-confirm-key="image-delete"
+										hx-swap="none"
+										hx-on::after-request="if(event.detail.successful) window.location.reload()"
+									>
+										@components.IconTrash("h-4 w-4")
+										{ t(ctx, "common.delete") }
+									</button>
+								}
 							}
 						</div>
 					</div>
@@ -514,12 +618,12 @@ templ imageSearchContextualized(data ImageSearchData) {
 				id="image-drop-zone"
 				class={
 					"relative flex items-center justify-center overflow-hidden rounded-lg max-h-96 transition-colors border-2 border-transparent",
-					templ.KV("checkered-bg", data.SelectedType == "logo" && imageExistsForType(data.Artist, data.SelectedType)),
-					templ.KV("bg-gray-100 dark:bg-gray-900", data.SelectedType != "logo" && imageExistsForType(data.Artist, data.SelectedType)),
-					templ.KV("bg-gray-50 dark:bg-gray-800/50 py-16", !imageExistsForType(data.Artist, data.SelectedType)),
+					templ.KV("checkered-bg", data.SelectedType == "logo" && fanartHeroExists(data, fanartIdx)),
+					templ.KV("bg-gray-100 dark:bg-gray-900", data.SelectedType != "logo" && fanartHeroExists(data, fanartIdx)),
+					templ.KV("bg-gray-50 dark:bg-gray-800/50 py-16", !fanartHeroExists(data, fanartIdx)),
 				}
 			>
-				if imageExistsForType(data.Artist, data.SelectedType) {
+				if fanartHeroExists(data, fanartIdx) {
 					// The current-image is also the in-modal lightbox trigger (#2305):
 					// clicking it opens the shared LightboxOverlay() as a zoom viewer. A
 					// <button> keeps it keyboard-reachable; it does not replace the
@@ -528,14 +632,14 @@ templ imageSearchContextualized(data ImageSearchData) {
 					<button
 						type="button"
 						class="block max-w-full max-h-96 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						data-lightbox-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
+						data-lightbox-src={ fanartHeroURL(data, fanartIdx) }
 						data-lightbox-alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
 						onclick="swLightbox.open(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
 						title={ t(ctx, "image.view_full_size") }
 						aria-label={ t(ctx, "image.view_full_size") }
 					>
 						<img
-							src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
+							src={ fanartHeroURL(data, fanartIdx) }
 							alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
 							class="max-w-full max-h-96 object-contain"
 						/>
@@ -551,7 +655,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 				</div>
 			</div>
 			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400 text-center">{ t(ctx, "image.drag_drop_hint") }</p>
-			if imageExistsForType(data.Artist, data.SelectedType) {
+			if fanartIdx < 0 && imageExistsForType(data.Artist, data.SelectedType) {
 				<div
 					class="mt-1 text-center"
 					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/%s/info", data.Artist.ID, data.SelectedType) }
@@ -559,6 +663,11 @@ templ imageSearchContextualized(data ImageSearchData) {
 					hx-swap="innerHTML"
 				></div>
 			}
+			// A slot-scoped hero (fanartIdx >= 0) deliberately omits the live
+			// dimensions/size line above: /images/fanart/info (no index) always
+			// describes slot 0, which would show the WRONG slot's info next to
+			// THIS slot's image. The Fanart Gallery row for this same slot
+			// (below) already shows its correct per-slot dimensions/size.
 			// -- Upload status --
 			<div id="upload-status" class="mt-2"></div>
 		</section>

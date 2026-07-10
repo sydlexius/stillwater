@@ -252,3 +252,87 @@ describe('artwork-modal: open and close', () => {
       'Escape must still close the artwork modal once the lightbox is hidden again');
   });
 });
+
+// ---------------------------------------------------------------------------
+// #2323/#2281 QOL #48: the outer modal's three close paths (Escape, its own
+// backdrop click, its own X button) must not silently discard an
+// in-progress crop staged in the nested Cropper overlay (image_search.templ).
+// That script sets window._cropDirty / window.guardedCloseCropModal as real
+// globals (an intentional top-level, non-IIFE <script>); these tests stub
+// them directly on dom.window rather than loading the whole crop editor.
+// ---------------------------------------------------------------------------
+describe('artwork-modal: crop discard-guard on the outer modal close paths (#2323)', () => {
+  function openModalDirty(dom) {
+    dom.window.swArtworkModal.open('backdrops');
+    dom.window._cropDirty = true;
+    dom.window.guardedCloseCropModal = () => { dom.window.guardedCloseCropModalCalls = (dom.window.guardedCloseCropModalCalls || 0) + 1; };
+  }
+
+  it('Escape routes through guardedCloseCropModal instead of closing when a crop is dirty', () => {
+    const dom = createDom({ html: MODAL_HTML, modules: ['artworkModal'] });
+    openModalDirty(dom);
+    const m = dom.window.document.getElementById('artwork-modal');
+
+    const evt = new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    dom.window.document.dispatchEvent(evt);
+
+    assert.ok(!m.classList.contains('hidden'), 'the outer modal must stay open while a crop is dirty');
+    assert.equal(dom.window.guardedCloseCropModalCalls, 1, 'Escape must call guardedCloseCropModal exactly once');
+  });
+
+  it('outer backdrop click routes through guardedCloseCropModal instead of closing when a crop is dirty', () => {
+    const dom = createDom({ html: MODAL_HTML, modules: ['artworkModal'] });
+    openModalDirty(dom);
+    const m = dom.window.document.getElementById('artwork-modal');
+
+    m.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    assert.ok(!m.classList.contains('hidden'), 'the outer modal must stay open while a crop is dirty');
+    assert.equal(dom.window.guardedCloseCropModalCalls, 1, 'backdrop click must call guardedCloseCropModal exactly once');
+  });
+
+  it('outer X button routes through guardedCloseCropModal instead of closing when a crop is dirty', () => {
+    const dom = createDom({ html: MODAL_HTML, modules: ['artworkModal'] });
+    openModalDirty(dom);
+    const m = dom.window.document.getElementById('artwork-modal');
+    const closeBtn = dom.window.document.querySelector('[data-sw-artwork-close]');
+
+    closeBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    assert.ok(!m.classList.contains('hidden'), 'the outer modal must stay open while a crop is dirty');
+    assert.equal(dom.window.guardedCloseCropModalCalls, 1, 'the X button must call guardedCloseCropModal exactly once');
+  });
+
+  it('Escape still closes the modal normally once the crop is no longer dirty', () => {
+    const dom = createDom({ html: MODAL_HTML, modules: ['artworkModal'] });
+    openModalDirty(dom);
+    dom.window._cropDirty = false; // e.g. the Cropper's own guarded Cancel just ran
+    const m = dom.window.document.getElementById('artwork-modal');
+
+    const evt = new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    dom.window.document.dispatchEvent(evt);
+
+    assert.ok(m.classList.contains('hidden'), 'Escape must close the outer modal once the crop is clean');
+    assert.equal(dom.window.guardedCloseCropModalCalls, undefined, 'guardedCloseCropModal must not be called when the crop is clean');
+  });
+
+  // No-silent-failure: a missing guardedCloseCropModal (e.g. the crop editor
+  // fragment was never loaded, so _cropDirty is somehow true without the
+  // guard function existing) must fail loudly, not swallow the close.
+  it('falls back to a normal close and logs an error if guardedCloseCropModal is missing while dirty', () => {
+    const dom = createDom({ html: MODAL_HTML, modules: ['artworkModal'] });
+    dom.window.swArtworkModal.open('backdrops');
+    dom.window._cropDirty = true;
+    // guardedCloseCropModal deliberately left undefined.
+    const errors = [];
+    dom.window.console.error = (msg) => errors.push(msg);
+    const m = dom.window.document.getElementById('artwork-modal');
+
+    const evt = new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    dom.window.document.dispatchEvent(evt);
+
+    assert.ok(m.classList.contains('hidden'), 'the outer modal must still close rather than get stuck open');
+    assert.equal(errors.length, 1, 'the missing-guard fallback must log exactly one error');
+    assert.match(errors[0], /guardedCloseCropModal unavailable/);
+  });
+});

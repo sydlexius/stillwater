@@ -10,7 +10,9 @@
 // All wiring is document-level delegation so it survives htmx fragment swaps.
 //
 // Public API:
-//   window.swArtworkModal.open(kind)       - open the modal pre-selected to kind
+//   window.swArtworkModal.open(kind, slot) - open the modal pre-selected to
+//                                             kind (and, for kind=backdrops,
+//                                             an optional 0-based fanart slot)
 //   window.swArtworkModal.close()          - close the modal
 //   window.swArtworkModal.setActiveKind(k) - switch the active kind tab
 (function () {
@@ -29,6 +31,14 @@
 
   var _opener = null; // element focused before the modal opened (focus restore)
   var _activeKind = "primary";
+  // #2323/#2281 item 4: which backdrop tile (0-based fanart slot) opened the
+  // modal, or -1 for the generic/non-indexed case (every other kind, the
+  // kind-tab switcher, and the backdrops [+] add-tile). Threaded to
+  // handleArtworkModal via loadBody()'s query string so the "Current
+  // Backdrop" hero + Actions menu scope to the clicked slot instead of
+  // always showing the primary (slot 0) regardless of which tile was
+  // clicked.
+  var _activeSlot = -1;
 
   function modal() {
     return document.getElementById("artwork-modal");
@@ -81,6 +91,7 @@
       id +
       "/artwork-modal?kind=" +
       encodeURIComponent(_activeKind);
+    if (_activeSlot >= 0) url += "&slot=" + encodeURIComponent(_activeSlot);
     window.htmx.ajax("GET", url, { target: "#artwork-modal-body", swap: "innerHTML" });
   }
 
@@ -128,9 +139,15 @@
       });
   }
 
-  function setActiveKind(kind) {
+  // slot (#2323/#2281 item 4): 0-based fanart index to pre-select for
+  // kind=backdrops, or omitted/negative for the generic view. Any caller
+  // that does not pass a slot (the kind-tab switcher, non-backdrop kinds)
+  // resets to -1 -- switching kind/tab manually is a deliberate "show me
+  // the generic view" action, not a re-click of the same tile.
+  function setActiveKind(kind, slot) {
     if (!KIND_TO_TYPE[kind]) kind = "primary";
     _activeKind = kind;
+    _activeSlot = typeof slot === "number" && slot >= 0 ? slot : -1;
     var tabs = document.querySelectorAll("[data-sw-artwork-kind-tab]");
     for (var i = 0; i < tabs.length; i++) {
       var on = tabs[i].dataset.artworkKind === kind;
@@ -141,7 +158,7 @@
     refreshRevert();
   }
 
-  function openModal(kind) {
+  function openModal(kind, slot) {
     var m = modal();
     if (!m) return;
     _opener = document.activeElement;
@@ -149,7 +166,7 @@
     m.classList.add("flex");
     document.removeEventListener("keydown", onKeydown);
     document.addEventListener("keydown", onKeydown);
-    setActiveKind(kind || "primary");
+    setActiveKind(kind || "primary", slot);
     m.focus();
   }
 
@@ -163,6 +180,46 @@
     _opener = null;
   }
 
+  // #2323: the crop editor (Cropper.js) is a nested overlay the reused
+  // ArtworkManageEditor fragment (image_search.templ) lazy-loads inside this
+  // modal's body. That fragment's script is an intentional top-level
+  // (non-IIFE) <script> tag -- window._cropDirty / window.guardedCloseCropModal
+  // are real globals whenever the crop editor fragment has ever been loaded
+  // for the current modal session, not implementation-detail bleed. The #2281
+  // QOL #48 discard guard (widened by the #6 fix, commit f082ad8a) already
+  // covers the Cropper's OWN close controls (its X, Cancel, and backdrop
+  // click), but this OUTER modal has three independent close paths of its own
+  // -- Escape, its own backdrop click, and its own X button -- that used to
+  // call closeModal() unconditionally, silently discarding a dirty crop
+  // staged underneath. cropGuardActive() reports whether that would happen;
+  // guardedCloseOuterModal() is the drop-in replacement for closeModal() at
+  // all three sites below.
+  function cropGuardActive() {
+    return typeof window._cropDirty !== "undefined" && !!window._cropDirty;
+  }
+
+  function guardedCloseOuterModal() {
+    if (!cropGuardActive()) {
+      closeModal();
+      return;
+    }
+    if (typeof window.guardedCloseCropModal !== "function") {
+      // Capability check fails loudly rather than silently discarding: log so
+      // a missing/broken crop-guard bridge is visible, but still let the
+      // user close the modal (mirrors guardedCloseCropModal's own fallback).
+      console.error("guardedCloseCropModal unavailable; closing the artwork modal without checking for an in-progress crop");
+      closeModal();
+      return;
+    }
+    // Close the crop overlay first (with its own discard-confirm prompt)
+    // rather than the whole modal in one step -- mirrors the lightbox
+    // close-topmost-layer-first precedent in onKeydown below. If the user
+    // confirms the discard, the crop overlay closes and this modal stays
+    // open underneath it, exactly like using the crop editor's own Cancel
+    // button would.
+    window.guardedCloseCropModal();
+  }
+
   function onKeydown(e) {
     // The lightbox can be opened on top of this modal as an in-modal zoom
     // viewer (#2305: image_search.templ current-image, FanartManagementGallery
@@ -174,7 +231,7 @@
     if (lightbox && !lightbox.classList.contains("hidden")) return;
     if (e.key === "Escape") {
       e.preventDefault();
-      closeModal();
+      guardedCloseOuterModal();
       return;
     }
     // Trap Tab/Shift+Tab inside the dialog so keyboard focus cannot escape to
@@ -276,12 +333,17 @@
     var openBtn = e.target.closest("[data-sw-artwork-open]");
     if (openBtn) {
       e.preventDefault();
-      openModal(openBtn.dataset.artworkKind || "primary");
+      // #2323/#2281 item 4: data-artwork-slot is only present on backdrop
+      // tiles (artist_artwork.templ); every other doorway (identity tiles,
+      // the toolbar "Manage artwork" button, the backdrops [+] add-tile)
+      // omits it, so slot stays undefined -> the generic view.
+      var slot = openBtn.dataset.artworkSlot !== undefined ? parseInt(openBtn.dataset.artworkSlot, 10) : undefined;
+      openModal(openBtn.dataset.artworkKind || "primary", slot);
       return;
     }
     if (e.target.closest("[data-sw-artwork-close]")) {
       e.preventDefault();
-      closeModal();
+      guardedCloseOuterModal();
       return;
     }
     var tab = e.target.closest("[data-sw-artwork-kind-tab]");
@@ -298,7 +360,7 @@
     // Click on the dark backdrop (the modal element itself, not its surface)
     // closes the modal.
     if (e.target === modal()) {
-      closeModal();
+      guardedCloseOuterModal();
     }
   });
 

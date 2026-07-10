@@ -290,6 +290,7 @@ templ artworkBackdropTile(artistID string, index int, total int) {
 			class="sw-artwork-tile-open block focus:outline-none focus:ring-2 focus:ring-blue-500"
 			data-sw-artwork-open
 			data-artwork-kind="backdrops"
+			data-artwork-slot={ strconv.Itoa(index) }
 			title={ t(ctx, "artist.artwork.click_to_manage") }
 			aria-label={ t(ctx, "artist.artwork.click_to_manage") }
 		>
