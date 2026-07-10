@@ -1937,6 +1937,13 @@ func (s *Service) ListRefsByLibrary(ctx context.Context, libraryID string) ([]Ar
 	return s.artists.ListRefsByLibrary(ctx, libraryID)
 }
 
+// ListMBIDPaths returns one (MBID, path) record per artist that has both a
+// non-empty MusicBrainz ID and a non-empty path. Used by Lidarr path-mapping
+// inference to match Stillwater artists to a Lidarr instance by MBID (#2329).
+func (s *Service) ListMBIDPaths(ctx context.Context) ([]MBIDPath, error) {
+	return s.artists.ListMBIDPaths(ctx)
+}
+
 // GetByIDsBatch returns the artists matching the supplied IDs as a map keyed
 // by artist ID. Missing IDs are silently dropped (no error). The opts arg
 // controls side-table hydration with the same semantics as GetByID; without

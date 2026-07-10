@@ -537,6 +537,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/stillwater-managed", wrapAuth(middleware.RequireAdmin(r.handleSetStillwaterManaged), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/verify-path-after-update", wrapAuth(middleware.RequireAdmin(r.handleSetVerifyPathAfterUpdate), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/path-mappings", wrapAuth(middleware.RequireAdmin(r.handleSetPathMappings), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/path-mappings/infer", wrapAuth(middleware.RequireAdmin(r.handleInferPathMappings), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/conflict-detail", wrapAuth(r.handleGetConnectionConflictDetail, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/conflicts", wrapAuth(r.handleGetConflicts, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/config/conflict-banner", wrapAuth(r.handleGetConflictBanner, authMw))

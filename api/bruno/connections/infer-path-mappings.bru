@@ -1,0 +1,35 @@
+meta {
+  name: Infer Path Mappings
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{apiBase}}/connections/{{connectionId}}/path-mappings/infer
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  connectionId is the sentinel UUID guaranteed not to exist in the CI
+  database. handleInferPathMappings checks connection existence (before
+  allocating any per-id mutex state) prior to the Lidarr-type gate, so a
+  non-existent connection yields a deterministic 404 with an error
+  envelope regardless of the request. A real Lidarr connection would
+  instead return the refreshed path-mapping card HTML fragment.
+}
+
+tests {
+  test("returns 404 for sentinel connectionId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports connection not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("connection not found");
+  });
+}

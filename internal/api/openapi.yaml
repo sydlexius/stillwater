@@ -8714,6 +8714,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /connections/{id}/path-mappings/infer:
+    post:
+      tags: [Connections]
+      summary: Re-run Lidarr path-mapping inference (Lidarr only)
+      operationId: inferPathMappings
+      description: >
+        Re-derives host<->platform path mappings for a Lidarr connection by
+        matching Stillwater artists to the connection's Lidarr artists by
+        MusicBrainz ID and comparing the two mount prefixes. When the connection
+        currently has no mappings, the derived set is applied; an existing
+        (operator-entered or previously inferred) list is never overwritten.
+        Returns the refreshed path-mapping card HTML fragment with a read-only
+        info line reporting how many mappings were inferred from how many matched
+        artists. Lidarr only; returns 400 for non-Lidarr connections.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >
+            Inference ran; returns the refreshed path-mapping card fragment.
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: >
+            Invalid request. Returned when the connection id is missing or the
+            connection is not a Lidarr connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Persisting the inferred mappings failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /conflicts:
     get:
       tags: [Connections]

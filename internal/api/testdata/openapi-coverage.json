@@ -1001,6 +1001,13 @@
     "covered": true
   },
   {
+    "operationId": "inferPathMappings",
+    "method": "POST",
+    "path": "/connections/{id}/path-mappings/infer",
+    "handler": "handleInferPathMappings",
+    "covered": true
+  },
+  {
     "operationId": "listAPITokens",
     "method": "GET",
     "path": "/auth/tokens",

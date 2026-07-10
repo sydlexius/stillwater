@@ -271,6 +271,8 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		if updateErr := r.connectionService.UpdateStatus(req.Context(), existing.ID, connStatus, ""); updateErr != nil {
 			r.logger.Error("updating connection status after save", "error", updateErr)
 		}
+		// Best-effort: auto-derive Lidarr path mappings when none are set yet.
+		r.applyInferredPathMappingsIfEmpty(req.Context(), existing)
 		r.handleCreateConnectionSuccess(w, req, *existing, isOOBE)
 		return
 	}
@@ -299,6 +301,8 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 	if updateErr := r.connectionService.UpdateStatus(req.Context(), c.ID, connStatus, ""); updateErr != nil {
 		r.logger.Error("updating connection status after create", "error", updateErr)
 	}
+	// Best-effort: auto-derive Lidarr path mappings when none are set yet.
+	r.applyInferredPathMappingsIfEmpty(req.Context(), c)
 	r.handleCreateConnectionSuccess(w, req, *c, isOOBE)
 }
 
@@ -408,6 +412,9 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 		writeFormError(w, req, http.StatusInternalServerError, "internal error")
 		return
 	}
+	// Best-effort: a Lidarr connection updated to enabled with no path mappings
+	// yet gets them auto-derived (no-op when disabled or already mapped -- #2329).
+	r.applyInferredPathMappingsIfEmpty(req.Context(), existing)
 	// HTMX form submission from the settings page edit panel: trigger a full
 	// page refresh so the updated connection values appear in the read-only
 	// row, matching the handleCreateConnectionSuccess pattern.
@@ -1070,6 +1077,82 @@ func sanitizePathMappings(in []connection.PathMapping) ([]connection.PathMapping
 		out = append(out, connection.PathMapping{HostPrefix: host, PlatformPrefix: platform})
 	}
 	return out, nil
+}
+
+// handleInferPathMappings re-runs Lidarr path-mapping inference for a connection
+// and, when the connection currently has no mappings, applies the derived set
+// (never overwriting an existing list -- #2329 B3). It returns the refreshed
+// path-mapping card fragment with a read-only info line reporting the outcome,
+// so the settings UI updates in place.
+//
+// POST /api/v1/connections/{id}/path-mappings/infer
+//
+// Mirrors handleSetPathMappings: non-Lidarr connections are rejected (400), the
+// existence + type gate runs BEFORE the per-id LoadOrStore, and the shared
+// pathMappingsMu serializes the read-modify-write so a concurrent manual save
+// and an infer cannot interleave.
+func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing connection id"})
+		return
+	}
+
+	// Existence + type gate BEFORE allocating per-id serialization state.
+	if gate, gerr := r.connectionService.GetByID(req.Context(), id); gerr != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	} else if gate.Type != connection.TypeLidarr {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
+		return
+	}
+
+	muIface, _ := r.pathMappingsMu.LoadOrStore(id, &sync.Mutex{})
+	connMu := muIface.(*sync.Mutex)
+	connMu.Lock()
+	defer connMu.Unlock()
+
+	existing, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+	if existing.Type != connection.TypeLidarr {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
+		return
+	}
+
+	// Compute the inference outcome (for the info line) then apply it when the
+	// list is empty. Running inference directly here -- rather than only through
+	// applyInferredPathMappingsIfEmpty -- lets the info line report the matched
+	// count and the derived-mapping count even when nothing is applied (e.g. the
+	// list was already populated or the consensus floor emitted zero).
+	mappings, matched, inferErr := r.inferLidarrPathMappings(req.Context(), existing)
+	if inferErr != nil {
+		r.logger.Info("path-mapping inference (manual) skipped", "connection_id", id, "error", inferErr)
+		mappings, matched = nil, 0
+	}
+	// Apply only when the list is empty (B3 precedence). Track whether we
+	// actually wrote so the info line can distinguish "applied N" from
+	// "inferred N but kept your existing mappings" (a non-empty list is never
+	// overwritten).
+	applied := false
+	if len(existing.GetPathMappings()) == 0 && len(mappings) > 0 {
+		setPathMappings(existing, mappings)
+		if updErr := r.connectionService.Update(req.Context(), existing); updErr != nil {
+			r.logger.Error("persisting inferred path mappings (manual)", "connection_id", id, "error", updErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		applied = true
+	}
+
+	renderTempl(w, req, templates.ConnectionPathMappingsBlock(*existing, templates.PathInferResult{
+		Show:     true,
+		Inferred: len(mappings),
+		Matched:  matched,
+		Applied:  applied,
+	}))
 }
 
 // setPathMappings replaces the Lidarr path-mapping list on c, allocating the
