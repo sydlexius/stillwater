@@ -26,6 +26,8 @@ package templates
 // rendered, and image_write is gated to Emby/Jellyfin (never Lidarr).
 
 import (
+	"strconv"
+
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -430,13 +432,34 @@ script toggleServerAddPanel() {
 // it never appears for Emby/Jellyfin (#2303). Shared by the stable and next
 // connection cards.
 templ connectionPathMappings(c connection.Connection) {
-	<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+	@ConnectionPathMappingsBlock(c, PathInferResult{})
+}
+
+// ConnectionPathMappingsBlock is the exported, re-renderable path-mapping card.
+// The initial page render passes a zero PathInferResult (no info line); the
+// POST /connections/{id}/path-mappings/infer handler re-renders this whole block
+// (swapped by id) with a populated result so the info line reports what the
+// re-infer found and the editor reflects any auto-applied rows (#2329). The
+// wrapper id is the hx-target for the Re-infer button's outerHTML swap.
+templ ConnectionPathMappingsBlock(c connection.Connection, infer PathInferResult) {
+	<div id={ "path-mapping-block-" + c.ID } class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
 		<div class="min-w-0">
 			<span id={ "path-mapping-label-" + c.ID } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.path_mapping_title") }</span>
 			<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 				{ t(ctx, "settings.connections.path_mapping_description") }
 			</div>
 		</div>
+		if infer.Show {
+			<div class="text-xs text-gray-600 dark:text-gray-400 mt-1" role="status" aria-live="polite" aria-atomic="true">
+				if infer.Inferred > 0 && infer.Applied {
+					{ tf(ctx, "settings.connections.path_mapping_inferred", strconv.Itoa(infer.Inferred), strconv.Itoa(infer.Matched)) }
+				} else if infer.Inferred > 0 {
+					{ tf(ctx, "settings.connections.path_mapping_inferred_kept", strconv.Itoa(infer.Inferred), strconv.Itoa(infer.Matched)) }
+				} else {
+					{ t(ctx, "settings.connections.path_mapping_none_inferred") }
+				}
+			</div>
+		}
 		<form
 			class="mt-2 space-y-1"
 			hx-post={ "/api/v1/connections/" + c.ID + "/path-mappings" }
@@ -451,7 +474,23 @@ templ connectionPathMappings(c connection.Connection) {
 				@pathMappingRow(m.HostPrefix, m.PlatformPrefix)
 			}
 			@pathMappingRow("", "")
-			<button type="submit" class="rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 mt-1">{ t(ctx, "actions.save") }</button>
+			<div class="flex items-center gap-2 mt-1">
+				<button type="submit" class="rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5">{ t(ctx, "actions.save") }</button>
+				// Stable id + conditional autofocus restore keyboard/SR focus after
+				// the outerHTML swap replaces this button: htmx re-focuses the
+				// same-id element in the swapped-in content, and autofocus (set only
+				// on the re-infer response, never the initial page render, so it does
+				// not steal focus on load) is the belt-and-suspenders fallback (#2335).
+				<button
+					id={ "path-mapping-reinfer-" + c.ID }
+					type="button"
+					class="rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs font-medium px-3 py-1.5"
+					hx-post={ "/api/v1/connections/" + c.ID + "/path-mappings/infer" }
+					hx-target={ "#path-mapping-block-" + c.ID }
+					hx-swap="outerHTML"
+					autofocus?={ infer.Show }
+				>{ t(ctx, "settings.connections.path_mapping_reinfer") }</button>
+			</div>
 		</form>
 		<span id={ "path-mapping-result-" + c.ID } class="hidden text-xs mt-1" role="status" aria-live="polite" aria-atomic="true"></span>
 	</div>

@@ -412,6 +412,39 @@ func (r *sqliteArtistRepo) ListRefsByLibrary(ctx context.Context, libraryID stri
 	return result, nil
 }
 
+// ListMBIDPaths returns one (MBID, path) record per artist that has both a
+// non-empty MusicBrainz ID and a non-empty path. The MBID lives in
+// artist_provider_ids (provider='musicbrainz'), so the join filters on that
+// provider and its provider_id, and the artists.path column supplies the host
+// path. Rows missing either side are excluded so callers never observe a blank
+// key. Rows are ordered by (provider_id, path) so a duplicate MBID surfaces in
+// a stable order -- defense-in-depth for the caller's dedup, which is itself
+// order-independent (it skips an MBID that maps to conflicting paths).
+func (r *sqliteArtistRepo) ListMBIDPaths(ctx context.Context) ([]MBIDPath, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT p.provider_id, a.path FROM artists a
+		JOIN artist_provider_ids p ON p.artist_id = a.id
+		WHERE p.provider = 'musicbrainz' AND p.provider_id != '' AND a.path != ''
+		ORDER BY p.provider_id, a.path`)
+	if err != nil {
+		return nil, fmt.Errorf("listing artist MBID paths: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var result []MBIDPath
+	for rows.Next() {
+		var mp MBIDPath
+		if err := rows.Scan(&mp.MBID, &mp.Path); err != nil {
+			return nil, fmt.Errorf("scanning artist MBID path: %w", err)
+		}
+		result = append(result, mp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating artist MBID paths: %w", err)
+	}
+	return result, nil
+}
+
 // ListByIDs returns the artist rows matching ids in a single query. Empty
 // input yields an empty slice with no DB hit. The IN-clause is built by
 // joining "?" literals so static-analysis tools can confirm no user input

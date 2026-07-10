@@ -101,6 +101,15 @@ type ArtistRef struct {
 	Path string
 }
 
+// MBIDPath pairs an artist's MusicBrainz ID with its on-disk path. Both fields
+// are guaranteed non-empty by ListMBIDPaths (the query filters out blanks).
+// Used by Lidarr path-mapping inference to match a Stillwater artist to its
+// Lidarr counterpart by MBID and compare the two mount prefixes (#2329).
+type MBIDPath struct {
+	MBID string
+	Path string
+}
+
 // DiscographyAlbum is the artist-domain representation of a single NFO
 // <album> entry. It mirrors nfo.DiscographyAlbum but lives in the artist
 // package so callers outside the nfo package can reference it without

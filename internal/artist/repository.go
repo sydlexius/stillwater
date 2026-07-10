@@ -49,6 +49,13 @@ type Repository interface {
 	// the full artist list. Order is not guaranteed.
 	ListRefsByLibrary(ctx context.Context, libraryID string) ([]ArtistRef, error)
 
+	// ListMBIDPaths returns one (MBID, path) record for every artist that has
+	// BOTH a non-empty MusicBrainz ID and a non-empty filesystem path. Lidarr
+	// path-mapping inference joins these against a Lidarr instance's artists by
+	// MBID to observe how the two sides mount the same directory (#2329). Order
+	// is not guaranteed.
+	ListMBIDPaths(ctx context.Context) ([]MBIDPath, error)
+
 	// ListByIDs returns the artist rows matching the given IDs in a single
 	// query. Order is not guaranteed; callers that need the original
 	// request order should reconstruct it from the returned slice's IDs.

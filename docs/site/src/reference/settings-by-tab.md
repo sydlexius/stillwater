@@ -308,6 +308,14 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-verify-path-title }
 - **Path mapping (Lidarr only)** -- Translates the artist path Stillwater sees on disk into the path Lidarr expects when the two mount the shared library under different roots (for example Stillwater's /music/Artist versus Lidarr's /data/media/Artist). Enter one or more host-to-platform prefix pairs; on a rename or merge, Stillwater rewrites the longest matching host prefix before telling Lidarr the new path. Leave it empty when both sides see identical paths, and the path is sent verbatim as before. This is the prevention half that pairs with Verify path after rename (the detection half): a correct mapping leaves Lidarr nothing to coerce against its Root Folder list, and a Verify error that fires after you set a mapping means the mapping (or a Lidarr Root Folder) is still wrong.
 {: #settings-connections-connections-path-mapping-title }
+- **Inferred %s mapping(s) from %s matched artists.**
+{: #settings-connections-connections-path-mapping-inferred }
+- **Inferred %s mapping(s) from %s matched artists; kept your existing mappings.**
+{: #settings-connections-connections-path-mapping-inferred-kept }
+- **No mappings inferred (shared mount or no matched Lidarr artists).**
+{: #settings-connections-connections-path-mapping-none-inferred }
+- **Re-infer**
+{: #settings-connections-connections-path-mapping-reinfer }
 - **Server name**
 {: #settings-connections-connections-server-name }
 - **Server URL**
