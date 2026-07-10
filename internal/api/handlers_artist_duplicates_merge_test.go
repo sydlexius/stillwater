@@ -46,6 +46,17 @@ func mergeTestRouter(t *testing.T) (*Router, *artist.Service, *sql.DB) {
 	return r, artistSvc, db
 }
 
+// mergeTestRouterWithPipeline is mergeTestRouter plus a rule.PipelineRunner
+// injected into the Router, so tests can observe (or stub the behavior of)
+// the post-merge runRulesAfterRefresh call (#2338). Pass nil for pipeline to
+// exercise the nil-pipeline no-op path explicitly.
+func mergeTestRouterWithPipeline(t *testing.T, pipeline rule.PipelineRunner) (*Router, *artist.Service, *sql.DB) {
+	t.Helper()
+	r, artistSvc, db := mergeTestRouter(t)
+	r.pipeline = pipeline
+	return r, artistSvc, db
+}
+
 // seedMergeFixture creates a library plus two near-duplicate artists with
 // non-overlapping album subdirs and a loose file on the loser. Returns the
 // IDs and the on-disk root so individual tests can mutate the layout (e.g.
@@ -591,5 +602,124 @@ func TestHandleArtistsMerge_NonAdmin(t *testing.T) {
 	r.handleArtistsMerge(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Post-merge rule-run trigger (#2338): a committed merge kicks off a
+// best-effort runRulesAfterRefresh pass on the survivor so rules that depend
+// on post-reconcile disk state (e.g. RuleImageDuplicate's within-type
+// fanart detection, #2337) actually run against the merged result.
+// --------------------------------------------------------------------------
+
+// TestHandleArtistsMerge_InvokesRulePipeline verifies that a real
+// (non-dry-run) merge triggers runRulesAfterRefresh -> RunForArtist against
+// the survivor's ID.
+func TestHandleArtistsMerge_InvokesRulePipeline(t *testing.T) {
+	t.Parallel()
+	var calledWithID string
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, a *artist.Artist) (*rule.RunResult, error) {
+			calledWithID = a.ID
+			return &rule.RunResult{}, nil
+		},
+	}
+	r, svc, db := mergeTestRouterWithPipeline(t, stub)
+	survivorID, loserID, _ := seedMergeFixture(t, svc, db)
+
+	req := adminReq(t, map[string]any{
+		"survivor_id": survivorID,
+		"loser_ids":   []string{loserID},
+		"dry_run":     false,
+	})
+	rec := httptest.NewRecorder()
+	r.handleArtistsMerge(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if calledWithID != survivorID {
+		t.Errorf("RunForArtist called with ID %q, want survivor ID %q", calledWithID, survivorID)
+	}
+}
+
+// TestHandleArtistsMerge_DryRunSkipsRulePipeline verifies that a dry-run
+// merge never invokes the rule pipeline, since no state was mutated.
+func TestHandleArtistsMerge_DryRunSkipsRulePipeline(t *testing.T) {
+	t.Parallel()
+	called := false
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, a *artist.Artist) (*rule.RunResult, error) {
+			called = true
+			return &rule.RunResult{}, nil
+		},
+	}
+	r, svc, db := mergeTestRouterWithPipeline(t, stub)
+	survivorID, loserID, _ := seedMergeFixture(t, svc, db)
+
+	req := adminReq(t, map[string]any{
+		"survivor_id": survivorID,
+		"loser_ids":   []string{loserID},
+		"dry_run":     true,
+	})
+	rec := httptest.NewRecorder()
+	r.handleArtistsMerge(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if called {
+		t.Error("RunForArtist was called on a dry-run merge; want no invocation")
+	}
+}
+
+// TestHandleArtistsMerge_RulePipelineErrorDoesNotPropagate verifies that a
+// pipeline error is swallowed (best-effort, matching runRulesAfterRefresh's
+// existing contract) and does not affect the merge's HTTP response.
+func TestHandleArtistsMerge_RulePipelineErrorDoesNotPropagate(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
+			return nil, fmt.Errorf("rule engine exploded")
+		},
+	}
+	r, svc, db := mergeTestRouterWithPipeline(t, stub)
+	survivorID, loserID, _ := seedMergeFixture(t, svc, db)
+
+	req := adminReq(t, map[string]any{
+		"survivor_id": survivorID,
+		"loser_ids":   []string{loserID},
+		"dry_run":     false,
+	})
+	rec := httptest.NewRecorder()
+	r.handleArtistsMerge(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got mergeResultPayload
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got.SurvivorID != survivorID {
+		t.Errorf("survivor_id = %q, want %q", got.SurvivorID, survivorID)
+	}
+}
+
+// TestHandleArtistsMerge_NilPipelineNoPanic verifies that a router with no
+// pipeline configured (the default in every other merge test) still returns
+// 200 without panicking, preserving backward compatibility with the
+// pre-#2338 test fixtures.
+func TestHandleArtistsMerge_NilPipelineNoPanic(t *testing.T) {
+	t.Parallel()
+	r, svc, db := mergeTestRouterWithPipeline(t, nil)
+	survivorID, loserID, _ := seedMergeFixture(t, svc, db)
+
+	req := adminReq(t, map[string]any{
+		"survivor_id": survivorID,
+		"loser_ids":   []string{loserID},
+		"dry_run":     false,
+	})
+	rec := httptest.NewRecorder()
+	r.handleArtistsMerge(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
 }

@@ -3,6 +3,7 @@ package rule
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1645,6 +1646,175 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		Fixed:   false,
 		Message: "no fanart files needing renumbering",
 	}, nil
+}
+
+// ImageDuplicateFixer removes redundant within-type fanart duplicates
+// detected by makeImageDuplicateChecker (via the shared findImageDuplicates
+// helper), keeping the lowest slot index in each duplicate group and
+// renumbering survivors into a contiguous sequence. Runs in manual mode only
+// (no CandidateDiscoverer implementation): the deletion is destructive, so
+// it is deferred to a user-triggered FixViolation call rather than applied
+// automatically during evaluation.
+type ImageDuplicateFixer struct {
+	db              *sql.DB
+	platformService *platform.Service
+	fsCheck         *SharedFSCheck
+	logger          *slog.Logger
+}
+
+// NewImageDuplicateFixer creates an ImageDuplicateFixer.
+func NewImageDuplicateFixer(db *sql.DB, platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *ImageDuplicateFixer {
+	return &ImageDuplicateFixer{
+		db:              db,
+		platformService: platformService,
+		fsCheck:         fsCheck,
+		logger:          logger.With(slog.String("component", "image-duplicate-fixer")),
+	}
+}
+
+// CanFix returns true for the image_duplicate rule.
+func (f *ImageDuplicateFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleImageDuplicate
+}
+
+// Fix re-detects current within-type fanart duplicates, deletes the
+// higher-numbered file in each duplicate group, and renumbers the survivors
+// to close the resulting gap. Detection is re-run rather than trusting the
+// persisted violation message, because FixViolation reconstructs the
+// violation from the DB row without re-running the checker, so the on-disk
+// state may have drifted since the violation was recorded.
+func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	if f.fsCheck.IsShared(ctx, a) {
+		return &FixResult{
+			RuleID:  RuleImageDuplicate,
+			Fixed:   false,
+			Message: "skipped: shared-filesystem library",
+		}, nil
+	}
+
+	if a.Path == "" {
+		return &FixResult{RuleID: RuleImageDuplicate, Fixed: false, Message: "artist has no path"}, nil
+	}
+	if f.db == nil {
+		return &FixResult{RuleID: RuleImageDuplicate, Fixed: false, Message: "no database connection"}, nil
+	}
+
+	var profile *platform.Profile
+	if f.platformService != nil {
+		var profErr error
+		profile, profErr = f.platformService.GetActive(ctx)
+		if profErr != nil {
+			// Abort rather than falling back to the default naming
+			// convention: deleting files under the wrong convention is
+			// destructive and not safely reversible (mirrors
+			// BackdropSequencingFixer).
+			return nil, fmt.Errorf("loading active platform profile: %w", profErr)
+		}
+	}
+	var fanartNames []string
+	if profile != nil {
+		fanartNames = profile.ImageNaming.NamesForType("fanart")
+	}
+	if len(fanartNames) == 0 {
+		fanartNames = img.FileNamesForType(img.DefaultFileNames, "fanart")
+	}
+	var primaryName string
+	if len(fanartNames) > 0 {
+		primaryName = fanartNames[0]
+	}
+	if primaryName == "" {
+		return &FixResult{
+			RuleID:  RuleImageDuplicate,
+			Fixed:   false,
+			Message: "skipped: no fanart naming convention available",
+		}, nil
+	}
+	kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
+
+	tolerance := 0.90
+	if v != nil && v.Config.Tolerance > 0 && v.Config.Tolerance <= 1.0 {
+		tolerance = v.Config.Tolerance
+	}
+
+	groups, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("re-detecting image duplicates for %s: %w", a.Name, err)
+	}
+
+	toDelete := nonTransitiveFanartDeletionSet(groups)
+
+	if len(toDelete) == 0 {
+		return &FixResult{
+			RuleID:  RuleImageDuplicate,
+			Fixed:   false,
+			Message: "no removable within-type fanart duplicates found",
+		}, nil
+	}
+
+	paths, discErr := img.DiscoverFanart(a.Path, primaryName)
+	if discErr != nil {
+		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
+	}
+
+	var removedNames []string
+	survivors := make([]string, 0, len(paths))
+	for i, p := range paths {
+		if !toDelete[i] {
+			survivors = append(survivors, p)
+			continue
+		}
+		if rmErr := os.Remove(p); rmErr != nil {
+			return nil, fmt.Errorf("deleting duplicate fanart %s: %w", filepath.Base(p), rmErr)
+		}
+		f.logger.Info("deleted duplicate fanart slot",
+			"artist", a.Name, "slot", i, "file", filepath.Base(p))
+		removedNames = append(removedNames, filepath.Base(p))
+	}
+
+	if renumberErr := img.RenumberFanart(a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
+		return nil, fmt.Errorf("renumbering fanart after duplicate removal for %s: %w", a.Name, renumberErr)
+	}
+
+	// Resync the artist's fanart fields from disk so the pipeline's
+	// subsequent artistService.Update(ctx, a) call (in Pipeline.FixViolation)
+	// writes matching artist_images rows, mirroring the discover/remove/
+	// renumber/resync sequence used by Router.updateArtistFanartCount.
+	resyncFanartFields(a, primaryName)
+
+	return &FixResult{
+		RuleID:  RuleImageDuplicate,
+		Fixed:   true,
+		Message: fmt.Sprintf("removed %d duplicate fanart file(s) for %s: %s", len(removedNames), a.Name, strings.Join(removedNames, ", ")),
+	}, nil
+}
+
+// resyncFanartFields re-discovers fanart files on disk after a mutation and
+// updates the artist's fanart fields in place, mirroring
+// Router.updateArtistFanartCount. Fixers have no Router reference, so this
+// is a self-contained copy limited to the fields extractImageMetadata reads
+// for fanart (Exists, Count, LowRes); Width/Height are left untouched since
+// slot 0 is never deleted and its dimensions do not change.
+func resyncFanartFields(a *artist.Artist, primaryName string) {
+	existing, err := img.DiscoverFanart(a.Path, primaryName)
+	if err != nil {
+		return
+	}
+	count := len(existing)
+	a.FanartExists = count > 0
+	a.FanartCount = count
+	a.FanartLowRes = false
+	if count == 0 {
+		return
+	}
+	f, openErr := os.Open(existing[0])
+	if openErr != nil {
+		return
+	}
+	defer f.Close() //nolint:errcheck // best-effort close after read
+	w, h, dimErr := img.GetDimensions(f)
+	if dimErr == nil {
+		a.FanartLowRes = img.IsLowResolution(w, h, "fanart")
+	}
 }
 
 // activeUseSymlinks returns the UseSymlinks flag from the active platform profile.
