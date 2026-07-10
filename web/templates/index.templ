@@ -210,7 +210,7 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 				>
 					<span class="sw-stat-label">{ t(ctx, "dashboard.bubble_artists") }</span>
 					if healthStatsError {
-						<span class="sw-stat-val sw-stat-val--sm" title={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+						<span class="sw-stat-val sw-stat-val--sm" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") } role="img">---</span>
 					} else {
 						<span class="sw-stat-val">{ fmt.Sprintf("%d", stats.TotalArtists) }</span>
 					}

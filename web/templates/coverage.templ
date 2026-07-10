@@ -38,7 +38,7 @@ templ scoreCell(a artist.Artist) {
 			{ scorePercent(a.HealthScore) }
 		</span>
 	} else {
-		<span class="text-xs text-gray-300 dark:text-gray-600" title={ t(ctx, "artists.score.unrated") }>{ "-" }</span>
+		<span class="text-xs text-gray-300 dark:text-gray-600" title={ t(ctx, "artists.score.unrated") } aria-label={ t(ctx, "artists.score.unrated") } role="img">{ "-" }</span>
 	}
 }
 
