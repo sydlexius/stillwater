@@ -37,6 +37,8 @@ func (r *reconcilePlatformLister) ListArtistsWithPlatformMappings(_ context.Cont
 	return r.artistIDs, r.listErr
 }
 
+func (r *reconcilePlatformLister) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+
 // fakeArtistGetter returns artists from a map keyed by ID.
 type fakeArtistGetter struct {
 	artists map[string]*artist.Artist
@@ -382,6 +384,8 @@ func (panicPlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([
 	panic("deliberate test panic in ListArtistsWithPlatformMappings")
 }
 
+func (panicPlatformLister) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+
 // --- additional coverage for uncovered branches ---
 
 // errPlatformListerIDs returns an error from GetPlatformIDs to exercise the
@@ -402,6 +406,8 @@ func (e *errPlatformListerIDs) ListArtistsWithPlatformMappings(_ context.Context
 	return e.artistIDs, nil
 }
 
+func (e *errPlatformListerIDs) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+
 // TestReconcileArtworkToPlatforms_NilGateWarns verifies that a nil imageWriteGate
 // logs a one-time Warn at reconcile start rather than silently bypassing gating.
 func TestReconcileArtworkToPlatforms_NilGateWarns(t *testing.T) {
@@ -420,6 +426,10 @@ func TestReconcileArtworkToPlatforms_NilGateWarns(t *testing.T) {
 type nilConnectionGetter struct{}
 
 func (nilConnectionGetter) GetByID(_ context.Context, _ string) (*connection.Connection, error) {
+	return nil, nil
+}
+
+func (nilConnectionGetter) ListByType(_ context.Context, _ string) ([]connection.Connection, error) {
 	return nil, nil
 }
 

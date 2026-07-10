@@ -109,6 +109,8 @@ func (errPlatformLister) ListArtistsWithPlatformMappings(_ context.Context) ([]s
 	return nil, errors.New("listing platform ids failed")
 }
 
+func (errPlatformLister) SetPlatformID(_ context.Context, _, _, _ string) error { return nil }
+
 // --- BuildArtistPushData ---
 
 // TestBuildArtistPushData exercises every branch of the type switch and

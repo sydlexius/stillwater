@@ -205,6 +205,15 @@ type MergeResult struct {
 	// capture and is therefore empty on dry-run.
 	SurvivorName string
 
+	// SurvivorMBID is the survivor's MusicBrainz ID at merge time (empty when
+	// the survivor has no musicbrainz provider row). Populated on BOTH dry-run
+	// and committed merges (free -- the survivor is already resolved). Used by
+	// refreshAffectedPlatforms to reach the Lidarr resolve-by-MBID self-heal
+	// (#2325) even when AffectedConnectionIDs is empty: the normal fully-
+	// unlinked merge has no existing platform_ids row, so without this signal
+	// the self-heal entry point (SyncMergeRefresh) would never be called.
+	SurvivorMBID string
+
 	// AffectedConnectionIDs is the distinct, sorted union of platform
 	// connection IDs that mapped the survivor or ANY loser at merge time.
 	// Captured before commitMergeDB deletes the loser rows (whose platform_ids
@@ -298,6 +307,7 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		DryRun:           req.DryRun,
 		SurvivorID:       survivor.ID,
 		SurvivorName:     survivor.Name,
+		SurvivorMBID:     survivor.MBID,
 		SurvivorPath:     survivor.Path,
 		SurvivorOverride: override,
 	}
@@ -418,12 +428,27 @@ func (s *Service) reconcileSurvivorCanonicalPath(ctx context.Context, articleMod
 // is wired it records the manual-refresh reminder (the behavior the removed
 // unconditional warning used to provide, now gated on refresh being absent).
 func (s *Service) refreshAffectedPlatforms(ctx context.Context, result *MergeResult) {
-	if len(result.AffectedConnectionIDs) == 0 {
-		return // no connected platforms indexed any member.
+	// Reach the refresh path when EITHER (a) a platform already indexed a
+	// merged member (AffectedConnectionIDs non-empty) OR (b) the survivor
+	// carries an MBID, so the Lidarr resolve-by-MBID self-heal (#2325) inside
+	// SyncMergeRefresh can discover and link a Stillwater-unlinked Lidarr
+	// artist. Without (b) the normal fully-unlinked merge would never reach
+	// SyncMergeRefresh and the merge-time self-heal would be dead code (its
+	// whole purpose). A merge with NEITHER an affected connection NOR an MBID
+	// has genuinely nothing to reconcile, so keep the old early return there.
+	hasAffected := len(result.AffectedConnectionIDs) > 0
+	if !hasAffected && result.SurvivorMBID == "" {
+		return
 	}
 	if s.mergeRefresher == nil {
-		result.Warnings = append(result.Warnings,
-			"Connected platforms still reference the merged directories. Trigger a library refresh on each so they pick up the new location.")
+		// Only remind about a manual refresh when a platform actually indexed a
+		// merged directory; a pure self-heal opportunity (MBID-only, no affected
+		// connection) has no existing platform link to refresh and no refresher
+		// wired to discover one, so there is nothing to remind about.
+		if hasAffected {
+			result.Warnings = append(result.Warnings,
+				"Connected platforms still reference the merged directories. Trigger a library refresh on each so they pick up the new location.")
+		}
 		return
 	}
 	refreshed, err := s.mergeRefresher.SyncMergeRefresh(ctx, result.SurvivorID, result.AffectedConnectionIDs)

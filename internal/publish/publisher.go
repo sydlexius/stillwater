@@ -115,6 +115,9 @@ type artistPlatformLister interface {
 	GetPlatformIDs(ctx context.Context, artistID string) ([]artist.PlatformID, error)
 	ListMembersByArtistID(ctx context.Context, artistID string) ([]artist.BandMember, error)
 	ListArtistsWithPlatformMappings(ctx context.Context) ([]string, error)
+	// SetPlatformID upserts an artist<->connection platform-ID mapping. Used by
+	// the Lidarr merge/rename self-heal to stamp a resolved-by-MBID link.
+	SetPlatformID(ctx context.Context, artistID, connectionID, platformArtistID string) error
 }
 
 // artistGetter loads a full artist record by ID for the background reconciler.
@@ -131,6 +134,9 @@ type ImageWriteGate interface {
 
 type connectionGetter interface {
 	GetByID(ctx context.Context, id string) (*connection.Connection, error)
+	// ListByType returns all connections of the given type. Used by the Lidarr
+	// merge/rename self-heal to enumerate Lidarr connections for resolve-by-MBID.
+	ListByType(ctx context.Context, connType string) ([]connection.Connection, error)
 }
 
 // libraryResolver looks up the library that owns an artist's filesystem path

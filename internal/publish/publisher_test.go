@@ -28,6 +28,23 @@ type fakePlatformLister struct {
 	ids        []artist.PlatformID
 	members    []artist.BandMember
 	membersErr error
+	// setErr, when non-nil, makes SetPlatformID fail (exercises the self-heal
+	// best-effort branch). setCalls records the accepted stamps for assertions.
+	setErr   error
+	setCalls []setPlatformIDCall
+}
+
+// setPlatformIDCall records one accepted SetPlatformID invocation.
+type setPlatformIDCall struct {
+	artistID, connectionID, platformArtistID string
+}
+
+func (f *fakePlatformLister) SetPlatformID(_ context.Context, artistID, connectionID, platformArtistID string) error {
+	if f.setErr != nil {
+		return f.setErr
+	}
+	f.setCalls = append(f.setCalls, setPlatformIDCall{artistID, connectionID, platformArtistID})
+	return nil
 }
 
 func (f *fakePlatformLister) GetPlatformIDs(_ context.Context, _ string) ([]artist.PlatformID, error) {
@@ -57,6 +74,9 @@ type fakeConnectionGetter struct {
 	conns map[string]*connection.Connection
 	mu    sync.Mutex
 	calls int
+	// listErr, when non-nil, makes ListByType fail (exercises the self-heal
+	// connection-list best-effort branch).
+	listErr error
 }
 
 func (f *fakeConnectionGetter) GetByID(_ context.Context, id string) (*connection.Connection, error) {
@@ -68,6 +88,26 @@ func (f *fakeConnectionGetter) GetByID(_ context.Context, id string) (*connectio
 		return nil, fmt.Errorf("no connection %s", id)
 	}
 	return c, nil
+}
+
+// ListByType returns every stored connection of the given type (a value copy,
+// matching the concrete connection.Service). It filters from the same conns
+// map GetByID uses, so a test that registers connections gets ListByType for
+// free. Disabled connections are included, mirroring the DB query which does
+// not filter on enabled; self-heal is responsible for the Enabled gate.
+func (f *fakeConnectionGetter) ListByType(_ context.Context, connType string) ([]connection.Connection, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	out := make([]connection.Connection, 0)
+	for _, c := range f.conns {
+		if c.Type == connType {
+			out = append(out, *c)
+		}
+	}
+	return out, nil
 }
 
 // waitForPosts spins up to 2s for the given number of POSTs to arrive at the
