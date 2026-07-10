@@ -1098,15 +1098,34 @@ func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	// Existence + type gate BEFORE allocating per-id serialization state.
-	if gate, gerr := r.connectionService.GetByID(req.Context(), id); gerr != nil {
+	// Existence + type gate. The resolved connection also drives the inference
+	// enumeration below, which runs BEFORE the per-id lock: the ~10s Lidarr
+	// GetArtists round-trip must not be held under pathMappingsMu, or it would
+	// block every other path-mapping write on this connection for its full
+	// duration (mirrors applyInferredPathMappingsIfEmpty, which enumerates
+	// unlocked and locks only the fast re-check-and-persist).
+	gate, gerr := r.connectionService.GetByID(req.Context(), id)
+	if gerr != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 		return
-	} else if gate.Type != connection.TypeLidarr {
+	}
+	if gate.Type != connection.TypeLidarr {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path-mappings is only valid for lidarr connections"})
 		return
 	}
 
+	// Compute the inference outcome UNLOCKED. It reports the matched count and
+	// derived-mapping count for the info line even when nothing is applied (the
+	// list was already populated or the consensus floor emitted zero).
+	mappings, matched, inferErr := r.inferLidarrPathMappings(req.Context(), gate)
+	if inferErr != nil {
+		r.logger.Info("path-mapping inference (manual) skipped", "connection_id", id, "error", inferErr)
+		mappings, matched = nil, 0
+	}
+
+	// Now take the per-id lock ONLY for the fast re-check-and-persist, reusing
+	// the precomputed mappings. Serializing just this window keeps a concurrent
+	// manual save from being clobbered while never blocking it for the round-trip.
 	muIface, _ := r.pathMappingsMu.LoadOrStore(id, &sync.Mutex{})
 	connMu := muIface.(*sync.Mutex)
 	connMu.Lock()
@@ -1122,20 +1141,11 @@ func (r *Router) handleInferPathMappings(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	// Compute the inference outcome (for the info line) then apply it when the
-	// list is empty. Running inference directly here -- rather than only through
-	// applyInferredPathMappingsIfEmpty -- lets the info line report the matched
-	// count and the derived-mapping count even when nothing is applied (e.g. the
-	// list was already populated or the consensus floor emitted zero).
-	mappings, matched, inferErr := r.inferLidarrPathMappings(req.Context(), existing)
-	if inferErr != nil {
-		r.logger.Info("path-mapping inference (manual) skipped", "connection_id", id, "error", inferErr)
-		mappings, matched = nil, 0
-	}
-	// Apply only when the list is empty (B3 precedence). Track whether we
-	// actually wrote so the info line can distinguish "applied N" from
-	// "inferred N but kept your existing mappings" (a non-empty list is never
-	// overwritten).
+	// Apply only when the list is (still) empty under the lock (B3 precedence).
+	// Track whether we actually wrote so the info line can distinguish
+	// "applied N" from "inferred N but kept your existing mappings" (a non-empty
+	// list is never overwritten -- a save that landed during the enumeration is
+	// seen here and wins).
 	applied := false
 	if len(existing.GetPathMappings()) == 0 && len(mappings) > 0 {
 		setPathMappings(existing, mappings)

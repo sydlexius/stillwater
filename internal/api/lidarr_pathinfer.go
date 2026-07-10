@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 )
@@ -53,19 +54,6 @@ func (r *Router) inferLidarrPathMappings(ctx context.Context, conn *connection.C
 	if len(mbidPaths) == 0 {
 		return nil, 0, nil
 	}
-	// Index host paths by normalized MBID for an O(1) join against Lidarr. A
-	// duplicate MBID (data anomaly) keeps the first host path seen.
-	hostByMBID := make(map[string]string, len(mbidPaths))
-	for _, mp := range mbidPaths {
-		key := strings.ToLower(strings.TrimSpace(mp.MBID))
-		if key == "" || mp.Path == "" {
-			continue
-		}
-		if _, ok := hostByMBID[key]; !ok {
-			hostByMBID[key] = mp.Path
-		}
-	}
-
 	// Lidarr side: enumerate the connection's artists via the swappable seam.
 	lister := lidarrArtistListerFactory(conn, r.logger)
 	if lister == nil {
@@ -74,6 +62,46 @@ func (r *Router) inferLidarrPathMappings(ctx context.Context, conn *connection.C
 	artists, err := lister.GetArtists(ctx)
 	if err != nil {
 		return nil, 0, err
+	}
+
+	pairs := buildInferencePairs(mbidPaths, artists)
+	mappings := connection.InferPathMappings(pairs, connection.DefaultPathInferConsensus)
+	return mappings, len(pairs), nil
+}
+
+// buildInferencePairs joins Stillwater (MBID, host path) records against a
+// Lidarr artist list by MusicBrainz ID and returns the observed (host path,
+// platform path) pairs for inference. Pure and order-independent (its output
+// does not depend on the order of either input slice).
+//
+// Duplicate-MBID handling is the key invariant (#2335): ListMBIDPaths can
+// return the same MBID more than once (a data anomaly - MBIDs should be
+// unique). If those rows carry DISTINCT host paths the MBID is AMBIGUOUS and is
+// excluded from the join entirely, so no arbitrary "first seen" winner can make
+// the result depend on row order. Repeated rows with the IDENTICAL host path
+// are a benign true-duplicate and keep that single path. MBIDs are matched
+// case-insensitively (trimmed + lowercased) on both sides.
+func buildInferencePairs(mbidPaths []artist.MBIDPath, artists []lidarr.Artist) []connection.PathPair {
+	hostByMBID := make(map[string]string, len(mbidPaths))
+	ambiguousMBID := make(map[string]bool)
+	for _, mp := range mbidPaths {
+		key := strings.ToLower(strings.TrimSpace(mp.MBID))
+		if key == "" || mp.Path == "" {
+			continue
+		}
+		if ambiguousMBID[key] {
+			continue
+		}
+		if prev, ok := hostByMBID[key]; ok {
+			if prev != mp.Path {
+				// Conflicting host paths for one MBID: drop it so no pair forms,
+				// deterministically, regardless of which row arrived first.
+				delete(hostByMBID, key)
+				ambiguousMBID[key] = true
+			}
+			continue
+		}
+		hostByMBID[key] = mp.Path
 	}
 
 	var pairs []connection.PathPair
@@ -88,9 +116,7 @@ func (r *Router) inferLidarrPathMappings(ctx context.Context, conn *connection.C
 		}
 		pairs = append(pairs, connection.PathPair{HostPath: hostPath, PlatformPath: la.Path})
 	}
-
-	mappings := connection.InferPathMappings(pairs, connection.DefaultPathInferConsensus)
-	return mappings, len(pairs), nil
+	return pairs
 }
 
 // applyInferredPathMappingsIfEmpty runs inference for a Lidarr connection and,

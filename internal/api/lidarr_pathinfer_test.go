@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 )
@@ -336,6 +337,70 @@ func TestInferLidarrPathMappings_NoMatches(t *testing.T) {
 	}
 	if matched != 0 || len(mappings) != 0 {
 		t.Fatalf("got (%+v, %d); want (nil, 0)", mappings, matched)
+	}
+}
+
+// TestBuildInferencePairs_AmbiguousMBIDSkipped is the FIX-1 regression: an MBID
+// that resolves to TWO DISTINCT host paths is a data anomaly and must
+// contribute NOTHING to inference, deterministically, regardless of the order
+// the conflicting rows appear in. It drives the pure joiner directly with two
+// row orderings and asserts an identical result. A benign true-duplicate (same
+// path repeated) is NOT ambiguous and still forms its pair.
+func TestBuildInferencePairs_AmbiguousMBIDSkipped(t *testing.T) {
+	t.Parallel()
+
+	lidarrArtists := []lidarr.Artist{
+		{ID: 1, ForeignArtistID: "dup", Path: "/data/Alpha"},    // ambiguous MBID
+		{ID: 2, ForeignArtistID: "clean1", Path: "/data/Beta"},  // clean
+		{ID: 3, ForeignArtistID: "clean2", Path: "/data/Gamma"}, // clean
+		{ID: 4, ForeignArtistID: "truedup", Path: "/data/Echo"}, // benign duplicate
+	}
+
+	orderA := []artist.MBIDPath{
+		{MBID: "dup", Path: "/musicA/Alpha"},
+		{MBID: "dup", Path: "/musicB/Alpha"}, // conflicting host path -> ambiguous
+		{MBID: "clean1", Path: "/music/Beta"},
+		{MBID: "clean2", Path: "/music/Gamma"},
+		{MBID: "truedup", Path: "/music/Echo"},
+		{MBID: "truedup", Path: "/music/Echo"}, // identical -> benign
+	}
+	// Same rows, reversed, plus the conflicting pair interleaved differently.
+	orderB := []artist.MBIDPath{
+		{MBID: "truedup", Path: "/music/Echo"},
+		{MBID: "clean2", Path: "/music/Gamma"},
+		{MBID: "dup", Path: "/musicB/Alpha"},
+		{MBID: "clean1", Path: "/music/Beta"},
+		{MBID: "truedup", Path: "/music/Echo"},
+		{MBID: "dup", Path: "/musicA/Alpha"},
+	}
+
+	pairsA := buildInferencePairs(orderA, lidarrArtists)
+	pairsB := buildInferencePairs(orderB, lidarrArtists)
+
+	// The ambiguous "dup" MBID must form NO pair in either ordering; clean1,
+	// clean2, and truedup each form one -> exactly 3 pairs, none for "dup".
+	assertPairSet := func(t *testing.T, label string, pairs []connection.PathPair) {
+		t.Helper()
+		if len(pairs) != 3 {
+			t.Fatalf("%s: got %d pairs, want 3 (ambiguous MBID excluded); pairs=%+v", label, len(pairs), pairs)
+		}
+		for _, p := range pairs {
+			if p.PlatformPath == "/data/Alpha" {
+				t.Fatalf("%s: ambiguous MBID leaked a pair: %+v", label, p)
+			}
+		}
+	}
+	assertPairSet(t, "orderA", pairsA)
+	assertPairSet(t, "orderB", pairsB)
+
+	// Determinism: the derived mappings are identical for both input orderings.
+	mA := connection.InferPathMappings(pairsA, connection.DefaultPathInferConsensus)
+	mB := connection.InferPathMappings(pairsB, connection.DefaultPathInferConsensus)
+	if len(mA) != 1 || mA[0].HostPrefix != "/music" || mA[0].PlatformPrefix != "/data" {
+		t.Fatalf("orderA mappings = %+v, want one /music->/data", mA)
+	}
+	if len(mA) != len(mB) || mA[0] != mB[0] {
+		t.Fatalf("nondeterministic: orderA=%+v vs orderB=%+v", mA, mB)
 	}
 }
 

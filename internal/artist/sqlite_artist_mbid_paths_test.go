@@ -87,6 +87,25 @@ func TestSqliteListMBIDPaths_Empty(t *testing.T) {
 	}
 }
 
+// TestSqliteListMBIDPaths_QueryError covers the error path: a closed DB makes
+// QueryContext fail, and the wrapped error must propagate (org test-quality
+// guideline requires error-path coverage).
+func TestSqliteListMBIDPaths_QueryError(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	repo := &sqliteArtistRepo{db: db}
+	// Close the DB so the query fails on execution. The test-DB cleanup closes
+	// idempotently, so a second close is harmless.
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	_, err := repo.ListMBIDPaths(context.Background())
+	if err == nil {
+		t.Fatal("expected an error from ListMBIDPaths on a closed DB")
+	}
+}
+
 // TestServiceListMBIDPaths covers the service-level wrapper, asserting it
 // passes the repository result through unchanged.
 func TestServiceListMBIDPaths(t *testing.T) {

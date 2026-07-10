@@ -476,12 +476,19 @@ templ ConnectionPathMappingsBlock(c connection.Connection, infer PathInferResult
 			@pathMappingRow("", "")
 			<div class="flex items-center gap-2 mt-1">
 				<button type="submit" class="rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5">{ t(ctx, "actions.save") }</button>
+				// Stable id + conditional autofocus restore keyboard/SR focus after
+				// the outerHTML swap replaces this button: htmx re-focuses the
+				// same-id element in the swapped-in content, and autofocus (set only
+				// on the re-infer response, never the initial page render, so it does
+				// not steal focus on load) is the belt-and-suspenders fallback (#2335).
 				<button
+					id={ "path-mapping-reinfer-" + c.ID }
 					type="button"
 					class="rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs font-medium px-3 py-1.5"
 					hx-post={ "/api/v1/connections/" + c.ID + "/path-mappings/infer" }
 					hx-target={ "#path-mapping-block-" + c.ID }
 					hx-swap="outerHTML"
+					autofocus?={ infer.Show }
 				>{ t(ctx, "settings.connections.path_mapping_reinfer") }</button>
 			</div>
 		</form>
