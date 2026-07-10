@@ -1764,7 +1764,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 			continue
 		}
 		if rmErr := os.Remove(p); rmErr != nil {
-			return nil, fmt.Errorf("deleting duplicate fanart %s: %w", filepath.Base(p), rmErr)
+			return nil, fmt.Errorf("deleting duplicate fanart %s (already removed: %s) for %s: %w", filepath.Base(p), strings.Join(removedNames, ", "), a.Name, rmErr)
 		}
 		f.logger.Info("deleted duplicate fanart slot",
 			"artist", a.Name, "slot", i, "file", filepath.Base(p))
@@ -1772,7 +1772,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	}
 
 	if renumberErr := img.RenumberFanart(a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
-		return nil, fmt.Errorf("renumbering fanart after duplicate removal for %s: %w", a.Name, renumberErr)
+		return nil, fmt.Errorf("renumbering fanart after removing %d duplicate(s) (%s) for %s: %w", len(removedNames), strings.Join(removedNames, ", "), a.Name, renumberErr)
 	}
 
 	// Resync the artist's fanart fields from disk so the pipeline's
