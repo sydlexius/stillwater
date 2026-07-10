@@ -185,6 +185,39 @@ func TestTriggerLibraryScan(t *testing.T) {
 	}
 }
 
+// TestTriggerArtistRefresh verifies Jellyfin's per-artist refresh forces a full
+// NFO re-import (#2336): FullRefresh + ReplaceAllMetadata=true are what make the
+// server re-read the on-disk NFO (so NFO-only fields like Disambiguation and
+// YearsActive land), while ReplaceAllImages=false leaves artwork untouched. The
+// artist ID must also be path-escaped into the URL segment.
+func TestTriggerArtistRefresh(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/Items/jf-001/Refresh" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if got := q.Get("MetadataRefreshMode"); got != "FullRefresh" {
+			t.Errorf("MetadataRefreshMode = %q, want FullRefresh (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllMetadata"); got != "true" {
+			t.Errorf("ReplaceAllMetadata = %q, want true (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllImages"); got != "false" {
+			t.Errorf("ReplaceAllImages = %q, want false (query=%q)", got, r.URL.RawQuery)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.TriggerArtistRefresh(context.Background(), "jf-001"); err != nil {
+		t.Fatalf("TriggerArtistRefresh failed: %v", err)
+	}
+}
+
 func TestCheckNFOWriterEnabled_True(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

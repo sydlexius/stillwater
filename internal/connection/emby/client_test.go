@@ -162,6 +162,20 @@ func TestTriggerArtistRefresh(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
+		// #2336: TriggerArtistRefresh must force a full NFO re-import so
+		// NFO-only fields (Disambiguation, YearsActive) reach the platform.
+		// FullRefresh + ReplaceAllMetadata=true are the load-bearing params;
+		// ReplaceAllImages=false keeps artwork untouched.
+		q := r.URL.Query()
+		if got := q.Get("MetadataRefreshMode"); got != "FullRefresh" {
+			t.Errorf("MetadataRefreshMode = %q, want FullRefresh (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllMetadata"); got != "true" {
+			t.Errorf("ReplaceAllMetadata = %q, want true (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllImages"); got != "false" {
+			t.Errorf("ReplaceAllImages = %q, want false (query=%q)", got, r.URL.RawQuery)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()

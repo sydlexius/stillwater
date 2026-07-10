@@ -199,9 +199,26 @@ func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 	return nil
 }
 
-// TriggerArtistRefresh refreshes metadata for a specific artist.
+// reimportRefreshQuery forces Emby to re-read an item's on-disk NFO. Emby only
+// re-imports local metadata under MetadataRefreshMode=FullRefresh, and only then
+// does ReplaceAllMetadata=true take effect (a destructive replace of the item's
+// metadata from the NFO). ImageRefreshMode=Default + ReplaceAllImages=false leave
+// artwork untouched so a re-read does not re-scrape images (a separately-tracked
+// concern, #2338). This is the ONLY channel through which NFO-only fields --
+// Disambiguation and YearsActive, which have no Emby BaseItemDto field -- reach
+// the platform, so it underpins the #2336 field-drop fix.
+const reimportRefreshQuery = "MetadataRefreshMode=FullRefresh&ReplaceAllMetadata=true&ImageRefreshMode=Default&ReplaceAllImages=false"
+
+// TriggerArtistRefresh forces Emby to re-import the artist's on-disk NFO,
+// applying NFO-only fields (Disambiguation, YearsActive) that the metadata API
+// body cannot carry. This is a destructive full re-import (ReplaceAllMetadata=true),
+// so callers must gate it on the operator's opt-in (FeatureTriggerRefresh); the
+// publish-layer dispatcher (publish.RefreshArtistOnPlatforms) is the sole caller
+// and enforces that gate.
 func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) error {
-	path := fmt.Sprintf("/Items/%s/Refresh", artistID)
+	// PathEscape the ID so a value containing reserved characters cannot break
+	// out of the URL segment; the query string carries the re-import mode.
+	path := fmt.Sprintf("/Items/%s/Refresh?%s", url.PathEscape(artistID), reimportRefreshQuery)
 	if err := c.Post(ctx, path, nil); err != nil {
 		return fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
 	}
