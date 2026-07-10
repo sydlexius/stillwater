@@ -216,6 +216,9 @@ const reimportRefreshQuery = "MetadataRefreshMode=FullRefresh&ReplaceAllMetadata
 // publish-layer dispatcher (publish.RefreshArtistOnPlatforms) is the sole caller
 // and enforces that gate.
 func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) error {
+	if strings.TrimSpace(artistID) == "" {
+		return fmt.Errorf("artistID is required")
+	}
 	// PathEscape the ID so a value containing reserved characters cannot break
 	// out of the URL segment; the query string carries the re-import mode.
 	path := fmt.Sprintf("/Items/%s/Refresh?%s", url.PathEscape(artistID), reimportRefreshQuery)

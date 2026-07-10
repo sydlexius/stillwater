@@ -186,6 +186,22 @@ func TestTriggerArtistRefresh(t *testing.T) {
 	}
 }
 
+// TestTriggerArtistRefresh_EmptyArtistID covers the defense-in-depth guard:
+// an empty/whitespace artistID must be rejected before any request is sent,
+// mirroring the sibling UpdateArtistPath guard.
+func TestTriggerArtistRefresh_EmptyArtistID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	if err := c.TriggerArtistRefresh(context.Background(), "   "); err == nil {
+		t.Fatal("expected an error for an empty artistID, got nil")
+	}
+}
+
 func TestCheckNFOWriterEnabled_True(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

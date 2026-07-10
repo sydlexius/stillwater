@@ -114,6 +114,10 @@ func TestPublishMetadata_SequencesDestructiveRefreshAfterPush(t *testing.T) {
 	// re-import. Wait on that observable outcome (goroutine-dispatched).
 	waitForEmbyRequests(t, rec, 3)
 
+	if got := rec.count(); got != 3 {
+		t.Fatalf("expected exactly 3 emby requests, got %d (order=%v)", got, rec.snapshot())
+	}
+
 	order := rec.snapshot()
 	idxPush, idxNonDestructive, idxDestructive := -1, -1, -1
 	for i, k := range order {

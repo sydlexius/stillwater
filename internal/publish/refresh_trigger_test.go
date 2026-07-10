@@ -3,12 +3,14 @@ package publish
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/platform"
 )
 
 // artistRefreshRecorder captures the RefreshArtist calls a swapped
@@ -286,6 +288,85 @@ func TestPublishMetadata_SkipsRefreshWhenNoNFOWritten(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	if got := rec.count(); got != 0 {
 		t.Errorf("refresh calls = %d, want 0 when no NFO was written this publish", got)
+	}
+}
+
+// TestPublishMetadata_SkipsRefreshWhenNFODisabledByProfile covers the
+// WriteBackNFO profile-gate false-return (NFOWriteAllowed == false): even with
+// a valid artist Path, an active platform profile with NFOEnabled=false (e.g.
+// Plex) must skip the NFO write, so PublishMetadata must not fire the gated
+// destructive re-import either -- there is no fresh local NFO for the platform
+// to re-read.
+func TestPublishMetadata_SkipsRefreshWhenNFODisabledByProfile(t *testing.T) {
+	rec := &artistRefreshRecorder{}
+	swapArtistRefresherFactory(t, func(conn *connection.Connection, _ *slog.Logger) (artistRefresher, bool) {
+		return rec.forConn(conn), true
+	})
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "emby-pid"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {
+				ID: "c-emby", Type: connection.TypeEmby, Enabled: true, Status: "ok", Name: "Emby",
+				Emby: &connection.EmbyConfig{FeatureTriggerRefresh: true},
+			},
+		}},
+		PlatformService: &fakePlatformProvider{profile: &platform.Profile{Name: "Plex", NFOEnabled: false}},
+		Logger:          silentLogger(),
+	})
+
+	// Valid Path, but the active profile disables NFO writing -> WriteBackNFO
+	// returns false via the profile gate (not the a.Path=="" branch), so the
+	// re-import must stay gated off.
+	p.PublishMetadata(context.Background(), &artist.Artist{ID: "a1", Name: "X", Path: t.TempDir()})
+
+	time.Sleep(200 * time.Millisecond)
+	if got := rec.count(); got != 0 {
+		t.Errorf("refresh calls = %d, want 0 when the active profile disables NFO writing", got)
+	}
+}
+
+// TestPublishMetadata_SkipsRefreshWhenNFOWriteFails covers the WriteBackNFO
+// atomic-write-failure false-return: when the artist directory is unwritable,
+// filesystem.WriteFileAtomic fails, WriteBackNFO returns false, and
+// PublishMetadata must not fire the gated destructive re-import.
+func TestPublishMetadata_SkipsRefreshWhenNFOWriteFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; chmod 0o555 does not block writes and the write-failure branch cannot be exercised on this runner")
+	}
+	rec := &artistRefreshRecorder{}
+	swapArtistRefresherFactory(t, func(conn *connection.Connection, _ *slog.Logger) (artistRefresher, bool) {
+		return rec.forConn(conn), true
+	})
+
+	artistDir := t.TempDir()
+	if err := os.Chmod(artistDir, 0o555); err != nil {
+		t.Fatalf("chmod 555 artist dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(artistDir, 0o755) })
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "emby-pid"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {
+				ID: "c-emby", Type: connection.TypeEmby, Enabled: true, Status: "ok", Name: "Emby",
+				Emby: &connection.EmbyConfig{FeatureTriggerRefresh: true},
+			},
+		}},
+		Logger: silentLogger(),
+	})
+
+	// Unwritable artist dir -> the atomic create write fails, WriteBackNFO
+	// returns false, and the re-import must stay gated off.
+	p.PublishMetadata(context.Background(), &artist.Artist{ID: "a1", Name: "X", Path: artistDir})
+
+	time.Sleep(200 * time.Millisecond)
+	if got := rec.count(); got != 0 {
+		t.Errorf("refresh calls = %d, want 0 when the NFO write fails", got)
 	}
 }
 
