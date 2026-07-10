@@ -240,6 +240,10 @@
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
   {
+    "route": "POST /api/v1/artists/{}/images/stage",
+    "reason": "Not yet covered by the Bruno CI smoke collection (new route added by #2281 QOL #47: stage a provider image as a same-origin data: URI before Cropper.js, no disk write). Add a Bruno request when contract-testing this route, then remove this entry."
+  },
+  {
     "route": "POST /api/v1/artists/{}/lock",
     "reason": "Not yet covered by the Bruno CI smoke collection (baseline gap recorded for #1765). Add a Bruno request when contract-testing this route, then remove this entry."
   },
