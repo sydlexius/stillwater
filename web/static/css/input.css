@@ -4685,6 +4685,36 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 .dark .sw-next-artist-detail #compare-save-btn {
   color: #b6c2d4 !important;
 }
+/* #2331 Copilot-2: the resting-state !important pins above ALSO shadowed
+ * this file's own pre-existing :hover rule (.sw-next-artist-detail
+ * .image-card-save:hover etc., which sets color: var(--swd-ink) with no
+ * !important) -- per CSS cascade rules, !important always wins over a
+ * non-!important declaration regardless of specificity or source order, so
+ * the intended hover ink-color change could never actually apply; only the
+ * hover background swap still worked. Restore it with matching-specificity
+ * !important hover rules, using the same literal (not var()) values as the
+ * resting-state fix for the same reason: --swd-ink is a different custom
+ * property than --swd-ink-2, and this file has no rendered evidence either
+ * way for whether it resolves correctly in this exact nested context, so
+ * pin literally rather than assume. #0f172a / #e6edf7 are this file's own
+ * --swd-ink token values (light/dark), already used elsewhere as the
+ * "emphasized" ink tier -- safe on both the white card (light) and the dark
+ * card (~#111827, dark) by a wide margin.
+ * LEAD: this is a rendered-CSS change -- live-verify getComputedStyle on
+ * :hover for these buttons in both themes before calling it fixed; do not
+ * assert from this diff alone (binding RENDERED EVIDENCE ONLY rule). */
+.sw-next-artist-detail .image-card-save:hover,
+.sw-next-artist-detail .compare-btn:hover,
+.sw-next-artist-detail .crop-btn:hover,
+.sw-next-artist-detail #compare-save-btn:hover {
+  color: #0f172a !important;
+}
+.dark .sw-next-artist-detail .image-card-save:hover,
+.dark .sw-next-artist-detail .compare-btn:hover,
+.dark .sw-next-artist-detail .crop-btn:hover,
+.dark .sw-next-artist-detail #compare-save-btn:hover {
+  color: #e6edf7 !important;
+}
 
 /* #1932 contrast fix: the artwork-modal multi-select "Save All" button
  * (#fanart-bulk-save) is the ONLY .sw-next-flat-btn that sits on the dark

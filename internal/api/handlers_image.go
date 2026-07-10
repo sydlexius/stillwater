@@ -419,11 +419,24 @@ func (r *Router) handleImageCropFanartSlot(w http.ResponseWriter, req *http.Requ
 // mirrors the non-slot fetch path below, which always builds fresh metadata
 // rather than reading back the file it is about to overwrite. Writes the HTTP
 // response itself.
+//
+// #2331 CR-1: the caller (handleImageFetch) validates the slot BEFORE the
+// slow network fetch, so re-validate here, immediately before the write --
+// the fanart set can change (reorder, delete, another save) during the
+// network round-trip, and a stale slot number must not silently land on the
+// wrong (or now out-of-range) file. handleImageCropFanartSlot does not need
+// this: it is synchronous with no network call between its own validation
+// and its write.
 func (r *Router) handleImageFetchFanartSlot(w http.ResponseWriter, req *http.Request, a *artist.Artist, artistID string, slot int, data []byte, imageURL string) {
+	dir := r.imageDir(a)
+	if slotErr := r.validateFanartSlot(req.Context(), dir, slot); slotErr != nil {
+		writeJSON(w, slotErr.status, map[string]string{"error": slotErr.msg})
+		return
+	}
+
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodiNumbering := r.isKodiNumbering(req.Context())
 	targetName := img.FanartFilename(primary, slot, kodiNumbering)
-	dir := r.imageDir(a)
 	slotMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
 
 	saved, saveErr := img.Save(dir, "fanart", data, []string{targetName}, false, slotMeta, r.logger)
@@ -498,8 +511,12 @@ func (r *Router) fetchRespondIfNeedsCrop(w http.ResponseWriter, imageType string
 		"append":         imageType == "fanart" && fanartExists,
 	}
 	// #2281: thread the slot through so the follow-up crop POST persists to
-	// the same slot this fetch originated from.
-	if slot != nil {
+	// the same slot this fetch originated from. #2331 Copilot-1: slot is only
+	// meaningful for fanart -- echoing it for another type would misleadingly
+	// imply a per-slot save is possible there (the actual per-slot WRITE path
+	// is already correctly gated on imageType == "fanart" elsewhere; this
+	// gate keeps the needs_crop response's contract consistent with that).
+	if slot != nil && imageType == "fanart" {
 		resp["slot"] = *slot
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -560,8 +577,21 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	// Check geometry before saving. If the aspect ratio does not match the slot
 	// requirement, return the fetched image data for client-side cropping.
+	//
+	// #2331 CR-2: this used to also gate on !isHTMXRequest(req), skipping
+	// crop-detection for EVERY htmx-driven caller. /images/fetch is hit via
+	// hx-post from two distinct templ sites though (image_search.templ): the
+	// compare-panel "Use this one" button (already reviewed via the compare
+	// UI, genuinely wants no crop prompt -- it now opts out explicitly via
+	// ?skip_crop=true on its hx-post URL) and the provider/fanart search
+	// results' plain "Save" button (a first-pick from a thumbnail, which
+	// DOES need the same aspect-mismatch check as every non-HTMX caller --
+	// it has its own hx-on::after-request handler that opens the crop modal
+	// when the response comes back needs_crop). Keying on "is it HTMX" was
+	// too broad a proxy for "does this specific caller want the check" and
+	// silently skipped the check for the search-results Save button too.
 	skipCrop := req.URL.Query().Get("skip_crop") == "true"
-	if !skipCrop && !isHTMXRequest(req) && r.fetchRespondIfNeedsCrop(w, imageType, data, a.FanartExists, slot) {
+	if !skipCrop && r.fetchRespondIfNeedsCrop(w, imageType, data, a.FanartExists, slot) {
 		return
 	}
 
@@ -1803,9 +1833,16 @@ func extractImageFetchParams(req *http.Request) (string, string, *int, error) {
 	} else {
 		rawURL, rawType = req.FormValue("url"), req.FormValue("type")
 		if slotStr := req.FormValue("slot"); slotStr != "" {
-			if n, err := strconv.Atoi(slotStr); err == nil {
-				slot = &n
+			// #2331 CR-3: a malformed slot must error, matching the JSON
+			// branch's decode-failure behavior above. Silently dropping it
+			// (falling back to slot=nil, i.e. the append/overwrite-primary
+			// default) would let a typo'd slot ("1O") silently take the
+			// wrong action instead of surfacing the mistake.
+			n, err := strconv.Atoi(slotStr)
+			if err != nil {
+				return "", "", nil, fmt.Errorf("invalid slot: %w", err)
 			}
+			slot = &n
 		}
 	}
 	return rawURL, normalizeImageType(rawType), slot, nil

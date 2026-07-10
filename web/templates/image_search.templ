@@ -123,6 +123,16 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		var _cropper = null;
 		var _currentRatio = NaN;
 		var _pendingRatio = NaN;
+		// #2331 CR-4: monotonic token identifying the current crop session.
+		// stageAndLoadCrop's async fetch callback captures the token active
+		// at its OWN call time and must bail if a newer session has started
+		// (or the modal closed) before it resolves -- otherwise a slow stage
+		// request that resolves after the user opened a different crop (or
+		// closed the modal) would clobber the #crop-image/#upload-status
+		// elements with stale data. Incremented on every openCropModal call
+		// AND on close, so both "opened something else" and "gave up
+		// entirely" invalidate any in-flight staging fetch.
+		var _cropSessionToken = 0;
 		// #2281 QOL #48 (widened for #2323): true once an image is actually
 		// loaded and ready in the cropper -- set in the Cropper `ready`
 		// callback below, on EVERY entry route (direct, provider fetch, URL
@@ -151,7 +161,17 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		// would taint the canvas for a provider that does not send CORS
 		// headers). Falls back to a generic load-failure message if staging
 		// itself fails.
-		function stageAndLoadCrop(imgSrc, imageType) {
+		//
+		// sessionToken (#2331 CR-4) is the _cropSessionToken value captured by
+		// the caller (openCropModal) at the moment THIS staging request
+		// started. Every callback below re-checks it against the CURRENT
+		// _cropSessionToken before touching any shared DOM (#crop-image,
+		// #upload-status, the modal itself) -- if a newer session opened, or
+		// the modal was closed, in the meantime, this callback is stale and
+		// must bail without side effects (including NOT calling
+		// closeCropModal, which would incorrectly close whatever session IS
+		// now active).
+		function stageAndLoadCrop(imgSrc, imageType, sessionToken) {
 			var modal = document.getElementById('crop-modal');
 			var cropImage = document.getElementById('crop-image');
 			var artistID = modal.dataset.artistId;
@@ -174,6 +194,7 @@ templ ArtworkManageEditor(data ImageSearchData) {
 					return {ok: r.ok, data: data};
 				});
 			}).then(function(result) {
+				if (sessionToken !== _cropSessionToken) return; // stale: a newer session took over
 				if (!result.ok || !result.data || !result.data.image_data) {
 					closeCropModal();
 					showCropStageFailure(modal);
@@ -182,6 +203,7 @@ templ ArtworkManageEditor(data ImageSearchData) {
 				if (statusEl) statusEl.replaceChildren();
 				cropImage.src = result.data.image_data;
 			}).catch(function() {
+				if (sessionToken !== _cropSessionToken) return; // stale: a newer session took over
 				closeCropModal();
 				showCropStageFailure(modal);
 			});
@@ -205,6 +227,10 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		// to; stashed on the modal so saveCroppedImage can thread it into the
 		// /images/crop POST without re-deriving it.
 		function openCropModal(imgSrc, imageType, initialRatio, append, slot) {
+			// #2331 CR-4: a fresh session token invalidates any staging fetch
+			// still in flight from a previous openCropModal call (double-open,
+			// fast re-click) -- see the sessionToken doc on stageAndLoadCrop.
+			var sessionToken = ++_cropSessionToken;
 			var modal = document.getElementById('crop-modal');
 			var cropImage = document.getElementById('crop-image');
 			var cropType = document.getElementById('crop-type');
@@ -280,12 +306,17 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			// first (avoids the canvas taint); an already-staged data: URI or
 			// a same-origin saved file loads directly.
 			if (isRemoteImageSrc(imgSrc)) {
-				stageAndLoadCrop(imgSrc, imageType);
+				stageAndLoadCrop(imgSrc, imageType, sessionToken);
 			} else {
 				cropImage.src = imgSrc;
 			}
 		}
 		function closeCropModal() {
+			// #2331 CR-4: also invalidate any in-flight staging fetch on an
+			// explicit close (not just a newer open) -- otherwise a slow
+			// stage request could still resolve after the user gave up on
+			// the crop entirely and repaint/reopen the (now-closed) modal.
+			_cropSessionToken++;
 			var modal = document.getElementById('crop-modal');
 			// Toggle BOTH classes back to the hidden state -- mirror of
 			// openCropModal so only the `hidden` rule is active when the
@@ -741,6 +772,13 @@ templ imageSearchContextualized(data ImageSearchData) {
 							<p class="text-xs text-gray-400 py-8">{ t(ctx, "image.click_compare_hint") }</p>
 						</div>
 						<div id="compare-right-meta" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></div>
+						// #2331 CR-2: /images/fetch's needs_crop check now runs for every
+						// caller (removed the old blanket !isHTMXRequest(req) skip, which
+						// incorrectly exempted this genuinely htmx-driven Save flow too),
+						// so this hx-on::after-request reacts to a needs_crop response by
+						// opening the crop modal via window.openAutoCrop (exposed by this
+						// same fragment's script below) -- otherwise a "successful" (2xx)
+						// needs_crop response would silently no-op instead of saving.
 						<button
 							type="button"
 							id="compare-save-btn"
@@ -751,6 +789,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							data-confirm-key="image-save"
 							data-sw-requires-image-write
 							title={ t(ctx, "image.disabled_during_conflict") }
+							hx-on::after-request="if(event.detail.successful){try{var d=JSON.parse(event.detail.xhr.responseText);if(d&&d.needs_crop&&typeof window.openAutoCrop==='function'){window.openAutoCrop(d);}}catch(e){}}"
 						>
 							{ t(ctx, "image.use_this_one") }
 						</button>
@@ -842,6 +881,14 @@ templ imageSearchContextualized(data ImageSearchData) {
 					openCropModal(data.image_data, data.type, data.required_ratio, !!data.append, data.slot);
 					setStatus(container.dataset.msgNeedsCrop, 'text-amber-600');
 				}
+				// #2331 CR-2: exposed globally so the hx-post Save buttons'
+				// inline hx-on::after-request handlers (compare-save and the
+				// fanart search-results Save button, both htmx-driven) can
+				// react to a needs_crop response the same way the plain-JS
+				// upload/fetch-URL flows already do -- an inline attribute
+				// handler runs in global scope and cannot reach this
+				// IIFE-local function otherwise.
+				window.openAutoCrop = openAutoCrop;
 
 				function uploadFile(file) {
 					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
@@ -1181,6 +1228,10 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 									<span class="ml-1">{ tn(ctx, "image.likes_count", img.Likes) }</span>
 								}
 							</div>
+							// #2331 CR-2: same needs_crop after-request handling as the
+							// compare-save button above -- this Save button picks a raw
+							// provider thumbnail directly and is just as likely to be a
+							// mismatched aspect ratio needing a crop prompt.
 							<button
 								type="button"
 								class="sw-next-flat-btn w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -1191,6 +1242,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 								data-confirm-key="image-save"
 								data-sw-requires-image-write
 								title={ t(ctx, "image.disabled_during_conflict") }
+								hx-on::after-request="if(event.detail.successful){try{var d=JSON.parse(event.detail.xhr.responseText);if(d&&d.needs_crop&&typeof window.openAutoCrop==='function'){window.openAutoCrop(d);}}catch(e){}}"
 							>
 								{ t(ctx, "common.save") }
 							</button>
