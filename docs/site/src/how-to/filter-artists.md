@@ -84,8 +84,9 @@ each artist as a card with its artwork.
 
 Sorting works differently in each view. In table view the column headers are the
 sort control: click a header to sort by that column, click it again to reverse
-the direction, and a third click clears the sort. Grid view has no headers, so a
-**Sort** dropdown appears in the toolbar there instead.
+the direction, and a third click returns to the default sort (Name, ascending).
+Grid view has no headers, so a **Sort** dropdown appears in the toolbar there
+instead.
 
 ## Choose which columns to show
 
