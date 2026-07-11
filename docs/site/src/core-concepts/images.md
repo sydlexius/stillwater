@@ -85,4 +85,4 @@ What you do think about: which images you want for which artists, whether the ru
 
 ## See also
 
-- [Merge duplicate artists](../how-to/merge-duplicate-artists.md) -- when two artist records with images merge, the surviving directory's images are kept and the loser's redundant copies are deleted (except `extrafanart`/`extrathumbs`, which merge additively).
+- [Merge duplicate artists](../how-to/merge-duplicate-artists.md) -- when two artist records with images merge, loose files are handled per-file: if the survivor already has a same-named file, the survivor's copy wins and the loser's copy is deleted; a uniquely-named loser image is moved into the survivor's directory and kept. The `extrafanart`/`extrathumbs` folders are the one exception -- both sides' images are kept and merged together rather than treated as a collision.

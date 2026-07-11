@@ -52,7 +52,7 @@ The first time you save or enable a Lidarr connection (and any time you click **
 3. For each matched pair, it compares the two paths' directory prefixes (after stripping the common artist-folder name at the end).
 4. A mapping is only applied when at least two independently-matched artists agree on the same prefix pair -- a single coincidental match isn't enough to guess from.
 
-If inference finds a consistent mapping, it's applied automatically and the connection panel reports how many mappings came from how many matched artists. If you already have mappings entered, inference never overwrites them -- it only fills in the gap when the list is empty. If your paths already match, or too few artists corroborate the same prefix, you'll see a "no mappings inferred" message and can type the host/Lidarr prefix pairs in yourself.
+If inference finds a consistent mapping, it's applied automatically and the connection panel reports how many mappings came from how many matched artists. If you already have mappings entered, inference never overwrites them -- it only fills in the gap when the list is empty. If your paths already match, leave the mapping empty. If too few artists corroborate a differing prefix pair, you'll see a "no mappings inferred" message and can enter the host/Lidarr prefixes manually.
 
 ### Verify path after rename
 

@@ -13,9 +13,9 @@ Stillwater flags artists that appear to be the same person or group -- usually t
 Open **Possible Duplicate Artists** (sidebar, or `/reports/duplicates` directly). Stillwater groups artists two ways:
 
 - **Shared MBID** -- every member of the group has the same MusicBrainz artist ID. High confidence.
-- **Name collision** -- the members' directory names normalize to the same value (ignoring punctuation style, hyphen vs. underscore, and a leading "The"). Worth a manual look before merging; an MBID match isn't present.
+- **Name collision** -- the members' directory names normalize to the same value (ignoring punctuation style, hyphen vs. underscore, and a leading "The"). Worth a manual look before merging; not classified as a Shared MBID group.
 
-Only artists with a directory on disk are considered -- a platform-only artist (no filesystem path) can't be merged.
+Only artists with a non-empty filesystem path are considered -- a platform-only artist (no filesystem path) can't be merged.
 
 If a group isn't actually a duplicate, click **Ignore** to dismiss it. Ignored groups move to **Manage ignored** (`/reports/duplicates/ignored`), where you can **Restore** one if you change your mind.
 
