@@ -268,13 +268,20 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		FixExample: "Before: /music/Pink Floyd/ contains fanart.jpg, folder.jpg, backdrop_old.png, artist_backup.jpg\nAfter:  /music/Pink Floyd/ contains fanart.jpg, folder.jpg  (two extraneous files deleted)",
 	},
 	RuleImageDuplicate: {
-		FixBehavior: "",
-		Guards:      "When the thumbnail and fanart, or logo and banner, contain the same underlying photograph, media server detail pages show the same image in multiple slots, which wastes platform resources and looks unintentional. The rule reads pre-computed perceptual hash (dHash) values from Stillwater's database and compares all cross-slot pairs using Hamming distance; two images are considered duplicates when their similarity meets or exceeds the configured threshold (default 90%). The violation is informational; resolving it requires manually replacing one of the images with a distinct alternative.",
+		FixBehavior: "Removes redundant within-type fanart duplicates: for each group of visually identical fanart slots, keeps the lowest-numbered slot and deletes the higher-numbered duplicate file(s), then renumbers the survivors into a contiguous sequence. Cross-type duplicates (e.g. thumbnail vs. fanart, or logo vs. banner) are not fixed automatically; resolving them requires manually replacing one of the images with a distinct alternative.",
+		Conditional: true,
+		Caveats: []string{
+			"Runs in manual mode only; never auto-deletes files.",
+			"Skipped on shared-filesystem libraries.",
+			"Only within-type fanart duplicates are fixable; cross-type duplicates remain informational.",
+		},
+		Guards: "When two fanart slots contain the same underlying photograph, or the thumbnail and fanart (or logo and banner) contain the same underlying photograph, media server detail pages show the same image in multiple slots, which wastes platform resources and looks unintentional. The rule compares all cross-slot pairs, including different fanart slots against each other (not just slot 0 against other types), using perceptual hash (dHash) similarity via Hamming distance; two images are considered duplicates when their similarity meets or exceeds the configured threshold (default 90%). Within-type fanart duplicates are fixable; cross-type duplicates remain informational and require manually replacing one of the images with a distinct alternative.",
 		Examples: []string{
 			"An artist whose thumbnail and fanart are the same press photo, automatically resized into both slots by an earlier fix pass.",
 			"An artist where logo.png and banner.jpg were both fetched from the same provider image source and are visually identical despite different dimensions.",
-			"A library that was seeded by copying the fanart into every image slot as a placeholder before sourcing distinct artwork.",
+			"An artist with fanart.jpg and fanart2.jpg saved as the same backdrop image after a provider re-fetch duplicated an existing slot.",
 		},
+		FixExample: "Before: /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg (visually identical), fanart3.jpg\nAfter:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (duplicate fanart2.jpg deleted, former fanart3.jpg renumbered to fanart2.jpg)",
 	},
 	RuleOriginMissing: {
 		Fields:      []string{"origin"},

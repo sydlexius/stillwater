@@ -922,6 +922,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		logoPaddingFixer,
 		rule.NewDirectoryRenameFixer(a.fsCheck, logger),
 		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, logger),
+		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, logger),
 		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),
 	}
 	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)
