@@ -135,13 +135,26 @@ func (p *Publisher) selfHealLidarrLinks(ctx context.Context, artistID, mbid stri
 			continue
 		}
 
-		if setErr := p.artistService.SetPlatformID(ctx, artistID, conn.ID, matchedID); setErr != nil {
+		// Self-heal is a non-authoritative writer, so route through the stable
+		// set: keep the deterministic (lowest-id) mapping rather than clobber an
+		// existing divergent id (#2344). Best-effort posture is unchanged -- a
+		// DB error skips this connection and is never propagated.
+		outcome, setErr := p.artistService.SetPlatformIDStable(ctx, artistID, conn.ID, matchedID)
+		if setErr != nil {
 			p.logger.Warn("self-heal: stamping Lidarr platform ID; skipping connection",
 				slog.String("artist_id", artistID),
 				slog.String("connection", conn.Name),
 				slog.String("platform_artist_id", matchedID),
 				slog.String("error", setErr.Error()))
 			continue
+		}
+		if outcome.Diverged {
+			p.logger.Info("self-heal: resolved a divergent Lidarr platform ID; kept deterministic pick",
+				slog.String("artist_id", artistID),
+				slog.String("connection", conn.Name),
+				slog.String("kept_platform_artist_id", outcome.StoredID),
+				slog.String("previous_platform_artist_id", outcome.PreviousID),
+				slog.String("incoming_platform_artist_id", matchedID))
 		}
 
 		linked[conn.ID] = matchedID

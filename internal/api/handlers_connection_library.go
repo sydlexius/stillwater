@@ -720,9 +720,14 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 						r.logger.Warn("backfilling mbid from emby", "name", existing.Name, "error", err)
 					}
 				}
-				// Store the platform-to-Stillwater artist ID mapping.
-				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
+				// Store the platform-to-Stillwater artist ID mapping. Populate is
+				// a non-authoritative writer, so use the divergence-aware stable
+				// set to keep the deterministic id across re-imports rather than
+				// clobber a duplicate twin (#2344).
+				if outcome, setErr := r.artistService.SetPlatformIDStable(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing emby platform id", "name", existing.Name, "error", setErr)
+				} else {
+					r.logPlatformIDDivergence(outcome, existing.Name, "emby", item.ID)
 				}
 				// record that this Emby library now also
 				// observes the existing artist (filesystem-imported or
@@ -762,9 +767,12 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 
 			// Store the platform-to-Stillwater artist ID mapping.
 			// Initial artist_libraries membership is recorded by
-			// artist.Service.Create via AddDerivingSource.
-			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
+			// artist.Service.Create via AddDerivingSource. Stable set keeps the
+			// deterministic id across re-imports (#2344).
+			if outcome, setErr := r.artistService.SetPlatformIDStable(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
+			} else {
+				r.logPlatformIDDivergence(outcome, a.Name, "emby", item.ID)
 			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
@@ -815,9 +823,12 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 						r.logger.Warn("backfilling mbid from jellyfin", "name", existing.Name, "error", err)
 					}
 				}
-				// Store the platform-to-Stillwater artist ID mapping.
-				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
+				// Store the platform-to-Stillwater artist ID mapping via the
+				// divergence-aware stable set (#2344).
+				if outcome, setErr := r.artistService.SetPlatformIDStable(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing jellyfin platform id", "name", existing.Name, "error", setErr)
+				} else {
+					r.logPlatformIDDivergence(outcome, existing.Name, "jellyfin", item.ID)
 				}
 				// record that this Jellyfin library now also
 				// observes the existing artist. Idempotent.
@@ -856,9 +867,12 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 
 			// Store the platform-to-Stillwater artist ID mapping.
 			// Initial artist_libraries membership is recorded by
-			// artist.Service.Create via AddDerivingSource.
-			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
+			// artist.Service.Create via AddDerivingSource. Stable set keeps the
+			// deterministic id across re-imports (#2344).
+			if outcome, setErr := r.artistService.SetPlatformIDStable(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
+			} else {
+				r.logPlatformIDDivergence(outcome, a.Name, "jellyfin", item.ID)
 			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
@@ -898,8 +912,12 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		}
 
 		if existing != nil {
-			if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+			pid := fmt.Sprintf("%d", la.ID)
+			// Stable set keeps the deterministic id across re-imports (#2344).
+			if outcome, setErr := r.artistService.SetPlatformIDStable(ctx, existing.ID, lib.ConnectionID, pid); setErr != nil {
 				r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
+			} else {
+				r.logPlatformIDDivergence(outcome, existing.Name, "lidarr", pid)
 			}
 			// record this Lidarr library's membership.
 			if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "lidarr"); memErr != nil {
@@ -924,11 +942,15 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		result.Created++
 
 		// Initial artist_libraries membership is recorded by
-		// artist.Service.Create via AddDerivingSource.
-		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+		// artist.Service.Create via AddDerivingSource. Stable set keeps the
+		// deterministic id across re-imports (#2344).
+		pid := fmt.Sprintf("%d", la.ID)
+		if outcome, setErr := r.artistService.SetPlatformIDStable(ctx, a.ID, lib.ConnectionID, pid); setErr != nil {
 			r.logger.Warn("storing lidarr platform id", "name", a.Name, "error", setErr)
+		} else {
+			r.logPlatformIDDivergence(outcome, a.Name, "lidarr", pid)
 		}
-		r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), a.ID, manualLibs)
+		r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, pid, a.ID, manualLibs)
 	}
 	return nil
 }
@@ -1268,7 +1290,11 @@ func (r *Router) backfillPlatformIDToManualLibs(
 	if fsArtist == nil || fsArtist.ID == connArtistID {
 		return
 	}
-	if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
+	// Backfill is a non-authoritative writer, so route through the stable set
+	// to preserve the deterministic (lowest-id) mapping instead of clobbering
+	// (#2344).
+	outcome, setErr := r.artistService.SetPlatformIDStable(ctx, fsArtist.ID, connectionID, platformArtistID)
+	if setErr != nil {
 		// a UNIQUE index on (connection_id, platform_artist_id) means at
 		// most one artist row can hold a given platform mapping. The
 		// connection-library artist already claimed it before we got
@@ -1283,6 +1309,7 @@ func (r *Router) backfillPlatformIDToManualLibs(
 		r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
 		return
 	}
+	r.logPlatformIDDivergence(outcome, fsArtist.Name, "filesystem", platformArtistID)
 	r.logger.Debug("backfill: platform id propagated to filesystem artist",
 		"name", fsArtist.Name, "fs_artist_id", fsArtist.ID, "connection_id", connectionID)
 }
@@ -1302,6 +1329,23 @@ func (r *Router) manualLibraries(ctx context.Context) []library.Library {
 		}
 	}
 	return manual
+}
+
+// logPlatformIDDivergence emits a single INFO line when a non-authoritative
+// platform-id write (scan, populate, or manual-library backfill) had to
+// tie-break a divergent id for the same (artist, connection). The stable set
+// keeps the deterministic lowest id; this makes the losing id visible without a
+// ledger, so the Emby duplicate-twin flip-flop no longer happens silently
+// (#2344). No-op when the write did not diverge.
+func (r *Router) logPlatformIDDivergence(outcome artist.PlatformIDStableOutcome, name, platform, incoming string) {
+	if !outcome.Diverged {
+		return
+	}
+	r.logger.Info("resolved a divergent platform id; kept deterministic pick",
+		"name", name, "platform", platform,
+		"kept_platform_artist_id", outcome.StoredID,
+		"previous_platform_artist_id", outcome.PreviousID,
+		"incoming_platform_artist_id", incoming)
 }
 
 // resolveAndBackfillPlatformID finds the connection-library artist by MBID
@@ -1341,9 +1385,15 @@ func (r *Router) resolveAndBackfillPlatformID(
 		return nil
 	}
 
-	// Store platform ID on the resolved artist.
-	if setErr := r.artistService.SetPlatformID(ctx, a.ID, connectionID, platformArtistID); setErr != nil {
+	// Store platform ID on the resolved artist. Scans are non-authoritative
+	// writers, so route through the divergence-aware stable set: when Emby
+	// returns duplicate items sharing one MBID, this keeps the deterministic
+	// (lowest-id) winner across scans instead of flip-flopping between the
+	// twins, so metadata/image pushes always target the same item (#2344).
+	if outcome, setErr := r.artistService.SetPlatformIDStable(ctx, a.ID, connectionID, platformArtistID); setErr != nil {
 		r.logger.Warn("storing platform id during scan", "name", a.Name, "platform", connLib.Source, "error", setErr)
+	} else {
+		r.logPlatformIDDivergence(outcome, a.Name, connLib.Source, platformArtistID)
 	}
 
 	// Backfill to filesystem-library artists.

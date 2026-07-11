@@ -28,23 +28,26 @@ type fakePlatformLister struct {
 	ids        []artist.PlatformID
 	members    []artist.BandMember
 	membersErr error
-	// setErr, when non-nil, makes SetPlatformID fail (exercises the self-heal
-	// best-effort branch). setCalls records the accepted stamps for assertions.
-	setErr   error
-	setCalls []setPlatformIDCall
+	// setErr, when non-nil, makes SetPlatformIDStable fail (exercises the
+	// self-heal best-effort branch). setCalls records the accepted stamps for
+	// assertions. stableOutcome, when set, is returned on an accepted stamp so a
+	// test can exercise the divergence-logging branch.
+	setErr        error
+	setCalls      []setPlatformIDCall
+	stableOutcome artist.PlatformIDStableOutcome
 }
 
-// setPlatformIDCall records one accepted SetPlatformID invocation.
+// setPlatformIDCall records one accepted SetPlatformIDStable invocation.
 type setPlatformIDCall struct {
 	artistID, connectionID, platformArtistID string
 }
 
-func (f *fakePlatformLister) SetPlatformID(_ context.Context, artistID, connectionID, platformArtistID string) error {
+func (f *fakePlatformLister) SetPlatformIDStable(_ context.Context, artistID, connectionID, platformArtistID string) (artist.PlatformIDStableOutcome, error) {
 	if f.setErr != nil {
-		return f.setErr
+		return artist.PlatformIDStableOutcome{}, f.setErr
 	}
 	f.setCalls = append(f.setCalls, setPlatformIDCall{artistID, connectionID, platformArtistID})
-	return nil
+	return f.stableOutcome, nil
 }
 
 func (f *fakePlatformLister) GetPlatformIDs(_ context.Context, _ string) ([]artist.PlatformID, error) {

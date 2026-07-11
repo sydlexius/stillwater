@@ -16,6 +16,24 @@ var ErrPlatformIDNotFound = errors.New("platform id not found")
 // library backfill helper) should match on this sentinel via errors.Is.
 var ErrPlatformIDClaimedByAnotherArtist = errors.New("platform id already claimed by another artist")
 
+// PlatformIDStableOutcome reports what a divergence-aware stable set did with a
+// platform-ID mapping. It exists so non-authoritative writers (scan, manual-lib
+// backfill, Lidarr self-heal) can LOG a deterministic tiebreak instead of
+// silently clobbering, without overloading the error channel.
+//
+//   - StoredID is the platform_artist_id in effect after the operation.
+//   - PreviousID is the id that was stored before (empty when there was no row).
+//   - Diverged is true only when an existing row held a DIFFERENT id than the
+//     incoming one, so a deterministic tiebreak had to be applied. In that case
+//     the losing id is whichever of {PreviousID, incoming} is not StoredID.
+//
+// A first insert and an idempotent re-set both report Diverged=false.
+type PlatformIDStableOutcome struct {
+	StoredID   string
+	PreviousID string
+	Diverged   bool
+}
+
 // PlatformID maps a Stillwater artist to their ID on a specific platform connection.
 type PlatformID struct {
 	ArtistID         string    `json:"artist_id"`
