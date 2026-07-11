@@ -20,7 +20,7 @@ Click **Filters** to open the flyout:
 - **Component** -- a single-select pill list, populated from the components actually present in the buffer.
 - **Artist ID** and **Rule** -- free-text fields for deep-linking to a specific artist's or rule's log lines. Unlike level and component, these aren't matched by the server-side stream and are applied client-side against each entry's structured fields.
 
-Active filters appear as dismissable chips above the log; removing a chip reconnects the stream without that facet. The toolbar's search box (`/`) narrows by matching log text.
+Active filters appear as dismissible chips above the log; removing a chip reconnects the stream without that facet. The toolbar's search box (`/`) narrows by matching log text.
 
 ## Read the log
 
