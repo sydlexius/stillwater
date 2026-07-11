@@ -699,6 +699,20 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 								}
 								setStatus(true);
 							});
+
+							// Close the stream on unload so the browser does not log a
+							// benign aborted-connection error when the tab navigates
+							// away or closes (#2262). pagehide is more reliable than
+							// beforeunload (fires on bfcache navigations too); the
+							// guard makes this idempotent and null-safe if the
+							// EventSource was never opened (e.g. construction failed
+							// above).
+							window.addEventListener('pagehide', function() {
+								if (src) {
+									try { src.close(); } catch (e) { /* ignore */ }
+									src = null;
+								}
+							});
 						})();
 					</script>
 					<!-- Footer "View all activity" link (restored, mirrors the stable

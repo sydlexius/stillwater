@@ -1004,6 +1004,13 @@ templ LogsViewerScript() {
 			applyWrap();
 			if (pauseBtn) pauseBtn.textContent = L('labelPause');
 			connect();
+
+			// Close the stream on unload so the browser does not log a benign
+			// aborted-connection error when the tab navigates away or closes
+			// (#2262). pagehide is more reliable than beforeunload (fires on
+			// bfcache navigations too); disconnect() is already idempotent and
+			// null-safe.
+			window.addEventListener('pagehide', disconnect);
 		})();
 	</script>
 }

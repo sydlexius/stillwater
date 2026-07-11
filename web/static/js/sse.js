@@ -377,15 +377,26 @@
     });
   }
 
-  // Disconnect cleanly when the page unloads.
-  window.addEventListener("beforeunload", function () {
+  // Disconnect cleanly when the page unloads. pagehide fires more reliably
+  // than beforeunload (including bfcache navigations) and closing the
+  // EventSource here -- rather than leaving the browser to abort the
+  // in-flight request on navigation -- avoids a benign but noisy connection
+  // error being logged to the console (#2262). beforeunload stays as a
+  // belt-and-suspenders fallback for browsers/contexts where pagehide is
+  // unavailable; closeSource is idempotent and null-safe so running both
+  // handlers is harmless.
+  function closeSource() {
     if (retryTimer) {
       clearTimeout(retryTimer);
+      retryTimer = null;
     }
     if (source) {
-      source.close();
+      try { source.close(); } catch (e) { /* ignore */ }
+      source = null;
     }
-  });
+  }
+  window.addEventListener("pagehide", closeSource);
+  window.addEventListener("beforeunload", closeSource);
 
   // Expose for testing and external control.
   window.swSSE = {
