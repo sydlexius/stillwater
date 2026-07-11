@@ -714,7 +714,7 @@ func TestMergeArtists_JunkSubdirDoesNotHalt(t *testing.T) {
 	}
 }
 
-// backupDirName must track image.BackupDirName. The merge package copies the
+// backupDirName must track image.BackupDirName. The artist package copies the
 // literal (".sw-backup") rather than importing image for a single string, so
 // this guards against the two drifting apart (#2363).
 func TestMergeArtists_BackupDirNameMatchesImage(t *testing.T) {

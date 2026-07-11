@@ -978,7 +978,7 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 	// pre-flight + survivor-wins loose-file policy above, plus the
 	// removeIgnoredJunk sweep just above, which now also drains the image
 	// editor's hidden .sw-backup rollback dir -- classified into `ignored`
-	// by enumerateChildren -- so it no longer blocks the unlink (#2363)).
+	// by enumerateChildren -- so it no longer blocks the unlink (#2363).
 	remaining, err := os.ReadDir(loser.Path)
 	if err != nil {
 		return false, fmt.Errorf("re-reading loser dir %s before removal: %w", loser.Path, err)
