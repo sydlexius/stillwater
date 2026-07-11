@@ -39,7 +39,6 @@ func TestGetters_ReadFromMatchingConfig(t *testing.T) {
 		PlatformUserID:    "u-1",
 		PlatformServerID:  "s-1",
 		FeatureImageWrite: true,
-		FeatureNFOWrite:   true,
 	}}
 	if emby.GetPlatformUserID() != "u-1" {
 		t.Errorf("GetPlatformUserID() = %q, want u-1", emby.GetPlatformUserID())
@@ -47,7 +46,7 @@ func TestGetters_ReadFromMatchingConfig(t *testing.T) {
 	if emby.GetPlatformServerID() != "s-1" {
 		t.Errorf("GetPlatformServerID() = %q, want s-1", emby.GetPlatformServerID())
 	}
-	if !emby.GetFeatureImageWrite() || !emby.GetFeatureNFOWrite() {
+	if !emby.GetFeatureImageWrite() {
 		t.Error("Emby feature getters should reflect the config")
 	}
 
@@ -175,17 +174,12 @@ func TestSetters_JellyfinPath(t *testing.T) {
 
 func TestSetFeatures_AllocatesAndSets(t *testing.T) {
 	// SetFeatures on a bare Emby connection must lazily allocate EmbyConfig
-	// and write all five feature flags.
+	// and write the three surviving feature flags (imageWrite, metadataPush,
+	// triggerRefresh).
 	emby := &Connection{Type: TypeEmby}
-	emby.SetFeatures(true, false, true, false, true)
+	emby.SetFeatures(true, false, true)
 	if emby.Emby == nil {
 		t.Fatal("SetFeatures must allocate EmbyConfig for TypeEmby")
-	}
-	if !emby.Emby.FeatureLibraryImport {
-		t.Error("FeatureLibraryImport must be true")
-	}
-	if emby.Emby.FeatureNFOWrite {
-		t.Error("FeatureNFOWrite must be false")
 	}
 	if !emby.Emby.FeatureImageWrite {
 		t.Error("FeatureImageWrite must be true")
@@ -199,15 +193,12 @@ func TestSetFeatures_AllocatesAndSets(t *testing.T) {
 
 	// Jellyfin path: same contract.
 	jf := &Connection{Type: TypeJellyfin}
-	jf.SetFeatures(false, true, false, true, false)
+	jf.SetFeatures(false, true, false)
 	if jf.Jellyfin == nil {
 		t.Fatal("SetFeatures must allocate JellyfinConfig for TypeJellyfin")
 	}
-	if jf.Jellyfin.FeatureLibraryImport {
-		t.Error("FeatureLibraryImport must be false")
-	}
-	if !jf.Jellyfin.FeatureNFOWrite {
-		t.Error("FeatureNFOWrite must be true")
+	if jf.Jellyfin.FeatureImageWrite {
+		t.Error("FeatureImageWrite must be false")
 	}
 	if !jf.Jellyfin.FeatureMetadataPush {
 		t.Error("FeatureMetadataPush must be true")
@@ -215,11 +206,11 @@ func TestSetFeatures_AllocatesAndSets(t *testing.T) {
 
 	// Lidarr has no features; SetFeatures must be a silent no-op.
 	lidarr := &Connection{Type: TypeLidarr}
-	lidarr.SetFeatures(true, true, true, true, true)
+	lidarr.SetFeatures(true, true, true)
 	if lidarr.Emby != nil || lidarr.Jellyfin != nil {
 		t.Error("SetFeatures must not allocate any sub-config for Lidarr")
 	}
-	if lidarr.GetFeatureLibraryImport() {
+	if lidarr.GetFeatureImageWrite() {
 		t.Error("SetFeatures on Lidarr must have no observable effect")
 	}
 }

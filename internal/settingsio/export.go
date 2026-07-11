@@ -209,8 +209,6 @@ type ConnectionExport struct {
 	URL                      string `json:"url"`
 	APIKey                   string `json:"api_key"`
 	Enabled                  bool   `json:"enabled"`
-	FeatureLibraryImport     bool   `json:"feature_library_import"`
-	FeatureNFOWrite          bool   `json:"feature_nfo_write"`
 	FeatureImageWrite        bool   `json:"feature_image_write"`
 	FeatureMetadataPush      bool   `json:"feature_metadata_push,omitempty"`
 	FeatureTriggerRefresh    bool   `json:"feature_trigger_refresh,omitempty"`
@@ -439,8 +437,6 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 			URL:                      c.URL,
 			APIKey:                   c.APIKey,
 			Enabled:                  c.Enabled,
-			FeatureLibraryImport:     c.GetFeatureLibraryImport(),
-			FeatureNFOWrite:          c.GetFeatureNFOWrite(),
 			FeatureImageWrite:        c.GetFeatureImageWrite(),
 			FeatureMetadataPush:      c.GetFeatureMetadataPush(),
 			FeatureTriggerRefresh:    c.GetFeatureTriggerRefresh(),

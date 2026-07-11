@@ -689,12 +689,6 @@ components:
           type: string
           format: date-time
           description: When the connection was last modified (UTC, RFC 3339).
-        feature_library_import:
-          type: boolean
-          description: Whether Stillwater imports libraries from this connection.
-        feature_nfo_write:
-          type: boolean
-          description: Whether Stillwater writes NFO files to this connection.
         feature_image_write:
           type: boolean
           description: Whether Stillwater writes images to this connection.
@@ -8375,10 +8369,6 @@ paths:
             schema:
               type: object
               properties:
-                feature_library_import:
-                  type: boolean
-                feature_nfo_write:
-                  type: boolean
                 feature_image_write:
                   type: boolean
                 feature_metadata_push:

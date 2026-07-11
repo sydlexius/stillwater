@@ -84,13 +84,13 @@ The toggle also makes a standing promise: if someone re-enables a saver on the p
 
 ## Feature toggles on connections
 
-Each connection has several feature toggles; three of them interact with how Stillwater writes to the shared library:
+Each connection has a few feature toggles; one of them interacts with how Stillwater writes to the shared library:
 
-- **image_write** -- whether Stillwater writes image files for artists sourced from this connection. See [`settings-connections-connections-feature-image-write`](../reference/settings-by-tab.md#settings-connections-connections-feature-image-write).
-- **nfo_write** -- whether Stillwater writes NFO files for artists sourced from this connection.
-- **library_import** -- whether Stillwater imports the library listing from this connection during scans.
+- **image_write** -- whether Stillwater writes image files for artists sourced from this connection. Shown for Emby and Jellyfin connections only; Lidarr has no image-write API, so the toggle (and the whole "What Stillwater sends" panel) is hidden for Lidarr connections. See [`settings-connections-connections-feature-image-write`](../reference/settings-by-tab.md#settings-connections-connections-feature-image-write).
 
-Disabling `image_write` or `nfo_write` on a connection stops Stillwater from writing those files for that connection's artists, but it does not change what the peer itself writes. The conflict gate operates independently: it watches what the *peer* is configured to write, not what Stillwater is configured to write.
+Disabling `image_write` on a connection stops Stillwater from writing images for that connection's artists, but it does not change what the peer itself writes. The conflict gate operates independently: it watches what the *peer* is configured to write, not what Stillwater is configured to write.
+
+NFO writes are not gated by a per-connection toggle. Whether Stillwater writes `.nfo` files is decided by the platform profile (`NFOWriteAllowed`) and, at write time, the conflict gate (`AllowNFOWrite`) -- both of which respond to the peer's own metadata-saver configuration and detected round-trip conflicts, not to any Stillwater-side connection toggle.
 
 ## Relationship to field locks and rules
 

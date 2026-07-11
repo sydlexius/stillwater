@@ -169,9 +169,8 @@ func TestHandleCreateConnection_JSON_SkipTest_Lidarr(t *testing.T) {
 	if got.Type != connection.TypeLidarr {
 		t.Errorf("type = %q, want lidarr", got.Type)
 	}
-	if got.GetFeatureLibraryImport() || got.GetFeatureNFOWrite() || got.GetFeatureImageWrite() {
-		t.Errorf("lidarr features should default false: import=%v nfo=%v image=%v",
-			got.GetFeatureLibraryImport(), got.GetFeatureNFOWrite(), got.GetFeatureImageWrite())
+	if got.GetFeatureImageWrite() {
+		t.Errorf("lidarr features should default false: image=%v", got.GetFeatureImageWrite())
 	}
 }
 
@@ -341,8 +340,6 @@ func TestHandleUpdateConnection_PatchesFields(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"name":                    "After",
 		"enabled":                 enabled,
-		"feature_library_import":  feat,
-		"feature_nfo_write":       feat,
 		"feature_image_write":     feat,
 		"feature_metadata_push":   feat,
 		"feature_trigger_refresh": feat,
@@ -363,7 +360,7 @@ func TestHandleUpdateConnection_PatchesFields(t *testing.T) {
 	if got.Name != "After" || got.Enabled {
 		t.Errorf("got = %+v, want name=After, enabled=false", got)
 	}
-	if !got.GetFeatureLibraryImport() || !got.GetFeatureNFOWrite() {
+	if !got.GetFeatureImageWrite() {
 		t.Errorf("feature flags not flipped: %+v", got)
 	}
 }
@@ -891,7 +888,7 @@ func TestHandleUpdateConnectionFeatures_Patches(t *testing.T) {
 
 	tr := true
 	body, _ := json.Marshal(map[string]any{
-		"feature_library_import":  tr,
+		"feature_image_write":     tr,
 		"feature_metadata_push":   tr,
 		"feature_trigger_refresh": tr,
 	})
@@ -909,7 +906,7 @@ func TestHandleUpdateConnectionFeatures_Patches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if !got.GetFeatureLibraryImport() || !got.GetFeatureMetadataPush() || !got.GetFeatureTriggerRefresh() {
+	if !got.GetFeatureImageWrite() || !got.GetFeatureMetadataPush() || !got.GetFeatureTriggerRefresh() {
 		t.Errorf("features not toggled: %+v", got)
 	}
 }

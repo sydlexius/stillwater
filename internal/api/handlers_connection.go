@@ -33,8 +33,6 @@ type connectionResponse struct {
 	LastCheckedAt         *string `json:"last_checked_at,omitempty"`
 	CreatedAt             string  `json:"created_at"`
 	UpdatedAt             string  `json:"updated_at"`
-	FeatureLibraryImport  bool    `json:"feature_library_import"`
-	FeatureNFOWrite       bool    `json:"feature_nfo_write"`
 	FeatureImageWrite     bool    `json:"feature_image_write"`
 	FeatureMetadataPush   bool    `json:"feature_metadata_push"`
 	FeatureTriggerRefresh bool    `json:"feature_trigger_refresh"`
@@ -62,8 +60,6 @@ func toConnectionResponse(c connection.Connection) connectionResponse {
 		StatusMessage:         c.StatusMessage,
 		CreatedAt:             c.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:             c.UpdatedAt.UTC().Format(time.RFC3339),
-		FeatureLibraryImport:  c.GetFeatureLibraryImport(),
-		FeatureNFOWrite:       c.GetFeatureNFOWrite(),
 		FeatureImageWrite:     c.GetFeatureImageWrite(),
 		FeatureMetadataPush:   c.GetFeatureMetadataPush(),
 		FeatureTriggerRefresh: c.GetFeatureTriggerRefresh(),
@@ -134,8 +130,6 @@ func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
 		"last_checked_at":         resp.LastCheckedAt,
 		"created_at":              resp.CreatedAt,
 		"updated_at":              resp.UpdatedAt,
-		"feature_library_import":  resp.FeatureLibraryImport,
-		"feature_nfo_write":       resp.FeatureNFOWrite,
 		"feature_image_write":     resp.FeatureImageWrite,
 		"feature_metadata_push":   resp.FeatureMetadataPush,
 		"feature_trigger_refresh": resp.FeatureTriggerRefresh,
@@ -353,8 +347,6 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 		URL                   string `json:"url"`
 		APIKey                string `json:"api_key"`
 		Enabled               *bool  `json:"enabled"`
-		FeatureLibraryImport  *bool  `json:"feature_library_import"`
-		FeatureNFOWrite       *bool  `json:"feature_nfo_write"`
 		FeatureImageWrite     *bool  `json:"feature_image_write"`
 		FeatureMetadataPush   *bool  `json:"feature_metadata_push"`
 		FeatureTriggerRefresh *bool  `json:"feature_trigger_refresh"`
@@ -385,17 +377,9 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	// Apply the partial feature-flag update against the matching media
 	// sub-config: read current values via the getters, override the fields
 	// present in the request, then write them back. No-op for Lidarr.
-	libImport := existing.GetFeatureLibraryImport()
-	nfoWrite := existing.GetFeatureNFOWrite()
 	imageWrite := existing.GetFeatureImageWrite()
 	metadataPush := existing.GetFeatureMetadataPush()
 	triggerRefresh := existing.GetFeatureTriggerRefresh()
-	if body.FeatureLibraryImport != nil {
-		libImport = *body.FeatureLibraryImport
-	}
-	if body.FeatureNFOWrite != nil {
-		nfoWrite = *body.FeatureNFOWrite
-	}
 	if body.FeatureImageWrite != nil {
 		imageWrite = *body.FeatureImageWrite
 	}
@@ -405,7 +389,7 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	if body.FeatureTriggerRefresh != nil {
 		triggerRefresh = *body.FeatureTriggerRefresh
 	}
-	existing.SetFeatures(libImport, nfoWrite, imageWrite, metadataPush, triggerRefresh)
+	existing.SetFeatures(imageWrite, metadataPush, triggerRefresh)
 
 	if err := r.connectionService.Update(req.Context(), existing); err != nil {
 		r.logger.Error("updating connection", "error", err)
@@ -718,8 +702,6 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 	}
 
 	var body struct {
-		FeatureLibraryImport  *bool `json:"feature_library_import"`
-		FeatureNFOWrite       *bool `json:"feature_nfo_write"`
 		FeatureImageWrite     *bool `json:"feature_image_write"`
 		FeatureMetadataPush   *bool `json:"feature_metadata_push"`
 		FeatureTriggerRefresh *bool `json:"feature_trigger_refresh"`
@@ -728,17 +710,9 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 		return
 	}
 
-	libImport := existing.GetFeatureLibraryImport()
-	nfoWrite := existing.GetFeatureNFOWrite()
 	imageWrite := existing.GetFeatureImageWrite()
 	metadataPush := existing.GetFeatureMetadataPush()
 	triggerRefresh := existing.GetFeatureTriggerRefresh()
-	if body.FeatureLibraryImport != nil {
-		libImport = *body.FeatureLibraryImport
-	}
-	if body.FeatureNFOWrite != nil {
-		nfoWrite = *body.FeatureNFOWrite
-	}
 	if body.FeatureImageWrite != nil {
 		imageWrite = *body.FeatureImageWrite
 	}
@@ -749,7 +723,7 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 		triggerRefresh = *body.FeatureTriggerRefresh
 	}
 
-	if err := r.connectionService.UpdateFeatures(req.Context(), id, libImport, nfoWrite, imageWrite, metadataPush, triggerRefresh); err != nil {
+	if err := r.connectionService.UpdateFeatures(req.Context(), id, imageWrite, metadataPush, triggerRefresh); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 			return

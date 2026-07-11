@@ -66,8 +66,6 @@ type EmbyConfig struct {
 	// an unrelated server in multi-server setups. Empty until the first
 	// successful connection test resolves it.
 	PlatformServerID      string `json:"platform_server_id,omitempty"`
-	FeatureLibraryImport  bool   `json:"feature_library_import,omitempty"`
-	FeatureNFOWrite       bool   `json:"feature_nfo_write,omitempty"`
 	FeatureImageWrite     bool   `json:"feature_image_write,omitempty"`
 	FeatureMetadataPush   bool   `json:"feature_metadata_push,omitempty"`
 	FeatureTriggerRefresh bool   `json:"feature_trigger_refresh,omitempty"`
@@ -79,8 +77,6 @@ type EmbyConfig struct {
 type JellyfinConfig struct {
 	PlatformUserID        string `json:"platform_user_id,omitempty"`
 	PlatformServerID      string `json:"platform_server_id,omitempty"`
-	FeatureLibraryImport  bool   `json:"feature_library_import,omitempty"`
-	FeatureNFOWrite       bool   `json:"feature_nfo_write,omitempty"`
 	FeatureImageWrite     bool   `json:"feature_image_write,omitempty"`
 	FeatureMetadataPush   bool   `json:"feature_metadata_push,omitempty"`
 	FeatureTriggerRefresh bool   `json:"feature_trigger_refresh,omitempty"`
@@ -245,31 +241,6 @@ func DecodePathMappings(s string) ([]PathMapping, error) {
 	return m, nil
 }
 
-// GetFeatureLibraryImport reports the library-import toggle. False for Lidarr
-// (which has no such feature) and unresolved connections. Nil-safe.
-func (c *Connection) GetFeatureLibraryImport() bool {
-	switch {
-	case c.Emby != nil:
-		return c.Emby.FeatureLibraryImport
-	case c.Jellyfin != nil:
-		return c.Jellyfin.FeatureLibraryImport
-	default:
-		return false
-	}
-}
-
-// GetFeatureNFOWrite reports the NFO-write toggle. Nil-safe.
-func (c *Connection) GetFeatureNFOWrite() bool {
-	switch {
-	case c.Emby != nil:
-		return c.Emby.FeatureNFOWrite
-	case c.Jellyfin != nil:
-		return c.Jellyfin.FeatureNFOWrite
-	default:
-		return false
-	}
-}
-
 // GetFeatureImageWrite reports the image-write toggle. Nil-safe.
 func (c *Connection) GetFeatureImageWrite() bool {
 	switch {
@@ -341,19 +312,17 @@ func (c *Connection) SetPlatformServerID(id string) {
 	}
 }
 
-// SetFeatures writes the five Emby/Jellyfin write-feature toggles onto the
-// matching media sub-config, allocating it if nil. No-op for Lidarr (which has
-// no such features). Mirrors Service.UpdateFeatures' parameter order so callers
-// holding an in-memory Connection (e.g. the update handler) set features the
-// same way the targeted DB updater does.
-func (c *Connection) SetFeatures(libImport, nfoWrite, imageWrite, metadataPush, triggerRefresh bool) {
+// SetFeatures writes the Emby/Jellyfin write-feature toggles onto the matching
+// media sub-config, allocating it if nil. No-op for Lidarr (which has no such
+// features). Mirrors Service.UpdateFeatures' parameter order so callers holding
+// an in-memory Connection (e.g. the update handler) set features the same way
+// the targeted DB updater does.
+func (c *Connection) SetFeatures(imageWrite, metadataPush, triggerRefresh bool) {
 	switch c.Type {
 	case TypeEmby:
 		if c.Emby == nil {
 			c.Emby = &EmbyConfig{}
 		}
-		c.Emby.FeatureLibraryImport = libImport
-		c.Emby.FeatureNFOWrite = nfoWrite
 		c.Emby.FeatureImageWrite = imageWrite
 		c.Emby.FeatureMetadataPush = metadataPush
 		c.Emby.FeatureTriggerRefresh = triggerRefresh
@@ -361,8 +330,6 @@ func (c *Connection) SetFeatures(libImport, nfoWrite, imageWrite, metadataPush, 
 		if c.Jellyfin == nil {
 			c.Jellyfin = &JellyfinConfig{}
 		}
-		c.Jellyfin.FeatureLibraryImport = libImport
-		c.Jellyfin.FeatureNFOWrite = nfoWrite
 		c.Jellyfin.FeatureImageWrite = imageWrite
 		c.Jellyfin.FeatureMetadataPush = metadataPush
 		c.Jellyfin.FeatureTriggerRefresh = triggerRefresh

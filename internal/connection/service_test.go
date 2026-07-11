@@ -409,12 +409,6 @@ func TestCreatePreservesFeatureFlags(t *testing.T) {
 	if got.Lidarr == nil || got.Emby != nil || got.Jellyfin != nil {
 		t.Errorf("Lidarr connection should have only Lidarr config, got Lidarr=%v Emby=%v Jellyfin=%v", got.Lidarr, got.Emby, got.Jellyfin)
 	}
-	if got.GetFeatureLibraryImport() {
-		t.Error("expected FeatureLibraryImport to remain false for Lidarr")
-	}
-	if got.GetFeatureNFOWrite() {
-		t.Error("expected FeatureNFOWrite to remain false for Lidarr")
-	}
 	if got.GetFeatureImageWrite() {
 		t.Error("expected FeatureImageWrite to remain false for Lidarr")
 	}
@@ -422,7 +416,7 @@ func TestCreatePreservesFeatureFlags(t *testing.T) {
 	// Verify that explicitly-true flags are also preserved.
 	c2 := &Connection{
 		Name: "Emby", Type: TypeEmby, URL: "http://emby:8096", APIKey: "key2", Enabled: true,
-		Emby: &EmbyConfig{FeatureLibraryImport: true, FeatureNFOWrite: true, FeatureImageWrite: true},
+		Emby: &EmbyConfig{FeatureImageWrite: true},
 	}
 	if err := svc.Create(ctx, c2); err != nil {
 		t.Fatal(err)
@@ -433,12 +427,6 @@ func TestCreatePreservesFeatureFlags(t *testing.T) {
 	}
 	if got2.Emby == nil {
 		t.Fatal("Emby connection should have an EmbyConfig populated")
-	}
-	if !got2.Emby.FeatureLibraryImport {
-		t.Error("expected FeatureLibraryImport to be true for Emby")
-	}
-	if !got2.Emby.FeatureNFOWrite {
-		t.Error("expected FeatureNFOWrite to be true for Emby")
 	}
 	if !got2.Emby.FeatureImageWrite {
 		t.Error("expected FeatureImageWrite to be true for Emby")
@@ -455,8 +443,8 @@ func TestUpdateFeatures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Disable NFO write only
-	if err := svc.UpdateFeatures(ctx, c.ID, true, false, true, false, false); err != nil {
+	// Enable image write; leave metadata-push and trigger-refresh off.
+	if err := svc.UpdateFeatures(ctx, c.ID, true, false, false); err != nil {
 		t.Fatalf("UpdateFeatures: %v", err)
 	}
 
@@ -464,21 +452,21 @@ func TestUpdateFeatures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.GetFeatureLibraryImport() {
-		t.Error("expected FeatureLibraryImport to remain true")
-	}
-	if got.GetFeatureNFOWrite() {
-		t.Error("expected FeatureNFOWrite to be false")
-	}
 	if !got.GetFeatureImageWrite() {
-		t.Error("expected FeatureImageWrite to remain true")
+		t.Error("expected FeatureImageWrite to be true")
+	}
+	if got.GetFeatureMetadataPush() {
+		t.Error("expected FeatureMetadataPush to be false")
+	}
+	if got.GetFeatureTriggerRefresh() {
+		t.Error("expected FeatureTriggerRefresh to be false")
 	}
 }
 
 func TestUpdateFeatures_NotFound(t *testing.T) {
 	t.Parallel()
 	svc := setupTestService(t)
-	if err := svc.UpdateFeatures(context.Background(), "nonexistent", true, true, true, false, false); err == nil {
+	if err := svc.UpdateFeatures(context.Background(), "nonexistent", true, false, false); err == nil {
 		t.Error("expected error updating features for nonexistent connection")
 	}
 }
@@ -605,7 +593,7 @@ func TestUpdateFeatures_NewFlags(t *testing.T) {
 	}
 
 	// Enable metadata push but disable trigger refresh to verify independent storage.
-	if err := svc.UpdateFeatures(ctx, c.ID, true, true, true, true, false); err != nil {
+	if err := svc.UpdateFeatures(ctx, c.ID, true, true, false); err != nil {
 		t.Fatalf("UpdateFeatures: %v", err)
 	}
 
