@@ -342,13 +342,16 @@ func TestHandleUpdateConnection_PatchesFields(t *testing.T) {
 	// round-1 all-true state is non-default for every flag.
 	putConn := func(t *testing.T, name string, enabled, imageWrite, metadataPush, triggerRefresh bool) *connection.Connection {
 		t.Helper()
-		body, _ := json.Marshal(map[string]any{
+		body, err := json.Marshal(map[string]any{
 			"name":                    name,
 			"enabled":                 enabled,
 			"feature_image_write":     imageWrite,
 			"feature_metadata_push":   metadataPush,
 			"feature_trigger_refresh": triggerRefresh,
 		})
+		if err != nil {
+			t.Fatalf("marshal put body: %v", err)
+		}
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("id", c.ID)
