@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/image"
 )
 
 // --- ChooseSurvivor: pure-Go table-driven coverage ---------------------------
@@ -709,6 +711,121 @@ func TestMergeArtists_JunkSubdirDoesNotHalt(t *testing.T) {
 	// Junk was not carried into the survivor.
 	if _, err := os.Stat(filepath.Join(survivor.Path, "Thumbs.db")); !os.IsNotExist(err) {
 		t.Errorf("loser Thumbs.db should not have been moved into survivor")
+	}
+}
+
+// backupDirName must track image.BackupDirName. The merge package copies the
+// literal (".sw-backup") rather than importing image for a single string, so
+// this guards against the two drifting apart (#2363).
+func TestMergeArtists_BackupDirNameMatchesImage(t *testing.T) {
+	t.Parallel()
+	if backupDirName != image.BackupDirName {
+		t.Fatalf("backupDirName = %q, want image.BackupDirName = %q; the merge reaper's classifier is out of sync with the image editor's backup dir",
+			backupDirName, image.BackupDirName)
+	}
+}
+
+// TestMergeArtists_ReapsBackupDir is the #2363 regression: the image editor's
+// hidden .sw-backup rollback dir on the loser must be swept during the merge so
+// the emptied loser directory is unlinked and the loser row deleted. Before the
+// fix, .sw-backup landed in no enumerateChildren bucket, so removeIgnoredJunk
+// never swept it; the empty-check then found it still present, warned, and
+// returned removed=false, leaving the loser dir on disk and its row in the DB
+// (lingering in the Duplicates report).
+func TestMergeArtists_ReapsBackupDir(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	loser := mustGetArtist(t, svc, ctx, loserID)
+
+	// The image editor's hidden per-artist rollback dir, populated with a
+	// backed-up thumb, sitting alongside the loser's real albums.
+	backupThumbDir := filepath.Join(loser.Path, image.BackupDirName, "thumb")
+	if err := os.MkdirAll(backupThumbDir, 0o755); err != nil {
+		t.Fatalf("mkdir loser .sw-backup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupThumbDir, "thumb.jpg"), []byte("pre-edit-original"), 0o600); err != nil {
+		t.Fatalf("write backup thumb: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	// (a) loser ID reported in result.Removed.
+	if !slices.Contains(res.Removed, loserID) {
+		t.Errorf("res.Removed = %v, want to contain loser %s", res.Removed, loserID)
+	}
+	// (b) loser ID reported in result.LosersDeleted (DB row deleted).
+	if !slices.Contains(res.LosersDeleted, loserID) {
+		t.Errorf("res.LosersDeleted = %v, want to contain loser %s", res.LosersDeleted, loserID)
+	}
+	// DB row is actually gone.
+	if _, err := svc.GetByID(ctx, loserID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected loser row deleted (ErrNotFound), got err = %v", err)
+	}
+	// (c) loser dir gone on disk.
+	if _, err := os.Stat(loser.Path); !os.IsNotExist(err) {
+		t.Errorf("expected loser dir removed, got err = %v", err)
+	}
+	// (d) the backup dir was reaped, not carried into the survivor.
+	if _, err := os.Stat(filepath.Join(loser.Path, image.BackupDirName)); !os.IsNotExist(err) {
+		t.Errorf("expected loser .sw-backup removed (ENOENT), got err = %v", err)
+	}
+	survivor := mustGetArtist(t, svc, ctx, survivorID)
+	if _, err := os.Stat(filepath.Join(survivor.Path, image.BackupDirName)); !os.IsNotExist(err) {
+		t.Errorf("loser .sw-backup must not be carried into survivor")
+	}
+}
+
+// TestMergeArtists_ReapsBackupDirOnlyChild covers the edge case where the
+// loser's ONLY remaining content is the .sw-backup dir (no albums, no loose
+// files): the sweep must still drain it so the empty loser dir unlinks and the
+// row is deleted.
+func TestMergeArtists_ReapsBackupDirOnlyChild(t *testing.T) {
+	t.Parallel()
+	svc, _, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	loser := mustGetArtist(t, svc, ctx, loserID)
+
+	// Strip the loser back to nothing but a .sw-backup dir.
+	entries, err := os.ReadDir(loser.Path)
+	if err != nil {
+		t.Fatalf("read loser dir: %v", err)
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(loser.Path, e.Name())); err != nil {
+			t.Fatalf("clearing loser child %s: %v", e.Name(), err)
+		}
+	}
+	backupThumbDir := filepath.Join(loser.Path, image.BackupDirName, "logo")
+	if err := os.MkdirAll(backupThumbDir, 0o755); err != nil {
+		t.Fatalf("mkdir loser .sw-backup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupThumbDir, "logo.png"), []byte("pre-edit-logo"), 0o600); err != nil {
+		t.Fatalf("write backup logo: %v", err)
+	}
+
+	res, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	})
+	if err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+	if !slices.Contains(res.LosersDeleted, loserID) {
+		t.Errorf("res.LosersDeleted = %v, want to contain loser %s", res.LosersDeleted, loserID)
+	}
+	if _, err := os.Stat(loser.Path); !os.IsNotExist(err) {
+		t.Errorf("expected loser dir removed, got err = %v", err)
 	}
 }
 
