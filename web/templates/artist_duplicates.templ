@@ -599,15 +599,24 @@ templ ArtistMergeModal() {
 			rowControls = [];
 			current.members.forEach(function(m) {
 				var row = document.createElement('div');
-				row.className = 'sw-merge-row flex items-start gap-3 p-2';
+				// FIX D (#1894): the WHOLE row selects this artist as survivor and is
+				// the tap target (touch-friendly, big hit area vs a ~20px dial). The
+				// native radio stays in the DOM but sr-only (visually hidden) so the
+				// radiogroup semantics -- arrow-key nav, aria-checked, SR announcement,
+				// form value, and the initial-focus-on-survivor behavior -- are all
+				// preserved; only the visible dial is dropped. The left accent border +
+				// "Keeping" badge remain the selection indicator, and :focus-within on
+				// the row gives keyboard users a visible focus ring.
+				row.className = 'sw-merge-row flex items-start gap-3 p-2 cursor-pointer';
 
-				var label = document.createElement('label');
-				label.className = 'flex items-start gap-3 flex-1 min-w-0 cursor-pointer';
 				var radio = document.createElement('input');
 				radio.type = 'radio';
 				radio.name = 'merge-survivor';
 				radio.value = m.id;
-				radio.className = 'sw-merge-radio mt-1';
+				// sr-only hides the dial but keeps the radio focusable/announced; the
+				// radio carries its own aria-label so no wrapping <label> is needed.
+				radio.className = 'sw-merge-radio sr-only';
+				radio.setAttribute('aria-label', m.name || m.id);
 				radio.checked = (m.id === current.survivorId);
 				radio.addEventListener('change', function() {
 					current.survivorId = m.id;
@@ -649,27 +658,33 @@ templ ArtistMergeModal() {
 				discardNote.textContent = tx('will_be_removed');
 				discardNote.hidden = true;
 				body.appendChild(discardNote);
-				label.appendChild(radio);
-				label.appendChild(body);
 
-				// Include-in-merge checkbox (#1714). Checked = this member is a
-				// loser that will be merged into the survivor; unchecked =
-				// excluded from the merge entirely. The survivor's own checkbox
-				// is forced checked + disabled (the survivor cannot be dropped);
-				// applySurvivorState keeps that in sync as the radio changes.
-				// Custom-appearanced (.sw-merge-include, see input.css) rather
-				// than left as native appearance:auto: Chromium renders a
-				// disabled+checked native checkbox as dimmed grey regardless of
-				// accent-color, which is exactly the "survivor reads as off"
-				// inversion #1894 F2 reported -- only a fully custom control
-				// gives disabled+checked the same accent-blue look as enabled.
+				// Include-in-merge control (#1714; iOS toggle per maintainer, #1894).
+				// ON = this loser is merged into the survivor; OFF = excluded from the
+				// merge entirely. The survivor's own toggle is forced ON + disabled
+				// (the survivor can't be dropped); applySurvivorState keeps that in sync
+				// as the survivor changes. Uses the app's shared Toggle pattern
+				// (.sw-toggle-*, role=switch, toggle.templ): the visual track/knob track
+				// the hidden checkbox's :checked state via CSS, so applySurvivorState
+				// only flips .checked / .disabled / aria-checked.
+				var includeWrap = document.createElement('label');
+				// sw-merge-include-toggle marks this as the isolated include control
+				// that the whole-row survivor-select handler must ignore.
+				includeWrap.className = 'sw-toggle-wrapper sw-merge-include-toggle shrink-0';
+				var includeId = 'merge-include-' + m.id;
+				includeWrap.htmlFor = includeId;
 				var include = document.createElement('input');
 				include.type = 'checkbox';
-				include.className = 'sw-merge-include mt-1 shrink-0';
+				include.id = includeId;
+				include.className = 'sw-toggle-input';
+				include.setAttribute('role', 'switch');
+				include.checked = true;
+				include.setAttribute('aria-checked', 'true');
 				var includeLabel = tx('exclude_label') + ': ' + (m.name || m.id);
 				include.setAttribute('aria-label', includeLabel);
 				include.title = includeLabel;
 				include.addEventListener('change', function() {
+					include.setAttribute('aria-checked', include.checked);
 					if (include.checked) {
 						excludedIds.delete(m.id);
 					} else {
@@ -680,9 +695,37 @@ templ ArtistMergeModal() {
 					applySurvivorState();
 					runDryRun();
 				});
+				// FIX D: isolate the include toggle -- its clicks (and its label) must
+				// NOT bubble to the row-select handler, so toggling "include" never
+				// changes the survivor. (The row handler also guards on this target.)
+				includeWrap.addEventListener('click', function(ev) { ev.stopPropagation(); });
+				var includeTrack = document.createElement('span');
+				includeTrack.className = 'sw-toggle-track';
+				includeTrack.setAttribute('aria-hidden', 'true');
+				var includeKnob = document.createElement('span');
+				includeKnob.className = 'sw-toggle-knob';
+				includeTrack.appendChild(includeKnob);
+				// input must immediately precede the track (the :checked + .sw-toggle-track
+				// sibling selector paints the accent fill + slides the knob).
+				includeWrap.appendChild(include);
+				includeWrap.appendChild(includeTrack);
 
-				row.appendChild(label);
-				row.appendChild(include);
+				// FIX D: clicking anywhere on the row (except the include checkbox)
+				// selects this artist as the survivor. Set the sr-only radio checked +
+				// dispatch its change so applySurvivorState() reruns (Keeping badge,
+				// discard notes, disabled-include-on-survivor). Guarded on !checked so
+				// re-clicking the current survivor is a no-op (no redundant dry-run).
+				row.addEventListener('click', function(ev) {
+					if (ev.target.closest('.sw-merge-include-toggle')) return;
+					if (!radio.checked) {
+						radio.checked = true;
+						radio.dispatchEvent(new Event('change', { bubbles: true }));
+					}
+				});
+
+				row.appendChild(radio);
+				row.appendChild(body);
+				row.appendChild(includeWrap);
 				optionsRoot.appendChild(row);
 				rowControls.push({ id: m.id, row: row, include: include, keepingBadge: keepingBadge, discardNote: discardNote });
 			});
@@ -703,6 +746,8 @@ templ ArtistMergeModal() {
 					excludedIds.delete(rc.id);
 					rc.include.checked = true;
 					rc.include.disabled = true;
+					// keep aria-checked in sync (the toggle sets .checked programmatically here)
+					rc.include.setAttribute('aria-checked', 'true');
 					rc.row.classList.remove('opacity-50', 'sw-merge-row-discard');
 					rc.row.classList.add('sw-merge-row-survivor');
 					rc.row.setAttribute('aria-current', 'true');
@@ -718,6 +763,7 @@ templ ArtistMergeModal() {
 					var excluded = excludedIds.has(rc.id);
 					rc.include.disabled = false;
 					rc.include.checked = !excluded;
+					rc.include.setAttribute('aria-checked', String(!excluded));
 					rc.row.classList.remove('sw-merge-row-survivor');
 					rc.row.classList.toggle('sw-merge-row-discard', !excluded);
 					rc.row.removeAttribute('aria-current');

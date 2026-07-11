@@ -7538,7 +7538,20 @@ html[data-density="spacious"] .sw-cmdk-row {
 
 #merge-modal .sw-merge-row {
   border-radius: 8px;
+  /* FIX D (#1894): the whole row is the survivor tap target (touch-friendly). */
+  cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+/* Subtle on-motif hover so the row reads as clickable (mirrors .sw-rep-item:hover
+   -- a neutral translucent overlay that reads on both themes). */
+#merge-modal .sw-merge-row:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+/* The survivor radio is sr-only, so give KEYBOARD users a visible focus ring on
+   the row itself when that radio is focused. */
+#merge-modal .sw-merge-row:focus-within {
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
 }
 
 /* Survivor row: the positive "chosen/kept" signal -- the app's sidebar
@@ -7581,102 +7594,33 @@ html[data-density="spacious"] .sw-cmdk-row {
   color: var(--sw-danger-text); /* theme-aware: red-700 light / red-300 dark */
 }
 
-/* Survivor radio + include checkbox (#1894 F2). Both are appearance:none custom
- * controls sharing one neutral, fully-tokenized box (transparent fill + a themed
- * --sw-content-text-secondary border, theme-aware so no .dark override or raw
- * slate hex is needed). Neither uses a solid accent fill: the checkbox marks
- * "included" with a neutral-ink checkmark (disabled survivor muted), and the
- * radio marks "survivor" with a blue HALO (accent-glow ring + accent border),
- * never a filled control. Kept-vs-discarded meaning is carried by the ROW
- * (Keeping badge / discard danger tone). */
-#merge-modal .sw-merge-radio,
-#merge-modal .sw-merge-include {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 1rem;
-  height: 1rem;
-  flex: none;
-  /* #1894 F2: themed neutral box (both radio + include). The
-   * --sw-content-text-secondary token is theme-aware (design-tokens.css
-   * :root/.dark), so no separate .dark override or raw slate hex is needed. */
-  border: 1.5px solid var(--sw-content-text-secondary);
-  background-color: transparent;
-  cursor: pointer;
-  display: inline-grid;
-  place-items: center;
-  position: relative;
-  vertical-align: middle;
-  margin: 0;
-  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+/* #1894 F2 FIX D: the survivor radio is sr-only (visually hidden) -- selection
+ * lives on the whole row now (accent left-border + "Keeping" badge as the
+ * indicator, .sw-merge-row:focus-within as the keyboard focus ring), so the radio
+ * has no dial/halo rules.
+ *
+ * The include control is the app's shared iOS Toggle (.sw-toggle-*, toggle.templ;
+ * iOS toggles per the maintainer, #1894): the track geometry / knob / knob-slide
+ * / focus-ring all come from the global .sw-toggle-* rules. Two merge-specific
+ * overrides, both scoped to #merge-modal so global preference toggles are
+ * unaffected. */
+
+/* (1) NO solid-blue fill on the ON track -- match the maintainer-approved
+ * settings Rules/severity toggles (.sw-next-settings, input.css:6999):
+ * neutralize the accent fill to a slate track + a blue HALO ring, so "on" reads
+ * as a halo (not a fill), consistent with the de-blued modal (radio halo, focus
+ * rings). --sw-content-text-secondary is theme-aware, so one rule covers both
+ * themes; the #id scope outranks the global :checked+track rule (no !important
+ * needed). Knob-slide (global rule) is untouched. */
+#merge-modal .sw-toggle-input:checked + .sw-toggle-track {
+  background-color: var(--sw-content-text-secondary);
+  box-shadow: 0 0 0 2px var(--sw-accent-primary), 0 0 0 5px var(--sw-accent-primary-glow);
 }
-#merge-modal .sw-merge-radio {
-  border-radius: 50%;
+/* (2) DISABLED (mandatory-keep survivor) state: the toggle stays ON but reads as
+ * a muted "locked" control. */
+#merge-modal .sw-toggle-input:disabled + .sw-toggle-track {
+  opacity: 0.5;
 }
-#merge-modal .sw-merge-include {
-  border-radius: 4px;
-}
-#merge-modal .sw-merge-radio:hover,
-#merge-modal .sw-merge-include:hover {
-  border-color: var(--sw-content-text);
-}
-/* #1894 F2 (maintainer 2026-07-11): survivor radio is DE-BLUED to match the
- * neutral checkboxes -- no solid blue fill, no white dot. "Selected" is
- * signalled by a soft blue HALO (accent-glow box-shadow ring) plus an accent
- * border; the center dot is neutral ink. Accent tokens only
- * (--sw-accent-primary / --sw-accent-primary-glow), no raw hex, and the ring
- * reads on both themes (the glow is semi-transparent). */
-#merge-modal .sw-merge-radio:checked {
-  background-color: transparent;
-  border-color: var(--sw-accent-primary);
-  box-shadow: 0 0 0 3px var(--sw-accent-primary-glow);
-}
-#merge-modal .sw-merge-radio:checked::after {
-  content: "";
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--sw-content-text);
-}
-/* #1894 F2 (maintainer 2026-07-11): merge-modal include checkboxes use the
- * blessed NEUTRAL treatment (mirrors .sw-next-artists [data-col-toggle],
- * #2067/#1337 -- the maintainer-approved reports de-blue), NOT the accent-blue
- * that was ported from the artists row/bulk-select. Enabled (discard) boxes
- * read as a standard neutral checkbox (ink checkmark on a transparent box); the
- * disabled survivor box is muted to signal "locked-in" (mandatory keep). All
- * colors are themed --sw-* tokens (design-tokens.css :root/.dark) -- no hard
- * hex, no blue fill, resolves in both themes. The kept-vs-discarded meaning is
- * carried by the ROW (Keeping badge / discard danger tone), never the box color.
- * The survivor's muted look intentionally REPLACES the earlier blue-parity
- * approach: no browser default dimming is inherited because the box is styled
- * (appearance:none), so the muted tokens are what actually paint it. */
-#merge-modal .sw-merge-include:checked {
-  background-color: transparent;
-  border-color: var(--sw-content-text);
-  opacity: 1;
-}
-#merge-modal .sw-merge-include:disabled:checked {
-  background-color: transparent;
-  border-color: var(--sw-content-text-secondary);
-  opacity: 0.6;
-}
-#merge-modal .sw-merge-include:checked::after,
-#merge-modal .sw-merge-include:disabled:checked::after {
-  content: "";
-  width: 0.5rem;
-  height: 0.28rem;
-  border-left: 2px solid var(--sw-content-text);
-  border-bottom: 2px solid var(--sw-content-text);
-  transform: rotate(-45deg) translate(0.5px, -1px);
-}
-#merge-modal .sw-merge-include:disabled:checked::after {
-  border-left-color: var(--sw-content-text-secondary);
-  border-bottom-color: var(--sw-content-text-secondary);
-}
-#merge-modal .sw-merge-include:disabled {
+#merge-modal .sw-merge-row-survivor .sw-merge-include-toggle {
   cursor: default;
-}
-#merge-modal .sw-merge-radio:focus-visible,
-#merge-modal .sw-merge-include:focus-visible {
-  outline: 2px solid var(--sw-accent-primary);
-  outline-offset: 2px;
 }
