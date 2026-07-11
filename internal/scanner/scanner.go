@@ -273,7 +273,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			result.Error = fmt.Sprintf("scan panicked: %v", r)
 			s.mu.Unlock()
 			s.logger.Error("scan goroutine panicked",
-				"error", r,
+				"panic", r,
 				"stack", string(debug.Stack()),
 			)
 		}
