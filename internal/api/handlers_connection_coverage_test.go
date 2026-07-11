@@ -335,33 +335,68 @@ func TestHandleUpdateConnection_PatchesFields(t *testing.T) {
 	}
 	newConnectionTestConn(t, r, c)
 
-	enabled := false
-	feat := true
-	body, _ := json.Marshal(map[string]any{
-		"name":                    "After",
-		"enabled":                 enabled,
-		"feature_image_write":     feat,
-		"feature_metadata_push":   feat,
-		"feature_trigger_refresh": feat,
-	})
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", c.ID)
+	// PUT the connection and return the persisted read-back. Each feature flag
+	// is asserted separately by the callers so a regression that drops one
+	// flag's write, or cross-wires two of the columns, fails the test rather
+	// than passing silently. Emby connections default to all-false, so the
+	// round-1 all-true state is non-default for every flag.
+	putConn := func(t *testing.T, name string, enabled, imageWrite, metadataPush, triggerRefresh bool) *connection.Connection {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"name":                    name,
+			"enabled":                 enabled,
+			"feature_image_write":     imageWrite,
+			"feature_metadata_push":   metadataPush,
+			"feature_trigger_refresh": triggerRefresh,
+		})
+		if err != nil {
+			t.Fatalf("marshal put body: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", c.ID)
 
-	w := serveValidated(t, http.HandlerFunc(r.handleUpdateConnection), req)
+		w := serveValidated(t, http.HandlerFunc(r.handleUpdateConnection), req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d", w.Code)
+		}
+		got, err := r.connectionService.GetByID(context.Background(), c.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		return got
+	}
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
-	}
-	got, err := r.connectionService.GetByID(context.Background(), c.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
+	// Round 1: rename, disable, and flip every feature flag on. Proves the
+	// non-feature fields still patch and that each flag persists a true (a
+	// dropped write for any flag leaves it at the false default -> fails).
+	got := putConn(t, "After", false, true, true, true)
 	if got.Name != "After" || got.Enabled {
 		t.Errorf("got = %+v, want name=After, enabled=false", got)
 	}
 	if !got.GetFeatureImageWrite() {
-		t.Errorf("feature flags not flipped: %+v", got)
+		t.Error("round 1: feature_image_write should persist true")
+	}
+	if !got.GetFeatureMetadataPush() {
+		t.Error("round 1: feature_metadata_push should persist true")
+	}
+	if !got.GetFeatureTriggerRefresh() {
+		t.Error("round 1: feature_trigger_refresh should persist true")
+	}
+
+	// Round 2: a distinct per-flag pattern (image off, metadata on, trigger
+	// off). The mixed read-back verifies each flag lands in its own column:
+	// a metadata_push <-> trigger_refresh column swap would flip both asserted
+	// values, and image_write not persisting false would read true.
+	got = putConn(t, "After", false, false, true, false)
+	if got.GetFeatureImageWrite() {
+		t.Error("round 2: feature_image_write should persist false")
+	}
+	if !got.GetFeatureMetadataPush() {
+		t.Error("round 2: feature_metadata_push should persist true")
+	}
+	if got.GetFeatureTriggerRefresh() {
+		t.Error("round 2: feature_trigger_refresh should persist false")
 	}
 }
 
