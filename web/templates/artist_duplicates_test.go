@@ -271,6 +271,8 @@ func TestMergeI18nJSON(t *testing.T) {
 		"error_unknown",
 		"exclude_label",
 		"no_sources_selected",
+		"keeping_badge",
+		"will_be_removed",
 	}
 	var m map[string]string
 	if err := json.Unmarshal([]byte(mergeI18nJSON(ctx)), &m); err != nil {

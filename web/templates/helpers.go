@@ -301,6 +301,8 @@ func mergeI18nJSON(ctx context.Context) string {
 		"error_unknown":             t(ctx, "artist_duplicates.merge_modal.error_unknown"),
 		"exclude_label":             t(ctx, "artist_duplicates.merge_modal.exclude_label"),
 		"no_sources_selected":       t(ctx, "artist_duplicates.merge_modal.no_sources_selected"),
+		"keeping_badge":             t(ctx, "artist_duplicates.merge_modal.keeping_badge"),
+		"will_be_removed":           t(ctx, "artist_duplicates.merge_modal.will_be_removed"),
 	}
 	b, err := json.Marshal(m)
 	if err != nil {

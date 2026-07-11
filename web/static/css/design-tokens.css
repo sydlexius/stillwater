@@ -140,6 +140,13 @@
   --sw-severity-info-bg: rgba(129, 140, 248, 0.12);
   --sw-success: #4ade80;
   --sw-success-bg: rgba(74, 222, 128, 0.12);
+  /* Subtle danger surfaces for irreversible-operation affordances (e.g. the
+     merge-modal discard row + "will be removed" note). Light baseline; .dark
+     overrides below. Values mirror the command-palette --flyout-danger-* palette
+     so the danger language stays consistent. */
+  --sw-danger-bg-subtle: rgba(239, 68, 68, 0.08);
+  --sw-danger-border-subtle: rgba(239, 68, 68, 0.25);
+  --sw-danger-text: #b91c1c; /* red-700 -- AA on the light tint */
 
   /* -- Typography --------------------------------------------------------- */
   --sw-font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -171,6 +178,11 @@
   --sw-content-bg: #0f172a;
   --sw-content-text: #e2e8f0;
   --sw-content-text-secondary: #94a3b8;
+  /* Subtle danger surfaces (dark): red-300 text for AA on dark, with a slightly
+     stronger tint/border -- matches the current discard-row rendering. */
+  --sw-danger-bg-subtle: rgba(239, 68, 68, 0.12);
+  --sw-danger-border-subtle: rgba(239, 68, 68, 0.3);
+  --sw-danger-text: #fca5a5; /* red-300 */
 
   /* Sidebar (dark keeps the original glass look) */
   --sw-sidebar-bg: #0f172a;

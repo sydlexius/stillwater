@@ -7489,3 +7489,138 @@ html[data-density="spacious"] .sw-cmdk-row {
 .sw-cmdk-foot-sep {
   margin-left: auto;
 }
+
+/* ==========================================================================
+ * #1894 F2: merge-modal motif fixes (artist_duplicates.templ / ArtistMergeModal).
+ *
+ * A SHARED cross-channel fragment, not scoped under .sw-next-* -- so unlike
+ * .sw-dash-card it cannot rely on next/-page-scoped --swd-* custom
+ * properties being in scope. Every rule below is anchored on #merge-modal
+ * (always present once the modal templ renders).
+ *
+ * Reference split (maintainer correction, mid-build): the artist-detail page
+ * (.sw-dash-card / sidebar accent) is the reference for the card motif and
+ * layout ONLY. Checkboxes and irreversible-operation colors have their OWN
+ * established patterns elsewhere in the app, reused verbatim below rather
+ * than invented fresh from the artist-detail motif:
+ *   - Checkbox: literal values ported from `.sw-next-artists
+ *     input[type="checkbox"]` (M55 #1335, "Mirrors design/styles.css
+ *     .sw-checkbox") -- the app's one existing styled-checkbox pattern.
+ *   - Discard/danger tint: literal values ported from the command palette's
+ *     fix-all row (`.sw-cmdk` --flyout-danger-ink/-bg/-border, #1773 de-blue
+ *     motif) -- the app's established "muted danger tint, never a solid
+ *     fill" pattern for rows affected by a destructive action.
+ * Neither source's scoped custom properties are in scope here, so the
+ * literal color values are copied rather than referenced.
+ *
+ * Root bug (maintainer rc6 finding): the survivor's "Include in merge"
+ * checkbox is disabled (forced checked+disabled -- correct logic, the
+ * survivor can't be dropped) but native disabled+checked renders dimmed
+ * grey in Chromium regardless of accent-color, so the row being KEPT read
+ * as "off" while every row being DELETED read native blue "on". Fixed by
+ * porting the app's existing styled-checkbox pattern (which never dims on
+ * :disabled) plus a row-level "Keeping" badge + accent highlight that no
+ * longer depends on the disabled-checkbox rendering at all; discard rows get
+ * the app's existing muted-danger tint as the reciprocal "not kept" signal.
+ * ========================================================================== */
+
+/* Glass-card treatment for the modal container, matching .sw-dash-card
+ * (background/border/radius) but scoped to #merge-modal since the modal
+ * is not a next/-page descendant. Uses the global --sw-glass-* tokens
+ * (already themed at :root/.dark), so this applies unconditionally --
+ * no separate dark-only rule needed. */
+#merge-modal .sw-merge-card {
+  border-radius: 14px;
+  background: var(--sw-glass-bg);
+  border: 1px solid var(--sw-glass-border);
+  backdrop-filter: none;
+}
+
+#merge-modal .sw-merge-row {
+  border-radius: 8px;
+  /* FIX D (#1894): the whole row is the survivor tap target (touch-friendly). */
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+/* Subtle on-motif hover so the row reads as clickable (mirrors .sw-rep-item:hover
+   -- a neutral translucent overlay that reads on both themes). */
+#merge-modal .sw-merge-row:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+/* The survivor radio is sr-only, so give KEYBOARD users a visible focus ring on
+   the row itself when that radio is focused. */
+#merge-modal .sw-merge-row:focus-within {
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
+}
+
+/* Survivor row: the positive "chosen/kept" signal -- the app's sidebar
+ * active-link accent tint (--sw-sidebar-active-bg) plus a left-border
+ * accent, independent of the include checkbox's disabled state. */
+#merge-modal .sw-merge-row-survivor {
+  background: var(--sw-sidebar-active-bg);
+  border-left: 3px solid var(--sw-accent-primary);
+  padding-left: 5px;
+}
+
+/* Discard rows: the reciprocal "not kept" signal, reusing the app's
+ * established muted-danger tint (.sw-cmdk fix-all row, #1773) rather than a
+ * plain opacity dim -- this IS an irreversible-operation row (its content
+ * will be deleted into the survivor), so it earns the same danger language
+ * as other destructive-affected rows elsewhere in the app. */
+#merge-modal .sw-merge-row-discard {
+  /* Themed subtle-danger tokens (design-tokens.css :root/.dark) carry the
+     per-theme tint + border, so no .dark override or raw rgba is needed. */
+  background: var(--sw-danger-bg-subtle);
+  border-left: 3px solid var(--sw-danger-border-subtle);
+  padding-left: 5px;
+}
+
+#merge-modal .sw-merge-keeping-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--sw-sidebar-active-text);
+}
+
+#merge-modal .sw-merge-discard-note {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--sw-danger-text); /* theme-aware: red-700 light / red-300 dark */
+}
+
+/* #1894 F2 FIX D: the survivor radio is sr-only (visually hidden) -- selection
+ * lives on the whole row now (accent left-border + "Keeping" badge as the
+ * indicator, .sw-merge-row:focus-within as the keyboard focus ring), so the radio
+ * has no dial/halo rules.
+ *
+ * The include control is the app's shared iOS Toggle (.sw-toggle-*, toggle.templ;
+ * iOS toggles per the maintainer, #1894): the track geometry / knob / knob-slide
+ * / focus-ring all come from the global .sw-toggle-* rules. Two merge-specific
+ * overrides, both scoped to #merge-modal so global preference toggles are
+ * unaffected. */
+
+/* (1) NO solid-blue fill on the ON track -- match the maintainer-approved
+ * settings Rules/severity toggles (.sw-next-settings, input.css:6999):
+ * neutralize the accent fill to a slate track + a blue HALO ring, so "on" reads
+ * as a halo (not a fill), consistent with the de-blued modal (radio halo, focus
+ * rings). --sw-content-text-secondary is theme-aware, so one rule covers both
+ * themes; the #id scope outranks the global :checked+track rule (no !important
+ * needed). Knob-slide (global rule) is untouched. */
+#merge-modal .sw-toggle-input:checked + .sw-toggle-track {
+  background-color: var(--sw-content-text-secondary);
+  box-shadow: 0 0 0 2px var(--sw-accent-primary), 0 0 0 5px var(--sw-accent-primary-glow);
+}
+/* (2) DISABLED (mandatory-keep survivor) state: the toggle stays ON but reads as
+ * a muted "locked" control. */
+#merge-modal .sw-toggle-input:disabled + .sw-toggle-track {
+  opacity: 0.5;
+}
+#merge-modal .sw-merge-row-survivor .sw-merge-include-toggle {
+  cursor: default;
+}

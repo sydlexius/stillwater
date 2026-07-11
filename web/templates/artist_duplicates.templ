@@ -426,14 +426,18 @@ templ ArtistMergeModal() {
 	>
 		<div class="fixed inset-0 bg-black/50 transition-opacity" id="merge-backdrop"></div>
 		<div class="fixed inset-0 flex items-center justify-center p-4">
-			<div class="relative w-full max-w-2xl max-h-[85vh] rounded-lg bg-white dark:bg-gray-800 shadow-xl flex flex-col">
-				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-					<h3 id="merge-modal-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+			<div class="sw-merge-card relative w-full max-w-2xl max-h-[85vh] bg-white dark:bg-gray-800 shadow-xl flex flex-col">
+				<div class="flex items-center justify-between px-6 py-4 border-b border-[var(--sw-glass-border)]">
+					<h3 id="merge-modal-title" class="text-lg font-semibold text-[color:var(--sw-content-text)]">
 						{ t(ctx, "artist_duplicates.merge_modal.title") }
 					</h3>
+					// #1894 F2: subtle on-motif icon-close -- muted secondary ink, quiet
+					// hover to primary ink, no hover-bg/bevel; it reads as chrome, not a
+					// button. Initial focus is moved off it (see the open handler) so it
+					// no longer flashes a focus halo when the modal opens.
 					<button
 						type="button"
-						class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+						class="p-1 rounded-md text-[color:var(--sw-content-text-secondary)] hover:text-[color:var(--sw-content-text)] transition-colors"
 						data-merge-close
 						aria-label={ t(ctx, "common.close") }
 					>
@@ -452,7 +456,7 @@ templ ArtistMergeModal() {
 						</legend>
 						<div id="merge-survivor-options" class="space-y-2"></div>
 					</fieldset>
-					<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+					<div class="border-t border-[var(--sw-glass-border)] pt-4">
 						<h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							{ t(ctx, "artist_duplicates.merge_modal.preview_heading") }
 						</h4>
@@ -461,10 +465,12 @@ templ ArtistMergeModal() {
 						</div>
 					</div>
 				</div>
-				<div class="flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3">
+				<div class="flex justify-end gap-2 border-t border-[var(--sw-glass-border)] px-6 py-3">
+					// #1894 F2: neutral ghost Cancel on themed tokens (muted ink,
+					// subtle both-theme hover), no raw Tailwind gray.
 					<button
 						type="button"
-						class="rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+						class="rounded-md px-3 py-2 text-sm font-medium text-[color:var(--sw-content-text-secondary)] hover:text-[color:var(--sw-content-text)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
 						data-merge-close
 					>
 						{ t(ctx, "common.cancel") }
@@ -472,7 +478,7 @@ templ ArtistMergeModal() {
 					<button
 						type="button"
 						id="merge-modal-confirm"
-						class="rounded bg-red-600 hover:bg-red-700 px-3 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-600"
+						class="rounded-md bg-red-600 hover:bg-red-700 px-3 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-600"
 						disabled
 					>
 						{ t(ctx, "artist_duplicates.merge_modal.confirm_button") }
@@ -558,12 +564,16 @@ templ ArtistMergeModal() {
 
 			renderSurvivorOptions();
 			modal.classList.remove('hidden');
-			// Move keyboard focus into the dialog so screen readers announce
-			// the new context and Tab/Shift+Tab don't begin behind the
-			// backdrop. The Confirm button is the highest-affordance control
-			// inside the modal, so focus lands there once the dry-run enables
-			// it; until then the close button is the next-best focus target.
-			var initial = document.querySelector('[data-merge-close][aria-label]') || confirmBtn;
+			// Move keyboard focus into the dialog so screen readers announce the
+			// new context and Tab/Shift+Tab don't begin behind the backdrop. Focus
+			// the survivor radio (the first real action), NOT the close button --
+			// auto-focusing the [X] made it flash an accent focus halo the instant
+			// the modal opened (#1894 F2). Prefer the pre-checked recommended
+			// survivor, else the first radio, else the Confirm button. renderSurvivor-
+			// Options() ran above, so the radios already exist in the DOM.
+			var initial = optionsRoot.querySelector('input[name="merge-survivor"]:checked')
+				|| optionsRoot.querySelector('input[name="merge-survivor"]')
+				|| confirmBtn;
 			if (initial && typeof initial.focus === 'function') initial.focus();
 			runDryRun();
 		}
@@ -589,15 +599,31 @@ templ ArtistMergeModal() {
 			rowControls = [];
 			current.members.forEach(function(m) {
 				var row = document.createElement('div');
-				row.className = 'flex items-start gap-3 rounded p-2 hover:bg-gray-50 dark:hover:bg-white/5 transition-opacity';
+				// FIX D (#1894): the WHOLE row selects this artist as survivor and is
+				// the tap target (touch-friendly, big hit area vs a ~20px dial). The
+				// native radio stays in the DOM but sr-only (visually hidden) so the
+				// radiogroup semantics -- arrow-key nav, aria-checked, SR announcement,
+				// form value, and the initial-focus-on-survivor behavior -- are all
+				// preserved; only the visible dial is dropped. The left accent border +
+				// "Keeping" badge remain the selection indicator, and :focus-within on
+				// the row gives keyboard users a visible focus ring.
+				row.className = 'sw-merge-row flex items-start gap-3 p-2 cursor-pointer';
 
-				var label = document.createElement('label');
-				label.className = 'flex items-start gap-3 flex-1 min-w-0 cursor-pointer';
+				// Accessible name folds in the path (#1894 F2 a11y): near-duplicate
+				// rows frequently share the same display name, so the path is what
+				// lets a screen-reader user tell two rows apart on this
+				// duplicate-resolution screen. Used by both the survivor radio and the
+				// include toggle below.
+				var accLabel = (m.name || m.id) + (m.path ? ' (' + m.path + ')' : '');
+
 				var radio = document.createElement('input');
 				radio.type = 'radio';
 				radio.name = 'merge-survivor';
 				radio.value = m.id;
-				radio.className = 'mt-1';
+				// sr-only hides the dial but keeps the radio focusable/announced; the
+				// radio carries its own aria-label so no wrapping <label> is needed.
+				radio.className = 'sw-merge-radio sr-only';
+				radio.setAttribute('aria-label', accLabel);
 				radio.checked = (m.id === current.survivorId);
 				radio.addEventListener('change', function() {
 					current.survivorId = m.id;
@@ -618,26 +644,54 @@ templ ArtistMergeModal() {
 					badge.title = recommendedReasonLabel(m.recommended_reason);
 					name.appendChild(badge);
 				}
+				// "Keeping" badge (#1894 F2): the accent "chosen" signal that a
+				// disabled checkbox alone cannot convey. Toggled by
+				// applySurvivorState as the survivor radio changes; hidden on
+				// every row until then.
+				var keepingBadge = document.createElement('span');
+				keepingBadge.className = 'sw-merge-keeping-badge';
+				keepingBadge.textContent = tx('keeping_badge');
+				keepingBadge.hidden = true;
+				name.appendChild(keepingBadge);
 				var path = document.createElement('div');
 				path.className = 'text-xs font-mono text-gray-600 dark:text-gray-400 truncate';
 				path.textContent = m.path;
 				body.appendChild(name);
 				body.appendChild(path);
-				label.appendChild(radio);
-				label.appendChild(body);
+				// "Will be removed" note for non-survivor rows -- the discard-side
+				// counterpart of the keeping badge. Hidden on the survivor row.
+				var discardNote = document.createElement('div');
+				discardNote.className = 'sw-merge-discard-note';
+				discardNote.textContent = tx('will_be_removed');
+				discardNote.hidden = true;
+				body.appendChild(discardNote);
 
-				// Include-in-merge checkbox (#1714). Checked = this member is a
-				// loser that will be merged into the survivor; unchecked =
-				// excluded from the merge entirely. The survivor's own checkbox
-				// is forced checked + disabled (the survivor cannot be dropped);
-				// applySurvivorState keeps that in sync as the radio changes.
+				// Include-in-merge control (#1714; iOS toggle per maintainer, #1894).
+				// ON = this loser is merged into the survivor; OFF = excluded from the
+				// merge entirely. The survivor's own toggle is forced ON + disabled
+				// (the survivor can't be dropped); applySurvivorState keeps that in sync
+				// as the survivor changes. Uses the app's shared Toggle pattern
+				// (.sw-toggle-*, role=switch, toggle.templ): the visual track/knob track
+				// the hidden checkbox's :checked state via CSS, so applySurvivorState
+				// only flips .checked / .disabled / aria-checked.
+				var includeWrap = document.createElement('label');
+				// sw-merge-include-toggle marks this as the isolated include control
+				// that the whole-row survivor-select handler must ignore.
+				includeWrap.className = 'sw-toggle-wrapper sw-merge-include-toggle shrink-0';
+				var includeId = 'merge-include-' + m.id;
+				includeWrap.htmlFor = includeId;
 				var include = document.createElement('input');
 				include.type = 'checkbox';
-				include.className = 'mt-1 shrink-0';
-				var includeLabel = tx('exclude_label') + ': ' + (m.name || m.id);
+				include.id = includeId;
+				include.className = 'sw-toggle-input';
+				include.setAttribute('role', 'switch');
+				include.checked = true;
+				include.setAttribute('aria-checked', 'true');
+				var includeLabel = tx('exclude_label') + ': ' + accLabel;
 				include.setAttribute('aria-label', includeLabel);
 				include.title = includeLabel;
 				include.addEventListener('change', function() {
+					include.setAttribute('aria-checked', include.checked);
 					if (include.checked) {
 						excludedIds.delete(m.id);
 					} else {
@@ -648,30 +702,80 @@ templ ArtistMergeModal() {
 					applySurvivorState();
 					runDryRun();
 				});
+				// FIX D: isolate the include toggle -- its clicks (and its label) must
+				// NOT bubble to the row-select handler, so toggling "include" never
+				// changes the survivor. (The row handler also guards on this target.)
+				includeWrap.addEventListener('click', function(ev) { ev.stopPropagation(); });
+				var includeTrack = document.createElement('span');
+				includeTrack.className = 'sw-toggle-track';
+				includeTrack.setAttribute('aria-hidden', 'true');
+				var includeKnob = document.createElement('span');
+				includeKnob.className = 'sw-toggle-knob';
+				includeTrack.appendChild(includeKnob);
+				// input must immediately precede the track (the :checked + .sw-toggle-track
+				// sibling selector paints the accent fill + slides the knob).
+				includeWrap.appendChild(include);
+				includeWrap.appendChild(includeTrack);
 
-				row.appendChild(label);
-				row.appendChild(include);
+				// FIX D: clicking anywhere on the row (except the include checkbox)
+				// selects this artist as the survivor. Set the sr-only radio checked +
+				// dispatch its change so applySurvivorState() reruns (Keeping badge,
+				// discard notes, disabled-include-on-survivor). Guarded on !checked so
+				// re-clicking the current survivor is a no-op (no redundant dry-run).
+				row.addEventListener('click', function(ev) {
+					if (ev.target.closest('.sw-merge-include-toggle')) return;
+					if (!radio.checked) {
+						radio.checked = true;
+						radio.dispatchEvent(new Event('change', { bubbles: true }));
+					}
+				});
+
+				row.appendChild(radio);
+				row.appendChild(body);
+				row.appendChild(includeWrap);
 				optionsRoot.appendChild(row);
-				rowControls.push({ id: m.id, row: row, include: include });
+				rowControls.push({ id: m.id, row: row, include: include, keepingBadge: keepingBadge, discardNote: discardNote });
 			});
 			applySurvivorState();
 		}
 
 		// applySurvivorState reconciles each member row with the current
-		// survivor + excludedIds set: the survivor row's include box is forced
-		// checked + disabled (it cannot be dropped); every other row reflects
-		// whether it is currently excluded, and excluded rows are dimmed.
+		// survivor + excludedIds set. The survivor row's include box is forced
+		// checked + disabled (it cannot be dropped) and gets the accent
+		// "Keeping" treatment (badge + highlight + aria-current) that replaces
+		// the "chosen" signal a disabled checkbox alone strips away (#1894 F2).
+		// Every other row is de-emphasized as a discard candidate and shows a
+		// "Will be removed" note; a row additionally excluded via its checkbox
+		// is dimmed further on top of the discard treatment.
 		function applySurvivorState() {
 			rowControls.forEach(function(rc) {
 				if (rc.id === current.survivorId) {
 					excludedIds.delete(rc.id);
 					rc.include.checked = true;
 					rc.include.disabled = true;
-					rc.row.classList.remove('opacity-50');
+					// keep aria-checked in sync (the toggle sets .checked programmatically here)
+					rc.include.setAttribute('aria-checked', 'true');
+					rc.row.classList.remove('opacity-50', 'sw-merge-row-discard');
+					rc.row.classList.add('sw-merge-row-survivor');
+					rc.row.setAttribute('aria-current', 'true');
+					rc.keepingBadge.hidden = false;
+					rc.discardNote.hidden = true;
 				} else {
+					// An UNCHECKED (excluded) loser is filtered out of loserIDs() and
+					// will NOT be removed, so it must read as neutral: no discard
+					// styling and no "Will be removed" note (that note would actively
+					// mislead). Only a still-included non-survivor row is a discard.
+					// applySurvivorState re-runs on every include-checkbox toggle
+					// (the change handler calls it), so this stays reactive.
 					var excluded = excludedIds.has(rc.id);
 					rc.include.disabled = false;
 					rc.include.checked = !excluded;
+					rc.include.setAttribute('aria-checked', String(!excluded));
+					rc.row.classList.remove('sw-merge-row-survivor');
+					rc.row.classList.toggle('sw-merge-row-discard', !excluded);
+					rc.row.removeAttribute('aria-current');
+					rc.keepingBadge.hidden = true;
+					rc.discardNote.hidden = excluded;
 					rc.row.classList.toggle('opacity-50', excluded);
 				}
 			});
