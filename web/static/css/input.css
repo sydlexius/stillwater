@@ -7546,7 +7546,7 @@ html[data-density="spacious"] .sw-cmdk-row {
  * accent, independent of the include checkbox's disabled state. */
 #merge-modal .sw-merge-row-survivor {
   background: var(--sw-sidebar-active-bg);
-  border-left: 3px solid rgb(59, 130, 246);
+  border-left: 3px solid var(--sw-accent-primary);
   padding-left: 5px;
 }
 
@@ -7556,13 +7556,11 @@ html[data-density="spacious"] .sw-cmdk-row {
  * will be deleted into the survivor), so it earns the same danger language
  * as other destructive-affected rows elsewhere in the app. */
 #merge-modal .sw-merge-row-discard {
-  background: rgba(239, 68, 68, 0.08);
-  border-left: 3px solid rgba(239, 68, 68, 0.25);
+  /* Themed subtle-danger tokens (design-tokens.css :root/.dark) carry the
+     per-theme tint + border, so no .dark override or raw rgba is needed. */
+  background: var(--sw-danger-bg-subtle);
+  border-left: 3px solid var(--sw-danger-border-subtle);
   padding-left: 5px;
-}
-:where(.dark, .dark *) #merge-modal .sw-merge-row-discard {
-  background: rgba(239, 68, 68, 0.12);
-  border-left-color: rgba(239, 68, 68, 0.3);
 }
 
 #merge-modal .sw-merge-keeping-badge {
@@ -7580,10 +7578,7 @@ html[data-density="spacious"] .sw-cmdk-row {
 #merge-modal .sw-merge-discard-note {
   margin-top: 2px;
   font-size: 11px;
-  color: #b91c1c; /* red-700, matches .sw-cmdk --flyout-danger-ink (light) */
-}
-:where(.dark, .dark *) #merge-modal .sw-merge-discard-note {
-  color: #fca5a5; /* red-300, matches .sw-cmdk --flyout-danger-ink (dark) */
+  color: var(--sw-danger-text); /* theme-aware: red-700 light / red-300 dark */
 }
 
 /* Survivor radio + include checkbox (#1894 F2). Both are appearance:none custom

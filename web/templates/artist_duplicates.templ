@@ -709,14 +709,20 @@ templ ArtistMergeModal() {
 					rc.keepingBadge.hidden = false;
 					rc.discardNote.hidden = true;
 				} else {
+					// An UNCHECKED (excluded) loser is filtered out of loserIDs() and
+					// will NOT be removed, so it must read as neutral: no discard
+					// styling and no "Will be removed" note (that note would actively
+					// mislead). Only a still-included non-survivor row is a discard.
+					// applySurvivorState re-runs on every include-checkbox toggle
+					// (the change handler calls it), so this stays reactive.
 					var excluded = excludedIds.has(rc.id);
 					rc.include.disabled = false;
 					rc.include.checked = !excluded;
 					rc.row.classList.remove('sw-merge-row-survivor');
-					rc.row.classList.add('sw-merge-row-discard');
+					rc.row.classList.toggle('sw-merge-row-discard', !excluded);
 					rc.row.removeAttribute('aria-current');
 					rc.keepingBadge.hidden = true;
-					rc.discardNote.hidden = false;
+					rc.discardNote.hidden = excluded;
 					rc.row.classList.toggle('opacity-50', excluded);
 				}
 			});
