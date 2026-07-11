@@ -19,6 +19,16 @@ func newSQLitePlatformIDRepo(db *sql.DB) *sqlitePlatformIDRepo {
 	return &sqlitePlatformIDRepo{db: db}
 }
 
+// isUniqueConstraintErr reports whether err is a SQLite UNIQUE-constraint
+// violation. modernc.org/sqlite emits "UNIQUE constraint failed: <table>.<col>";
+// matches the pattern in internal/foreign/repository.go and internal/auth.
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
+}
+
 func (r *sqlitePlatformIDRepo) Set(ctx context.Context, artistID, connectionID, platformArtistID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -140,6 +150,9 @@ func (r *sqlitePlatformIDRepo) SetStable(ctx context.Context, artistID, connecti
 			platform_artist_id = MIN(artist_platform_ids.platform_artist_id, excluded.platform_artist_id)
 	`, artistID, connectionID, platformArtistID, now, now)
 	if err != nil {
+		if isUniqueConstraintErr(err) {
+			return PlatformIDStableOutcome{}, ErrPlatformIDClaimedByAnotherArtist
+		}
 		return PlatformIDStableOutcome{}, fmt.Errorf("setting platform id (stable): %w", err)
 	}
 

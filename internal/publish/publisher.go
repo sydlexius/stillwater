@@ -119,7 +119,9 @@ type artistPlatformLister interface {
 	// the divergence-aware, deterministic stable set. Used by the Lidarr
 	// merge/rename self-heal to stamp a resolved-by-MBID link without silently
 	// clobbering an existing divergent id (#2344). Returns an outcome the caller
-	// logs on divergence; this best-effort path never propagates the error.
+	// logs on divergence, and an error the caller inspects for logging; the
+	// self-heal caller treats a non-nil error as best-effort and does not
+	// propagate it further up the stack (it skips the connection and continues).
 	SetPlatformIDStable(ctx context.Context, artistID, connectionID, platformArtistID string) (artist.PlatformIDStableOutcome, error)
 }
 
