@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -87,12 +88,25 @@ func TestRefreshArtistOnPlatforms_RefreshErrorIsNonFatal(t *testing.T) {
 // passing.
 func TestRefreshArtistOnPlatforms_PanicRecovered(t *testing.T) {
 	rec := &artistRefreshRecorder{}
+	// wg proves both goroutines (c-panic, c-ok) have finished reading the
+	// package-global artistRefresherFactory before the test returns. Done is
+	// called at factory-closure entry: by the time the closure body runs, the
+	// goroutine's read of the global has already completed, so signaling here
+	// (rather than after RefreshArtist) closes the race window against
+	// swapArtistRefresherFactory's t.Cleanup restoring the global.
+	var wg sync.WaitGroup
+	wg.Add(2)
 	swapArtistRefresherFactory(t, func(conn *connection.Connection, _ *slog.Logger) (artistRefresher, bool) {
+		defer wg.Done()
 		if conn.ID == "c-panic" {
 			return panickingArtistRefresher{}, true
 		}
 		return rec.forConn(conn), true
 	})
+	// Cleanups run LIFO, so this Wait runs BEFORE swapArtistRefresherFactory's
+	// cleanup writes artistRefresherFactory back to orig -- closing the window
+	// where a still-running goroutine's read races the restore's write.
+	t.Cleanup(wg.Wait)
 
 	embyPanic := &connection.Connection{
 		ID: "c-panic", Type: connection.TypeEmby, Enabled: true, Status: "ok", Name: "Panic",
@@ -119,8 +133,9 @@ func TestRefreshArtistOnPlatforms_PanicRecovered(t *testing.T) {
 	// The healthy sibling must still dispatch despite the panic in c-panic.
 	waitForRefreshCount(t, rec, 1)
 	rec.assertCalled(t, "c-ok", "ok-pid")
-	// c-panic aborted before recording anything.
-	time.Sleep(100 * time.Millisecond)
+	// c-panic aborted before recording anything. The wg.Wait cleanup (registered
+	// above) already blocks until both goroutines have read the factory, so no
+	// extra sleep is needed here to gate this assert-absence.
 	rec.assertNoCall(t, "c-panic")
 }
 
