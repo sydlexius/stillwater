@@ -302,6 +302,28 @@ func (r *Router) handleArtistsMerge(w http.ResponseWriter, req *http.Request) {
 	// don't mutate state, so the cache stays valid.
 	if !body.DryRun {
 		duplicatesCount.invalidate()
+
+		// Trigger a best-effort rule pass on the survivor so rules that
+		// depend on post-reconcile disk state (e.g. RuleImageDuplicate's
+		// within-type fanart detection, #2337) actually run and can flag or
+		// fix duplicates that the merge/reconcile step produced or exposed.
+		// runRulesAfterRefresh re-fetches the survivor by ID (picking up any
+		// canonical-rename path change from reconcile), runs all enabled
+		// rule categories via RunForArtist (merge is an identity-level
+		// mutation, not an image-only one), and swallows errors so this
+		// never affects the HTTP response.
+		//
+		// No extra locking or rule reordering is needed here:
+		//   - BackdropSequencingFixer.Fix re-reads the directory live via
+		//     img.DiscoverFanart at fix time, so renumbering is correct
+		//     regardless of intra-pass rule order or prior deletions.
+		//   - runRulesAfterRefresh calls pipeline.RunForArtist directly and
+		//     does not acquire fixAllMu, ruleRunMu, or the bulk-executor
+		//     gate, so it cannot 409-collide with a concurrent fix-all;
+		//     per-artist concurrency safety relies on existing SQLite
+		//     upsert semantics, consistent with every other
+		//     runRulesAfterRefresh call site.
+		r.runRulesAfterRefresh(req.Context(), &artist.Artist{ID: result.SurvivorID})
 	}
 
 	writeJSON(w, http.StatusOK, toMergeResultPayload(result))
