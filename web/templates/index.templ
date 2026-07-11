@@ -667,38 +667,49 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 							window.swDashboardActivity = { showError: showError };
 
 							var src;
-							try {
-								src = new EventSource(bp + '/api/v1/events/stream');
-							} catch (e) {
-								// EventSource construction failed (unsupported / blocked):
-								// surface "reconnecting" so the indicator does not falsely
-								// read live, and log so the failure is diagnosable.
-								console.warn('SSE init failed', e);
-								setStatus(false);
-								return;
+
+							// Named so it can be re-run on bfcache restore (pageshow
+							// below), mirroring the connect()/disconnect() shape used
+							// by sse.js and logs.templ.
+							function connectActivity() {
+								if (src) {
+									try { src.close(); } catch (e) { /* ignore */ }
+									src = null;
+								}
+								try {
+									src = new EventSource(bp + '/api/v1/events/stream');
+								} catch (e) {
+									// EventSource construction failed (unsupported / blocked):
+									// surface "reconnecting" so the indicator does not falsely
+									// read live, and log so the failure is diagnosable.
+									console.warn('SSE init failed', e);
+									setStatus(false);
+									return;
+								}
+								src.onopen = function() { setStatus(true); };
+								src.onerror = function() { setStatus(false); };
+								src.addEventListener('activity.recent', function(e) {
+									var env = {};
+									try { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }
+									// The SSE wire payload is an envelope; the structured
+									// rail fields (ts, kind, text, artistId) are nested
+									// under .data, NOT at the top level. Reading the top
+									// level (the spike bug) yields blank rows.
+									var d = env.data || {};
+									// When the rail boots empty it shows the idle hint
+									// instead of rows; clear it before the first live row.
+									if (feed.querySelector('.sw-activity-row') === null) {
+										feed.innerHTML = '';
+									}
+									feed.insertBefore(buildRow(d), feed.firstChild);
+									// Cap at 50 rows in the DOM; drop the oldest (last).
+									while (feed.children.length > 50) {
+										feed.removeChild(feed.lastChild);
+									}
+									setStatus(true);
+								});
 							}
-							src.onopen = function() { setStatus(true); };
-							src.onerror = function() { setStatus(false); };
-							src.addEventListener('activity.recent', function(e) {
-								var env = {};
-								try { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }
-								// The SSE wire payload is an envelope; the structured
-								// rail fields (ts, kind, text, artistId) are nested
-								// under .data, NOT at the top level. Reading the top
-								// level (the spike bug) yields blank rows.
-								var d = env.data || {};
-								// When the rail boots empty it shows the idle hint
-								// instead of rows; clear it before the first live row.
-								if (feed.querySelector('.sw-activity-row') === null) {
-									feed.innerHTML = '';
-								}
-								feed.insertBefore(buildRow(d), feed.firstChild);
-								// Cap at 50 rows in the DOM; drop the oldest (last).
-								while (feed.children.length > 50) {
-									feed.removeChild(feed.lastChild);
-								}
-								setStatus(true);
-							});
+							connectActivity();
 
 							// Close the stream on unload so the browser does not log a
 							// benign aborted-connection error when the tab navigates
@@ -712,6 +723,15 @@ templ IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsEr
 									try { src.close(); } catch (e) { /* ignore */ }
 									src = null;
 								}
+							});
+
+							// Reconnect on bfcache restore. pagehide above fires for a
+							// real bfcache suspend too (not just teardown), so a
+							// back/forward restore (evt.persisted) leaves the stream
+							// silently dead unless it is reopened here; connectActivity()
+							// already tears down any existing source first.
+							window.addEventListener('pageshow', function(evt) {
+								if (evt.persisted) connectActivity();
 							});
 						})();
 					</script>

@@ -1011,6 +1011,15 @@ templ LogsViewerScript() {
 			// bfcache navigations too); disconnect() is already idempotent and
 			// null-safe.
 			window.addEventListener('pagehide', disconnect);
+
+			// Reconnect on bfcache restore. pagehide above fires for a real
+			// bfcache suspend too (not just teardown), so a back/forward
+			// restore (evt.persisted) leaves the stream silently dead unless
+			// it is reopened here; connect() already calls disconnect() first,
+			// so this is safe to call unconditionally.
+			window.addEventListener('pageshow', function(evt) {
+				if (evt.persisted) connect();
+			});
 		})();
 	</script>
 }

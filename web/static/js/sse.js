@@ -398,18 +398,23 @@
   window.addEventListener("pagehide", closeSource);
   window.addEventListener("beforeunload", closeSource);
 
+  // Reconnect on bfcache restore. pagehide above only closes the source when
+  // the page is actually being torn down; when it fires because the page was
+  // suspended into the back/forward cache instead (evt.persisted), the
+  // stream must be reopened on restore or it stays silently dead (#2262
+  // follow-up). connect() already tears down any existing source first, so
+  // calling it here is safe even if closeSource ran on the way out.
+  window.addEventListener("pageshow", function (evt) {
+    if (evt.persisted) {
+      connect();
+    }
+  });
+
   // Expose for testing and external control.
   window.swSSE = {
     connect: connect,
     disconnect: function () {
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      if (source) {
-        source.close();
-        source = null;
-      }
+      closeSource();
     },
     isConnected: function () {
       return source !== null && source.readyState === EventSource.OPEN;
