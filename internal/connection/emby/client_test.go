@@ -162,6 +162,20 @@ func TestTriggerArtistRefresh(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
+		// #2336: TriggerArtistRefresh must force a full NFO re-import so
+		// NFO-only fields (Disambiguation, YearsActive) reach the platform.
+		// FullRefresh + ReplaceAllMetadata=true are the load-bearing params;
+		// ReplaceAllImages=false keeps artwork untouched.
+		q := r.URL.Query()
+		if got := q.Get("MetadataRefreshMode"); got != "FullRefresh" {
+			t.Errorf("MetadataRefreshMode = %q, want FullRefresh (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllMetadata"); got != "true" {
+			t.Errorf("ReplaceAllMetadata = %q, want true (query=%q)", got, r.URL.RawQuery)
+		}
+		if got := q.Get("ReplaceAllImages"); got != "false" {
+			t.Errorf("ReplaceAllImages = %q, want false (query=%q)", got, r.URL.RawQuery)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -169,6 +183,22 @@ func TestTriggerArtistRefresh(t *testing.T) {
 	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	if err := c.TriggerArtistRefresh(context.Background(), "emby-001"); err != nil {
 		t.Fatalf("TriggerArtistRefresh failed: %v", err)
+	}
+}
+
+// TestTriggerArtistRefresh_EmptyArtistID covers the defense-in-depth guard:
+// an empty/whitespace artistID must be rejected before any request is sent,
+// mirroring the sibling UpdateArtistPath guard.
+func TestTriggerArtistRefresh_EmptyArtistID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	if err := c.TriggerArtistRefresh(context.Background(), "   "); err == nil {
+		t.Fatal("expected an error for an empty artistID, got nil")
 	}
 }
 

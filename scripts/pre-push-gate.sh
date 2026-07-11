@@ -475,7 +475,9 @@ fi
 
 echo ""
 echo "=== Raw error leak check ==="
-error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' \
+# Scope to production handler code only: test files legitimately assert on
+# err.Error()/err.String() and never reach a client response.
+error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' ':(exclude)internal/api/*_test.go' \
   | grep '^+' \
   | grep -E 'err\.(Error|String)\(\)' \
   | grep -vE '\bslog\.|\blogger\.|\blog\.' || true)

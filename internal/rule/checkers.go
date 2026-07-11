@@ -1019,9 +1019,14 @@ func checkDirectoryNameMismatch(_ context.Context, a *artist.Artist, cfg RuleCon
 }
 
 // makeImageDuplicateChecker returns a Checker closure that detects visually
-// similar images across different image slots for the same artist. It reads
-// pre-computed dHash values from the artist_images table and compares all
-// pairs using Hamming distance.
+// similar images across an artist's image slots, including within-type
+// fanart duplicates (e.g. fanart slot 0 vs fanart slot 2), not just
+// cross-type ones. Detection delegates to findImageDuplicates, the shared
+// helper also used by ImageDuplicateFixer so both sides agree on what counts
+// as a duplicate. Within-type fanart duplicates are marked Fixable so the
+// fixer can remove the redundant slot; cross-type duplicates remain
+// informational, since resolving them requires replacing one of the images
+// with a distinct alternative that the fixer cannot choose on its own.
 func (e *Engine) makeImageDuplicateChecker() Checker {
 	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" || e.db == nil {
@@ -1033,60 +1038,39 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 			tolerance = 0.90
 		}
 
-		type slotHash struct {
-			slot string
-			hash uint64
-		}
-
-		// Select one hash per image_type (slot_index = 0) to compare across
-		// different types only. Within-type comparison (e.g. fanart slot 0 vs 1)
-		// is not the goal of this rule.
-		rows, err := e.db.QueryContext(ctx,
-			`SELECT image_type, phash FROM artist_images WHERE artist_id = ? AND slot_index = 0 AND exists_flag = 1 AND phash IS NOT NULL AND phash != '' AND phash != '0000000000000000'`,
-			a.ID)
+		primaryName := resolveFanartPrimaryName(ctx, e.platformService)
+		groups, err := findImageDuplicates(ctx, e.db, a, primaryName, tolerance, e.logger)
 		if err != nil {
-			e.logger.Debug("querying image hashes", "artist", a.Name, "error", err)
+			e.logger.Debug("detecting image duplicates", "artist", a.Name, "error", err)
 			return nil
 		}
-		defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
-
-		var hashes []slotHash
-		for rows.Next() {
-			var slot, hashStr string
-			if err := rows.Scan(&slot, &hashStr); err != nil {
-				e.logger.Debug("scanning image hash row", "artist", a.Name, "error", err)
-				continue
-			}
-			h, err := image.ParseHashHex(hashStr)
-			if err != nil || h == 0 {
-				continue
-			}
-			hashes = append(hashes, slotHash{slot: slot, hash: h})
-		}
-		if err := rows.Err(); err != nil {
-			e.logger.Debug("iterating image hash rows", "artist", a.Name, "error", err)
+		if len(groups) == 0 {
 			return nil
 		}
 
-		// Compare all pairs.
-		for i := 0; i < len(hashes); i++ {
-			for j := i + 1; j < len(hashes); j++ {
-				sim := image.Similarity(hashes[i].hash, hashes[j].hash)
-				if sim >= tolerance {
-					return &Violation{
-						RuleID:   RuleImageDuplicate,
-						RuleName: "No duplicate images",
-						Category: "image",
-						Severity: effectiveSeverity(cfg),
-						Message: fmt.Sprintf("artist %s: %s and %s are %.0f%% similar",
-							a.Name, hashes[i].slot, hashes[j].slot, sim*100),
-						Fixable: false,
-					}
-				}
+		// queryImageDupRows has no ORDER BY, so groups[0] is not guaranteed
+		// to be a within-type fanart pair: a cross-type duplicate (e.g.
+		// thumb vs fanart) can sort first and mask a genuine within-type
+		// fanart duplicate, reporting the violation as non-fixable even
+		// though the fixer could resolve it. Prefer a within-type fanart
+		// group for the reported message/Fixable so the fix affordance is
+		// never masked by detection order.
+		g := groups[0]
+		for i := range groups {
+			if groups[i].withinTypeFanart {
+				g = groups[i]
+				break
 			}
 		}
-
-		return nil
+		return &Violation{
+			RuleID:   RuleImageDuplicate,
+			RuleName: "No duplicate images",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message: fmt.Sprintf("artist %s: %s and %s are %.0f%% similar",
+				a.Name, g.a.slotName, g.b.slotName, g.similarity*100),
+			Fixable: g.withinTypeFanart,
+		}
 	}
 }
 

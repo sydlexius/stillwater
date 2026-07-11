@@ -254,12 +254,14 @@ func TestRenderCatalogue_DetectionOnlyOmitsBothFixSections(t *testing.T) {
 	rules := rule.DefaultRules()
 	got := renderCatalogue(rules)
 
-	// image_duplicate is detection-only (no FixBehavior).
-	imgDupIdx := strings.Index(got, "## No duplicate images")
-	if imgDupIdx < 0 {
-		t.Fatal("expected ## No duplicate images heading")
+	// artist_id_mismatch is detection-only (no FixBehavior). image_duplicate,
+	// the previous subject here, became fixable, so this test moved to a rule
+	// that is still detection-only.
+	detIdx := strings.Index(got, "## Artist/ID mismatch")
+	if detIdx < 0 {
+		t.Fatal("expected ## Artist/ID mismatch heading")
 	}
-	section := got[imgDupIdx:]
+	section := got[detIdx:]
 	nextH2 := strings.Index(section[3:], "\n## ")
 	if nextH2 >= 0 {
 		section = section[:nextH2+3]

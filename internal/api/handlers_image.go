@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"log/slog"
 	"net"
@@ -988,6 +989,45 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// saveOrRestoreResult is the outcome of saveSingleSlotWithRollback: either the
+// save succeeded (Saved set, SaveErr nil), or it failed and the helper
+// automatically attempted to restore the pre-edit backup so a save-failure
+// window can never leave the canonical image genuinely absent (#2339).
+type saveOrRestoreResult struct {
+	// Saved is the list of filenames written, set only when the save itself
+	// succeeded.
+	Saved []string
+	// SaveErr is the original img.Save failure. Nil means the save succeeded
+	// and the other fields are zero.
+	SaveErr error
+	// RestoreErr is set when the rollback attempt (img.RestoreSingleSlot)
+	// itself failed after SaveErr, i.e. the worst case: neither the edit nor
+	// the restore landed and manual recovery may be needed. Nil (with SaveErr
+	// non-nil) means the rollback succeeded and the original is back in place.
+	RestoreErr error
+}
+
+// saveSingleSlotWithRollback saves data for a single-slot image type
+// (thumb/logo/banner) and, if the save fails, automatically restores the
+// pre-edit backup written by an earlier BackupSingleSlot call so a save
+// failure never leaves the artist without an image (#2339). Callers must have
+// already backed up the original; fanart (multi-slot, no single-slot backup)
+// must not use this helper.
+func (r *Router) saveSingleSlotWithRollback(dir, imageType string, naming []string, useSymlinks bool, meta *img.ExifMeta, data []byte) saveOrRestoreResult {
+	saved, err := img.Save(dir, imageType, data, naming, useSymlinks, meta, r.logger)
+	if err == nil {
+		return saveOrRestoreResult{Saved: saved}
+	}
+	// The save failed after a successful backup: restore the original rather
+	// than leaving the canonical file missing or half-written. Pass a nil meta
+	// so RestoreSingleSlot re-derives fresh provenance from the restored
+	// bytes, matching handleImageRevert's convention.
+	if restoreErr := img.RestoreSingleSlot(dir, imageType, naming, useSymlinks, nil, r.logger); restoreErr != nil {
+		return saveOrRestoreResult{SaveErr: err, RestoreErr: restoreErr}
+	}
+	return saveOrRestoreResult{SaveErr: err}
+}
+
 // processAndSaveImage processes image data (convert format, optimize) and saves it.
 // For logos, transparent borders are automatically trimmed before saving.
 // meta is optional EXIF provenance metadata to embed in the saved image.
@@ -1027,12 +1067,33 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 		defer r.expectedWrites.RemoveAll(expectedPaths)
 	}
 
-	saved, err := img.Save(dir, imageType, converted, naming, useSymlinks, meta, r.logger)
-	if err != nil {
-		return nil, fmt.Errorf("saving: %w", err)
+	if imageType == "fanart" {
+		// Fanart has no single-slot backup to roll back to: a failed append
+		// leaves the primary untouched (append writes a new numbered file),
+		// so a plain save without rollback is correct here.
+		saved, saveErr := img.Save(dir, imageType, converted, naming, useSymlinks, meta, r.logger)
+		if saveErr != nil {
+			return nil, fmt.Errorf("saving: %w", saveErr)
+		}
+		return saved, nil
 	}
 
-	return saved, nil
+	// Single-slot types: route through the shared helper so a save failure
+	// after the successful backup above triggers an automatic rollback
+	// instead of silently leaving the canonical image missing (#2339).
+	res := r.saveSingleSlotWithRollback(dir, imageType, naming, useSymlinks, meta, converted)
+	if res.SaveErr != nil {
+		// A first-ever upload for this slot has no prior original, so the
+		// earlier BackupSingleSlot call was a no-op and RestoreSingleSlot
+		// correctly finds nothing to restore (os.ErrNotExist). That is not
+		// a failed rollback -- nothing was lost -- so it must not surface
+		// as the "manual recovery may be needed" message.
+		if res.RestoreErr != nil && !errors.Is(res.RestoreErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("saving image failed and automatic restore also failed (manual recovery may be needed): %w (restore: %w)", res.SaveErr, res.RestoreErr)
+		}
+		return nil, fmt.Errorf("saving image failed: %w", res.SaveErr)
+	}
+	return res.Saved, nil
 }
 
 // getActiveNamingConfig returns the filenames for the given image type from the
@@ -1863,6 +1924,33 @@ func normalizeImageType(t string) string {
 	}
 }
 
+// degenerateTrimReason validates the output of img.TrimAlpha before it is
+// allowed anywhere near backup/save, returning a non-empty reason string when
+// the data is unusable (empty, or does not decode to a positive-dimension
+// image), or "" when it is valid.
+//
+// TrimAlpha does not currently return empty bytes with a nil error (it
+// re-encodes and returns the full original when no visible pixels are
+// found), so this guard is defensive: it protects handleLogoTrim from ever
+// touching disk with a degenerate result even if that invariant changes
+// later (#2339).
+func degenerateTrimReason(data []byte) string {
+	if len(data) == 0 {
+		return "empty trimmed image"
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		// Reason strings are server-log-only (the caller passes this to slog and
+		// returns a static client message); keep it a descriptive phrase,
+		// consistent with the other reasons here, rather than a raw error dump.
+		return fmt.Sprintf("trimmed image did not decode: %v", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return fmt.Sprintf("invalid trimmed image dimensions (%dx%d)", cfg.Width, cfg.Height)
+	}
+	return ""
+}
+
 // handleLogoTrim trims the transparent border from an artist's existing logo.
 // POST /api/v1/artists/{id}/images/logo/trim
 func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
@@ -1909,6 +1997,20 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Degeneracy guard (#2339): TrimAlpha does not currently return empty
+	// bytes with a nil error (it re-encodes and returns the full original
+	// when no visible pixels are found), but this is a cheap defensive check
+	// against that class of bug: reject a trim result that is empty or does
+	// not decode to a valid positive-dimension image BEFORE touching backup
+	// or save, so the canonical original is never disturbed by a degenerate
+	// result. No success-implying HX-Trigger is set on this path.
+	if reason := degenerateTrimReason(trimmed); reason != "" {
+		r.logger.Error("logo trim produced a degenerate result; aborting before backup/save",
+			slog.String("artist_id", artistID), slog.String("reason", reason))
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "logo trim produced no usable image; original kept"})
+		return
+	}
+
 	// Preserve existing provenance metadata if present, updating the rule and timestamp.
 	var trimMeta *img.ExifMeta
 	if existing, readErr := img.ReadProvenance(filePath); readErr == nil && existing != nil {
@@ -1933,9 +2035,22 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 
 	_, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), "logo")
-	if _, err := img.Save(r.imageDir(a), "logo", trimmed, patterns, useSymlinks, trimMeta, r.logger); err != nil {
-		r.logger.Error("saving trimmed logo", "artist_id", artistID, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo"})
+	res := r.saveSingleSlotWithRollback(r.imageDir(a), "logo", patterns, useSymlinks, trimMeta, trimmed)
+	if res.SaveErr != nil {
+		if res.RestoreErr != nil {
+			// Worst case: the save failed AND the automatic rollback also
+			// failed. Neither the trim nor the original landed cleanly, so
+			// this must never be silent (#2339).
+			r.logger.Error("saving trimmed logo failed and automatic restore also failed; manual recovery may be needed",
+				slog.String("artist_id", artistID),
+				slog.String("save_error", res.SaveErr.Error()),
+				slog.String("restore_error", res.RestoreErr.Error()))
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo and automatic recovery also failed; manual recovery may be needed"})
+			return
+		}
+		r.logger.Error("saving trimmed logo failed; original restored",
+			slog.String("artist_id", artistID), slog.String("error", res.SaveErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo; original restored"})
 		return
 	}
 	r.enforceCacheLimitIfNeeded(req.Context(), a)
