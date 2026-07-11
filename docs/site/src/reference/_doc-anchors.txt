@@ -295,11 +295,14 @@ how-to/edit-artist#discard-accidental-edits
 how-to/edit-artist#edit-a-field
 how-to/edit-artist#edit-an-artist
 how-to/edit-artist#editing-list-fields
+how-to/edit-artist#keyboard-shortcuts
 how-to/edit-artist#lock-a-single-field
 how-to/edit-artist#lock-the-artist
 how-to/edit-artist#manually-upload-an-image
+how-to/edit-artist#reorder-and-collapse-sections
 how-to/edit-artist#reorder-fanart
 how-to/edit-artist#revert-a-field-to-a-prior-value
+how-to/edit-artist#scroll-with-the-sticky-mini-header
 how-to/edit-artist#see-also
 how-to/edit-artist#what-edits-dont-do
 how-to/enable-and-configure-rules#apply-fixes
@@ -460,6 +463,7 @@ how-to/self-update#what-an-update-changes
 how-to/view-reports#additional-reports
 how-to/view-reports#background-appearance
 how-to/view-reports#compliance-overview
+how-to/view-reports#duplicate-and-foreign-file-reports
 how-to/view-reports#library-health
 how-to/view-reports#live-reports
 how-to/view-reports#metadata-completeness
