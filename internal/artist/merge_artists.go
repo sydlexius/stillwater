@@ -726,6 +726,17 @@ func enumerateChildren(path string) (subdirs, files []os.DirEntry, symlinks []st
 			ignored = append(ignored, e)
 			continue
 		}
+		// The image editor's hidden rollback dir (.sw-backup) is not album
+		// content and not a mergeable child. Route it into `ignored` BEFORE the
+		// generic dot-prefix skip below -- same ordering reason as the junk
+		// classification above: if the hidden-file skip ran first, the dir would
+		// be silently dropped instead of entering the `ignored` bucket, so
+		// removeIgnoredJunk would never sweep it and the leftover would keep the
+		// loser directory non-empty and block the final unlink (#2363).
+		if e.Name() == backupDirName {
+			ignored = append(ignored, e)
+			continue
+		}
 		// Non-junk hidden entries (dotfiles/dotdirs that are not OS/NAS junk)
 		// are skipped: not album content, not a mergeable child.
 		if strings.HasPrefix(e.Name(), ".") {
@@ -964,7 +975,10 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 	// Defensive empty check before unlinking: os.Remove on a non-empty
 	// directory returns a clear error, which we surface so the operator
 	// can investigate (a real leftover should be rare given the
-	// pre-flight + survivor-wins loose-file policy above).
+	// pre-flight + survivor-wins loose-file policy above, plus the
+	// removeIgnoredJunk sweep just above, which now also drains the image
+	// editor's hidden .sw-backup rollback dir -- classified into `ignored`
+	// by enumerateChildren -- so it no longer blocks the unlink (#2363).
 	remaining, err := os.ReadDir(loser.Path)
 	if err != nil {
 		return false, fmt.Errorf("re-reading loser dir %s before removal: %w", loser.Path, err)

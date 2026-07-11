@@ -65,6 +65,18 @@ func IsNonArtistDirName(name string) bool {
 	return nonArtistDirNames[strings.ToLower(strings.TrimSpace(name))]
 }
 
+// backupDirName is the hidden per-artist rollback directory the image editor
+// writes (crop/trim/replace originals). During a merge it is neither album
+// content nor a mergeable child, so enumerateChildren routes it into the
+// `ignored` bucket (BEFORE the generic dot-prefix skip) so removeIgnoredJunk
+// sweeps it and the emptied loser directory can still be unlinked (#2363).
+//
+// Source of truth for the literal is image.BackupDirName
+// (internal/image/backup.go). We deliberately avoid a cross-package import for
+// a single string constant; a sync test (backupDirName == image.BackupDirName)
+// guards against drift.
+const backupDirName = ".sw-backup"
+
 // isAdditiveMergeDir reports whether name is a subdirectory whose contents are
 // additive across a merge -- both artists' copies can coexist, so a collision
 // on the directory itself must NOT halt the merge. Kodi/Emby store extra
