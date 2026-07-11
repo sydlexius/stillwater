@@ -443,6 +443,7 @@
   "artists.shortcuts.tip_open": "open",
   "artists.shortcuts.tip_prev": "prev",
   "artists.shortcuts.tip_range": "+click to select a range",
+  "artists.shortcuts.tip_scan": "scan library",
   "artists.shortcuts.tip_select_all": "select all",
   "artists.sort.added": "Added",
   "artists.sort.ascending": "Ascending",

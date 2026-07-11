@@ -208,6 +208,18 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailPageData) {
 	}
 }
 
+// providerLogoImg renders the decorative platform-logo <img> shared by the
+// hero deep-link pills and the "view on platform" menu items (#1894 F4):
+// connType is the stable provider key ("emby"/"jellyfin"/"lidarr"); emby is
+// PNG (srcset), the others SVG (no srcset).
+templ providerLogoImg(connType string) {
+	if logoSrcSet(connType) != "" {
+		<img src={ logoSrc(connType) } srcset={ logoSrcSet(connType) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
+	} else {
+		<img src={ logoSrc(connType) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
+	}
+}
+
 // artistHero is the FIXED first card (not reorderable): fanart as the card-header
 // background with a contrast scrim, artistlogo preferred over the H1 (reserved
 // height to avoid layout shift), thumb, provider deep-link pills (presence +
@@ -305,6 +317,7 @@ templ artistHero(assets AssetPaths, data ArtistDetailPageData) {
 								style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
 								title={ tf(ctx, "artist.view_on_platform", conn.Name) }
 							>
+								@providerLogoImg(conn.Type)
 								{ conn.Name }
 								@components.IconArrowTopRightOnSquare("h-3 w-3")
 							</a>
@@ -709,8 +722,11 @@ templ artistActionItems(data ArtistDetailPageData, withShortcut bool) {
 			role="menuitem"
 			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 		>
-			@components.IconArrowTopRightOnSquare("h-4 w-4 text-gray-400")
+			// Platform logo (#1894 F4) leads as the menu-item icon, matching the
+			// hero pill; the external-link arrow trails as the "opens externally" cue.
+			@providerLogoImg(conn.Type)
 			{ tf(ctx, "artist.view_on_platform", conn.Name) }
+			@components.IconArrowTopRightOnSquare("h-3 w-3 text-gray-400")
 		</a>
 	}
 }
@@ -1392,18 +1408,37 @@ templ artistDetailPageScript() {
 
 			var root = document.querySelector('[data-sw-section-nav]');
 			if (!root) return;
-			var sections = Array.prototype.slice.call(root.querySelectorAll('[data-sw-section]'));
+			// The section list is re-queried LIVE inside the j/k handler below, so no
+			// stale snapshot is held here -- SortableJS reorder (#2065) and collapse
+			// (#2112) would otherwise desync j/k from the visual order (#1894).
 			var idx = -1;
 
 			function handle(key) {
 				if (key === 'h') { var p = root.getAttribute('data-sw-prev-artist'); if (p) { window.location.assign(p); return true; } return false; }
 				if (key === 'l') { var n = root.getAttribute('data-sw-next-artist'); if (n) { window.location.assign(n); return true; } return false; }
 				if (key === 'j' || key === 'k') {
-					if (!sections.length) return false;
-					idx = key === 'j' ? Math.min(sections.length - 1, idx + 1) : Math.max(0, idx - 1);
-					sections[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
-					sections[idx].setAttribute('tabindex', '-1');
-					sections[idx].focus({ preventScroll: true });
+					// Re-query sections LIVE every press so reorder (#2065) / collapse
+					// (#2112) stay in sync. Derive the current position from the focused
+					// section's identity, not a stale index, so a drag-reorder never
+					// makes j/k jump in the old order (#1894 keyboard re-audit).
+					var live = Array.prototype.slice.call(root.querySelectorAll('[data-sw-section]'));
+					if (!live.length) return false;
+					var active = (document.activeElement && document.activeElement.closest) ? document.activeElement.closest('[data-sw-section]') : null;
+					var cur = active ? live.indexOf(active) : idx;
+					if (cur < 0) cur = idx;
+					// idx persists across presses with no live section focused, so a
+					// shrunk list (collapse/reorder removing a section) can leave cur
+					// pointing past the end -- clamp before computing next/prev so
+					// live[idx] below is always a valid element (#1894 review). Floor
+					// at -1, not 0: -1 is the "nothing focused yet" sentinel the j/k
+					// math below already special-cases (first j -> section 0, first k
+					// -> section 0); flooring at 0 here would skip section 0 on the
+					// very first j press (CR follow-up on the initial clamp).
+					cur = Math.min(live.length - 1, Math.max(-1, cur));
+					idx = key === 'j' ? Math.min(live.length - 1, cur + 1) : Math.max(0, cur - 1);
+					live[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+					live[idx].setAttribute('tabindex', '-1');
+					live[idx].focus({ preventScroll: true });
 					return true;
 				}
 				return false;

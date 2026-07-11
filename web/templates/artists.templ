@@ -561,6 +561,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">f</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_filters") }</span></span>
 				<span aria-hidden="true">·</span>
+				// r (Scan Library) is wired via data-sw-shortcut="r" on the toolbar Scan
+				// button (read by the #1789 global keyboard registry); advertise it so the
+				// legend is truthful (#1894 keyboard-legend truth-check).
+				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">r</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_scan") }</span></span>
+				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">j</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_next") }</span></span>
 				<span aria-hidden="true">·</span>
 				<span class="inline-flex items-center"><kbd class="sw-kbd inline-flex">k</kbd><span class="ml-1">{ t(ctx, "artists.shortcuts.tip_prev") }</span></span>
