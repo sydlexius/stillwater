@@ -19,6 +19,16 @@ func newSQLitePlatformIDRepo(db *sql.DB) *sqlitePlatformIDRepo {
 	return &sqlitePlatformIDRepo{db: db}
 }
 
+// isUniqueConstraintErr reports whether err is a SQLite UNIQUE-constraint
+// violation. modernc.org/sqlite emits "UNIQUE constraint failed: <table>.<col>";
+// matches the pattern in internal/foreign/repository.go and internal/auth.
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
+}
+
 func (r *sqlitePlatformIDRepo) Set(ctx context.Context, artistID, connectionID, platformArtistID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -54,6 +64,108 @@ func (r *sqlitePlatformIDRepo) Set(ctx context.Context, artistID, connectionID, 
 		return fmt.Errorf("setting platform id: %w", err)
 	}
 	return nil
+}
+
+// SetStable is a divergence-aware, deterministic variant of Set used by
+// non-authoritative writers (scan resolution, manual-library backfill, Lidarr
+// self-heal). Where Set unconditionally overwrites the stored id -- the source
+// of the per-scan Emby duplicate-twin flip-flop (#2344), where two platform
+// items sharing one MBID take turns winning depending on enumeration order --
+// SetStable keeps the lexicographically LOWER id for a given (artist,
+// connection). Lowest-id converges to the same winner on every scan regardless
+// of Emby paging order, so metadata and image pushes always target the same
+// platform item.
+//
+// Behavior:
+//   - Incoming id already claimed by a DIFFERENT artist -> ErrPlatformIDClaimedByAnotherArtist.
+//   - No existing row -> insert the incoming id (Diverged=false).
+//   - Existing id equals incoming -> no-op (Diverged=false).
+//   - Existing id differs from incoming -> store min(existing, incoming) and
+//     report Diverged=true so the caller can log the deterministic pick.
+//
+// The tiebreak is applied inside the ON CONFLICT upsert via SQL MIN() so the
+// STORED value is deterministic even if a concurrent writer changed the row
+// between the read below and the write. min() on TEXT uses BINARY collation, a
+// byte-wise compare that matches Go's "<" on strings, so numeric and GUID-style
+// ids both compare consistently. The returned PreviousID/Diverged are derived
+// from the pre-write read and are advisory (used only for logging); under a
+// race they may lag the actual stored value, but the stored value is always the
+// deterministic minimum. Cross-connection serialization is tracked separately
+// (#2324). Set is intentionally left unchanged so explicit operator-driven UI
+// writes keep full-overwrite semantics.
+func (r *sqlitePlatformIDRepo) SetStable(ctx context.Context, artistID, connectionID, platformArtistID string) (PlatformIDStableOutcome, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Same cross-artist collision pre-check as Set: a UNIQUE index on
+	// (connection_id, platform_artist_id) forbids two artist rows claiming the
+	// same platform item. Detect it explicitly and surface the typed sentinel
+	// so best-effort callers can no-op rather than treat it as a DB error.
+	var existingHolder string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT artist_id FROM artist_platform_ids
+		WHERE connection_id = ? AND platform_artist_id = ?
+	`, connectionID, platformArtistID).Scan(&existingHolder)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// No collision; fall through.
+	case err != nil:
+		return PlatformIDStableOutcome{}, fmt.Errorf("checking existing platform id holder: %w", err)
+	case existingHolder != artistID:
+		return PlatformIDStableOutcome{}, ErrPlatformIDClaimedByAnotherArtist
+	}
+
+	// Read the id currently stored for THIS (artist, connection) to build the
+	// outcome and to short-circuit an idempotent re-set (avoids a spurious
+	// updated_at bump).
+	var current string
+	hadRow := true
+	err = r.db.QueryRowContext(ctx, `
+		SELECT platform_artist_id FROM artist_platform_ids
+		WHERE artist_id = ? AND connection_id = ?
+	`, artistID, connectionID).Scan(&current)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		hadRow = false
+	case err != nil:
+		return PlatformIDStableOutcome{}, fmt.Errorf("reading current platform id: %w", err)
+	}
+
+	// Idempotent re-set: nothing to do.
+	if hadRow && current == platformArtistID {
+		return PlatformIDStableOutcome{StoredID: current, PreviousID: current}, nil
+	}
+
+	// Insert-or-tiebreak. On conflict, keep the lexicographically lower of the
+	// stored and incoming ids. updated_at only advances when the stored value
+	// actually changes (i.e. the incoming id is the new, lower winner), so a
+	// higher incoming id that loses the tiebreak leaves the row untouched.
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (artist_id, connection_id)
+		DO UPDATE SET
+			updated_at = CASE
+				WHEN excluded.platform_artist_id < artist_platform_ids.platform_artist_id
+				THEN excluded.updated_at ELSE artist_platform_ids.updated_at END,
+			platform_artist_id = MIN(artist_platform_ids.platform_artist_id, excluded.platform_artist_id)
+	`, artistID, connectionID, platformArtistID, now, now)
+	if err != nil {
+		if isUniqueConstraintErr(err) {
+			return PlatformIDStableOutcome{}, ErrPlatformIDClaimedByAnotherArtist
+		}
+		return PlatformIDStableOutcome{}, fmt.Errorf("setting platform id (stable): %w", err)
+	}
+
+	if !hadRow {
+		return PlatformIDStableOutcome{StoredID: platformArtistID}, nil
+	}
+
+	// Existing row held a different id: deterministic min wins.
+	stored := current
+	if platformArtistID < current {
+		stored = platformArtistID
+	}
+	return PlatformIDStableOutcome{StoredID: stored, PreviousID: current, Diverged: true}, nil
 }
 
 func (r *sqlitePlatformIDRepo) Get(ctx context.Context, artistID, connectionID string) (string, error) {

@@ -2695,6 +2695,188 @@ func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
 	}
 }
 
+// TestScanFromEmby_DuplicateTwinIDDeterministic reproduces the #2344 flip-flop:
+// Emby returns two duplicate "twin" items that share one MBID (and name) but
+// carry different item Ids. Both resolve to the same Stillwater artist row, so
+// each scan stamps a platform id for the same (artist, connection). With the
+// old full-overwrite Set the LAST item in the page won, so when Emby returned
+// the twins in a different paging order on the next scan the stored id flipped
+// -- and subsequent metadata/image pushes landed on the phantom twin. The
+// deterministic stable set must keep the same (lowest) id regardless of order.
+//
+// RED without the fix: forward order stores "emby-twin-2" (last wins), reversed
+// order stores "emby-twin-1", so the two scans disagree and the test fails.
+func TestScanFromEmby_DuplicateTwinIDDeterministic(t *testing.T) {
+	t.Parallel()
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	// forward controls the order the fake Emby server enumerates the twins.
+	// Flipped between the two scans to simulate Emby's non-deterministic paging.
+	var forward atomic.Bool
+	forward.Store(true)
+	twinBody := func() string {
+		a := fmt.Sprintf(`{"Name":"Twin Artist","SortName":"Twin Artist","Id":"emby-twin-1","Path":%q,"Overview":"","Genres":[],"Tags":[],"PremiereDate":"","EndDate":"","ProviderIds":{"MusicBrainzArtist":"mbid-shared"},"ImageTags":{}}`, artistDir)
+		b := fmt.Sprintf(`{"Name":"Twin Artist","SortName":"Twin Artist","Id":"emby-twin-2","Path":%q,"Overview":"","Genres":[],"Tags":[],"PremiereDate":"","EndDate":"","ProviderIds":{"MusicBrainzArtist":"mbid-shared"},"ImageTags":{}}`, artistDir)
+		first, second := a, b
+		if !forward.Load() {
+			first, second = b, a
+		}
+		return fmt.Sprintf(`{"Items":[%s,%s],"TotalRecordCount":2}`, first, second)
+	}
+
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Artists/AlbumArtists" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, twinBody())
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Path:         libPath,
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+	// One artist row both twins resolve to (shared MBID + library membership).
+	embyArtist := &artist.Artist{
+		Name:          "Twin Artist",
+		SortName:      "Twin Artist",
+		MusicBrainzID: "mbid-shared",
+		LibraryID:     embyLib.ID,
+		Path:          artistDir,
+	}
+	if err := router.artistService.Create(ctx, embyArtist); err != nil {
+		t.Fatalf("creating emby artist: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
+	// First scan: forward twin order.
+	if _, err := router.scanFromEmby(ctx, client, embyLib); err != nil {
+		t.Fatalf("scanFromEmby (forward): %v", err)
+	}
+	firstID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (forward): %v", err)
+	}
+
+	// Second scan: reversed twin order.
+	forward.Store(false)
+	if _, err := router.scanFromEmby(ctx, client, embyLib); err != nil {
+		t.Fatalf("scanFromEmby (reversed): %v", err)
+	}
+	secondID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (reversed): %v", err)
+	}
+
+	if firstID != secondID {
+		t.Fatalf("platform id flip-flopped across scans: forward=%q reversed=%q", firstID, secondID)
+	}
+	if firstID != "emby-twin-1" {
+		t.Errorf("stored platform id = %q, want deterministic lowest %q", firstID, "emby-twin-1")
+	}
+}
+
+// TestScanFromJellyfin_DuplicateTwinIDDeterministic is the Jellyfin counterpart
+// of TestScanFromEmby_DuplicateTwinIDDeterministic; the two scans share the
+// resolveAndBackfillPlatformID resolver, so this guards the same stable-set
+// determinism on the Jellyfin path (#2344).
+func TestScanFromJellyfin_DuplicateTwinIDDeterministic(t *testing.T) {
+	t.Parallel()
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	var forward atomic.Bool
+	forward.Store(true)
+	twinBody := func() string {
+		a := fmt.Sprintf(`{"Name":"Twin Artist","SortName":"Twin Artist","Id":"jf-twin-1","Path":%q,"Overview":"","Genres":[],"Tags":[],"PremiereDate":"","EndDate":"","ProviderIds":{"MusicBrainzArtist":"mbid-shared"},"ImageTags":{}}`, artistDir)
+		b := fmt.Sprintf(`{"Name":"Twin Artist","SortName":"Twin Artist","Id":"jf-twin-2","Path":%q,"Overview":"","Genres":[],"Tags":[],"PremiereDate":"","EndDate":"","ProviderIds":{"MusicBrainzArtist":"mbid-shared"},"ImageTags":{}}`, artistDir)
+		first, second := a, b
+		if !forward.Load() {
+			first, second = b, a
+		}
+		return fmt.Sprintf(`{"Items":[%s,%s],"TotalRecordCount":2}`, first, second)
+	}
+
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Artists/AlbumArtists" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, twinBody())
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer jfSrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+	addTestConnection(t, router, "conn-jf-1", "Jellyfin Server", "jellyfin")
+
+	jfLib := &library.Library{
+		Name:         "JF Music",
+		Path:         libPath,
+		Type:         library.TypeRegular,
+		Source:       connection.TypeJellyfin,
+		ConnectionID: "conn-jf-1",
+		ExternalID:   "jf-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, jfLib); err != nil {
+		t.Fatalf("creating jellyfin library: %v", err)
+	}
+	jfArtist := &artist.Artist{
+		Name:          "Twin Artist",
+		SortName:      "Twin Artist",
+		MusicBrainzID: "mbid-shared",
+		LibraryID:     jfLib.ID,
+		Path:          artistDir,
+	}
+	if err := router.artistService.Create(ctx, jfArtist); err != nil {
+		t.Fatalf("creating jellyfin artist: %v", err)
+	}
+
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
+	if _, err := router.scanFromJellyfin(ctx, client, jfLib); err != nil {
+		t.Fatalf("scanFromJellyfin (forward): %v", err)
+	}
+	firstID, err := router.artistService.GetPlatformID(ctx, jfArtist.ID, "conn-jf-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (forward): %v", err)
+	}
+
+	forward.Store(false)
+	if _, err := router.scanFromJellyfin(ctx, client, jfLib); err != nil {
+		t.Fatalf("scanFromJellyfin (reversed): %v", err)
+	}
+	secondID, err := router.artistService.GetPlatformID(ctx, jfArtist.ID, "conn-jf-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (reversed): %v", err)
+	}
+
+	if firstID != secondID {
+		t.Fatalf("platform id flip-flopped across scans: forward=%q reversed=%q", firstID, secondID)
+	}
+	if firstID != "jf-twin-1" {
+		t.Errorf("stored platform id = %q, want deterministic lowest %q", firstID, "jf-twin-1")
+	}
+}
+
 func TestResolveAndBackfillPlatformID_NilWhenNoConnectionMatch(t *testing.T) {
 	t.Parallel()
 	router := testRouterForLibraryOps(t)
