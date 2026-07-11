@@ -2,7 +2,7 @@
 description: Get artwork from providers or the web, crop in-browser, save canonical filenames.
 ---
 
-<!-- code: internal/api/router.go (POST /artists/{id}/images/upload, /fetch, /crop, /logo/trim, GET /search, /websearch, fanart batch + reorder + assign endpoints), internal/api/handlers_image.go (maxUploadSize 25MB), internal/image/processor.go (Resize, IsLowResolution thresholds), web/templates/artist.templ (cropper integration). -->
+<!-- code: internal/api/router.go (POST /artists/{id}/images/upload, /fetch, /crop, /logo/trim, GET /search, /websearch, fanart batch + reorder + assign endpoints), internal/api/handlers_image.go (maxUploadSize 25MB), internal/image/processor.go (Resize, IsLowResolution thresholds), web/templates/artist.templ (cropper integration), web/templates/backdrop_management.templ (per-slot crop/fetch buttons). -->
 
 # Fetch and crop images
 
@@ -81,6 +81,10 @@ To reorder:
 
 - On the artist page, hover (or focus) any non-primary fanart in the gallery; a star button appears on the overlay. Click the star to promote that fanart to primary -- the rest keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox; the star is the promotion control.)
 - For finer control, open the **Backdrops** tab in **Manage artwork** (the same place you fetch new fanart from). The gallery there shows each fanart with up and down buttons; click them to reshuffle. The first fanart is primary, and the file numbering on disk follows the order, with the platform's convention applied (Emby/Jellyfin uses `fanart.jpg, fanart2.jpg, ...`; Kodi uses `fanart.jpg, fanart1.jpg, ...`).
+
+To replace or re-crop one fanart in place:
+
+- Each fanart tile in the **Backdrops** tab has its own **Crop** and **Fetch** buttons alongside the checkbox and move controls. Use these to re-crop or replace that specific fanart without touching the others or leaving the tab.
 
 To delete:
 

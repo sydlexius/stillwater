@@ -2,7 +2,7 @@
 description: Trigger filesystem and platform scans, schedule recurring runs, monitor progress.
 ---
 
-<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/settings.templ (per-library Scan Library / Re-sync Artists buttons in the Music Libraries section). -->
+<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/settings.templ (per-library Scan Library / Re-sync Artists buttons in the Music Libraries section), internal/artist/duplicates.go (DetectDuplicates). -->
 
 # Run scans
 
@@ -115,21 +115,6 @@ During a filesystem scan, Stillwater compares each newly discovered artist's nam
 
 When a collision is detected, the scan log records a warning and the scan result count includes the number of suspected duplicates found.
 
-To see which artist records were flagged, open the **Possible duplicate artists** report (direct URL: `/reports/duplicates`). The page groups artists that appear to be the same entity. Each group shows the reason the match was made:
+To see which artist records were flagged, open the **Possible duplicate artists** report (direct URL: `/reports/duplicates`). The page groups artists that appear to be the same entity, with the higher-confidence **MBID match** groups (shared MusicBrainz ID) distinguished from **Name key match** groups (names normalize to the same value, but no MusicBrainz ID confirms it -- review these manually).
 
-- **MBID match** -- every member shares the same MusicBrainz artist ID. This is the higher-confidence signal.
-- **Name key match** -- the members' names normalize to the same value. Review these manually; an exact MusicBrainz ID match is not present.
-
-Each group offers a **Merge** action. Click it to open a confirmation modal that previews which album subdirectories would be moved into the surviving artist's folder. The recommended survivor is pre-selected using the following precedence:
-
-1. The record whose directory basename matches the MusicBrainz canonical name (so connected tools like Lidarr do not re-fork the artist).
-2. The record with the most album subdirectories on disk, if no member matches the canonical name.
-3. Lowest artist ID as a deterministic fallback if neither rule applies.
-
-You can override the recommendation by selecting a different survivor in the modal; the orchestrator will flag the deviation in the response but the merge still runs. Confirming the merge consolidates the directories on disk and collapses the artist records into one.
-
-### Loser directory cleanup after a merge
-
-After the album subdirectories are moved, Stillwater removes any loose metadata files (NFO files, artwork) that remain in the loser's directory and have a matching regular file in the survivor's directory. This step is **destructive** -- the loser's copies are permanently deleted from disk so that the loser's directory is left empty and can be removed, preventing the duplicate artist from reappearing on the next scan.
-
-A loser file is only deleted when the survivor already has a regular file at the same relative path. Survivor entries that are directories or symlinks are left alone, so the cleanup never removes files that the survivor side cannot clearly cover.
+For how to review a group, pick a survivor, read the merge preview, and what happens on disk once you confirm, see [Merge duplicate artists](merge-duplicate-artists.md).

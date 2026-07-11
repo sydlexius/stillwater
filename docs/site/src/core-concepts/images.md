@@ -82,3 +82,7 @@ Stillwater's UI shows the platform-appropriate label when a library is associate
 - **Filename variants.** Some platforms want the same image under multiple names (`folder.jpg` and `artist.jpg`). Stillwater writes one real file and creates symlinks for the alternate filenames where the filesystem supports it.
 
 What you do think about: which images you want for which artists, whether the rule defaults match your standards, and whether to accept low-resolution placeholders or hold out for something better. Rules and the [fix-all flow](rules.md) make the second question a batch operation rather than a per-artist click-through.
+
+## See also
+
+- [Merge duplicate artists](../how-to/merge-duplicate-artists.md) -- when two artist records with images merge, the surviving directory's images are kept and the loser's redundant copies are deleted (except `extrafanart`/`extrathumbs`, which merge additively).

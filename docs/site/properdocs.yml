@@ -105,6 +105,7 @@ nav:
       - First-run setup: getting-started/first-run-oobe.md
       - Connect Emby: getting-started/connect-emby.md
       - Connect Jellyfin: getting-started/connect-jellyfin.md
+      - Connect Lidarr: getting-started/connect-lidarr.md
   - Core concepts:
       - core-concepts/index.md
       - Artists and libraries: core-concepts/artists-and-libraries.md
@@ -119,6 +120,7 @@ nav:
   - How-to:
       - how-to/index.md
       - Run scans: how-to/run-scans.md
+      - Merge duplicate artists: how-to/merge-duplicate-artists.md
       - View reports: how-to/view-reports.md
       - Edit an artist: how-to/edit-artist.md
       - Filter the artists list: how-to/filter-artists.md

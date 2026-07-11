@@ -92,6 +92,7 @@ core-concepts/images#images
 core-concepts/images#multi-fanart
 core-concepts/images#platform-terminology
 core-concepts/images#resolution-and-aspect-rule-driven-configurable
+core-concepts/images#see-also
 core-concepts/images#the-four-slots
 core-concepts/images#what-you-dont-need-to-think-about
 core-concepts/images#where-the-images-come-from
@@ -151,6 +152,16 @@ getting-started/connect-jellyfin#troubleshooting
 getting-started/connect-jellyfin#verify-the-connection-works
 getting-started/connect-jellyfin#what-the-connection-enables
 getting-started/connect-jellyfin#when-the-toggle-is-moot
+getting-started/connect-lidarr#before-you-start
+getting-started/connect-lidarr#connect-lidarr
+getting-started/connect-lidarr#connect-stillwater-to-lidarr
+getting-started/connect-lidarr#get-a-lidarr-api-key
+getting-started/connect-lidarr#path-mapping-when-stillwater-and-lidarr-disagree-on-paths
+getting-started/connect-lidarr#stillwater-infers-it-for-you-when-it-can
+getting-started/connect-lidarr#troubleshooting
+getting-started/connect-lidarr#verify-path-after-rename
+getting-started/connect-lidarr#verify-the-connection-works
+getting-started/connect-lidarr#what-the-connection-enables
 getting-started/first-run-oobe#after-the-wizard
 getting-started/first-run-oobe#create-the-admin-account
 getting-started/first-run-oobe#first-time-setup
@@ -370,6 +381,14 @@ how-to/inbound-webhooks#inbound-webhooks
 how-to/inbound-webhooks#operational-notes
 how-to/inbound-webhooks#troubleshooting
 how-to/index#how-to-guides
+how-to/merge-duplicate-artists#find-suspected-duplicates
+how-to/merge-duplicate-artists#merge-a-group
+how-to/merge-duplicate-artists#merge-duplicate-artists
+how-to/merge-duplicate-artists#pick-the-survivor
+how-to/merge-duplicate-artists#read-the-preview-before-confirming
+how-to/merge-duplicate-artists#safety-checks-that-can-block-a-merge
+how-to/merge-duplicate-artists#see-also
+how-to/merge-duplicate-artists#what-happens-on-merge
 how-to/quick-actions#cycle-theme
 how-to/quick-actions#keyboard-shortcuts
 how-to/quick-actions#log-out
@@ -405,7 +424,6 @@ how-to/reverse-proxy#verifying-the-proxy-works
 how-to/reverse-proxy#what-stillwater-expects-from-a-reverse-proxy
 how-to/run-scans#concurrent-scan-safety
 how-to/run-scans#imported-libraries
-how-to/run-scans#loser-directory-cleanup-after-a-merge
 how-to/run-scans#manual-libraries
 how-to/run-scans#monitor-an-in-progress-scan
 how-to/run-scans#possible-duplicate-artists
@@ -485,6 +503,7 @@ troubleshooting/platform-auth#connection-refused-dns-lookup-failed-502-504
 troubleshooting/platform-auth#forbidden-403
 troubleshooting/platform-auth#image-fetcher-conflict-warning
 troubleshooting/platform-auth#library-paths-overlap-409-from-refresh
+troubleshooting/platform-auth#lidarr-shows-an-artist-as-missing-after-a-rename-or-merge
 troubleshooting/platform-auth#nfo-writes-paused-banner
 troubleshooting/platform-auth#platform-authentication
 troubleshooting/platform-auth#platform-push-failed-toasts
