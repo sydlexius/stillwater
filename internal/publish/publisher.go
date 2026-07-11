@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -241,8 +242,52 @@ func (p *Publisher) PublishMetadata(ctx context.Context, a *artist.Artist) {
 	if p == nil {
 		return
 	}
-	p.WriteBackNFO(ctx, a)
-	p.PushMetadataAsync(ctx, a)
+	nfoWritten := p.WriteBackNFO(ctx, a)
+
+	// The two platform operations touch the SAME Emby/Jellyfin item and MUST be
+	// ordered, not raced (#2336 review P2). Two failure modes if they run as
+	// unordered goroutines:
+	//   (a) Emby rejects one of two simultaneous /Items/{id}/Refresh calls
+	//       ("refresh already in progress"); if the destructive re-import loses,
+	//       the NFO-only fields silently never reach the platform.
+	//   (b) The push path's own non-destructive refresh (emby refreshItem)
+	//       persists Emby's IN-MEMORY item back to the NFO. That in-memory item
+	//       lacks Disambiguation/YearsActive (the API cannot carry them), so if
+	//       it lands AFTER the destructive re-import it CLOBBERS the on-disk NFO
+	//       Stillwater just wrote -- dropping the two fields at the source.
+	// Fix: run the API push + its non-destructive refresh FIRST, wait for it to
+	// settle, THEN fire the destructive FullRefresh re-import so it always
+	// re-reads the correct on-disk NFO last. This ordering is deterministic and
+	// does not rely on Emby's concurrent-refresh semantics.
+	//
+	// P3: skip the destructive re-import entirely when no NFO was written this
+	// publish (artist has no library path, or the active profile disables NFO).
+	// With no fresh local NFO an opted-in Emby FullRefresh could re-scrape from
+	// online fetchers and clobber the platform metadata.
+	//
+	// The sequence runs in a detached coordinator goroutine so the HTTP response
+	// is not blocked on the push timeout; context.WithoutCancel lets the work
+	// outlive the originating request.
+	detached := context.WithoutCancel(ctx)
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				p.logger.Error("publish-metadata: panic in sequencing goroutine",
+					slog.String("artist_id", a.ID),
+					slog.Any("panic", v),
+					slog.String("stack", string(debug.Stack())))
+			}
+		}()
+		// Blocks until every per-connection push (POST /Items/{id} + its
+		// non-destructive refresh) has completed.
+		p.pushMetadata(detached, a, true)
+		if !nfoWritten {
+			p.logger.Debug("publish-metadata: skipping destructive NFO re-import; no NFO written this publish",
+				slog.String("artist_id", a.ID))
+			return
+		}
+		p.RefreshArtistOnPlatforms(detached, a)
+	}()
 }
 
 // WriteBackNFO writes the artist's current metadata to its artist.nfo file
@@ -253,12 +298,17 @@ func (p *Publisher) PublishMetadata(ctx context.Context, a *artist.Artist) {
 // not silent). Skips when the artist has no filesystem path. The on-disk check
 // (os.Stat) guards against stale NFOExists flags when the file was deleted or
 // moved since the last scan.
-func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
+//
+// Returns true when an artist.nfo was created or rewritten on disk this call,
+// and false on every early return or write failure. PublishMetadata uses this
+// to gate the destructive NFO re-import (#2336 review P3): the re-import must
+// only fire when a fresh local NFO exists for the platform to re-read.
+func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) bool {
 	if p == nil {
-		return
+		return false
 	}
 	if a.Path == "" {
-		return
+		return false
 	}
 	nfoPath := filepath.Join(a.Path, "artist.nfo")
 
@@ -270,7 +320,7 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 			slog.String("nfo_path", nfoPath),
 			slog.String("error", statErr.Error()),
 		)
-		return
+		return false
 	}
 
 	// #2306: honor the active platform profile. Plex does not use .nfo files, so
@@ -289,7 +339,7 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 			p.logger.Info("NFO write-back skipped: NFO writing is disabled for the active platform profile",
 				slog.String("artist_id", a.ID),
 				slog.String("profile", profileName))
-			return
+			return false
 		}
 	}
 
@@ -320,7 +370,7 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 				slog.String("artist_id", a.ID),
 				slog.String("error", err.Error()),
 			)
-			return
+			return false
 		}
 		if err := filesystem.WriteFileAtomic(nfoPath, buf.Bytes(), 0o644); err != nil {
 			p.logger.Error("creating NFO",
@@ -328,13 +378,13 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 				slog.String("nfo_path", nfoPath),
 				slog.String("error", err.Error()),
 			)
-			return
+			return false
 		}
 		// Keep the in-memory artist consistent with the file just written so a
 		// caller that returns `a` directly (e.g. handleLockArtist) reports
 		// nfo_exists=true.
 		a.NFOExists = true
-		return
+		return true
 	}
 
 	if err := nfo.WriteBackArtistNFOWithFieldMap(ctx, a, p.nfoSnapshotService, p.logger, fm, lockNFO); err != nil {
@@ -343,7 +393,9 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 			slog.String("artist_name", a.Name),
 			slog.String("error", err.Error()),
 		)
+		return false
 	}
+	return true
 }
 
 // resolveNFOFieldMap reads the configured NFO field map for platform-specific
@@ -372,6 +424,16 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 	if p == nil {
 		return
 	}
+	p.pushMetadata(ctx, a, false)
+}
+
+// pushMetadata is the shared core behind PushMetadataAsync and the sequenced
+// PublishMetadata path. It dispatches one push goroutine per platform mapping.
+// When wait is true it blocks until every push goroutine (POST /Items/{id} plus
+// its non-destructive refresh) has returned; when false it returns immediately.
+// PublishMetadata uses wait=true so the destructive NFO re-import can be fired
+// strictly AFTER the push and its refresh have settled (#2336 review P2).
+func (p *Publisher) pushMetadata(ctx context.Context, a *artist.Artist, wait bool) {
 	platformIDs, err := p.artistService.GetPlatformIDs(ctx, a.ID)
 	if err != nil {
 		p.logger.Error("auto-push: listing platform IDs",
@@ -399,67 +461,82 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 	// references; reading its fields from goroutines is safe.
 	data := BuildArtistPushData(a, members)
 
+	var wg sync.WaitGroup
 	for _, pid := range platformIDs {
+		wg.Add(1)
 		go func() {
-			gCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pushTimeout)
-			defer cancel()
-			defer func() {
-				if v := recover(); v != nil {
-					p.logger.Error("auto-push: panic in goroutine",
-						slog.String("artist_id", a.ID),
-						slog.String("connection_id", pid.ConnectionID),
-						slog.Any("panic", v),
-						slog.String("stack", string(debug.Stack())))
-				}
-			}()
-
-			conn, connErr := p.connectionService.GetByID(gCtx, pid.ConnectionID)
-			if connErr != nil {
-				p.logger.Error("auto-push: fetching connection",
-					slog.String("artist_id", a.ID),
-					slog.String("connection_id", pid.ConnectionID),
-					slog.String("error", connErr.Error()))
-				// Mirror the PushLocks lookup-failure notify path so the
-				// metadata push surface emits the same toast taxonomy.
-				// shortConnLabel falls back to an 8-char id prefix the
-				// operator can correlate against the settings page
-				// connection list -- it matches the connection_id prefix
-				// shown in the "auto-push: fetching connection" error log
-				// above, so a toast can be cross-referenced to the log
-				// entry without exposing the full UUID. classifyPushErr
-				// translates the lookup failure into a stable category;
-				// connErr is always non-nil in this branch so the empty
-				// return from classifyPushErr is unreachable here.
-				p.notifyPushFailure(pid.ConnectionID, shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
-				return
-			}
-			if !conn.Enabled {
-				return
-			}
-
-			pusher, ok := NewMetadataPusher(conn, p.logger)
-			if !ok {
-				return // connection type does not support PushMetadata (e.g. Lidarr)
-			}
-
-			if pushErr := pusher.PushMetadata(gCtx, pid.PlatformArtistID, data); pushErr != nil {
-				p.logger.Error("auto-push: metadata push failed",
-					slog.String("artist_id", a.ID),
-					slog.String("artist_name", a.Name),
-					slog.String("connection", conn.Name),
-					slog.String("error", pushErr.Error()))
-				// Same notify path as PushLocks: classifyPushErr translates
-				// the raw transport / status error into the stable taxonomy
-				// (auth_failed, timeout, server_error, ...) so the toast
-				// tells the operator what kind of intervention is needed.
-				p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(pushErr), a.ID, artistDisplayName(a), pushOpMetadataPush, pushErr)
-			} else {
-				p.logger.Info("auto-push: metadata pushed",
-					slog.String("artist_id", a.ID),
-					slog.String("artist_name", a.Name),
-					slog.String("connection", conn.Name))
-			}
+			defer wg.Done()
+			p.pushMetadataToConnection(ctx, a, pid, data)
 		}()
+	}
+	if wait {
+		wg.Wait()
+	}
+}
+
+// pushMetadataToConnection performs the metadata push for a single platform
+// mapping. It creates its own detached, timeout-bounded context so the push
+// outlives the originating request, and recovers from panics so one bad
+// connection cannot crash the fan-out. Best-effort: failures are logged and
+// surfaced as toasts, never propagated.
+func (p *Publisher) pushMetadataToConnection(ctx context.Context, a *artist.Artist, pid artist.PlatformID, data connection.ArtistPushData) {
+	gCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pushTimeout)
+	defer cancel()
+	defer func() {
+		if v := recover(); v != nil {
+			p.logger.Error("auto-push: panic in goroutine",
+				slog.String("artist_id", a.ID),
+				slog.String("connection_id", pid.ConnectionID),
+				slog.Any("panic", v),
+				slog.String("stack", string(debug.Stack())))
+		}
+	}()
+
+	conn, connErr := p.connectionService.GetByID(gCtx, pid.ConnectionID)
+	if connErr != nil {
+		p.logger.Error("auto-push: fetching connection",
+			slog.String("artist_id", a.ID),
+			slog.String("connection_id", pid.ConnectionID),
+			slog.String("error", connErr.Error()))
+		// Mirror the PushLocks lookup-failure notify path so the
+		// metadata push surface emits the same toast taxonomy.
+		// shortConnLabel falls back to an 8-char id prefix the
+		// operator can correlate against the settings page
+		// connection list -- it matches the connection_id prefix
+		// shown in the "auto-push: fetching connection" error log
+		// above, so a toast can be cross-referenced to the log
+		// entry without exposing the full UUID. classifyPushErr
+		// translates the lookup failure into a stable category;
+		// connErr is always non-nil in this branch so the empty
+		// return from classifyPushErr is unreachable here.
+		p.notifyPushFailure(pid.ConnectionID, shortConnLabel(pid.ConnectionID), classifyPushErr(connErr), a.ID, artistDisplayName(a), pushOpMetadataPush, connErr)
+		return
+	}
+	if !conn.Enabled {
+		return
+	}
+
+	pusher, ok := NewMetadataPusher(conn, p.logger)
+	if !ok {
+		return // connection type does not support PushMetadata (e.g. Lidarr)
+	}
+
+	if pushErr := pusher.PushMetadata(gCtx, pid.PlatformArtistID, data); pushErr != nil {
+		p.logger.Error("auto-push: metadata push failed",
+			slog.String("artist_id", a.ID),
+			slog.String("artist_name", a.Name),
+			slog.String("connection", conn.Name),
+			slog.String("error", pushErr.Error()))
+		// Same notify path as PushLocks: classifyPushErr translates
+		// the raw transport / status error into the stable taxonomy
+		// (auth_failed, timeout, server_error, ...) so the toast
+		// tells the operator what kind of intervention is needed.
+		p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(pushErr), a.ID, artistDisplayName(a), pushOpMetadataPush, pushErr)
+	} else {
+		p.logger.Info("auto-push: metadata pushed",
+			slog.String("artist_id", a.ID),
+			slog.String("artist_name", a.Name),
+			slog.String("connection", conn.Name))
 	}
 }
 
