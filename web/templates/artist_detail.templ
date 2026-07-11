@@ -1429,8 +1429,12 @@ templ artistDetailPageScript() {
 					// idx persists across presses with no live section focused, so a
 					// shrunk list (collapse/reorder removing a section) can leave cur
 					// pointing past the end -- clamp before computing next/prev so
-					// live[idx] below is always a valid element (#1894 review).
-					cur = Math.min(live.length - 1, Math.max(0, cur));
+					// live[idx] below is always a valid element (#1894 review). Floor
+					// at -1, not 0: -1 is the "nothing focused yet" sentinel the j/k
+					// math below already special-cases (first j -> section 0, first k
+					// -> section 0); flooring at 0 here would skip section 0 on the
+					// very first j press (CR follow-up on the initial clamp).
+					cur = Math.min(live.length - 1, Math.max(-1, cur));
 					idx = key === 'j' ? Math.min(live.length - 1, cur + 1) : Math.max(0, cur - 1);
 					live[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
 					live[idx].setAttribute('tabindex', '-1');

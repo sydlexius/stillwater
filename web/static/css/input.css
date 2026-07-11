@@ -3863,10 +3863,12 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
   margin: 0;
   /* #1894 F3: was a 14px literal; now the artist-detail --sw-ad-font-section
      token (also 1rem) so the value has one source instead of a duplicated
-     rem literal. .sw-next-dashboard resolves this to an invalid var (the
-     token is scoped to .sw-next-artist-detail), which is harmless -- the
-     dashboard-only rule below unconditionally overrides font-size anyway. */
-  font-size: var(--sw-ad-font-section);
+     rem literal. .sw-next-dashboard resolves the token undefined (it's scoped
+     to .sw-next-artist-detail); the dashboard-only rule below unconditionally
+     overrides font-size anyway, but the var() fallback (1rem, matching the
+     token) keeps this declaration valid on its own even if that override rule
+     ever changes (Codoki review). */
+  font-size: var(--sw-ad-font-section, 1rem);
   font-weight: 600;
   color: var(--swd-ink);
 }
@@ -3874,8 +3876,9 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
 .sw-next-artist-detail .sw-dash-card > .head .meta {
   margin-left: auto;
   /* #1894 F3: was a 12px literal; see --sw-ad-font-card-meta above (same
-     invalid-for-dashboard-but-overridden-below reasoning as h2). */
-  font-size: var(--sw-ad-font-card-meta);
+     invalid-for-dashboard-but-overridden-below reasoning as h2, same
+     fallback-for-robustness rationale). */
+  font-size: var(--sw-ad-font-card-meta, 0.8571rem);
   color: var(--swd-ink-3);
   font-variant-numeric: tabular-nums;
 }
