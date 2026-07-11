@@ -2,7 +2,7 @@
 description: Diagnose Emby, Jellyfin, and Lidarr connection failures -- 401/403 errors, image fetcher conflicts, refresh issues.
 ---
 
-<!-- code: internal/connection/emby/client.go (StatusUnauthorized handling), internal/connection/jellyfin/client.go (StatusUnauthorized handling), internal/connection/state.go (ImageFetcherWarning RiskLevel "warn"/"critical"), internal/conflict/gate.go (gate reasons: shared library paths, server-side image saving, server-side NFO saving), internal/api/handlers_shared_filesystem.go (ImageFetcherWarning collection). -->
+<!-- code: internal/connection/emby/client.go (StatusUnauthorized handling), internal/connection/jellyfin/client.go (StatusUnauthorized handling), internal/connection/state.go (ImageFetcherWarning RiskLevel "warn"/"critical"), internal/conflict/gate.go (gate reasons: shared library paths, server-side image saving, server-side NFO saving), internal/api/handlers_shared_filesystem.go (ImageFetcherWarning collection), internal/connection/pathinfer.go (InferPathMappings). -->
 
 # Platform authentication
 
@@ -98,6 +98,18 @@ The site-wide banner reading "NFO file writes paused" means the conflict gate ha
 
 The banner clears within seconds of resolving the conflict.
 
+## Lidarr shows an artist as missing after a rename or merge
+
+Stillwater and Lidarr can mount the same library under different root paths (Stillwater's `/music`, Lidarr's `/data/media`, for example). When that's the case, a **path mapping** on the Lidarr connection translates one into the other; without it (or with a wrong one), a rename or [merge](../how-to/merge-duplicate-artists.md) tells Lidarr about a path it doesn't recognize.
+
+**Check:**
+
+- Does the connection have a path mapping configured at all? Settings > Connections > the Lidarr card > the **Path mapping** panel. If both sides genuinely see the same path, it should be empty; otherwise it needs at least one host-to-Lidarr prefix pair.
+- Does the host prefix match the *exact* path Stillwater shows for the affected artist? A mapping saved against the wrong prefix silently fails to apply.
+- Try **Re-infer** on the connection -- Stillwater re-derives the mapping from artists it can match to Lidarr by MusicBrainz ID. If it reports "no mappings inferred," too few matched artists agree on a single prefix, and you'll need to enter the mapping manually.
+
+**Fix:** correct or add the path mapping, then re-trigger the rename or a Lidarr library refresh. See [Connect Lidarr](../getting-started/connect-lidarr.md#path-mapping-when-stillwater-and-lidarr-disagree-on-paths) for how the mapping and inference work.
+
 ## Re-sync Artists returns nothing new
 
 You connected the platform, you clicked **Re-sync Artists** on the library row, but no new artists appeared.
@@ -137,4 +149,5 @@ When you change credentials on the platform side, the platform sometimes caches 
 
 - [Connect Emby](../getting-started/connect-emby.md)
 - [Connect Jellyfin](../getting-started/connect-jellyfin.md)
+- [Connect Lidarr](../getting-started/connect-lidarr.md)
 - [Field locks](../core-concepts/field-locks.md#what-about-platforms-pushing-back) -- the bigger picture on conflict-gated writes.
