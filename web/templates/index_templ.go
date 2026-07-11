@@ -1322,14 +1322,14 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" hx-get=\"/dashboard/activity\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-on::response-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\" hx-on::send-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\"></div><script>\n\t\t\t\t\t\t(function() {\n\t\t\t\t\t\t\tvar feed = document.getElementById('next-dash-activity-feed');\n\t\t\t\t\t\t\tvar status = document.getElementById('next-dash-activity-status');\n\t\t\t\t\t\t\tvar dot = document.getElementById('next-dash-activity-status-dot');\n\t\t\t\t\t\t\tvar label = document.getElementById('next-dash-activity-status-label');\n\t\t\t\t\t\t\tif (!feed || !status || !dot || !label) return;\n\n\t\t\t\t\t\t\t// SVG path \"d\" attributes for each activity kind icon.\n\t\t\t\t\t\t\t// These MUST stay byte-identical to activityKindIconPath\n\t\t\t\t\t\t\t// in web/templates/index.templ so a live row's\n\t\t\t\t\t\t\t// icon matches a server-rendered initial row's icon.\n\t\t\t\t\t\t\tvar SVG_PATHS = {\n\t\t\t\t\t\t\t\tset: 'M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\tcleared: 'M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\treverted: 'M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3',\n\t\t\t\t\t\t\t\tchanged: 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125'\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t// Icon tone classes per kind. Mirrors activityKindToneClass.\n\t\t\t\t\t\t\tvar KIND_TONE = {\n\t\t\t\t\t\t\t\tset: 'text-green-500 dark:text-green-400',\n\t\t\t\t\t\t\t\tcleared: 'text-red-500 dark:text-red-400',\n\t\t\t\t\t\t\t\treverted: 'text-amber-500 dark:text-amber-400',\n\t\t\t\t\t\t\t\tchanged: 'text-blue-500 dark:text-blue-400'\n\t\t\t\t\t\t\t};\n\n\t\t\t\t\t\t\tvar bp = feed.dataset.basePath || (function() {\n\t\t\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t\t\t})();\n\n\t\t\t\t\t\t\t// setStatus drives the connection indicator (UAT #9). When the\n\t\t\t\t\t\t\t// stream is live the dot PULSES green to read as an active\n\t\t\t\t\t\t\t// broadcast alongside the \"Live feed\" label; while\n\t\t\t\t\t\t\t// disconnected it is a steady amber dot with \"Reconnecting\",\n\t\t\t\t\t\t\t// so live vs reconnecting are distinct by motion + hue + word.\n\t\t\t\t\t\t\t// Labels come from data-* (no hardcoded copy, no \"SSE\").\n\t\t\t\t\t\t\tfunction setStatus(connected) {\n\t\t\t\t\t\t\t\tif (connected) {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelLive || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse';\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelReconnecting || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-amber-500';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tfunction esc(s) {\n\t\t\t\t\t\t\t\treturn String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// relTime formats a Date as a relative string using the\n\t\t\t\t\t\t\t// shared time.* i18n templates carried on the feed's\n\t\t\t\t\t\t\t// data-* attributes, matching activityRelTime so live and\n\t\t\t\t\t\t\t// initial rows agree.\n\t\t\t\t\t\t\tfunction relTime(d) {\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - d.getTime()) / 60000);\n\t\t\t\t\t\t\t\tvar ds = feed.dataset;\n\t\t\t\t\t\t\t\tif (diffMin < 1) return ds.labelJustNow || '';\n\t\t\t\t\t\t\t\tif (diffMin < 60) return (ds.tplMinutes || '').replace('{count}', diffMin);\n\t\t\t\t\t\t\t\tif (diffMin < 1440) return (ds.tplHours || '').replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\treturn (ds.tplDays || '').replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// buildRow constructs a rail row from the SSE payload in\n\t\t\t\t\t\t\t// the SAME shape as DashboardActivityRow (icon + text\n\t\t\t\t\t\t\t// + optional artist link + relative time).\n\t\t\t\t\t\t\tfunction buildRow(d) {\n\t\t\t\t\t\t\t\tvar kind = d.kind || 'changed';\n\t\t\t\t\t\t\t\tvar iconPath = SVG_PATHS[kind] || SVG_PATHS.changed;\n\t\t\t\t\t\t\t\tvar tone = KIND_TONE[kind] || KIND_TONE.changed;\n\t\t\t\t\t\t\t\tvar ts = d.ts ? new Date(d.ts) : new Date();\n\t\t\t\t\t\t\t\tif (isNaN(ts.getTime())) ts = new Date();\n\n\t\t\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\t\t\trow.className = 'sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm';\n\n\t\t\t\t\t\t\t\t// The live payload carries no artist name, so the\n\t\t\t\t\t\t\t\t// artist link (when artistId is present) shows the id\n\t\t\t\t\t\t\t\t// as a fallback label; the next HTMX refresh replaces\n\t\t\t\t\t\t\t\t// it with the named server row.\n\t\t\t\t\t\t\t\tvar artistLink = '';\n\t\t\t\t\t\t\t\tif (d.artistId) {\n\t\t\t\t\t\t\t\t\tartistLink = '<a href=\"' + esc(bp + '/artists/' + d.artistId) +\n\t\t\t\t\t\t\t\t\t\t'\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"' +\n\t\t\t\t\t\t\t\t\t\tesc(feed.dataset.labelViewArtist || '') + '\">' + esc(d.artistId) + '</a>';\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\trow.innerHTML =\n\t\t\t\t\t\t\t\t\t'<svg class=\"h-4 w-4 mt-0.5 shrink-0 ' + tone + '\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\">' +\n\t\t\t\t\t\t\t\t\t'<path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"' + iconPath + '\"></path></svg>' +\n\t\t\t\t\t\t\t\t\t'<div class=\"min-w-0 flex-1\">' +\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-start justify-between gap-2\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"truncate text-gray-800 dark:text-gray-200\">' + esc(d.text || '') + '</span>' +\n\t\t\t\t\t\t\t\t\t'<time datetime=\"' + esc(ts.toISOString()) + '\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">' + esc(relTime(ts)) + '</time>' +\n\t\t\t\t\t\t\t\t\t'</div>' + artistLink + '</div>';\n\t\t\t\t\t\t\t\treturn row;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// showError renders the rail's error state when the initial\n\t\t\t\t\t\t\t// hx-get load of /dashboard/activity fails (500 / network).\n\t\t\t\t\t\t\t// Without it a failed load left the rail blank but \"live\",\n\t\t\t\t\t\t\t// hiding the failure. Mirrors the queue's showQueueError: a\n\t\t\t\t\t\t\t// localized message + a Retry button that re-fires the load.\n\t\t\t\t\t\t\t// Strings come from the feed's data-* (server-localized).\n\t\t\t\t\t\t\tfunction showError() {\n\t\t\t\t\t\t\t\tvar failed = feed.dataset.labelLoadFailed || '';\n\t\t\t\t\t\t\t\tvar retry = feed.dataset.labelRetry || '';\n\t\t\t\t\t\t\t\tfeed.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-center justify-between gap-3 px-4 py-3\" role=\"alert\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + esc(failed) + '</span>' +\n\t\t\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-activity-retry inline-flex items-center rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + esc(retry) + '</button>' +\n\t\t\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\t\t\tvar btn = feed.querySelector('.sw-activity-retry');\n\t\t\t\t\t\t\t\tif (btn) btn.addEventListener('click', function() {\n\t\t\t\t\t\t\t\t\tif (window.htmx) window.htmx.ajax('GET', '/dashboard/activity', {target: '#next-dash-activity-feed', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\twindow.swDashboardActivity = { showError: showError };\n\n\t\t\t\t\t\t\tvar src;\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tsrc = new EventSource(bp + '/api/v1/events/stream');\n\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\t// EventSource construction failed (unsupported / blocked):\n\t\t\t\t\t\t\t\t// surface \"reconnecting\" so the indicator does not falsely\n\t\t\t\t\t\t\t\t// read live, and log so the failure is diagnosable.\n\t\t\t\t\t\t\t\tconsole.warn('SSE init failed', e);\n\t\t\t\t\t\t\t\tsetStatus(false);\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tsrc.onopen = function() { setStatus(true); };\n\t\t\t\t\t\t\tsrc.onerror = function() { setStatus(false); };\n\t\t\t\t\t\t\tsrc.addEventListener('activity.recent', function(e) {\n\t\t\t\t\t\t\t\tvar env = {};\n\t\t\t\t\t\t\t\ttry { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }\n\t\t\t\t\t\t\t\t// The SSE wire payload is an envelope; the structured\n\t\t\t\t\t\t\t\t// rail fields (ts, kind, text, artistId) are nested\n\t\t\t\t\t\t\t\t// under .data, NOT at the top level. Reading the top\n\t\t\t\t\t\t\t\t// level (the spike bug) yields blank rows.\n\t\t\t\t\t\t\t\tvar d = env.data || {};\n\t\t\t\t\t\t\t\t// When the rail boots empty it shows the idle hint\n\t\t\t\t\t\t\t\t// instead of rows; clear it before the first live row.\n\t\t\t\t\t\t\t\tif (feed.querySelector('.sw-activity-row') === null) {\n\t\t\t\t\t\t\t\t\tfeed.innerHTML = '';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tfeed.insertBefore(buildRow(d), feed.firstChild);\n\t\t\t\t\t\t\t\t// Cap at 50 rows in the DOM; drop the oldest (last).\n\t\t\t\t\t\t\t\twhile (feed.children.length > 50) {\n\t\t\t\t\t\t\t\t\tfeed.removeChild(feed.lastChild);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tsetStatus(true);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t})();\n\t\t\t\t\t</script><!-- Footer \"View all activity\" link (restored, mirrors the stable\n\t\t\t\t\t     dashboard's activity feed footer in web/templates/dashboard.templ):\n\t\t\t\t\t     a subtle blue-ink link with a right-chevron, targeting the same\n\t\t\t\t\t     /activity route. A hairline top border separates it from the rows;\n\t\t\t\t\t     it sits inside the content-sized card (does not re-stretch it). --><div class=\"border-t border-[var(--swd-line)] px-4 py-2.5\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" hx-get=\"/dashboard/activity\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-on::response-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\" hx-on::send-error=\"window.swDashboardActivity && window.swDashboardActivity.showError()\"></div><script>\n\t\t\t\t\t\t(function() {\n\t\t\t\t\t\t\tvar feed = document.getElementById('next-dash-activity-feed');\n\t\t\t\t\t\t\tvar status = document.getElementById('next-dash-activity-status');\n\t\t\t\t\t\t\tvar dot = document.getElementById('next-dash-activity-status-dot');\n\t\t\t\t\t\t\tvar label = document.getElementById('next-dash-activity-status-label');\n\t\t\t\t\t\t\tif (!feed || !status || !dot || !label) return;\n\n\t\t\t\t\t\t\t// SVG path \"d\" attributes for each activity kind icon.\n\t\t\t\t\t\t\t// These MUST stay byte-identical to activityKindIconPath\n\t\t\t\t\t\t\t// in web/templates/index.templ so a live row's\n\t\t\t\t\t\t\t// icon matches a server-rendered initial row's icon.\n\t\t\t\t\t\t\tvar SVG_PATHS = {\n\t\t\t\t\t\t\t\tset: 'M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\tcleared: 'M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',\n\t\t\t\t\t\t\t\treverted: 'M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3',\n\t\t\t\t\t\t\t\tchanged: 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125'\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t// Icon tone classes per kind. Mirrors activityKindToneClass.\n\t\t\t\t\t\t\tvar KIND_TONE = {\n\t\t\t\t\t\t\t\tset: 'text-green-500 dark:text-green-400',\n\t\t\t\t\t\t\t\tcleared: 'text-red-500 dark:text-red-400',\n\t\t\t\t\t\t\t\treverted: 'text-amber-500 dark:text-amber-400',\n\t\t\t\t\t\t\t\tchanged: 'text-blue-500 dark:text-blue-400'\n\t\t\t\t\t\t\t};\n\n\t\t\t\t\t\t\tvar bp = feed.dataset.basePath || (function() {\n\t\t\t\t\t\t\t\tvar m = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\t\t\t\treturn m ? m.content : '';\n\t\t\t\t\t\t\t})();\n\n\t\t\t\t\t\t\t// setStatus drives the connection indicator (UAT #9). When the\n\t\t\t\t\t\t\t// stream is live the dot PULSES green to read as an active\n\t\t\t\t\t\t\t// broadcast alongside the \"Live feed\" label; while\n\t\t\t\t\t\t\t// disconnected it is a steady amber dot with \"Reconnecting\",\n\t\t\t\t\t\t\t// so live vs reconnecting are distinct by motion + hue + word.\n\t\t\t\t\t\t\t// Labels come from data-* (no hardcoded copy, no \"SSE\").\n\t\t\t\t\t\t\tfunction setStatus(connected) {\n\t\t\t\t\t\t\t\tif (connected) {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelLive || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse';\n\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\tlabel.textContent = status.dataset.labelReconnecting || '';\n\t\t\t\t\t\t\t\t\tdot.className = 'inline-block h-2 w-2 rounded-full bg-amber-500';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tfunction esc(s) {\n\t\t\t\t\t\t\t\treturn String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// relTime formats a Date as a relative string using the\n\t\t\t\t\t\t\t// shared time.* i18n templates carried on the feed's\n\t\t\t\t\t\t\t// data-* attributes, matching activityRelTime so live and\n\t\t\t\t\t\t\t// initial rows agree.\n\t\t\t\t\t\t\tfunction relTime(d) {\n\t\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - d.getTime()) / 60000);\n\t\t\t\t\t\t\t\tvar ds = feed.dataset;\n\t\t\t\t\t\t\t\tif (diffMin < 1) return ds.labelJustNow || '';\n\t\t\t\t\t\t\t\tif (diffMin < 60) return (ds.tplMinutes || '').replace('{count}', diffMin);\n\t\t\t\t\t\t\t\tif (diffMin < 1440) return (ds.tplHours || '').replace('{count}', Math.floor(diffMin / 60));\n\t\t\t\t\t\t\t\treturn (ds.tplDays || '').replace('{count}', Math.floor(diffMin / 1440));\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// buildRow constructs a rail row from the SSE payload in\n\t\t\t\t\t\t\t// the SAME shape as DashboardActivityRow (icon + text\n\t\t\t\t\t\t\t// + optional artist link + relative time).\n\t\t\t\t\t\t\tfunction buildRow(d) {\n\t\t\t\t\t\t\t\tvar kind = d.kind || 'changed';\n\t\t\t\t\t\t\t\tvar iconPath = SVG_PATHS[kind] || SVG_PATHS.changed;\n\t\t\t\t\t\t\t\tvar tone = KIND_TONE[kind] || KIND_TONE.changed;\n\t\t\t\t\t\t\t\tvar ts = d.ts ? new Date(d.ts) : new Date();\n\t\t\t\t\t\t\t\tif (isNaN(ts.getTime())) ts = new Date();\n\n\t\t\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\t\t\trow.className = 'sw-activity-row flex items-start gap-2 px-4 py-2.5 text-sm';\n\n\t\t\t\t\t\t\t\t// The live payload carries no artist name, so the\n\t\t\t\t\t\t\t\t// artist link (when artistId is present) shows the id\n\t\t\t\t\t\t\t\t// as a fallback label; the next HTMX refresh replaces\n\t\t\t\t\t\t\t\t// it with the named server row.\n\t\t\t\t\t\t\t\tvar artistLink = '';\n\t\t\t\t\t\t\t\tif (d.artistId) {\n\t\t\t\t\t\t\t\t\tartistLink = '<a href=\"' + esc(bp + '/artists/' + d.artistId) +\n\t\t\t\t\t\t\t\t\t\t'\" class=\"mt-0.5 block truncate text-xs text-blue-600 hover:underline dark:text-blue-400\" title=\"' +\n\t\t\t\t\t\t\t\t\t\tesc(feed.dataset.labelViewArtist || '') + '\">' + esc(d.artistId) + '</a>';\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\trow.innerHTML =\n\t\t\t\t\t\t\t\t\t'<svg class=\"h-4 w-4 mt-0.5 shrink-0 ' + tone + '\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\">' +\n\t\t\t\t\t\t\t\t\t'<path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"' + iconPath + '\"></path></svg>' +\n\t\t\t\t\t\t\t\t\t'<div class=\"min-w-0 flex-1\">' +\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-start justify-between gap-2\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"truncate text-gray-800 dark:text-gray-200\">' + esc(d.text || '') + '</span>' +\n\t\t\t\t\t\t\t\t\t'<time datetime=\"' + esc(ts.toISOString()) + '\" class=\"shrink-0 text-[10px] tabular-nums text-gray-500 dark:text-gray-400\">' + esc(relTime(ts)) + '</time>' +\n\t\t\t\t\t\t\t\t\t'</div>' + artistLink + '</div>';\n\t\t\t\t\t\t\t\treturn row;\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t// showError renders the rail's error state when the initial\n\t\t\t\t\t\t\t// hx-get load of /dashboard/activity fails (500 / network).\n\t\t\t\t\t\t\t// Without it a failed load left the rail blank but \"live\",\n\t\t\t\t\t\t\t// hiding the failure. Mirrors the queue's showQueueError: a\n\t\t\t\t\t\t\t// localized message + a Retry button that re-fires the load.\n\t\t\t\t\t\t\t// Strings come from the feed's data-* (server-localized).\n\t\t\t\t\t\t\tfunction showError() {\n\t\t\t\t\t\t\t\tvar failed = feed.dataset.labelLoadFailed || '';\n\t\t\t\t\t\t\t\tvar retry = feed.dataset.labelRetry || '';\n\t\t\t\t\t\t\t\tfeed.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div class=\"flex items-center justify-between gap-3 px-4 py-3\" role=\"alert\">' +\n\t\t\t\t\t\t\t\t\t'<span class=\"text-sm text-red-700 dark:text-red-300\">' + esc(failed) + '</span>' +\n\t\t\t\t\t\t\t\t\t'<button type=\"button\" class=\"sw-activity-retry inline-flex items-center rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-gray-800 dark:text-red-300\">' + esc(retry) + '</button>' +\n\t\t\t\t\t\t\t\t\t'</div>';\n\t\t\t\t\t\t\t\tvar btn = feed.querySelector('.sw-activity-retry');\n\t\t\t\t\t\t\t\tif (btn) btn.addEventListener('click', function() {\n\t\t\t\t\t\t\t\t\tif (window.htmx) window.htmx.ajax('GET', '/dashboard/activity', {target: '#next-dash-activity-feed', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\twindow.swDashboardActivity = { showError: showError };\n\n\t\t\t\t\t\t\tvar src;\n\n\t\t\t\t\t\t\t// Named so it can be re-run on bfcache restore (pageshow\n\t\t\t\t\t\t\t// below), mirroring the connect()/disconnect() shape used\n\t\t\t\t\t\t\t// by sse.js and logs.templ.\n\t\t\t\t\t\t\tfunction connectActivity() {\n\t\t\t\t\t\t\t\tif (src) {\n\t\t\t\t\t\t\t\t\ttry { src.close(); } catch (e) { /* ignore */ }\n\t\t\t\t\t\t\t\t\tsrc = null;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\t\tsrc = new EventSource(bp + '/api/v1/events/stream');\n\t\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\t\t// EventSource construction failed (unsupported / blocked):\n\t\t\t\t\t\t\t\t\t// surface \"reconnecting\" so the indicator does not falsely\n\t\t\t\t\t\t\t\t\t// read live, and log so the failure is diagnosable.\n\t\t\t\t\t\t\t\t\tconsole.warn('SSE init failed', e);\n\t\t\t\t\t\t\t\t\tsetStatus(false);\n\t\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tsrc.onopen = function() { setStatus(true); };\n\t\t\t\t\t\t\t\tsrc.onerror = function() { setStatus(false); };\n\t\t\t\t\t\t\t\tsrc.addEventListener('activity.recent', function(e) {\n\t\t\t\t\t\t\t\t\tvar env = {};\n\t\t\t\t\t\t\t\t\ttry { env = JSON.parse(e.data || '{}'); } catch (err) { console.warn('SSE envelope parse failed', err); return; }\n\t\t\t\t\t\t\t\t\t// The SSE wire payload is an envelope; the structured\n\t\t\t\t\t\t\t\t\t// rail fields (ts, kind, text, artistId) are nested\n\t\t\t\t\t\t\t\t\t// under .data, NOT at the top level. Reading the top\n\t\t\t\t\t\t\t\t\t// level (the spike bug) yields blank rows.\n\t\t\t\t\t\t\t\t\tvar d = env.data || {};\n\t\t\t\t\t\t\t\t\t// When the rail boots empty it shows the idle hint\n\t\t\t\t\t\t\t\t\t// instead of rows; clear it before the first live row.\n\t\t\t\t\t\t\t\t\tif (feed.querySelector('.sw-activity-row') === null) {\n\t\t\t\t\t\t\t\t\t\tfeed.innerHTML = '';\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\tfeed.insertBefore(buildRow(d), feed.firstChild);\n\t\t\t\t\t\t\t\t\t// Cap at 50 rows in the DOM; drop the oldest (last).\n\t\t\t\t\t\t\t\t\twhile (feed.children.length > 50) {\n\t\t\t\t\t\t\t\t\t\tfeed.removeChild(feed.lastChild);\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\tsetStatus(true);\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tconnectActivity();\n\n\t\t\t\t\t\t\t// Close the stream on unload so the browser does not log a\n\t\t\t\t\t\t\t// benign aborted-connection error when the tab navigates\n\t\t\t\t\t\t\t// away or closes (#2262). pagehide is more reliable than\n\t\t\t\t\t\t\t// beforeunload (fires on bfcache navigations too); the\n\t\t\t\t\t\t\t// guard makes this idempotent and null-safe if the\n\t\t\t\t\t\t\t// EventSource was never opened (e.g. construction failed\n\t\t\t\t\t\t\t// above).\n\t\t\t\t\t\t\twindow.addEventListener('pagehide', function() {\n\t\t\t\t\t\t\t\tif (src) {\n\t\t\t\t\t\t\t\t\ttry { src.close(); } catch (e) { /* ignore */ }\n\t\t\t\t\t\t\t\t\tsrc = null;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t});\n\n\t\t\t\t\t\t\t// Reconnect on bfcache restore. pagehide above fires for a\n\t\t\t\t\t\t\t// real bfcache suspend too (not just teardown), so a\n\t\t\t\t\t\t\t// back/forward restore (evt.persisted) leaves the stream\n\t\t\t\t\t\t\t// silently dead unless it is reopened here; connectActivity()\n\t\t\t\t\t\t\t// already tears down any existing source first.\n\t\t\t\t\t\t\twindow.addEventListener('pageshow', function(evt) {\n\t\t\t\t\t\t\t\tif (evt.persisted) connectActivity();\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t})();\n\t\t\t\t\t</script><!-- Footer \"View all activity\" link (restored, mirrors the stable\n\t\t\t\t\t     dashboard's activity feed footer in web/templates/dashboard.templ):\n\t\t\t\t\t     a subtle blue-ink link with a right-chevron, targeting the same\n\t\t\t\t\t     /activity route. A hairline top border separates it from the rows;\n\t\t\t\t\t     it sits inside the content-sized card (does not re-stretch it). --><div class=\"border-t border-[var(--swd-line)] px-4 py-2.5\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var84 templ.SafeURL
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/activity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 711, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 745, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1342,7 +1342,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.view_all_activity"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 714, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 748, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 			if templ_7745c5c3_Err != nil {
@@ -1355,7 +1355,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 730, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 764, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 			if templ_7745c5c3_Err != nil {
@@ -1368,7 +1368,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var87 string
 			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.search"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 731, Col: 139}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 765, Col: 139}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 			if templ_7745c5c3_Err != nil {
@@ -1381,7 +1381,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var88 string
 			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_filters"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 733, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 767, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 			if templ_7745c5c3_Err != nil {
@@ -1394,7 +1394,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.run_rules"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 735, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 769, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 			if templ_7745c5c3_Err != nil {
@@ -1407,7 +1407,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var90 string
 			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 737, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 771, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 			if templ_7745c5c3_Err != nil {
@@ -1420,7 +1420,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 739, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 773, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 			if templ_7745c5c3_Err != nil {
@@ -1433,7 +1433,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var92 string
 			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 741, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 775, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 			if templ_7745c5c3_Err != nil {
@@ -1446,7 +1446,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var93 string
 			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.page_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 743, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 777, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 			if templ_7745c5c3_Err != nil {
@@ -1459,7 +1459,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var94 string
 			templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_open"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 745, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 779, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 			if templ_7745c5c3_Err != nil {
@@ -1472,7 +1472,7 @@ func IndexPage(assets AssetPaths, stats artist.HealthStatsResult, healthStatsErr
 			var templ_7745c5c3_Var95 string
 			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.shortcuts.tip_undo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 747, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 781, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 			if templ_7745c5c3_Err != nil {
@@ -1615,7 +1615,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var102 string
 			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1349, Col: 158}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1383, Col: 158}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 			if templ_7745c5c3_Err != nil {
@@ -1637,7 +1637,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var103 string
 			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1360, Col: 158}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1394, Col: 158}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 			if templ_7745c5c3_Err != nil {
@@ -1650,7 +1650,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var104 string
 			templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1384, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1418, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var104)
 			if templ_7745c5c3_Err != nil {
@@ -1663,7 +1663,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var105 string
 			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1385, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1419, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var105)
 			if templ_7745c5c3_Err != nil {
@@ -1676,7 +1676,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var106 string
 			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_open"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1386, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1420, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var106)
 			if templ_7745c5c3_Err != nil {
@@ -1689,7 +1689,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var107 string
 			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_prev"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1387, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1421, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
 			if templ_7745c5c3_Err != nil {
@@ -1702,7 +1702,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var108 string
 			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.page_next"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1388, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1422, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var108)
 			if templ_7745c5c3_Err != nil {
@@ -1715,7 +1715,7 @@ func DashboardActionQueue(data ActionQueueData) templ.Component {
 			var templ_7745c5c3_Var109 string
 			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.shortcuts.tip_undo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1390, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1424, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var109)
 			if templ_7745c5c3_Err != nil {
@@ -1824,7 +1824,7 @@ func DashboardActionQueuePage(data ActionQueueData) templ.Component {
 		var templ_7745c5c3_Var111 string
 		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.queue_meta", dashQueueRangeStart(data), dashQueueRangeEnd(data), data.Total))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1455, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1489, Col: 157}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 		if templ_7745c5c3_Err != nil {
@@ -1916,7 +1916,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		var templ_7745c5c3_Var113 string
 		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue("queue-item-" + v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1503, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1537, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var113)
 		if templ_7745c5c3_Err != nil {
@@ -1929,7 +1929,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		var templ_7745c5c3_Var114 string
 		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1503, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1537, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
 		if templ_7745c5c3_Err != nil {
@@ -1942,7 +1942,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		var templ_7745c5c3_Var115 templ.SafeURL
 		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + v.ArtistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1505, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1539, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
 		if templ_7745c5c3_Err != nil {
@@ -1955,7 +1955,7 @@ func dashActionRovingItem(v rule.RuleViolation, basePath string) templ.Component
 		var templ_7745c5c3_Var116 string
 		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(v.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1510, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1544, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
 		if templ_7745c5c3_Err != nil {
@@ -2014,7 +2014,7 @@ func DashboardActivityFeed(data ActivityFeedData) templ.Component {
 			var templ_7745c5c3_Var118 string
 			templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1529, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1563, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 			if templ_7745c5c3_Err != nil {
@@ -2027,7 +2027,7 @@ func DashboardActivityFeed(data ActivityFeedData) templ.Component {
 			var templ_7745c5c3_Var119 string
 			templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.activity_idle_action"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1535, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1569, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
 			if templ_7745c5c3_Err != nil {
@@ -2104,7 +2104,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 		var templ_7745c5c3_Var123 string
 		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(activityKindIconPath(activityChangeKind(c)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1553, Col: 103}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1587, Col: 103}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 		if templ_7745c5c3_Err != nil {
@@ -2117,7 +2117,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 		var templ_7745c5c3_Var124 string
 		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(activityChangeText(ctx, c))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1557, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1591, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 		if templ_7745c5c3_Err != nil {
@@ -2130,7 +2130,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 		var templ_7745c5c3_Var125 string
 		templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1559, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1593, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var125)
 		if templ_7745c5c3_Err != nil {
@@ -2143,7 +2143,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 		var templ_7745c5c3_Var126 string
 		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1560, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1594, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 		if templ_7745c5c3_Err != nil {
@@ -2156,7 +2156,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 		var templ_7745c5c3_Var127 string
 		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(activityRelTime(ctx, c.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1563, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1597, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
 		if templ_7745c5c3_Err != nil {
@@ -2174,7 +2174,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 			var templ_7745c5c3_Var128 templ.SafeURL
 			templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + c.ArtistID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1568, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1602, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 			if templ_7745c5c3_Err != nil {
@@ -2187,7 +2187,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 			var templ_7745c5c3_Var129 string
 			templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "dashboard.view_artist"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1570, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1604, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var129)
 			if templ_7745c5c3_Err != nil {
@@ -2200,7 +2200,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 			var templ_7745c5c3_Var130 string
 			templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(c.ArtistName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1572, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1606, Col: 19}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
 			if templ_7745c5c3_Err != nil {

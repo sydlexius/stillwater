@@ -377,13 +377,36 @@
     });
   }
 
-  // Disconnect cleanly when the page unloads.
-  window.addEventListener("beforeunload", function () {
+  // Disconnect cleanly when the page unloads. pagehide fires more reliably
+  // than beforeunload (including bfcache navigations) and closing the
+  // EventSource here -- rather than leaving the browser to abort the
+  // in-flight request on navigation -- avoids a benign but noisy connection
+  // error being logged to the console (#2262). beforeunload stays as a
+  // belt-and-suspenders fallback for browsers/contexts where pagehide is
+  // unavailable; closeSource is idempotent and null-safe so running both
+  // handlers is harmless.
+  function closeSource() {
     if (retryTimer) {
       clearTimeout(retryTimer);
+      retryTimer = null;
     }
     if (source) {
-      source.close();
+      try { source.close(); } catch (e) { /* ignore */ }
+      source = null;
+    }
+  }
+  window.addEventListener("pagehide", closeSource);
+  window.addEventListener("beforeunload", closeSource);
+
+  // Reconnect on bfcache restore. pagehide above only closes the source when
+  // the page is actually being torn down; when it fires because the page was
+  // suspended into the back/forward cache instead (evt.persisted), the
+  // stream must be reopened on restore or it stays silently dead (#2262
+  // follow-up). connect() already tears down any existing source first, so
+  // calling it here is safe even if closeSource ran on the way out.
+  window.addEventListener("pageshow", function (evt) {
+    if (evt.persisted) {
+      connect();
     }
   });
 
@@ -391,14 +414,7 @@
   window.swSSE = {
     connect: connect,
     disconnect: function () {
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      if (source) {
-        source.close();
-        source = null;
-      }
+      closeSource();
     },
     isConnected: function () {
       return source !== null && source.readyState === EventSource.OPEN;
