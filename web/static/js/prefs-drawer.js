@@ -678,10 +678,13 @@
         fontSizeSlider.value = String(fsStop);
         // data-stop-names always carries the 5 localized stop labels (server
         // contract, prefs_drawer.templ), so fsLabels[fsStop] (stop in 0..4) is
-        // always defined -- no raw-enum fallback needed. The || '' still guards
-        // a missing attribute from throwing on .split.
+        // always defined -- no raw-enum fallback needed. The || '' on the
+        // attribute guards a missing attribute from throwing on .split; the
+        // || '' on the label keeps that same defensive path from surfacing a
+        // literal "undefined" in the value/aria-valuetext if the contract is
+        // ever violated (degrades to blank, not the raw enum).
         var fsLabels = (fontSizeSlider.getAttribute('data-stop-names') || '').split('|');
-        var fsLabel  = fsLabels[fsStop];
+        var fsLabel  = fsLabels[fsStop] || '';
         fontSizeSlider.setAttribute('aria-valuetext', fsLabel);
         var fsValueEl = drawer.querySelector('#pref-d-font-size-value');
         if (fsValueEl) { fsValueEl.textContent = fsLabel; }
@@ -851,7 +854,9 @@
         var stop = parseInt(fontSizeSlider.value, 10);
         // FONT_SIZE_LABELS is the 5-label data-stop-names contract; stop is
         // clamped to the slider's 0..4 range, so the label is always defined.
-        var label = FONT_SIZE_LABELS[stop];
+        // The || '' degrades to blank (not "undefined") if the contract is
+        // ever violated, without reintroducing the raw-enum fallback.
+        var label = FONT_SIZE_LABELS[stop] || '';
         fontSizeSlider.setAttribute('aria-valuetext', label);
         if (fontSizeValueLabel) { fontSizeValueLabel.textContent = label; }
       });
