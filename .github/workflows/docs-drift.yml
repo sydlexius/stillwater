@@ -97,7 +97,7 @@ jobs:
               - 'internal/scraper/**'
               - 'internal/api/handlers_*'
             docs:
-              - 'docs/**'
+              - 'docs/site/src/**'
 
       - name: Apply or clear docs-drift advisory
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -274,7 +274,11 @@ jobs:
                     ? '_The hard gate no longer applies; merge is not blocked by this check._'
                     : '_This is a soft advisory and never blocks merge._',
                 ].join('\n');
-                await upsertComment(cleared);
+                if (existing) {
+                  await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: cleared });
+                } else {
+                  await github.rest.issues.createComment({ owner, repo, issue_number, body: cleared });
+                }
               }
               await setLabel(NEEDS_LABEL, false);
             }
