@@ -609,6 +609,13 @@ templ ArtistMergeModal() {
 				// the row gives keyboard users a visible focus ring.
 				row.className = 'sw-merge-row flex items-start gap-3 p-2 cursor-pointer';
 
+				// Accessible name folds in the path (#1894 F2 a11y): near-duplicate
+				// rows frequently share the same display name, so the path is what
+				// lets a screen-reader user tell two rows apart on this
+				// duplicate-resolution screen. Used by both the survivor radio and the
+				// include toggle below.
+				var accLabel = (m.name || m.id) + (m.path ? ' (' + m.path + ')' : '');
+
 				var radio = document.createElement('input');
 				radio.type = 'radio';
 				radio.name = 'merge-survivor';
@@ -616,7 +623,7 @@ templ ArtistMergeModal() {
 				// sr-only hides the dial but keeps the radio focusable/announced; the
 				// radio carries its own aria-label so no wrapping <label> is needed.
 				radio.className = 'sw-merge-radio sr-only';
-				radio.setAttribute('aria-label', m.name || m.id);
+				radio.setAttribute('aria-label', accLabel);
 				radio.checked = (m.id === current.survivorId);
 				radio.addEventListener('change', function() {
 					current.survivorId = m.id;
@@ -680,7 +687,7 @@ templ ArtistMergeModal() {
 				include.setAttribute('role', 'switch');
 				include.checked = true;
 				include.setAttribute('aria-checked', 'true');
-				var includeLabel = tx('exclude_label') + ': ' + (m.name || m.id);
+				var includeLabel = tx('exclude_label') + ': ' + accLabel;
 				include.setAttribute('aria-label', includeLabel);
 				include.title = includeLabel;
 				include.addEventListener('change', function() {
