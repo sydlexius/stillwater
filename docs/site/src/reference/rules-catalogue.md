@@ -35,7 +35,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Banner image exists](#banner-image-exists) | Image | Disabled, auto | Yes |
 | [Banner minimum resolution](#banner-minimum-resolution) | Image | Disabled, auto | Yes |
 | [Extraneous image files](#extraneous-image-files) | Image | Enabled, manual | Sometimes |
-| [No duplicate images](#no-duplicate-images) | Image | Disabled, auto | Detection-only |
+| [No duplicate images](#no-duplicate-images) | Image | Disabled, manual | Sometimes |
 | [Backdrop/fanart sequencing](#backdropfanart-sequencing) | Image | Disabled, manual | Yes |
 | [Minimum backdrop count](#minimum-backdrop-count) | Image | Disabled, manual | Detection-only |
 | [Logo excessive padding](#logo-excessive-padding) | Image | Disabled, manual | Yes |
@@ -574,24 +574,35 @@ After:  /music/Pink Floyd/ contains fanart.jpg, folder.jpg  (two extraneous file
 
 ## No duplicate images
 
-**Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** warning
+**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** warning
 
 Different image slots should not contain visually similar images (default threshold: 90%)
 
-When the thumbnail and fanart, or logo and banner, contain the same underlying photograph, media server detail pages show the same image in multiple slots, which wastes platform resources and looks unintentional. The rule reads pre-computed perceptual hash (dHash) values from Stillwater's database and compares all cross-slot pairs using Hamming distance; two images are considered duplicates when their similarity meets or exceeds the configured threshold (default 90%). The violation is informational; resolving it requires manually replacing one of the images with a distinct alternative.
+When two fanart slots contain the same underlying photograph, or the thumbnail and fanart (or logo and banner) contain the same underlying photograph, media server detail pages show the same image in multiple slots, which wastes platform resources and looks unintentional. The rule compares all cross-slot pairs, including different fanart slots against each other (not just slot 0 against other types), using perceptual hash (dHash) similarity via Hamming distance; two images are considered duplicates when their similarity meets or exceeds the configured threshold (default 90%). Within-type fanart duplicates are fixable; cross-type duplicates remain informational and require manually replacing one of the images with a distinct alternative.
 
 **When this fires:**
 
 - An artist whose thumbnail and fanart are the same press photo, automatically resized into both slots by an earlier fix pass.
 - An artist where logo.png and banner.jpg were both fetched from the same provider image source and are visually identical despite different dimensions.
-- A library that was seeded by copying the fanart into every image slot as a placeholder before sourcing distinct artwork.
+- An artist with fanart.jpg and fanart2.jpg saved as the same backdrop image after a provider re-fetch duplicated an existing slot.
 
-**Fix:** No automated fix.
+**What the fix does:** Removes redundant within-type fanart duplicates: for each group of visually identical fanart slots, keeps the lowest-numbered slot and deletes the higher-numbered duplicate file(s), then renumbers the survivors into a contiguous sequence. Cross-type duplicates (e.g. thumbnail vs. fanart, or logo vs. banner) are not fixed automatically; resolving them requires manually replacing one of the images with a distinct alternative.
+
+```
+Before: /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg (visually identical), fanart3.jpg
+After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (duplicate fanart2.jpg deleted, former fanart3.jpg renumbered to fanart2.jpg)
+```
 
 **Configurable:**
 
 - Tolerance (default 0.90)
 - Severity (default: warning)
+
+**Caveats:**
+
+- Runs in manual mode only; never auto-deletes files.
+- Skipped on shared-filesystem libraries.
+- Only within-type fanart duplicates are fixable; cross-type duplicates remain informational.
 
 ---
 

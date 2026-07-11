@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -191,9 +192,28 @@ func (c *Client) TriggerLibraryScan(ctx context.Context) error {
 	return nil
 }
 
-// TriggerArtistRefresh refreshes metadata for a specific artist.
+// reimportRefreshQuery forces Jellyfin to re-read an item's on-disk NFO.
+// Jellyfin's OpenAPI confirms local metadata is only re-imported under
+// MetadataRefreshMode=FullRefresh, where ReplaceAllMetadata=true then replaces
+// the item's metadata from the NFO. ReplaceAllImages=false leaves artwork
+// untouched so a re-read does not re-scrape images (#2338). This is the only
+// channel through which NFO-only fields (Disambiguation, YearsActive) reach the
+// platform, underpinning the #2336 field-drop fix.
+const reimportRefreshQuery = "MetadataRefreshMode=FullRefresh&ReplaceAllMetadata=true&ReplaceAllImages=false"
+
+// TriggerArtistRefresh forces Jellyfin to re-import the artist's on-disk NFO,
+// applying NFO-only fields (Disambiguation, YearsActive) the metadata API body
+// cannot carry. Destructive full re-import (ReplaceAllMetadata=true), so callers
+// must gate it on the operator opt-in (FeatureTriggerRefresh); the publish-layer
+// dispatcher (publish.RefreshArtistOnPlatforms) is the sole caller and enforces
+// that gate.
 func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) error {
-	path := fmt.Sprintf("/Items/%s/Refresh", artistID)
+	if strings.TrimSpace(artistID) == "" {
+		return fmt.Errorf("artistID is required")
+	}
+	// PathEscape the ID so a value containing reserved characters cannot break
+	// out of the URL segment; the query string carries the re-import mode.
+	path := fmt.Sprintf("/Items/%s/Refresh?%s", url.PathEscape(artistID), reimportRefreshQuery)
 	if err := c.Post(ctx, path, nil); err != nil {
 		return fmt.Errorf("triggering artist refresh: %w", wrapAuthIfStatusAuth(err))
 	}
