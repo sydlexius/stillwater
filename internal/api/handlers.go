@@ -793,24 +793,20 @@ func (r *Router) authenticateByName(ctx context.Context, authMethod, serverURL, 
 // if the media server issued a new access token during login.
 // setMediaServerDefaults seeds the type-appropriate sub-config for an
 // auto-provisioned media-server connection created during federated login:
-// the three default write features enabled plus the resolved platform user ID
-// (#1686). authMethod is always emby or jellyfin on this path; a non-media
-// type leaves the sub-config nil and Validate normalizes it.
+// the image-write feature enabled plus the resolved platform user ID (#1686).
+// authMethod is always emby or jellyfin on this path; a non-media type leaves
+// the sub-config nil and Validate normalizes it.
 func setMediaServerDefaults(conn *connection.Connection, platformUserID string) {
 	switch conn.Type {
 	case connection.TypeEmby:
 		conn.Emby = &connection.EmbyConfig{
-			FeatureLibraryImport: true,
-			FeatureNFOWrite:      true,
-			FeatureImageWrite:    true,
-			PlatformUserID:       platformUserID,
+			FeatureImageWrite: true,
+			PlatformUserID:    platformUserID,
 		}
 	case connection.TypeJellyfin:
 		conn.Jellyfin = &connection.JellyfinConfig{
-			FeatureLibraryImport: true,
-			FeatureNFOWrite:      true,
-			FeatureImageWrite:    true,
-			PlatformUserID:       platformUserID,
+			FeatureImageWrite: true,
+			PlatformUserID:    platformUserID,
 		}
 	}
 }

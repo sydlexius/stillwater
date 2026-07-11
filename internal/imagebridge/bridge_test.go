@@ -242,8 +242,8 @@ func TestUploadArtistImage_NoImageWriteFeature(t *testing.T) {
 	connSvc := setupTestConnService(t)
 	ctx := context.Background()
 
-	// Create with library_import enabled to prevent the "all false -> all true"
-	// default, then explicitly disable image_write via UpdateFeatures.
+	// Create with image_write enabled, then explicitly disable it via
+	// UpdateFeatures so the bridge must honor the false gate.
 	conn := &connection.Connection{
 		Name:    "No Write",
 		Type:    connection.TypeEmby,
@@ -251,16 +251,14 @@ func TestUploadArtistImage_NoImageWriteFeature(t *testing.T) {
 		APIKey:  "test-key",
 		Enabled: true,
 		Emby: &connection.EmbyConfig{
-			FeatureLibraryImport: true,
-			FeatureNFOWrite:      false,
-			FeatureImageWrite:    true, // will be disabled below
+			FeatureImageWrite: true, // will be disabled below
 		},
 	}
 	if err := connSvc.Create(ctx, conn); err != nil {
 		t.Fatalf("creating connection: %v", err)
 	}
 	// Disable image_write after creation.
-	if err := connSvc.UpdateFeatures(ctx, conn.ID, true, false, false, false, false); err != nil {
+	if err := connSvc.UpdateFeatures(ctx, conn.ID, false, false, false); err != nil {
 		t.Fatalf("disabling image_write: %v", err)
 	}
 

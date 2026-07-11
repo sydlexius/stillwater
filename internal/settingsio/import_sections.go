@@ -185,8 +185,6 @@ func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14
 		if conn.Emby == nil {
 			conn.Emby = &connection.EmbyConfig{}
 		}
-		conn.Emby.FeatureLibraryImport = ce.FeatureLibraryImport
-		conn.Emby.FeatureNFOWrite = ce.FeatureNFOWrite
 		conn.Emby.FeatureImageWrite = ce.FeatureImageWrite
 		if gateV14 {
 			conn.Emby.FeatureMetadataPush = ce.FeatureMetadataPush
@@ -202,8 +200,6 @@ func applyExportConfig(conn *connection.Connection, ce ConnectionExport, gateV14
 		if conn.Jellyfin == nil {
 			conn.Jellyfin = &connection.JellyfinConfig{}
 		}
-		conn.Jellyfin.FeatureLibraryImport = ce.FeatureLibraryImport
-		conn.Jellyfin.FeatureNFOWrite = ce.FeatureNFOWrite
 		conn.Jellyfin.FeatureImageWrite = ce.FeatureImageWrite
 		if gateV14 {
 			conn.Jellyfin.FeatureMetadataPush = ce.FeatureMetadataPush

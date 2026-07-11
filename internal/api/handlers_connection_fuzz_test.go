@@ -76,14 +76,14 @@ func FuzzHandleUpdateConnection(f *testing.F) {
 	// Happy-path seeds.
 	f.Add([]byte(`{"name":"Renamed","enabled":true}`))
 	f.Add([]byte(`{"name":"Full","type":"emby","url":"http://e.local:8096","api_key":"k","enabled":false}`))
-	f.Add([]byte(`{"feature_library_import":true,"feature_nfo_write":false,"feature_image_write":true,"feature_metadata_push":true,"feature_trigger_refresh":false}`))
+	f.Add([]byte(`{"feature_image_write":true,"feature_metadata_push":true,"feature_trigger_refresh":false}`))
 
 	// Empty object (no-op patch).
 	f.Add([]byte(`{}`))
 	// Enabled as string instead of bool.
 	f.Add([]byte(`{"enabled":"yes"}`))
 	// Feature flag set to non-bool.
-	f.Add([]byte(`{"feature_nfo_write":1}`))
+	f.Add([]byte(`{"feature_image_write":1}`))
 	// Extra unknown fields.
 	f.Add([]byte(`{"name":"X","unknown_field":42,"nested":{"a":1}}`))
 	// NUL byte in name.
