@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -255,6 +256,26 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 					"new_artists":       result.NewArtists,
 				},
 			})
+		}
+	}()
+	// Deferred functions run LIFO, so this recover defer -- registered
+	// last -- runs FIRST during a panic unwind, before the completion-status
+	// defer above. Marking the result "failed" here (while status is still
+	// "running") means the completion defer's `if result.Status == "running"`
+	// check no longer matches, so it leaves "failed" alone instead of
+	// overwriting it with "completed". scanWg.Done() (registered first, runs
+	// last) still fires either way, so callers waiting on the WaitGroup are
+	// never blocked by a panicked scan.
+	defer func() {
+		if r := recover(); r != nil {
+			s.mu.Lock()
+			result.Status = "failed"
+			result.Error = fmt.Sprintf("scan panicked: %v", r)
+			s.mu.Unlock()
+			s.logger.Error("scan goroutine panicked",
+				"error", r,
+				"stack", string(debug.Stack()),
+			)
 		}
 	}()
 
