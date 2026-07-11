@@ -3861,14 +3861,24 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
 .sw-next-dashboard .sw-dash-card > .head h2,
 .sw-next-artist-detail .sw-dash-card > .head h2 {
   margin: 0;
-  font-size: 14px;
+  /* #1894 F3: was a 14px literal; now the artist-detail --sw-ad-font-section
+     token (also 1rem) so the value has one source instead of a duplicated
+     rem literal. .sw-next-dashboard resolves the token undefined (it's scoped
+     to .sw-next-artist-detail); the dashboard-only rule below unconditionally
+     overrides font-size anyway, but the var() fallback (1rem, matching the
+     token) keeps this declaration valid on its own even if that override rule
+     ever changes (Codoki review). */
+  font-size: var(--sw-ad-font-section, 1rem);
   font-weight: 600;
   color: var(--swd-ink);
 }
 .sw-next-dashboard .sw-dash-card > .head .meta,
 .sw-next-artist-detail .sw-dash-card > .head .meta {
   margin-left: auto;
-  font-size: 12px;
+  /* #1894 F3: was a 12px literal; see --sw-ad-font-card-meta above (same
+     invalid-for-dashboard-but-overridden-below reasoning as h2, same
+     fallback-for-robustness rationale). */
+  font-size: var(--sw-ad-font-card-meta, 0.8571rem);
   color: var(--swd-ink-3);
   font-variant-numeric: tabular-nums;
 }
@@ -4140,7 +4150,7 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
   border-radius: var(--swd-r-2);
   background: rgba(148, 163, 184, 0.05);
   border: 1px solid var(--swd-line);
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   color: var(--swd-ink-2);
 }
 .sw-next-artist-detail .sw-next-summary-divider {
@@ -4173,7 +4183,7 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
   padding: 3px 0;
   margin: 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.08);
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   line-height: 1.3;
 }
 .sw-next-artist-detail .sw-next-fields [id^="field-"] > dt {
@@ -4503,6 +4513,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   --sw-ad-font-section: 1rem;
   --sw-ad-font-body: 0.875rem;
   --sw-ad-font-meta: max(0.75rem, 10px);
+  --sw-ad-font-card-meta: 0.8571rem; /* was 12px: shared .sw-dash-card .head .meta (#1894 F3) */
   --sw-ad-lh-hero: 1.15;
   --sw-ad-lh-body: 1.6;
   --sw-ad-track-hero: -0.01em;
@@ -4900,7 +4911,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   gap: 5px;
   padding: 1px 8px;
   border-radius: 999px;
-  font-size: 9.5px;
+  font-size: 0.6786rem; /* #1894 F3: was 9.5px, scales with font-size pref */
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -4975,7 +4986,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 .sw-next-artist-detail .sw-ff-pop-title {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-weight: 600;
   color: var(--swd-ink);
   overflow: hidden;
@@ -4984,7 +4995,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 }
 .sw-next-artist-detail .sw-ff-pop-sev {
   flex: none;
-  font-size: 10px;
+  font-size: 0.7143rem; /* #1894 F3: was 10px, scales with font-size pref */
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -5000,7 +5011,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
 .sw-next-artist-detail .sw-ff-pop[data-severity="info"] .sw-ff-pop-sev { color: var(--swd-info); }
 .sw-next-artist-detail .sw-ff-pop-msg {
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   line-height: 1.45;
   color: var(--swd-ink-2);
   white-space: pre-line;
@@ -5022,7 +5033,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   padding: 5px 12px;
   border-radius: var(--swd-r-2, 10px);
   border: 1px solid var(--swd-line);
-  font-size: 12px;
+  font-size: 0.8571rem; /* #1894 F3: was 12px, scales with font-size pref */
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
@@ -5062,13 +5073,13 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
  * shared fragments are unchanged for the stable channel. The section title
  * already shares the 14px .head h2 token. */
 .sw-next-artist-detail [data-sw-section="findings"] .body {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
 }
 .sw-next-artist-detail [data-sw-section="findings"] .body .text-sm {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
 }
 .sw-next-artist-detail [data-sw-section="findings"] .body .text-xs {
-  font-size: 11px;
+  font-size: 0.7857rem; /* #1894 F3: was 11px, scales with font-size pref */
 }
 
 /* History entries were rounded on the right only (rounded-r-lg) against a left
@@ -5152,7 +5163,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   min-width: 0;
 }
 .sw-next-artist-detail .sw-next-stickhdr-name {
-  font-size: 14px;
+  font-size: 1rem; /* #1894 F3: was 14px, scales with font-size pref */
   font-weight: 600;
   color: var(--swd-ink);
   white-space: nowrap;
@@ -5541,7 +5552,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   flex-direction: column;
 }
 .sw-next-artist-detail .sw-next-findings-empty {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-style: italic;
   /* --swd-ink-3 renders at 4.35:1 on the dark card bg (just under AA 4.5 for
    * this small text); --swd-ink-2 clears AA in both themes (#1784 a11y). */
@@ -5572,7 +5583,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   flex: none;
   min-width: 5.5rem;
   margin-top: 1px;
-  font-size: 11px;
+  font-size: 0.7857rem; /* #1894 F3: was 11px, scales with font-size pref */
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -5604,18 +5615,18 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   gap: 8px;
 }
 .sw-next-artist-detail .sw-next-finding-rule {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-weight: 500;
   color: var(--swd-ink-2);
 }
 .sw-next-artist-detail .sw-next-finding-age {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 0.7857rem; /* #1894 F3: was 11px, scales with font-size pref */
   font-variant-numeric: tabular-nums;
   color: var(--swd-ink-3);
 }
 .sw-next-artist-detail .sw-next-finding-msg {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   color: var(--swd-ink-3);
   margin-top: 2px;
 }
@@ -5627,7 +5638,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 .sw-next-artist-detail .sw-next-finding-fix,
 .sw-next-artist-detail .sw-next-finding-dismiss {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-weight: 600;
   background: none;
   border: 0;
@@ -5864,7 +5875,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border: 1px solid var(--sw-glass-border);
   background: transparent;
   color: var(--sw-content-text);
-  font-size: 12px;
+  font-size: 0.8571rem; /* #1894 F3: was 12px, scales with font-size pref */
   outline: none;
   box-sizing: border-box;
 }
@@ -5887,7 +5898,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 .sw-rep-list-label {
-  font-size: 10.5px;
+  font-size: 0.75rem; /* #1894 F3: was 10.5px, scales with font-size pref */
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -5937,7 +5948,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 .sw-rep-item-label {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -5945,7 +5956,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 .sw-rep-item-desc {
-  font-size: 11.5px;
+  font-size: 0.8214rem; /* #1894 F3: was 11.5px, scales with font-size pref */
   color: var(--sw-content-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -5990,7 +6001,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 .sw-rep-pane-title {
-  font-size: 17px;
+  font-size: 1.2143rem; /* #1894 F3: was 17px, scales with font-size pref */
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--sw-content-text);
@@ -5999,7 +6010,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 .sw-rep-pane-desc {
-  font-size: 12.5px;
+  font-size: 0.8929rem; /* #1894 F3: was 12.5px, scales with font-size pref */
   color: var(--sw-content-text-secondary);
   margin: 2px 0 0;
   line-height: 1.4;
@@ -6022,7 +6033,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border: 1px solid var(--sw-glass-border);
   background: transparent;
   color: var(--sw-content-text);
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease;
@@ -6111,7 +6122,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border: 1px solid var(--sw-glass-border);
   background: transparent;
   color: var(--sw-content-text);
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   outline: none;
   box-sizing: border-box;
 }
@@ -6142,7 +6153,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border: 1px solid var(--sw-glass-border);
   background: transparent;
   color: var(--sw-content-text);
-  font-size: 12.5px;
+  font-size: 0.8929rem; /* #1894 F3: was 12.5px, scales with font-size pref */
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease;
 }
@@ -6170,7 +6181,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border: 1px solid var(--sw-glass-border);
   background: transparent;
   color: var(--sw-content-text);
-  font-size: 12.5px;
+  font-size: 0.8929rem; /* #1894 F3: was 12.5px, scales with font-size pref */
   text-decoration: none;
   transition: background-color 0.12s ease;
 }
@@ -6197,7 +6208,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--sw-content-text-secondary);
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-weight: 500;
   cursor: pointer;
   margin-bottom: -1px;
@@ -6253,14 +6264,14 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 }
 
 .sw-rep-placeholder-title {
-  font-size: 15px;
+  font-size: 1.0714rem; /* #1894 F3: was 15px, scales with font-size pref */
   font-weight: 600;
   color: var(--sw-content-text);
   margin: 0;
 }
 
 .sw-rep-placeholder-desc {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   color: var(--sw-content-text-secondary);
   margin: 0;
   max-width: 320px;
@@ -6281,7 +6292,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 /* Rule pass-rates inline list (the /api/v1/reports/rule-pass-rates endpoint is
    JSON-only, so this pane renders its own list rather than reusing a fragment). */
 .sw-rep-rate-empty {
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   color: var(--sw-content-text-secondary);
   margin: 0;
 }
@@ -6313,18 +6324,18 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   color: var(--sw-content-text);
 }
 
 .sw-rep-rate-counts {
-  font-size: 12px;
+  font-size: 0.8571rem; /* #1894 F3: was 12px, scales with font-size pref */
   color: var(--sw-content-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
 .sw-rep-rate-pct {
-  font-size: 12.5px;
+  font-size: 0.8929rem; /* #1894 F3: was 12.5px, scales with font-size pref */
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   min-width: 3.5em;
@@ -6417,7 +6428,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   border-radius: var(--sw-radius-sm);
   background: transparent;
   color: var(--sw-content-text);
-  font-size: 13px;
+  font-size: 0.9286rem; /* #1894 F3: was 13px, scales with font-size pref */
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease;
@@ -6527,7 +6538,7 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 .sw-save-modal-btn-primary {
   padding: 8px 12px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 1rem; /* #1894 F3: was 14px, scales with font-size pref */
   font-weight: 500;
   background: transparent;
   color: #111827;
