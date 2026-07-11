@@ -749,6 +749,18 @@ func TestMergeArtists_ReapsBackupDir(t *testing.T) {
 		t.Fatalf("write backup thumb: %v", err)
 	}
 
+	// The survivor's own pre-existing .sw-backup content, which the loser-side
+	// sweep must leave untouched.
+	survivorBefore := mustGetArtist(t, svc, ctx, survivorID)
+	survivorBackupDir := filepath.Join(survivorBefore.Path, image.BackupDirName)
+	if err := os.MkdirAll(survivorBackupDir, 0o755); err != nil {
+		t.Fatalf("mkdir survivor .sw-backup: %v", err)
+	}
+	survivorBackupFile := filepath.Join(survivorBackupDir, "existing.jpg")
+	if err := os.WriteFile(survivorBackupFile, []byte("survivor-pre-existing-backup"), 0o600); err != nil {
+		t.Fatalf("write survivor backup file: %v", err)
+	}
+
 	res, err := svc.MergeArtists(ctx, MergeRequest{
 		SurvivorID:  survivorID,
 		LoserIDs:    []string{loserID},
@@ -779,8 +791,13 @@ func TestMergeArtists_ReapsBackupDir(t *testing.T) {
 		t.Errorf("expected loser .sw-backup removed (ENOENT), got err = %v", err)
 	}
 	survivor := mustGetArtist(t, svc, ctx, survivorID)
-	if _, err := os.Stat(filepath.Join(survivor.Path, image.BackupDirName)); !os.IsNotExist(err) {
-		t.Errorf("loser .sw-backup must not be carried into survivor")
+	if _, err := os.Stat(filepath.Join(survivor.Path, image.BackupDirName, "thumb", "thumb.jpg")); !os.IsNotExist(err) {
+		t.Errorf("loser's backed-up thumb must not be carried into survivor's .sw-backup")
+	}
+	// (e) the survivor's own pre-existing .sw-backup content is untouched by
+	// the loser-side sweep.
+	if _, err := os.Stat(survivorBackupFile); err != nil {
+		t.Errorf("survivor's pre-existing .sw-backup file must survive the merge, got err = %v", err)
 	}
 }
 
