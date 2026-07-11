@@ -2087,3 +2087,50 @@ func TestHasNumericSuffix(t *testing.T) {
 		}
 	}
 }
+
+// panicLibraryLister panics on List, standing in for an unexpected failure
+// (e.g. a corrupt library record) partway through the scan goroutine.
+type panicLibraryLister struct{}
+
+func (panicLibraryLister) List(_ context.Context) ([]library.Library, error) {
+	panic("simulated scan panic")
+}
+
+// TestScan_RecoversFromPanic verifies runScan's recover() defer: a panic
+// inside the scan goroutine must not crash the process, must leave the scan
+// result as "failed" (never "completed"), and must still release scanWg so
+// Shutdown/waitForScan never deadlock waiting on a panicked scan.
+func TestScan_RecoversFromPanic(t *testing.T) {
+	t.Parallel()
+	svc, _ := setupScanner(t, "")
+	svc.SetLibraryLister(panicLibraryLister{})
+
+	if _, err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	final := waitForScan(t, svc, 5*time.Second)
+
+	if final.Status != "failed" {
+		t.Errorf("status = %q, want failed", final.Status)
+	}
+	if final.Error == "" {
+		t.Error("Error = \"\", want a non-empty panic message")
+	}
+	if final.CompletedAt == nil {
+		t.Error("CompletedAt = nil, want set")
+	}
+
+	// A leaked scanWg would hang Shutdown forever; bound it so a
+	// regression fails the test instead of hanging the suite.
+	done := make(chan struct{})
+	go func() {
+		svc.Shutdown()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown did not return: scanWg was not released after a panicked scan")
+	}
+}
