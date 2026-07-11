@@ -1751,28 +1751,9 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		}, nil
 	}
 
-	paths, discErr := img.DiscoverFanart(a.Path, primaryName)
-	if discErr != nil {
-		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
-	}
-
-	var removedNames []string
-	survivors := make([]string, 0, len(paths))
-	for i, p := range paths {
-		if !toDelete[i] {
-			survivors = append(survivors, p)
-			continue
-		}
-		if rmErr := os.Remove(p); rmErr != nil {
-			return nil, fmt.Errorf("deleting duplicate fanart %s (already removed: %s) for %s: %w", filepath.Base(p), strings.Join(removedNames, ", "), a.Name, rmErr)
-		}
-		f.logger.Info("deleted duplicate fanart slot",
-			"artist", a.Name, "slot", i, "file", filepath.Base(p))
-		removedNames = append(removedNames, filepath.Base(p))
-	}
-
-	if renumberErr := img.RenumberFanart(a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
-		return nil, fmt.Errorf("renumbering fanart after removing %d duplicate(s) (%s) for %s: %w", len(removedNames), strings.Join(removedNames, ", "), a.Name, renumberErr)
+	removedNames, delErr := f.deleteDuplicateFanartWithRollback(a, primaryName, kodiNumbering, toDelete)
+	if delErr != nil {
+		return nil, delErr
 	}
 
 	// Resync the artist's fanart fields from disk so the pipeline's
@@ -1786,6 +1767,93 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		Fixed:   true,
 		Message: fmt.Sprintf("removed %d duplicate fanart file(s) for %s: %s", len(removedNames), a.Name, strings.Join(removedNames, ", ")),
 	}, nil
+}
+
+// deleteDuplicateFanartWithRollback discovers the artist's fanart files and
+// removes the within-type duplicates named by toDelete (keyed by compacted slot
+// position, matching DiscoverFanart's ordering; see resolveImageDupHash), then
+// renumbers the survivors to close the resulting gap. It returns the base names
+// of the removed files.
+//
+// Deletion is crash-safe, mirroring img.RenumberFanart's two-phase
+// stage/rollback shape: each duplicate is first STAGED to a tomb (renamed to
+// ".dup_pending_delete.tmp") rather than unlinked immediately; the tombs are
+// permanently unlinked only AFTER RenumberFanart succeeds. On any failure before
+// that commit point, every staged tomb is restored to its original path
+// (best-effort) so no distinct artwork is lost on a partial failure. A
+// post-commit tomb-unlink failure is logged, not rolled back -- the survivors
+// are already renumbered, and a leftover tomb is ignored by discovery.
+func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
+	paths, discErr := img.DiscoverFanart(a.Path, primaryName)
+	if discErr != nil {
+		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
+	}
+
+	const dupTombSuffix = ".dup_pending_delete.tmp"
+	type stagedDup struct {
+		origPath string // original file path (restore target)
+		tombPath string // staged tomb path
+	}
+	var staged []stagedDup
+	var removedNames []string
+	survivors := make([]string, 0, len(paths))
+
+	// restoreStaged rolls staged tombs back to their originals (best-effort),
+	// returning any restore-error descriptions for inclusion in the wrapped err.
+	restoreStaged := func() []string {
+		var rollbackErrs []string
+		for _, s := range staged {
+			if rbErr := os.Rename(s.tombPath, s.origPath); rbErr != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: %v", filepath.Base(s.origPath), rbErr))
+			}
+		}
+		return rollbackErrs
+	}
+
+	for i, p := range paths {
+		if !toDelete[i] {
+			survivors = append(survivors, p)
+			continue
+		}
+		tombPath := p + dupTombSuffix
+		// Clear any leftover tomb from a previous crashed operation.
+		if rmErr := os.Remove(tombPath); rmErr != nil && !os.IsNotExist(rmErr) {
+			return nil, wrapWithRollbackErrs(restoreStaged(),
+				fmt.Errorf("clearing stale tomb %s for %s: %w", filepath.Base(tombPath), a.Name, rmErr))
+		}
+		if stageErr := os.Rename(p, tombPath); stageErr != nil {
+			return nil, wrapWithRollbackErrs(restoreStaged(),
+				fmt.Errorf("staging duplicate fanart %s for deletion (already staged: %s) for %s: %w", filepath.Base(p), strings.Join(removedNames, ", "), a.Name, stageErr))
+		}
+		staged = append(staged, stagedDup{origPath: p, tombPath: tombPath})
+		f.logger.Info("staged duplicate fanart slot for deletion",
+			"artist", a.Name, "slot", i, "file", filepath.Base(p))
+		removedNames = append(removedNames, filepath.Base(p))
+	}
+
+	if renumberErr := img.RenumberFanart(a.Path, primaryName, survivors, kodiNumbering); renumberErr != nil {
+		return nil, wrapWithRollbackErrs(restoreStaged(),
+			fmt.Errorf("renumbering fanart after removing %d duplicate(s) (%s) for %s: %w", len(removedNames), strings.Join(removedNames, ", "), a.Name, renumberErr))
+	}
+
+	// Committed: permanently unlink the tombs.
+	for _, s := range staged {
+		if rmErr := os.Remove(s.tombPath); rmErr != nil {
+			f.logger.Warn("removing staged duplicate-fanart tomb after renumber",
+				"artist", a.Name, "tomb", filepath.Base(s.tombPath), "error", rmErr)
+		}
+	}
+	return removedNames, nil
+}
+
+// wrapWithRollbackErrs appends any best-effort rollback-error descriptions to
+// err so a partial failure reports both the original cause and any staged files
+// that could not be restored. Returns err unchanged when the rollback was clean.
+func wrapWithRollbackErrs(rollbackErrs []string, err error) error {
+	if len(rollbackErrs) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (rollback errors: %s)", err, strings.Join(rollbackErrs, "; "))
 }
 
 // resyncFanartFields re-discovers fanart files on disk after a mutation and

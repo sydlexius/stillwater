@@ -351,3 +351,66 @@ func TestImageDuplicateFixer_Fix_RemovesDuplicateAndRenumbersSurvivors(t *testin
 		t.Error("FanartExists = false; want true")
 	}
 }
+
+// TestImageDuplicateFixer_Fix_RestoresStagedTombsOnRenumberFailure pins F2's
+// crash-safe deletion contract (issue #2351): ImageDuplicateFixer.Fix STAGES
+// each duplicate to a tomb (never an immediate unlink) and only commits the
+// deletion once RenumberFanart succeeds. If renumbering fails, every staged
+// tomb must be RESTORED to its original path so no distinct artwork is lost.
+//
+// The failure is forced deterministically and host-independently: RenumberFanart
+// clears any stale temp file named fanart_renumber_0.jpg.tmp before staging its
+// first survivor; pre-creating a NON-EMPTY directory at that path makes its
+// os.Remove return ENOTEMPTY, aborting the renumber -- but only after the fixer
+// has already staged the duplicate, exercising the rollback path.
+//
+// Revert-and-rerun proof (#210): reverting F2's staging back to an immediate
+// os.Remove(p) makes this test RED (fanart3.jpg is gone, never restored);
+// restoring the staging turns it GREEN. Measured RED/GREEN reported in the PR.
+func TestImageDuplicateFixer_Fix_RestoresStagedTombsOnRenumberFailure(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-rollback", "Rollback Artist")
+	insertTestImage(t, db, "art-rollback", "fanart", 1)
+	insertTestImage(t, db, "art-rollback", "fanart", 2)
+
+	dir := t.TempDir()
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	createGradientJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1)
+	createGradientJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1) // slot 2: duplicate of slot 1
+
+	// Force RenumberFanart to fail on its very first survivor: it clears a
+	// stale temp file named fanart_renumber_0.jpg.tmp before staging survivor 0
+	// (fanart.jpg, .jpg ext). A non-empty directory at that path makes the
+	// clearing os.Remove return ENOTEMPTY, so RenumberFanart returns an error
+	// after the fixer has already staged the duplicate (fanart3.jpg).
+	blockDir := filepath.Join(dir, "fanart_renumber_0.jpg.tmp")
+	if err := os.Mkdir(blockDir, 0o755); err != nil {
+		t.Fatalf("creating block dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(blockDir, "keep"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("populating block dir: %v", err)
+	}
+
+	f := NewImageDuplicateFixer(db, nil, nonSharedFSCheck(), testLogger())
+	a := &artist.Artist{
+		ID: "art-rollback", Name: "Rollback Artist", Path: dir, LibraryID: "lib-test",
+		FanartExists: true, FanartCount: 3,
+	}
+	_, err := f.Fix(t.Context(), a, &Violation{RuleID: RuleImageDuplicate, Config: RuleConfig{Tolerance: 0.90}})
+	if err == nil {
+		t.Fatal("expected Fix to fail when RenumberFanart fails, got nil error")
+	}
+
+	// Rollback proof: the staged duplicate (fanart3.jpg) is restored to its
+	// original path, and no tomb file is left behind.
+	if _, statErr := os.Stat(filepath.Join(dir, "fanart3.jpg")); statErr != nil {
+		t.Errorf("fanart3.jpg must be RESTORED after rollback: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "fanart3.jpg.dup_pending_delete.tmp")); !os.IsNotExist(statErr) {
+		t.Errorf("staged tomb must not remain after rollback; stat err = %v", statErr)
+	}
+	// The lower duplicate slot's file is untouched.
+	if _, statErr := os.Stat(filepath.Join(dir, "fanart2.jpg")); statErr != nil {
+		t.Errorf("fanart2.jpg should be untouched: %v", statErr)
+	}
+}
