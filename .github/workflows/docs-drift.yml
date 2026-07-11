@@ -1,11 +1,9 @@
 name: Docs Drift
 
-# POLICY: this workflow is a SOFT advisory. It posts a PR comment and applies
-# the `needs-docs-review` label when code paths change without corresponding
-# docs updates, but it NEVER blocks merge.
+# POLICY: this workflow is a two-tier docs-drift check.
 #
-# Enforcement model (as of 2026-06-17):
-#   HARD gates (fail CI, block merge):
+# Enforcement model (as of 2026-07-10, issue #2030):
+#   HARD gates (fail CI, block merge) -- generated references:
 #     - Generated reference pages drift: scripts/check-generated.sh runs
 #       gen-env-reference, gen-cli-reference, gen-rules-catalogue,
 #       gen-settings-reference, gen-doc-anchors, gen-envelope-changelog,
@@ -15,20 +13,33 @@ name: Docs Drift
 #       code-defined key lacks its required metadata (e.g. env:/desc: tags
 #       for config vars; flag:/desc: tags for CLI flags; catalogue entry for
 #       rules). So adding a key without docs is a build failure.
-#   SOFT advisory (this workflow):
-#     - Hand-written narrative docs (provider guides, troubleshooting, API
-#       reference prose) are not generated and cannot be drift-checked
-#       mechanically. This workflow flags those cases.
+#   HARD gates (fail CI, block merge) -- high-risk hand-written surfaces,
+#   this workflow (#2030, hardening #2008's soft advisory):
+#     - `internal/api/openapi.yaml` changes without a corresponding
+#       `docs/**` update. The API spec is the contract for external
+#       integrators.
+#     - Changes to the irreversible/destructive handlers -- filesystem
+#       deletion (`internal/api/handlers_foreign_files.go`), irreversible
+#       artist merge (`internal/api/handlers_artist_duplicates.go`), and
+#       cascade-delete library operations (`internal/api/handlers_library.go`)
+#       -- without a corresponding `docs/**` update (precedent: #1779 / PR
+#       #2007 changed filesystem deletion behavior and was only soft-flagged).
+#   SOFT advisory (this workflow, #2008) -- other hand-written narrative docs:
+#     - Provider guides, troubleshooting, and other API-adjacent handlers
+#       (`internal/provider/**`, `internal/connection/**`,
+#       `internal/scraper/**`, and any `internal/api/handlers_*` outside the
+#       destructive set above) are not generated and cannot be drift-checked
+#       mechanically. This workflow flags those cases without blocking merge.
 #
-# Raising the enforcement level: to make specific surfaces blocking, move
-# them from the soft advisory path to the hard gate (add a -check call in
-# scripts/check-generated.sh). Candidate surfaces for hardening:
-#   - openapi.yaml changes without docs/api/** updates (high-value; the API
-#     spec is the contract for external integrators).
-#   - Handler changes that add/remove destructive operations without
-#     docs updates (precedent: #1779 / PR #2007 changed filesystem deletion
-#     behavior and was only soft-flagged).
-# Decision on this policy requires maintainer sign-off; see issue #2008.
+# The `docs: not-required` label is the opt-out for BOTH tiers: applying it
+# clears a hard block or a soft advisory without requiring a new commit
+# (the `labeled`/`unlabeled` trigger below re-runs the job).
+#
+# Raising the enforcement level further: to make additional surfaces
+# blocking, either add a new hard-gate filter group here (mirroring
+# `openapi`/`destructive`) or move the check into
+# scripts/check-generated.sh if the surface can be made mechanically
+# generated. Maintainer sign-off required; see issues #2008 and #2030.
 
 on:
   pull_request:
@@ -72,19 +83,28 @@ jobs:
         id: filter
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
+          list-files: shell
           filters: |
+            openapi:
+              - 'internal/api/openapi.yaml'
+            destructive:
+              - 'internal/api/handlers_foreign_files.go'
+              - 'internal/api/handlers_artist_duplicates.go'
+              - 'internal/api/handlers_library.go'
             code:
               - 'internal/provider/**'
               - 'internal/connection/**'
               - 'internal/scraper/**'
-              - 'internal/api/openapi.yaml'
               - 'internal/api/handlers_*'
             docs:
-              - 'docs/**'
+              - 'docs/site/src/**'
 
       - name: Apply or clear docs-drift advisory
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          OPENAPI_CHANGED: ${{ steps.filter.outputs.openapi }}
+          DESTRUCTIVE_CHANGED: ${{ steps.filter.outputs.destructive }}
+          DESTRUCTIVE_FILES: ${{ steps.filter.outputs.destructive_files }}
           CODE_CHANGED: ${{ steps.filter.outputs.code }}
           DOCS_CHANGED: ${{ steps.filter.outputs.docs }}
         with:
@@ -93,6 +113,11 @@ jobs:
             const NEEDS_LABEL = 'needs-docs-review';
             const OPT_OUT_LABEL = 'docs: not-required';
 
+            const openapiChanged = process.env.OPENAPI_CHANGED === 'true';
+            const destructiveChanged = process.env.DESTRUCTIVE_CHANGED === 'true';
+            const destructiveFiles = (process.env.DESTRUCTIVE_FILES || '')
+              .split(/\s+/)
+              .filter(Boolean);
             const codeChanged = process.env.CODE_CHANGED === 'true';
             const docsChanged = process.env.DOCS_CHANGED === 'true';
             const pr = context.payload.pull_request;
@@ -143,14 +168,67 @@ jobs:
               }
             }
 
-            await ensureLabel(NEEDS_LABEL, 'fbca04', 'Code changed but docs were not updated; please review docs surface');
-            await ensureLabel(OPT_OUT_LABEL, 'c5def5', 'Override the docs-drift advisory; this PR does not need docs changes');
+            async function upsertComment(body) {
+              const existing = await findMarkerComment();
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              }
+              return existing;
+            }
+
+            await ensureLabel(
+              NEEDS_LABEL,
+              'fbca04',
+              'Code changed without a matching docs update; may be a blocking hard gate (openapi.yaml / destructive handlers) or a soft advisory depending on which paths changed'
+            );
+            await ensureLabel(
+              OPT_OUT_LABEL,
+              'c5def5',
+              'Override the docs-drift check; this PR does not need docs changes. Clears both the soft advisory and the hard gate.'
+            );
 
             const optedOut = pr.labels.some(l => l.name === OPT_OUT_LABEL);
-            const driftDetected = codeChanged && !docsChanged && !optedOut;
-            const existing = await findMarkerComment();
+            const hardGateTriggered = (openapiChanged || destructiveChanged) && !docsChanged && !optedOut;
+            const softAdvisoryTriggered = !hardGateTriggered && codeChanged && !docsChanged && !optedOut;
 
-            if (driftDetected) {
+            if (hardGateTriggered) {
+              const surfaces = [];
+              if (openapiChanged) surfaces.push('`internal/api/openapi.yaml` (the API contract for external integrators)');
+              if (destructiveChanged) {
+                const files = destructiveFiles.length
+                  ? destructiveFiles.map(f => `\`${f}\``).join(', ')
+                  : 'a destructive handler file (`handlers_foreign_files.go`, `handlers_artist_duplicates.go`, or `handlers_library.go`)';
+                surfaces.push(`an irreversible/destructive handler: ${files}`);
+              }
+
+              const body = [
+                MARKER,
+                '## Docs drift: merge blocked',
+                '',
+                'This PR modifies a high-risk surface without a matching `docs/` update:',
+                '',
+                ...surfaces.map(s => `- ${s}`),
+                '',
+                '**Merge is blocked** until one of the following is true:',
+                '',
+                '1. This PR also updates the relevant page(s) under `docs/` (for example',
+                '   `docs/site/src/reference/providers.md` or the API reference built from',
+                '   `internal/api/openapi.yaml`), or',
+                '2. The `docs: not-required` label is applied, if no docs change is needed.',
+                '',
+                'This check re-runs automatically when the label is applied or removed, so',
+                'no new commit is required to clear it.',
+              ].join('\n');
+
+              await upsertComment(body);
+              await setLabel(NEEDS_LABEL, true);
+              core.setFailed(
+                `Docs drift hard gate: ${surfaces.join('; ')} changed without a docs/** update. ` +
+                'Update the relevant docs, or apply the `docs: not-required` label to opt out.'
+              );
+            } else if (softAdvisoryTriggered) {
               const body = [
                 MARKER,
                 '## Docs drift advisory',
@@ -171,27 +249,36 @@ jobs:
                 '_This is a soft advisory and never blocks merge._',
               ].join('\n');
 
-              if (existing) {
-                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-              } else {
-                await github.rest.issues.createComment({ owner, repo, issue_number, body });
-              }
+              await upsertComment(body);
               await setLabel(NEEDS_LABEL, true);
             } else {
+              const existing = await findMarkerComment();
               if (existing) {
+                const wasBlocking = existing.body && existing.body.includes('merge blocked');
+                let reason;
+                if (optedOut) {
+                  reason = 'Cleared: `docs: not-required` label is set on this PR.';
+                } else if (docsChanged) {
+                  reason = 'Cleared: this PR updates `docs/` alongside the code changes.';
+                } else {
+                  reason = 'Cleared: no docs-sensitive code paths are modified.';
+                }
+
                 const cleared = [
                   MARKER,
-                  '## Docs drift advisory',
+                  wasBlocking ? '## Docs drift: hard gate cleared' : '## Docs drift advisory',
                   '',
-                  optedOut
-                    ? 'Cleared: `docs: not-required` label is set on this PR.'
-                    : (docsChanged
-                        ? 'Cleared: this PR updates `docs/` alongside the code changes.'
-                        : 'Cleared: no docs-sensitive code paths are modified.'),
+                  reason,
                   '',
-                  '_This is a soft advisory and never blocks merge._',
+                  wasBlocking
+                    ? '_The hard gate no longer applies; merge is not blocked by this check._'
+                    : '_This is a soft advisory and never blocks merge._',
                 ].join('\n');
-                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: cleared });
+                if (existing) {
+                  await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: cleared });
+                } else {
+                  await github.rest.issues.createComment({ owner, repo, issue_number, body: cleared });
+                }
               }
               await setLabel(NEEDS_LABEL, false);
             }
