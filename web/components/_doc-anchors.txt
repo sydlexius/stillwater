@@ -354,9 +354,12 @@ how-to/fetch-discography#see-also
 how-to/fetch-discography#what-happens-to-the-nfo
 how-to/fetch-discography#what-stillwater-keeps-and-what-it-adds
 how-to/filter-artists#active-filters-and-sharing-a-view
+how-to/filter-artists#choose-which-columns-to-show
 how-to/filter-artists#filter-the-artists-list
 how-to/filter-artists#open-the-flyout
+how-to/filter-artists#save-a-filter-set-as-a-view
 how-to/filter-artists#select-every-matching-artist
+how-to/filter-artists#switch-between-table-and-grid-views
 how-to/filter-artists#the-artist-type-filter
 how-to/filter-artists#the-library-filter
 how-to/filter-artists#the-same-flyout-on-the-dashboard-and-reports

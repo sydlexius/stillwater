@@ -155,7 +155,7 @@ type MusicConfig struct {
 // ScannerConfig holds scanner behavior settings.
 type ScannerConfig struct {
 	Depth      int      `yaml:"depth" toml:"depth"`
-	Exclusions []string `yaml:"exclusions" toml:"exclusions" env:"SW_SCANNER_EXCLUSIONS" default:"Various Artists, Various, VA, Soundtrack, OST" desc:"Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed."`
+	Exclusions []string `yaml:"exclusions" toml:"exclusions" env:"SW_SCANNER_EXCLUSIONS" default:"Various Artists, Various, VA, Soundtrack, OST" desc:"Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
 	// MtimeFastPath, when true, lets the scanner skip the per-file image
 	// stat + dimension probe loop for artist directories whose mtime has
 	// not advanced since the previous scan. Defaults to true; disable it
@@ -163,14 +163,14 @@ type ScannerConfig struct {
 	// maintain stable directory mtimes -- some network shares, FUSE
 	// mounts, and any backup-restored tree where mtimes were not
 	// preserved fall into this category.
-	MtimeFastPath bool `yaml:"mtime_fast_path" toml:"mtime_fast_path" env:"SW_SCANNER_MTIME_FAST_PATH" default:"true" desc:"When true the scanner reuses cached image flags for artist directories whose mtime has not advanced since the previous scan, eliminating the per-file stat + dimension probe loop. Set to false on filesystems with unreliable mtimes (some network shares, FUSE mounts, backup-restored trees) so every scan re-probes."`
+	MtimeFastPath bool `yaml:"mtime_fast_path" toml:"mtime_fast_path" env:"SW_SCANNER_MTIME_FAST_PATH" default:"true" desc:"When true the scanner reuses cached image flags for artist directories whose mtime has not advanced since the previous scan, eliminating the per-file stat + dimension probe loop. Set to false on filesystems with unreliable mtimes (some network shares, FUSE mounts, backup-restored trees) so every scan re-probes. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
 }
 
 // BackupConfig holds database backup settings.
 type BackupConfig struct {
 	Path           string `yaml:"path" toml:"path" env:"SW_BACKUP_PATH" default:"" desc:"Override the directory where automated database backups are written. When empty Stillwater writes to a backups/ subfolder of the config directory."`
 	RetentionCount int    `yaml:"retention_count" toml:"retention_count" env:"SW_BACKUP_RETENTION" default:"7" desc:"Number of recent backups to keep. Must be a positive integer; non-positive or non-numeric values are silently ignored."`
-	IntervalHours  int    `yaml:"interval_hours" toml:"interval_hours" env:"SW_BACKUP_INTERVAL" default:"24" desc:"Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored."`
+	IntervalHours  int    `yaml:"interval_hours" toml:"interval_hours" env:"SW_BACKUP_INTERVAL" default:"24" desc:"Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
 	Enabled        bool   `yaml:"enabled" toml:"enabled" env:"SW_BACKUP_ENABLED" default:"true" desc:"Set to true or 1 to enable automated backups. Any other value disables them."`
 }
 
@@ -190,7 +190,7 @@ type RuleEngineConfig struct {
 	// per-provider rate limiter (internal/provider/ratelimit.go), so more
 	// workers never exceed any provider's request budget -- they only hide
 	// fetch latency. Issue #1730.
-	ArtistWorkers int `yaml:"artist_workers" toml:"artist_workers" env:"SW_RULE_ENGINE_ARTIST_WORKERS" default:"2" desc:"Number of artists the rule engine processes concurrently during a Run Rules pass. Default 2. Set to 1 for the original strictly-sequential walk; higher values overlap more per-artist provider fetches. The shared per-provider rate limiter still caps total request throughput. Must be a positive integer; non-positive or non-numeric values are silently ignored."`
+	ArtistWorkers int `yaml:"artist_workers" toml:"artist_workers" env:"SW_RULE_ENGINE_ARTIST_WORKERS" default:"2" desc:"Number of artists the rule engine processes concurrently during a Run Rules pass. Default 2. Set to 1 for the original strictly-sequential walk; higher values overlap more per-artist provider fetches. The shared per-provider rate limiter still caps total request throughput. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
 }
 
 // Default returns a Config with sensible defaults.
