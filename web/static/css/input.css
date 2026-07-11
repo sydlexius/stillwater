@@ -7489,3 +7489,199 @@ html[data-density="spacious"] .sw-cmdk-row {
 .sw-cmdk-foot-sep {
   margin-left: auto;
 }
+
+/* ==========================================================================
+ * #1894 F2: merge-modal motif fixes (artist_duplicates.templ / ArtistMergeModal).
+ *
+ * A SHARED cross-channel fragment, not scoped under .sw-next-* -- so unlike
+ * .sw-dash-card it cannot rely on next/-page-scoped --swd-* custom
+ * properties being in scope. Every rule below is anchored on #merge-modal
+ * (always present once the modal templ renders).
+ *
+ * Reference split (maintainer correction, mid-build): the artist-detail page
+ * (.sw-dash-card / sidebar accent) is the reference for the card motif and
+ * layout ONLY. Checkboxes and irreversible-operation colors have their OWN
+ * established patterns elsewhere in the app, reused verbatim below rather
+ * than invented fresh from the artist-detail motif:
+ *   - Checkbox: literal values ported from `.sw-next-artists
+ *     input[type="checkbox"]` (M55 #1335, "Mirrors design/styles.css
+ *     .sw-checkbox") -- the app's one existing styled-checkbox pattern.
+ *   - Discard/danger tint: literal values ported from the command palette's
+ *     fix-all row (`.sw-cmdk` --flyout-danger-ink/-bg/-border, #1773 de-blue
+ *     motif) -- the app's established "muted danger tint, never a solid
+ *     fill" pattern for rows affected by a destructive action.
+ * Neither source's scoped custom properties are in scope here, so the
+ * literal color values are copied rather than referenced.
+ *
+ * Root bug (maintainer rc6 finding): the survivor's "Include in merge"
+ * checkbox is disabled (forced checked+disabled -- correct logic, the
+ * survivor can't be dropped) but native disabled+checked renders dimmed
+ * grey in Chromium regardless of accent-color, so the row being KEPT read
+ * as "off" while every row being DELETED read native blue "on". Fixed by
+ * porting the app's existing styled-checkbox pattern (which never dims on
+ * :disabled) plus a row-level "Keeping" badge + accent highlight that no
+ * longer depends on the disabled-checkbox rendering at all; discard rows get
+ * the app's existing muted-danger tint as the reciprocal "not kept" signal.
+ * ========================================================================== */
+
+/* Glass-card treatment for the modal container, matching .sw-dash-card
+ * (background/border/radius) but scoped to #merge-modal since the modal
+ * is not a next/-page descendant. Uses the global --sw-glass-* tokens
+ * (already themed at :root/.dark), so this applies unconditionally --
+ * no separate dark-only rule needed. */
+#merge-modal .sw-merge-card {
+  border-radius: 14px;
+  background: var(--sw-glass-bg);
+  border: 1px solid var(--sw-glass-border);
+  backdrop-filter: none;
+}
+
+#merge-modal .sw-merge-row {
+  border-radius: 8px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+/* Survivor row: the positive "chosen/kept" signal -- the app's sidebar
+ * active-link accent tint (--sw-sidebar-active-bg) plus a left-border
+ * accent, independent of the include checkbox's disabled state. */
+#merge-modal .sw-merge-row-survivor {
+  background: var(--sw-sidebar-active-bg);
+  border-left: 3px solid rgb(59, 130, 246);
+  padding-left: 5px;
+}
+
+/* Discard rows: the reciprocal "not kept" signal, reusing the app's
+ * established muted-danger tint (.sw-cmdk fix-all row, #1773) rather than a
+ * plain opacity dim -- this IS an irreversible-operation row (its content
+ * will be deleted into the survivor), so it earns the same danger language
+ * as other destructive-affected rows elsewhere in the app. */
+#merge-modal .sw-merge-row-discard {
+  background: rgba(239, 68, 68, 0.08);
+  border-left: 3px solid rgba(239, 68, 68, 0.25);
+  padding-left: 5px;
+}
+:where(.dark, .dark *) #merge-modal .sw-merge-row-discard {
+  background: rgba(239, 68, 68, 0.12);
+  border-left-color: rgba(239, 68, 68, 0.3);
+}
+
+#merge-modal .sw-merge-keeping-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--sw-sidebar-active-text);
+}
+
+#merge-modal .sw-merge-discard-note {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #b91c1c; /* red-700, matches .sw-cmdk --flyout-danger-ink (light) */
+}
+:where(.dark, .dark *) #merge-modal .sw-merge-discard-note {
+  color: #fca5a5; /* red-300, matches .sw-cmdk --flyout-danger-ink (dark) */
+}
+
+/* Survivor radio + include checkbox (#1894 F2). Both are appearance:none custom
+ * controls sharing one neutral, fully-tokenized box (transparent fill + a themed
+ * --sw-content-text-secondary border, theme-aware so no .dark override or raw
+ * slate hex is needed). Neither uses a solid accent fill: the checkbox marks
+ * "included" with a neutral-ink checkmark (disabled survivor muted), and the
+ * radio marks "survivor" with a blue HALO (accent-glow ring + accent border),
+ * never a filled control. Kept-vs-discarded meaning is carried by the ROW
+ * (Keeping badge / discard danger tone). */
+#merge-modal .sw-merge-radio,
+#merge-modal .sw-merge-include {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  /* #1894 F2: themed neutral box (both radio + include). The
+   * --sw-content-text-secondary token is theme-aware (design-tokens.css
+   * :root/.dark), so no separate .dark override or raw slate hex is needed. */
+  border: 1.5px solid var(--sw-content-text-secondary);
+  background-color: transparent;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  vertical-align: middle;
+  margin: 0;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#merge-modal .sw-merge-radio {
+  border-radius: 50%;
+}
+#merge-modal .sw-merge-include {
+  border-radius: 4px;
+}
+#merge-modal .sw-merge-radio:hover,
+#merge-modal .sw-merge-include:hover {
+  border-color: var(--sw-content-text);
+}
+/* #1894 F2 (maintainer 2026-07-11): survivor radio is DE-BLUED to match the
+ * neutral checkboxes -- no solid blue fill, no white dot. "Selected" is
+ * signalled by a soft blue HALO (accent-glow box-shadow ring) plus an accent
+ * border; the center dot is neutral ink. Accent tokens only
+ * (--sw-accent-primary / --sw-accent-primary-glow), no raw hex, and the ring
+ * reads on both themes (the glow is semi-transparent). */
+#merge-modal .sw-merge-radio:checked {
+  background-color: transparent;
+  border-color: var(--sw-accent-primary);
+  box-shadow: 0 0 0 3px var(--sw-accent-primary-glow);
+}
+#merge-modal .sw-merge-radio:checked::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--sw-content-text);
+}
+/* #1894 F2 (maintainer 2026-07-11): merge-modal include checkboxes use the
+ * blessed NEUTRAL treatment (mirrors .sw-next-artists [data-col-toggle],
+ * #2067/#1337 -- the maintainer-approved reports de-blue), NOT the accent-blue
+ * that was ported from the artists row/bulk-select. Enabled (discard) boxes
+ * read as a standard neutral checkbox (ink checkmark on a transparent box); the
+ * disabled survivor box is muted to signal "locked-in" (mandatory keep). All
+ * colors are themed --sw-* tokens (design-tokens.css :root/.dark) -- no hard
+ * hex, no blue fill, resolves in both themes. The kept-vs-discarded meaning is
+ * carried by the ROW (Keeping badge / discard danger tone), never the box color.
+ * The survivor's muted look intentionally REPLACES the earlier blue-parity
+ * approach: no browser default dimming is inherited because the box is styled
+ * (appearance:none), so the muted tokens are what actually paint it. */
+#merge-modal .sw-merge-include:checked {
+  background-color: transparent;
+  border-color: var(--sw-content-text);
+  opacity: 1;
+}
+#merge-modal .sw-merge-include:disabled:checked {
+  background-color: transparent;
+  border-color: var(--sw-content-text-secondary);
+  opacity: 0.6;
+}
+#merge-modal .sw-merge-include:checked::after,
+#merge-modal .sw-merge-include:disabled:checked::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.28rem;
+  border-left: 2px solid var(--sw-content-text);
+  border-bottom: 2px solid var(--sw-content-text);
+  transform: rotate(-45deg) translate(0.5px, -1px);
+}
+#merge-modal .sw-merge-include:disabled:checked::after {
+  border-left-color: var(--sw-content-text-secondary);
+  border-bottom-color: var(--sw-content-text-secondary);
+}
+#merge-modal .sw-merge-include:disabled {
+  cursor: default;
+}
+#merge-modal .sw-merge-radio:focus-visible,
+#merge-modal .sw-merge-include:focus-visible {
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
+}
