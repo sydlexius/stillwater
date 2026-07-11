@@ -115,6 +115,6 @@ During a filesystem scan, Stillwater compares each newly discovered artist's nam
 
 When a collision is detected, the scan log records a warning and the scan result count includes the number of suspected duplicates found.
 
-To see which artist records were flagged, open the **Possible duplicate artists** report (direct URL: `/reports/duplicates`). The page groups artists that appear to be the same entity, with the higher-confidence **MBID match** groups (shared MusicBrainz ID) distinguished from **Name key match** groups (names normalize to the same value, but no MusicBrainz ID confirms it -- review these manually).
+To see which artist records were flagged, open the **Possible duplicate artists** report (direct URL: `/reports/duplicates`). The page groups artists that appear to be the same entity, with the higher-confidence **Shared MBID** groups (shared MusicBrainz ID) distinguished from **Name collision** groups (names normalize to the same value, but no MusicBrainz ID confirms it -- review these manually).
 
 For how to review a group, pick a survivor, read the merge preview, and what happens on disk once you confirm, see [Merge duplicate artists](merge-duplicate-artists.md).

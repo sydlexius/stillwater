@@ -31,8 +31,8 @@ In Stillwater, open **Settings > Connections** and click **Add server**, then **
 
 Fill in three fields:
 
-- **Name.** A label for the connection. Free-form; "Lidarr" is fine.
-- **URL.** The full URL to the Lidarr instance, including scheme and port. Example: `http://192.168.1.100:8686`. Use the hostname Stillwater can reach from its own network position; if Stillwater is in Docker on a different host than Lidarr, this is usually the LAN IP, not `localhost`.
+- **Server name.** A label for the connection. Free-form; "Lidarr" is fine.
+- **Server URL.** The full URL to the Lidarr instance, including scheme and port. Example: `http://192.168.1.100:8686`. Use the hostname Stillwater can reach from its own network position; if Stillwater is in Docker on a different host than Lidarr, this is usually the LAN IP, not `localhost`.
 - **API key.** Paste the key from the previous section.
 
 Click **Test** to verify the URL is reachable and the API key is valid, then save.
