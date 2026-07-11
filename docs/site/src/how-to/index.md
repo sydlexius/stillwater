@@ -8,6 +8,14 @@ Step-by-step procedures for the common operations. For background and *why*, see
 
 <div class="grid cards" markdown>
 
+- __The Dashboard__
+
+    ---
+
+    Read the health bubbles, work the action queue, and follow the live activity rail.
+
+    [Read more](dashboard.md)
+
 - __Run scans__
 
     ---
@@ -31,6 +39,30 @@ Step-by-step procedures for the common operations. For background and *why*, see
     Narrow the Artists page with tri-state field, image, platform, and status filters.
 
     [Read more](filter-artists.md)
+
+- __Foreign files__
+
+    ---
+
+    Review, allowlist, or delete unmatched files found on disk.
+
+    [Read more](foreign-files.md)
+
+- __Activity feed__
+
+    ---
+
+    Browse and filter the library-wide history of metadata changes, and undo one from its entry.
+
+    [Read more](activity-feed.md)
+
+- __Logs viewer__
+
+    ---
+
+    Watch the live-tailing log stream, filter by severity or component, and export for a bug report.
+
+    [Read more](logs-viewer.md)
 
 - __Customize preferences__
 

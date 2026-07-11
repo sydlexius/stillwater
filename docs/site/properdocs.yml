@@ -119,9 +119,13 @@ nav:
       - Rules: core-concepts/rules.md
   - How-to:
       - how-to/index.md
+      - The Dashboard: how-to/dashboard.md
       - Run scans: how-to/run-scans.md
       - Merge duplicate artists: how-to/merge-duplicate-artists.md
       - View reports: how-to/view-reports.md
+      - Foreign files: how-to/foreign-files.md
+      - Activity feed: how-to/activity-feed.md
+      - Logs viewer: how-to/logs-viewer.md
       - Edit an artist: how-to/edit-artist.md
       - Filter the artists list: how-to/filter-artists.md
       - Find a setting: how-to/find-a-setting.md
