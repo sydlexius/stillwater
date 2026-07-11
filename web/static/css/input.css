@@ -3861,14 +3861,21 @@ html[data-kbd="hide"] .sw-cmdk .sw-kbd { display: inline-flex; } /* command pale
 .sw-next-dashboard .sw-dash-card > .head h2,
 .sw-next-artist-detail .sw-dash-card > .head h2 {
   margin: 0;
-  font-size: 1rem; /* #1894 F3: was 14px, scales with font-size pref */
+  /* #1894 F3: was a 14px literal; now the artist-detail --sw-ad-font-section
+     token (also 1rem) so the value has one source instead of a duplicated
+     rem literal. .sw-next-dashboard resolves this to an invalid var (the
+     token is scoped to .sw-next-artist-detail), which is harmless -- the
+     dashboard-only rule below unconditionally overrides font-size anyway. */
+  font-size: var(--sw-ad-font-section);
   font-weight: 600;
   color: var(--swd-ink);
 }
 .sw-next-dashboard .sw-dash-card > .head .meta,
 .sw-next-artist-detail .sw-dash-card > .head .meta {
   margin-left: auto;
-  font-size: 0.8571rem; /* #1894 F3: was 12px, scales with font-size pref */
+  /* #1894 F3: was a 12px literal; see --sw-ad-font-card-meta above (same
+     invalid-for-dashboard-but-overridden-below reasoning as h2). */
+  font-size: var(--sw-ad-font-card-meta);
   color: var(--swd-ink-3);
   font-variant-numeric: tabular-nums;
 }
@@ -4503,6 +4510,7 @@ html:not([data-density="compact"]) .sw-next-artist-detail .sw-next-meta-group + 
   --sw-ad-font-section: 1rem;
   --sw-ad-font-body: 0.875rem;
   --sw-ad-font-meta: max(0.75rem, 10px);
+  --sw-ad-font-card-meta: 0.8571rem; /* was 12px: shared .sw-dash-card .head .meta (#1894 F3) */
   --sw-ad-lh-hero: 1.15;
   --sw-ad-lh-body: 1.6;
   --sw-ad-track-hero: -0.01em;

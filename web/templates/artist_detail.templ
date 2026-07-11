@@ -208,6 +208,18 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailPageData) {
 	}
 }
 
+// providerLogoImg renders the decorative platform-logo <img> shared by the
+// hero deep-link pills and the "view on platform" menu items (#1894 F4):
+// connType is the stable provider key ("emby"/"jellyfin"/"lidarr"); emby is
+// PNG (srcset), the others SVG (no srcset).
+templ providerLogoImg(connType string) {
+	if logoSrcSet(connType) != "" {
+		<img src={ logoSrc(connType) } srcset={ logoSrcSet(connType) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
+	} else {
+		<img src={ logoSrc(connType) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
+	}
+}
+
 // artistHero is the FIXED first card (not reorderable): fanart as the card-header
 // background with a contrast scrim, artistlogo preferred over the H1 (reserved
 // height to avoid layout shift), thumb, provider deep-link pills (presence +
@@ -305,14 +317,7 @@ templ artistHero(assets AssetPaths, data ArtistDetailPageData) {
 								style="border:1px solid var(--swd-line);color:var(--swd-ink-2)"
 								title={ tf(ctx, "artist.view_on_platform", conn.Name) }
 							>
-								// Platform logo (#1894 F4): conn.Type is the stable provider
-								// key ("emby"/"jellyfin"/"lidarr"); emby is PNG (srcset), the
-								// others SVG (no srcset). Decorative -- the name carries the label.
-								if logoSrcSet(conn.Type) != "" {
-									<img src={ logoSrc(conn.Type) } srcset={ logoSrcSet(conn.Type) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
-								} else {
-									<img src={ logoSrc(conn.Type) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
-								}
+								@providerLogoImg(conn.Type)
 								{ conn.Name }
 								@components.IconArrowTopRightOnSquare("h-3 w-3")
 							</a>
@@ -718,13 +723,8 @@ templ artistActionItems(data ArtistDetailPageData, withShortcut bool) {
 			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 		>
 			// Platform logo (#1894 F4) leads as the menu-item icon, matching the
-			// hero pill; the external-link arrow trails as the "opens externally"
-			// cue. conn.Type is the stable key (emby PNG+srcset; jellyfin/lidarr SVG).
-			if logoSrcSet(conn.Type) != "" {
-				<img src={ logoSrc(conn.Type) } srcset={ logoSrcSet(conn.Type) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
-			} else {
-				<img src={ logoSrc(conn.Type) } alt="" class="h-4 w-4 rounded-full" aria-hidden="true"/>
-			}
+			// hero pill; the external-link arrow trails as the "opens externally" cue.
+			@providerLogoImg(conn.Type)
 			{ tf(ctx, "artist.view_on_platform", conn.Name) }
 			@components.IconArrowTopRightOnSquare("h-3 w-3 text-gray-400")
 		</a>
@@ -1426,6 +1426,11 @@ templ artistDetailPageScript() {
 					var active = (document.activeElement && document.activeElement.closest) ? document.activeElement.closest('[data-sw-section]') : null;
 					var cur = active ? live.indexOf(active) : idx;
 					if (cur < 0) cur = idx;
+					// idx persists across presses with no live section focused, so a
+					// shrunk list (collapse/reorder removing a section) can leave cur
+					// pointing past the end -- clamp before computing next/prev so
+					// live[idx] below is always a valid element (#1894 review).
+					cur = Math.min(live.length - 1, Math.max(0, cur));
 					idx = key === 'j' ? Math.min(live.length - 1, cur + 1) : Math.max(0, cur - 1);
 					live[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
 					live[idx].setAttribute('tabindex', '-1');
