@@ -106,7 +106,7 @@ Setting an ID does not trigger a refresh on its own -- the next refresh will use
 
 ## Reorder and collapse sections
 
-Below the hero, the artist's sections (Details, Artwork, Findings, Providers, Discography, Identifiers) are individually reorderable and collapsible.
+Below the hero, the artist's sections (Details, Artwork, Findings, Providers, Discography, Provider IDs) are individually reorderable and collapsible.
 
 1. Hover (or focus) a section's header to reveal its drag handle.
 2. Drag the handle to move that section up or down. The new order saves automatically as soon as you drop it.
