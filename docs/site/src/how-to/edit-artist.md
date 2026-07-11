@@ -2,7 +2,7 @@
 description: Change artist metadata by hand, lock fields you've curated, override provider IDs.
 ---
 
-<!-- code: internal/api/router.go (PATCH /api/v1/artists/{id}/fields/{field}; POST/DELETE /api/v1/artists/{id}/lock + field-locks), internal/api/handlers_field_update*.go, internal/api/handlers_locks*.go, web/templates/artist.templ. -->
+<!-- code: internal/api/router.go (PATCH /api/v1/artists/{id}/fields/{field}; POST/DELETE /api/v1/artists/{id}/lock + field-locks), internal/api/handlers_field_update*.go, internal/api/handlers_locks*.go, web/templates/artist_detail.templ, web/static/js/artist-detail/section-layout.js. -->
 
 # Edit an artist
 
@@ -103,6 +103,38 @@ Most provider IDs are discovered automatically as Stillwater queries providers a
 4. Save the field.
 
 Setting an ID does not trigger a refresh on its own -- the next refresh will use the new ID. To pull updated data immediately, click **Refresh** after saving.
+
+## Reorder and collapse sections
+
+Below the hero, the artist's sections (Details, Artwork, Findings, Providers, Discography, Provider IDs) are individually reorderable and collapsible.
+
+1. Hover (or focus) a section's header to reveal its drag handle.
+2. Drag the handle to move that section up or down. The new order saves automatically as soon as you drop it.
+3. Click a section's disclosure control to collapse or expand it. The collapsed state saves alongside the order.
+
+Both settings are per-user preferences (`artist_detail_section_order`, `artist_detail_collapsed_sections`), so the layout follows you across artists and sessions. You can also set the section order and hidden sections from the preferences drawer -- see [Customize your view](customize-preferences.md).
+
+## Scroll with the sticky mini-header
+
+Once you scroll past the hero, a compact mini-header takes its place at the top of the page: the artist's name and type, a findings indicator (when there are open findings), and the same **Edit** and **Actions** controls as the hero. It lets you edit, run rules, or jump back to the artist list without scrolling back up.
+
+## Keyboard shortcuts
+
+The artist page responds to these keys (not while a text field is focused):
+
+| Key | Action |
+| --- | --- |
+| `h` | Previous artist |
+| `l` | Next artist |
+| `j` | Next section |
+| `k` | Previous section |
+| `r` | Refresh metadata |
+| `R` | Run rules |
+| `e` | Toggle edit mode |
+| `f` | Fetch from providers for the field your cursor is over |
+| `Esc` | Close the open panel, or exit edit mode |
+
+A shortcut legend with the same keys is printed at the bottom of the page.
 
 ## Discard accidental edits
 

@@ -56,6 +56,10 @@ Six further reports appear in the rail and are coming in a future release:
 | State records | Artist lifecycle and refresh history |
 | Weekly review queue | Artists scheduled for manual review |
 
+## Duplicate and foreign-file reports
+
+The sidebar's **Reports** group also lists **Duplicates** and **Foreign Files**. These are dedicated pages at their own URLs (`/reports/duplicates`, `/reports/foreign-files`), not entries in the two-pane workspace's rail -- each report pill shows a live count when there's something to review. See [Merge duplicate artists](merge-duplicate-artists.md) for the duplicate-detection and merge workflow.
+
 ## Background appearance
 
 The card surfaces in the Reports workspace follow the **Background Opacity** preference. See [Customize preferences](customize-preferences.md#background-opacity) to adjust the frosted-glass opacity of cards and panels.
